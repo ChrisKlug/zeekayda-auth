@@ -180,6 +180,31 @@ public sealed class ClientRegistrationValidatorTests
         act.Should().NotThrow();
     }
 
+    // ── PKCE opt-out ──────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A_public_client_cannot_be_permitted_to_omit_pkce()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { AllowNonceInsteadOfPkce = true };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.allow_nonce_instead_of_pkce.on_public");
+    }
+
+    [Fact]
+    public void A_confidential_client_may_be_permitted_to_omit_pkce()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidConfidentialClient() with { AllowNonceInsteadOfPkce = true };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow();
+    }
+
     // ── Redirect URI rules ────────────────────────────────────────────────────────────────────────
 
     [Fact]

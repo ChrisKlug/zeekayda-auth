@@ -29,7 +29,7 @@ internal static class AuthorizationRequestContextSerializer
     /// The format version. A payload carrying any other value is refused rather than misread —
     /// positional formats have no way to detect a field that moved.
     /// </summary>
-    private const byte Version = 1;
+    private const byte Version = 2;
 
     public static byte[] Encode(AuthorizationRequestContext context)
     {
@@ -46,8 +46,7 @@ internal static class AuthorizationRequestContextSerializer
         WriteStrings(writer, context.Scopes);
         WriteNullableString(writer, context.State);
         writer.Write(context.Nonce);
-        writer.Write(context.CodeChallenge);
-        writer.Write((byte)context.CodeChallengeMethod);
+        WritePkce(writer, context.Pkce);
 
         writer.Write7BitEncodedInt(context.Prompts.Count);
         foreach (var prompt in context.Prompts)
@@ -120,10 +119,7 @@ internal static class AuthorizationRequestContextSerializer
         var scopes = ReadStrings(reader);
         var state = ReadNullableString(reader);
         var nonce = reader.ReadString();
-        var codeChallenge = reader.ReadString();
-
-        var challengeMethod = (CodeChallengeMethod)reader.ReadByte();
-        if (!Enum.IsDefined(challengeMethod))
+        if (!TryReadPkce(reader, out var pkce))
             return null;
 
         var prompts = ReadPrompts(reader);
@@ -138,8 +134,7 @@ internal static class AuthorizationRequestContextSerializer
             Scopes = scopes,
             State = state,
             Nonce = nonce,
-            CodeChallenge = codeChallenge,
-            CodeChallengeMethod = challengeMethod,
+            Pkce = pkce,
             Prompts = prompts,
             MaxAge = ReadNullableTimeSpan(reader),
             IssuedAt = DateTimeOffset.FromUnixTimeSeconds(reader.ReadInt64()),
@@ -189,8 +184,33 @@ internal static class AuthorizationRequestContextSerializer
         !string.IsNullOrEmpty(context.ClientId) &&
         !string.IsNullOrEmpty(context.RedirectUri) &&
         !string.IsNullOrEmpty(context.Nonce) &&
-        !string.IsNullOrEmpty(context.CodeChallenge) &&
         context.Scopes.Count > 0;
+
+    private static void WritePkce(BinaryWriter writer, PkceChallenge? pkce)
+    {
+        writer.Write(pkce is not null);
+        if (pkce is null)
+            return;
+
+        writer.Write(pkce.Challenge);
+        writer.Write((byte)pkce.Method);
+    }
+
+    /// <summary>False for a method this version does not define or an empty challenge: a payload this version did not write.</summary>
+    private static bool TryReadPkce(BinaryReader reader, out PkceChallenge? pkce)
+    {
+        pkce = null;
+        if (!reader.ReadBoolean())
+            return true;
+
+        var challenge = reader.ReadString();
+        var method = (CodeChallengeMethod)reader.ReadByte();
+        if (challenge.Length == 0 || !Enum.IsDefined(method))
+            return false;
+
+        pkce = new PkceChallenge(challenge, method);
+        return true;
+    }
 
     private static void WriteStrings(BinaryWriter writer, IReadOnlyList<string> values)
     {

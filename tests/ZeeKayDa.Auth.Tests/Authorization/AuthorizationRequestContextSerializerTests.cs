@@ -50,6 +50,37 @@ public class AuthorizationRequestContextSerializerTests
     }
 
     [Fact]
+    public void Context_without_a_PKCE_binding_round_trips_without_one()
+    {
+        var context = MinimalContext() with { Pkce = null };
+
+        AuthorizationRequestContextSerializer.TryDecode(
+            AuthorizationRequestContextSerializer.Encode(context), out var decoded).Should().BeTrue();
+
+        decoded!.Pkce.Should().BeNull();
+    }
+
+    [Fact]
+    public void Payload_carrying_an_undefined_code_challenge_method_is_refused()
+    {
+        var payload = AuthorizationRequestContextSerializer.Encode(MinimalContext());
+        var methodByte = IndexOfChallengeMethod(payload);
+        payload[methodByte] = 42;
+
+        AuthorizationRequestContextSerializer.TryDecode(payload, out _).Should().BeFalse(
+            "a method this version cannot verify must not be read as one it can");
+    }
+
+    /// <summary>The byte after the challenge string: the format writes the challenge, then its method.</summary>
+    private static int IndexOfChallengeMethod(byte[] payload)
+    {
+        var challenge = System.Text.Encoding.UTF8.GetBytes(MinimalContext().Pkce!.Challenge);
+        var at = payload.AsSpan().IndexOf(challenge);
+        at.Should().BeGreaterThan(0);
+        return at + challenge.Length;
+    }
+
+    [Fact]
     public void Null_and_empty_collections_stay_distinguishable()
     {
         // "no consent decision yet" and "consented to nothing" are different states, and a
@@ -170,8 +201,7 @@ public class AuthorizationRequestContextSerializerTests
         Scopes = ["openid"],
         State = null,
         Nonce = "n-0S6_WzA2Mj",
-        CodeChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
-        CodeChallengeMethod = CodeChallengeMethod.S256,
+        Pkce = new PkceChallenge("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", CodeChallengeMethod.S256),
         Prompts = new HashSet<PromptValue>(),
         MaxAge = null,
         IssuedAt = Now,

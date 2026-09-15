@@ -42,9 +42,14 @@ one *is* recoverable, redirect to the client with the spec error (`interaction_r
 `login_required`, …) rather than showing a dead end. The framework never auto-restarts a flow — the
 relying party decides whether to retry.
 
-**PKCE with `S256` is mandatory for every client, with no per-client opt-out** (OAuth 2.1 §7.6).
-There is no `RequirePkce` flag on a client registration and there will not be one. The implicit flow
-and resource-owner password credentials are not merely disabled — they have no `GrantType` member.
+**PKCE with `S256` is enforced for every client, with the one exception OAuth 2.1 §7.5.1.1 allows:**
+a confidential client whose registration sets `AllowNonceInsteadOfPkce` may omit `code_challenge`,
+and the `openid` scope plus `nonce` that every request must carry anyway then protect the code. The
+opt-in is the operator's assurance that the client checks the nonce; startup rejects it on a public
+client, and the authorize endpoint ignores it on one. A challenge the client does send is enforced as
+for any other client, and a code issued without one refuses a `code_verifier` (RFC 9700 §4.8.2). The
+implicit flow and resource-owner password credentials are not merely disabled — they have no
+`GrantType` member.
 
 **`nonce` is required whenever `openid` scope is requested**, rejected with `invalid_request` when
 absent (OIDC Core §3.1.2.1, §3.1.3.7). **`iss` is returned on every authorization response**,

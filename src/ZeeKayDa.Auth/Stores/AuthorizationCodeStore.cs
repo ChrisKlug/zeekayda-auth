@@ -126,10 +126,11 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
         {
             entry = UnprotectEntry(entryBytes.Value);
         }
-        catch (Exception ex) when (ex is CryptographicException or JsonException)
+        catch (Exception ex) when (ex is CryptographicException or JsonException or ArgumentException)
         {
             // The entry is unusable — there is nothing to hand back — so the redeem path returns
-            // NotFound. Distinct from the tombstone catch site below.
+            // NotFound. Distinct from the tombstone catch site below. ArgumentException covers a
+            // value the entry's own types refuse to construct, such as an incomplete PKCE binding.
             return new AuthorizationCodeRedemptionResult.NotFound();
         }
 

@@ -155,8 +155,7 @@ internal sealed class AuthorizationCodeIssuer
         {
             ClientId = requestContext.ClientId,
             RedirectUri = requestContext.RedirectUri,
-            CodeChallenge = requestContext.CodeChallenge,
-            CodeChallengeMethod = requestContext.CodeChallengeMethod,
+            Pkce = requestContext.Pkce,
             Sub = session.Subject,
             Scope = scopes,
             Nonce = requestContext.Nonce,

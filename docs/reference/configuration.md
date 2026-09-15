@@ -157,9 +157,10 @@ Must be greater than zero; rejected at startup otherwise.
 | Required | When `GrantTypesSupported` contains `AuthorizationCode` |
 
 The PKCE code challenge methods advertised in the discovery document, and the one method the token
-endpoint verifies every `code_verifier` with. PKCE is mandatory for the authorization code grant
-(OAuth 2.1 §4.1.1, RFC 9700 §2.1.1) for every client, with no per-client opt-out, so a host that
-serves the grant must keep `S256` in this collection: startup fails otherwise. When `null`, the
+endpoint verifies every `code_verifier` with. PKCE is enforced for the authorization code grant
+(OAuth 2.1 §4.1.1, RFC 9700 §2.1.1) for every client except a confidential one whose registration
+sets `AllowNonceInsteadOfPkce`, so a host that serves the grant must keep `S256` in this collection:
+startup fails otherwise. When `null`, the
 `code_challenge_methods_supported` field is omitted from the discovery document, which is only
 valid on a host whose `GrantTypesSupported` does not contain the code grant.
 

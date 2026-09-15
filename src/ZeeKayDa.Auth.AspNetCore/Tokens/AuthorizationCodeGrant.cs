@@ -52,6 +52,12 @@ internal sealed class AuthorizationCodeGrant
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(client);
 
+        // Refused before the code is touched, as the form parser once did for every client: a
+        // client held to PKCE that forgot its verifier keeps its code. Only a client permitted
+        // to omit PKCE reaches the store without one, and there the code decides.
+        if (request.CodeVerifier is null && !PkceRules.MayOmitChallenge(client))
+            return TokenResponses.Error(TokenError.InvalidRequest("The code_verifier parameter is required."));
+
         // Resolved from the request's services rather than the constructor: this is a singleton
         // whose store and signing-ring dependencies are host registrations, and constructor
         // injection would surface their absence as a raw DI error instead of the startup
@@ -98,7 +104,15 @@ internal sealed class AuthorizationCodeGrant
             return InvalidGrant();
         }
 
-        if (!PkceVerifier.Verify(request.CodeVerifier, entry.CodeChallenge, entry.CodeChallengeMethod))
+        // The code is consumed by now, so a verifier sent for a code that never had a challenge
+        // buys nothing; the error code is the spec's for a malformed exchange (OAuth 2.1 §3.2.4).
+        if (entry.Pkce is null && request.CodeVerifier is not null)
+        {
+            _logger.LogWarning("Client {ClientId} presented a code_verifier for an authorization code issued without a code_challenge.", client.ClientId);
+            return TokenResponses.Error(TokenError.InvalidRequest("The code_verifier parameter was sent, but the authorization request carried no code_challenge."));
+        }
+
+        if (!VerifierProvesTheChallengeTheCodeWasIssuedWith(request, entry))
         {
             _logger.LogWarning("Client {ClientId} presented a code_verifier that does not match its authorization code's challenge.", client.ClientId);
             return InvalidGrant();
@@ -207,6 +221,13 @@ internal sealed class AuthorizationCodeGrant
     /// </summary>
     private static IResult InvalidGrant() =>
         TokenResponses.Error(TokenError.InvalidGrant("The authorization code is invalid, expired, revoked, or was not issued to this client and redirect URI, or the code_verifier does not match, or the subject can no longer be issued tokens."));
+
+    /// <summary>
+    /// A code issued with a challenge needs the verifier it was derived from, and a missing one
+    /// fails like a wrong one; a code issued without a challenge has nothing to prove.
+    /// </summary>
+    private static bool VerifierProvesTheChallengeTheCodeWasIssuedWith(TokenRequest request, AuthorizationCodeEntry entry) =>
+        entry.Pkce is not { } pkce || (request.CodeVerifier is { } verifier && PkceVerifier.Verify(verifier, pkce));
 
     private static bool ClientAcceptsCurrentSigningKey(HttpContext context, IClientMetadata client) =>
         client.AllowedSigningAlgorithms is not { } allowed ||

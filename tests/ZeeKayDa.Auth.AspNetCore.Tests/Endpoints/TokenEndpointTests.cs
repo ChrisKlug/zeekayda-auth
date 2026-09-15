@@ -27,8 +27,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 /// <summary>
 /// Integration tests for the token endpoint: a code obtained through the real authorization
 /// flow is exchanged over HTTP, and what comes back is verified against the JWKS the same host
-/// serves. The security decisions here — PKCE for every client, a burnt code on any binding
-/// failure, a replay revoking its family — are recorded by the tests that prove them.
+/// serves. The security decisions here — PKCE for every client not permitted to rely on the nonce
+/// instead, a burnt code on any binding failure, a replay revoking its family — are recorded by
+/// the tests that prove them.
 /// </summary>
 public sealed class TokenEndpointTests : IDisposable
 {
@@ -43,6 +44,8 @@ public sealed class TokenEndpointTests : IDisposable
     private const string ConfidentialSecret = "very-secret";
     private const string OtherClient = "other-client";
     private const string NoCodeGrantClient = "no-code-grant-client";
+    private const string NoncePkceClient = "nonce-instead-of-pkce-client";
+    private const string NoncePkceSecret = "also-very-secret";
     private const string Nonce = "n-0S6_WzA2Mj";
 
     // RFC 7636 Appendix B.
@@ -87,6 +90,7 @@ public sealed class TokenEndpointTests : IDisposable
                 .Add(PublicRegistration())
                 .Add(NoCodeGrantRegistration())
                 .AddConfidential(ConfidentialClient, ConfidentialSecret, [RegisteredRedirect], [], ["openid", "profile"])
+                .Add(NoncePkceRegistration())
                 .AddPublic(OtherClient, ["https://other.example.com/callback"], [], ["openid"]));
 
             // The interaction and code stores are the framework's; the refresh-token store is
@@ -108,6 +112,18 @@ public sealed class TokenEndpointTests : IDisposable
         ClientRegistration.CreatePublic(NoCodeGrantClient, [RegisteredRedirect], [], ["openid"])
             with
         { AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken } };
+
+    /// <summary>A first-party confidential client the operator trusts to check the nonce, so it may leave PKCE out.</summary>
+    private static ClientRegistration NoncePkceRegistration() =>
+        ClientRegistration.CreateConfidential(NoncePkceClient, Pbkdf2(NoncePkceSecret), [RegisteredRedirect], [], ["openid", "profile"])
+            with
+        { AllowNonceInsteadOfPkce = true, RequireConsent = false };
+
+    private static Pbkdf2ClientSecret Pbkdf2(string secret)
+    {
+        var salt = new byte[16];
+        return new Pbkdf2ClientSecret(600_000, salt, Rfc2898DeriveBytes.Pbkdf2(secret, salt, 600_000, HashAlgorithmName.SHA256, 32));
+    }
 
     private static HttpClient NewClient(WebApplicationFactory<TestWebAppFactory> factory) => factory.CreateClient(new()
     {
@@ -137,16 +153,25 @@ public sealed class TokenEndpointTests : IDisposable
 
     // ── Driving the authorization flow to a code ──────────────────────────────────────────────
 
-    private static Dictionary<string, string?> AuthorizeQuery(string clientId = PublicClient, string scope = "openid profile") => new()
+    private static Dictionary<string, string?> AuthorizeQuery(string clientId = PublicClient, string scope = "openid profile", bool pkce = true)
     {
-        ["client_id"] = clientId,
-        ["redirect_uri"] = RegisteredRedirect,
-        ["response_type"] = "code",
-        ["scope"] = scope,
-        ["nonce"] = Nonce,
-        ["code_challenge"] = Challenge,
-        ["code_challenge_method"] = "S256",
-    };
+        var query = new Dictionary<string, string?>
+        {
+            ["client_id"] = clientId,
+            ["redirect_uri"] = RegisteredRedirect,
+            ["response_type"] = "code",
+            ["scope"] = scope,
+            ["nonce"] = Nonce,
+        };
+
+        if (pkce)
+        {
+            query["code_challenge"] = Challenge;
+            query["code_challenge_method"] = "S256";
+        }
+
+        return query;
+    }
 
     private static string InteractionIdFrom(HttpResponseMessage response)
     {
@@ -161,12 +186,12 @@ public sealed class TokenEndpointTests : IDisposable
     /// Authorize and follow the flow to a code: sign in when the host asks, consent when the
     /// client asks. A browser that already holds an SSO session is handed the code straight away.
     /// </summary>
-    private Task<string> ObtainCodeAsync(string clientId = PublicClient, string scope = "openid profile") =>
-        ObtainCodeWithAsync(_client, clientId, scope);
+    private Task<string> ObtainCodeAsync(string clientId = PublicClient, string scope = "openid profile", bool pkce = true) =>
+        ObtainCodeWithAsync(_client, clientId, scope, pkce);
 
-    private static async Task<string> ObtainCodeWithAsync(HttpClient client, string clientId = PublicClient, string scope = "openid profile")
+    private static async Task<string> ObtainCodeWithAsync(HttpClient client, string clientId = PublicClient, string scope = "openid profile", bool pkce = true)
     {
-        var response = await client.GetAsync(QueryHelpers.AddQueryString("/connect/authorize", AuthorizeQuery(clientId, scope)), Cancellation);
+        var response = await client.GetAsync(QueryHelpers.AddQueryString("/connect/authorize", AuthorizeQuery(clientId, scope, pkce)), Cancellation);
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
 
         if (IsHandoffTo(response, LoginPath))
@@ -206,6 +231,20 @@ public sealed class TokenEndpointTests : IDisposable
 
     private Task<HttpResponseMessage> PostTokenAsync(Dictionary<string, string> form, (string Id, string Secret)? basic = null) =>
         PostTokenAsync(form.Select(field => KeyValuePair.Create(field.Key, field.Value)), basic);
+
+    /// <summary>The client permitted to omit PKCE exchanges <paramref name="code"/>, authenticating with its secret, with or without a verifier.</summary>
+    private Task<HttpResponseMessage> PostTokenAsNoncePkceClientAsync(string code, string? verifier)
+    {
+        var form = TokenForm(code, NoncePkceClient);
+        form.Remove("client_id");
+
+        if (verifier is null)
+            form.Remove("code_verifier");
+        else
+            form["code_verifier"] = verifier;
+
+        return PostTokenAsync(form, basic: (NoncePkceClient, NoncePkceSecret));
+    }
 
     private async Task<HttpResponseMessage> PostTokenAsync(IEnumerable<KeyValuePair<string, string>> fields, (string Id, string Secret)? basic = null)
     {
@@ -531,18 +570,96 @@ public sealed class TokenEndpointTests : IDisposable
     // ── PKCE ──────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task A_request_without_a_code_verifier_is_refused_for_every_client()
+    public async Task A_request_without_a_code_verifier_is_refused_before_the_code_is_touched_for_a_client_held_to_pkce()
     {
         var code = await ObtainCodeAsync();
         var form = TokenForm(code);
         form.Remove("code_verifier");
 
-        var response = await PostTokenAsync(form);
+        var refused = await PostTokenAsync(form);
+        var retried = await PostTokenAsync(TokenForm(code));
 
-        await ShouldBeErrorAsync(response, "invalid_request");
+        await ShouldBeErrorAsync(refused, "invalid_request");
+        retried.StatusCode.Should().Be(HttpStatusCode.OK, "a request refused for leaving out a required parameter consumed nothing");
+    }
+
+    [Fact]
+    public async Task A_client_permitted_to_omit_pkce_redeems_a_code_issued_without_a_challenge_with_no_verifier()
+    {
+        var code = await ObtainCodeAsync(NoncePkceClient, pkce: false);
+
+        var response = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await ReadJsonAsync(response);
+        Claims(body.GetProperty("id_token").GetString()!).GetProperty("nonce").GetString().Should().Be(Nonce, "the nonce is what protects this exchange instead of PKCE");
+    }
+
+    [Fact]
+    public async Task An_empty_code_verifier_is_malformed_not_absent_even_for_a_client_permitted_to_omit_pkce()
+    {
+        var code = await ObtainCodeAsync(NoncePkceClient, pkce: false);
+
+        var refused = await PostTokenAsNoncePkceClientAsync(code, verifier: "");
+        var retried = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
+
+        await ShouldBeErrorAsync(refused, "invalid_request");
+        retried.StatusCode.Should().Be(HttpStatusCode.OK, "a request refused at the shape check consumed nothing");
+    }
+
+    [Fact]
+    public async Task A_verifier_presented_for_a_code_issued_without_a_challenge_is_refused_and_burns_the_code()
+    {
+        var code = await ObtainCodeAsync(NoncePkceClient, pkce: false);
+
+        var refused = await PostTokenAsNoncePkceClientAsync(code, verifier: Verifier);
+        var retried = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
+
+        await ShouldBeErrorAsync(refused, "invalid_request");
+        await ShouldBeErrorAsync(retried, "invalid_grant"); // consumed by the refused exchange
+    }
+
+    [Fact]
+    public async Task A_code_issued_with_a_challenge_to_a_client_permitted_to_omit_pkce_is_refused_without_the_verifier_and_burns()
+    {
+        var code = await ObtainCodeAsync(NoncePkceClient);
+
+        var refused = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
+        var retried = await PostTokenAsNoncePkceClientAsync(code, verifier: Verifier);
+
+        await ShouldBeErrorAsync(refused, "invalid_grant");
+        await ShouldBeErrorAsync(retried, "invalid_grant");
+    }
+
+    [Fact]
+    public async Task A_code_issued_with_a_challenge_to_a_client_permitted_to_omit_pkce_is_verified_like_any_other()
+    {
+        var wrong = await PostTokenAsNoncePkceClientAsync(await ObtainCodeAsync(NoncePkceClient), verifier: WrongVerifier);
+        var right = await PostTokenAsNoncePkceClientAsync(await ObtainCodeAsync(NoncePkceClient), verifier: Verifier);
+
+        await ShouldBeErrorAsync(wrong, "invalid_grant");
+        right.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task A_confidential_client_held_to_pkce_is_refused_without_a_code_verifier_before_the_code_is_touched()
+    {
+        var code = await ObtainCodeAsync(ConfidentialClient);
+        var form = TokenForm(code, ConfidentialClient);
+        form.Remove("client_id");
+        form.Remove("code_verifier");
+        var retryForm = TokenForm(code, ConfidentialClient);
+        retryForm.Remove("client_id");
+
+        var refused = await PostTokenAsync(form, basic: (ConfidentialClient, ConfidentialSecret));
+        var retried = await PostTokenAsync(retryForm, basic: (ConfidentialClient, ConfidentialSecret));
+
+        await ShouldBeErrorAsync(refused, "invalid_request");
+        retried.StatusCode.Should().Be(HttpStatusCode.OK, "only a client permitted to omit PKCE reaches the store without a verifier");
     }
 
     [Theory]
+    [InlineData("")]
     [InlineData("tooshort")]
     [InlineData("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk=")]
     public async Task A_malformed_code_verifier_is_refused_before_the_code_is_touched(string verifier)

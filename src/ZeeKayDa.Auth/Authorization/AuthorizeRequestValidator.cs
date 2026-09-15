@@ -51,7 +51,7 @@ internal sealed partial class AuthorizeRequestValidator
         EffectiveScopesNameOneResource,
         ClientAdditionsNameNoScopeClaim,
         NonceIsPresent,
-        CodeChallengeIsPresent,
+        CodeChallengeIsPresentUnlessTheClientMayOmitIt,
         CodeChallengeIsWellFormed,
         CodeChallengeMethodIsS256,
         PromptValuesAreCoherent,
@@ -317,23 +317,46 @@ internal sealed partial class AuthorizeRequestValidator
         return null;
     }
 
-    private static Problem? CodeChallengeIsPresent(RequestContext context)
+    /// <remarks>
+    /// The opt-in is honoured only on a confidential client, whatever the registration says: a
+    /// custom repository may skip registration validation, and a public client's PKCE is the only
+    /// thing binding the redemption to the party that started the flow. The nonce this request
+    /// relies on instead was already required by <c>NonceIsPresent</c>.
+    /// </remarks>
+    private static Problem? CodeChallengeIsPresentUnlessTheClientMayOmitIt(RequestContext context)
     {
+        // A challenge that is sent, empty included, is held to its shape by the next rule.
         var challenge = context.Single("code_challenge");
-        if (string.IsNullOrEmpty(challenge))
-            return InvalidRequest("The code_challenge parameter is required.");
+        if (challenge is not null)
+        {
+            context.CodeChallenge = challenge;
+            return null;
+        }
 
-        context.CodeChallenge = challenge;
-        return null;
+        return PkceRules.MayOmitChallenge(context.Client)
+            ? null
+            : InvalidRequest("The code_challenge parameter is required.");
     }
 
     private static Problem? CodeChallengeIsWellFormed(RequestContext context) =>
-        CodeChallengePattern().IsMatch(context.CodeChallenge)
+        context.CodeChallenge is null || CodeChallengePattern().IsMatch(context.CodeChallenge)
             ? null
             : InvalidRequest("The code_challenge parameter is malformed.");
 
+    /// <remarks>
+    /// A request that omitted the challenge has no method to check, but a method sent without a
+    /// challenge is a client that meant to use PKCE and lost half of it, and is refused rather than
+    /// handed a code its verifier would burn.
+    /// </remarks>
     private static Problem? CodeChallengeMethodIsS256(RequestContext context)
     {
+        if (context.CodeChallenge is null)
+        {
+            return context.Single("code_challenge_method") is null
+                ? null
+                : InvalidRequest("The code_challenge_method parameter was sent without a code_challenge.");
+        }
+
         var method = context.Single("code_challenge_method");
 
         if (string.IsNullOrEmpty(method))
@@ -403,8 +426,7 @@ internal sealed partial class AuthorizeRequestValidator
             Scopes = context.EffectiveScopes,
             State = state,
             Nonce = context.Nonce,
-            CodeChallenge = context.CodeChallenge,
-            CodeChallengeMethod = CodeChallengeMethod.S256,
+            Pkce = context.CodeChallenge is { } challenge ? new PkceChallenge(challenge, CodeChallengeMethod.S256) : null,
             Prompts = context.Prompts,
             MaxAge = context.MaxAge,
         };
@@ -490,8 +512,8 @@ internal sealed partial class AuthorizeRequestValidator
         /// <summary>Set by <c>NonceIsPresent</c>; non-empty by the time <c>Build</c> runs.</summary>
         public string Nonce { get; set; } = string.Empty;
 
-        /// <summary>Set by <c>CodeChallengeIsPresent</c>; non-empty by the time <c>Build</c> runs.</summary>
-        public string CodeChallenge { get; set; } = string.Empty;
+        /// <summary>Set by <c>CodeChallengeIsPresentUnlessTheClientMayOmitIt</c>; <see langword="null"/> when the client omitted it and may.</summary>
+        public string? CodeChallenge { get; set; }
 
         /// <summary>The single value of <paramref name="name"/>, or <see langword="null"/>.</summary>
         public string? Single(string name) => TryGetSingle(parameters, name, out var value) ? value : null;

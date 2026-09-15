@@ -1475,7 +1475,8 @@ Medium/Lows verified by both agents.
 - PKCE for every client, S256 only, fixed-time; a wrong verifier burns the code; the startup gate.
   Closed — `The_verifier_a_challenge_was_derived_from_is_accepted`,
   `A_method_the_verifier_has_no_derivation_for_fails_closed`,
-  `A_request_without_a_code_verifier_is_refused_for_every_client`,
+  `A_request_without_a_code_verifier_is_refused_before_the_code_is_touched_for_a_client_held_to_pkce`
+  [renamed by #662, which lets a confidential client opt in to the nonce instead],
   `A_code_verifier_that_does_not_match_the_challenge_is_refused_and_burns_the_code`,
   `Validate_fails_when_the_code_grant_is_served_without_S256`.
 - Single use; a replay revokes a fresh 256-bit CSPRNG family minted per code; exact `redirect_uri`;
@@ -1621,3 +1622,30 @@ non-JWS prefix plus a fresh 32-byte nonce, not a fixed constant.
 - Residual, accepted: pairing is proven at the handoff only, so a custom signer re-resolving its key
   per call drifts undetected; the shipped Key Vault signer pins the version —
   `ReadAsync_reads_the_vault_exactly_once_and_ignores_versions_rotated_in_afterwards`.
+
+## 2026-09-15 — a confidential client may use the OIDC nonce instead of PKCE (#662)
+
+Scoped to the authorize validator, token parser and grant, the `PkceChallenge` binding, context
+format v2 and registration validation. One round: code lens (two Highs fixed, lens-verified),
+security and architect agents with their lenses, maintainer rulings on every Medium/Low, all
+verified on the fix diff.
+
+- Opt-in off by default, refused at startup on a public client, one predicate at both endpoints.
+  Closed — `A_public_client_cannot_be_permitted_to_omit_pkce`,
+  `A_public_client_never_omits_pkce_whatever_its_registration_says`,
+  `Only_a_confidential_client_that_opted_in_may_omit_the_challenge`.
+- A nonce-only code is always an `openid` code carrying the nonce; a sent challenge, empty or
+  half-sent included, is held to its shape. Closed —
+  `A_client_permitted_to_omit_pkce_still_needs_the_nonce_it_relies_on_instead`,
+  `A_client_permitted_to_omit_pkce_redeems_a_code_issued_without_a_challenge_with_no_verifier`,
+  `A_client_permitted_to_omit_pkce_that_sends_a_bad_challenge_is_refused`,
+  `A_client_permitted_to_omit_pkce_that_sends_a_method_without_a_challenge_is_refused`.
+- No downgrade either way; a client held to PKCE keeps its code on a missing verifier; a binding
+  is complete or absent. Closed —
+  `A_verifier_presented_for_a_code_issued_without_a_challenge_is_refused_and_burns_the_code`,
+  `A_code_issued_with_a_challenge_to_a_client_permitted_to_omit_pkce_is_refused_without_the_verifier_and_burns`,
+  `A_confidential_client_held_to_pkce_is_refused_without_a_code_verifier_before_the_code_is_touched`,
+  `A_binding_without_a_challenge_cannot_be_constructed`,
+  `AuthorizationCodeEntry_with_an_incomplete_PKCE_binding_does_not_deserialize`.
+- Residual: a public client carrying the opt-in reaches the grant only via a custom authenticator,
+  so the shared predicate is proven at the rule, not end to end.

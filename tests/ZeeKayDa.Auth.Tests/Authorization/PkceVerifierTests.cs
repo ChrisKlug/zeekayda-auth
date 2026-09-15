@@ -15,7 +15,7 @@ public sealed class PkceVerifierTests
     [Fact]
     public void The_verifier_a_challenge_was_derived_from_is_accepted()
     {
-        PkceVerifier.Verify(Verifier, Challenge, CodeChallengeMethod.S256)
+        PkceVerifier.Verify(Verifier, new PkceChallenge(Challenge, CodeChallengeMethod.S256))
             .Should().BeTrue("this is the RFC 7636 Appendix B vector");
     }
 
@@ -25,7 +25,7 @@ public sealed class PkceVerifierTests
     [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "an unrelated verifier")]
     public void A_verifier_the_challenge_was_not_derived_from_is_rejected(string verifier, string because)
     {
-        PkceVerifier.Verify(verifier, Challenge, CodeChallengeMethod.S256).Should().BeFalse(because);
+        PkceVerifier.Verify(verifier, new PkceChallenge(Challenge, CodeChallengeMethod.S256)).Should().BeFalse(because);
     }
 
     [Theory]
@@ -34,18 +34,24 @@ public sealed class PkceVerifierTests
     [InlineData("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-c", "a truncated challenge")]
     public void A_stored_challenge_that_is_not_exactly_the_derived_value_is_rejected(string challenge, string because)
     {
-        PkceVerifier.Verify(Verifier, challenge, CodeChallengeMethod.S256).Should().BeFalse(because);
+        PkceVerifier.Verify(Verifier, new PkceChallenge(challenge, CodeChallengeMethod.S256)).Should().BeFalse(because);
     }
 
     [Fact]
     public void A_method_the_verifier_has_no_derivation_for_fails_closed()
     {
-        // The enum has one member today; a value outside it must not pass by falling through
-        // to the S256 path, and must not throw either — the entry came from a store.
-        var undefined = (CodeChallengeMethod)42;
+        // The binding's constructor refuses a method outside the enum, so the only way one
+        // reaches the verifier is a store that bypassed the constructor. It must not pass by
+        // falling through to the S256 path, and must not throw either.
+        var binding = (PkceChallenge)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(PkceChallenge));
+        BackingField(nameof(PkceChallenge.Challenge)).SetValue(binding, Challenge);
+        BackingField(nameof(PkceChallenge.Method)).SetValue(binding, (CodeChallengeMethod)42);
 
-        PkceVerifier.Verify(Verifier, Challenge, undefined).Should().BeFalse();
+        PkceVerifier.Verify(Verifier, binding).Should().BeFalse();
     }
+
+    private static System.Reflection.FieldInfo BackingField(string property) =>
+        typeof(PkceChallenge).GetField($"<{property}>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
 
     [Theory]
     [InlineData("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", true)]

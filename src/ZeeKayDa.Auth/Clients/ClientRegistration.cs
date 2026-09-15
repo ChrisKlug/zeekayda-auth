@@ -71,6 +71,9 @@ public sealed record ClientRegistration : IClientRegistration
     public bool RequireConsent { get; init; } = true;
 
     /// <inheritdoc/>
+    public bool AllowNonceInsteadOfPkce { get; init; }
+
+    /// <inheritdoc/>
     public IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms { get; init; }
 
     /// <inheritdoc/>

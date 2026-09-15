@@ -135,6 +135,19 @@ public interface IClientMetadata
     bool RequireConsent => true;
 
     /// <summary>
+    /// Whether this client may omit PKCE from an authorization request and rely on the OpenID
+    /// Connect <c>nonce</c> for code-injection protection instead. Defaults to
+    /// <see langword="false"/>, and is only valid on a confidential client.
+    /// </summary>
+    /// <remarks>
+    /// PKCE is enforced for every client unless the client is confidential and the operator has
+    /// reasonable assurance it implements the <c>nonce</c> check properly (OAuth 2.1 §7.5.1.1,
+    /// RFC 9700 §2.1.1). This opt-in is that assurance; PKCE stays recommended even then, and a
+    /// challenge the client does send is enforced as for any other client.
+    /// </remarks>
+    bool AllowNonceInsteadOfPkce => false;
+
+    /// <summary>
     /// JWS signing algorithms permitted for ID tokens issued to this client.
     /// <see langword="null"/> means inherit the server's advertised set.
     /// </summary>

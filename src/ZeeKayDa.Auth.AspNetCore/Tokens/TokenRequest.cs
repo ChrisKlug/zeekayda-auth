@@ -9,6 +9,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Tokens;
 /// An authorization-code token request as parsed from the form body (RFC 6749 §4.1.3): every
 /// parameter the grant needs, present, single-valued and well-formed. What the values mean —
 /// whether the code exists, whether the verifier matches — is decided later, against the store.
+/// Whether a <c>code_verifier</c> is required at all depends on the client and the code, neither
+/// of which the form alone identifies, so its absence is the grant's to judge.
 /// </summary>
 internal sealed class TokenRequest
 {
@@ -18,14 +20,14 @@ internal sealed class TokenRequest
         GrantTypeIsAuthorizationCode,
         CodeIsPresent,
         RedirectUriIsPresent,
-        CodeVerifierIsPresentAndWellFormed,
+        CodeVerifierIsWellFormedWhenPresent,
     ];
 
     private TokenRequest(IFormCollection form)
     {
         Code = form["code"].ToString();
         RedirectUri = form["redirect_uri"].ToString();
-        CodeVerifier = form["code_verifier"].ToString();
+        CodeVerifier = form.TryGetValue("code_verifier", out var verifier) ? verifier.ToString() : null;
         ClientId = form["client_id"].ToString() is { Length: > 0 } clientId ? clientId : null;
     }
 
@@ -74,14 +76,13 @@ internal sealed class TokenRequest
             ? null
             : TokenError.InvalidRequest("The redirect_uri parameter is required.");
 
-    private static TokenError? CodeVerifierIsPresentAndWellFormed(IFormCollection form)
+    /// <summary>A parameter that is sent is held to its shape; an empty one is malformed, not absent.</summary>
+    private static TokenError? CodeVerifierIsWellFormedWhenPresent(IFormCollection form)
     {
-        var verifier = form["code_verifier"].ToString();
+        if (!form.TryGetValue("code_verifier", out var verifier))
+            return null;
 
-        if (verifier.Length == 0)
-            return TokenError.InvalidRequest("The code_verifier parameter is required.");
-
-        return PkceVerifier.IsWellFormed(verifier)
+        return PkceVerifier.IsWellFormed(verifier.ToString())
             ? null
             : TokenError.InvalidRequest("The code_verifier parameter is malformed.");
     }
@@ -92,8 +93,8 @@ internal sealed class TokenRequest
     /// <summary>The redirect URI the client says the code was delivered to.</summary>
     public string RedirectUri { get; }
 
-    /// <summary>The PKCE verifier, well-formed but not yet checked against the stored challenge.</summary>
-    public string CodeVerifier { get; }
+    /// <summary>The PKCE verifier, well-formed but not yet checked against the stored challenge, or <see langword="null"/> when absent.</summary>
+    public string? CodeVerifier { get; }
 
     /// <summary>The <c>client_id</c> form parameter, or <see langword="null"/> when absent.</summary>
     public string? ClientId { get; }

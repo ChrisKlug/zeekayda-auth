@@ -23,16 +23,16 @@ internal static partial class PkceVerifier
     }
 
     /// <summary>
-    /// Whether the challenge derived from <paramref name="codeVerifier"/> by <paramref name="method"/>
-    /// equals <paramref name="codeChallenge"/>. The comparison is fixed-time, and a method this
-    /// verifier has no derivation for fails rather than passes.
+    /// Whether the challenge derived from <paramref name="codeVerifier"/> by the binding's method
+    /// equals the binding's challenge. The comparison is fixed-time, and a method this verifier
+    /// has no derivation for fails rather than passes.
     /// </summary>
-    public static bool Verify(string codeVerifier, string codeChallenge, CodeChallengeMethod method)
+    public static bool Verify(string codeVerifier, PkceChallenge pkce)
     {
         ArgumentNullException.ThrowIfNull(codeVerifier);
-        ArgumentNullException.ThrowIfNull(codeChallenge);
+        ArgumentNullException.ThrowIfNull(pkce);
 
-        if (method != CodeChallengeMethod.S256)
+        if (pkce.Method != CodeChallengeMethod.S256)
             return false;
 
         Span<byte> digest = stackalloc byte[SHA256.HashSizeInBytes];
@@ -41,6 +41,6 @@ internal static partial class PkceVerifier
 
         return CryptographicOperations.FixedTimeEquals(
             Encoding.ASCII.GetBytes(derived),
-            Encoding.ASCII.GetBytes(codeChallenge));
+            Encoding.ASCII.GetBytes(pkce.Challenge));
     }
 }

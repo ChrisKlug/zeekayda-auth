@@ -27,11 +27,11 @@ internal sealed record ValidatedAuthorizeRequest
     /// <summary>The OpenID Connect <c>nonce</c>. Required in v1, so never null or empty.</summary>
     public required string Nonce { get; init; }
 
-    /// <summary>The PKCE code challenge (RFC 7636 §4.3).</summary>
-    public required string CodeChallenge { get; init; }
-
-    /// <summary>The PKCE challenge method. Always <see cref="CodeChallengeMethod.S256"/> today.</summary>
-    public required CodeChallengeMethod CodeChallengeMethod { get; init; }
+    /// <summary>
+    /// The PKCE binding (RFC 7636 §4.3), or <see langword="null"/> when the client may rely on
+    /// the nonce instead and sent no challenge.
+    /// </summary>
+    public required PkceChallenge? Pkce { get; init; }
 
     /// <summary>
     /// The recognised <c>prompt</c> values, parsed and syntax-checked. Behavioural handling

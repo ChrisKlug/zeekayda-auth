@@ -34,8 +34,7 @@ public sealed class AuthorizationCodeStoreTests
         {
             ClientId = clientId,
             RedirectUri = "https://app/callback",
-            CodeChallenge = "challenge-abc",
-            CodeChallengeMethod = CodeChallengeMethod.S256,
+            Pkce = new PkceChallenge("challenge-abc", CodeChallengeMethod.S256),
             Sub = "user-1",
             Scope = ["openid", "profile"],
             SsoSessionId = "session-1",
@@ -260,6 +259,34 @@ public sealed class AuthorizationCodeStoreTests
 
         outcome.Should().BeOfType<AuthorizationCodeRedemptionResult.NotFound>(
             because: "§7: an entry that cannot be unprotected is unusable — nothing to hand back");
+    }
+
+    [Theory]
+    [InlineData("""{"challenge":"","method":"S256"}""")]
+    [InlineData("""{"challenge":"challenge-abc","method":"plain"}""")]
+    public async Task TryRedeemAsync_returns_NotFound_when_the_entry_carries_an_incomplete_PKCE_binding(string pkce)
+    {
+        // A binding the entry's own type refuses to construct can only come from a store that
+        // wrote it wrongly. The redeem path must answer NotFound, not surface the constructor's
+        // exception as a server error.
+        var dp = new EphemeralDataProtectionProvider();
+        var json = System.Text.Json.JsonSerializer.Serialize(BuildEntry(), StoreJsonSerializerContext.Default.AuthorizationCodeEntry)
+            .Replace("""{"challenge":"challenge-abc","method":"S256"}""", pkce, StringComparison.Ordinal);
+        json.Should().Contain(pkce, "the substitution must have hit the binding");
+        var planted = dp.CreateProtector("ZeeKayDa.Auth:AuthorizationCodeStore").Protect(System.Text.Encoding.UTF8.GetBytes(json));
+        var store = CreateStore(backingStore: new PlantedEntryBackingStore(planted), dp: dp);
+
+        var outcome = await store.TryRedeemAsync("any-code", "client-a", "family-1", CancellationToken.None);
+
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionResult.NotFound>();
+    }
+
+    /// <summary>Hands back one protected entry for every key, so a test can plant bytes the store would never write.</summary>
+    private sealed class PlantedEntryBackingStore(byte[] entry) : IAuthorizationCodeBackingStore
+    {
+        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) => ValueTask.FromResult(true);
+        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) => ValueTask.FromResult<ReadOnlyMemory<byte>?>(entry);
+        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) => ValueTask.CompletedTask;
     }
 
     [Fact]

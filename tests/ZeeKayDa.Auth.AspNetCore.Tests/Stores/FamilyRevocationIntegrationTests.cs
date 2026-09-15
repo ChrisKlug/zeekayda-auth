@@ -49,8 +49,7 @@ public sealed class FamilyRevocationIntegrationTests
         {
             ClientId = clientId,
             RedirectUri = "https://example.com/callback",
-            CodeChallenge = "abc123challenge",
-            CodeChallengeMethod = CodeChallengeMethod.S256,
+            Pkce = new PkceChallenge("abc123challenge", CodeChallengeMethod.S256),
             Sub = "user-sub-001",
             Scope = ["openid", "profile"],
             SsoSessionId = Guid.NewGuid().ToString("N"),
