@@ -51,7 +51,7 @@ app.MapZeeKayDaAuth();
 app.Run();
 ```
 
-At startup, ZeeKayDa.Auth emits a `LogLevel.Warning` to confirm the stores are active and remind you not to use them in production. Outside a `Development` environment the application refuses to start unless you explicitly pass `allowOutsideDevelopment: true` to the registration call.
+At startup in `Development`, ZeeKayDa.Auth logs a `LogLevel.Information` message per store to confirm it is active and remind you not to use it in production. Outside a `Development` environment the application refuses to start unless you explicitly pass `allowOutsideDevelopment: true` to the registration call.
 
 > 💡 **Tip:** For integration tests running under a non-`Development` environment name, pass `allowOutsideDevelopment: true` to the registration call in the test host configuration:
 >
@@ -161,11 +161,11 @@ builder.Services
     {
         options.Issuer = "https://id.example.com";
     })
-    .AddInMemoryAuthorizationCodeStore()  // dev/test; emits startup warning
+    .AddInMemoryAuthorizationCodeStore()  // dev/test; logs at startup
     .AddRefreshTokenStore<MyPersistentRefreshTokenStore>();
 ```
 
-> ⚠️ **Warning:** `.AddInMemoryAuthorizationCodeStore()` still emits a startup warning and is still subject to the `Development`-environment check. This pattern is useful during development while building a persistent refresh token store; it is not a production configuration.
+> ⚠️ **Warning:** `.AddInMemoryAuthorizationCodeStore()` still logs its startup message and is still subject to the `Development`-environment check. This pattern is useful during development while building a persistent refresh token store; it is not a production configuration.
 
 Each in-memory registration method carries its own `allowOutsideDevelopment` parameter and is gated independently — passing it on one call has no effect on another. For example, this configuration still fails to start outside `Development` because `.AddInMemoryRefreshTokenStore()` was not opted in, even though the authorization code store was:
 

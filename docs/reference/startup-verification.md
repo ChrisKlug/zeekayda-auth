@@ -239,6 +239,7 @@ internal sealed class InMemoryStoreVerifier(
             context.AddWarning(
                 "stores.inmemory.active",
                 "In-memory store '{StoreName}' is active. Tokens will be lost on restart.",
+                LogLevel.Information,
                 storeName);
         }
         else if (!allowOutsideDevelopment)
