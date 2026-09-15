@@ -20,9 +20,13 @@ determined caller, who could resolve the repository anyway. The framework ships 
 lives in a separate validator rather than in a constructor, so a test can construct an invalid
 registration deliberately.
 
-**Every string set on a registration MUST be compared with explicit `StringComparer.Ordinal`.** The
-set's own comparer is not trusted — a custom repository's entity type is free to build one with
-`OrdinalIgnoreCase`, which would silently widen a redirect-URI or auth-method allowlist.
+**Every string set on a registration MUST be compared with explicit `StringComparer.Ordinal`, and
+counted by enumeration.** Neither the set's comparer nor its `Count` is trusted — a custom
+repository's entity type is free to build one with `OrdinalIgnoreCase`, which would silently widen a
+redirect-URI or auth-method allowlist, or to report fewer entries than it yields, which let a 33rd
+redirect URI past the cap and `{ "none", "client_secret_basic" }` past the `IsPublic` rule. A
+refactor swapping such a loop for `.Count` or `.Contains` changes behaviour; the `MiscountingSet`
+tests pin it.
 
 **`IsPublic` is declared, never derived, and the three-way consistency rule is enforced at
 registration:** public ⇔ no credentials ⇔ auth methods are exactly `{ "none" }`. A default
