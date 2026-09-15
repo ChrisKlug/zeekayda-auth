@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <!-- Samples are excluded from coverage. This project lives under samples/, which the coverage
+       gate's discovery never scans, and it deliberately has no coverlet.collector, so the CI run
+       that collects coverage for every test project gets no file from it for the baseline. -->
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../IdentityServer/ZeeKayDa.Auth.Samples.IdentityServer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The log-hygiene analyzers run on every project the CI check scans, samples included. -->
+    <ProjectReference Include="../../src/ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>
