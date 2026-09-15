@@ -51,9 +51,10 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
         configEx!.AggregatedFailures
             .Single(f => f.Code == "client.token_endpoint_auth_methods.not_subset")
             .Message.Should().NotContain(
-                "TokenEndpointAuthMethods.None",
-                because: "the opt-in hint is for public clients only; a confidential client's " +
-                         "unsupported method is fixed by advertising that method, not 'none'");
+                "none",
+                because: "the opt-in hint, in either its code or its bound-configuration form, is for " +
+                         "public clients only; a confidential client's unsupported method is fixed by " +
+                         "advertising that method");
     }
 
     // ── Happy path ────────────────────────────────────────────────────────────────────────────────
