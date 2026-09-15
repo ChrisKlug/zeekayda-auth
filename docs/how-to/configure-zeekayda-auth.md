@@ -192,13 +192,14 @@ For the full `Pbkdf2ClientSecretHasherOptions` property reference, see
 
 ## 7. Enable extended error codes per client (`EnableZkdErrorCodes`)
 
-`EnableZkdErrorCodes` is a per-client flag on `ClientRegistration` (and `IClientRegistration`).
-When `true`, the server may include a `zkd_error` field in token endpoint error responses for that
-client, surfacing machine-readable diagnostic codes beyond what RFC 6749 defines.
+`EnableZkdErrorCodes` is a per-client flag, set in the client's `AddConfidential` callback (or on
+an `IClientRegistration` you build yourself). When `true`, the server may include a `zkd_error`
+field in token endpoint error responses for that client, surfacing machine-readable diagnostic
+codes beyond what RFC 6749 defines.
 
 ```csharp
-var customClient = ClientRegistration.CreateConfidential(/* ... */)
-    with { EnableZkdErrorCodes = true };
+builder.AddInMemoryClients(clients =>
+    clients.AddConfidential(/* ... */, options => options.EnableZkdErrorCodes = true));
 ```
 
 ### Operator guidance
