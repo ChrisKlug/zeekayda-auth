@@ -71,6 +71,8 @@ docs/
 ## Project Conventions
 
 - Every change starts with a GitHub issue; no direct commits to `main`.
+- Every commit carries a `Signed-off-by` trailer (`git commit --signoff`): the DCO check blocks a
+  PR without it, and adding it afterwards means rewriting the branch.
 - **Exception — agent configuration.** `.claude/**` and this file go straight to `main`: commit and
   push, no issue, no PR, no review, and never carried inside a feature branch's PR — a reviewer
   reading the PR should see only the issue's work. These files steer how agents work rather than

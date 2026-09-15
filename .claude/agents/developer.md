@@ -165,6 +165,7 @@ These run before you return your result — not before a PR, because at this poi
 
 The orchestrator opens the PR after the maintainer approves your branch, but write your commits so it can:
 
+- Every commit carries a `Signed-off-by` trailer (`git commit --signoff`); the DCO check blocks the PR otherwise, and fixing it afterwards means rewriting the branch
 - PR titles follow Conventional Commits format: `feat:`, `fix:`, `docs:`, `test:`, `chore:`, `security:`
 - Always include `Closes #N` in the PR body so the issue auto-closes on merge
 - PRs must pass CI (build + tests + security scan) before merge
