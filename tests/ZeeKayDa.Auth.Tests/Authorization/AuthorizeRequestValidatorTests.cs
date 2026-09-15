@@ -441,12 +441,25 @@ public class AuthorizeRequestValidatorTests
     }
 
     [Theory]
+    [InlineData("code_challenge", "")]
     [InlineData("code_challenge", "short")]
     [InlineData("code_challenge_method", "plain")]
     public async Task A_client_permitted_to_omit_pkce_that_sends_a_bad_challenge_is_refused(string parameter, string value)
     {
         var parameters = ValidParameters();
         parameters[parameter] = [value];
+
+        var result = await Validate(parameters, ConfidentialClientPermittedToOmitPkce());
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_request");
+    }
+
+    [Fact]
+    public async Task A_client_permitted_to_omit_pkce_that_sends_a_method_without_a_challenge_is_refused()
+    {
+        var parameters = ValidParameters();
+        parameters.Remove("code_challenge");
 
         var result = await Validate(parameters, ConfidentialClientPermittedToOmitPkce());
 

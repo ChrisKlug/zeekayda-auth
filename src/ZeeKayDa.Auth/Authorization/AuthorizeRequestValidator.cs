@@ -325,8 +325,9 @@ internal sealed partial class AuthorizeRequestValidator
     /// </remarks>
     private static Problem? CodeChallengeIsPresentUnlessTheClientMayOmitIt(RequestContext context)
     {
+        // A challenge that is sent, empty included, is held to its shape by the next rule.
         var challenge = context.Single("code_challenge");
-        if (!string.IsNullOrEmpty(challenge))
+        if (challenge is not null)
         {
             context.CodeChallenge = challenge;
             return null;
@@ -342,11 +343,19 @@ internal sealed partial class AuthorizeRequestValidator
             ? null
             : InvalidRequest("The code_challenge parameter is malformed.");
 
-    /// <remarks>A request that omitted the challenge has no method to check; one it sends anyway is ignored.</remarks>
+    /// <remarks>
+    /// A request that omitted the challenge has no method to check, but a method sent without a
+    /// challenge is a client that meant to use PKCE and lost half of it, and is refused rather than
+    /// handed a code its verifier would burn.
+    /// </remarks>
     private static Problem? CodeChallengeMethodIsS256(RequestContext context)
     {
         if (context.CodeChallenge is null)
-            return null;
+        {
+            return context.Single("code_challenge_method") is null
+                ? null
+                : InvalidRequest("The code_challenge_method parameter was sent without a code_challenge.");
+        }
 
         var method = context.Single("code_challenge_method");
 
