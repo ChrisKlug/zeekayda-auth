@@ -27,7 +27,7 @@ internal sealed class TokenRequest
     {
         Code = form["code"].ToString();
         RedirectUri = form["redirect_uri"].ToString();
-        CodeVerifier = form.ContainsKey("code_verifier") ? form["code_verifier"].ToString() : null;
+        CodeVerifier = form.TryGetValue("code_verifier", out var verifier) ? verifier.ToString() : null;
         ClientId = form["client_id"].ToString() is { Length: > 0 } clientId ? clientId : null;
     }
 
@@ -79,10 +79,10 @@ internal sealed class TokenRequest
     /// <summary>A parameter that is sent is held to its shape; an empty one is malformed, not absent.</summary>
     private static TokenError? CodeVerifierIsWellFormedWhenPresent(IFormCollection form)
     {
-        if (!form.ContainsKey("code_verifier"))
+        if (!form.TryGetValue("code_verifier", out var verifier))
             return null;
 
-        return PkceVerifier.IsWellFormed(form["code_verifier"].ToString())
+        return PkceVerifier.IsWellFormed(verifier.ToString())
             ? null
             : TokenError.InvalidRequest("The code_verifier parameter is malformed.");
     }
