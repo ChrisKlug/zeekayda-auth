@@ -31,9 +31,8 @@ public sealed class ConfidentialClientOptions : ClientOptions
     /// <see cref="TokenEndpointAuthMethods.ClientSecretBasic"/> by default.
     /// </summary>
     /// <remarks>
-    /// Every entry must be one the server advertises in
-    /// <c>TokenEndpointOptions.AuthMethodsSupported</c>, and <see cref="TokenEndpointAuthMethods.None"/>
-    /// is refused; startup fails otherwise.
+    /// Every entry must also be listed in the server's <c>TokenEndpointOptions.AuthMethodsSupported</c>,
+    /// and <see cref="TokenEndpointAuthMethods.None"/> is refused; startup fails otherwise.
     /// </remarks>
     public ISet<string> AllowedTokenEndpointAuthMethods { get; }
 }
