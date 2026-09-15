@@ -142,12 +142,8 @@ public interface IClientMetadata
     /// <remarks>
     /// PKCE is enforced for every client unless the client is confidential and the operator has
     /// reasonable assurance it implements the <c>nonce</c> check properly (OAuth 2.1 §7.5.1.1,
-    /// RFC 9700 §2.1.1); this opt-in is that assurance, and PKCE stays recommended even then. An
-    /// opted-in client that does send a <c>code_challenge</c> is held to it exactly as any other
-    /// client: the challenge is validated, and the token endpoint requires the matching
-    /// <c>code_verifier</c>. A code issued without a challenge refuses any verifier. Registration
-    /// validation rejects the opt-in on a public client, and the authorization endpoint ignores it
-    /// on one.
+    /// RFC 9700 §2.1.1). This opt-in is that assurance; PKCE stays recommended even then, and a
+    /// challenge the client does send is enforced as for any other client.
     /// </remarks>
     bool AllowNonceInsteadOfPkce => false;
 

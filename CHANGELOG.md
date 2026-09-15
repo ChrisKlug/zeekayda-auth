@@ -15,10 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   must carry anyway then protect the code (OAuth 2.1 §7.5.1.1, RFC 9700 §2.1.1). Startup rejects
   the opt-in on a public client, and the authorize endpoint ignores it on one. A challenge the
   client does send is validated and enforced exactly as before, and a code issued without one
-  refuses any `code_verifier` at the token endpoint. A client held to PKCE that leaves the verifier
-  out is still refused before its code is touched. `AuthorizationCodeEntry.CodeChallenge` and
-  `CodeChallengeMethod` are now nullable, absent together. The interaction context's wire format
-  is versioned up, so a context minted before an upgrade is refused rather than misread.
+  answers a `code_verifier` with `invalid_request` and consumes the code. A client held to PKCE
+  that leaves the verifier out is still refused before its code is touched. `AuthorizationCodeEntry`
+  carries the challenge and its method as one nullable `PkceChallenge` value in place of the
+  `CodeChallenge` and `CodeChallengeMethod` members. The interaction context's wire format is
+  versioned up, so a context minted before an upgrade is refused rather than misread.
 
 - **A Razor Pages handler or controller action can end after a terminal interaction call with a plain `await`** (#675)
 
