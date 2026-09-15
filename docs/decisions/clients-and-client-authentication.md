@@ -39,7 +39,6 @@ implementation that says nothing requires consent), `AllowNonceInsteadOfPkce` (`
 registration that says nothing is held to PKCE), the two token lifetimes (`null`: the server's
 validated value) and the three claim additions (empty: a registration that says nothing widens
 nothing). Every one of them is in the registration fingerprint, because each changes what a
-<<<END>>>
 client is issued; a test fails the build when a member is added to either interface and not to it.
 
 **A client's claim additions are selectors, never sources, and never remove.** `AdditionalIdTokenClaims`,

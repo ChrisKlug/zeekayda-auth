@@ -57,7 +57,6 @@ public sealed record AuthorizationCodeEntry
     /// </remarks>
     public required PkceChallenge? Pkce { get; init; }
 
-
     /// <summary>
     /// The subject identifier (<c>sub</c>) of the authenticated end-user.
     /// </summary>
