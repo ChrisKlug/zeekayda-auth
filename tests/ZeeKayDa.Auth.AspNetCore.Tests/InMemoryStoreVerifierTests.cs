@@ -31,18 +31,20 @@ public sealed class InMemoryStoreVerifierTests
         return new InMemoryStoreVerifier(new FakeHostEnvironment(environmentName), storeName, allowOutsideDevelopment);
     }
 
-    // ── VerifyAsync: Development environment — warning only ──────────────────────────────────────
+    // ── VerifyAsync: Development environment — Information only ──────────────────────────────────
 
     [Fact]
-    public async Task VerifyAsync_adds_a_warning_in_Development_environment()
+    public async Task VerifyAsync_logs_at_Information_in_Development_environment()
     {
+        // In-memory stores are the expected choice in Development; a Warning on every start there
+        // teaches people to ignore warnings.
         var sut = BuildSut(Environments.Development);
         var context = new StartupVerificationContext();
 
         await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
-            .Which.Level.Should().Be(LogLevel.Warning);
+            .Which.Level.Should().Be(LogLevel.Information);
         context.Failures.Should().BeEmpty();
     }
 

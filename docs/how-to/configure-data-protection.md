@@ -435,7 +435,7 @@ mixes granular calls with different values gets one outcome per store:
 
 | Environment | `allowOutsideDevelopment` | Log level |
 |---|---|---|
-| Development | n/a | `LogLevel.Warning` |
+| Development | n/a | `LogLevel.Information` |
 | Non-Development | `true` | `LogLevel.Critical` |
 | Non-Development | `false` (default) | Startup exception (`ZeeKayDaConfigurationException`) |
 

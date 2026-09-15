@@ -4,16 +4,17 @@ using Microsoft.Extensions.Logging;
 namespace ZeeKayDa.Auth.AspNetCore;
 
 /// <summary>
-/// Emits a startup warning when an in-memory store is active, alerting operators that its
-/// contents are lost on process restart and invisible to other instances — tokens, single-use
-/// enforcement and reuse detection for the token stores, in-flight authorization requests for the
-/// interaction store.
+/// Records at startup that an in-memory store is active, whose contents are lost on process
+/// restart and invisible to other instances — tokens, single-use enforcement and reuse detection
+/// for the token stores, in-flight authorization requests for the interaction store.
 /// </summary>
 /// <remarks>
 /// One instance is registered per in-memory store registration call, each capturing its own
 /// <c>storeName</c> and <c>allowOutsideDevelopment</c> value, so the gate is enforced
-/// independently per store. Outside <c>Development</c>, startup fails unless the captured
-/// <c>allowOutsideDevelopment</c> is <see langword="true"/>. The registrations share this
+/// independently per store. In <c>Development</c>, where an in-memory store is the expected
+/// choice, it is logged at <see cref="LogLevel.Information"/>. Outside it, startup fails unless
+/// the captured <c>allowOutsideDevelopment</c> is <see langword="true"/>, which is logged at
+/// <see cref="LogLevel.Critical"/> on every start instead. The registrations share this
 /// implementation type but are added via plain <c>AddSingleton&lt;IStartupVerifier&gt;</c> rather
 /// than <c>TryAddEnumerable</c>, which would otherwise deduplicate them away.
 /// </remarks>
@@ -28,8 +29,8 @@ internal sealed class InMemoryStoreVerifier : IStartupVerifier
     /// <summary>The store name passed for the interaction store registration.</summary>
     internal const string InteractionStoreName = "interaction store";
 
-    /// <summary>Named-placeholder template for the mandatory startup warning.</summary>
-    internal const string WarningMessageFormat =
+    /// <summary>Named-placeholder template for the Development startup message.</summary>
+    internal const string ActiveMessageFormat =
         "ZeeKayDa.Auth: the in-memory {StoreName} is active. Its contents are lost on process " +
         "restart and invisible to other instances: issued tokens, single-use enforcement and reuse " +
         "detection do not survive a restart or span a multi-instance deployment, and an in-flight " +
@@ -76,7 +77,7 @@ internal sealed class InMemoryStoreVerifier : IStartupVerifier
     {
         if (_environment.IsDevelopment())
         {
-            context.AddWarning("stores.inmemory.active", WarningMessageFormat, _storeName);
+            context.AddWarning("stores.inmemory.active", ActiveMessageFormat, LogLevel.Information, _storeName);
             return ValueTask.CompletedTask;
         }
 

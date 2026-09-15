@@ -469,6 +469,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Per-process stores in Development log at `Information`, not `Warning`** (#677)
+
+  In-memory stores and the per-process cache are the expected choice in `Development`, so the
+  `stores.inmemory.active` warning on every start there was noise: the sample printed three. It is
+  now logged at `Information`, same code and message. The distributed-cache interaction store on
+  `MemoryDistributedCache`, silent in `Development` until now, logs
+  `stores.interaction.per_process_cache_active` at `Information` to match. Outside `Development`
+  nothing changes: startup fails unless the registration opts out, and the opt-out is logged at
+  `Critical` on every start.
+
 - **A failure that defers its detail to the inner exception now has one to defer to** (#618)
 
   Six Key Vault reader failures — and every future failure following the same convention — end with
