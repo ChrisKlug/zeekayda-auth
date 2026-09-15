@@ -472,6 +472,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **Registering a public client on a server that does not advertise `none` now says how to fix it**
+  (#674). The startup failure named only the mismatch; it now explains that public clients present no
+  credentials, so the server accepts them only when `TokenEndpoint.AuthMethodsSupported` includes
+  `none`, and gives the line that adds it. The default is unchanged: advertising `none` declares that
+  the server accepts credential-less clients, which a server with only confidential clients should not
+  do.
+
 - **The login page signs in what it validated** (#636). `ILoginInteraction.SignInAsync` validated the
   `authenticationMethods` array and passed the caller's `ClaimsPrincipal` through, then awaited the
   interaction store before the session read both; a host that kept a reference and changed either during

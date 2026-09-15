@@ -15,9 +15,16 @@ public interface IInMemoryClientRegistrationBuilder
     /// Registers a public client (no credentials, token endpoint auth method <c>none</c>).
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <paramref name="configure"/>, when given, sets the client's other settings — for example
     /// <see cref="ClientOptions.RequireConsent"/> or <see cref="ClientOptions.DisplayName"/>. It is
     /// called once, before this method returns.
+    /// </para>
+    /// <para>
+    /// The server accepts public clients only when it advertises <c>none</c>, which it does not by
+    /// default: add <c>TokenEndpointAuthMethods.None</c> to
+    /// <c>TokenEndpoint.AuthMethodsSupported</c>, or startup rejects the registration.
+    /// </para>
     /// </remarks>
     IInMemoryClientRegistrationBuilder AddPublic(
         string clientId,
