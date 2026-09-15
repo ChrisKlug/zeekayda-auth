@@ -24,8 +24,17 @@ internal sealed record LogoutRequestContext
 
     public required string? State { get; init; }
 
+    /// <summary>The SSO session the sign-out was started for — the only one it may end.</summary>
+    public required string SsoSessionId { get; init; }
+
     public required DateTimeOffset ExpiresAt { get; init; }
 }
+
+/// <summary>
+/// A sign-out about to be put to the user: who asked, where they go afterwards, and the session
+/// that would end.
+/// </summary>
+internal sealed record PendingSignOut(string? ClientId, PostLogoutRedirect? Redirect, string SsoSessionId);
 
 /// <summary>
 /// Keeps a <see cref="LogoutRequestContext"/> between the end-session endpoint and the page that
@@ -43,7 +52,7 @@ internal sealed class LogoutRequestStore
     /// <summary>How long the user has to confirm. Not sliding.</summary>
     internal static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(10);
 
-    private const byte Version = 1;
+    private const byte Version = 2;
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:LogoutRequestContext";
 
     private readonly IInteractionBackingStore _store;
@@ -79,18 +88,19 @@ internal sealed class LogoutRequestStore
     /// <exception cref="ZeeKayDaStoreException">The backing store could not complete the write.</exception>
     public async ValueTask<LogoutRequestContext> CreateAsync(
         HttpContext context,
-        string? clientId,
-        PostLogoutRedirect? redirect,
+        PendingSignOut pending,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(pending);
 
         var request = new LogoutRequestContext
         {
             Id = StoreKeyGenerator.Generate(),
-            ClientId = clientId,
-            PostLogoutRedirectUri = redirect?.Uri,
-            State = redirect?.State,
+            ClientId = pending.ClientId,
+            PostLogoutRedirectUri = pending.Redirect?.Uri,
+            State = pending.Redirect?.State,
+            SsoSessionId = pending.SsoSessionId,
             ExpiresAt = _timeProvider.GetUtcNow() + Lifetime,
         };
 
@@ -186,6 +196,7 @@ internal sealed class LogoutRequestStore
         WriteNullableString(writer, request.ClientId);
         WriteNullableString(writer, request.PostLogoutRedirectUri);
         WriteNullableString(writer, request.State);
+        writer.Write(request.SsoSessionId);
         writer.Write(request.ExpiresAt.ToUnixTimeSeconds());
 
         writer.Flush();
@@ -208,6 +219,7 @@ internal sealed class LogoutRequestStore
                 ClientId = ReadNullableString(reader),
                 PostLogoutRedirectUri = ReadNullableString(reader),
                 State = ReadNullableString(reader),
+                SsoSessionId = reader.ReadString(),
                 ExpiresAt = DateTimeOffset.FromUnixTimeSeconds(reader.ReadInt64()),
             };
 

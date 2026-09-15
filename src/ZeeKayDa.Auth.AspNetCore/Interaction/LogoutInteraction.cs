@@ -13,19 +13,23 @@ internal sealed class LogoutInteraction : ILogoutInteraction
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly LogoutRequestStore _requests;
     private readonly EndSessionResponses _responses;
+    private readonly SsoSession _session;
 
     public LogoutInteraction(
         IHttpContextAccessor httpContextAccessor,
         LogoutRequestStore requests,
-        EndSessionResponses responses)
+        EndSessionResponses responses,
+        SsoSession session)
     {
         ArgumentNullException.ThrowIfNull(httpContextAccessor);
         ArgumentNullException.ThrowIfNull(requests);
         ArgumentNullException.ThrowIfNull(responses);
+        ArgumentNullException.ThrowIfNull(session);
 
         _httpContextAccessor = httpContextAccessor;
         _requests = requests;
         _responses = responses;
+        _session = session;
     }
 
     /// <inheritdoc/>
@@ -51,17 +55,14 @@ internal sealed class LogoutInteraction : ILogoutInteraction
     {
         var context = RequireStateChangingRequest();
         var request = await ResolveAddressedAsync(context, context.RequestAborted).ConfigureAwait(false);
+        await RequireAskedSessionAsync(context, request).ConfigureAwait(false);
 
         // Checked against the registration as it stands now rather than remembered from when the
         // sign-out arrived: an operator who removes a redirect URI means nobody to be sent there.
         var client = request.ClientId is null
             ? null
             : await FindClientAsync(context, request.ClientId, context.RequestAborted).ConfigureAwait(false);
-        var redirect = client is not null
-            && request.PostLogoutRedirectUri is { } uri
-            && EndSessionResponses.IsRegistered(client, uri)
-            ? new PostLogoutRedirect(uri, request.State)
-            : null;
+        var redirect = PostLogoutRedirect.For(client, request.PostLogoutRedirectUri, request.State);
 
         await _requests.DeleteAsync(context, request.Id, context.RequestAborted).ConfigureAwait(false);
         var result = await _responses.SignOutAsync(context, redirect).ConfigureAwait(false);
@@ -89,6 +90,26 @@ internal sealed class LogoutInteraction : ILogoutInteraction
                 "There is no sign-out waiting to be confirmed with this identifier for this browser. It has " +
                 "expired or already completed, the page was reached without going through the end-session " +
                 "endpoint, or the sign-out was started in another browser.");
+    }
+
+    /// <summary>
+    /// Refuses unless the browser still holds the session the sign-out was started for. A
+    /// confirmation left open across a sign-out or a fresh sign-in would otherwise end a session
+    /// nobody was asked about, and the answer to a question about a session that has since ended
+    /// is not an instruction about its replacement.
+    /// </summary>
+    private async ValueTask RequireAskedSessionAsync(HttpContext context, LogoutRequestContext request)
+    {
+        var session = await _session.ReadAsync(context).ConfigureAwait(false);
+        if (session is not null && string.Equals(session.SessionId, request.SsoSessionId, StringComparison.Ordinal))
+            return;
+
+        // One answer either way: a sign-out that cannot be completed is not left for a later try.
+        await _requests.DeleteAsync(context, request.Id, context.RequestAborted).ConfigureAwait(false);
+
+        throw new ZeeKayDaInteractionException(
+            "The session this sign-out was started for is not the one this browser holds now — it has " +
+            "already ended, or the user signed in again since being asked. Start the sign-out again.");
     }
 
     /// <summary>

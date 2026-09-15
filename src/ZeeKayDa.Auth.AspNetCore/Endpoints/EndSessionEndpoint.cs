@@ -107,7 +107,8 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
         if (session is null || MayEndWithoutAsking(client, hint, session))
             return await _responses.SignOutAsync(context, redirect).ConfigureAwait(false);
 
-        return await AskAsync(context, client, redirect).ConfigureAwait(false);
+        return await AskAsync(context, new PendingSignOut(client?.ClientId, redirect, session.SessionId))
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -142,28 +143,23 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
     /// </summary>
     private static PostLogoutRedirect? RedirectFor(IClientMetadata? client, Dictionary<string, StringValues> parameters)
     {
-        if (client is null
-            || Single(parameters, "post_logout_redirect_uri") is not { } uri
-            || !EndSessionResponses.IsRegistered(client, uri))
-        {
-            return null;
-        }
-
         var state = Single(parameters, "state");
-        return state is null || state.Length <= MaxStateLength ? new PostLogoutRedirect(uri, state) : null;
+        if (state is not null && state.Length > MaxStateLength)
+            return null;
+
+        return PostLogoutRedirect.For(client, Single(parameters, "post_logout_redirect_uri"), state);
     }
 
     /// <summary>
     /// Keeps the sign-out for the user to confirm and sends them to the page that asks: the
     /// host's, or the framework's own.
     /// </summary>
-    private async Task<IResult> AskAsync(HttpContext context, IClientMetadata? client, PostLogoutRedirect? redirect)
+    private async Task<IResult> AskAsync(HttpContext context, PendingSignOut pending)
     {
         LogoutRequestContext request;
         try
         {
-            request = await _requests.CreateAsync(context, client?.ClientId, redirect, context.RequestAborted)
-                .ConfigureAwait(false);
+            request = await _requests.CreateAsync(context, pending, context.RequestAborted).ConfigureAwait(false);
         }
         catch (ZeeKayDaStoreException ex)
         {

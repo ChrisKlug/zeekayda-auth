@@ -407,7 +407,7 @@ two ship together or not at all (#103, #206). Adding a claim later is non-breaki
 | | |
 |---|---|
 | `prompt=none`, `max_age`, session lookup | cookie |
-| RP-initiated logout (browser present) | cookie: delete it, revoke grants by `SsoSessionId` |
+| RP-initiated logout (browser present) | cookie: delete it — grant revocation by `SsoSessionId` arrives with #104 |
 | Back-channel logout to RPs | cookie, including the visited-RP list the spec suggests keeping there |
 | Admin or remote termination, logout-all | **needs server-side state** |
 

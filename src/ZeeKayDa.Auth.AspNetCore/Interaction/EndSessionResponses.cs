@@ -29,17 +29,6 @@ internal sealed class EndSessionResponses
     }
 
     /// <summary>
-    /// Whether <paramref name="postLogoutRedirectUri"/> is one of <paramref name="client"/>'s
-    /// registered post-logout redirect URIs, by exact ordinal comparison.
-    /// </summary>
-    public static bool IsRegistered(IClientMetadata client, string postLogoutRedirectUri)
-    {
-        ArgumentNullException.ThrowIfNull(client);
-
-        return client.PostLogoutRedirectUris.Contains(postLogoutRedirectUri, StringComparer.Ordinal);
-    }
-
-    /// <summary>
     /// Ends the SSO session and every interaction this browser has in flight, then answers: at the
     /// client's post-logout redirect URI, at the host's signed-out page, or with the framework's
     /// own.
@@ -50,10 +39,17 @@ internal sealed class EndSessionResponses
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        // The cookie handler deletes the session cookie with the attributes it was issued with,
-        // which is what makes a browser actually drop it.
-        await context.SignOutAsync(ZeeKayDaCookies.Session).ConfigureAwait(false);
-        InteractionBindingCookie.DeleteAll(context);
+        // Only a browser that presented the session cookie gets one deleted. A cross-site form
+        // post carries no SameSite=Lax cookie, so answering it with a deletion would end the
+        // session without the question §2 requires — and would end interactions belonging to a
+        // browser that never signed in. A cookie that is present but unreadable is still cleared.
+        if (context.Request.Cookies.ContainsKey(ZeeKayDaCookies.Session))
+        {
+            // The cookie handler deletes the session cookie with the attributes it was issued
+            // with, which is what makes a browser actually drop it.
+            await context.SignOutAsync(ZeeKayDaCookies.Session).ConfigureAwait(false);
+            InteractionBindingCookie.DeleteAll(context);
+        }
 
         if (redirect is not null)
         {

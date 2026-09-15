@@ -314,6 +314,23 @@ public sealed class EndSessionEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_confirmation_is_refused_once_the_browser_holds_a_different_session()
+    {
+        // The answer to a question about one session is not an instruction about its replacement.
+        await SignInAsync(_client);
+        var asked = await EndSessionAsync(new());
+
+        var other = await EndSessionAsync(new());
+        await PostEmptyFormAsync(_client, Location(other));
+        await SignInAsync(_client, App, subject: "user-2");
+
+        var confirmed = await PostEmptyFormAsync(_client, Location(asked));
+
+        confirmed.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await HasSessionAsync(_client)).Should().BeTrue("the session nobody was asked about is left alone");
+    }
+
+    [Fact]
     public async Task A_confirmation_without_the_binding_cookie_signs_nobody_out()
     {
         // A cross-site form post does not carry the SameSite=Lax binding cookie. Even a request
@@ -336,13 +353,48 @@ public sealed class EndSessionEndpointTests : IDisposable
     [Fact]
     public async Task Signing_out_ends_the_authorization_requests_the_browser_has_in_flight()
     {
+        await SignInAsync(_client);
+
+        // The default test client requires consent, so this request is still in flight: its
+        // binding cookie names an interaction nothing has completed.
+        var pending = await _client.GetAsync(AuthorizeUrl("test-client"), Cancellation);
+        var interactionId = InteractionIdFrom(pending);
+
+        var asked = await EndSessionAsync(new());
+        var confirmed = await PostEmptyFormAsync(_client, Location(asked));
+
+        SetCookieFor(confirmed, InteractionBindingCookie.NamePrefix + interactionId)
+            .ToLowerInvariant().Should().Contain("expires=thu, 01 jan 1970");
+    }
+
+    [Fact]
+    public async Task A_request_carrying_no_session_cookie_deletes_no_session()
+    {
+        // A cross-site form post carries no SameSite=Lax cookie. Answering it with a cookie
+        // deletion would end the session without asking — the very thing the question exists for.
+        await SignInAsync(_client);
+
+        using var crossSite = NewClient(_factory, handleCookies: false);
+        var response = await PostEmptyFormAsync(crossSite, EndSessionPath);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Contains("Set-Cookie").Should().BeFalse();
+        (await HasSessionAsync(_client)).Should().BeTrue("the browser holding the session was never asked");
+    }
+
+    [Fact]
+    public async Task Without_a_session_an_authorization_request_in_flight_survives()
+    {
+        // Nobody is signed in, so there is nothing to end — and a browser part-way through a
+        // sign-in keeps the interaction it is part-way through.
         var pending = await _client.GetAsync(AuthorizeUrl(App), Cancellation);
         var interactionId = InteractionIdFrom(pending);
 
-        var signedOut = await EndSessionAsync(new());
+        var response = await EndSessionAsync(new());
 
-        SetCookieFor(signedOut, InteractionBindingCookie.NamePrefix + interactionId)
-            .ToLowerInvariant().Should().Contain("expires=thu, 01 jan 1970");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Contains("Set-Cookie").Should().BeFalse();
+        (await PostLoginAsync(_client, interactionId, "user-1")).ShouldHaveIssuedCodeTo(Redirect);
     }
 
     // ── id_token_hint ─────────────────────────────────────────────────────────────────────────────
@@ -632,6 +684,17 @@ public sealed class EndSessionEndpointTests : IDisposable
 
         using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["sub"] = subject });
         return await client.PostAsync(Location(authorize), form, Cancellation);
+    }
+
+    /// <summary>Completes the login page for an interaction the browser already started.</summary>
+    private static async Task<HttpResponseMessage> PostLoginAsync(HttpClient client, string interactionId, string subject)
+    {
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["sub"] = subject });
+
+        return await client.PostAsync(
+            QueryHelpers.AddQueryString(LoginPath, InteractionHandoff.InteractionIdParameter, interactionId),
+            form,
+            Cancellation);
     }
 
     /// <summary>Signs the browser in and redeems the code, for an ID token to send as a hint.</summary>

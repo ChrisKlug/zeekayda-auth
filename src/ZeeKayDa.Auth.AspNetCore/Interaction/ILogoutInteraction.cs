@@ -21,6 +21,12 @@ public interface ILogoutInteraction
     /// <summary>
     /// Returns the sign-out the page is asked to confirm, for the page to render.
     /// </summary>
+    /// <remarks>
+    /// The response this is read from is stamped <c>frame-ancestors 'none'</c>,
+    /// <c>X-Frame-Options: DENY</c> and <c>no-store</c>, so the page taking a one-click decision
+    /// cannot be framed or cached. A page that renders without calling this — a fixed "Sign out?"
+    /// page that only posts — gets none of those headers and must set its own.
+    /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <exception cref="ZeeKayDaInteractionException">
     /// There is no sign-out to confirm: the request carries no <c>zkd_i</c>, or names one this
@@ -61,7 +67,8 @@ public interface ILogoutInteraction
     /// <exception cref="ZeeKayDaInteractionException">
     /// There is no sign-out to complete: the request carries no <c>zkd_i</c>, or names one this
     /// browser is not carrying — it expired, was already completed, or was started in another
-    /// browser.
+    /// browser. Or the browser no longer holds the session the sign-out was started for, because
+    /// that session ended or the user signed in again while the page was open.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store could not be read. Fail-closed: nobody was signed out.
