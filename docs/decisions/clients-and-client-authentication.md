@@ -98,8 +98,9 @@ match so `localhost.attacker.com` fails. Fragments, userinfo and path traversal 
 count is capped, and the scheme rule is a **pure allowlist** — `https` on any host, `http` on
 loopback, and any private-use scheme containing a dot (RFC 8252 §7.1). No blocklist is maintained,
 because every dangerous scheme (`javascript`, `data`, `file`) lacks a dot and the allowlist rejects it
-without being told about it. A `localhost` host logs an advisory warning recommending the IP literal
-(RFC 8252 §8.3). Post-logout redirect URIs get the same treatment.
+without being told about it. An `http://localhost` URI logs an advisory warning recommending the IP
+literal (RFC 8252 §8.3); `https://localhost` does not, being a web client on a dev certificate rather
+than a native loopback redirect. Post-logout redirect URIs get the same treatment.
 
 **A registration whose credential no registered hasher can handle is a startup failure, and so is one
 whose credential accepts an empty presented secret.** Both would otherwise surface at runtime as an

@@ -382,21 +382,39 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_passes_but_emits_log_warning_for_HTTPS_localhost_redirect_uri()
+    public void Validate_passes_without_log_warning_for_HTTPS_localhost_redirect_uri()
     {
-        // The localhost advisory warning (RFC 8252 §8.3) must be scheme-neutral: it fires for any
-        // passing URI whose host is 'localhost', including https://localhost.
+        // The localhost advisory warning (RFC 8252 §8.3) is for native apps' http loopback
+        // redirects. https://localhost is a web client on a dev certificate, where TLS already
+        // rules out the name-resolution risk the advice is about.
         var logger = new CapturingLogger();
         var validator = MakeValidator(logger: logger);
         var client = MakeValidPublicClient() with
         {
-            RedirectUris = new HashSet<string>(["https://localhost/cb"], StringComparer.Ordinal)
+            RedirectUris = new HashSet<string>(["https://localhost:5002/signin-oidc"], StringComparer.Ordinal)
         };
 
         var act = () => validator.Validate(client);
 
         act.Should().NotThrow();
-        logger.Warnings.Should().ContainSingle(w => w.Contains("localhost"));
+        logger.Warnings.Should().NotContain(w => w.Contains("localhost"));
+    }
+
+    [Fact]
+    public void Validate_emits_log_warning_for_HTTP_localhost_post_logout_redirect_uri_but_not_HTTPS()
+    {
+        var logger = new CapturingLogger();
+        var validator = MakeValidator(logger: logger);
+        var client = MakeValidPublicClient() with
+        {
+            PostLogoutRedirectUris = new HashSet<string>(
+                ["http://localhost/signed-out", "https://localhost:5002/signed-out"], StringComparer.Ordinal)
+        };
+
+        validator.Validate(client);
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("localhost"))
+            .Which.Should().Contain("http://localhost/signed-out");
     }
 
     [Fact]

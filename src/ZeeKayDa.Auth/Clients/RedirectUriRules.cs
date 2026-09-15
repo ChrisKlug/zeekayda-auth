@@ -16,11 +16,13 @@ internal static class RedirectUriRules
         => string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Whether the string parses as an absolute URI whose host is <c>localhost</c>, in any scheme.
-    /// A string that does not parse is not localhost.
+    /// Whether the string parses as an absolute <c>http</c> URI whose host is the name
+    /// <c>localhost</c> — the shape of a native app's loopback redirect (RFC 8252 §7.3).
+    /// A string that does not parse is not one.
     /// </summary>
-    internal static bool IsLocalhost(string uriString)
+    internal static bool IsHttpLocalhost(string uriString)
         => Uri.TryCreate(uriString, UriKind.Absolute, out var uri)
+           && IsHttp(uri)
            && string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase);
 
     internal static bool HasPathTraversal(string uriString)

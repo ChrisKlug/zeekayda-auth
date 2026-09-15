@@ -91,15 +91,16 @@ public sealed class RedirectUriRulesTests
     public void IsHttp_returns_expected_value(string input, bool expected)
         => RedirectUriRules.IsHttp(new Uri(input)).Should().Be(expected);
 
-    // ── IsLocalhost ───────────────────────────────────────────────────────────────────────────────
+    // ── IsHttpLocalhost ───────────────────────────────────────────────────────────────────────────
 
     [Theory]
     [InlineData("http://localhost/cb", true)]
-    [InlineData("https://LOCALHOST:5001/cb", true)]  // scheme-neutral, case-insensitive
+    [InlineData("HTTP://LOCALHOST:5001/cb", true)]   // case-insensitive scheme and host
+    [InlineData("https://localhost:5001/cb", false)] // web client on a dev certificate, not a loopback redirect
     [InlineData("http://127.0.0.1/cb", false)]       // loopback, but not the name 'localhost'
-    [InlineData("https://localhost.example.com/cb", false)]
+    [InlineData("http://localhost.example.com/cb", false)]
     [InlineData("not a uri", false)]                 // does not parse
     [InlineData("/relative/path", false)]            // not absolute
-    public void IsLocalhost_returns_expected_value(string uriString, bool expected)
-        => RedirectUriRules.IsLocalhost(uriString).Should().Be(expected);
+    public void IsHttpLocalhost_returns_expected_value(string uriString, bool expected)
+        => RedirectUriRules.IsHttpLocalhost(uriString).Should().Be(expected);
 }
