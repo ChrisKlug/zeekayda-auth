@@ -1649,3 +1649,34 @@ verified on the fix diff.
   `AuthorizationCodeEntry_with_an_incomplete_PKCE_binding_does_not_deserialize`.
 - Residual: a public client carrying the opt-in reaches the grant only via a custom authenticator,
   so the shared predicate is proven at the rule, not end to end.
+
+## 2026-09-16 — RP-initiated logout: the end-session endpoint and its confirmation (#671 PR 2)
+
+Scoped to `EndSessionEndpoint`, `LogoutInteraction`, `LogoutRequestStore`, `EndSessionResponses` and
+`PostLogoutRedirect`. Security agent plus the Copilot security lens, one round: a cross-site form
+post signed a user out unasked, and a confirmation left open across a re-authentication ended the
+replacement session. Both fixed in `96d6849`, the session test made discriminating in `525e94b` and
+mutation-checked by hand, all verified on the fix diffs. The `id_token_hint` validator itself was
+signed off with #688 and was not re-reviewed here.
+
+- A confirmation is bound to the browser and to the session it asked about, is answered once, and
+  expires. Closed — `A_confirmation_without_the_binding_cookie_signs_nobody_out`,
+  `A_confirmation_is_refused_once_the_browser_holds_a_different_session`,
+  `A_confirmation_is_answered_once`, `A_confirmation_after_the_sign_out_expired_is_refused`.
+- No session cookie, no deletion; a GET and an unreachable store sign nobody out. Closed —
+  `A_request_carrying_no_session_cookie_deletes_no_session`,
+  `SignOutAsync_from_a_GET_is_refused_and_signs_nobody_out`,
+  `A_sign_out_that_cannot_be_stored_for_confirmation_signs_nobody_out`.
+- A redirect is an exact match against the resolved client; a hint that fails is never trusted, and
+  skips the question only for the signed-in user of an opted-out client. Closed —
+  `A_post_logout_redirect_uri_the_client_did_not_register_is_not_used`,
+  `A_hint_issued_to_another_client_than_the_one_named_is_ignored`,
+  `A_valid_hint_for_someone_other_than_the_signed_in_user_is_still_asked`.
+- Residual, accepted: the session is the cookie, so a sign-out revokes no token already issued;
+  session-bound revocation is #104 — `A_valid_hint_from_a_client_that_skips_the_question_signs_out_at_once`.
+- Residual: the framework's own page answers 400 for every refusal alike, so the session check is
+  proven only through a host page — `A_confirmation_is_refused_once_the_browser_holds_a_different_session`.
+- Residual: a present-but-undecryptable session cookie is cleared on sign-out, untested.
+- Residual, accepted: the deletion gate is cookie presence and `zkd.session` carries no `__Host-`
+  prefix, so a sibling-subdomain cookie toss can still trigger it, untested — the same exposure the
+  session cookie itself has.
