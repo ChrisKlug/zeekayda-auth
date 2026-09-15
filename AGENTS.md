@@ -143,6 +143,16 @@ fully specified, and would pollute the main context — roughly 300+ lines of im
 **Don't over-orchestrate.** Fix rounds, nits, doc rewording, and small changes are never delegated.
 Every agent hop is tokens and latency, and each spawn starts from zero.
 
+**Recommend a cheaper model for mechanical work.** The main session runs on whatever model the
+maintainer picked, and only they can change it. When the next stretch of work is mechanical and big
+enough for the model to matter — a multi-file rename, a test backfill against a settled contract, a
+doc sweep, a fix round with no judgement in it — say so in one line before starting: name the work,
+say it does not need this model's reasoning, and suggest switching with `/model` (Sonnet for pure
+mechanics, Opus when the mechanics need some care). Then end the turn so they can switch before the
+build starts. Design conversations, reviews, and anything touching tokens, crypto, or endpoints stay
+on the model already running. Once the maintainer declines for a task, do not raise it again for
+that task.
+
 | Task | Route |
 |---|---|
 | Designing an API shape | main session, in conversation with the maintainer |
