@@ -37,7 +37,7 @@ internal static class TokenEndpointAuthMethodValidator
 
         foreach (var method in client.AllowedTokenEndpointAuthMethods)
         {
-            if (ValidateEntry(client.ClientId, method, seen, serverMethods) is { } failure)
+            if (ValidateEntry(client, method, seen, serverMethods) is { } failure)
                 failures.Add(failure);
         }
     }
@@ -88,7 +88,7 @@ internal static class TokenEndpointAuthMethodValidator
     /// entry is not also a duplicate, and a duplicate is not also checked against the server's methods.
     /// </summary>
     private static ZeeKayDaConfigurationFailure? ValidateEntry(
-        string clientId,
+        IClientRegistration client,
         string? method,
         HashSet<string> seen,
         IReadOnlySet<string> serverMethods)
@@ -97,7 +97,7 @@ internal static class TokenEndpointAuthMethodValidator
         {
             return new ZeeKayDaConfigurationFailure(
                 "client.token_endpoint_auth_methods.invalid_entry",
-                $"Client '{clientId}' has an invalid entry in AllowedTokenEndpointAuthMethods: " +
+                $"Client '{client.ClientId}' has an invalid entry in AllowedTokenEndpointAuthMethods: " +
                 $"'{method}'. Entries must be non-null, non-empty, have no leading/trailing whitespace, " +
                 "and contain no control characters.");
         }
@@ -106,32 +106,34 @@ internal static class TokenEndpointAuthMethodValidator
         {
             return new ZeeKayDaConfigurationFailure(
                 "client.token_endpoint_auth_methods.duplicate",
-                $"Client '{clientId}' has a duplicate entry in AllowedTokenEndpointAuthMethods: '{method}'.");
+                $"Client '{client.ClientId}' has a duplicate entry in AllowedTokenEndpointAuthMethods: '{method}'.");
         }
 
         if (!serverMethods.Contains(method))
-            return NotSupportedByServer(clientId, method, serverMethods);
+            return NotSupportedByServer(client, method, serverMethods);
 
         return null;
     }
 
-    // 'none' outside the server's methods is a host that registered a public client without opting
-    // in to accepting them — the common first-run mistake — so its failure names the opt-in.
+    // 'none' outside the server's methods on a public client is a host that registered one without
+    // opting in to accepting them — the common first-run mistake — so its failure names the opt-in.
+    // A confidential client listing 'none' is fixed by removing it (none_on_confidential), never by
+    // advertising it, so it gets no hint.
     private static ZeeKayDaConfigurationFailure NotSupportedByServer(
-        string clientId,
+        IClientRegistration client,
         string method,
         IReadOnlySet<string> serverMethods)
     {
-        var fix = string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal)
+        var fix = client.IsPublic && string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal)
             ? " Public clients present no credentials at the token endpoint, so the server accepts them " +
               "only when it advertises 'none': add " +
-              "options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None) to the " +
+              "options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None); to the " +
               "AddZeeKayDaAuth configuration, or 'none' to TokenEndpoint:AuthMethodsSupported in bound configuration."
             : "";
 
         return new ZeeKayDaConfigurationFailure(
             "client.token_endpoint_auth_methods.not_subset",
-            $"Client '{clientId}' has AllowedTokenEndpointAuthMethods entry '{method}' that is not " +
+            $"Client '{client.ClientId}' has AllowedTokenEndpointAuthMethods entry '{method}' that is not " +
             $"in the server's AuthMethodsSupported: [{string.Join(", ", serverMethods)}]." + fix);
     }
 }
