@@ -1,0 +1,16 @@
+@page "/error"
+@model ErrorModel
+@{
+    ViewData["Title"] = "Sign-in problem";
+}
+<h1>Something went wrong</h1>
+
+@if (Model.Details is { } details)
+{
+    <p>@details.Description</p>
+    <p><small>Error code: <code>@details.Error</code></small></p>
+}
+else
+{
+    <p>The sign-in request could not be completed. Return to the application and try again.</p>
+}
