@@ -15,6 +15,7 @@
     <Project Path="tests/ZeeKayDa.Auth.AspNetCore.Tests/ZeeKayDa.Auth.AspNetCore.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.AzureKeyVault.Tests/ZeeKayDa.Auth.AzureKeyVault.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.FileSystem.Tests/ZeeKayDa.Auth.FileSystem.Tests.csproj" />
+    <Project Path="tests/ZeeKayDa.Auth.Samples.IdentityServer.Tests/ZeeKayDa.Auth.Samples.IdentityServer.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.Windows.Tests/ZeeKayDa.Auth.Windows.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.Tests/ZeeKayDa.Auth.Tests.csproj" />
   </Folder>

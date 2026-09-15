@@ -45,7 +45,10 @@ auth.AddInMemoryClients(clients =>
 // profile is let through, and a copy of this sample keeps the guard everywhere else.
 auth.AddInMemoryStores(allowOutsideDevelopment: builder.Environment.IsEnvironment("Conformance"));
 
-auth.AddPemFileSigning(SigningKeyFile.Ensure(settings.SigningKeyPath), SigningAlgorithm.RS256);
+// Resolved against the app's own folder, not the working directory, so the key always lands in the
+// same gitignored place however the app is started.
+var signingKeyPath = Path.Combine(builder.Environment.ContentRootPath, settings.SigningKeyPath);
+auth.AddPemFileSigning(SigningKeyFile.Ensure(signingKeyPath), SigningAlgorithm.RS256);
 
 auth.AddClaimsProvider<UserClaimsProvider>();
 
@@ -58,3 +61,6 @@ app.MapZeeKayDaAuth();
 app.MapRazorPages();
 
 app.Run();
+
+/// <summary>The sample's entry point, public so the smoke tests can host it.</summary>
+public partial class Program;

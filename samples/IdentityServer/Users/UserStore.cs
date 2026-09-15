@@ -15,7 +15,12 @@ public sealed record SampleUser(string Subject, string Username, IReadOnlyList<C
 /// </summary>
 public sealed class UserStore
 {
-    private const int Iterations = 100_000;
+    // The same work factor the framework requires for client secrets (Pbkdf2ClientSecretHasherOptions).
+    private const int Iterations = 600_000;
+
+    // Hashed against when the username is unknown, so a miss costs as much as a wrong password and
+    // the response time does not reveal which usernames exist.
+    private static readonly byte[] UnknownUserSalt = RandomNumberGenerator.GetBytes(16);
 
     // The password material never leaves the store; callers only ever see the SampleUser.
     private sealed record Account(SampleUser User, byte[] Salt, byte[] PasswordHash);
@@ -64,11 +69,18 @@ public sealed class UserStore
     }
 
     /// <summary>The user whose password matches, or <see langword="null"/>.</summary>
-    public SampleUser? Validate(string username, string password) =>
-        _byUsername.TryGetValue(username, out var account)
-        && CryptographicOperations.FixedTimeEquals(Hash(password, account.Salt), account.PasswordHash)
+    public SampleUser? Validate(string username, string password)
+    {
+        if (!_byUsername.TryGetValue(username, out var account))
+        {
+            _ = Hash(password, UnknownUserSalt);
+            return null;
+        }
+
+        return CryptographicOperations.FixedTimeEquals(Hash(password, account.Salt), account.PasswordHash)
             ? account.User
             : null;
+    }
 
     public SampleUser? FindBySubject(string subject) =>
         _bySubject.TryGetValue(subject, out var user) ? user : null;
