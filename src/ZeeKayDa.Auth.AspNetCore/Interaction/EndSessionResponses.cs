@@ -45,9 +45,8 @@ internal sealed class EndSessionResponses
     /// own.
     /// </summary>
     /// <param name="context">The request signing out.</param>
-    /// <param name="postLogoutRedirectUri">A redirect URI already matched against the client's registration, or <see langword="null"/>.</param>
-    /// <param name="state">The client's <c>state</c>, echoed only with a redirect.</param>
-    public async Task<IResult> SignOutAsync(HttpContext context, string? postLogoutRedirectUri, string? state)
+    /// <param name="redirect">Where to send the user back to the client, or <see langword="null"/>.</param>
+    public async Task<IResult> SignOutAsync(HttpContext context, PostLogoutRedirect? redirect)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -56,11 +55,11 @@ internal sealed class EndSessionResponses
         await context.SignOutAsync(ZeeKayDaCookies.Session).ConfigureAwait(false);
         InteractionBindingCookie.DeleteAll(context);
 
-        if (postLogoutRedirectUri is not null)
+        if (redirect is not null)
         {
-            return new UnloggedRedirect(state is null
-                ? postLogoutRedirectUri
-                : QueryHelpers.AddQueryString(postLogoutRedirectUri, "state", state));
+            return new UnloggedRedirect(redirect.State is null
+                ? redirect.Uri
+                : QueryHelpers.AddQueryString(redirect.Uri, "state", redirect.State));
         }
 
         if (_options.Value.EndSessionEndpoint.SignedOutPath is { } signedOutPath)

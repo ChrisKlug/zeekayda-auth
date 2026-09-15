@@ -80,8 +80,7 @@ internal sealed class LogoutRequestStore
     public async ValueTask<LogoutRequestContext> CreateAsync(
         HttpContext context,
         string? clientId,
-        string? postLogoutRedirectUri,
-        string? state,
+        PostLogoutRedirect? redirect,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -90,8 +89,8 @@ internal sealed class LogoutRequestStore
         {
             Id = StoreKeyGenerator.Generate(),
             ClientId = clientId,
-            PostLogoutRedirectUri = postLogoutRedirectUri,
-            State = state,
+            PostLogoutRedirectUri = redirect?.Uri,
+            State = redirect?.State,
             ExpiresAt = _timeProvider.GetUtcNow() + Lifetime,
         };
 

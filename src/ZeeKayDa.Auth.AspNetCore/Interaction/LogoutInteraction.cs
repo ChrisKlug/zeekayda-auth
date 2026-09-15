@@ -57,15 +57,14 @@ internal sealed class LogoutInteraction : ILogoutInteraction
         var client = request.ClientId is null
             ? null
             : await FindClientAsync(context, request.ClientId, context.RequestAborted).ConfigureAwait(false);
-        var redirectUri = client is not null
+        var redirect = client is not null
             && request.PostLogoutRedirectUri is { } uri
             && EndSessionResponses.IsRegistered(client, uri)
-            ? uri
+            ? new PostLogoutRedirect(uri, request.State)
             : null;
 
         await _requests.DeleteAsync(context, request.Id, context.RequestAborted).ConfigureAwait(false);
-        var result = await _responses.SignOutAsync(context, redirectUri, redirectUri is null ? null : request.State)
-            .ConfigureAwait(false);
+        var result = await _responses.SignOutAsync(context, redirect).ConfigureAwait(false);
 
         context.Response.Headers.CacheControl = "no-store";
         await result.ExecuteAsync(context).ConfigureAwait(false);

@@ -100,6 +100,27 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
         context.Response.Headers.CacheControl = "no-store";
 
         var parameters = await ReadParametersAsync(context).ConfigureAwait(false);
+        var (hint, client) = await ResolveClientAsync(parameters, hints, clients, context.RequestAborted).ConfigureAwait(false);
+        var redirect = RedirectFor(client, parameters);
+
+        var session = await _session.ReadAsync(context).ConfigureAwait(false);
+        if (session is null || MayEndWithoutAsking(client, hint, session))
+            return await _responses.SignOutAsync(context, redirect).ConfigureAwait(false);
+
+        return await AskAsync(context, client, redirect).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The validated hint, and the client the sign-out is for: the hint's own when it validated,
+    /// the one <c>client_id</c> names otherwise. <c>client_id</c> is passed to the validator as
+    /// sent, so a hint issued to any other client is refused.
+    /// </summary>
+    private async ValueTask<(IdTokenHint? Hint, IClientRegistration? Client)> ResolveClientAsync(
+        Dictionary<string, StringValues> parameters,
+        IdTokenHintValidator hints,
+        ValidatedClientResolver clients,
+        CancellationToken cancellationToken)
+    {
         var requestedClientId = Single(parameters, "client_id");
         var idTokenHint = Single(parameters, "id_token_hint");
 
@@ -110,25 +131,38 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
         var clientId = hint?.ClientId ?? requestedClientId;
         var client = clientId is null
             ? null
-            : await clients.FindByClientIdAsync(clientId, context.RequestAborted).ConfigureAwait(false);
+            : await clients.FindByClientIdAsync(clientId, cancellationToken).ConfigureAwait(false);
+
+        return (hint, client);
+    }
+
+    /// <summary>
+    /// The redirect back to the client, when the request asked for one the client registered and
+    /// its <c>state</c> is short enough to echo.
+    /// </summary>
+    private static PostLogoutRedirect? RedirectFor(IClientMetadata? client, Dictionary<string, StringValues> parameters)
+    {
+        if (client is null
+            || Single(parameters, "post_logout_redirect_uri") is not { } uri
+            || !EndSessionResponses.IsRegistered(client, uri))
+        {
+            return null;
+        }
 
         var state = Single(parameters, "state");
-        var redirectUri = client is not null
-            && Single(parameters, "post_logout_redirect_uri") is { } requested
-            && EndSessionResponses.IsRegistered(client, requested)
-            && (state is null || state.Length <= MaxStateLength)
-            ? requested
-            : null;
-        var echoedState = redirectUri is null ? null : state;
+        return state is null || state.Length <= MaxStateLength ? new PostLogoutRedirect(uri, state) : null;
+    }
 
-        var session = await _session.ReadAsync(context).ConfigureAwait(false);
-        if (session is null || MayEndWithoutAsking(client, hint, session))
-            return await _responses.SignOutAsync(context, redirectUri, echoedState).ConfigureAwait(false);
-
+    /// <summary>
+    /// Keeps the sign-out for the user to confirm and sends them to the page that asks: the
+    /// host's, or the framework's own.
+    /// </summary>
+    private async Task<IResult> AskAsync(HttpContext context, IClientMetadata? client, PostLogoutRedirect? redirect)
+    {
         LogoutRequestContext request;
         try
         {
-            request = await _requests.CreateAsync(context, client?.ClientId, redirectUri, echoedState, context.RequestAborted)
+            request = await _requests.CreateAsync(context, client?.ClientId, redirect, context.RequestAborted)
                 .ConfigureAwait(false);
         }
         catch (ZeeKayDaStoreException ex)
