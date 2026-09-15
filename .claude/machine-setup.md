@@ -119,10 +119,19 @@ Verify: `umask 022; dotnet test ZeeKayDa.Auth.Linux.slnf` is green.
 ## 6. CodeScene MCP — optional, expected by Stage 3
 
 `work-on-issue` Stage 3 asks the main session to run CodeScene `analyze_change_set` on production
-files. No CodeScene MCP server is configured on this machine, so that step is skipped and only the
-CI check runs. To restore it, add CodeScene's MCP server at user level with `claude mcp add`
-(needs a CodeScene API token; see CodeScene's MCP documentation) and confirm the tool appears in
-`ToolSearch("codescene")`.
+files. Without the server that step is skipped and only the CI check runs. Install the standalone
+binary (no node needed) and register it at user level:
+
+```sh
+gh release download -R codescene-oss/codescene-mcp-server -p 'cs-mcp-linux-amd64.zip' -D /tmp
+unzip -o /tmp/cs-mcp-linux-amd64.zip -d /tmp && install -m 755 /tmp/cs-mcp-linux-amd64 ~/.local/bin/cs-mcp
+claude mcp add codescene --scope user -- "$HOME/.local/bin/cs-mcp"
+```
+
+Then, in a session, ask Claude to log in to CodeScene (OAuth), or pass
+`--env CS_ACCESS_TOKEN=<token>` to `claude mcp add` instead.
+
+Verify: `claude mcp list` shows `codescene ... Connected`; `ToolSearch("codescene")` finds the tools.
 
 ## 7. Aspire CLI — optional
 
