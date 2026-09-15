@@ -24,6 +24,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// silently replace both — which for a deny is the open redirect the interaction identifier
 /// exists to prevent, written in host code where nothing validates it. Starting the response
 /// commits the headers and turns that mistake into an exception the first time the page runs.
+/// Under MVC, <see cref="TerminalInteractionResultFilter"/> goes one further and skips whatever
+/// result follows, so a Razor Pages handler can end with a plain <c>await</c>.
 /// </para>
 /// <para>
 /// Every outcome that leaves the interaction takes the destination from validated state — the
@@ -330,7 +332,7 @@ internal sealed class InteractionOutcomes
 
         var handler = await _activator.ActivateAsync(context, registration).ConfigureAwait(false);
         await handler.ChallengeAsync(properties).ConfigureAwait(false);
-        await context.Response.StartAsync().ConfigureAwait(false);
+        await CommitAsync(context).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -359,7 +361,17 @@ internal sealed class InteractionOutcomes
     private static async Task WriteAsync(HttpContext context, IResult result)
     {
         await result.ExecuteAsync(context).ConfigureAwait(false);
+        await CommitAsync(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Starts the response and records that a terminal outcome did, which is what lets MVC skip
+    /// the result a host handler would otherwise execute next.
+    /// </summary>
+    private static async Task CommitAsync(HttpContext context)
+    {
         await context.Response.StartAsync().ConfigureAwait(false);
+        TerminalResponse.MarkCommitted(context);
     }
 }
 
