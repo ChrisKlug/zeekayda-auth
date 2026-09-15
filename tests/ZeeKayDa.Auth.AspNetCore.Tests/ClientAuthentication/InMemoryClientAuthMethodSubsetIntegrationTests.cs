@@ -39,6 +39,24 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                      "when the client's auth method is not in the server's AuthMethodsSupported list");
     }
 
+    [Fact]
+    public void Host_startup_failure_for_a_method_other_than_none_does_not_suggest_advertising_none()
+    {
+        using var factory = new InvalidAuthMethodWebAppFactory();
+
+        var act = () => factory.CreateClient();
+
+        var configEx = ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(
+            act.Should().Throw<Exception>().Which);
+        configEx!.AggregatedFailures
+            .Single(f => f.Code == "client.token_endpoint_auth_methods.not_subset")
+            .Message.Should().NotContain(
+                "none",
+                because: "the opt-in hint, in either its code or its bound-configuration form, is for " +
+                         "public clients only; a confidential client's unsupported method is fixed by " +
+                         "advertising that method");
+    }
+
     // ── Happy path ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
