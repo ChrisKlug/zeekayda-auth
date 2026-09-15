@@ -86,6 +86,29 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
         (await response.Content.ReadAsStringAsync(Cancellation)).Should().Contain("The username or password is incorrect.");
     }
 
+    [Fact]
+    public async Task An_absolute_signing_key_path_is_used_as_given_rather_than_joined_to_the_content_root()
+    {
+        var keyDirectory = Path.Join(Path.GetTempPath(), "zkd-sample-" + Guid.NewGuid().ToString("N"));
+        var keyPath = Path.Join(keyDirectory, "signing.pem");
+        try
+        {
+            using var factory = _factory.WithWebHostBuilder(host => host.UseSetting("IdentityServer:SigningKeyPath", keyPath));
+            using var browser = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri(Issuer) });
+
+            using var response = await browser.GetAsync("/.well-known/openid-configuration", Cancellation);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            File.Exists(keyPath).Should().BeTrue(
+                because: "an operator's absolute key path is where the key is created and read, not a path under the app folder");
+        }
+        finally
+        {
+            if (Directory.Exists(keyDirectory))
+                Directory.Delete(keyDirectory, recursive: true);
+        }
+    }
+
     // ── Driving the flow ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>Starts an authorization request and returns the login page URL it lands on.</summary>
