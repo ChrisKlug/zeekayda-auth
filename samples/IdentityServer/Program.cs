@@ -45,8 +45,9 @@ auth.AddInMemoryClients(clients =>
 // profile is let through, and a copy of this sample keeps the guard everywhere else.
 auth.AddInMemoryStores(allowOutsideDevelopment: builder.Environment.IsEnvironment("Conformance"));
 
-// Resolved against the app's own folder, not the working directory, so the key always lands in the
-// same gitignored place however the app is started.
+// A relative path resolves against the app's own folder rather than the working directory, so the
+// default lands in the gitignored keys/ folder however the app is started. An absolute path — an
+// operator placing the key elsewhere — is used as given.
 var signingKeyPath = Path.Combine(builder.Environment.ContentRootPath, settings.SigningKeyPath);
 auth.AddPemFileSigning(SigningKeyFile.Ensure(signingKeyPath), SigningAlgorithm.RS256);
 
