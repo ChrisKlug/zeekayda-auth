@@ -20,6 +20,8 @@ public sealed class TerminalCallModel(ILoginInteraction login) : PageModel
 
     public Task OnPostCancelAsync() => login.DenyAsync();
 
+    public Task OnPostChallengeAsync() => login.ChallengeAsync("acme");
+
     /// <summary>Returns a result of its own after the terminal call, which must not reach the browser.</summary>
     public async Task<IActionResult> OnPostSignInThenRedirectAsync()
     {

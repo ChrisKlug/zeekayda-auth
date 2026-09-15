@@ -14,4 +14,7 @@ public sealed class TerminalCallController(ILoginInteraction login) : Controller
 
     [HttpPost("cancel")]
     public Task Cancel() => login.DenyAsync();
+
+    [HttpPost("challenge")]
+    public Task ChallengeProvider() => login.ChallengeAsync("acme");
 }

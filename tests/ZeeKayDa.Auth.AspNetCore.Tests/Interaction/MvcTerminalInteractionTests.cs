@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Pages;
+using ZeeKayDa.Auth.AspNetCore.Tests.Providers;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 
@@ -29,6 +30,7 @@ public sealed class MvcTerminalInteractionTests : IDisposable
             {
                 builder.Services.AddRazorPages();
                 builder.Services.AddControllers();
+                builder.WithProviders(auth => auth.AddOAuth("acme", "Acme", ProviderTestHost.ConfigureAcme));
             },
             mapEndpoints: endpoints =>
             {
@@ -71,6 +73,17 @@ public sealed class MvcTerminalInteractionTests : IDisposable
 
         response.Headers.Location!.OriginalString.Should().StartWith(RegisteredRedirect + "?");
         RedirectQueryOf(response)["error"].ToString().Should().Be("access_denied");
+    }
+
+    [Theory]
+    [InlineData("/TerminalCall?handler=Challenge")]
+    [InlineData("/mvc/login/challenge")]
+    public async Task A_handler_ending_with_a_plain_await_after_a_challenge_sends_the_user_to_the_provider(string path)
+    {
+        var response = await PostToInteractionAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.OriginalString.Should().StartWith("https://acme.example.net/authorize?");
     }
 
     [Theory]
