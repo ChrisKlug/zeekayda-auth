@@ -317,17 +317,23 @@ public sealed class EndSessionEndpointTests : IDisposable
     public async Task A_confirmation_is_refused_once_the_browser_holds_a_different_session()
     {
         // The answer to a question about one session is not an instruction about its replacement.
-        await SignInAsync(_client);
-        var asked = await EndSessionAsync(new());
+        // Against the host's page the refusal is an exception naming its reason, which is what
+        // tells this apart from a confirmation refused for want of its binding cookie — the
+        // framework's own page answers 400 either way.
+        using var factory = NewFactory(options => options.LogoutPath = LogoutPath);
+        using var client = NewClient(factory);
+        await SignInAsync(client);
+        var asked = await EndSessionAsync(client, new());
 
-        var other = await EndSessionAsync(new());
-        await PostEmptyFormAsync(_client, Location(other));
-        await SignInAsync(_client, App, subject: "user-2");
+        // A fresh sign-in as someone else mints a new session identifier and leaves the open
+        // confirmation's binding cookie alone, so only the session check can refuse it.
+        await SignInAsync(client, App, subject: "user-2", prompt: "login");
 
-        var confirmed = await PostEmptyFormAsync(_client, Location(asked));
+        var confirm = async () => await PostEmptyFormAsync(client, Location(asked));
 
-        confirmed.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await HasSessionAsync(_client)).Should().BeTrue("the session nobody was asked about is left alone");
+        (await confirm.Should().ThrowAsync<ZeeKayDaInteractionException>())
+            .WithMessage("*not the one this browser holds now*");
+        (await HasSessionAsync(client)).Should().BeTrue("the session nobody was asked about is left alone");
     }
 
     [Fact]
@@ -664,7 +670,7 @@ public sealed class EndSessionEndpointTests : IDisposable
         });
     }
 
-    private static string AuthorizeUrl(string clientId) =>
+    private static string AuthorizeUrl(string clientId, string? prompt = null) =>
         QueryHelpers.AddQueryString("/connect/authorize", new Dictionary<string, string?>
         {
             ["client_id"] = clientId,
@@ -674,12 +680,20 @@ public sealed class EndSessionEndpointTests : IDisposable
             ["nonce"] = Nonce,
             ["code_challenge"] = Challenge,
             ["code_challenge_method"] = "S256",
+            ["prompt"] = prompt,
         });
 
-    /// <summary>Signs the browser in through an authorization request for <paramref name="clientId"/>.</summary>
-    private static async Task<HttpResponseMessage> SignInAsync(HttpClient client, string clientId = App, string subject = "user-1")
+    /// <summary>
+    /// Signs the browser in through an authorization request for <paramref name="clientId"/>.
+    /// <paramref name="prompt"/> of <c>login</c> re-authenticates over a session the browser holds.
+    /// </summary>
+    private static async Task<HttpResponseMessage> SignInAsync(
+        HttpClient client,
+        string clientId = App,
+        string subject = "user-1",
+        string? prompt = null)
     {
-        var authorize = await client.GetAsync(AuthorizeUrl(clientId), Cancellation);
+        var authorize = await client.GetAsync(AuthorizeUrl(clientId, prompt), Cancellation);
         authorize.StatusCode.Should().Be(HttpStatusCode.Redirect);
 
         using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["sub"] = subject });

@@ -85,8 +85,8 @@ internal sealed class EndSessionResponses
         StatusCodes.Status400BadRequest,
         "Sign-out request error",
         "<h1>There is no sign-out to confirm.</h1>" +
-        "<p>It expired, was already completed, or was started in another browser. " +
-        "Return to the application and sign out again.</p>");
+        "<p>It expired, was already completed, was started in another browser, or the session it " +
+        "was for has since ended. Return to the application and sign out again.</p>");
 
     /// <summary>The interaction store could not be reached, so the user could not be asked.</summary>
     public static IResult Unavailable() => Page(

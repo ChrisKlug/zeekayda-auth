@@ -99,8 +99,13 @@ error. The user is asked unless there is no session to end, or a valid hint name
 user and its client set `SkipLogoutConfirmation` (§2: asking is a SHOULD with a hint, a MUST
 without). `post_logout_redirect_uri` is honoured only on an exact match against the registration of
 the client the request resolves to — the hint's, else `client_id`'s — echoing `state`, and a
-`state` over 2048 characters drops the redirect rather than truncating what the client must match. A pending confirmation is an interaction like any other, `zkd_i` plus a binding
-cookie, which is its CSRF protection. There is no cancel call: a sign-out has no error response.
+`state` over 2048 characters drops the redirect rather than truncating what the client must match.
+A pending confirmation is an interaction like any other, `zkd_i` plus a binding cookie, which is
+its CSRF protection; it records the session it would end and is refused once the browser holds
+another, so a page left open across a re-authentication ends nothing. A request that presented no
+session cookie has none deleted and clears no interaction — a cross-site form post carries no `Lax`
+cookie, and answering one with a deletion would end a session unasked. There is no cancel call: a
+sign-out has no error response.
 
 **Every protocol endpoint is implemented; nothing answers `501` any more.** Routes were
 mapped and shaped before their implementations landed so discovery stayed stable; the last stub,
