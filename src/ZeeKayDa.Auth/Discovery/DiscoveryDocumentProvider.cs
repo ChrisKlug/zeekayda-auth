@@ -89,24 +89,35 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
     /// rather than publishing an empty array: metadata naming an endpoint that answers 404, or a
     /// response type nothing serves, is worse than metadata without.
     /// </summary>
-    private sealed record InteractiveMetadata(
-        string? AuthorizationEndpoint,
-        string? EndSessionEndpoint,
-        IReadOnlyCollection<ResponseType>? ResponseTypesSupported,
-        IReadOnlyCollection<ResponseMode>? ResponseModesSupported,
-        IReadOnlyCollection<CodeChallengeMethod>? CodeChallengeMethodsSupported)
+    private sealed record InteractiveMetadata
     {
-        public static InteractiveMetadata For(AuthorizationServerOptions options, Uri issuerUri)
-        {
-            if (!options.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
-                return new InteractiveMetadata(null, null, null, null, null);
+        /// <summary>What a host serving no such grant publishes: none of it.</summary>
+        public static readonly InteractiveMetadata None = new();
 
-            return new InteractiveMetadata(
-                options.AuthorizationEndpoint.Uri ?? IssuerUriHelper.Combine(issuerUri, ConnectAuthorize).AbsoluteUri,
-                options.EndSessionEndpoint.Uri ?? IssuerUriHelper.Combine(issuerUri, ConnectEndSession).AbsoluteUri,
-                [.. options.Response.TypesSupported],
-                [.. options.Response.ModesSupported],
-                options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { } methods ? [.. methods] : null);
-        }
+        public string? AuthorizationEndpoint { get; init; }
+
+        public string? EndSessionEndpoint { get; init; }
+
+        public IReadOnlyCollection<ResponseType>? ResponseTypesSupported { get; init; }
+
+        public IReadOnlyCollection<ResponseMode>? ResponseModesSupported { get; init; }
+
+        public IReadOnlyCollection<CodeChallengeMethod>? CodeChallengeMethodsSupported { get; init; }
+
+        public static InteractiveMetadata For(AuthorizationServerOptions options, Uri issuerUri) =>
+            options.GrantTypesSupported.Contains(GrantType.AuthorizationCode)
+                ? new InteractiveMetadata
+                {
+                    AuthorizationEndpoint = options.AuthorizationEndpoint.Uri
+                        ?? IssuerUriHelper.Combine(issuerUri, ConnectAuthorize).AbsoluteUri,
+                    EndSessionEndpoint = options.EndSessionEndpoint.Uri
+                        ?? IssuerUriHelper.Combine(issuerUri, ConnectEndSession).AbsoluteUri,
+                    ResponseTypesSupported = [.. options.Response.TypesSupported],
+                    ResponseModesSupported = [.. options.Response.ModesSupported],
+                    CodeChallengeMethodsSupported = options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { } methods
+                        ? [.. methods]
+                        : null,
+                }
+                : None;
     }
 }
