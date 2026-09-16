@@ -19,5 +19,13 @@ public sealed class ClientSettings
 
     public IReadOnlyList<string> RedirectUris { get; init; } = [];
 
+    public IReadOnlyList<string> PostLogoutRedirectUris { get; init; } = [];
+
     public IReadOnlyList<string> Scopes { get; init; } = [];
+
+    /// <summary>
+    /// Whether the user is shown the consent page for this client. Turn it off only for an
+    /// operator's own applications: consent is what lets a user notice a request they never started.
+    /// </summary>
+    public bool RequireConsent { get; init; } = true;
 }

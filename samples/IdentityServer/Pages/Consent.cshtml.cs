@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 
@@ -10,8 +9,9 @@ public sealed class ConsentModel(IConsentInteraction consent) : PageModel
 
     public async Task OnGetAsync() => ConsentRequest = await consent.GetRequestAsync(HttpContext.RequestAborted);
 
-    public async Task<IActionResult> OnPostAsync(string? action)
+    public async Task OnPostAsync(string? action)
     {
+        // Both calls are terminal: the framework writes the response, and the handler just ends.
         if (action == "allow")
         {
             // Grants what was asked; a page offering per-scope choices would pass the subset.
@@ -22,8 +22,5 @@ public sealed class ConsentModel(IConsentInteraction consent) : PageModel
         {
             await consent.DenyAsync();
         }
-
-        // Both calls are terminal: the framework has already written the response.
-        return new EmptyResult();
     }
 }

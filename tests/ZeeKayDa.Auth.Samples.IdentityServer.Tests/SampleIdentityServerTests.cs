@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.WebUtilities;
 
@@ -20,6 +21,9 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     private const string Issuer = "https://localhost:5443";
     private const string ClientId = "sample-public-client";
     private const string RedirectUri = "https://localhost:5002/signin-oidc";
+    private const string PostLogoutRedirectUri = "https://localhost:5002/signout-callback-oidc";
+    private const string ConformanceClientId = "conformance-client";
+    private const string ConformanceRedirectUri = "https://localhost.emobix.co.uk:8443/test/a/zeekayda/callback";
 
     private readonly WebApplicationFactory<Program> _factory;
 
@@ -27,7 +31,9 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
-    private HttpClient NewBrowser() => _factory.CreateClient(new WebApplicationFactoryClientOptions
+    private HttpClient NewBrowser() => NewBrowser(_factory);
+
+    private static HttpClient NewBrowser(WebApplicationFactory<Program> factory) => factory.CreateClient(new WebApplicationFactoryClientOptions
     {
         BaseAddress = new Uri(Issuer),
         AllowAutoRedirect = false,
@@ -119,6 +125,58 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     }
 
     [Fact]
+    public async Task A_client_that_skips_consent_goes_from_the_login_page_straight_back_to_the_client()
+    {
+        using var factory = _factory.WithWebHostBuilder(host => host.UseEnvironment("Conformance"));
+        using var browser = NewBrowser(factory);
+        var (_, challenge) = NewPkcePair();
+
+        var loginPage = await FollowAuthorizeAsync(browser, challenge, ConformanceClientId, ConformanceRedirectUri);
+        var callback = await PostFormAsync(browser, loginPage, AliceLogin());
+
+        callback.Should().StartWith(ConformanceRedirectUri + "?",
+            because: "a conformance client is registered with RequireConsent off, so no consent page comes between");
+        QueryHelpers.ParseQuery(new Uri(callback).Query)["code"].ToString().Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_client_initiated_sign_out_is_confirmed_on_the_logout_page_and_returns_to_the_client_with_its_state()
+    {
+        using var browser = NewBrowser();
+        await SignInAliceAsync(browser);
+
+        var logoutPage = await RedirectOfAsync(browser, QueryHelpers.AddQueryString("/connect/endsession", new Dictionary<string, string?>
+        {
+            ["client_id"] = ClientId,
+            ["post_logout_redirect_uri"] = PostLogoutRedirectUri,
+            ["state"] = "logout-state",
+        }));
+        var page = await browser.GetStringAsync(logoutPage, Cancellation);
+        var backAtClient = await PostFormAsync(browser, logoutPage, new());
+
+        logoutPage.Should().StartWith("/logout?");
+        page.Should().Contain("Sign out alice?").And.Contain(ClientId);
+        backAtClient.Should().Be(PostLogoutRedirectUri + "?state=logout-state");
+        (await FollowAuthorizeAsync(browser, NewPkcePair().Challenge)).Should().StartWith("/login?",
+            because: "the session ended, so a new sign-in asks for the password again");
+    }
+
+    [Fact]
+    public async Task A_sign_out_from_the_home_page_is_confirmed_and_lands_on_the_signed_out_page()
+    {
+        using var browser = NewBrowser();
+        await SignInAliceAsync(browser);
+
+        var home = await browser.GetStringAsync("/", Cancellation);
+        var logoutPage = await RedirectOfAsync(browser, "/connect/endsession");
+        var signedOut = await PostFormAsync(browser, logoutPage, new());
+
+        home.Should().Contain("href=\"/connect/endsession\"");
+        signedOut.Should().Be("/signed-out");
+        (await browser.GetStringAsync(signedOut, Cancellation)).Should().Contain("You have been signed out");
+    }
+
+    [Fact]
     public async Task An_absolute_signing_key_path_is_used_as_given_rather_than_joined_to_the_content_root()
     {
         var keyDirectory = Path.Join(Path.GetTempPath(), "zkd-sample-" + Guid.NewGuid().ToString("N"));
@@ -143,22 +201,43 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
 
     // ── Driving the flow ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Starts an authorization request and returns the login page URL it lands on.</summary>
-    private static async Task<string> FollowAuthorizeAsync(HttpClient browser, string challenge)
+    private static Dictionary<string, string> AliceLogin() => new()
     {
-        var authorize = QueryHelpers.AddQueryString("/connect/authorize", new Dictionary<string, string?>
+        ["username"] = "alice",
+        ["password"] = "alice-password",
+        ["action"] = "login",
+    };
+
+    /// <summary>Signs alice in to the sample client, through login and consent.</summary>
+    private static async Task SignInAliceAsync(HttpClient browser)
+    {
+        var loginPage = await FollowAuthorizeAsync(browser, NewPkcePair().Challenge);
+        var consentPage = await PostFormAsync(browser, loginPage, AliceLogin());
+        var callback = await PostFormAsync(browser, consentPage, new() { ["action"] = "allow" });
+        callback.Should().StartWith(RedirectUri);
+    }
+
+    /// <summary>Starts an authorization request and returns the page URL it lands on.</summary>
+    private static Task<string> FollowAuthorizeAsync(HttpClient browser, string challenge) =>
+        FollowAuthorizeAsync(browser, challenge, ClientId, RedirectUri);
+
+    private static Task<string> FollowAuthorizeAsync(HttpClient browser, string challenge, string clientId, string redirectUri) =>
+        RedirectOfAsync(browser, QueryHelpers.AddQueryString("/connect/authorize", new Dictionary<string, string?>
         {
-            ["client_id"] = ClientId,
-            ["redirect_uri"] = RedirectUri,
+            ["client_id"] = clientId,
+            ["redirect_uri"] = redirectUri,
             ["response_type"] = "code",
             ["scope"] = "openid profile",
             ["nonce"] = "sample-nonce",
             ["state"] = "sample-state",
             ["code_challenge"] = challenge,
             ["code_challenge_method"] = "S256",
-        });
+        }));
 
-        using var response = await browser.GetAsync(authorize, Cancellation);
+    /// <summary>Requests a URL the server answers with a redirect, and returns where it points.</summary>
+    private static async Task<string> RedirectOfAsync(HttpClient browser, string url)
+    {
+        using var response = await browser.GetAsync(url, Cancellation);
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         return response.Headers.Location!.ToString();
     }
