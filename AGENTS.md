@@ -148,20 +148,15 @@ fully specified, and would pollute the main context — roughly 300+ lines of im
 **Don't over-orchestrate.** Fix rounds, nits, doc rewording, and small changes are never delegated.
 Every agent hop is tokens and latency, and each spawn starts from zero.
 
-**Building happens on Opus; Fable is for design and review.** The main session runs on whatever
-model the maintainer picked, and only they can change it — a session cannot re-price itself. When
-the maintainer starts a session on Fable, what they want from it is its reasoning: the design
-conversation, the judgement calls, reading the review findings. Typing the code, running the suite,
-formatting and coverage are not that, *whatever the code touches* — the reviewers run on Fable and
-are the safety net for the subject matter; the builder does not need to be. So at the moment
-building is about to start — right after the `### Agreed shape` comment is posted, or at the start
-of a mechanical change that has no design gate — check which model this session is on (it is named
-in your system prompt). If it is Fable, say so in one line: the shape is agreed, the build does not
-need Fable, please switch the session to Opus in the model menu. Then end the turn, so the switch
-lands before the first edit rather than mid-build. Stay on Opus through the review round, the
-maintainer's read of the diff, and the merge: fixing findings and summarising a diff are Opus work
-too. If the maintainer declines for an issue, build on Fable and do not raise it again for that
-issue.
+**Building happens on Opus; Fable is for design and review.** Only the maintainer can change the
+session's model. On Fable they want its reasoning — the design conversation, the judgement calls,
+reading findings — not typing code, running the suite, formatting or coverage, *whatever the code
+touches*: the reviewers run on Fable and are the safety net for the subject matter. So when building
+is about to start (right after the `### Agreed shape` comment, or at the start of a mechanical
+change) and your system prompt names Fable, say in one line that the build does not need Fable and
+ask for a switch to Opus in the model menu, then end the turn so the switch lands before the first
+edit. Stay on Opus through the review round, the diff read and the merge. If the maintainer declines
+for an issue, build on Fable and do not raise it again for that issue.
 
 | Task | Route |
 |---|---|
