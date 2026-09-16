@@ -892,8 +892,8 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Theory]
-    // RFC 6749 §3.1 explicitly permits query components on the authorization endpoint.
-    // RFC 6749 §3.2 does not prohibit them on the token endpoint.
+    // RFC 6749 §3.1 and §3.2 carry the same sentence for the authorization and token endpoints
+    // alike: the endpoint URI MAY include a query component. Neither is merely unprohibited.
     [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com/connect/authorize?foo=bar")]
     [InlineData("TokenEndpoint.Uri", "https://auth.example.com/connect/token?foo=bar")]
     public void Validate_succeeds_when_endpoint_override_has_query(string propertyPath, string value)
