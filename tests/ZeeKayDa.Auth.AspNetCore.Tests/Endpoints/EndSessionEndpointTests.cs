@@ -553,6 +553,24 @@ public sealed class EndSessionEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_logout_page_reloaded_after_someone_else_signed_in_discloses_no_subject()
+    {
+        // The sign-out carries the subject it was started for. A confirmation left open across a
+        // fresh sign-in must not hand the new user the previous one's identifier — the binding
+        // cookie survives a sign-in, so nothing but the session check refuses this.
+        using var factory = NewFactory(options => options.LogoutPath = LogoutPath);
+        using var client = NewClient(factory);
+        await SignInAsync(client, subject: "user-7");
+        var asked = await EndSessionAsync(client, new() { ["client_id"] = App });
+
+        await SignInAsync(client, App, subject: "user-8", prompt: "login");
+        var reload = async () => await client.GetAsync(Location(asked), Cancellation);
+
+        (await reload.Should().ThrowAsync<ZeeKayDaInteractionException>())
+            .WithMessage("*not the one this browser holds now*");
+    }
+
+    [Fact]
     public async Task A_host_with_its_own_logout_page_serves_no_framework_confirmation_route()
     {
         using var factory = NewFactory(options => options.LogoutPath = LogoutPath);

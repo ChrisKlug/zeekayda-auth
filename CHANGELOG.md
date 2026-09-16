@@ -14,7 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   user it is asking about rather than only the client that asked. It is the subject of the session
   the sign-out was started for, stamped when the user was asked; `SignOutAsync` already refuses
   unless the browser still holds that session, so the page cannot name one user and sign out
-  another.
+  another. `GetRequestAsync` now refuses on the same condition rather than only `SignOutAsync`: a
+  confirmation left open across a fresh sign-in would otherwise show the new user the previous
+  one's subject, and the sign-out it asks about could not complete anyway.
 
 - **RP-initiated logout: an end-session endpoint and a host logout page** (#671)
 

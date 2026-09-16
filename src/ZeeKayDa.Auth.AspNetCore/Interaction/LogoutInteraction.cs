@@ -40,6 +40,12 @@ internal sealed class LogoutInteraction : ILogoutInteraction
         cancellationToken.ThrowIfCancellationRequested();
         var request = await ResolveAddressedAsync(context, cancellationToken).ConfigureAwait(false);
 
+        // Checked here and not only at SignOutAsync: the request names the user it was started for,
+        // and a confirmation left open across a fresh sign-in would hand the new user the previous
+        // one's subject. Refusing the render is also honest — the sign-out it asks about can no
+        // longer complete.
+        await RequireAskedSessionAsync(context, request, cancellationToken).ConfigureAwait(false);
+
         // The page takes a one-click decision, so it renders framed by nobody and cached by nothing.
         RenderedPage.Protect(context.Response);
 
@@ -55,7 +61,7 @@ internal sealed class LogoutInteraction : ILogoutInteraction
     {
         var context = RequireStateChangingRequest();
         var request = await ResolveAddressedAsync(context, context.RequestAborted).ConfigureAwait(false);
-        await RequireAskedSessionAsync(context, request).ConfigureAwait(false);
+        await RequireAskedSessionAsync(context, request, context.RequestAborted).ConfigureAwait(false);
 
         // Checked against the registration as it stands now rather than remembered from when the
         // sign-out arrived: an operator who removes a redirect URI means nobody to be sent there.
@@ -96,16 +102,20 @@ internal sealed class LogoutInteraction : ILogoutInteraction
     /// Refuses unless the browser still holds the session the sign-out was started for. A
     /// confirmation left open across a sign-out or a fresh sign-in would otherwise end a session
     /// nobody was asked about, and the answer to a question about a session that has since ended
-    /// is not an instruction about its replacement.
+    /// is not an instruction about its replacement. Reading the sign-out is gated on it too, so
+    /// the subject it carries is only ever shown to the browser it was stored for.
     /// </summary>
-    private async ValueTask RequireAskedSessionAsync(HttpContext context, LogoutRequestContext request)
+    private async ValueTask RequireAskedSessionAsync(
+        HttpContext context,
+        LogoutRequestContext request,
+        CancellationToken cancellationToken)
     {
         var session = await _session.ReadAsync(context).ConfigureAwait(false);
         if (session is not null && string.Equals(session.SessionId, request.SsoSessionId, StringComparison.Ordinal))
             return;
 
         // One answer either way: a sign-out that cannot be completed is not left for a later try.
-        await _requests.DeleteAsync(context, request.Id, context.RequestAborted).ConfigureAwait(false);
+        await _requests.DeleteAsync(context, request.Id, cancellationToken).ConfigureAwait(false);
 
         throw new ZeeKayDaInteractionException(
             "The session this sign-out was started for is not the one this browser holds now — it has " +
