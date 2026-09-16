@@ -81,8 +81,9 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
 
         // The whole family shares one absolute ceiling, applied here to the encrypted entry too, so
         // a caller reading Consumed.Entry.ExpiresAt never sees a value larger than what the
-        // cleartext column actually enforces.
-        var expiresAt = Min(now + _refreshTokenLifetime, entry.FamilyAbsoluteExpiry);
+        // cleartext column actually enforces. RefreshTokenLifetime has no upper bound, so the
+        // addition saturates rather than throwing out of token issuance.
+        var expiresAt = Min(TokenLifetimes.ExpiresAt(now, _refreshTokenLifetime), entry.FamilyAbsoluteExpiry);
         var clampedEntry = entry with { ExpiresAt = expiresAt };
 
         var grant = new RefreshTokenGrant

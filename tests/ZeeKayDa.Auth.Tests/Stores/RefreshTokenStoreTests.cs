@@ -242,6 +242,31 @@ public sealed class RefreshTokenStoreTests
             because: "when FamilyAbsoluteExpiry is the smaller of the two bounds, the whole family's ceiling wins");
     }
 
+    public static TheoryData<TimeSpan> OverflowingRefreshTokenLifetimes() =>
+    [
+        TimeSpan.MaxValue,
+        TimeSpan.FromDays(4_000_000),
+    ];
+
+    [Theory]
+    [MemberData(nameof(OverflowingRefreshTokenLifetimes))]
+    public async Task StoreAsync_saturates_ExpiresAt_instead_of_throwing_when_now_plus_RefreshTokenLifetime_overflows(TimeSpan lifetime)
+    {
+        var tp = new FakeTimeProvider(new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var store = CreateStore(
+            grantStore: grantStore,
+            serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = lifetime } },
+            timeProvider: tp);
+        const string handle = "clamp-overflowing-lifetime";
+
+        await store.StoreAsync(handle, BuildEntry(familyAbsoluteExpiry: DateTimeOffset.MaxValue), CancellationToken.None);
+
+        var grant = await grantStore.FindByHandleAsync(new StoreKey(ComputeExpectedHandleHash(handle)), CancellationToken.None);
+        grant!.ExpiresAt.Should().Be(DateTimeOffset.MaxValue,
+            because: "RefreshTokenLifetime has no upper bound, so its expiry saturates like every other lifetime");
+    }
+
     [Fact]
     public async Task StoreAsync_persists_FamilyAbsoluteExpiry_verbatim_as_a_queryable_column()
     {
