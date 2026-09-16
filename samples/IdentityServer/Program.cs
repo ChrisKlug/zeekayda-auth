@@ -20,6 +20,8 @@ var auth = builder.Services.AddZeeKayDaAuth(options =>
     options.AuthorizationEndpoint.Interaction.LoginPath = "/login";
     options.AuthorizationEndpoint.Interaction.ConsentPath = "/consent";
     options.AuthorizationEndpoint.Interaction.ErrorPath = "/error";
+    options.EndSessionEndpoint.LogoutPath = "/logout";
+    options.EndSessionEndpoint.SignedOutPath = "/signed-out";
 
     // Public clients authenticate with nothing at the token endpoint, so "none" must be advertised
     // for them to be registrable.
@@ -33,9 +35,15 @@ auth.AddInMemoryClients(clients =>
     foreach (var client in settings.Clients)
     {
         if (client.Secret is { } secret)
-            clients.AddConfidential(client.ClientId, secret, client.RedirectUris, [], client.Scopes);
+        {
+            clients.AddConfidential(client.ClientId, secret, client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes,
+                options => options.RequireConsent = client.RequireConsent);
+        }
         else
-            clients.AddPublic(client.ClientId, client.RedirectUris, [], client.Scopes);
+        {
+            clients.AddPublic(client.ClientId, client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes,
+                options => options.RequireConsent = client.RequireConsent);
+        }
     }
 });
 
