@@ -108,6 +108,16 @@ whose credential accepts an empty presented secret.** Both would otherwise surfa
 ordinary `invalid_client`, indistinguishable from a wrong password — or, for the empty-secret case,
 as unauthenticated access.
 
+**The resolver serves a snapshot, never the store's instance.** A repository may return an entity
+still attached to a change tracker, so validating what it handed back validated nothing durable — one
+set of redirect URIs approved, another matched against. `ValidatedClientResolver` copies every member
+into a `ClientRegistrationSnapshot` before reading it twice, then fingerprints, validates and returns
+the copy. Collections are rebuilt *and* wrapped against a downcast, because `TokenIssuanceContext.Client`
+hands the registration to the host's own `ITokenIssuer`. An uncopied member is not a compile error, so
+`Snapshot_covers_every_IClientRegistration_member` and
+`A_snapshot_carries_every_value_of_the_registration_it_copied` enforce it. Credential *values* are the
+documented exception (#697).
+
 **Client lookup returns `null` for unknown or malformed ids and never throws.** Throwing changes
 timing and leaks a signal usable for client-ID enumeration. `invalid_client` covers both unknown
 client and wrong credential, `error_description` never contains the `client_id`, and any opt-in

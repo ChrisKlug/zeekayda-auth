@@ -31,7 +31,10 @@ public interface ILogoutInteraction
     /// <exception cref="ZeeKayDaInteractionException">
     /// There is no sign-out to confirm: the request carries no <c>zkd_i</c>, or names one this
     /// browser is not carrying — it expired, was already completed, or was started in another
-    /// browser.
+    /// browser. Or the browser no longer holds the session the sign-out was started for, on the
+    /// same terms as <see cref="SignOutAsync"/>: the sign-out could not complete anyway, and
+    /// <see cref="LogoutRequest.Subject"/> names the user it was started for, who is no longer the
+    /// one at the browser.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
     /// <exception cref="InvalidOperationException">

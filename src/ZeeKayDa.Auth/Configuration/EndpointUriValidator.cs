@@ -2,10 +2,9 @@ namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
 /// Validates the endpoint URI overrides. RFC 8414 §2 requires all metadata URLs to use HTTPS;
-/// RFC 6749 §3.1 and §3.2 forbid a fragment on the authorization and token endpoints, while
-/// a query is explicitly permitted on the authorization endpoint (§3.1) and not prohibited on
-/// the token endpoint. The JWKS and end-session routes match on the path alone, so a query on
-/// either could never be honoured.
+/// RFC 6749 §3.1 and §3.2 carry the same two rules for the authorization and token endpoints
+/// alike — a query component is explicitly permitted, a fragment is forbidden. The JWKS and
+/// end-session routes match on the path alone, so a query on either could never be honoured.
 /// </summary>
 internal static class EndpointUriValidator
 {

@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **The logout page is told which user is being signed out** (#692)
+
+  `LogoutRequest` carries a `Subject` alongside its `Client`, so a host's logout page can name the
+  user it is asking about rather than only the client that asked. It is the subject of the session
+  the sign-out was started for, stamped when the user was asked; `SignOutAsync` already refuses
+  unless the browser still holds that session, so the page cannot name one user and sign out
+  another. `GetRequestAsync` now refuses on the same condition rather than only `SignOutAsync`: a
+  confirmation left open across a fresh sign-in would otherwise show the new user the previous
+  one's subject, and the sign-out it asks about could not complete anyway.
+
 - **RP-initiated logout: an end-session endpoint and a host logout page** (#671)
 
   `/connect/endsession`, advertised as `end_session_endpoint`, signs the user out per OpenID
@@ -484,6 +494,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   and is not detectable from this method.
 
 ### Fixed
+
+- **A client registration is validated and served as one snapshot** (#691). The resolver fingerprinted
+  and validated the instance a custom `IClientRepository` returned, then handed that same live instance
+  to the protocol; a store free to edit it in between — an ORM entity still attached to a change
+  tracker, or one instance shared across requests — had a redirect URI approved and then matched
+  against a different set. Every member is now copied once, at the point the store hands the
+  registration over, and it is the copy that is fingerprinted, validated and served. The copy's string
+  sets are rebuilt with `StringComparer.Ordinal`, so `IClientMetadata`'s string-set comparison
+  invariant holds structurally past that point, and every copied collection is wrapped so that a
+  host reached by `TokenIssuanceContext.Client` cannot cast one back to something mutable. Credentials are copied as a list, not as values:
+  `Pbkdf2ClientSecret` documents that its `Salt` and `Hash` arrays are not defensively copied.
 
 - **Registering a public client on a server that does not advertise `none` now says how to fix it**
   (#674). The startup failure named only the mismatch; it now explains that public clients present no

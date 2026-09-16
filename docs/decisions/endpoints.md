@@ -42,8 +42,10 @@ issuer, and no deployment has yet needed the hole. It also rejects a non-canonic
 (uppercase scheme or host, an explicit default port) and names the canonical replacement in the
 error, and it rejects any trailing slash, the root's included: the document publishes the issuer
 verbatim, while RFC 8414 §3.1 strips the slash to build the metadata URL, so a client configured
-without it would reject the document (§3.3). A query component is permitted on the authorization endpoint URI, because RFC 6749 §3.1
-allows one there; it is rejected on the token, JWKS and end-session URIs, and a fragment is rejected everywhere.
+without it would reject the document (§3.3). A query component is permitted on the authorization and
+token endpoint URIs — RFC 6749 §3.1 and §3.2 carry the same rule for each — and rejected on the JWKS
+and end-session URIs, whose routes match on the path alone, so a query there could never be
+honoured. A fragment is rejected everywhere, as §3.1 and §3.2 also require.
 
 **Endpoint URIs are derived from the issuer by `Uri` combination, never string concatenation**, and
 each can be overridden individually. Every mapped route additionally constrains the request host to

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Logging;
 
@@ -15,7 +16,52 @@ public class ValidatedClientResolverTests
 
         var result = await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
 
-        result.Should().BeSameAs(client);
+        // A copy, never the store's own instance — see ClientRegistrationSnapshot.
+        result.Should().NotBeNull().And.NotBeSameAs(client);
+        result!.ClientId.Should().Be(client.ClientId);
+        result.RedirectUris.Should().BeEquivalentTo(client.RedirectUris);
+        result.AllowedScopes.Should().BeEquivalentTo(client.AllowedScopes);
+    }
+
+    [Fact]
+    public async Task A_registration_edited_after_it_was_validated_does_not_change_what_was_served()
+    {
+        var redirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/callback" };
+        var resolver = Resolver(Client() with { RedirectUris = redirectUris }, new PassingValidator());
+
+        var result = await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        redirectUris.Add("https://attacker.example.com/callback");
+
+        // Exact-match redirect validation is only as trustworthy as the set it matches against. A
+        // store free to edit that set after the verdict would have the authorize endpoint accept a
+        // URI validation never saw.
+        result!.RedirectUris.Should().NotContain("https://attacker.example.com/callback");
+    }
+
+    [Fact]
+    public async Task A_registration_that_cannot_be_read_is_served_as_unknown_client()
+    {
+        var resolver = new ValidatedClientResolver(
+            new ThrowingRepository(), new PassingValidator(), NullLogger());
+
+        var result = await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // A registration is an extension point, so a getter may throw. Fail closed: unknown
+        // client, not a 500 out of every protocol endpoint.
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_registration_that_cannot_be_read_logs_critical_naming_the_client_id()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(new ThrowingRepository(), new PassingValidator(), logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // The registration's own ClientId is unreadable, so the looked-up one is what names it —
+        // an operator with neither would have nothing to go on.
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical && e.Message.Contains("client-1"));
     }
 
     [Fact]
@@ -130,6 +176,38 @@ public class ValidatedClientResolverTests
         public ValueTask<IClientRegistration?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IClientRegistration?>(Current);
+    }
+
+    private sealed class ThrowingRepository : IClientRepository
+    {
+        public ValueTask<IClientRegistration?> FindByClientIdAsync(
+            string clientId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IClientRegistration?>(new ThrowingRegistration());
+    }
+
+    private sealed class ThrowingRegistration : IClientRegistration
+    {
+        public string ClientId => throw new InvalidOperationException("This registration cannot be read.");
+
+        public bool IsPublic => true;
+
+        public bool EnableZkdErrorCodes => false;
+
+        public IReadOnlySet<string> RedirectUris => new HashSet<string>(StringComparer.Ordinal);
+
+        public IReadOnlySet<string> PostLogoutRedirectUris => new HashSet<string>(StringComparer.Ordinal);
+
+        public IReadOnlySet<string> AllowedScopes => new HashSet<string>(StringComparer.Ordinal);
+
+        public IReadOnlySet<string> AllowedTokenEndpointAuthMethods => new HashSet<string>(StringComparer.Ordinal);
+
+        public IReadOnlySet<GrantType> AllowedGrantTypes => new HashSet<GrantType>();
+
+        public IReadOnlySet<ResponseType> AllowedResponseTypes => new HashSet<ResponseType>();
+
+        public IReadOnlySet<ResponseMode> AllowedResponseModes => new HashSet<ResponseMode>();
+
+        public IReadOnlyList<IClientCredential> Credentials => [];
     }
 
     private sealed class FreshInstanceRepository : IClientRepository

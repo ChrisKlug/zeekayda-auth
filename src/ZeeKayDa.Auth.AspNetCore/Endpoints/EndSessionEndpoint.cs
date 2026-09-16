@@ -107,7 +107,7 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
         if (session is null || MayEndWithoutAsking(client, hint, session))
             return await _responses.SignOutAsync(context, redirect).ConfigureAwait(false);
 
-        return await AskAsync(context, new PendingSignOut(client?.ClientId, redirect, session.SessionId))
+        return await AskAsync(context, new PendingSignOut(client?.ClientId, redirect, session.SessionId, session.Subject))
             .ConfigureAwait(false);
     }
 
