@@ -52,18 +52,6 @@ All features and behaviour must be grounded in the relevant specification. **The
 
 ## Repository Layout
 
-```
-src/
-  ZeeKayDa.Auth/                    # Core library
-  ZeeKayDa.Auth.AspNetCore/         # ASP.NET Core integration
-  ZeeKayDa.Auth.Analyzers/          # Roslyn analyzers
-  ZeeKayDa.Auth.AzureKeyVault/      # Azure Key Vault signing provider
-  ZeeKayDa.Auth.Windows/            # Windows Certificate Store signing provider (Windows-only)
-tests/                              # One test project per src project
-samples/
-docs/
-```
-
 **Note:** `ZeeKayDa.Auth` has `InternalsVisibleTo` for the other `src/` projects. Do not make types `public` solely for cross-project access — use the existing internal visibility.
 
 `ZeeKayDa.Auth.slnx` is the single canonical solution — build/test/format against it locally. The platform `.slnf` solution filters and the OS-specific-TFM rules are in `docs/decisions/build-and-ci.md`; read it before adding or changing a platform-specific package.
@@ -135,42 +123,36 @@ fixes three separate times, at a full review round each.
 
 ## Routing — MAIN ORCHESTRATOR ONLY
 
-> **STOP. If you are a specialist agent (`developer`, `tester`, `architect`, `security`, `docs`), this section does not apply to you. Execute your own domain work directly and return your results to whoever called you — never delegate to another specialist from here.**
+> **STOP. Specialist agents (`developer`, `tester`, `architect`, `security`, `docs`): this section is not for you. Do your own domain work and return it to your caller — never delegate onward.**
 
-The main session owns **design, decisions, and the code itself**. Design is talked through with the
-maintainer in chat — never routed to `architect` to be thought about. C# is written by the main
-session directly: it has LSP, the design conversation, and the full context, and a subagent spawn
-that must re-derive all of that costs more than it protects. The specialists are for two things
-only: **independent review** (`architect`, `security` — a review's value is a context that did *not*
-write the code) and **large mechanical builds** (`developer`, foreground, only when the work is big,
-fully specified, and would pollute the main context — roughly 300+ lines of implementation logic).
+The main session owns **design, decisions, and the code**. Design is talked through with the
+maintainer in chat, never routed to `architect` to be thought about; C# is written by the main
+session directly, because a subagent must re-derive the LSP access, design conversation, and context
+it already has. Specialists exist for two things only: **independent review** (`architect`,
+`security` — the value is a context that did *not* write the code) and **large mechanical builds**
+(`developer`, foreground, roughly 300+ lines of implementation logic, fully specified, when the file
+churn would pollute the main context). Fix rounds, nits, doc rewording, and small changes are never
+delegated — every hop costs tokens and latency, and each spawn starts from zero.
 
-**Don't over-orchestrate.** Fix rounds, nits, doc rewording, and small changes are never delegated.
-Every agent hop is tokens and latency, and each spawn starts from zero.
-
-**Building happens on Opus; Fable is for design and review.** Only the maintainer can change the
-session's model. On Fable they want its reasoning — the design conversation, the judgement calls,
-reading findings — not typing code, running the suite, formatting or coverage, *whatever the code
-touches*: the reviewers run on Fable and are the safety net for the subject matter. So when building
-is about to start (right after the `### Agreed shape` comment, or at the start of a mechanical
-change) and your system prompt names Fable, say in one line that the build does not need Fable and
-ask for a switch to Opus in the model menu, then end the turn so the switch lands before the first
-edit. Stay on Opus through the review round, the diff read and the merge. If the maintainer declines
-for an issue, build on Fable and do not raise it again for that issue.
+**Build on Opus; Fable is for design and review.** Only the maintainer can change the session model.
+At the moment building starts — right after the `### Agreed shape` comment, or at the start of a
+mechanical change with no design gate — check the model named in your system prompt. If it is Fable,
+say in one line that the shape is agreed and the build needs Opus, then end the turn so the switch
+lands before the first edit. This holds *whatever the code touches*: the reviewers run on Fable and
+are the safety net for the subject matter. Stay on Opus through the review round, the maintainer's
+read of the diff, and the merge. If the maintainer declines for an issue, build on Fable and do not
+raise it again for that issue.
 
 | Task | Route |
 |---|---|
 | Designing an API shape | main session, in conversation with the maintainer |
-| Writing or changing C# (features, fixes, refactors, review fixes) | main session, directly — on Opus (see the model rule above) |
+| Writing or changing C# (features, fixes, refactors, review fixes) | main session, directly, on Opus |
 | Large, mechanical, fully-specified implementation | `developer` agent (foreground) |
 | Reviewing a change | the table in Development Workflow — `security` and/or `architect`, one round |
 | Writing or verifying tests on demand | `tester` agent, or main session |
-| User-facing documentation | **dormant until the walking skeleton ships** — `docs` agent only on the maintainer's explicit request |
-| Starting work on an issue | `/work-on-issue` skill |
+| User-facing documentation | **dormant until the walking skeleton ships** — `docs` agent on explicit request only |
 | Filing an issue discovered mid-work | one line with `gh issue create`, no ceremony |
-| Deliberately fleshing out a new feature idea | `/write-issue` skill |
-| After a PR merges | `/post-merge-checks` skill (main session) |
-| Reviewing a branch or PR other than the current checkout | `/review-branch` skill, then the right review agent |
+| After a PR merges | `/post-merge-checks` — main session runs the git steps, `housekeeper` agent the GitHub ones |
 
 If no route fits, tell the user — it might be a gap in the process.
 
