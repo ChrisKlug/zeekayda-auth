@@ -268,6 +268,34 @@ public sealed class RefreshTokenStoreTests
     }
 
     [Fact]
+    public async Task FindAsync_returns_the_entry_when_its_expiry_is_saturated()
+    {
+        var store = CreateStore(
+            serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = TimeSpan.MaxValue } });
+        const string handle = "find-saturated-expiry";
+        await store.StoreAsync(handle, BuildEntry(familyAbsoluteExpiry: DateTimeOffset.MaxValue), CancellationToken.None);
+
+        var result = await store.FindAsync(handle, CancellationToken.None);
+
+        result.Should().NotBeNull(because: "adding the clock skew to a saturated expiry must saturate too, not throw");
+        result!.ExpiresAt.Should().Be(DateTimeOffset.MaxValue);
+    }
+
+    [Fact]
+    public async Task TryConsumeAsync_consumes_a_grant_whose_expiry_is_saturated()
+    {
+        var store = CreateStore(
+            serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = TimeSpan.MaxValue } });
+        const string handle = "consume-saturated-expiry";
+        await store.StoreAsync(handle, BuildEntry(clientId: "client-a", familyAbsoluteExpiry: DateTimeOffset.MaxValue), CancellationToken.None);
+
+        var outcome = await store.TryConsumeAsync(handle, "client-a", CancellationToken.None);
+
+        outcome.Should().BeOfType<RefreshTokenConsumptionResult.Consumed>(
+            because: "adding the clock skew to a saturated expiry must saturate too, not throw");
+    }
+
+    [Fact]
     public async Task StoreAsync_persists_FamilyAbsoluteExpiry_verbatim_as_a_queryable_column()
     {
         var grantStore = new InMemoryRefreshTokenGrantStore();

@@ -125,7 +125,7 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
                 "check whether the refresh token family is revoked").ConfigureAwait(false))
             return null;
 
-        if (_timeProvider.GetUtcNow() >= grant.ExpiresAt + _clockSkewTolerance)
+        if (_timeProvider.GetUtcNow() >= TokenLifetimes.ExpiresAt(grant.ExpiresAt, _clockSkewTolerance))
             return null;
 
         try
@@ -172,7 +172,7 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
                 "check whether the refresh token family is revoked").ConfigureAwait(false))
             return new RefreshTokenConsumptionResult.Revoked { FamilyId = grant.FamilyId };
 
-        if (_timeProvider.GetUtcNow() >= grant.ExpiresAt + _clockSkewTolerance)
+        if (_timeProvider.GetUtcNow() >= TokenLifetimes.ExpiresAt(grant.ExpiresAt, _clockSkewTolerance))
             return new RefreshTokenConsumptionResult.NotFound();
 
         if (!string.Equals(grant.ClientId, clientId, StringComparison.Ordinal))
