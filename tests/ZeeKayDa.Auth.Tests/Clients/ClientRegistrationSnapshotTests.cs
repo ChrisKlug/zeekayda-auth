@@ -112,12 +112,17 @@ public class ClientRegistrationSnapshotTests
     }
 
     [Fact]
-    public void No_copied_collection_can_be_cast_back_to_something_mutable()
+    public void No_copied_collection_can_be_mutated_through_its_writable_interface()
     {
         // The registration reaches host code: TokenIssuanceContext.Client hands it to the host's
         // own ITokenIssuer. A HashSet behind an IReadOnlySet is read-only by convention only, and a
-        // host that cast one back and added a redirect URI would reopen this type's whole reason
-        // for existing one layer further down.
+        // host that reached one and added a redirect URI would reopen this type's whole reason for
+        // existing one layer further down.
+        //
+        // Every collection is exercised through ICollection<T> rather than checked against a list
+        // of known-mutable types: a future edit could reach for a mutable collection no such list
+        // happens to name, and the invariant is that mutation is refused, not that one spelling of
+        // it is avoided.
         var snapshot = ClientRegistrationSnapshot.Of(FullyPopulated());
 
         foreach (var property in DeclaredProperties())
@@ -125,12 +130,25 @@ public class ClientRegistrationSnapshotTests
             if (property.GetValue(snapshot) is not IEnumerable collection || collection is string)
                 continue;
 
-            var because = $"{property.Name} must not be castable to a mutable collection";
-            (collection is HashSet<string> or HashSet<GrantType> or HashSet<ResponseType>
-                or HashSet<ResponseMode> or HashSet<PromptValue> or HashSet<SigningAlgorithm>)
-                .Should().BeFalse(because);
-            (collection is string[] or IClientCredential[] or List<string> or List<IClientCredential>)
-                .Should().BeFalse(because);
+            var because = $"{property.Name} must refuse mutation through every ICollection<T> it exposes";
+            var before = collection.Cast<object>().ToList();
+
+            var writable = collection.GetType().GetInterfaces()
+                .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICollection<>))
+                .ToList();
+
+            writable.Should().NotBeEmpty(
+                $"{property.Name} exposes no ICollection<T>, so this test cannot prove it refuses mutation");
+
+            foreach (var clear in writable.Select(i => i.GetMethod(nameof(ICollection<object>.Clear))!))
+            {
+                var mutate = () => clear.Invoke(collection, null);
+
+                mutate.Should().Throw<TargetInvocationException>()
+                    .WithInnerException<NotSupportedException>(because);
+            }
+
+            collection.Cast<object>().Should().BeEquivalentTo(before, because);
         }
     }
 
