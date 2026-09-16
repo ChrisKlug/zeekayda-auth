@@ -616,7 +616,7 @@ public sealed class EndSessionEndpointTests : IDisposable
     [Fact]
     public async Task A_sign_out_that_cannot_be_stored_for_confirmation_signs_nobody_out()
     {
-        using var factory = NewFactory(store: new LogoutRefusingStore(refuseWrites: true));
+        using var factory = NewFactory(store: new LogoutRefusingStore(_time, refuseWrites: true));
         using var client = NewClient(factory);
         await SignInAsync(client);
 
@@ -629,7 +629,7 @@ public sealed class EndSessionEndpointTests : IDisposable
     [Fact]
     public async Task A_confirmation_page_whose_sign_out_cannot_be_read_signs_nobody_out()
     {
-        using var factory = NewFactory(store: new LogoutRefusingStore(refuseReads: true));
+        using var factory = NewFactory(store: new LogoutRefusingStore(_time, refuseReads: true));
         using var client = NewClient(factory);
         await SignInAsync(client);
         var asked = await EndSessionAsync(client, new());
@@ -809,9 +809,11 @@ public sealed class EndSessionEndpointTests : IDisposable
         SetCookieFor(response, name).Split(';')[0];
 
     /// <summary>A working in-memory store that refuses to hold, or to give back, sign-out requests.</summary>
-    private sealed class LogoutRefusingStore(bool refuseWrites = false, bool refuseReads = false) : IInteractionBackingStore
+    private sealed class LogoutRefusingStore(TimeProvider time, bool refuseWrites = false, bool refuseReads = false) : IInteractionBackingStore
     {
-        private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
+        // The host's clock: the framework dates each entry by it, so a store on the real clock
+        // would find every entry expired once real time passes the pinned one.
+        private readonly InMemoryInteractionBackingStore _inner = new(time);
 
         public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             refuseWrites && IsLogout(key)
