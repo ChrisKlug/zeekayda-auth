@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **The logout page is told which user is being signed out** (#692)
+
+  `LogoutRequest` carries a `Subject` alongside its `Client`, so a host's logout page can name the
+  user it is asking about rather than only the client that asked. It is the subject of the session
+  the sign-out was started for, stamped when the user was asked; `SignOutAsync` already refuses
+  unless the browser still holds that session, so the page cannot name one user and sign out
+  another.
+
 - **RP-initiated logout: an end-session endpoint and a host logout page** (#671)
 
   `/connect/endsession`, advertised as `end_session_endpoint`, signs the user out per OpenID

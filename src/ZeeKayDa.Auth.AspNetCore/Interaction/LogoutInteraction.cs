@@ -44,10 +44,10 @@ internal sealed class LogoutInteraction : ILogoutInteraction
         RenderedPage.Protect(context.Response);
 
         if (request.ClientId is null)
-            return new LogoutRequest(client: null);
+            return new LogoutRequest(client: null, request.Subject);
 
         var client = await FindClientAsync(context, request.ClientId, cancellationToken).ConfigureAwait(false);
-        return new LogoutRequest(new ClientInformation(request.ClientId, client?.DisplayName));
+        return new LogoutRequest(new ClientInformation(request.ClientId, client?.DisplayName), request.Subject);
     }
 
     /// <inheritdoc/>

@@ -507,6 +507,7 @@ public sealed class EndSessionEndpointTests : IDisposable
         {
             body.RootElement.GetProperty("clientId").GetString().Should().Be(App);
             body.RootElement.GetProperty("displayName").GetString().Should().Be(AppName);
+            body.RootElement.GetProperty("subject").GetString().Should().Be("user-1");
         }
 
         page.Headers.GetValues("X-Frame-Options").Should().Contain("DENY");
@@ -528,6 +529,27 @@ public sealed class EndSessionEndpointTests : IDisposable
 
         using var body = JsonDocument.Parse(await page.Content.ReadAsStringAsync(Cancellation));
         body.RootElement.GetProperty("clientId").ValueKind.Should().Be(JsonValueKind.Null);
+
+        // The user is still named: a sign-out nobody's client started still signs a known user out,
+        // and the page has no other way to say whose session it is ending.
+        body.RootElement.GetProperty("subject").GetString().Should().Be("user-1");
+    }
+
+    [Fact]
+    public async Task A_host_logout_page_is_told_which_user_is_being_signed_out()
+    {
+        using var factory = NewFactory(options => options.LogoutPath = LogoutPath);
+        using var client = NewClient(factory);
+        await SignInAsync(client, subject: "user-7");
+        var asked = await EndSessionAsync(client, new() { ["client_id"] = App });
+
+        var page = await client.GetAsync(Location(asked), Cancellation);
+
+        // The subject of the session the sign-out was started for, stamped when the user was asked.
+        // SignOutAsync refuses unless the browser still holds that same session, so the page can
+        // never name one user and sign out another.
+        using var body = JsonDocument.Parse(await page.Content.ReadAsStringAsync(Cancellation));
+        body.RootElement.GetProperty("subject").GetString().Should().Be("user-7");
     }
 
     [Fact]
@@ -656,7 +678,12 @@ public sealed class EndSessionEndpointTests : IDisposable
         {
             var request = await logout.GetRequestAsync(context.RequestAborted);
 
-            return Results.Ok(new { clientId = request.Client?.ClientId, displayName = request.Client?.DisplayName });
+            return Results.Ok(new
+            {
+                clientId = request.Client?.ClientId,
+                displayName = request.Client?.DisplayName,
+                subject = request.Subject,
+            });
         });
 
         endpoints.MapPost(LogoutPath, (ILogoutInteraction logout) => logout.SignOutAsync());

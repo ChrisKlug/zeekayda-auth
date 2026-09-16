@@ -7,6 +7,7 @@ ZeeKayDa.Auth.AspNetCore.Interaction.ILogoutInteraction.GetRequestAsync(System.T
 ZeeKayDa.Auth.AspNetCore.Interaction.ILogoutInteraction.SignOutAsync() -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest
 ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest.Client.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation?
+ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest.Subject.get -> string!
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAuthenticatorExtensions
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderClientExtensions
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderHasherExtensions
