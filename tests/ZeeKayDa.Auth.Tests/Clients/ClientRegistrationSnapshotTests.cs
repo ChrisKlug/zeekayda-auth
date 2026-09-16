@@ -112,6 +112,42 @@ public class ClientRegistrationSnapshotTests
     }
 
     [Fact]
+    public void No_copied_collection_can_be_cast_back_to_something_mutable()
+    {
+        // The registration reaches host code: TokenIssuanceContext.Client hands it to the host's
+        // own ITokenIssuer. A HashSet behind an IReadOnlySet is read-only by convention only, and a
+        // host that cast one back and added a redirect URI would reopen this type's whole reason
+        // for existing one layer further down.
+        var snapshot = ClientRegistrationSnapshot.Of(FullyPopulated());
+
+        foreach (var property in DeclaredProperties())
+        {
+            if (property.GetValue(snapshot) is not IEnumerable collection || collection is string)
+                continue;
+
+            var because = $"{property.Name} must not be castable to a mutable collection";
+            (collection is HashSet<string> or HashSet<GrantType> or HashSet<ResponseType>
+                or HashSet<ResponseMode> or HashSet<PromptValue> or HashSet<SigningAlgorithm>)
+                .Should().BeFalse(because);
+            (collection is string[] or IClientCredential[] or List<string> or List<IClientCredential>)
+                .Should().BeFalse(because);
+        }
+    }
+
+    [Fact]
+    public void Adding_to_a_copied_set_through_its_mutable_interface_is_refused()
+    {
+        // The other half of the guard above: even reached as ICollection<string> — which every set
+        // implements — the wrapper has no working Add.
+        var snapshot = ClientRegistrationSnapshot.Of(FullyPopulated());
+
+        var add = () => ((ICollection<string>)snapshot.RedirectUris).Add("https://attacker.example.com/callback");
+
+        add.Should().Throw<NotSupportedException>();
+        snapshot.RedirectUris.Should().NotContain("https://attacker.example.com/callback");
+    }
+
+    [Fact]
     public void String_sets_are_rebuilt_with_ordinal_comparison()
     {
         // The IClientMetadata string-set invariant says a set's own comparer is not trusted. Past

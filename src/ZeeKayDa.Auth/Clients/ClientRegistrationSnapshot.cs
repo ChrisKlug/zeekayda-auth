@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Tokens;
 
@@ -24,6 +25,12 @@ namespace ZeeKayDa.Auth.Clients;
 /// one set of redirect URIs, and the authorize endpoint would then match the request against
 /// whatever the set held by then. Copying at the choke point is what makes "validated" mean the
 /// values the caller actually gets.
+/// </para>
+/// <para>
+/// Every collection is copied <em>and</em> wrapped so that it cannot be cast back to something
+/// mutable. The registration reaches host code — <c>TokenIssuanceContext.Client</c> hands it to the
+/// host's own token issuer — and a bare <see cref="HashSet{T}"/> behind an
+/// <see cref="IReadOnlySet{T}"/> is read-only by convention only.
 /// </para>
 /// <para>
 /// The string sets are rebuilt with <see cref="StringComparer.Ordinal"/>, which makes
@@ -63,10 +70,10 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
             : null;
         AccessTokenLifetime = client.AccessTokenLifetime;
         IdTokenLifetime = client.IdTokenLifetime;
-        AdditionalIdTokenClaims = [.. client.AdditionalIdTokenClaims];
-        AdditionalUserInfoClaims = [.. client.AdditionalUserInfoClaims];
-        AdditionalAccessTokenClaims = [.. client.AdditionalAccessTokenClaims];
-        Credentials = [.. client.Credentials];
+        AdditionalIdTokenClaims = Copy(client.AdditionalIdTokenClaims);
+        AdditionalUserInfoClaims = Copy(client.AdditionalUserInfoClaims);
+        AdditionalAccessTokenClaims = Copy(client.AdditionalAccessTokenClaims);
+        Credentials = new ReadOnlyCollection<IClientCredential>([.. client.Credentials]);
     }
 
     /// <inheritdoc/>
@@ -147,8 +154,18 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
     /// </remarks>
     public static ClientRegistrationSnapshot Of(IClientRegistration client) => new(client);
 
+    // Every copy is wrapped, never handed over bare. An IReadOnlySet<string> whose runtime type is
+    // HashSet<string> is read-only only by convention: TokenIssuanceContext.Client hands this
+    // registration to the host's own ITokenIssuer, which can downcast the set and add to it. That
+    // would reopen this type's whole reason for existing one layer further down. ReadOnlySet and
+    // ReadOnlyCollection wrap a collection nothing else holds a reference to, so a downcast reaches
+    // a type with no mutators rather than the backing store.
     private static IReadOnlySet<string> OrdinalCopy(IReadOnlySet<string> values) =>
-        new HashSet<string>(values, StringComparer.Ordinal);
+        new ReadOnlySet<string>(new HashSet<string>(values, StringComparer.Ordinal));
 
-    private static IReadOnlySet<T> Copy<T>(IReadOnlySet<T> values) => new HashSet<T>(values);
+    private static IReadOnlySet<T> Copy<T>(IReadOnlySet<T> values) =>
+        new ReadOnlySet<T>(new HashSet<T>(values));
+
+    private static IReadOnlyCollection<string> Copy(IReadOnlyCollection<string> values) =>
+        new ReadOnlyCollection<string>([.. values]);
 }

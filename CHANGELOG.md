@@ -500,7 +500,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   against a different set. Every member is now copied once, at the point the store hands the
   registration over, and it is the copy that is fingerprinted, validated and served. The copy's string
   sets are rebuilt with `StringComparer.Ordinal`, so `IClientMetadata`'s string-set comparison
-  invariant holds structurally past that point. Credentials are copied as a list, not as values:
+  invariant holds structurally past that point, and every copied collection is wrapped so that a
+  host reached by `TokenIssuanceContext.Client` cannot cast one back to something mutable. Credentials are copied as a list, not as values:
   `Pbkdf2ClientSecret` documents that its `Salt` and `Hash` arrays are not defensively copied.
 
 - **Registering a public client on a server that does not advertise `none` now says how to fix it**
