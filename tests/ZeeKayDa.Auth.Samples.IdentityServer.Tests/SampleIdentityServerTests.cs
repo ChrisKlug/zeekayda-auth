@@ -272,8 +272,13 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
         return await browser.PostAsync(FormTarget(html, pageUrl), form, Cancellation);
     }
 
-    private static string FormTarget(string html, string pageUrl) =>
-        FormAction().Match(html) is { Success: true } action ? WebUtility.HtmlDecode(action.Groups[1].Value) : pageUrl;
+    // An absent or empty action posts to the page's own URL; any other is resolved against it.
+    private static Uri FormTarget(string html, string pageUrl)
+    {
+        var page = new Uri(new Uri(Issuer), pageUrl);
+        var action = WebUtility.HtmlDecode(FormAction().Match(html).Groups["action"].Value);
+        return action.Length == 0 ? page : new Uri(page, action);
+    }
 
     private static string CodeFrom(string callback)
     {
@@ -320,6 +325,7 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     [GeneratedRegex("name=\"__RequestVerificationToken\" type=\"hidden\" value=\"([^\"]+)\"")]
     private static partial Regex AntiforgeryToken();
 
-    [GeneratedRegex("<form\\b[^>]*\\saction=\"([^\"]+)\"")]
+    // HTML attribute names are case-insensitive, and a value may be double-, single- or unquoted.
+    [GeneratedRegex("""<form\b[^>]*\saction\s*=\s*(?:"(?<action>[^"]*)"|'(?<action>[^']*)'|(?<action>[^\s>"']+))""", RegexOptions.IgnoreCase)]
     private static partial Regex FormAction();
 }
