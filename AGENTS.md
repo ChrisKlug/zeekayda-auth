@@ -84,7 +84,10 @@ docs/
 - **The coding standards in `.claude/agents/developer.md` bind everyone who writes C# in this
   repository** — the main session, `tester`, and any agent making a fix — not only the `developer`
   agent whose file they live in. Test code is not exempt: the standards that keep CodeQL quiet
-  apply to a test helper exactly as they do to `src/`.
+  apply to a test helper exactly as they do to `src/`. That is a rule for *writing* tests. A
+  static-analysis finding raised afterwards on a test — CodeQL, CodeScene — is advisory: fix it by
+  hand if it names a real standards violation, never through GitHub's commit-suggestion button, and
+  never as a review round. `work-on-issue` Stage 3 says the same from the review side.
 
 ## Development Workflow
 
@@ -108,7 +111,7 @@ question from the maintainer gets an answer and a stop, never a build.
 
 | Change | Process |
 |---|---|
-| Internal / mechanical — bug fix, refactor, test, chore | Main session just builds it. No design gate, no reviewers. |
+| Internal / mechanical — bug fix, refactor, test, chore | Main session just builds it. No design gate, no Claude reviewers; one Copilot lens — `code` if the diff has code, `text` if it does not. |
 | New or changed **public API** / behaviour | Shape agreed in chat first; short `### Agreed shape` bookmark comment on the issue. |
 | Touches **tokens, crypto, endpoints, or storage** | `security` reviews — **one round**; High/Critical fixed inline, the rest is the maintainer's call. |
 | Changes **structure or an extension point** | `architect` reviews, same single-round rule. |
@@ -145,20 +148,25 @@ fully specified, and would pollute the main context — roughly 300+ lines of im
 **Don't over-orchestrate.** Fix rounds, nits, doc rewording, and small changes are never delegated.
 Every agent hop is tokens and latency, and each spawn starts from zero.
 
-**Recommend a cheaper model for mechanical work.** The main session runs on whatever model the
-maintainer picked, and only they can change it. When the next stretch of work is mechanical and big
-enough for the model to matter — a multi-file rename, a test backfill against a settled contract, a
-doc sweep, a fix round with no judgement in it — say so in one line before starting: name the work,
-say it does not need this model's reasoning, and suggest switching with `/model` (Sonnet for pure
-mechanics, Opus when the mechanics need some care). Then end the turn so they can switch before the
-build starts. Design conversations, reviews, and anything touching tokens, crypto, or endpoints stay
-on the model already running. Once the maintainer declines for a task, do not raise it again for
-that task.
+**Building happens on Opus; Fable is for design and review.** The main session runs on whatever
+model the maintainer picked, and only they can change it — a session cannot re-price itself. When
+the maintainer starts a session on Fable, what they want from it is its reasoning: the design
+conversation, the judgement calls, reading the review findings. Typing the code, running the suite,
+formatting and coverage are not that, *whatever the code touches* — the reviewers run on Fable and
+are the safety net for the subject matter; the builder does not need to be. So at the moment
+building is about to start — right after the `### Agreed shape` comment is posted, or at the start
+of a mechanical change that has no design gate — check which model this session is on (it is named
+in your system prompt). If it is Fable, say so in one line: the shape is agreed, the build does not
+need Fable, please switch the session to Opus in the model menu. Then end the turn, so the switch
+lands before the first edit rather than mid-build. Stay on Opus through the review round, the
+maintainer's read of the diff, and the merge: fixing findings and summarising a diff are Opus work
+too. If the maintainer declines for an issue, build on Fable and do not raise it again for that
+issue.
 
 | Task | Route |
 |---|---|
 | Designing an API shape | main session, in conversation with the maintainer |
-| Writing or changing C# (features, fixes, refactors, review fixes) | main session, directly |
+| Writing or changing C# (features, fixes, refactors, review fixes) | main session, directly — on Opus (see the model rule above) |
 | Large, mechanical, fully-specified implementation | `developer` agent (foreground) |
 | Reviewing a change | the table in Development Workflow — `security` and/or `architect`, one round |
 | Writing or verifying tests on demand | `tester` agent, or main session |
@@ -188,6 +196,7 @@ Prefer the LSP tool over text search for symbol-level navigation; text search is
 ## User Interaction
 
 - **Be terse.** Short, precise answers; no progress narration; the user will ask if they need more.
+- **Text that leaves the conversation stands alone.** A PR or issue comment, a commit message, an `### Agreed shape` bookmark, a brief for a reviewer or builder, a Stage 4 summary, a register entry: each is read by someone without this session's context — the maintainer coming back to it later, an agent starting from zero, a lens that sees only the diff. Put the thing, the reason, and what the reader must do or decide in the text itself. Never "as discussed", "the change above", "the earlier finding". If understanding the text needs a fact from this conversation, the fact goes in the text.
 - **Ask before deciding.** Never resolve ambiguity by guessing. In the main session, ask the user. In a specialist agent, return the open question as your result — the orchestrator will route it.
 - **Never fabricate** facts, spec content, or API details. If uncertain, say so and ask.
 - **The maintainer sees the code before GitHub does.** Commit locally on the feature branch and keep it there; the maintainer reads the branch in their own editor and approves *before* a PR is opened. Never open a PR, merge one, or create a release tag without explicit approval.

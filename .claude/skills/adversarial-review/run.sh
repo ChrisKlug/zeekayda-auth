@@ -3,7 +3,7 @@
 # Read-only by construction: write, shell and patch tools are denied, and the
 # working tree is compared before and after so any change aborts the run loudly.
 #
-# Usage: run.sh <code|security|architecture> [--base <ref>] [--model <id>] [--effort <level>] [focus text...]
+# Usage: run.sh <code|security|architecture|text> [--base <ref>] [--model <id>] [--effort <level>] [--settled <text>]... [focus text...]
 set -euo pipefail
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,20 +14,22 @@ lens=""
 base="origin/main"
 model=""
 effort=""
+settled=()
 focus=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    code|security|architecture) lens="$1" ;;
+    code|security|architecture|text) lens="$1" ;;
     --base)   base="$2";   shift ;;
     --model)  model="$2";  shift ;;
     --effort) effort="$2"; shift ;;
+    --settled) settled+=("$2"); shift ;;
     *) focus+=("$1") ;;
   esac
   shift
 done
 
 if [ -z "$lens" ]; then
-  echo "usage: run.sh <code|security|architecture> [--base <ref>] [--model <id>] [--effort <level>] [focus text...]" >&2
+  echo "usage: run.sh <code|security|architecture|text> [--base <ref>] [--model <id>] [--effort <level>] [--settled <text>]... [focus text...]" >&2
   exit 2
 fi
 
@@ -36,6 +38,7 @@ case "$lens" in
   code)         : "${model:=gpt-5.6-terra}"; : "${effort:=high}" ;;
   security)     : "${model:=gpt-5.6-sol}";   : "${effort:=high}" ;;
   architecture) : "${model:=gpt-5.6-sol}";   : "${effort:=high}" ;;
+  text)         : "${model:=gpt-5.6-sol}";   : "${effort:=medium}" ;;
 esac
 
 COPILOT="$(command -v copilot || true)"
@@ -72,6 +75,19 @@ brief="$work_dir/brief.md"
   echo "- Commit range: $range"
   echo "- Focus: $focus_text"
   echo
+  if [ "${#settled[@]}" -gt 0 ]; then
+    echo "## Already decided"
+    echo
+    echo "The maintainer has settled these points for this change. They are decisions in force, not open"
+    echo "questions: a finding that only restates one of them, or asks for it to be reconsidered, is not a"
+    echo "finding. Report against one only if the diff breaks the proof it cites, or applies the decision to"
+    echo "a surface it does not name."
+    echo
+    for item in "${settled[@]}"; do
+      echo "- $item"
+    done
+    echo
+  fi
   echo "## Commits under review"
   echo
   echo '```'

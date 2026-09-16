@@ -1,7 +1,7 @@
 ---
 name: adversarial-review
-description: Run a read-only adversarial review of the current branch through the GitHub Copilot CLI, with one of three lenses — code (correctness; runs first, on every change), security, or architecture. Use at Stage 3 of work-on-issue, or whenever an independent non-Claude reviewer is wanted on a committed branch.
-argument-hint: <code|security|architecture> [--base <ref>] [--model <id>] [--effort <level>] [focus text...]
+description: Run a read-only adversarial review of the current branch through the GitHub Copilot CLI, with one of four lenses — code (correctness; runs first, on every change that touches code), text (truth and consistency; the whole review of a change with no code in it), security, or architecture. Use at Stage 3 of work-on-issue, or whenever an independent non-Claude reviewer is wanted on a committed branch.
+argument-hint: <code|security|architecture|text> [--base <ref>] [--model <id>] [--effort <level>] [--settled <text>]... [focus text...]
 allowed-tools:
   - Bash(bash .claude/skills/adversarial-review/run.sh *)
   - Bash(git *)
@@ -24,14 +24,27 @@ bash .claude/skills/adversarial-review/run.sh code
 bash .claude/skills/adversarial-review/run.sh security --effort xhigh "trust-boundary change: the zkd_i binding"
 bash .claude/skills/adversarial-review/run.sh architecture --base origin/main
 bash .claude/skills/adversarial-review/run.sh code --base <round-1 sha>   # verify a fix diff only
+bash .claude/skills/adversarial-review/run.sh security \
+  --settled "<accepted residual, one sentence>; proven by <TestName>" \
+  --settled "Agreed shape: <the signatures from the issue's ### Agreed shape comment>"
 ```
 
-- **Lens** is required: `code`, `security`, or `architecture`. One lens per run — narrow attack
-  surfaces produce strong findings; a combined prompt produces weak ones.
+- **Lens** is required: `code`, `text`, `security`, or `architecture`. One lens per run — narrow
+  attack surfaces produce strong findings; a combined prompt produces weak ones. `text` is for a
+  diff with no code in it — docs, the decision register, sign-offs, agent and skill instructions,
+  CI or config text; it checks that what is written is true of the code, consistent with the other
+  rules in force, and points at things that exist, and it opens with a plain-words reading of the
+  change for the maintainer.
 - **`--base`** defaults to `origin/main`. The review covers `merge-base..HEAD`. To verify a fix
   diff, pass the SHA the fix was built on.
 - **Focus text** is anything after the flags. Use it to name the thing you most want attacked. One
   sentence.
+- **`--settled <text>`**, repeatable, is what the maintainer has already decided for this change:
+  the `### Agreed shape`, and any accepted residual with the test that proves it. It goes into the
+  brief as decisions in force, so the lens does not re-raise them as findings. Give the lens the same
+  settled list the Claude reviewer gets — what is decided, never what has already been found. A
+  decision made in chat this week is nowhere in the repository yet, so without this the lens cannot
+  know it exists.
 - The branch must be **committed**. The script refuses an empty range, and it does not look at the
   working tree — the same rule as every other reviewer here: commit the work, then review it.
 
@@ -60,6 +73,7 @@ Defaults per lens; both overridable per run. Choose per task — the main sessio
 | `code` | `gpt-5.6-terra` | `high` | code-specialised; correctness and test adequacy |
 | `security` | `gpt-5.6-sol` | `high` | reasoning-heavy; `xhigh` for trust-boundary changes |
 | `architecture` | `gpt-5.6-sol` | `high` | reasoning-heavy |
+| `text` | `gpt-5.6-sol` | `medium` | reads prose against the repository; no code to trace |
 
 Raise to `xhigh` when the change touches a trust boundary (anything that would earn a
 `security-sign-offs.md` entry). Drop to `medium` for a small mechanical diff where the lens is
@@ -77,7 +91,8 @@ See `work-on-issue`, Stage 3. In short:
 1. **Code lens first, on every change,** before any other reviewer. It gates on **High/Critical
    only**: fix those as their own commit, re-run the lens with `--base <round-1 sha>` to verify the
    fix diff, then proceed. Its Medium/Low findings go straight to the Stage 4 list — no fix cycle,
-   no re-run. On a mechanical or test-only change this lens is the entire review.
+   no re-run. On a mechanical or test-only change this lens is the entire review; on a change with
+   no code in it, the **text lens** is, under the same gate.
 2. **Security and architecture lenses** run alongside their Claude counterparts, in parallel, only
    when the change has that surface. Same severity gate, same one-round rule.
 
@@ -94,6 +109,6 @@ See `work-on-issue`, Stage 3. In short:
 
 ## Prompts
 
-`prompts/code.md`, `prompts/security.md` and `prompts/architecture.md` are the briefs. They carry
+`prompts/code.md`, `prompts/text.md`, `prompts/security.md` and `prompts/architecture.md` are the briefs. They carry
 the project's threat model, the binding rules from `.claude/agents/`, and the output contract.
 Change them here, in the repository; there is no other copy.

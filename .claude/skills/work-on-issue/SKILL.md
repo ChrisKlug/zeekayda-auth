@@ -66,6 +66,12 @@ the builder is you, and you were in the conversation.
 
 ## Stage 2 — Build
 
+**Building is Opus work.** If this session is running on Fable, say so now, in one line — the shape
+is agreed, the build does not need Fable, please switch the session to Opus in the model menu — and
+end the turn. The session cannot switch itself, and the switch has to land before the first edit,
+not mid-build. Stay on Opus through Stages 3–5; the reviewers bring Fable's judgement to the review
+round themselves. If the maintainer declines, build on Fable and do not ask again for this issue.
+
 **The main session implements directly.** You have LSP, the codebase, and the design conversation in
 context; there is no handoff to protect against. Commit locally, do not push, do not open a PR.
 
@@ -95,7 +101,12 @@ before any other reviewer. It is the cheap, independent, non-Claude pass that ca
 never reach an expensive review. It gates on **High/Critical only**: fix those as their own commit,
 re-run the lens against that fix diff (`--base <round-1 sha>`), and only then start the reviewers
 below. Its Medium/Low findings go straight into the Stage 4 list — no fix cycle, no re-run. On a
-change with no security or architecture surface, this lens is the whole review.
+change with no security or architecture surface, this lens is the whole review. On a change with no
+code in it at all — docs, register wording, agent or skill instructions, CI or config text — run
+`/adversarial-review text` instead: it is the one independent reader of that change, it checks the
+text against the code and the other rules in force, and it opens with a plain-words account the
+maintainer can compare to what they asked for. Same High/Critical gate. Every change gets exactly
+one lens; the Claude reviewers are added only for the surfaces in the table below.
 
 Then scope the reviewer(s) by surface. Each Claude agent runs alongside its Copilot lens, in
 parallel, launched in one message; neither sees the other's findings:
@@ -110,10 +121,12 @@ parallel, launched in one message; neither sees the other's findings:
 **The reviewer brief carries what is already settled, never what has already been found.** Each
 Claude reviewer is spawned with the issue number, the `### Agreed shape` comment, one sentence on
 why it is shaped that way, the commit range to review, and the surface it is being asked to look at.
-That is what it would otherwise spend its first minutes re-deriving. It never carries the Copilot
-lens's findings, the other reviewer's findings, or your own opinion of where the weak spot is —
-independence is what makes a finding raised twice high-confidence, and a primed reviewer raises
-nothing independently.
+That is what it would otherwise spend its first minutes re-deriving. The Copilot lens gets the same
+settled list through `--settled`, one entry per decision, the agreed shape included — a decision
+made in this conversation is nowhere in the repository yet, and a lens that cannot see it will raise
+it as a High finding on every PR that touches the area. Neither reviewer ever carries the other's
+findings, or your own opinion of where the weak spot is — independence is what makes a finding
+raised twice high-confidence, and a primed reviewer raises nothing independently.
 
 Reviewers run **foreground**. Alongside them, run CodeScene `analyze_change_set` yourself (agents
 cannot reach MCP tools) — **production files only. Findings on `tests/` are ignored entirely, not
@@ -124,7 +137,10 @@ The same rule covers **every static-analysis suggestion on test files** — Code
 suggested fix on a test is advisory at most and is never applied via GitHub's "commit suggestion"
 button: applied suggestions land as unreviewed, untested commits on the branch, and they have broken
 the very tests they edited before. If a suggestion on *production* code looks right, bring it into
-the working tree, run the tests, and commit it like any other change.
+the working tree, run the tests, and commit it like any other change. Advisory is not exempt: the
+coding standards bind test code when it is written (`AGENTS.md`, Project Conventions), so a finding
+that names a real violation in a test is fixed by hand, with the suite run. What is never done is
+applying the bot's patch, or opening a review round over it.
 
 Then the severity gate:
 
@@ -202,4 +218,5 @@ On the maintainer's approval: `gh pr merge` (which prompts), then `/post-merge-c
 ## When the loop does not apply
 
 A mechanical change with no API or security surface — a typo, a test-only fix, a chore — is built
-directly in the main session with no gates except the merge. Say so and build it.
+directly in the main session with no gates except the merge. Say so and build it. The Stage 2 model
+rule still applies: if the session is on Fable, ask for the switch to Opus first.
