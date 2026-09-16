@@ -28,6 +28,9 @@ internal static class InteractionStoreKeys
     /// <summary>The entry holding a principal an external provider returned, parked for a host page.</summary>
     public static StoreKey PendingPrincipal(string interactionId, string secret) => Derive("p", interactionId, secret);
 
+    /// <summary>The entry holding a sign-out waiting for the user to confirm it.</summary>
+    public static StoreKey Logout(string interactionId, string secret) => Derive("l", interactionId, secret);
+
     /// <summary>
     /// The protector for one entry: <paramref name="root"/> — already carrying the purpose that
     /// separates one kind of entry from another — narrowed to this interaction and this secret.

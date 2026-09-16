@@ -1,5 +1,12 @@
 #nullable enable
 Microsoft.AspNetCore.Builder.ZeeKayDaAuthEndpointRouteBuilderExtensions
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.SkipLogoutConfirmation.get -> bool
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.SkipLogoutConfirmation.set -> void
+ZeeKayDa.Auth.AspNetCore.Interaction.ILogoutInteraction
+ZeeKayDa.Auth.AspNetCore.Interaction.ILogoutInteraction.GetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest!>!
+ZeeKayDa.Auth.AspNetCore.Interaction.ILogoutInteraction.SignOutAsync() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest
+ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest.Client.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation?
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAuthenticatorExtensions
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderClientExtensions
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderHasherExtensions

@@ -39,6 +39,16 @@ public sealed record OpenIdConfigurationDocument
     public required string JwksUri { get; init; }
 
     /// <summary>
+    /// Gets the URL of the end-session endpoint, where a relying party sends the user to sign out
+    /// (OpenID Connect RP-Initiated Logout 1.0 §2.1). Absent from the document when
+    /// <see langword="null"/>: the endpoint is served only alongside the authorization endpoint,
+    /// the one flow that establishes a session for it to end.
+    /// </summary>
+    [JsonPropertyName("end_session_endpoint")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EndSessionEndpoint { get; init; }
+
+    /// <summary>
     /// Gets the OAuth 2.0 response types supported by this authorization server. Absent from the
     /// document when <see langword="null"/>: a host that serves no authorization endpoint
     /// supports none, and OpenID Connect Discovery §4.2 omits a zero-element claim rather than

@@ -722,6 +722,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "not-a-uri")]
     [InlineData("TokenEndpoint.Uri", "not-a-uri")]
     [InlineData("JwksEndpoint.Uri", "not-a-uri")]
+    [InlineData("EndSessionEndpoint.Uri", "not-a-uri")]
     public void Validate_fails_when_endpoint_override_is_not_an_absolute_URI(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
@@ -740,6 +741,8 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "https://evil.example.com/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "https://evil.example.com/connect/token")]
     [InlineData("JwksEndpoint.Uri", "https://evil.example.com/connect/jwks")]
+    [InlineData("EndSessionEndpoint.Uri", "not-a-uri")]
+    [InlineData("EndSessionEndpoint.Uri", "https://evil.example.com/connect/endsession")]
     public void Validate_failure_message_names_the_endpoint_override_it_is_about(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
@@ -755,6 +758,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "http://auth.example.com/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "http://auth.example.com/connect/token")]
     [InlineData("JwksEndpoint.Uri", "http://auth.example.com/connect/jwks")]
+    [InlineData("EndSessionEndpoint.Uri", "http://auth.example.com/connect/endsession")]
     public void Validate_fails_for_HTTP_endpoint_override_without_AllowInsecureIssuer_flag(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
@@ -770,6 +774,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "https://auth.example.com/connect/token")]
     [InlineData("JwksEndpoint.Uri", "https://auth.example.com/connect/jwks")]
+    [InlineData("EndSessionEndpoint.Uri", "https://auth.example.com/connect/endsession")]
     public void Validate_succeeds_for_HTTPS_endpoint_override(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
@@ -784,6 +789,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "https://evil.example.com/connect/authorize")]
     [InlineData("TokenEndpoint.Uri", "https://evil.example.com/connect/token")]
     [InlineData("JwksEndpoint.Uri", "https://evil.example.com/connect/jwks")]
+    [InlineData("EndSessionEndpoint.Uri", "https://evil.example.com/connect/endsession")]
     public void Validate_fails_when_endpoint_override_has_different_authority(string propertyPath, string value)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
@@ -1650,6 +1656,72 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("account/logout")]
+    [InlineData("//evil.example.com/logout")]
+    [InlineData("/\\evil.example.com/logout")]
+    [InlineData("/account/logout?x=1")]
+    [InlineData("/account/logout#frag")]
+    public void Validate_rejects_malformed_EndSessionEndpoint_LogoutPath(string logoutPath)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            EndSessionEndpoint = { LogoutPath = logoutPath },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("EndSessionEndpoint.LogoutPath");
+    }
+
+    [Theory]
+    [InlineData("account/signed-out")]
+    [InlineData("//evil.example.com/signed-out")]
+    [InlineData("/\\evil.example.com/signed-out")]
+    [InlineData("/account/signed-out?x=1")]
+    [InlineData("/account/signed-out#frag")]
+    public void Validate_rejects_malformed_EndSessionEndpoint_SignedOutPath(string signedOutPath)
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            EndSessionEndpoint = { SignedOutPath = signedOutPath },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("EndSessionEndpoint.SignedOutPath");
+    }
+
+    [Fact]
+    public void Validate_accepts_absolute_path_end_session_pages()
+    {
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            EndSessionEndpoint = { LogoutPath = "/account/logout", SignedOutPath = "/account/signed-out" },
+        });
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("https://auth.example.com/connect/endsession?x=1", "query component")]
+    [InlineData("https://auth.example.com/connect/endsession#frag", "fragment component")]
+    [InlineData("https://user@auth.example.com/connect/endsession", "user information")]
+    public void Validate_rejects_an_EndSessionEndpoint_Uri_its_route_could_not_serve_as_published(string value, string rule)
+    {
+        // The route matches on the path alone, so a query published in discovery would reach
+        // relying parties and never be honoured.
+        var result = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            EndSessionEndpoint = { Uri = value },
+        });
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("AuthorizationServerOptions.EndSessionEndpoint.Uri").And.Contain(rule);
     }
 }
 

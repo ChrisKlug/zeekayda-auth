@@ -1,7 +1,8 @@
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The client an authorization request is being completed for, as a host page sees it.
+/// The client an interaction is being completed for — an authorization request or a sign-out —
+/// as a host page sees it.
 /// </summary>
 public sealed class ClientInformation
 {
@@ -13,7 +14,7 @@ public sealed class ClientInformation
         DisplayName = displayName;
     }
 
-    /// <summary>The identifier of the registered client that sent the authorization request.</summary>
+    /// <summary>The identifier of the registered client that sent the request.</summary>
     public string ClientId { get; }
 
     /// <summary>

@@ -36,14 +36,14 @@ routes. `AllowInsecureIssuer` is a loopback development hatch, never an assertio
 deployment is safe.
 
 **Endpoint URIs must share the issuer's authority, and the issuer must be canonical.** Startup
-rejects a cross-authority `AuthorizationEndpoint.Uri`, `TokenEndpoint.Uri` or `JwksEndpoint.Uri`
-outright rather than gating it behind an opt-in — metadata integrity is the whole point of the
+rejects a cross-authority `AuthorizationEndpoint.Uri`, `TokenEndpoint.Uri`, `JwksEndpoint.Uri` or
+`EndSessionEndpoint.Uri` outright rather than gating it behind an opt-in — metadata integrity is the whole point of the
 issuer, and no deployment has yet needed the hole. It also rejects a non-canonical issuer
 (uppercase scheme or host, an explicit default port) and names the canonical replacement in the
 error, and it rejects any trailing slash, the root's included: the document publishes the issuer
 verbatim, while RFC 8414 §3.1 strips the slash to build the metadata URL, so a client configured
 without it would reject the document (§3.3). A query component is permitted on the authorization endpoint URI, because RFC 6749 §3.1
-allows one there; it is rejected on the token and JWKS URIs, and a fragment is rejected everywhere.
+allows one there; it is rejected on the token, JWKS and end-session URIs, and a fragment is rejected everywhere.
 
 **Endpoint URIs are derived from the issuer by `Uri` combination, never string concatenation**, and
 each can be overridden individually. Every mapped route additionally constrains the request host to
@@ -92,7 +92,22 @@ client was unknown or the credential wrong. A server fault is `500` with `server
 resume and provider-callback routes do, so a host's fallback authorization policy cannot pre-empt
 client authentication.
 
-**All three protocol endpoints are implemented; nothing answers `501` any more.** Routes were
+**The end-session endpoint refuses nothing and asks by default.** GET and form POST alike; a
+parameter that fails to validate is ignored, as RP-Initiated Logout §4 requires of an
+`id_token_hint`, so a bad request lands the user on a confirmation or signed-out page, never an
+error. The user is asked unless there is no session to end, or a valid hint names the signed-in
+user and its client set `SkipLogoutConfirmation` (§2: asking is a SHOULD with a hint, a MUST
+without). `post_logout_redirect_uri` is honoured only on an exact match against the registration of
+the client the request resolves to — the hint's, else `client_id`'s — echoing `state`, and a
+`state` over 2048 characters drops the redirect rather than truncating what the client must match.
+A pending confirmation is an interaction like any other, `zkd_i` plus a binding cookie, which is
+its CSRF protection; it records the session it would end and is refused once the browser holds
+another, so a page left open across a re-authentication ends nothing. A request that presented no
+session cookie has none deleted and leaves the browser's other interactions alone — a cross-site form post carries no `Lax`
+cookie, and answering one with a deletion would end a session unasked. There is no cancel call: a
+sign-out has no error response.
+
+**Every protocol endpoint is implemented; nothing answers `501` any more.** Routes were
 mapped and shaped before their implementations landed so discovery stayed stable; the last stub,
 the token route, is gone.
 

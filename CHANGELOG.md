@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **RP-initiated logout: an end-session endpoint and a host logout page** (#671)
+
+  `/connect/endsession`, advertised as `end_session_endpoint`, signs the user out per OpenID
+  Connect RP-Initiated Logout 1.0. It accepts `id_token_hint`, `client_id`,
+  `post_logout_redirect_uri` and `state` by GET or form POST, and sends the user back only to a
+  post-logout redirect URI registered to the client the request resolves to, with `state` echoed.
+  A hint that does not validate is ignored. The user is asked before being signed out unless there
+  is no session, or a valid hint names the signed-in user and its client set the new
+  `SkipLogoutConfirmation` (off by default). A host sets `EndSessionEndpoint.LogoutPath` for its own
+  confirmation page, driven by the new `ILogoutInteraction`, and `EndSessionEndpoint.SignedOutPath`
+  for its own signed-out page; with either unset the framework renders a minimal page itself.
+  Signing out deletes the session cookie and every in-flight interaction's binding cookie.
+
 - **`AddPublic` and `AddConfidential` can set a client's other settings** (#670)
 
   Both in-memory builder methods take an optional last `configure` callback. `AddPublic` hands it

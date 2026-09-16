@@ -135,6 +135,21 @@ public interface IClientMetadata
     bool RequireConsent => true;
 
     /// <summary>
+    /// Whether a sign-out this client starts may end the user's session without asking them
+    /// first. Defaults to <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// Even when <see langword="true"/>, the question is skipped only for a request carrying a
+    /// valid <c>id_token_hint</c> issued to this client for the user signed in to the browser; any
+    /// other sign-out is confirmed. An ID token is not a secret — it passes through the browser
+    /// and the client's own logs — so skipping the question lets anyone holding one of the user's
+    /// ID tokens for this client sign them out. Set it only for an operator's own first-party
+    /// applications. It is a default interface member because asking is what a registration
+    /// means unless it says otherwise.
+    /// </remarks>
+    bool SkipLogoutConfirmation => false;
+
+    /// <summary>
     /// Whether this client may omit PKCE from an authorization request and rely on the OpenID
     /// Connect <c>nonce</c> for code-injection protection instead. Defaults to
     /// <see langword="false"/>, and is only valid on a confidential client.

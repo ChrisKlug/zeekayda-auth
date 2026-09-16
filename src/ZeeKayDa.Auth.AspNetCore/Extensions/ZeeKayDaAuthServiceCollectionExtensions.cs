@@ -86,6 +86,8 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, TokenEndpoint>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, JwksEndpoint>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, EndSessionEndpoint>());
 
         // Every framework route matches its path exactly; see ExactPathMatcherPolicy.
         services.TryAddEnumerable(
@@ -224,6 +226,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
         services.TryAddSingleton<IConsentInteraction, ConsentInteraction>();
         services.TryAddSingleton<IProviderSignInInteraction, ProviderSignInInteraction>();
+        services.TryAddSingleton<IdTokenHintValidator>();
+        services.TryAddSingleton<LogoutRequestStore>();
+        services.TryAddSingleton<EndSessionResponses>();
+        services.TryAddSingleton<ILogoutInteraction, LogoutInteraction>();
 
         // Lets a Razor Pages handler or controller action end with a plain await after a terminal
         // call. Inert on a host without MVC, which never reads MvcOptions.

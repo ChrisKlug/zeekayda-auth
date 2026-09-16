@@ -1,9 +1,9 @@
 namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
-/// Paths of the host-owned interaction pages the authorization flow hands off to. ZeeKayDa owns
-/// no interaction UI; each configured path is a page the host application builds and drives
-/// through the corresponding interaction service.
+/// Paths of the host-owned interaction pages the authorization flow hands off to. Each configured
+/// path is a page the host application builds and drives through the corresponding interaction
+/// service.
 /// </summary>
 public sealed class InteractionOptions
 {

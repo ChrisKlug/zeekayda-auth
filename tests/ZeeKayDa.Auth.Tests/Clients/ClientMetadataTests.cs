@@ -31,6 +31,16 @@ public sealed class ClientMetadataTests
         client.DisplayName.Should().BeNull();
     }
 
+    [Fact]
+    public void An_implementation_that_never_heard_of_logout_confirmation_asks_for_it()
+    {
+        // Skipping the question is an opt-out a registration must state; one written before the
+        // member existed keeps asking.
+        IClientMetadata client = new BareClient();
+
+        client.SkipLogoutConfirmation.Should().BeFalse();
+    }
+
     private sealed class BareClient : IClientMetadata
     {
         public string ClientId => "bare";

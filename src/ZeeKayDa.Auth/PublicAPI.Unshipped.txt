@@ -1,5 +1,19 @@
 #nullable enable
 ZeeKayDa.Auth.Authorization.AuthenticationMethods
+ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions
+ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.EndSessionEndpointOptions() -> void
+ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.LogoutPath.get -> string?
+ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.LogoutPath.set -> void
+ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.SignedOutPath.get -> string?
+ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.SignedOutPath.set -> void
+ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.Uri.get -> string?
+ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.Uri.set -> void
+ZeeKayDa.Auth.AuthorizationServerOptions.EndSessionEndpoint.get -> ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions!
+ZeeKayDa.Auth.Clients.ClientRegistration.SkipLogoutConfirmation.get -> bool
+ZeeKayDa.Auth.Clients.ClientRegistration.SkipLogoutConfirmation.init -> void
+ZeeKayDa.Auth.Clients.IClientMetadata.SkipLogoutConfirmation.get -> bool
+ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.EndSessionEndpoint.get -> string?
+ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.EndSessionEndpoint.init -> void
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.AuthorizationCodeLifetime.get -> System.TimeSpan
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions.AuthorizationCodeLifetime.set -> void

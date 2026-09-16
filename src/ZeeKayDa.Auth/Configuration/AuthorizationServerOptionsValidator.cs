@@ -287,9 +287,11 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
                 "AuthorizationServerOptions.AuthorizationEndpoint.MaxRequestContextBytes must be greater than zero.");
         }
 
-        ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.ErrorPath, "ErrorPath", errors);
-        ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.LoginPath, "LoginPath", errors);
-        ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.ConsentPath, "ConsentPath", errors);
+        ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.ErrorPath, "AuthorizationEndpoint.Interaction.ErrorPath", errors);
+        ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.LoginPath, "AuthorizationEndpoint.Interaction.LoginPath", errors);
+        ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.ConsentPath, "AuthorizationEndpoint.Interaction.ConsentPath", errors);
+        ValidateInteractionPath(options.EndSessionEndpoint.LogoutPath, "EndSessionEndpoint.LogoutPath", errors);
+        ValidateInteractionPath(options.EndSessionEndpoint.SignedOutPath, "EndSessionEndpoint.SignedOutPath", errors);
     }
 
     /// <summary>The authorization code grant is advertised, but PKCE's S256 method is not.</summary>
@@ -303,13 +305,13 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     /// is a redirect destination the framework builds itself, so a malformed one would turn the
     /// framework into the open redirect it exists to avoid.
     /// </summary>
-    private static void ValidateInteractionPath(string? path, string optionName, List<string> errors)
+    private static void ValidateInteractionPath(string? path, string optionPath, List<string> errors)
     {
         if (path is null || InteractionPath.IsSafe(path))
             return;
 
         errors.Add(
-            $"AuthorizationServerOptions.AuthorizationEndpoint.Interaction.{optionName} must be an " +
+            $"AuthorizationServerOptions.{optionPath} must be an " +
             "absolute path within the host application (starting with '/'), without scheme, " +
             "authority, query, fragment, control characters, or a leading '//' or '/\\' " +
             "that a browser would resolve to another origin.");
