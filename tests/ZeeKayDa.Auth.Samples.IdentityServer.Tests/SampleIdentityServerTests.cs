@@ -258,15 +258,22 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
         return response.Headers.Location!.ToString();
     }
 
-    /// <summary>Loads a page for its antiforgery token, then posts its form back to the same URL.</summary>
+    /// <summary>
+    /// Loads a page for its antiforgery token, then posts its form where a browser would: to the
+    /// form's action, or back to the page's own URL when it has none. A page whose action drops
+    /// the zkd_i parameter therefore fails here, as it would in a browser.
+    /// </summary>
     private static async Task<HttpResponseMessage> SubmitFormAsync(HttpClient browser, string pageUrl, Dictionary<string, string> fields)
     {
         var html = await browser.GetStringAsync(pageUrl, Cancellation);
         fields["__RequestVerificationToken"] = AntiforgeryToken().Match(html).Groups[1].Value;
 
         using var form = new FormUrlEncodedContent(fields);
-        return await browser.PostAsync(pageUrl, form, Cancellation);
+        return await browser.PostAsync(FormTarget(html, pageUrl), form, Cancellation);
     }
+
+    private static string FormTarget(string html, string pageUrl) =>
+        FormAction().Match(html) is { Success: true } action ? WebUtility.HtmlDecode(action.Groups[1].Value) : pageUrl;
 
     private static string CodeFrom(string callback)
     {
@@ -312,4 +319,7 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
 
     [GeneratedRegex("name=\"__RequestVerificationToken\" type=\"hidden\" value=\"([^\"]+)\"")]
     private static partial Regex AntiforgeryToken();
+
+    [GeneratedRegex("<form\\b[^>]*\\saction=\"([^\"]+)\"")]
+    private static partial Regex FormAction();
 }
