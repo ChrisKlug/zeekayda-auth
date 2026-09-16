@@ -604,6 +604,7 @@ warned, explicit opt-in (the framework warns at startup when it is configured).
 
 **Non-blocking implementation note attached to the sign-off.** Guard `now + RefreshTokenLifetime` and
 `ExpiresAt + ClockSkewTolerance` against `DateTimeOffset` overflow near the sentinel.
+[Discharged by the 2026-09-17 entry for #486 below.]
 
 ### 3.3 Item 3 — single `Unprotect` catch site — ✅ SIGN-OFF (2026-07-15)
 
@@ -892,6 +893,7 @@ existence of shipped code as approval for any of them.
   `A_replayed_code_revokes_the_family_its_first_exchange_started`.
 - **§3.x — a non-blocking overflow note was only half discharged** (#486). One of the two expiry
   arithmetic call sites is guarded; the other is not.
+  Discharged by the 2026-09-17 entry for #486.
 - **§1.3 — retired private-key memory residency on `KeySetOptions` is bounded only by request
   cadence** (#489). Residual accepted; the noted scavenge-timer mitigation was never filed.
 - **§1.3 — the active-key-expires-with-no-successor gap has no operator-facing surface** (#490).
@@ -1680,3 +1682,16 @@ signed off with #688 and was not re-reviewed here.
 - Residual, accepted: the deletion gate is cookie presence and `zkd.session` carries no `__Host-`
   prefix, so a sibling-subdomain cookie toss can still trigger it, untested — the same exposure the
   session cookie itself has.
+
+## 2026-09-17 — refresh-token expiry arithmetic saturates instead of overflowing (#486, closes the §3.2 note; commit `1e9f27e`)
+
+Scoped to `RefreshTokenStore`'s per-token expiry and its two expiry-plus-skew liveness checks.
+Security agent plus the Copilot security lens, one round, no High or Critical. The Copilot code lens
+found the lookups overflowing once issuance saturated; fixed in `558e79f` and verified on that diff.
+
+- Every configurable `RefreshTokenLifetime` issues, and the saturated expiry is still found and
+  consumed. Closed — `StoreAsync_saturates_ExpiresAt_instead_of_throwing_when_now_plus_RefreshTokenLifetime_overflows`,
+  `FindAsync_returns_the_entry_when_its_expiry_is_saturated`,
+  `TryConsumeAsync_consumes_a_grant_whose_expiry_is_saturated`.
+- Saturation never lifts a token above a finite family ceiling. Closed —
+  `StoreAsync_saturated_lifetime_still_yields_to_a_finite_FamilyAbsoluteExpiry`.
