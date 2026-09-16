@@ -50,19 +50,17 @@ public class ClientRegistrationSnapshotTests
     public void The_fixture_leaves_no_member_at_a_value_an_omission_could_match()
     {
         var registration = FullyPopulated();
+        var members = DeclaredProperties().Select(p => (p.Name, Value: p.GetValue(registration)));
 
-        foreach (var property in DeclaredProperties())
+        foreach (var (name, value) in members)
         {
-            var value = property.GetValue(registration);
-            var because = $"{property.Name} must differ from what an uncopied member would hold";
+            var because = $"{name} must differ from what an uncopied member would hold";
 
             value.Should().NotBeNull(because);
-            if (value is bool flag)
-                flag.Should().BeTrue(because);
+            (value as bool?)?.Should().BeTrue(because);
             // A string matches too, which is what we want: an empty ClientId or DisplayName is
             // exactly the value an uncopied one would hold.
-            if (value is IEnumerable items)
-                items.Cast<object>().Should().NotBeEmpty(because);
+            (value as IEnumerable)?.Cast<object>().Should().NotBeEmpty(because);
         }
     }
 
@@ -125,12 +123,16 @@ public class ClientRegistrationSnapshotTests
         // it is avoided.
         var snapshot = ClientRegistrationSnapshot.Of(FullyPopulated());
 
-        foreach (var property in DeclaredProperties())
-        {
-            if (property.GetValue(snapshot) is not IEnumerable collection || collection is string)
-                continue;
+        // A string is IEnumerable and has nothing to mutate, so ClientId and DisplayName are not
+        // members this test has anything to say about.
+        var members = DeclaredProperties()
+            .Select(p => (p.Name, Value: p.GetValue(snapshot)))
+            .Where(member => member.Value is IEnumerable and not string)
+            .Select(member => (member.Name, Collection: (IEnumerable)member.Value!));
 
-            var because = $"{property.Name} must refuse mutation through every ICollection<T> it exposes";
+        foreach (var (name, collection) in members)
+        {
+            var because = $"{name} must refuse mutation through every ICollection<T> it exposes";
             var before = collection.Cast<object>().ToList();
 
             var writable = collection.GetType().GetInterfaces()
@@ -138,7 +140,7 @@ public class ClientRegistrationSnapshotTests
                 .ToList();
 
             writable.Should().NotBeEmpty(
-                $"{property.Name} exposes no ICollection<T>, so this test cannot prove it refuses mutation");
+                $"{name} exposes no ICollection<T>, so this test cannot prove it refuses mutation");
 
             foreach (var clear in writable.Select(i => i.GetMethod(nameof(ICollection<object>.Clear))!))
             {
