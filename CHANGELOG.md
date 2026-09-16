@@ -485,6 +485,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **A client registration is validated and served as one snapshot** (#691). The resolver fingerprinted
+  and validated the instance a custom `IClientRepository` returned, then handed that same live instance
+  to the protocol; a store free to edit it in between — an ORM entity still attached to a change
+  tracker, or one instance shared across requests — had a redirect URI approved and then matched
+  against a different set. Every member is now copied once, at the point the store hands the
+  registration over, and it is the copy that is fingerprinted, validated and served. The copy's string
+  sets are rebuilt with `StringComparer.Ordinal`, so `IClientMetadata`'s string-set comparison
+  invariant holds structurally past that point. Credentials are copied as a list, not as values:
+  `Pbkdf2ClientSecret` documents that its `Salt` and `Hash` arrays are not defensively copied.
+
 - **Registering a public client on a server that does not advertise `none` now says how to fix it**
   (#674). The startup failure named only the mismatch; it now explains that public clients present no
   credentials, so the server accepts them only when `TokenEndpoint.AuthMethodsSupported` includes

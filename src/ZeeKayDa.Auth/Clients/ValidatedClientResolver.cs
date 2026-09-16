@@ -24,6 +24,12 @@ namespace ZeeKayDa.Auth.Clients;
 /// it is, gets a critical log entry naming the client and the violated rules.
 /// </para>
 /// <para>
+/// <strong>What is validated is what is served.</strong> The store's instance is copied into a
+/// <see cref="ClientRegistrationSnapshot"/> before anything reads it twice, and it is the snapshot
+/// that is fingerprinted, validated and returned. A store free to edit a registration between the
+/// two would otherwise have its redirect URIs approved and then matched against a different set.
+/// </para>
+/// <para>
 /// <strong>Verdicts are memoized by registration content, not by instance.</strong> Validation
 /// runs a full PBKDF2 derivation (the empty-secret probe), so revalidating on every lookup would
 /// make an unauthenticated request to a protocol endpoint cost hundreds of milliseconds of CPU —
@@ -67,10 +73,14 @@ internal sealed class ValidatedClientResolver
     }
 
     /// <summary>
-    /// Returns the validated registration for <paramref name="clientId"/>, or
-    /// <see langword="null"/> when the client is unknown <em>or</em> its registration fails
+    /// Returns an immutable snapshot of the validated registration for <paramref name="clientId"/>,
+    /// or <see langword="null"/> when the client is unknown <em>or</em> its registration fails
     /// validation. Callers cannot and must not distinguish the two.
     /// </summary>
+    /// <remarks>
+    /// The returned instance is never the store's own — see the snapshot's remarks for why, and
+    /// for the one thing it does not deep-copy.
+    /// </remarks>
     public async ValueTask<IClientRegistration?> FindByClientIdAsync(
         string clientId,
         CancellationToken cancellationToken)
@@ -81,9 +91,9 @@ internal sealed class ValidatedClientResolver
         if (client is null)
             return null;
 
-        var verdict = GetOrAddVerdict(client);
-        if (verdict.IsValid)
-            return client;
+        var (snapshot, verdict) = Resolve(client);
+        if (snapshot is not null && verdict.IsValid)
+            return snapshot;
 
         // Logged once per memoized verdict, not per request — a known-bad client_id must not be
         // an unauthenticated log-amplification lever.
@@ -92,28 +102,42 @@ internal sealed class ValidatedClientResolver
             _logger.LogCritical(
                 "Client registration for '{ClientId}' failed validation and was served to the protocol as an unknown client. " +
                 "Fix the registration in the client store. Violations: {Violations}",
-                client.ClientId,
+                snapshot?.ClientId ?? clientId,
                 verdict.Violations);
         }
 
         return null;
     }
 
-    private Verdict GetOrAddVerdict(IClientRegistration client)
+    /// <summary>
+    /// The copy of <paramref name="client"/> the protocol will see, and the verdict on it. The
+    /// snapshot is <see langword="null"/> only when the registration could not be read at all,
+    /// which the verdict then says.
+    /// </summary>
+    private (ClientRegistrationSnapshot? Snapshot, Verdict Verdict) Resolve(IClientRegistration client)
     {
+        ClientRegistrationSnapshot snapshot;
         ClientRegistrationFingerprint.Fingerprint fingerprint;
         try
         {
-            fingerprint = ClientRegistrationFingerprint.Compute(client);
+            // Copied before it is fingerprinted, and never read through again: the values the
+            // verdict is about are exactly the values the caller gets. See the snapshot's remarks.
+            snapshot = ClientRegistrationSnapshot.Of(client);
+            fingerprint = ClientRegistrationFingerprint.Compute(snapshot);
         }
         catch (Exception ex)
         {
             // A registration is an extension point: a property getter may throw, or a set may be
             // mutated while it is being read. Either way this type's promise is to answer unknown
             // rather than let a 500 escape from every protocol endpoint.
-            return new Verdict($"The registration could not be fingerprinted: {ex.GetType().FullName}.");
+            return (null, new Verdict($"The registration could not be read: {ex.GetType().FullName}."));
         }
 
+        return (snapshot, GetOrAddVerdict(snapshot, fingerprint));
+    }
+
+    private Verdict GetOrAddVerdict(ClientRegistrationSnapshot client, ClientRegistrationFingerprint.Fingerprint fingerprint)
+    {
         // An instance-identity fallback (a custom IClientCredential) produces a different key for
         // every instance of the same registration. Caching under it would let request volume grow
         // the cache — the one thing the bound must not depend on — so it is validated uncached.
