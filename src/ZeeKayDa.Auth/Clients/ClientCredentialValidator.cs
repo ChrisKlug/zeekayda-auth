@@ -77,15 +77,13 @@ internal static class ClientCredentialValidator
         {
             copy = credential.Snapshot();
         }
-        catch (ZeeKayDaConfigurationException)
-        {
-            throw;
-        }
         catch (Exception ex)
         {
             // Snapshot() is an extension point, and the built-in PBKDF2 copy throws on a null Salt
-            // or Hash. A named failure beats an unexplained exception escaping startup validation;
-            // only the type is reported, because a credential's exception message may carry its data.
+            // or Hash. A named failure beats an unexplained exception escaping startup validation.
+            // Only the type is reported — a ZeeKayDaConfigurationException included, which is
+            // deliberately not rethrown with its own text: Snapshot() belongs to a credential, and a
+            // message it composes may carry the credential's data into the log.
             return $"threw {ex.GetType().Name}";
         }
 

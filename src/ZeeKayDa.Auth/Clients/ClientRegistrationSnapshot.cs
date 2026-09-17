@@ -176,14 +176,26 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
         new ReadOnlyCollection<string>([.. values]);
 
     // The one Snapshot() call per credential, checked on the spot. Throws rather than keeping the
-    // store's instance: the resolver turns a configuration exception from here into an unknown client
-    // whose log entry carries this failure.
+    // store's instance: the resolver turns this exception into an unknown client whose log entry
+    // carries the failure.
     private static IClientCredential CopyOf(string clientId, IClientCredential credential)
     {
         var copy = credential.Snapshot();
 
         return ClientCredentialValidator.DescribeCopyProblem(credential, copy) is { } problem
-            ? throw new ZeeKayDaConfigurationException(ClientCredentialValidator.NotCopied(clientId, credential, problem))
+            ? throw new UncopiedCredentialException(ClientCredentialValidator.NotCopied(clientId, credential, problem))
             : copy;
+    }
+
+    /// <summary>
+    /// Thrown by <see cref="Of"/> for a credential it refused to keep. Only this class throws it,
+    /// so its failure text is the framework's own and safe to log — unlike the message of anything a
+    /// store's getter or a credential's <c>Snapshot</c> throws, a
+    /// <see cref="ZeeKayDaConfigurationException"/> included.
+    /// </summary>
+    internal sealed class UncopiedCredentialException(ZeeKayDaConfigurationFailure failure)
+        : Exception(failure.Message)
+    {
+        public ZeeKayDaConfigurationFailure Failure { get; } = failure;
     }
 }

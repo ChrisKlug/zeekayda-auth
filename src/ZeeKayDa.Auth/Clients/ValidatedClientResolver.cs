@@ -125,11 +125,12 @@ internal sealed class ValidatedClientResolver
             snapshot = ClientRegistrationSnapshot.Of(client);
             fingerprint = ClientRegistrationFingerprint.Compute(snapshot);
         }
-        catch (ZeeKayDaConfigurationException ex)
+        catch (ClientRegistrationSnapshot.UncopiedCredentialException ex)
         {
             // A registration the snapshot refused to copy — a credential whose Snapshot() handed
-            // back itself or null. Its failures are named, as a validator's are.
-            return (null, new Verdict(string.Join("; ", ex.AggregatedFailures.Select(f => f.Message))));
+            // back itself or null. The failure is the snapshot's own text, so it is named; anything
+            // else thrown here, a ZeeKayDaConfigurationException included, is reduced to its type.
+            return (null, new Verdict(ex.Failure.Message));
         }
         catch (Exception ex)
         {

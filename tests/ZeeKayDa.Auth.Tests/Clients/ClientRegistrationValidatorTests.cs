@@ -935,21 +935,16 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_lets_a_configuration_failure_thrown_by_Snapshot_through_unchanged()
+    public void Validate_reports_a_configuration_failure_thrown_by_Snapshot_by_its_type_only()
     {
-        // A credential that reports its own misconfiguration keeps its code and message rather
-        // than being flattened into not_copied.
-        var thrown = new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure("custom.credential.unreadable", "The credential store is offline."));
-        var validator = MakeValidator();
-        var client = MakeValidConfidentialClient() with
-        {
-            Credentials = [new FakeSecret(), new ThrowingSnapshotCredential(thrown)],
-        };
+        // Even the framework's own exception type is not trusted here: Snapshot() belongs to the
+        // credential, and a message it composed may carry the credential's data into the log.
+        var credential = new ThrowingSnapshotCredential(new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("custom.credential.unreadable", "Cannot copy salt=0badc0de.")));
 
-        var act = () => validator.Validate(client);
+        var failure = NotCopiedFailure(credential);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>().Which.Should().BeSameAs(thrown);
+        failure.Message.Should().Contain("threw ZeeKayDaConfigurationException").And.NotContain("0badc0de");
     }
 
     [Fact]

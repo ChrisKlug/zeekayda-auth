@@ -181,6 +181,24 @@ public class ValidatedClientResolverTests
             .Which.Message.Should().Contain("FirstCallUncopiedCredential").And.Contain(problem);
     }
 
+    [Fact]
+    public async Task A_configuration_failure_thrown_by_a_credential_s_Snapshot_is_logged_by_its_type_only()
+    {
+        // Only a failure the snapshot raised itself is logged by name. A ZeeKayDaConfigurationException
+        // thrown by the credential is the credential's text, which may carry its data.
+        var logger = new CapturingLogger();
+        var credential = new ThrowingSnapshotCredential(new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("custom.credential.unreadable", "Cannot copy salt=0badc0de.")));
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(ConfidentialClient(credential)), new PassingValidator(), logger);
+
+        var result = await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull();
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
+            .Which.Message.Should().Contain(nameof(ZeeKayDaConfigurationException)).And.NotContain("0badc0de");
+    }
+
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
 
     private static ClientRegistration Client() =>
@@ -275,6 +293,11 @@ public class ValidatedClientResolverTests
 
             return returnsNull ? null! : this;
         }
+    }
+
+    private sealed class ThrowingSnapshotCredential(Exception exception) : IClientCredential
+    {
+        public IClientCredential Snapshot() => throw exception;
     }
 
     private sealed class PassingValidator : IClientRegistrationValidator
