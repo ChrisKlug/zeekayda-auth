@@ -42,16 +42,17 @@ internal sealed class AuthorizeErrorTransport
     /// Attaches the transport cookie for the given error to the response and returns the opaque
     /// identifier to carry on the redirect.
     /// </summary>
-    public string CreateAndAttach(HttpContext context, string error, string description)
+    public string CreateAndAttach(HttpContext context, AuthorizationErrorKind kind, string error, string description)
     {
         var id = StoreKeyGenerator.Generate();
 
-        // Hand-rolled serialization: four fields do not justify a source-generated context.
+        // Hand-rolled serialization: five fields do not justify a source-generated context.
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
             writer.WriteString("id", id);
+            writer.WriteString("kind", kind.ToString());
             writer.WriteString("error", error);
             writer.WriteString("description", description);
             writer.WriteString("expiresAt", _timeProvider.GetUtcNow() + Lifetime);
@@ -114,6 +115,7 @@ internal sealed class AuthorizeErrorTransport
             return null;
 
         string id;
+        AuthorizationErrorKind kind;
         string error;
         string description;
         DateTimeOffset expiresAt;
@@ -124,6 +126,7 @@ internal sealed class AuthorizeErrorTransport
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             id = root.GetProperty("id").GetString()!;
+            kind = ReadKind(root);
             error = root.GetProperty("error").GetString()!;
             description = root.GetProperty("description").GetString()!;
             expiresAt = root.GetProperty("expiresAt").GetDateTimeOffset();
@@ -141,6 +144,22 @@ internal sealed class AuthorizeErrorTransport
             return null;
         }
 
-        return new AuthorizationErrorDetails { Error = error, Description = description };
+        return new AuthorizationErrorDetails { Kind = kind, Error = error, Description = description };
+    }
+
+    /// <summary>
+    /// The kind the cookie names. A cookie written before kinds existed names none and was a
+    /// rejected request; a name that is not a defined kind makes the cookie unreadable.
+    /// </summary>
+    private static AuthorizationErrorKind ReadKind(JsonElement root)
+    {
+        if (!root.TryGetProperty("kind", out var element))
+            return AuthorizationErrorKind.RequestRejected;
+
+        return Enum.TryParse<AuthorizationErrorKind>(element.GetString(), ignoreCase: false, out var kind)
+            && Enum.IsDefined(kind)
+            && !int.TryParse(element.GetString(), out _)
+            ? kind
+            : throw new FormatException("The error transport cookie names an unknown kind.");
     }
 }

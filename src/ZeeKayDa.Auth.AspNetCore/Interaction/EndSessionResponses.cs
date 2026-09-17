@@ -58,11 +58,14 @@ internal sealed class EndSessionResponses
                 : QueryHelpers.AddQueryString(redirect.Uri, "state", redirect.State));
         }
 
-        if (_options.Value.EndSessionEndpoint.SignedOutPath is { } signedOutPath)
-            return Results.Redirect(signedOutPath);
-
-        return Page(StatusCodes.Status200OK, "Signed out", "<h1>You have been signed out.</h1>");
+        return SignedOut();
     }
+
+    /// <summary>The host's signed-out page, or the framework's own. Signs nothing out.</summary>
+    public IResult SignedOut() =>
+        _options.Value.EndSessionEndpoint.SignedOutPath is { } signedOutPath
+            ? Results.Redirect(signedOutPath)
+            : Page(StatusCodes.Status200OK, "Signed out", "<h1>You have been signed out.</h1>");
 
     /// <summary>
     /// The framework's confirmation page. Its form has no <c>action</c>, so it posts back to the

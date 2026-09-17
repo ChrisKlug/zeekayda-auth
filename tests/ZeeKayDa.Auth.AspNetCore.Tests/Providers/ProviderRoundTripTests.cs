@@ -147,9 +147,9 @@ public sealed class ProviderRoundTripTests
         using var client = NewClient(factory);
         await client.GetAsync(AuthorizeUrl(), Cancellation);
 
-        var challenge = async () => await client.PostAsync(LoginPath, Form(("provider", "acme")), Cancellation);
+        using var challenge = await client.PostAsync(LoginPath, Form(("provider", "acme")), Cancellation);
 
-        await challenge.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await challenge.ShouldHaveFoundNothingToContinueAsync();
     }
 
     // ── The callback and the return ───────────────────────────────────────────────────────────
@@ -264,9 +264,9 @@ public sealed class ProviderRoundTripTests
         var (interactionId, challenge) = await ChallengeAsync(client);
         await client.GetAsync(CallbackUrlOf(challenge, error: "access_denied"), Cancellation);
 
-        var signIn = async () => await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
+        using var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
 
-        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>("a refused request cannot be picked back up");
+        await signIn.ShouldHaveFoundNothingToContinueAsync("a refused request cannot be picked back up");
     }
 
     [Fact]

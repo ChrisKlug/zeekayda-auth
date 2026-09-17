@@ -226,7 +226,7 @@ public sealed class AuthorizationRequestContextStoreTests
     }
 
     [Fact]
-    public async Task Deleting_removes_the_entry_and_the_binding_cookie()
+    public async Task Deleting_removes_the_entry_and_retires_the_binding_cookie()
     {
         var backing = new NeverEvictingStore();
         var (contexts, _, _) = Store(backing);
@@ -237,9 +237,9 @@ public sealed class AuthorizationRequestContextStoreTests
         await contexts.DeleteAsync(delete, InteractionId, None);
 
         backing.Count.Should().Be(0);
-        delete.Response.Headers.SetCookie.ToString()
-            .Should().StartWith(InteractionBindingCookie.NamePrefix + InteractionId + "=")
-            .And.Contain("expires=Thu, 01 Jan 1970");
+        var setCookie = delete.Response.Headers.SetCookie.ToString();
+        setCookie.Should().StartWith(InteractionBindingCookie.NamePrefix + InteractionId + "=");
+        FlowAssertions.IsRetiredBinding(setCookie).Should().BeTrue();
     }
 
     [Fact]
@@ -251,14 +251,14 @@ public sealed class AuthorizationRequestContextStoreTests
         // unreachable whatever the store did.
         var (contexts, _, _) = Store(new ThrowingStore());
         var delete = new DefaultHttpContext();
-        delete.Request.Headers.Cookie = $"{InteractionBindingCookie.NamePrefix}{InteractionId}=1.secret";
+        delete.Request.Headers.Cookie = $"{InteractionBindingCookie.NamePrefix}{InteractionId}=1.secret.";
 
         var act = async () => await contexts.DeleteAsync(delete, InteractionId, None);
 
         await act.Should().NotThrowAsync();
-        delete.Response.Headers.SetCookie.ToString()
-            .Should().StartWith(InteractionBindingCookie.NamePrefix + InteractionId + "=")
-            .And.Contain("expires=Thu, 01 Jan 1970");
+        var setCookie = delete.Response.Headers.SetCookie.ToString();
+        setCookie.Should().StartWith(InteractionBindingCookie.NamePrefix + InteractionId + "=");
+        FlowAssertions.IsRetiredBinding(setCookie).Should().BeTrue();
     }
 
     [Fact]
@@ -320,7 +320,7 @@ public sealed class AuthorizationRequestContextStoreTests
         // would send the user round the flow again against a broken store.
         var (contexts, _, _) = Store(new ThrowingStore());
         var read = new DefaultHttpContext();
-        read.Request.Headers.Cookie = $"{InteractionBindingCookie.NamePrefix}{InteractionId}=1.secret";
+        read.Request.Headers.Cookie = $"{InteractionBindingCookie.NamePrefix}{InteractionId}=1.secret.";
 
         var act = async () => await contexts.ReadAsync(read, InteractionId, None);
 
@@ -359,7 +359,7 @@ public sealed class AuthorizationRequestContextStoreTests
         return (
             new AuthorizationRequestContextStore(
                 store,
-                new InteractionBindingCookie(time),
+                new InteractionBindingCookie(time, new EphemeralDataProtectionProvider()),
                 keyRing ?? new EphemeralDataProtectionProvider(),
                 time,
                 NullSanitizingLogger<AuthorizationRequestContextStore>.Instance),

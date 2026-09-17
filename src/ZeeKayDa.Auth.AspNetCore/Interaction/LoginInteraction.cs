@@ -19,30 +19,36 @@ internal sealed class LoginInteraction : ILoginInteraction
     /// </summary>
     private const string CancelledAtSignIn = "The user cancelled the request at the sign-in page.";
 
+    private const string Page = "login";
+
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly ProviderRegistry _providers;
     private readonly AuthorizationFlow _flow;
     private readonly InteractionOutcomes _outcomes;
+    private readonly NothingToContinue _nothingToContinue;
 
     public LoginInteraction(
         IHttpContextAccessor httpContextAccessor,
         IOptions<AuthorizationServerOptions> options,
         ProviderRegistry providers,
         AuthorizationFlow flow,
-        InteractionOutcomes outcomes)
+        InteractionOutcomes outcomes,
+        NothingToContinue nothingToContinue)
     {
         ArgumentNullException.ThrowIfNull(httpContextAccessor);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(providers);
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(outcomes);
+        ArgumentNullException.ThrowIfNull(nothingToContinue);
 
         _httpContextAccessor = httpContextAccessor;
         _options = options;
         _providers = providers;
         _flow = flow;
         _outcomes = outcomes;
+        _nothingToContinue = nothingToContinue;
     }
 
     /// <inheritdoc/>
@@ -67,13 +73,17 @@ internal sealed class LoginInteraction : ILoginInteraction
         var user = ReservedClaims.Snapshot(principal);
 
         var context = RequireStateChangingRequest();
-        var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+        await _nothingToContinue.SignInStepAsync(context, Page, async () =>
+        {
+            var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
-        // A principal an external provider parked for this interaction is discarded, not adopted:
-        // the login page signs in the host's own principal, and a local sign-in records no provider.
-        await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
-        await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(user, methods, ProviderScheme: null))
-            .ConfigureAwait(false);
+            // A principal an external provider parked for this interaction is discarded, not
+            // adopted: the login page signs in the host's own principal, and a local sign-in
+            // records no provider.
+            await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
+            await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(user, methods, ProviderScheme: null))
+                .ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -85,9 +95,11 @@ internal sealed class LoginInteraction : ILoginInteraction
     public async Task DenyAsync()
     {
         var context = RequireStateChangingRequest();
-        var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-
-        await _outcomes.DenyAsync(context, requestContext, CancelledAtSignIn).ConfigureAwait(false);
+        await _nothingToContinue.SignInStepAsync(context, Page, async () =>
+        {
+            var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            await _outcomes.DenyAsync(context, requestContext, CancelledAtSignIn).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -95,17 +107,20 @@ internal sealed class LoginInteraction : ILoginInteraction
     {
         ArgumentException.ThrowIfNullOrEmpty(provider);
 
-        var context = RequireStateChangingRequest();
-        var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-
         // The identifier selects from the configured set; it never names a target. The value is
-        // request input, so the message does not echo it.
+        // request input, so the message does not echo it. Checked before the interaction is
+        // resolved: a wrong identifier is the page's bug, whatever state the interaction is in.
+        var context = RequireStateChangingRequest();
         var registration = _providers.Find(provider)
             ?? throw new ZeeKayDaInteractionException(
                 "The provider identifier is not one of the registered providers. Pass the Id of an " +
                 "entry in ILoginInteraction.Providers, as the login page received it.");
 
-        await _outcomes.ChallengeAsync(context, requestContext, registration).ConfigureAwait(false);
+        await _nothingToContinue.SignInStepAsync(context, Page, async () =>
+        {
+            var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            await _outcomes.ChallengeAsync(context, requestContext, registration).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     private HttpContext RequireHttpContext() =>

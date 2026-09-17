@@ -222,6 +222,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<AuthorizationFlow>();
         services.TryAddSingleton<AuthorizationCodeIssuer>();
         services.TryAddSingleton<InteractionOutcomes>();
+        services.TryAddSingleton<NothingToContinue>();
         services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
         services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
         services.TryAddSingleton<IConsentInteraction, ConsentInteraction>();

@@ -12,26 +12,32 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </summary>
 internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
 {
+    private const string Page = "provider sign-in";
+
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ProviderRegistry _providers;
     private readonly AuthorizationFlow _flow;
     private readonly InteractionOutcomes _outcomes;
+    private readonly NothingToContinue _nothingToContinue;
 
     public ProviderSignInInteraction(
         IHttpContextAccessor httpContextAccessor,
         ProviderRegistry providers,
         AuthorizationFlow flow,
-        InteractionOutcomes outcomes)
+        InteractionOutcomes outcomes,
+        NothingToContinue nothingToContinue)
     {
         ArgumentNullException.ThrowIfNull(httpContextAccessor);
         ArgumentNullException.ThrowIfNull(providers);
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(outcomes);
+        ArgumentNullException.ThrowIfNull(nothingToContinue);
 
         _httpContextAccessor = httpContextAccessor;
         _providers = providers;
         _flow = flow;
         _outcomes = outcomes;
+        _nothingToContinue = nothingToContinue;
     }
 
     /// <inheritdoc/>
@@ -75,6 +81,11 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         }
 
         var context = RequireStateChangingRequest();
+        await _nothingToContinue.SignInStepAsync(context, Page, () => SignInWithParkedAsync(context, collected)).ConfigureAwait(false);
+    }
+
+    private async Task SignInWithParkedAsync(HttpContext context, Claim[] additionalClaims)
+    {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
         // Validated on the parked principal before it is taken, so a principal that cannot be
@@ -82,7 +93,7 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         Promote(parked);
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
         var promoted = Promote(taken);
-        ((ClaimsIdentity)promoted.Identity!).AddClaims(collected.Where(claim => !ReservedClaims.IsReserved(claim)));
+        ((ClaimsIdentity)promoted.Identity!).AddClaims(additionalClaims.Where(claim => !ReservedClaims.IsReserved(claim)));
 
         // Nothing is stated about how the user proved who they are at the provider, as for an
         // external sign-in that involved no page.
@@ -116,6 +127,11 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         }
 
         var context = RequireStateChangingRequest();
+        await _nothingToContinue.SignInStepAsync(context, Page, () => SignInAsReplacementAsync(context, replacement, methods)).ConfigureAwait(false);
+    }
+
+    private async Task SignInAsReplacementAsync(HttpContext context, ClaimsPrincipal replacement, string[] methods)
+    {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
         RequireRegistered(parked);
@@ -138,9 +154,11 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
     public async Task DenyAsync()
     {
         var context = RequireStateChangingRequest();
-        var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-
-        await _outcomes.DenyAsync(context, requestContext, InteractionOutcomes.DeniedAfterProvider).ConfigureAwait(false);
+        await _nothingToContinue.SignInStepAsync(context, Page, async () =>
+        {
+            var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            await _outcomes.DenyAsync(context, requestContext, InteractionOutcomes.DeniedAfterProvider).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -174,7 +192,8 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         "session subject of an external sign-in is never the upstream one verbatim: pass a local " +
         "account's own principal, or let SignInAsync derive the subject.");
 
-    private static ZeeKayDaInteractionException NothingParked() => new(
+    private static NothingToContinueException NothingParked() => new(
+        NothingToContinueReason.NothingParked,
         "No external sign-in is parked for this interaction: it expired, was already used, or the " +
         "user did not arrive here through RedirectToAsync. Send the user back to the login page.");
 

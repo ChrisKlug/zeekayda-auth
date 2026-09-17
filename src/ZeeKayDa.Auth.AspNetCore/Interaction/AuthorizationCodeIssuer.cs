@@ -90,7 +90,7 @@ internal sealed class AuthorizationCodeIssuer
     /// carries no decision. Both are caller errors: every path that reaches issuance binds the
     /// session and records the decision first.
     /// </exception>
-    /// <exception cref="ZeeKayDaInteractionException">
+    /// <exception cref="NothingToContinueException">
     /// Another response completed the interaction first, or it expired while this response was
     /// being prepared.
     /// </exception>

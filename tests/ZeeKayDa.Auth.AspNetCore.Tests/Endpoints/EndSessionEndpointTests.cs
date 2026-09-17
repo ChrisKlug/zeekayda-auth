@@ -288,16 +288,37 @@ public sealed class EndSessionEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task A_confirmation_is_answered_once()
+    public async Task A_confirmation_submitted_twice_ends_on_the_signed_out_page()
     {
+        // A double-clicked Sign out: the first submission signed the user out, so the second has
+        // nothing to confirm, and the truthful answer to it is the signed-out page.
         await SignInAsync(_client);
         var asked = await EndSessionAsync(new());
         await PostEmptyFormAsync(_client, Location(asked));
 
         var again = await PostEmptyFormAsync(_client, Location(asked));
 
-        again.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await again.Content.ReadAsStringAsync(Cancellation)).Should().Contain("There is no sign-out to confirm.");
+        again.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await again.Content.ReadAsStringAsync(Cancellation)).Should().Contain("You have been signed out.");
+    }
+
+    [Fact]
+    public async Task A_confirmation_submitted_twice_to_a_host_page_ends_on_the_hosts_signed_out_page()
+    {
+        using var factory = NewFactory(options =>
+        {
+            options.LogoutPath = LogoutPath;
+            options.SignedOutPath = SignedOutPath;
+        });
+        using var client = NewClient(factory);
+        await SignInAsync(client);
+        var asked = await EndSessionAsync(client, new());
+        await PostEmptyFormAsync(client, Location(asked));
+
+        var again = await PostEmptyFormAsync(client, Location(asked));
+
+        again.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        again.Headers.Location!.OriginalString.Should().Be(SignedOutPath);
     }
 
     [Fact]
@@ -317,9 +338,7 @@ public sealed class EndSessionEndpointTests : IDisposable
     public async Task A_confirmation_is_refused_once_the_browser_holds_a_different_session()
     {
         // The answer to a question about one session is not an instruction about its replacement.
-        // Against the host's page the refusal is an exception naming its reason, which is what
-        // tells this apart from a confirmation refused for want of its binding cookie — the
-        // framework's own page answers 400 either way.
+        // The browser is still signed in, so it is not shown the signed-out page either.
         using var factory = NewFactory(options => options.LogoutPath = LogoutPath);
         using var client = NewClient(factory);
         await SignInAsync(client);
@@ -329,10 +348,9 @@ public sealed class EndSessionEndpointTests : IDisposable
         // confirmation's binding cookie alone, so only the session check can refuse it.
         await SignInAsync(client, App, subject: "user-2", prompt: "login");
 
-        var confirm = async () => await PostEmptyFormAsync(client, Location(asked));
+        using var confirm = await PostEmptyFormAsync(client, Location(asked));
 
-        (await confirm.Should().ThrowAsync<ZeeKayDaInteractionException>())
-            .WithMessage("*not the one this browser holds now*");
+        await confirm.ShouldHaveFoundNothingToContinueAsync();
         (await HasSessionAsync(client)).Should().BeTrue("the session nobody was asked about is left alone");
     }
 

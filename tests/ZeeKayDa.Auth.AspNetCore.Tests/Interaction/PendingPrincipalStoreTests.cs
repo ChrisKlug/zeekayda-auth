@@ -353,7 +353,7 @@ public sealed class PendingPrincipalStoreTests
     {
         var (pending, _, _) = Store(new ThrowingStore());
         var read = new DefaultHttpContext();
-        read.Request.Headers.Cookie = $"{InteractionBindingCookie.NamePrefix}{InteractionId}=1.secret";
+        read.Request.Headers.Cookie = $"{InteractionBindingCookie.NamePrefix}{InteractionId}=1.secret.";
 
         var act = async () => await pending.ReadAsync(read, InteractionId, None);
 
@@ -373,7 +373,7 @@ public sealed class PendingPrincipalStoreTests
         return (
             new PendingPrincipalStore(
                 store,
-                new InteractionBindingCookie(time),
+                new InteractionBindingCookie(time, new EphemeralDataProtectionProvider()),
                 keyRing ?? new EphemeralDataProtectionProvider(),
                 time,
                 NullSanitizingLogger<PendingPrincipalStore>.Instance),
@@ -384,7 +384,7 @@ public sealed class PendingPrincipalStoreTests
     private static AuthorizationRequestContextStore ContextStore(IInteractionBackingStore backing, FakeTimeProvider time) =>
         new(
             backing,
-            new InteractionBindingCookie(time),
+            new InteractionBindingCookie(time, new EphemeralDataProtectionProvider()),
             new EphemeralDataProtectionProvider(),
             time,
             NullSanitizingLogger<AuthorizationRequestContextStore>.Instance);
@@ -393,8 +393,8 @@ public sealed class PendingPrincipalStoreTests
     private static DefaultHttpContext BoundRequest(string interactionId = InteractionId)
     {
         var context = new DefaultHttpContext();
-        new InteractionBindingCookie(new FakeTimeProvider(Now))
-            .Issue(context, interactionId, Now + AuthorizationRequestContextStore.Lifetime, InteractionBindingCookie.NewSecret());
+        new InteractionBindingCookie(new FakeTimeProvider(Now), new EphemeralDataProtectionProvider())
+            .Issue(context, interactionId, Now + AuthorizationRequestContextStore.Lifetime, InteractionBindingCookie.NewSecret(), clientId: null);
         return context;
     }
 

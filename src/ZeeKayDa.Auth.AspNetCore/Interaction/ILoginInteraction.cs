@@ -74,14 +74,18 @@ public interface ILoginInteraction
     /// says — so the framework states nothing about a sign-in it was told nothing about, instead
     /// of guessing a method that may not be the one used.
     /// </para>
+    /// <para>
+    /// <strong>Nothing to continue is answered, not thrown.</strong> When there is no interaction
+    /// left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was already
+    /// completed or was started in another browser; or another response completed it while this
+    /// one was being prepared — the framework answers the request itself. It sends the browser to
+    /// the client's registered <c>InitiateLoginUri</c> to start again when the browser can still say
+    /// which client it came from, and to the error page with
+    /// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal
+    /// either way. A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it
+    /// causes the same answer on every submission.
+    /// </para>
     /// </remarks>
-    /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to resume: the request carries no <c>zkd_i</c>, or names an
-    /// interaction this browser is not carrying — it expired, was already completed, was started
-    /// in another browser, or the login page dropped the query parameter (see
-    /// <c>Interaction.LoginPath</c> for the fix). Or another response completed the interaction
-    /// while this one was being prepared.
-    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// nothing was signed in or issued.
@@ -122,12 +126,18 @@ public interface ILoginInteraction
     /// anything is read. A cancel wired to a <c>GET</c> anchor would be triggerable cross-site by
     /// anyone who learned the interaction identifier, ending the user's in-flight sign-in.
     /// </para>
+    /// <para>
+    /// <strong>Nothing to continue is answered, not thrown.</strong> When there is no interaction
+    /// left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was already
+    /// completed or was started in another browser; or another response completed it while this
+    /// one was being prepared — the framework answers the request itself. It sends the browser to
+    /// the client's registered <c>InitiateLoginUri</c> to start again when the browser can still say
+    /// which client it came from, and to the error page with
+    /// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal
+    /// either way. A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it
+    /// causes the same answer on every submission.
+    /// </para>
     /// </remarks>
-    /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to end: the request carries no <c>zkd_i</c>, or names an interaction
-    /// this browser is not carrying — it expired, was already completed, or was started in another
-    /// browser. Or another response completed the interaction while this one was being prepared.
-    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// the client was told nothing.
@@ -161,12 +171,20 @@ public interface ILoginInteraction
     /// one. Only a <c>POST</c> — the form's submission — is accepted, and that is checked before
     /// anything is read.
     /// </para>
+    /// <para>
+    /// <strong>Nothing to continue is answered, not thrown.</strong> When there is no interaction
+    /// left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was already
+    /// completed or was started in another browser; or another response completed it while this
+    /// one was being prepared — the framework answers the request itself. It sends the browser to
+    /// the client's registered <c>InitiateLoginUri</c> to start again when the browser can still say
+    /// which client it came from, and to the error page with
+    /// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal
+    /// either way. A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it
+    /// causes the same answer on every submission.
+    /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to continue: the request carries no <c>zkd_i</c>, or names an
-    /// interaction this browser is not carrying — it expired, was already completed, or was started
-    /// in another browser. Or <paramref name="provider"/> is not the identifier of a registered
-    /// provider.
+    /// <paramref name="provider"/> is not the identifier of a registered provider.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store could not be reached. Fail-closed: no challenge was issued.

@@ -42,4 +42,30 @@ internal static class FlowAssertions
 
         return query["code"].Single()!;
     }
+
+    /// <summary>
+    /// The page had nothing to continue, and the framework answered with its own page — what a
+    /// submission for an expired, completed or foreign interaction looks like on a host with no
+    /// error page and a client with no <c>InitiateLoginUri</c>. No code, and no redirect anywhere.
+    /// </summary>
+    public static async Task ShouldHaveFoundNothingToContinueAsync(this HttpResponseMessage response, string because = "")
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, because);
+        (await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .Should().Contain(NothingToContinue.ErrorCode, because);
+    }
+
+    /// <summary>
+    /// Whether a binding cookie's <c>Set-Cookie</c> header ends the binding: deleted outright, or
+    /// rewritten as a tombstone that no longer carries the secret.
+    /// </summary>
+    public static bool IsRetiredBinding(string setCookie)
+    {
+        if (setCookie.Contains("expires=Thu, 01 Jan 1970", StringComparison.Ordinal))
+            return true;
+
+        var pair = setCookie.Split(';')[0];
+        var value = pair[(pair.IndexOf('=') + 1)..];
+        return value.Split('.') is [_, "", _];
+    }
 }

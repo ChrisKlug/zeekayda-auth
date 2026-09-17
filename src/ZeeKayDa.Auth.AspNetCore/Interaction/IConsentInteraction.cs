@@ -36,7 +36,8 @@ public interface IConsentInteraction
     /// interaction this browser is not carrying — it expired, was already completed, or was started
     /// in another browser; or the session that authenticated the request is no longer the one the
     /// browser holds; or the client that sent the request is no longer registered or no longer
-    /// lists its redirect URI.
+    /// lists its redirect URI. A page that wants to render its own message for these cases calls
+    /// <see cref="TryGetRequestAsync"/> instead.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store could not be reached. Fail-closed: nothing is reported as absent.
@@ -48,6 +49,28 @@ public interface IConsentInteraction
     /// <paramref name="cancellationToken"/> was cancelled.
     /// </exception>
     Task<ConsentRequest> GetRequestAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// What the page should ask, or <see langword="null"/> when there is nothing to ask about — for
+    /// a page that renders its own "nothing to continue" message.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read; pass the request's own token.</param>
+    /// <remarks>
+    /// Exactly <see cref="GetRequestAsync"/>, including the headers it stamps, except that each case
+    /// <see cref="GetRequestAsync"/> reports with <see cref="ZeeKayDaInteractionException"/> returns
+    /// <see langword="null"/> instead. A request with no <c>zkd_i</c> is logged as a warning, since
+    /// a form that drops it looks like this on every submission.
+    /// </remarks>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store could not be reached. Fail-closed: nothing is reported as absent.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// There is no active HTTP request — the service was resolved outside one.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// <paramref name="cancellationToken"/> was cancelled.
+    /// </exception>
+    Task<ConsentRequest?> TryGetRequestAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Records the user's consent to <paramref name="scopes"/> and continues the authorization
@@ -76,15 +99,18 @@ public interface IConsentInteraction
     /// before anything is read. The framework arrives at the page with a <c>GET</c>, so a page
     /// that decided in its render handler would grant every request on arrival.
     /// </para>
+    /// <para>
+    /// <strong>Nothing to continue is answered, not thrown.</strong> When there is no interaction
+    /// left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was already
+    /// completed or was started in another browser; the session that authenticated it is no longer
+    /// the one the browser holds; the client is no longer registered; or another response completed
+    /// it while this one was being prepared — the framework answers the request itself. It sends
+    /// the browser to the client's registered <c>InitiateLoginUri</c> to start again when the
+    /// browser can still say which client it came from, and to the error page with
+    /// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal
+    /// either way.
+    /// </para>
     /// </remarks>
-    /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to complete: the request carries no <c>zkd_i</c>, or names an
-    /// interaction this browser is not carrying — it expired, was already completed, or was started
-    /// in another browser; or the session that authenticated the request is no longer the one the
-    /// browser holds; or the client that sent the request is no longer registered or no longer
-    /// lists its redirect URI. Or another response — a second grant, or a denial — completed the
-    /// interaction while this one was being prepared.
-    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// nothing was issued.
@@ -125,15 +151,18 @@ public interface IConsentInteraction
     /// anything is read. A deny reachable by a link could be triggered cross-site by anyone who
     /// learned the interaction identifier, ending the user's in-flight request.
     /// </para>
+    /// <para>
+    /// <strong>Nothing to continue is answered, not thrown.</strong> When there is no interaction
+    /// left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was already
+    /// completed or was started in another browser; the session that authenticated it is no longer
+    /// the one the browser holds; the client is no longer registered; or another response completed
+    /// it while this one was being prepared — the framework answers the request itself. It sends
+    /// the browser to the client's registered <c>InitiateLoginUri</c> to start again when the
+    /// browser can still say which client it came from, and to the error page with
+    /// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal
+    /// either way.
+    /// </para>
     /// </remarks>
-    /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to end: the request carries no <c>zkd_i</c>, or names an interaction
-    /// this browser is not carrying — it expired, was already completed, or was started in another
-    /// browser; or the session that authenticated the request is no longer the one the browser
-    /// holds; or the client that sent the request is no longer registered or no longer lists its
-    /// redirect URI. Or another response — a grant, or an earlier denial — completed the
-    /// interaction while this one was being prepared.
-    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// the client was told nothing.

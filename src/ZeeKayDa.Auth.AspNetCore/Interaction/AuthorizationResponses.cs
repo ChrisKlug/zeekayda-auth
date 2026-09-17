@@ -40,15 +40,19 @@ internal sealed class AuthorizationResponses
         _errorTransport = errorTransport;
     }
 
-    /// <summary>An error rendered at the user, never redirected to the client.</summary>
-    public IResult Local(HttpContext context, string error, string description)
+    /// <summary>A rejected request's error, rendered at the user, never redirected to the client.</summary>
+    public IResult Local(HttpContext context, string error, string description) =>
+        Local(context, AuthorizationErrorKind.RequestRejected, error, description);
+
+    /// <summary>An error of <paramref name="kind"/>, rendered at the user, never redirected to the client.</summary>
+    public IResult Local(HttpContext context, AuthorizationErrorKind kind, string error, string description)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         var errorPath = _options.Value.AuthorizationEndpoint.Interaction.ErrorPath;
         if (errorPath is not null)
         {
-            var id = _errorTransport.CreateAndAttach(context, error, description);
+            var id = _errorTransport.CreateAndAttach(context, kind, error, description);
             return Results.Redirect(QueryHelpers.AddQueryString(
                 errorPath, AuthorizeErrorTransport.QueryParameterName, id));
         }
@@ -56,13 +60,17 @@ internal sealed class AuthorizationResponses
         // Unbranded fallback for hosts that have not configured an error page. The values are
         // the framework's own constants — no request value is ever echoed — but they are
         // HTML-encoded anyway so a future description can never become an injection vector.
+        var (heading, advice) = kind == AuthorizationErrorKind.NothingToContinue
+            ? ("There is nothing to continue.", "Return to the application and start again.")
+            : ("This sign-in request is invalid.", "Contact the application you arrived from; the request it sent cannot be completed.");
+
         var html =
             "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">" +
             "<title>Sign-in request error</title></head><body>" +
-            "<h1>This sign-in request is invalid.</h1>" +
+            $"<h1>{heading}</h1>" +
             $"<p>{HtmlEncoder.Default.Encode(description)}</p>" +
             $"<p><code>{HtmlEncoder.Default.Encode(error)}</code></p>" +
-            "<p>Contact the application you arrived from; the request it sent cannot be completed.</p>" +
+            $"<p>{advice}</p>" +
             "</body></html>";
 
         return Results.Content(html, "text/html; charset=utf-8", statusCode: StatusCodes.Status400BadRequest);

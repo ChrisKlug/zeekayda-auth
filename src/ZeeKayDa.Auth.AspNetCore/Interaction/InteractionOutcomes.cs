@@ -107,7 +107,7 @@ internal sealed class InteractionOutcomes
     /// URI, discarding the interaction and any principal parked for it. No session is promoted
     /// and none is read.
     /// </summary>
-    /// <exception cref="ZeeKayDaInteractionException">
+    /// <exception cref="NothingToContinueException">
     /// Another response — a grant, a sign-in that issued, or an earlier denial — completed the
     /// interaction first, or it expired while this response was being prepared.
     /// </exception>

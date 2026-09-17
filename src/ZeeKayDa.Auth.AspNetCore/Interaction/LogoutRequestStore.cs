@@ -122,7 +122,7 @@ internal sealed class LogoutRequestStore
         await Guarded(
             () => _store.SetAsync(KeyFor(request.Id, secret), protectedValue, request.ExpiresAt, cancellationToken),
             "store the sign-out request").ConfigureAwait(false);
-        _binding.Issue(context, request.Id, request.ExpiresAt, secret);
+        _binding.Issue(context, request.Id, request.ExpiresAt, secret, clientId: null);
 
         return request;
     }
@@ -179,7 +179,7 @@ internal sealed class LogoutRequestStore
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
         var secret = _binding.Read(context, interactionId);
-        _binding.Delete(context, interactionId);
+        _binding.Retire(context, interactionId);
 
         if (secret is null)
             return;
