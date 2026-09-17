@@ -15,6 +15,17 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// must preserve is the <c>zkd_i</c> query parameter it was reached with, which an ordinary
 /// <c>&lt;form method="post"&gt;</c> does by default.
 /// </para>
+/// <para>
+/// <strong>Nothing to continue is answered, not thrown.</strong> When a terminal method finds no
+/// interaction left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was
+/// already completed or was started in another browser; or another response completed it while
+/// this one was being prepared — the framework answers the request itself. It sends the browser to
+/// the client's registered <c>InitiateLoginUri</c>, with <c>iss</c>, to start again when the browser
+/// can still say which client it came from, and to the error page with
+/// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal either way.
+/// A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it causes the same
+/// answer on every submission.
+/// </para>
 /// </remarks>
 public interface ILoginInteraction
 {
@@ -75,15 +86,8 @@ public interface ILoginInteraction
     /// of guessing a method that may not be the one used.
     /// </para>
     /// <para>
-    /// <strong>Nothing to continue is answered, not thrown.</strong> When there is no interaction
-    /// left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was already
-    /// completed or was started in another browser; or another response completed it while this
-    /// one was being prepared — the framework answers the request itself. It sends the browser to
-    /// the client's registered <c>InitiateLoginUri</c> to start again when the browser can still say
-    /// which client it came from, and to the error page with
-    /// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal
-    /// either way. A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it
-    /// causes the same answer on every submission.
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// interface remarks.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
@@ -127,15 +131,8 @@ public interface ILoginInteraction
     /// anyone who learned the interaction identifier, ending the user's in-flight sign-in.
     /// </para>
     /// <para>
-    /// <strong>Nothing to continue is answered, not thrown.</strong> When there is no interaction
-    /// left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was already
-    /// completed or was started in another browser; or another response completed it while this
-    /// one was being prepared — the framework answers the request itself. It sends the browser to
-    /// the client's registered <c>InitiateLoginUri</c> to start again when the browser can still say
-    /// which client it came from, and to the error page with
-    /// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal
-    /// either way. A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it
-    /// causes the same answer on every submission.
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// interface remarks.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
@@ -172,15 +169,8 @@ public interface ILoginInteraction
     /// anything is read.
     /// </para>
     /// <para>
-    /// <strong>Nothing to continue is answered, not thrown.</strong> When there is no interaction
-    /// left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was already
-    /// completed or was started in another browser; or another response completed it while this
-    /// one was being prepared — the framework answers the request itself. It sends the browser to
-    /// the client's registered <c>InitiateLoginUri</c> to start again when the browser can still say
-    /// which client it came from, and to the error page with
-    /// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal
-    /// either way. A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it
-    /// causes the same answer on every submission.
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// interface remarks.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">

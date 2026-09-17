@@ -16,6 +16,18 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// session that was authenticated for it: a consent decision is recorded by the user it was
 /// asked of, never by whoever holds the browser afterwards.
 /// </para>
+/// <para>
+/// <strong>Nothing to continue is answered, not thrown.</strong> When a terminal method finds no
+/// interaction left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was
+/// already completed or was started in another browser; the session that authenticated it is no longer the one the browser holds; the client
+/// is no longer registered; or another response completed it while
+/// this one was being prepared — the framework answers the request itself. It sends the browser to
+/// the client's registered <c>InitiateLoginUri</c>, with <c>iss</c>, to start again when the browser
+/// can still say which client it came from, and to the error page with
+/// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal either way.
+/// A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it causes the same
+/// answer on every submission.
+/// </para>
 /// </remarks>
 public interface IConsentInteraction
 {
@@ -100,15 +112,8 @@ public interface IConsentInteraction
     /// that decided in its render handler would grant every request on arrival.
     /// </para>
     /// <para>
-    /// <strong>Nothing to continue is answered, not thrown.</strong> When there is no interaction
-    /// left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was already
-    /// completed or was started in another browser; the session that authenticated it is no longer
-    /// the one the browser holds; the client is no longer registered; or another response completed
-    /// it while this one was being prepared — the framework answers the request itself. It sends
-    /// the browser to the client's registered <c>InitiateLoginUri</c> to start again when the
-    /// browser can still say which client it came from, and to the error page with
-    /// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal
-    /// either way.
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// interface remarks.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
@@ -152,15 +157,8 @@ public interface IConsentInteraction
     /// learned the interaction identifier, ending the user's in-flight request.
     /// </para>
     /// <para>
-    /// <strong>Nothing to continue is answered, not thrown.</strong> When there is no interaction
-    /// left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was already
-    /// completed or was started in another browser; the session that authenticated it is no longer
-    /// the one the browser holds; the client is no longer registered; or another response completed
-    /// it while this one was being prepared — the framework answers the request itself. It sends
-    /// the browser to the client's registered <c>InitiateLoginUri</c> to start again when the
-    /// browser can still say which client it came from, and to the error page with
-    /// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal
-    /// either way.
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// interface remarks.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">

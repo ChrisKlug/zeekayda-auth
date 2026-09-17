@@ -15,6 +15,15 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// client, so a "stay signed in" button can go wherever the host likes, and the unanswered
 /// sign-out expires on its own.
 /// </para>
+/// <para>
+/// <strong>Nothing to continue is answered, not thrown.</strong> When <see cref="SignOutAsync"/>
+/// finds no sign-out left to complete — the request carries no <c>zkd_i</c>; the sign-out expired,
+/// was already completed or was started in another browser; or the browser no longer holds the
+/// session it was started for — the framework answers the request itself: with the signed-out page
+/// when the browser holds no session, and with the error page, with
+/// <see cref="AuthorizationErrorKind.NothingToContinue"/>, when it is still signed in. Nobody is
+/// signed out by such a request. The call is terminal either way.
+/// </para>
 /// </remarks>
 public interface ILogoutInteraction
 {
@@ -86,13 +95,8 @@ public interface ILogoutInteraction
     /// user out the moment they arrived, which is exactly what the confirmation exists to prevent.
     /// </para>
     /// <para>
-    /// <strong>Nothing to continue is answered, not thrown.</strong> When there is no sign-out left
-    /// to complete — the request carries no <c>zkd_i</c>; the sign-out expired, was already
-    /// completed or was started in another browser; or the browser no longer holds the session it
-    /// was started for — the framework answers the request itself: with the signed-out page when
-    /// the browser holds no session, and with the error page, with
-    /// <see cref="AuthorizationErrorKind.NothingToContinue"/>, when it is still signed in. Nobody is
-    /// signed out by such a request. The call is terminal either way.
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// interface remarks.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
