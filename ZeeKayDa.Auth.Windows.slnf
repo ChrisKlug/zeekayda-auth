@@ -14,7 +14,9 @@
       "tests/ZeeKayDa.Auth.FileSystem.Tests/ZeeKayDa.Auth.FileSystem.Tests.csproj",
       "tests/ZeeKayDa.Auth.Windows.Tests/ZeeKayDa.Auth.Windows.Tests.csproj",
       "samples/IdentityServer/ZeeKayDa.Auth.Samples.IdentityServer.csproj",
-      "tests/ZeeKayDa.Auth.Samples.IdentityServer.Tests/ZeeKayDa.Auth.Samples.IdentityServer.Tests.csproj"
+      "tests/ZeeKayDa.Auth.Samples.IdentityServer.Tests/ZeeKayDa.Auth.Samples.IdentityServer.Tests.csproj",
+      "samples/WebClient/ZeeKayDa.Auth.Samples.WebClient.csproj",
+      "tests/ZeeKayDa.Auth.Samples.WebClient.Tests/ZeeKayDa.Auth.Samples.WebClient.Tests.csproj"
     ]
   }
 }
