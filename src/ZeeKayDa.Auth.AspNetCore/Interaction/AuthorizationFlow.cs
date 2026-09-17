@@ -222,8 +222,17 @@ internal sealed class AuthorizationFlow
 
         var interactionId = await RequireInteractionIdAsync(context).ConfigureAwait(false);
 
-        return await ReadAsync(context, interactionId).ConfigureAwait(false)
-            ?? throw new NothingToContinueException(
+        var requestContext = await ReadAsync(context, interactionId).ConfigureAwait(false);
+        if (requestContext is not null)
+            return requestContext;
+
+        // The entry this binding addressed is gone, so the binding's secret addresses nothing and
+        // must not be left live: it would count against the per-browser cap ahead of a tab that is
+        // still running, and hold a usable secret for the rest of the cookie's life. Retiring keeps
+        // the client hint, which is what the restart below is built on.
+        await ClearAsync(context, interactionId).ConfigureAwait(false);
+
+        throw new NothingToContinueException(
                 NothingToContinueReason.NotFound,
                 "There is no active interaction with this identifier for this browser. The authorization " +
                 "request has expired or already completed, the page was reached without going through " +

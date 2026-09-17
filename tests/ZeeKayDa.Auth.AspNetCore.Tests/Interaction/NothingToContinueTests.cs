@@ -198,6 +198,23 @@ public sealed class NothingToContinueTests : IDisposable
     }
 
     [Fact]
+    public async Task A_login_submitted_for_an_expired_interaction_retires_its_binding()
+    {
+        // The entry the binding addressed is gone, so its secret addresses nothing: left live it
+        // would hold a usable secret for the rest of the cookie's life and take a per-browser slot
+        // from a tab that is still running. The tombstone keeps the client hint the restart uses.
+        var interactionId = InteractionIdFrom(await AuthorizeAsync(RestartingClient));
+        _time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
+
+        using var signIn = await PostLoginAsync(interactionId);
+
+        signIn.ShouldRestartAtTheClient();
+        signIn.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
+            cookie.StartsWith(InteractionBindingCookie.NamePrefix + interactionId + "=", StringComparison.Ordinal)
+            && FlowAssertions.IsRetiredBinding(cookie));
+    }
+
+    [Fact]
     public async Task A_login_submitted_without_an_interaction_id_gets_the_error_page_and_a_warning()
     {
         // A bookmarked login page, or a form that drops zkd_i: the log is where the second shows.

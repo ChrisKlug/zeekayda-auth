@@ -116,8 +116,15 @@ internal sealed class LogoutInteraction : ILogoutInteraction
                 "form that regenerates its action from routing drops it, and must pass it back explicitly " +
                 $"(asp-route-{InteractionHandoff.InteractionIdParameter}).");
 
-        return await _requests.ReadAsync(context, interactionId, cancellationToken).ConfigureAwait(false)
-            ?? throw new NothingToContinueException(
+        var request = await _requests.ReadAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
+        if (request is not null)
+            return request;
+
+        // Nothing is left for this binding to address, so its secret is retired rather than left
+        // live for the rest of the cookie's life, taking a per-browser slot from a live tab.
+        await _requests.DeleteAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
+
+        throw new NothingToContinueException(
                 NothingToContinueReason.NotFound,
                 "There is no sign-out waiting to be confirmed with this identifier for this browser. It has " +
                 "expired or already completed, the page was reached without going through the end-session " +
