@@ -118,9 +118,12 @@ internal sealed class NothingToContinue
     /// one case that may be the host's bug — a form that regenerates its action drops it — so it
     /// is a warning; everything else is a user doing something ordinary.
     /// </summary>
-    public void Log(string page, NothingToContinueException missing)
+    public void Log(string page, NothingToContinueException missing) => Log(page, missing.Reason);
+
+    /// <inheritdoc cref="Log(string, NothingToContinueException)"/>
+    public void Log(string page, NothingToContinueReason reason)
     {
-        if (missing.Reason == NothingToContinueReason.NoInteractionId)
+        if (reason == NothingToContinueReason.NoInteractionId)
         {
             _logger.LogWarning(
                 "The {Page} page was reached without the '{Parameter}' parameter, so there was no interaction to " +
@@ -134,7 +137,7 @@ internal sealed class NothingToContinue
         _logger.LogInformation(
             "The {Page} page was reached for an interaction there is nothing left of ({Reason}).",
             page,
-            missing.Reason);
+            reason);
     }
 
     /// <summary>

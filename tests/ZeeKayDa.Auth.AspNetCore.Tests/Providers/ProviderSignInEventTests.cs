@@ -842,15 +842,19 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
-    public async Task GetPendingPrincipalAsync_without_an_interaction_id_is_refused()
+    public async Task GetPendingPrincipalAsync_without_an_interaction_id_reads_nothing_and_warns()
     {
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        var logs = new CapturingLoggerProvider();
+        using var factory = NewFaultableFactory(new FaultableInteractionStore(), logs);
         using var client = NewClient(factory);
         await ResumeAsync(client);
 
-        var read = async () => await client.GetAsync(CollectMorePath, Cancellation);
+        using var read = await client.GetAsync(CollectMorePath, Cancellation);
 
-        await read.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        read.StatusCode.Should().Be(HttpStatusCode.NotFound, "the page is told there is nothing to finish");
+        read.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
+        logs.Entries.Should().Contain(entry =>
+            entry.Level == LogLevel.Warning && entry.Message.Contains("without the 'zkd_i' parameter", StringComparison.Ordinal));
     }
 
     [Fact]

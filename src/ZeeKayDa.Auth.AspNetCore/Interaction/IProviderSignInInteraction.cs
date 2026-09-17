@@ -29,8 +29,9 @@ public interface IProviderSignInInteraction
     /// The principal the external provider authenticated, parked for the interaction this request
     /// is addressed to, or <see langword="null"/> when there is none: the redirect did not come
     /// from <c>RedirectToAsync</c>, the parked principal has expired, or it belongs to another
-    /// interaction. A page that gets <see langword="null"/> has nothing to finish and should say
-    /// so, not fail.
+    /// interaction, or the request carries no <c>zkd_i</c> at all. A page that gets
+    /// <see langword="null"/> has nothing to finish and should say so, not fail. A missing
+    /// <c>zkd_i</c> is also logged as a warning, since a form that drops it looks the same.
     /// </summary>
     /// <param name="cancellationToken">Cancels the read; pass the request's own token.</param>
     /// <remarks>
@@ -41,11 +42,6 @@ public interface IProviderSignInInteraction
     /// read finds. A page renders nothing meaningful without this call, so every rendered page
     /// carries the protection; one that renders without calling it is on its own.
     /// </remarks>
-    /// <exception cref="ZeeKayDaInteractionException">
-    /// The request carries no <c>zkd_i</c>, so there is no interaction to read a parked principal
-    /// for. The framework adds it to the URL it redirects the page to; a form that regenerates its
-    /// action from routing drops it.
-    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store could not be reached. Fail-closed: a parked principal that cannot be
     /// read is not reported as absent, since the page would then tell the user there is nothing
