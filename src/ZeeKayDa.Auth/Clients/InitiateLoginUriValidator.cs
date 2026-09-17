@@ -44,13 +44,14 @@ internal static class InitiateLoginUriValidator
     }
 
     /// <summary>
-    /// Parses as absolute and says so itself: on Linux and macOS a rooted path such as
-    /// <c>/login</c> parses as a <c>file</c> URI, which is a relative value, not a URI with a
-    /// scheme the rules below could judge.
+    /// Parses as absolute and says so itself, authority and all: on Linux and macOS a rooted path
+    /// such as <c>/login</c> parses as a <c>file</c> URI, which is a relative value rather than a
+    /// URI with a scheme the rules below could judge, and a scheme-only form such as
+    /// <c>https:/login</c> parses as absolute while naming no origin at all.
     /// </summary>
     private static bool IsAbsoluteAsWritten(string uriString, out Uri uri) =>
         Uri.TryCreate(uriString, UriKind.Absolute, out uri!)
-        && uriString.StartsWith(uri.Scheme + ":", StringComparison.OrdinalIgnoreCase)
+        && uriString.StartsWith(uri.Scheme + Uri.SchemeDelimiter, StringComparison.OrdinalIgnoreCase)
         && !uriString.Any(IsControlOrWhitespace);
 
     private static bool IsControlOrWhitespace(char c) => char.IsControl(c) || char.IsWhiteSpace(c);
