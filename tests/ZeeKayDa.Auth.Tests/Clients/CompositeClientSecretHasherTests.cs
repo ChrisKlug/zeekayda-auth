@@ -11,12 +11,12 @@ public sealed class CompositeClientSecretHasherTests
     /// <summary>
     /// Simple credential type used as the default hasher's credential.
     /// </summary>
-    private sealed class DefaultSecret : IClientSecret { }
+    private sealed class DefaultSecret : IClientSecret { public IClientCredential Snapshot() => new DefaultSecret(); }
 
     /// <summary>
     /// A second credential type used to test dispatch to a non-default hasher.
     /// </summary>
-    private sealed class AltSecret : IClientSecret { }
+    private sealed class AltSecret : IClientSecret { public IClientCredential Snapshot() => new AltSecret(); }
 
     /// <summary>
     /// Trackable fake hasher. Handles credentials of type <typeparamref name="TSecret"/>.

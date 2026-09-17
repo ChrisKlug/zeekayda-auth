@@ -174,8 +174,30 @@ public interface IBcryptClientSecret : IClientSecret
 
 ### Step 2: Define a sealed record implementing the interface
 
+Every credential implements `IClientCredential.Snapshot()`. When the framework looks a client up, it
+validates a copy of the registration and authenticates the client against that same copy, so each
+credential must return a new instance that shares no mutable state with itself. A string cannot
+change, so this record can share it — but it still returns a new instance, because the framework
+rejects a credential whose `Snapshot()` returns itself or `null` (`client.credentials.not_copied`).
+A credential holding a `byte[]` must copy the array.
+
 ```csharp
-public sealed record BcryptClientSecret(string Hash) : IBcryptClientSecret;
+public sealed record BcryptClientSecret(string Hash) : IBcryptClientSecret
+{
+    public IClientCredential Snapshot() => this with { };
+}
+```
+
+If store entities implement your sub-interface directly, declare the copy on the sub-interface
+instead, as the built-in `IPbkdf2ClientSecret` does, so no entity has to write one:
+
+```csharp
+public interface IBcryptClientSecret : IClientSecret
+{
+    string Hash { get; }
+
+    IClientCredential IClientCredential.Snapshot() => new BcryptClientSecret(Hash);
+}
 ```
 
 ### Step 3: Subclass `ClientSecretHasher<TSecret>`

@@ -18,11 +18,14 @@ public sealed class CompositeClientAuthenticatorTests
 {
     // ── Fake infrastructure ───────────────────────────────────────────────────────────────────────
 
-    private sealed class FakeSecret : IClientSecret { }
+    private sealed record FakeSecret(string Name = "") : IClientSecret
+    {
+        public IClientCredential Snapshot() => this with { };
+    }
 
     /// <summary>
     /// Trackable hasher that handles any <see cref="FakeSecret"/>.
-    /// Verify result is configurable per instance or per credential identity.
+    /// Verify result is configurable per instance or per credential.
     /// </summary>
     private sealed class FakeHasher : IClientSecretHasher
     {
@@ -501,11 +504,12 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_true_when_second_credential_is_correct()
     {
-        var wrongSecret = new FakeSecret();
-        var correctSecret = new FakeSecret();
+        var wrongSecret = new FakeSecret("wrong");
+        var correctSecret = new FakeSecret("correct");
 
-        // Hasher that accepts only correctSecret; uses identity to distinguish the two.
-        var hasher = new FakeHasher(secret => ReferenceEquals(secret, correctSecret));
+        // Hasher that accepts only correctSecret. It matches by name, not by reference: the client is
+        // served as a snapshot, so the hasher is handed a copy of each credential, never the original.
+        var hasher = new FakeHasher(secret => secret is FakeSecret { Name: "correct" });
         var client = new MinimalClient
         {
             ClientId = "client-1",

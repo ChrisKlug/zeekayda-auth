@@ -7,7 +7,10 @@ namespace ZeeKayDa.Auth.Tests.Clients;
 
 public sealed class ClientRegistrationTests
 {
-    private sealed record FakeCredential : IClientCredential;
+    private sealed record FakeCredential : IClientCredential
+    {
+        public IClientCredential Snapshot() => this with { };
+    }
 
     private sealed class MinimalPublicClient : IClientRegistration
     {
@@ -354,6 +357,23 @@ public sealed class ClientRegistrationTests
         secret.Iterations.Should().Be(600_000);
         secret.Salt.Should().BeSameAs(salt);
         secret.Hash.Should().BeSameAs(hash);
+    }
+
+    [Fact]
+    public void Snapshot_of_a_PBKDF2_secret_holds_its_own_copies_of_the_salt_and_hash()
+    {
+        // The constructor keeps the caller's arrays, so the snapshot is where they are copied: a
+        // copy sharing them would let a store's in-place write reach the credential the framework
+        // validated. The copy is a Pbkdf2ClientSecret, which the built-in hasher handles.
+        var salt = new byte[] { 1, 2, 3 };
+        var hash = new byte[] { 4, 5, 6 };
+        IClientCredential secret = new Pbkdf2ClientSecret(600_000, salt, hash);
+
+        var copy = secret.Snapshot().Should().BeOfType<Pbkdf2ClientSecret>().Subject;
+
+        copy.Iterations.Should().Be(600_000);
+        copy.Salt.Should().Equal(salt).And.NotBeSameAs(salt);
+        copy.Hash.Should().Equal(hash).And.NotBeSameAs(hash);
     }
 
     [Fact]

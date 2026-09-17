@@ -78,8 +78,8 @@ internal sealed class ValidatedClientResolver
     /// validation. Callers cannot and must not distinguish the two.
     /// </summary>
     /// <remarks>
-    /// The returned instance is never the store's own — see the snapshot's remarks for why, and
-    /// for the one thing it does not deep-copy.
+    /// The returned instance is never the store's own, and neither are its credentials — see the
+    /// snapshot's remarks for why.
     /// </remarks>
     public async ValueTask<IClientRegistration?> FindByClientIdAsync(
         string clientId,
@@ -124,6 +124,14 @@ internal sealed class ValidatedClientResolver
             // verdict is about are exactly the values the caller gets. See the snapshot's remarks.
             snapshot = ClientRegistrationSnapshot.Of(client);
             fingerprint = ClientRegistrationFingerprint.Compute(snapshot);
+        }
+        catch (ClientRegistrationSnapshot.UncopiedCredentialException ex)
+        {
+            // A registration the snapshot refused to copy — a null credential, or one whose
+            // Snapshot() handed back itself or null. The failure is the snapshot's own text, so it is
+            // named; anything
+            // else thrown here, a ZeeKayDaConfigurationException included, is reduced to its type.
+            return (null, new Verdict(ex.Failure.Message));
         }
         catch (Exception ex)
         {

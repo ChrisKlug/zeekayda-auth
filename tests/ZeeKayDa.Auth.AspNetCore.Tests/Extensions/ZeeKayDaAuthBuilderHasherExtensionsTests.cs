@@ -159,8 +159,8 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
 
     // ── Fakes ─────────────────────────────────────────────────────────────────────────────────────
 
-    private sealed class FakeSecret : IClientSecret { }
-    private sealed class AnotherFakeSecret : IClientSecret { }
+    private sealed class FakeSecret : IClientSecret { public IClientCredential Snapshot() => new FakeSecret(); }
+    private sealed class AnotherFakeSecret : IClientSecret { public IClientCredential Snapshot() => new AnotherFakeSecret(); }
 
     private sealed class FakeHasher : IClientSecretHasher
     {

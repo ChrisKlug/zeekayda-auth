@@ -20,6 +20,8 @@ public sealed class ClientSecretHasherTests
     private sealed class StringOnlySecret : IClientSecret
     {
         public required string Value { get; init; }
+
+        public IClientCredential Snapshot() => new StringOnlySecret { Value = Value };
     }
 
     /// <summary>

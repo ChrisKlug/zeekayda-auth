@@ -14,9 +14,75 @@ public sealed class ClientRegistrationValidatorTests
 {
     // ── Fake/helper infrastructure ────────────────────────────────────────────────────────────────
 
-    private sealed class FakeSecret : IClientSecret { }
+    private sealed class FakeSecret : IClientSecret { public IClientCredential Snapshot() => new FakeSecret(); }
 
-    private sealed class AnySecret : IClientSecret { }
+    private sealed class AnySecret : IClientSecret { public IClientCredential Snapshot() => new AnySecret(); }
+
+    // The credentials below are deliberately not secrets: the snapshot rule applies to every
+    // credential, including ones no hasher will ever see.
+
+    private sealed class SelfReturningCredential : IClientCredential
+    {
+        public IClientCredential Snapshot() => this;
+    }
+
+    private sealed class NullReturningCredential : IClientCredential
+    {
+        public IClientCredential Snapshot() => null!;
+    }
+
+    private sealed class ThrowingSnapshotCredential(Exception exception) : IClientCredential
+    {
+        public IClientCredential Snapshot() => throw exception;
+    }
+
+    private sealed class CopyingCredential : IClientCredential
+    {
+        public IClientCredential Snapshot() => new CopyingCredential();
+    }
+
+    /// <summary>A secret whose copy is a credential but no longer a secret.</summary>
+    private sealed class DemotingSecret : IClientSecret
+    {
+        public IClientCredential Snapshot() => new CopyingCredential();
+    }
+
+    /// <summary>A secret <see cref="RetypingHasher"/> handles, whose copy no hasher handles.</summary>
+    private sealed class RetypingSecret : IClientSecret
+    {
+        public IClientCredential Snapshot() => new AnySecret();
+    }
+
+    /// <summary>A stored secret whose copy accepts an empty secret, and whose copy's copy does not.</summary>
+    private sealed class StoredSecret : IClientSecret
+    {
+        public IClientCredential Snapshot() => new EmptyAcceptingCopy();
+    }
+
+    private sealed class EmptyAcceptingCopy : IClientSecret
+    {
+        public IClientCredential Snapshot() => new SafeCopy();
+    }
+
+    private sealed class SafeCopy : IClientSecret
+    {
+        public IClientCredential Snapshot() => new SafeCopy();
+    }
+
+    /// <summary>Handles all three generations; only <see cref="EmptyAcceptingCopy"/> verifies anything.</summary>
+    private sealed class GenerationHasher : IClientSecretHasher
+    {
+        public bool CanHandle(IClientSecret secret) => secret is StoredSecret or EmptyAcceptingCopy or SafeCopy;
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => stored is EmptyAcceptingCopy;
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new SafeCopy();
+    }
+
+    private sealed class RetypingHasher : IClientSecretHasher
+    {
+        public bool CanHandle(IClientSecret secret) => secret is RetypingSecret;
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new RetypingSecret();
+    }
 
     /// <summary>
     /// A hasher that accepts any credential of type <see cref="FakeSecret"/> and always returns
@@ -868,6 +934,143 @@ public sealed class ClientRegistrationValidatorTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.too_many_secrets");
+    }
+
+    // ── Credential snapshots ──────────────────────────────────────────────────────────────────────
+
+    // The resolver validates a copy of the registration and then authenticates the client against
+    // that copy. A credential whose Snapshot() hands back itself, or nothing, would leave the store's
+    // instance in the copy, where the store can still change it after the verdict. This rule catches
+    // it on the store's instance, at startup and at a custom store's write time; at request time the
+    // snapshot refuses such a credential itself (ValidatedClientResolverTests).
+
+    [Fact]
+    public void Validate_fails_with_not_copied_code_if_a_credential_s_Snapshot_returns_itself()
+    {
+        var failure = NotCopiedFailure(new SelfReturningCredential());
+
+        failure.Message.Should().Contain("SelfReturningCredential").And.Contain("returned the same instance");
+    }
+
+    [Fact]
+    public void Validate_fails_with_not_copied_code_if_a_credential_s_Snapshot_returns_null()
+    {
+        var failure = NotCopiedFailure(new NullReturningCredential());
+
+        failure.Message.Should().Contain("NullReturningCredential").And.Contain("returned null");
+    }
+
+    [Fact]
+    public void Validate_names_the_exception_but_not_its_message_if_a_credential_s_Snapshot_throws()
+    {
+        // A throw becomes a named startup failure rather than an unexplained exception, and the
+        // message is left out because a credential's own exception may carry the credential's data.
+        var credential = new ThrowingSnapshotCredential(new InvalidOperationException("salt=0badc0de"));
+
+        var failure = NotCopiedFailure(credential);
+
+        failure.Message.Should().Contain("threw InvalidOperationException").And.NotContain("0badc0de");
+    }
+
+    [Fact]
+    public void Validate_fails_with_not_copied_code_if_a_PBKDF2_credential_has_no_salt()
+    {
+        // The built-in copy cannot copy a missing array. Before credentials were copied, such a
+        // registration passed startup and then failed every request as an unknown client.
+        var failure = NotCopiedFailure(new Pbkdf2ClientSecret(600_000, null!, new byte[32]));
+
+        failure.Message.Should().Contain("Pbkdf2ClientSecret").And.Contain("threw");
+    }
+
+    [Fact]
+    public void Validate_reports_a_configuration_failure_thrown_by_Snapshot_by_its_type_only()
+    {
+        // Even the framework's own exception type is not trusted here: Snapshot() belongs to the
+        // credential, and a message it composed may carry the credential's data into the log.
+        var credential = new ThrowingSnapshotCredential(new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("custom.credential.unreadable", "Cannot copy salt=0badc0de.")));
+
+        var failure = NotCopiedFailure(credential);
+
+        failure.Message.Should().Contain("threw ZeeKayDaConfigurationException").And.NotContain("0badc0de");
+    }
+
+    [Fact]
+    public void Validate_fails_with_null_entry_code_if_Credentials_holds_a_null()
+    {
+        // The other credential rules filter by type and skip a null, so without this the
+        // registration passed startup as confidential and then failed every lookup unexplained.
+        var validator = MakeValidator();
+        var client = MakeValidConfidentialClient() with { Credentials = [new FakeSecret(), null!] };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.null_entry");
+    }
+
+    [Fact]
+    public void Validate_fails_with_not_copied_code_if_a_secret_s_Snapshot_is_not_a_secret()
+    {
+        // The copy is what the client is authenticated against. A secret that copies into some other
+        // kind of credential would silently leave the client with no secret at all.
+        var failure = NotCopiedFailure(new DemotingSecret());
+
+        failure.Message.Should().Contain("DemotingSecret").And.Contain("which is not an IClientSecret");
+    }
+
+    [Fact]
+    public void Validate_fails_with_no_hasher_code_if_a_secret_s_Snapshot_returns_a_type_no_hasher_handles()
+    {
+        // The secret rules run on the copy, which is what the resolver serves. Run on the store's
+        // instance, this registration passed startup — its hasher handles the original — and then
+        // failed every lookup, because nothing handles the copy.
+        var validator = MakeValidator(hasher: new RetypingHasher());
+        var client = MakeValidConfidentialClient(secret: new RetypingSecret());
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.no_hasher")
+            .Which.Message.Should().Contain(nameof(AnySecret));
+    }
+
+    [Fact]
+    public void Validate_checks_the_resolver_s_copy_itself_rather_than_copying_it_again()
+    {
+        // The client is authenticated against the copy the snapshot holds. Copying that copy again
+        // and checking the result would approve a second copy while the first is served — here, a
+        // first copy that accepts an empty secret behind a second copy that does not.
+        var validator = MakeValidator(hasher: new GenerationHasher());
+        var client = MakeValidConfidentialClient(secret: new StoredSecret());
+
+        var act = () => validator.Validate(ClientRegistrationSnapshot.Of(client));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.empty_secret_accepted");
+    }
+
+    [Fact]
+    public void Validate_does_not_throw_on_the_resolver_s_copy_of_a_valid_registration()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidConfidentialClient();
+
+        var act = () => validator.Validate(ClientRegistrationSnapshot.Of(client));
+
+        act.Should().NotThrow();
+    }
+
+    private static ZeeKayDaConfigurationFailure NotCopiedFailure(IClientCredential credential)
+    {
+        var validator = MakeValidator();
+        var client = MakeValidConfidentialClient() with { Credentials = [new FakeSecret(), credential] };
+
+        var act = () => validator.Validate(client);
+
+        return act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.not_copied")
+            .Subject;
     }
 
     // ── Empty-secret probe ────────────────────────────────────────────────────────────────────────
