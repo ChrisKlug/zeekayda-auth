@@ -26,10 +26,11 @@ entity type is free to build a set with `OrdinalIgnoreCase`, which would silentl
 redirect-URI or auth-method allowlist, or to report fewer entries than it yields, which let a 33rd
 redirect URI past the cap and `{ "none", "client_secret_basic" }` past the `IsPublic` rule. The
 snapshot rebuilds the four sets with `StringComparer.Ordinal` from what they enumerate. Code reading
-a registration straight from a repository — the snapshot's copy, and the registration validator a
-custom repository calls on its own entity — still compares explicitly and counts by enumerating:
-swapping such a loop for `.Count` or `.Contains` changes behaviour, and the `MiscountingSet` tests
-pin it. Framework code past the snapshot compares explicitly too, so a path that skips it stays safe.
+a registration straight from a repository — the snapshot's copy, the registration validator (which a
+custom repository calls on its own entity) and the startup check of in-memory clients' scopes —
+still compares explicitly and counts by enumerating: swapping such a loop for `.Count` or
+`.Contains` changes behaviour, and the `MiscountingSet` tests pin it. Framework code past the
+snapshot compares explicitly too, so a path that skips it stays safe.
 
 **`IsPublic` is declared, never derived, and the three-way consistency rule is enforced at
 registration:** public ⇔ no credentials ⇔ auth methods are exactly `{ "none" }`. A default

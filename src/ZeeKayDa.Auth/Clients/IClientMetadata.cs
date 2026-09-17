@@ -32,10 +32,10 @@ namespace ZeeKayDa.Auth.Clients;
 /// <para>
 /// Code that reads a registration straight from an <see cref="IClientRepository"/> gets no such
 /// guarantee, because a custom repository may build a set with a case-insensitive comparer or one
-/// whose <c>Count</c> differs from what it enumerates. That code — an
+/// whose <c>Count</c> differs from what it enumerates. Such code — an
 /// <see cref="IClientRegistrationValidator"/>, which a custom repository calls on its own entity at
-/// write time, and any host code that resolves the repository itself — MUST compare with explicit
-/// <see cref="System.StringComparer.Ordinal"/> and count by enumerating. This is a security
+/// write time, the repository's own code, or host code that resolves the repository itself — MUST
+/// compare with explicit <see cref="System.StringComparer.Ordinal"/> and count by enumerating. This is a security
 /// contract, not a suggestion: a case-insensitive redirect URI or authentication method allowlist
 /// accepts values that were never registered.
 /// </para>
