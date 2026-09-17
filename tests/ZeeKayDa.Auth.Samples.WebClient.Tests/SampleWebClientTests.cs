@@ -129,6 +129,33 @@ public sealed class SampleWebClientTests : IDisposable
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task The_client_starts_a_sign_in_from_a_form_post_naming_its_issuer()
+    {
+        using var client = _webClient.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = WebClientOrigin,
+            AllowAutoRedirect = false,
+        });
+        using var form = new FormUrlEncodedContent([KeyValuePair.Create("iss", IdentityServerOrigin.GetLeftPart(UriPartial.Authority))]);
+
+        using var response = await client.PostAsync("/initiate-login", form, Cancellation);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Redirect);
+        response.Headers.Location!.GetLeftPart(UriPartial.Path).Should().Be(new Uri(IdentityServerOrigin, "/connect/authorize").ToString());
+    }
+
+    [Fact]
+    public async Task The_client_refuses_to_be_framed()
+    {
+        using var client = _webClient.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = WebClientOrigin });
+
+        using var response = await client.GetAsync("/", Cancellation);
+
+        response.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
+        response.Headers.GetValues("Content-Security-Policy").Should().Equal("frame-ancestors 'none'");
+    }
+
     public void Dispose()
     {
         _browser.Dispose();

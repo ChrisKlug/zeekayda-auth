@@ -20,6 +20,10 @@
 </ul>
 
 <form method="post">
+    @foreach (var scope in request.Scopes)
+    {
+        <input type="hidden" name="scope" value="@scope" />
+    }
     <button id="consent-submit" class="login-submit" type="submit" name="action" value="allow">Allow</button>
     <button id="consent-deny" type="submit" name="action" value="deny">Deny</button>
 </form>

@@ -10,16 +10,16 @@ public sealed class ConsentModel(IConsentInteraction consent) : PageModel
 
     public async Task OnGetAsync() => ConsentRequest = await consent.TryGetRequestAsync(HttpContext.RequestAborted);
 
-    public async Task OnPostAsync(string? action)
+    public async Task OnPostAsync(string? action, string[] scope)
     {
         // Both calls are terminal: the framework writes the response, and the handler just ends.
         // That includes a form submitted twice, or after the request expired: the framework sends
         // the user back to the application to start again.
         if (action == "allow")
         {
-            // Grants what was asked; a page offering per-scope choices would pass the subset.
-            var request = await consent.TryGetRequestAsync(HttpContext.RequestAborted);
-            await consent.GrantAsync(request?.Scopes ?? []);
+            // The scopes the page showed, posted back with the form. A page offering per-scope
+            // choices posts the ticked subset; the framework grants nothing that was not asked.
+            await consent.GrantAsync(scope);
         }
         else
         {

@@ -128,11 +128,21 @@ error page. Start a sign-in there only when `iss` is the server your application
 options.InitiateLoginUri = "https://app.example.com/initiate-login";
 ```
 
+The address must accept both `GET` and `POST`, and should not be frameable, so another site cannot
+start a sign-in the user does not see:
+
 ```csharp
 // In the application: an ASP.NET Core site using AddOpenIdConnect.
-app.MapGet("/initiate-login", (string? iss) => iss == "https://login.example.com"
-    ? Results.Challenge(new AuthenticationProperties { RedirectUri = "/" }, [OpenIdConnectDefaults.AuthenticationScheme])
-    : Results.BadRequest());
+app.MapMethods("/initiate-login", [HttpMethods.Get, HttpMethods.Post], async (HttpRequest request) =>
+{
+    var iss = request.HasFormContentType
+        ? (await request.ReadFormAsync())["iss"].ToString()
+        : request.Query["iss"].ToString();
+
+    return iss == "https://login.example.com"
+        ? Results.Challenge(new AuthenticationProperties { RedirectUri = "/" }, [OpenIdConnectDefaults.AuthenticationScheme])
+        : Results.BadRequest();
+});
 ```
 
 ## Registering a pre-built client
