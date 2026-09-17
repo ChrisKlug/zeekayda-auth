@@ -109,6 +109,20 @@ public sealed class NothingToContinueTests : IDisposable
         again.ShouldRestartAtTheClient();
     }
 
+    [Fact]
+    public async Task The_restart_address_is_not_written_to_the_log()
+    {
+        // A registered initiate_login_uri may carry query values of its own; the redirect to it is
+        // written without the framework's redirect result, which logs the whole Location.
+        var interactionId = InteractionIdFrom(await AuthorizeAsync(RestartingClient));
+        _time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
+
+        using var signIn = await PostLoginAsync(interactionId);
+
+        signIn.ShouldRestartAtTheClient();
+        _logs.Entries.Should().NotContain(entry => entry.Message.Contains("app.example.com", StringComparison.Ordinal));
+    }
+
     // ── Not back to the client ────────────────────────────────────────────────────────────────
 
     [Fact]

@@ -153,7 +153,8 @@ internal sealed class NothingToContinue
         if (client?.InitiateLoginUri is not { } initiateLoginUri)
             return null;
 
-        return Results.Redirect(QueryHelpers.AddQueryString(initiateLoginUri, "iss", _options.Value.Issuer!));
+        // Unlogged: a registered address may carry query values of its own.
+        return new UnloggedRedirect(QueryHelpers.AddQueryString(initiateLoginUri, "iss", _options.Value.Issuer!));
     }
 
     private static async Task WriteAsync(HttpContext context, IResult result)
