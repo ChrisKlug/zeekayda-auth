@@ -95,9 +95,8 @@ internal static class ClientRegistrationFingerprint
         AppendLengthPrefixed(builder, name);
 
         // Sets are unordered, so a stable fingerprint requires a deterministic order. Ordinal
-        // sorting is used rather than the set's own comparer, which is not trusted (see the
-        // IClientMetadata string-set invariant). The count is written too, so a set cannot be
-        // confused with a differently-sized one whose members concatenate the same way.
+        // sorting gives the same order under every culture. The count is written too, so a set
+        // cannot be confused with a differently-sized one whose members concatenate the same way.
         var ordered = values.OrderBy(v => v, StringComparer.Ordinal).ToList();
         builder.Append(ordered.Count).Append(FieldSeparator);
 

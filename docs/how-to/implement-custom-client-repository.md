@@ -114,19 +114,25 @@ originally created them. A registration that fails validation must not be return
 
 ## String comparison invariants
 
-All `IReadOnlySet<string>` members on `IClientRegistration` — `RedirectUris`,
-`PostLogoutRedirectUris`, `AllowedScopes`, `AllowedTokenEndpointAuthMethods` — must be enumerated
-with **explicit `StringComparer.Ordinal`** semantics wherever a membership check is performed.
-Do not trust the set's own comparer: a custom implementation may return a set built with a
-case-insensitive or culture-aware comparer, which would silently loosen security boundaries.
+The framework never hands your entity to its endpoints or to a token issuer. It copies each
+registration it looks up and rebuilds the `IReadOnlySet<string>` members — `RedirectUris`,
+`PostLogoutRedirectUris`, `AllowedScopes`, `AllowedTokenEndpointAuthMethods` — with
+`StringComparer.Ordinal`, whatever comparer your sets were built with. A registration the framework
+hands you, such as `TokenIssuanceContext.Client`, therefore compares ordinally.
+
+Code that reads your entity directly gets no such guarantee. Wherever your repository, or any other
+code that resolves `IClientRepository` itself, checks membership in one of those sets, use
+**explicit `StringComparer.Ordinal`** semantics and count by enumerating. Do not trust the set's own
+comparer or its `Count`: a set built with a case-insensitive or culture-aware comparer would
+silently loosen security boundaries.
 
 ```csharp
 // Correct — ordinal comparison regardless of the set's comparer
-var allowed = client.RedirectUris
+var allowed = entity.RedirectUris
     .Contains(incomingRedirectUri, StringComparer.Ordinal);
 
 // Wrong — trusts the set's comparer, which may differ across implementations
-var allowed = client.RedirectUris.Contains(incomingRedirectUri);
+var allowed = entity.RedirectUris.Contains(incomingRedirectUri);
 ```
 
 ## See also

@@ -14,8 +14,9 @@ namespace ZeeKayDa.Auth.Clients;
 /// <see cref="IClientMetadata"/>, so secrets stay off code paths that never need them.
 /// </para>
 /// <para>
-/// See <see cref="IClientMetadata"/> for the string-set comparison invariant, which is a security
-/// contract binding on every implementation of this interface.
+/// See <see cref="IClientMetadata"/> for the string-set comparison invariant: which code may rely
+/// on the framework's ordinal copy of a registration, and which code MUST compare ordinally
+/// itself.
 /// </para>
 /// <para>
 /// See <see href="https://www.rfc-editor.org/rfc/rfc6749#section-2">RFC 6749 §2</see> for the
