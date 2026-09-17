@@ -23,6 +23,7 @@ public sealed class SampleWebClientTests : IDisposable
     private const string AliceSubject = "a1ice000000000000000000000000001";
 
     private readonly WebApplicationFactory<IdentityServer::Program> _identityServer = new();
+    private readonly WebApplicationFactory<Program> _webClientHost = new();
     private readonly WebApplicationFactory<Program> _webClient;
     private readonly TwoSiteBrowser _browser;
 
@@ -31,7 +32,7 @@ public sealed class SampleWebClientTests : IDisposable
         // The handler's server-to-server calls (discovery, keys, token) go to the in-process
         // identity server. Configure, not PostConfigure: the handler builds its backchannel in its
         // own post-configure step, which has to see this handler.
-        _webClient = new WebApplicationFactory<Program>().WithWebHostBuilder(host => host.ConfigureTestServices(services =>
+        _webClient = _webClientHost.WithWebHostBuilder(host => host.ConfigureTestServices(services =>
             services.Configure<OpenIdConnectOptions>(OpenIdConnectDefaults.AuthenticationScheme, options =>
                 options.BackchannelHttpHandler = _identityServer.Server.CreateHandler())));
 
@@ -86,6 +87,7 @@ public sealed class SampleWebClientTests : IDisposable
     {
         _browser.Dispose();
         _webClient.Dispose();
+        _webClientHost.Dispose();
         _identityServer.Dispose();
     }
 
