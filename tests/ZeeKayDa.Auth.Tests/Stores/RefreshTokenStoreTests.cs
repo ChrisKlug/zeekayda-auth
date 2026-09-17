@@ -242,6 +242,80 @@ public sealed class RefreshTokenStoreTests
             because: "when FamilyAbsoluteExpiry is the smaller of the two bounds, the whole family's ceiling wins");
     }
 
+    public static TheoryData<TimeSpan> OverflowingRefreshTokenLifetimes() =>
+    [
+        TimeSpan.MaxValue,
+        TimeSpan.FromDays(4_000_000),
+    ];
+
+    [Theory]
+    [MemberData(nameof(OverflowingRefreshTokenLifetimes))]
+    public async Task StoreAsync_saturates_ExpiresAt_instead_of_throwing_when_now_plus_RefreshTokenLifetime_overflows(TimeSpan lifetime)
+    {
+        var tp = new FakeTimeProvider(new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var store = CreateStore(
+            grantStore: grantStore,
+            serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = lifetime } },
+            timeProvider: tp);
+        const string handle = "clamp-overflowing-lifetime";
+
+        await store.StoreAsync(handle, BuildEntry(familyAbsoluteExpiry: DateTimeOffset.MaxValue), CancellationToken.None);
+
+        var grant = await grantStore.FindByHandleAsync(new StoreKey(ComputeExpectedHandleHash(handle)), CancellationToken.None);
+        grant!.ExpiresAt.Should().Be(DateTimeOffset.MaxValue,
+            because: "RefreshTokenLifetime has no upper bound, so its expiry saturates like every other lifetime");
+    }
+
+    [Theory]
+    [MemberData(nameof(OverflowingRefreshTokenLifetimes))]
+    public async Task StoreAsync_saturated_lifetime_still_yields_to_a_finite_FamilyAbsoluteExpiry(TimeSpan lifetime)
+    {
+        var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var tp = new FakeTimeProvider(startTime);
+        var familyAbsoluteExpiry = startTime.AddDays(90);
+        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var store = CreateStore(
+            grantStore: grantStore,
+            serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = lifetime } },
+            timeProvider: tp);
+        const string handle = "clamp-overflowing-lifetime-finite-family";
+
+        await store.StoreAsync(handle, BuildEntry(familyAbsoluteExpiry: familyAbsoluteExpiry), CancellationToken.None);
+
+        var grant = await grantStore.FindByHandleAsync(new StoreKey(ComputeExpectedHandleHash(handle)), CancellationToken.None);
+        grant!.ExpiresAt.Should().Be(familyAbsoluteExpiry,
+            because: "a saturated per-token expiry must never lift a token above its family's absolute ceiling");
+    }
+
+    [Fact]
+    public async Task FindAsync_returns_the_entry_when_its_expiry_is_saturated()
+    {
+        var store = CreateStore(
+            serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = TimeSpan.MaxValue } });
+        const string handle = "find-saturated-expiry";
+        await store.StoreAsync(handle, BuildEntry(familyAbsoluteExpiry: DateTimeOffset.MaxValue), CancellationToken.None);
+
+        var result = await store.FindAsync(handle, CancellationToken.None);
+
+        result.Should().NotBeNull(because: "adding the clock skew to a saturated expiry must saturate too, not throw");
+        result!.ExpiresAt.Should().Be(DateTimeOffset.MaxValue);
+    }
+
+    [Fact]
+    public async Task TryConsumeAsync_consumes_a_grant_whose_expiry_is_saturated()
+    {
+        var store = CreateStore(
+            serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = TimeSpan.MaxValue } });
+        const string handle = "consume-saturated-expiry";
+        await store.StoreAsync(handle, BuildEntry(clientId: "client-a", familyAbsoluteExpiry: DateTimeOffset.MaxValue), CancellationToken.None);
+
+        var outcome = await store.TryConsumeAsync(handle, "client-a", CancellationToken.None);
+
+        outcome.Should().BeOfType<RefreshTokenConsumptionResult.Consumed>(
+            because: "adding the clock skew to a saturated expiry must saturate too, not throw");
+    }
+
     [Fact]
     public async Task StoreAsync_persists_FamilyAbsoluteExpiry_verbatim_as_a_queryable_column()
     {

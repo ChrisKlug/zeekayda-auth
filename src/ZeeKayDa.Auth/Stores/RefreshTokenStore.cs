@@ -81,8 +81,9 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
 
         // The whole family shares one absolute ceiling, applied here to the encrypted entry too, so
         // a caller reading Consumed.Entry.ExpiresAt never sees a value larger than what the
-        // cleartext column actually enforces.
-        var expiresAt = Min(now + _refreshTokenLifetime, entry.FamilyAbsoluteExpiry);
+        // cleartext column actually enforces. RefreshTokenLifetime has no upper bound, so the
+        // addition saturates rather than throwing out of token issuance.
+        var expiresAt = Min(TokenLifetimes.ExpiresAt(now, _refreshTokenLifetime), entry.FamilyAbsoluteExpiry);
         var clampedEntry = entry with { ExpiresAt = expiresAt };
 
         var grant = new RefreshTokenGrant
@@ -124,7 +125,7 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
                 "check whether the refresh token family is revoked").ConfigureAwait(false))
             return null;
 
-        if (_timeProvider.GetUtcNow() >= grant.ExpiresAt + _clockSkewTolerance)
+        if (_timeProvider.GetUtcNow() >= TokenLifetimes.ExpiresAt(grant.ExpiresAt, _clockSkewTolerance))
             return null;
 
         try
@@ -171,7 +172,7 @@ internal sealed class RefreshTokenStore : IRefreshTokenStore
                 "check whether the refresh token family is revoked").ConfigureAwait(false))
             return new RefreshTokenConsumptionResult.Revoked { FamilyId = grant.FamilyId };
 
-        if (_timeProvider.GetUtcNow() >= grant.ExpiresAt + _clockSkewTolerance)
+        if (_timeProvider.GetUtcNow() >= TokenLifetimes.ExpiresAt(grant.ExpiresAt, _clockSkewTolerance))
             return new RefreshTokenConsumptionResult.NotFound();
 
         if (!string.Equals(grant.ClientId, clientId, StringComparison.Ordinal))
