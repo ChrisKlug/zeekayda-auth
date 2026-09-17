@@ -11,19 +11,24 @@ internal static class ClientCredentialValidator
     /// Validates every credential the client holds.
     /// </summary>
     /// <remarks>
-    /// The secret rules run on each credential's <see cref="IClientCredential.Snapshot"/>, not on the
-    /// credential itself, because the copy is what the client is authenticated against. At startup
-    /// and at a custom store's write time that means the copy the resolver will later serve; at
-    /// request time the registration already is the resolver's copy, and copying it again changes
-    /// nothing. Checking the store's instance instead would let a copy that differs from it pass
-    /// here and fail every lookup.
+    /// The secret rules run on the credentials the client will be authenticated against. For a
+    /// store's own registration — at startup and at a custom store's write time — that is each
+    /// credential's <see cref="IClientCredential.Snapshot"/>, the copy the resolver will later serve;
+    /// checking the store's instance instead would let a copy that differs from it pass here and
+    /// fail every lookup. For the resolver's <see cref="ClientRegistrationSnapshot"/> it is the
+    /// credentials the snapshot already holds, checked as they are: copying them again would
+    /// validate a second copy while the client is authenticated against the first, and a
+    /// <c>Snapshot</c> whose successive copies differ would get an unsafe first copy served.
     /// </remarks>
     internal static void Validate(
         IClientRegistration client,
         CompositeClientSecretHasher hasher,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        var secrets = CopySecrets(client, failures);
+        // The snapshot has already refused null entries and anything that is not a usable copy.
+        var secrets = client is ClientRegistrationSnapshot
+            ? client.Credentials.OfType<IClientSecret>().ToList()
+            : CopySecrets(client, failures);
 
         ValidateEmptySecretProbe(client.ClientId, secrets, hasher, failures);
         ValidateCredentialConstraints(client.ClientId, secrets, hasher, failures);
@@ -37,10 +42,9 @@ internal static class ClientCredentialValidator
     /// to change it after this verdict.
     /// </summary>
     /// <remarks>
-    /// At request time <see cref="ClientRegistrationSnapshot"/> has already applied
-    /// <see cref="DescribeCopyProblem"/> to the one <c>Snapshot</c> result it keeps, so a credential
-    /// that answers differently when asked again cannot pass here while the copy holds the store's
-    /// instance.
+    /// Never called for the resolver's <see cref="ClientRegistrationSnapshot"/>, which applied
+    /// <see cref="DescribeCopyProblem"/> to the one <c>Snapshot</c> result it keeps: a credential
+    /// asked a second time could answer differently from what is served.
     /// </remarks>
     private static List<IClientSecret> CopySecrets(
         IClientRegistration client,

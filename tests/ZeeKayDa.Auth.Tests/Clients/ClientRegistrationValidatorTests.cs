@@ -53,6 +53,30 @@ public sealed class ClientRegistrationValidatorTests
         public IClientCredential Snapshot() => new AnySecret();
     }
 
+    /// <summary>A stored secret whose copy accepts an empty secret, and whose copy's copy does not.</summary>
+    private sealed class StoredSecret : IClientSecret
+    {
+        public IClientCredential Snapshot() => new EmptyAcceptingCopy();
+    }
+
+    private sealed class EmptyAcceptingCopy : IClientSecret
+    {
+        public IClientCredential Snapshot() => new SafeCopy();
+    }
+
+    private sealed class SafeCopy : IClientSecret
+    {
+        public IClientCredential Snapshot() => new SafeCopy();
+    }
+
+    /// <summary>Handles all three generations; only <see cref="EmptyAcceptingCopy"/> verifies anything.</summary>
+    private sealed class GenerationHasher : IClientSecretHasher
+    {
+        public bool CanHandle(IClientSecret secret) => secret is StoredSecret or EmptyAcceptingCopy or SafeCopy;
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => stored is EmptyAcceptingCopy;
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new SafeCopy();
+    }
+
     private sealed class RetypingHasher : IClientSecretHasher
     {
         public bool CanHandle(IClientSecret secret) => secret is RetypingSecret;
@@ -1012,10 +1036,23 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_does_not_throw_on_the_resolver_s_copy_of_a_credential_that_copies_itself()
+    public void Validate_checks_the_resolver_s_copy_itself_rather_than_copying_it_again()
     {
-        // At request time the rule runs on credentials that are already copies; asking a copy for
-        // its own copy must not look like a failure.
+        // The client is authenticated against the copy the snapshot holds. Copying that copy again
+        // and checking the result would approve a second copy while the first is served — here, a
+        // first copy that accepts an empty secret behind a second copy that does not.
+        var validator = MakeValidator(hasher: new GenerationHasher());
+        var client = MakeValidConfidentialClient(secret: new StoredSecret());
+
+        var act = () => validator.Validate(ClientRegistrationSnapshot.Of(client));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.empty_secret_accepted");
+    }
+
+    [Fact]
+    public void Validate_does_not_throw_on_the_resolver_s_copy_of_a_valid_registration()
+    {
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient();
 
