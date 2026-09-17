@@ -146,11 +146,54 @@ public class ValidatedClientResolverTests
         validator.Calls.Should().Be(2);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_credential_whose_first_Snapshot_is_not_a_copy_is_served_as_unknown_whatever_it_answers_later(
+        bool returnsNull)
+    {
+        // The snapshot asks each credential once and keeps that answer. A credential that hands back
+        // itself (or null) the first time and a real copy afterwards must not pass because something
+        // asked again — the validator here passes everything, so the snapshot's own check is all
+        // that stands between the store's instance and the protocol.
+        var resolver = Resolver(
+            ConfidentialClient(new FirstCallUncopiedCredential(returnsNull)), new PassingValidator());
+
+        var result = await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(false, "returned the same instance")]
+    [InlineData(true, "returned null")]
+    public async Task A_credential_that_is_not_copied_is_named_in_the_critical_log(bool returnsNull, string problem)
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(ConfidentialClient(new FirstCallUncopiedCredential(returnsNull))),
+            new PassingValidator(),
+            logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
+            .Which.Message.Should().Contain("FirstCallUncopiedCredential").And.Contain(problem);
+    }
+
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
 
     private static ClientRegistration Client() =>
         ClientRegistration.CreatePublic(
             "client-1",
+            redirectUris: ["https://app.example.com/callback"],
+            postLogoutRedirectUris: [],
+            allowedScopes: ["openid"]);
+
+    private static ClientRegistration ConfidentialClient(IClientCredential credential) =>
+        ClientRegistration.CreateConfidential(
+            "client-1",
+            credential,
             redirectUris: ["https://app.example.com/callback"],
             postLogoutRedirectUris: [],
             allowedScopes: ["openid"]);
@@ -215,6 +258,23 @@ public class ValidatedClientResolverTests
         public ValueTask<IClientRegistration?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IClientRegistration?>(Client());
+    }
+
+    /// <summary>
+    /// Returns itself, or <see langword="null"/>, from its first <c>Snapshot()</c> and a real copy
+    /// from every later one.
+    /// </summary>
+    private sealed class FirstCallUncopiedCredential(bool returnsNull) : IClientCredential
+    {
+        private int _calls;
+
+        public IClientCredential Snapshot()
+        {
+            if (Interlocked.Increment(ref _calls) > 1)
+                return new FirstCallUncopiedCredential(returnsNull);
+
+            return returnsNull ? null! : this;
+        }
     }
 
     private sealed class PassingValidator : IClientRegistrationValidator

@@ -27,9 +27,11 @@ internal static class ClientCredentialValidator
     /// hands back itself leaves the store able to change it after this verdict.
     /// </summary>
     /// <remarks>
-    /// Runs on the store's own instance at startup and at a custom store's write time, and on the
-    /// resolver's snapshot per request. The snapshot keeps the store's instance wherever
-    /// <c>Snapshot</c> returned it or <see langword="null"/>, so the same check rejects it there too.
+    /// This is the check for the store's own instance, at startup and at a custom store's write
+    /// time. At request time <see cref="ClientRegistrationSnapshot"/> has already applied
+    /// <see cref="DescribeCopyProblem"/> to the one <c>Snapshot</c> result it keeps, so a credential
+    /// that answers differently when asked again cannot pass here while the copy holds the store's
+    /// instance; this rule then runs on credentials that are already copies.
     /// </remarks>
     private static void ValidateSnapshots(
         IClientRegistration client,
@@ -40,14 +42,33 @@ internal static class ClientCredentialValidator
                      .Select(credential => (credential, DescribeSnapshotProblem(credential)))
                      .Where(entry => entry.Item2 is not null))
         {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.credentials.not_copied",
-                $"Client '{client.ClientId}' has a credential of type '{credential.GetType().Name}' " +
-                $"whose Snapshot() {problem}. Snapshot() must return a new instance that shares no " +
-                "mutable state with the credential, so the credential that was validated is the one " +
-                "the client is authenticated against."));
+            failures.Add(NotCopied(client.ClientId, credential, problem!));
         }
     }
+
+    /// <summary>
+    /// What is wrong with <paramref name="copy"/> as the result of <paramref name="credential"/>'s
+    /// <see cref="IClientCredential.Snapshot"/>, or <see langword="null"/> when it is a new instance.
+    /// </summary>
+    internal static string? DescribeCopyProblem(IClientCredential credential, IClientCredential? copy)
+    {
+        if (copy is null)
+            return "returned null";
+
+        return ReferenceEquals(copy, credential) ? "returned the same instance" : null;
+    }
+
+    /// <summary>The failure for a credential whose <c>Snapshot</c> did not produce a copy.</summary>
+    internal static ZeeKayDaConfigurationFailure NotCopied(
+        string clientId,
+        IClientCredential credential,
+        string problem) =>
+        new(
+            "client.credentials.not_copied",
+            $"Client '{clientId}' has a credential of type '{credential.GetType().Name}' " +
+            $"whose Snapshot() {problem}. Snapshot() must return a new instance that shares no " +
+            "mutable state with the credential, so the credential that was validated is the one " +
+            "the client is authenticated against.");
 
     private static string? DescribeSnapshotProblem(IClientCredential credential)
     {
@@ -68,10 +89,7 @@ internal static class ClientCredentialValidator
             return $"threw {ex.GetType().Name}";
         }
 
-        if (copy is null)
-            return "returned null";
-
-        return ReferenceEquals(copy, credential) ? "returned the same instance" : null;
+        return DescribeCopyProblem(credential, copy);
     }
 
     private static void ValidateEmptySecretProbe(

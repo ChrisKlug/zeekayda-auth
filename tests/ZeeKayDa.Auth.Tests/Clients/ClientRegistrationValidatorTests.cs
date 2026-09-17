@@ -891,27 +891,23 @@ public sealed class ClientRegistrationValidatorTests
     // ── Credential snapshots ──────────────────────────────────────────────────────────────────────
 
     // The resolver validates a copy of the registration and then authenticates the client against
-    // that copy. A credential whose Snapshot() hands back itself, or nothing, leaves the store's
-    // instance in the copy, where the store can still change it after the verdict. The rule runs on
-    // the store's instance at startup and write time, and on the resolver's copy per request — the
-    // copy keeps the store's instance in both cases, so the same check has to catch it there too.
+    // that copy. A credential whose Snapshot() hands back itself, or nothing, would leave the store's
+    // instance in the copy, where the store can still change it after the verdict. This rule catches
+    // it on the store's instance, at startup and at a custom store's write time; at request time the
+    // snapshot refuses such a credential itself (ValidatedClientResolverTests).
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Validate_fails_with_not_copied_code_if_a_credential_s_Snapshot_returns_itself(bool onTheResolversCopy)
+    [Fact]
+    public void Validate_fails_with_not_copied_code_if_a_credential_s_Snapshot_returns_itself()
     {
-        var failure = NotCopiedFailure(new SelfReturningCredential(), onTheResolversCopy);
+        var failure = NotCopiedFailure(new SelfReturningCredential());
 
         failure.Message.Should().Contain("SelfReturningCredential").And.Contain("returned the same instance");
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Validate_fails_with_not_copied_code_if_a_credential_s_Snapshot_returns_null(bool onTheResolversCopy)
+    [Fact]
+    public void Validate_fails_with_not_copied_code_if_a_credential_s_Snapshot_returns_null()
     {
-        var failure = NotCopiedFailure(new NullReturningCredential(), onTheResolversCopy);
+        var failure = NotCopiedFailure(new NullReturningCredential());
 
         failure.Message.Should().Contain("NullReturningCredential").And.Contain("returned null");
     }
@@ -923,7 +919,7 @@ public sealed class ClientRegistrationValidatorTests
         // message is left out because a credential's own exception may carry the credential's data.
         var credential = new ThrowingSnapshotCredential(new InvalidOperationException("salt=0badc0de"));
 
-        var failure = NotCopiedFailure(credential, onTheResolversCopy: false);
+        var failure = NotCopiedFailure(credential);
 
         failure.Message.Should().Contain("threw InvalidOperationException").And.NotContain("0badc0de");
     }
@@ -933,7 +929,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         // The built-in copy cannot copy a missing array. Before credentials were copied, such a
         // registration passed startup and then failed every request as an unknown client.
-        var failure = NotCopiedFailure(new Pbkdf2ClientSecret(600_000, null!, new byte[32]), onTheResolversCopy: false);
+        var failure = NotCopiedFailure(new Pbkdf2ClientSecret(600_000, null!, new byte[32]));
 
         failure.Message.Should().Contain("Pbkdf2ClientSecret").And.Contain("threw");
     }
@@ -957,8 +953,10 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_does_not_throw_for_a_credential_whose_Snapshot_returns_a_new_instance()
+    public void Validate_does_not_throw_on_the_resolver_s_copy_of_a_credential_that_copies_itself()
     {
+        // At request time the rule runs on credentials that are already copies; asking a copy for
+        // its own copy must not look like a failure.
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient();
 
@@ -967,13 +965,12 @@ public sealed class ClientRegistrationValidatorTests
         act.Should().NotThrow();
     }
 
-    private static ZeeKayDaConfigurationFailure NotCopiedFailure(IClientCredential credential, bool onTheResolversCopy)
+    private static ZeeKayDaConfigurationFailure NotCopiedFailure(IClientCredential credential)
     {
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient() with { Credentials = [new FakeSecret(), credential] };
-        IClientRegistration validated = onTheResolversCopy ? ClientRegistrationSnapshot.Of(client) : client;
 
-        var act = () => validator.Validate(validated);
+        var act = () => validator.Validate(client);
 
         return act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.not_copied")

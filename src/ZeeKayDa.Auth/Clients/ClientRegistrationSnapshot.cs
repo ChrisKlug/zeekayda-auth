@@ -44,8 +44,11 @@ namespace ZeeKayDa.Auth.Clients;
 /// credential behind a verdict nor edit one in place — <see cref="Pbkdf2ClientSecret"/> hands out
 /// its <c>Salt</c> and <c>Hash</c> arrays, and <see cref="IPbkdf2ClientSecret"/>'s snapshot copies
 /// them. Copying is the credential type's job rather than this class's, so a custom credential type
-/// is treated exactly as the framework's own. A <c>Snapshot</c> that returns the store's instance is
-/// caught by the registration validator, which runs on this copy.
+/// is treated exactly as the framework's own. <c>Snapshot</c> is called once per credential and its
+/// result checked here: one that returns the store's instance or <see langword="null"/> makes the
+/// registration unreadable (<c>client.credentials.not_copied</c>), which the resolver serves as an
+/// unknown client. Leaving that check to the validator would mean asking the credential a second
+/// time, and a credential that answered differently could pass while this copy held its instance.
 /// </para>
 /// </remarks>
 internal sealed class ClientRegistrationSnapshot : IClientRegistration
@@ -75,7 +78,8 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
         AdditionalIdTokenClaims = Copy(client.AdditionalIdTokenClaims);
         AdditionalUserInfoClaims = Copy(client.AdditionalUserInfoClaims);
         AdditionalAccessTokenClaims = Copy(client.AdditionalAccessTokenClaims);
-        Credentials = new ReadOnlyCollection<IClientCredential>([.. client.Credentials.Select(CopyOf)]);
+        Credentials = new ReadOnlyCollection<IClientCredential>(
+            [.. client.Credentials.Select(credential => CopyOf(ClientId, credential))]);
     }
 
     /// <inheritdoc/>
@@ -171,10 +175,15 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
     private static IReadOnlyCollection<string> Copy(IReadOnlyCollection<string> values) =>
         new ReadOnlyCollection<string>([.. values]);
 
-    // A Snapshot() that returns null keeps the store's instance rather than a null the fingerprint
-    // would fail on unnamed. The registration validator runs on this copy and rejects a credential
-    // whose Snapshot() returns null or itself, so the store's instance is never served either way —
-    // it is kept only so that rejection says which credential and why.
-    private static IClientCredential CopyOf(IClientCredential credential) =>
-        credential.Snapshot() ?? credential;
+    // The one Snapshot() call per credential, checked on the spot. Throws rather than keeping the
+    // store's instance: the resolver turns a configuration exception from here into an unknown client
+    // whose log entry carries this failure.
+    private static IClientCredential CopyOf(string clientId, IClientCredential credential)
+    {
+        var copy = credential.Snapshot();
+
+        return ClientCredentialValidator.DescribeCopyProblem(credential, copy) is { } problem
+            ? throw new ZeeKayDaConfigurationException(ClientCredentialValidator.NotCopied(clientId, credential, problem))
+            : copy;
+    }
 }
