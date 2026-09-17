@@ -22,6 +22,17 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// A page that links the external identity to a local account passes that account's own
 /// principal to <see cref="SignInWithReplacedPrincipalAsync"/>.
 /// </para>
+/// <para>
+/// <strong>Nothing to continue is answered, not thrown.</strong> When a terminal method finds no
+/// interaction left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was
+/// already completed or was started in another browser; no principal is parked for it any more; or another response completed it while
+/// this one was being prepared — the framework answers the request itself. It sends the browser to
+/// the client's registered <c>InitiateLoginUri</c>, with <c>iss</c>, to start again when the browser
+/// can still say which client it came from, and to the error page with
+/// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal either way.
+/// A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it causes the same
+/// answer on every submission.
+/// </para>
 /// </remarks>
 public interface IProviderSignInInteraction
 {
@@ -29,8 +40,9 @@ public interface IProviderSignInInteraction
     /// The principal the external provider authenticated, parked for the interaction this request
     /// is addressed to, or <see langword="null"/> when there is none: the redirect did not come
     /// from <c>RedirectToAsync</c>, the parked principal has expired, or it belongs to another
-    /// interaction. A page that gets <see langword="null"/> has nothing to finish and should say
-    /// so, not fail.
+    /// interaction, or the request carries no <c>zkd_i</c> at all. A page that gets
+    /// <see langword="null"/> has nothing to finish and should say so, not fail. A missing
+    /// <c>zkd_i</c> is also logged as a warning, since a form that drops it looks the same.
     /// </summary>
     /// <param name="cancellationToken">Cancels the read; pass the request's own token.</param>
     /// <remarks>
@@ -41,11 +53,6 @@ public interface IProviderSignInInteraction
     /// read finds. A page renders nothing meaningful without this call, so every rendered page
     /// carries the protection; one that renders without calling it is on its own.
     /// </remarks>
-    /// <exception cref="ZeeKayDaInteractionException">
-    /// The request carries no <c>zkd_i</c>, so there is no interaction to read a parked principal
-    /// for. The framework adds it to the URL it redirects the page to; a form that regenerates its
-    /// action from routing drops it.
-    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store could not be reached. Fail-closed: a parked principal that cannot be
     /// read is not reported as absent, since the page would then tell the user there is nothing
@@ -91,15 +98,15 @@ public interface IProviderSignInInteraction
     /// first, and a principal parked by a second provider return while this sign-in was in flight,
     /// which is promoted in place of the one read and, if it cannot be, is gone with the refusal.
     /// </para>
+    /// <para>
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// interface remarks.
+    /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no external sign-in to finish: the request carries no <c>zkd_i</c>, or names an
-    /// interaction this browser is not carrying — it expired, was already completed, or was
-    /// started in another browser — or no principal is parked for it, because it expired or was
-    /// already consumed. Or the parked principal cannot be promoted: its provider is no longer
-    /// registered, it carries no subject on an authenticated identity, or its subject claim names
-    /// no issuer — a provider handler that must be fixed, since it fails every time. Or another
-    /// response completed the interaction while this one was being prepared.
+    /// The parked principal cannot be promoted: its provider is no longer registered, it carries no
+    /// subject on an authenticated identity, or its subject claim names no issuer — a provider
+    /// handler that must be fixed, since it fails every time.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached before the
@@ -157,14 +164,14 @@ public interface IProviderSignInInteraction
     /// provider return while this sign-in was in flight, which is held to the same subject rule
     /// and, when refused, is gone with the refusal.
     /// </para>
+    /// <para>
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// interface remarks.
+    /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no external sign-in to finish: the request carries no <c>zkd_i</c>, or names an
-    /// interaction this browser is not carrying — it expired, was already completed, or was
-    /// started in another browser — or no principal is parked for it, because it expired or was
-    /// already consumed, or its provider is no longer registered. Or <paramref name="principal"/>
-    /// carries no subject, or its subject is the upstream subject the provider returned. Or
-    /// another response completed the interaction while this one was being prepared.
+    /// The parked principal's provider is no longer registered. Or <paramref name="principal"/>
+    /// carries no subject, or its subject is the upstream subject the provider returned.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached before the
@@ -208,12 +215,11 @@ public interface IProviderSignInInteraction
     /// anything is read. A cancel wired to a <c>GET</c> anchor would be triggerable cross-site by
     /// anyone who learned the interaction identifier.
     /// </para>
+    /// <para>
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// interface remarks.
+    /// </para>
     /// </remarks>
-    /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no interaction to end: the request carries no <c>zkd_i</c>, or names an interaction
-    /// this browser is not carrying — it expired, was already completed, or was started in another
-    /// browser. Or another response completed the interaction while this one was being prepared.
-    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// the client was told nothing.

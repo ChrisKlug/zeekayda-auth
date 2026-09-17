@@ -9,12 +9,11 @@ The authorize endpoint's protocol rules are in
 
 ## Decisions in force
 
-**Callback dispatch never reads a user-supplied discriminator.** One callback path per registered
-provider, assigned by the framework and handled by that provider's own handler — never a single
-callback path selecting the provider from a query parameter. Dispatch that trusts attacker-visible
-request input is the failure this avoids; cleaner audit logs are a side benefit, not the reason.
-The provider identifier the login page posts back is request input too, validated against the
-configured provider set before any challenge — it selects from a known list, never names a target.
+**Callback dispatch never reads a user-supplied discriminator.** One callback path per registered provider,
+assigned by the framework and handled by that provider's own handler — never a single callback path selecting
+the provider from a query parameter: dispatch that trusts attacker-visible request input is the failure this
+avoids. The provider identifier the login page posts back is request input too, validated against the configured
+provider set before any challenge — it selects from a known list, never names a target.
 
 **No host code ever contains a scheme name, cookie name, callback path or `ReturnUrl`.** The host's
 pages advance the flow only through the interaction services. The one concession is `zkd_i`, the
@@ -60,7 +59,7 @@ disclosure primitive, since it reaches the client, browser history and proxy log
 rule in `docs/design/authorization-endpoint-interaction.md` that a description stays generic and
 echoes no value would have no enforcement left. The denial never becomes a redirect primitive
 either: the destination is the registered URI from the decrypted interaction context, so an expired
-context has no destination and the request fails where it stands.
+context has no destination and the request has nothing to continue.
 
 **The SSO session identifier is framework-minted, unguessable and stable for the life of the
 session — and is not the cookie value, which is regenerated on every promotion so that
@@ -74,77 +73,78 @@ host's principal, or a host copying claims from an inbound token could choose it
 
 **Framework cookie names are reserved, the `zkd.interaction.` prefix included; a host registering one
 fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and the
-binding cookies hold a random secret. A session cookie needs `SameSite=None` only if silent authentication
+binding cookies hold a random secret and a sealed hint. A session cookie needs `SameSite=None` only if silent authentication
 is supported; the rest take `Lax`: each is first read on a cross-site navigation, which `Strict` is withheld
 from — a control that silently breaks the feature is no control. The parked external principal is no cookie
 but a second store entry under the interaction's binding, one per tab; `zkd.pending` stays reserved, unwritten.
 Multi-instance deployments must share one Data Protection key ring — the framework does not solve distributed key management.
 
-**The authorization request context lives in the interaction store, one encrypted entry per
-interaction, so any number can be in flight in one browser.** An unauthenticated request may store at
-most `MaxRequestContextBytes` (16 KB) of encoded context, refused locally above that — a bound on the
-store, not a header budget; that a valid request costs the store an entry for 30 minutes is accepted,
-rate limiting being the host's. It carries protocol state and a subject reference — **never claims or a
-`ClaimsPrincipal`**. The seam is internal; set, get and remove is the whole contract (`token-stores.md`).
+**The authorization request context lives in the interaction store, one encrypted entry per interaction, so any
+number can be in flight in one browser.** An unauthenticated request may store at most `MaxRequestContextBytes`
+(16 KB) of encoded context, refused locally above that — a bound on the store, not a header budget; that a valid
+request costs the store an entry for 30 minutes is accepted, rate limiting being the host's. It carries protocol
+state and a subject reference — **never claims or a `ClaimsPrincipal`**. The seam is internal; set, get and
+remove is the whole contract (`token-stores.md`).
 
-**Each interaction is bound to its browser by `zkd.interaction.<id>`, a random secret; the store key
-is derived from identifier and secret together.** The identifier travels in URLs and URLs leak; a
-browser without the cookie, or with a forged one, finds nothing. Each cookie expires with its interaction
-and is deleted when it ends; capped at ten per browser in sequence, oldest first, so ninety-byte bindings
-do not reopen the header-budget finding a 3 KB payload per cookie would have. Simultaneous tabs overshoot
-by their count, which cross-site content cannot force; ten top-level navigations evicting a tab's live
-binding is accepted. A failed request wrote nothing and clears nothing.
+**Each interaction is bound to its browser by `zkd.interaction.<id>`: a random secret, from which with the
+identifier the store key is derived, and an encrypted client hint.** The identifier travels in URLs and URLs
+leak; a browser without the cookie, or with a forged one, finds nothing. An ended interaction that names a client
+retires its cookie to a secret-less tombstone keeping the hint a day, so a late submission can still name it; at
+most three tombstones, evicted before any live binding, within ten bindings per browser, oldest first, stay clear
+of the header-budget finding a 3 KB payload per cookie had. Simultaneous tabs overshoot by their count, which cross-site content cannot
+force; ten top-level navigations evicting a tab's live binding is accepted. A failed request wrote nothing.
 
 **One terminal outcome per interaction — a code or a denial — decided by the authorization code store.**
 Issuance and denial both claim the interaction first, through the code store's atomic insert-if-absent,
 expiring with the interaction plus skew, with expiry re-checked before and after the claim so a stalled
-response cannot claim again once the winner's claim lapsed. A loser refuses as a replayed form is refused.
+response cannot claim again once the winner's claim lapsed. A loser has nothing to continue, as a replay has.
+
+**A page with nothing to continue is answered, never thrown at.** A double submit, an expired or foreign
+interaction, a lost claim or a missing `zkd_i` is ordinary user behaviour, so each terminal call writes the
+answer: the client's registered `InitiateLoginUri` with `iss` when the hint names a client still registered,
+else the error page with `NothingToContinue`. The destination is the registration's alone; a browser without
+the binding never learns the client. A logout shows the signed-out page, or the error page if still signed in.
+A missing `zkd_i`, the one host-bug case, logs a warning; the rest log at information.
 
 **ZeeKayDa owns no interaction UI that needs a user model.** Login, consent and provider selection are the
 host's pages, with its own user store, branding and MFA — more host code than a shipped page, a cost accepted.
 Only the error, logout-confirmation and signed-out pages have unbranded framework fallbacks for a host that sets no
-path. The response a consent or logout page calls `GetRequestAsync` from, or a provider sign-in page
+path. The response a consent or logout page calls `GetRequestAsync` or `TryGetRequestAsync` from, or a provider sign-in page
 `GetPendingPrincipalAsync`, is stamped `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `no-store`; the login page is not.
 
-**Provider schemes exist only in the framework's scheme map, and what would make them visible to
-the host fails at startup.** `WithProviders` replays the scheme-map configurers the host's callback
-appended, records the schemes, and removes the configurers, so a provider is absent from the host's
-`AuthenticationOptions`: not enumerable, not challengeable by name, never dispatched by the
-middleware. Invisibility is a guarantee rather than a convention, which is why a provider name the
-host also registers as a scheme of its own is a startup error and not a shadowing rule. The
-framework pins every provider's forwarding and each remote handler's callback path, sign-in scheme
-and access-denied path by name, and *asserts* the pins with a validator resolved at startup, because a
-post-configurer registered later would otherwise win silently and send the sign-in to the wrong
-cookie or the callback to a path nothing serves. A host remote scheme whose callback path is a
-provider's route is refused for the same reason: the middleware would claim the callback first.
+**Provider schemes exist only in the framework's scheme map, and what would make them visible to the host fails
+at startup.** `WithProviders` replays the scheme-map configurers the host's callback appended, records the
+schemes, and removes the configurers, so a provider is absent from the host's `AuthenticationOptions`: not
+enumerable, not challengeable by name, never dispatched by the middleware. Invisibility is a guarantee rather
+than a convention, which is why a provider name the host also registers as a scheme of its own is a startup
+error and not a shadowing rule. The framework pins every provider's forwarding and each remote handler's
+callback path, sign-in scheme and access-denied path by name, and *asserts* the pins with a validator resolved
+at startup, because a post-configurer registered later would otherwise win silently and send the sign-in to the
+wrong cookie or the callback to a path nothing serves. A host remote scheme whose callback path is a provider's
+route is refused for the same reason: the middleware would claim the callback first.
 
-**No handler is trusted for provider identity or interaction binding.** The challenge stamps the
-interaction identifier into the properties it hands the handler; the callback endpoint marks the
-request with the provider its route names before the handler runs; `zkd.external` records that
-mark at sign-in and refuses a sign-in without one; `/connect/resume` consumes the ticket first and
-refuses one naming another interaction or an unregistered provider. A handler that drops its
-properties fails loudly there and can complete nothing else. Only a refusal by the user at the
-provider reaches the client — recorded by the framework's own pinned access-denied event, and only
-for the interaction the browser carries; every other callback failure renders locally, logged by
-type never by message, and leaves the interaction alive. The session subject of an auto-promoted
-external principal is derived from provider, claim issuer and upstream subject together, never the
-upstream value: two providers can never share a session, and a subject without an issuer is refused.
+**No handler is trusted for provider identity or interaction binding.** The challenge stamps the interaction
+identifier into the properties it hands the handler; the callback endpoint marks the request with the provider
+its route names before the handler runs; `zkd.external` records that mark at sign-in and refuses a sign-in
+without one; `/connect/resume` consumes the ticket first and refuses one naming another interaction or an
+unregistered provider. A handler that drops its properties fails loudly there and can complete nothing else.
+Only a refusal by the user at the provider reaches the client — recorded by the framework's own pinned
+access-denied event, and only for the interaction the browser carries; every other callback failure renders
+locally, logged by type never by message, and leaves the interaction alive. The session subject of an
+auto-promoted external principal is derived from provider, claim issuer and upstream subject together, never
+the upstream value: two providers can never share a session, and a subject without an issuer is refused.
 
-**Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and `LoginPath`
-presence is the dispatch override.** The login page is also the provider-selection page, and the
-framework never skips a page the host built: `LoginPath` set → redirect there; unset with local off
-and one provider → challenge it directly; unset when the page is needed → `server_error`, warned at
-startup; local off with no providers → startup error. Checks fire only when `GrantTypesSupported`
-contains `AuthorizationCode` — the existing capability declaration, so a `client_credentials`-only
-host starts clean. The conditions are exact: a warning that cries wolf trains people to ignore it.
+**Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and `LoginPath` presence is the
+dispatch override.** The login page is also the provider-selection page, and the framework never skips a page the
+host built: `LoginPath` set → redirect there; unset with local off and one provider → challenge it directly; unset
+when the page is needed → `server_error`, warned at startup; local off with no providers → startup error. Checks
+fire only when `GrantTypesSupported` contains `AuthorizationCode`, so a `client_credentials`-only host starts
+clean. The conditions are exact: a warning that cries wolf trains people to ignore it.
 
-**Home realm discovery never consults the host's user store.** Framework HRD (deferred, unbuilt) is
-domain matching against provider-declared configuration. A per-user lookup on the login page is an
-unauthenticated user-enumeration oracle — type an address, learn whether an account exists — and
-will not become framework API; domain matching leaks only tenant configuration the matched
-provider's own page reveals anyway. Per-user HRD is host code, owning that exposure.
+**Home realm discovery never consults the host's user store.** Framework HRD (deferred, unbuilt) is domain
+matching against provider configuration. A per-user lookup on the login page is an unauthenticated
+user-enumeration oracle and will not become framework API; per-user HRD is host code, owning that exposure.
 
-**Consent re-intersects scopes as a last line of defence.** Effective scope is
-`(requested ∩ client.AllowedScopes) ∩ user_granted`; dropped scopes are silently omitted and never
-echoed in an error response. The grant path re-applies the intersection so a host bug cannot grant a
-scope the client was never registered for.
+**Consent re-intersects scopes as a last line of defence.** Effective scope is `(requested ∩ client.AllowedScopes)
+∩ user_granted`; dropped scopes are silently omitted and never echoed in an error response. The grant path
+re-applies the intersection so a host bug cannot grant a scope the client was never registered for.

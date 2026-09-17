@@ -3,6 +3,12 @@
 @{
     ViewData["Title"] = "Sign out";
 }
+@if (!Model.HasRequest)
+{
+    <h1>Nothing to confirm</h1>
+    <p>This sign-out has expired or was already answered. Return to the application and sign out again.</p>
+    return;
+}
 <h1>Sign out @Model.Username?</h1>
 
 @if (Model.ClientName is not null)

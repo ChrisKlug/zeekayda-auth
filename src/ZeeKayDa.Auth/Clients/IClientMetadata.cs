@@ -134,6 +134,20 @@ public interface IClientMetadata
     string? DisplayName => null;
 
     /// <summary>
+    /// The client's <c>initiate_login_uri</c> (OpenID Connect Core §4): where the framework sends
+    /// the browser, with <c>iss</c>, to have the client start a new sign-in when a login or consent
+    /// page is submitted for an interaction that no longer exists — it expired, was already
+    /// completed, or was answered twice. <see langword="null"/> (the default) sends the user to the
+    /// host's error page instead.
+    /// </summary>
+    /// <remarks>
+    /// An absolute <c>https</c> URI with no fragment or userinfo; startup fails otherwise. The
+    /// client must treat a request to it only as a prompt to start a sign-in at the issuer named by
+    /// <c>iss</c>, and only for an issuer it already trusts.
+    /// </remarks>
+    string? InitiateLoginUri => null;
+
+    /// <summary>
     /// Whether the user must consent on the host's consent page before an authorization code is
     /// issued to this client. Defaults to <see langword="true"/>.
     /// </summary>

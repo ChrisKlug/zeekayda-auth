@@ -59,6 +59,7 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
         IsPublic = client.IsPublic;
         EnableZkdErrorCodes = client.EnableZkdErrorCodes;
         DisplayName = client.DisplayName;
+        InitiateLoginUri = client.InitiateLoginUri;
         RequireConsent = client.RequireConsent;
         SkipLogoutConfirmation = client.SkipLogoutConfirmation;
         AllowNonceInsteadOfPkce = client.AllowNonceInsteadOfPkce;
@@ -93,6 +94,9 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
 
     /// <inheritdoc/>
     public string? DisplayName { get; }
+
+    /// <inheritdoc/>
+    public string? InitiateLoginUri { get; }
 
     /// <inheritdoc/>
     public bool RequireConsent { get; }

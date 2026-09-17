@@ -17,13 +17,25 @@ public class AuthorizeErrorTransportTests
         var transport = Transport(out var time);
         var write = new DefaultHttpContext();
 
-        var id = transport.CreateAndAttach(write, "invalid_request", "The request is invalid.");
+        var id = transport.CreateAndAttach(write, AuthorizationErrorKind.RequestRejected, "invalid_request", "The request is invalid.");
         var read = ContextWithCookieFrom(write, id);
 
         var details = transport.TryRead(read);
         details.Should().NotBeNull();
         details!.Error.Should().Be("invalid_request");
         details.Description.Should().Be("The request is invalid.");
+        details.Kind.Should().Be(AuthorizationErrorKind.RequestRejected);
+    }
+
+    [Fact]
+    public void Attached_kind_round_trips_through_cookie_and_id()
+    {
+        var transport = Transport(out _);
+        var write = new DefaultHttpContext();
+
+        var id = transport.CreateAndAttach(write, AuthorizationErrorKind.NothingToContinue, "interaction_not_found", "Nothing to continue.");
+
+        transport.TryRead(ContextWithCookieFrom(write, id))!.Kind.Should().Be(AuthorizationErrorKind.NothingToContinue);
     }
 
     [Fact]
@@ -32,7 +44,7 @@ public class AuthorizeErrorTransportTests
         var transport = Transport(out _);
         var write = new DefaultHttpContext();
 
-        transport.CreateAndAttach(write, "invalid_request", "The request is invalid.");
+        transport.CreateAndAttach(write, AuthorizationErrorKind.RequestRejected, "invalid_request", "The request is invalid.");
         var read = ContextWithCookieFrom(write, "a-different-id");
 
         transport.TryRead(read).Should().BeNull(
@@ -46,7 +58,7 @@ public class AuthorizeErrorTransportTests
         var transport = Transport(out var time);
         var write = new DefaultHttpContext();
 
-        var id = transport.CreateAndAttach(write, "invalid_request", "The request is invalid.");
+        var id = transport.CreateAndAttach(write, AuthorizationErrorKind.RequestRejected, "invalid_request", "The request is invalid.");
         time.Advance(TimeSpan.FromMinutes(3));
 
         transport.TryRead(ContextWithCookieFrom(write, id)).Should().BeNull();
@@ -69,7 +81,7 @@ public class AuthorizeErrorTransportTests
         var transport = Transport(out _);
         var write = new DefaultHttpContext();
 
-        transport.CreateAndAttach(write, "invalid_request", "The request is invalid.");
+        transport.CreateAndAttach(write, AuthorizationErrorKind.RequestRejected, "invalid_request", "The request is invalid.");
 
         var setCookie = write.Response.Headers.SetCookie.ToString();
         setCookie.Should().Contain("httponly").And.Contain("secure").And.Contain("path=/auth-error");

@@ -188,12 +188,10 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
                 return Results.Empty;
             }
 
-            var request = await logout.GetRequestAsync(context.RequestAborted).ConfigureAwait(false);
-            return EndSessionResponses.Confirmation(request.Client);
-        }
-        catch (ZeeKayDaInteractionException)
-        {
-            return EndSessionResponses.NothingToConfirm();
+            var request = await logout.TryGetRequestAsync(context.RequestAborted).ConfigureAwait(false);
+            return request is null
+                ? EndSessionResponses.NothingToConfirm()
+                : EndSessionResponses.Confirmation(request.Client);
         }
         catch (ZeeKayDaStoreException ex)
         {

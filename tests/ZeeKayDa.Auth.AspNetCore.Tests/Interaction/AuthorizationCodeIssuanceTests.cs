@@ -353,15 +353,15 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     [Fact]
     public async Task Issuance_straight_from_sign_in_discards_the_interaction_too()
     {
-        // On this path the session cookie and the interaction cookie's deletion land in the same
+        // On this path the session cookie and the interaction cookie's retirement land in the same
         // response; a replayed login POST for the same interaction must find nothing to complete.
         var handoff = await AuthorizeAsync(ValidQuery(TrustedClient, "openid profile"));
         var interactionId = InteractionIdFrom(handoff);
         (await PostLoginAsync(interactionId)).ShouldHaveIssuedCodeTo(RegisteredRedirect);
 
-        var replay = async () => await PostLoginAsync(interactionId);
+        using var replay = await PostLoginAsync(interactionId);
 
-        await replay.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await replay.ShouldHaveFoundNothingToContinueAsync();
         (await InteractionIsAliveAsync(interactionId)).Should().BeFalse();
     }
 
@@ -376,9 +376,12 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         var second = GrantAsync(interactionId, "openid");
         var outcomes = await Task.WhenAll(Settle(first), Settle(second));
 
-        outcomes.Count(outcome => outcome.Response is not null).Should().Be(1, "exactly one response carries a code");
-        outcomes.Single(outcome => outcome.Response is not null).Response!.ShouldHaveIssuedCodeTo(RegisteredRedirect);
-        outcomes.Single(outcome => outcome.Response is null).Error.Should().BeOfType<ZeeKayDaInteractionException>();
+        outcomes.Should().AllSatisfy(outcome => outcome.Error.Should().BeNull());
+        var redirected = outcomes.Where(outcome => outcome.Response!.StatusCode == HttpStatusCode.Redirect).ToArray();
+        redirected.Should().ContainSingle("exactly one response carries a code");
+        redirected[0].Response!.ShouldHaveIssuedCodeTo(RegisteredRedirect);
+        await outcomes.Single(outcome => outcome.Response!.StatusCode != HttpStatusCode.Redirect).Response!
+            .ShouldHaveFoundNothingToContinueAsync("the loser finds nothing left to answer");
     }
 
     [Fact]
@@ -392,10 +395,13 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         var deny = DenyAsync(interactionId);
         var outcomes = await Task.WhenAll(Settle(grant), Settle(deny));
 
-        outcomes.Count(outcome => outcome.Response is not null).Should().Be(1, "exactly one response reaches the client");
-        var delivered = RedirectQueryOf(outcomes.Single(outcome => outcome.Response is not null).Response!);
+        outcomes.Should().AllSatisfy(outcome => outcome.Error.Should().BeNull());
+        var redirected = outcomes.Where(outcome => outcome.Response!.StatusCode == HttpStatusCode.Redirect).ToArray();
+        redirected.Should().ContainSingle("exactly one response reaches the client");
+        var delivered = RedirectQueryOf(redirected[0].Response!);
         (delivered.ContainsKey("code") ^ delivered.ContainsKey("error")).Should().BeTrue("a code or a denial, never both");
-        outcomes.Single(outcome => outcome.Response is null).Error.Should().BeOfType<ZeeKayDaInteractionException>();
+        await outcomes.Single(outcome => outcome.Response!.StatusCode != HttpStatusCode.Redirect).Response!
+            .ShouldHaveFoundNothingToContinueAsync("the loser finds nothing left to answer");
     }
 
     [Fact]
@@ -408,11 +414,12 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         using var client = NewClient(factory);
         var interactionId = await ReachConsentAsync(client);
 
-        var deny = async () => await DenyAsync(client, interactionId);
+        using var deny = await DenyAsync(client, interactionId);
 
-        (await deny.Should().ThrowAsync<ZeeKayDaInteractionException>()).WithMessage("*already been completed*");
-        var replay = async () => await GrantAsync(client, interactionId, "openid");
-        await replay.Should().ThrowAsync<ZeeKayDaInteractionException>("the interaction was discarded with the refusal");
+        await deny.ShouldHaveFoundNothingToContinueAsync();
+        _logs.Entries.Should().Contain(entry => entry.Message.Contains(nameof(NothingToContinueReason.AlreadyCompleted), StringComparison.Ordinal));
+        using var replay = await GrantAsync(client, interactionId, "openid");
+        await replay.ShouldHaveFoundNothingToContinueAsync("the interaction was discarded with the refusal");
     }
 
     [Fact]
@@ -427,11 +434,12 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         using var client = NewClient(factory);
         var interactionId = await ReachConsentAsync(client);
 
-        var grant = async () => await GrantAsync(client, interactionId, "openid");
+        using var grant = await GrantAsync(client, interactionId, "openid");
 
-        (await grant.Should().ThrowAsync<ZeeKayDaInteractionException>()).WithMessage("*already been completed*");
-        var replay = async () => await GrantAsync(client, interactionId, "openid");
-        await replay.Should().ThrowAsync<ZeeKayDaInteractionException>("the interaction was discarded with the refusal");
+        await grant.ShouldHaveFoundNothingToContinueAsync();
+        _logs.Entries.Should().Contain(entry => entry.Message.Contains(nameof(NothingToContinueReason.AlreadyCompleted), StringComparison.Ordinal));
+        using var replay = await GrantAsync(client, interactionId, "openid");
+        await replay.ShouldHaveFoundNothingToContinueAsync("the interaction was discarded with the refusal");
     }
 
     // ── Concurrent tabs ───────────────────────────────────────────────────────────────────────
@@ -501,9 +509,9 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         var interactionId = await ReachConsentAsync();
         (await GrantAsync(interactionId, "openid")).ShouldHaveIssuedCodeTo(RegisteredRedirect);
 
-        var replay = async () => await GrantAsync(interactionId, "openid");
+        using var replay = await GrantAsync(interactionId, "openid");
 
-        await replay.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await replay.ShouldHaveFoundNothingToContinueAsync();
     }
 
     // ── What the code is bound to ─────────────────────────────────────────────────────────────
@@ -607,8 +615,8 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Headers.Location.Should().BeNull();
         (await response.Content.ReadAsStringAsync(Cancellation)).Should().Contain("invalid_request");
-        var replay = async () => await GrantAsync(client, interactionId, "openid");
-        await replay.Should().ThrowAsync<ZeeKayDaInteractionException>("the interaction was discarded");
+        using var replay = await GrantAsync(client, interactionId, "openid");
+        await replay.ShouldHaveFoundNothingToContinueAsync("the interaction was discarded");
     }
 
     // ── What the store does with it ───────────────────────────────────────────────────────────
@@ -688,8 +696,8 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         parameters.Should().NotContainKey("code", "nothing was stored, so nothing is handed out");
         _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains(ConsentingClient, StringComparison.Ordinal));
         LogsShouldCarryNoProtocolMaterial(code: null, "opaque-client-state");
-        var replay = async () => await GrantAsync(client, interactionId, "openid");
-        await replay.Should().ThrowAsync<ZeeKayDaInteractionException>("a request that failed at issuance is not resumed");
+        using var replay = await GrantAsync(client, interactionId, "openid");
+        await replay.ShouldHaveFoundNothingToContinueAsync("a request that failed at issuance is not resumed");
     }
 
     // ── The interaction store fails ───────────────────────────────────────────────────────────
@@ -742,7 +750,7 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     public async Task A_stored_code_is_delivered_even_when_discarding_the_interaction_fails()
     {
         // Once the code is in the store it is redeemable; a response that dropped it for a cleanup
-        // failure would leave a live code the client never learns about. The binding cookie still
+        // failure would leave a live code the client never learns about. The binding's secret still
         // goes, so the browser cannot resubmit against the entry the store kept.
         using var factory = NewFactory(configureStores: builder => StoresWithFailingInteractionStore(builder, failFromWrite: int.MaxValue, failRemoval: true));
         using var client = NewClient(factory);
@@ -753,10 +761,10 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         var code = response.ShouldHaveIssuedCodeTo(RegisteredRedirect);
         (await RedeemAsync(factory, code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>();
         response.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
-            cookie.StartsWith(InteractionBindingCookie.NamePrefix + interactionId + "=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
+            cookie.StartsWith(InteractionBindingCookie.NamePrefix + interactionId + "=") && FlowAssertions.IsRetiredBinding(cookie));
         _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains("left to expire", StringComparison.Ordinal));
-        var replay = async () => await GrantAsync(client, interactionId, "openid");
-        await replay.Should().ThrowAsync<ZeeKayDaInteractionException>("the binding is gone even though the entry is not");
+        using var replay = await GrantAsync(client, interactionId, "openid");
+        await replay.ShouldHaveFoundNothingToContinueAsync("the binding is gone even though the entry is not");
     }
 
     private void StoresWithFailingInteractionStore(ZeeKayDaAuthBuilder builder, int failFromWrite, bool failRemoval = false)

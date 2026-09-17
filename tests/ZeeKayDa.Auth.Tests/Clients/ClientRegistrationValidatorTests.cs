@@ -1909,4 +1909,43 @@ public sealed class ClientRegistrationValidatorTests
 
         act.Should().NotThrow();
     }
+
+    // ── InitiateLoginUri ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_passes_for_an_https_initiate_login_uri()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { InitiateLoginUri = "https://app.example.com/login?source=idp" };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData("not a uri", "client.initiate_login_uri.invalid")]
+    [InlineData("/relative/login", "client.initiate_login_uri.invalid")]
+    [InlineData("https://app.example.com/lo gin", "client.initiate_login_uri.invalid")]
+    [InlineData("https://app.example.com/login\u0007", "client.initiate_login_uri.invalid")]
+    [InlineData("https:/login", "client.initiate_login_uri.invalid")]
+    [InlineData("https:///login", "client.initiate_login_uri.invalid")]
+    [InlineData("https://:443/login", "client.initiate_login_uri.invalid")]
+    [InlineData("http://app.example.com/login", "client.initiate_login_uri.scheme")]
+    [InlineData("http://127.0.0.1/login", "client.initiate_login_uri.scheme")]
+    [InlineData("myapp.scheme://login", "client.initiate_login_uri.scheme")]
+    [InlineData("https://app.example.com/login#x", "client.initiate_login_uri.fragment")]
+    [InlineData("https://user@app.example.com/login", "client.initiate_login_uri.userinfo")]
+    [InlineData("https://[fe80::1%25eth0]/login", "client.initiate_login_uri.ipv6_zone_id")]
+    [InlineData("https://app.example.com/a/../login", "client.initiate_login_uri.path_traversal")]
+    public void Validate_fails_for_an_initiate_login_uri_the_framework_must_not_send_a_browser_to(string uri, string code)
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { InitiateLoginUri = System.Text.RegularExpressions.Regex.Unescape(uri) };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == code);
+    }
 }

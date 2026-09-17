@@ -464,8 +464,8 @@ public sealed class ConsentInteractionTests : IDisposable
     }
 
     /// <summary>
-    /// The read, the grant and the deny all throw, nothing is redirected anywhere, and the
-    /// interaction is left exactly where it was.
+    /// The read throws, the grant and the deny find nothing to continue, nothing is redirected
+    /// anywhere, and the interaction is left exactly where it was.
     /// </summary>
     private static async Task EveryConsentOperationIsRefusedAsync(HttpClient client, string interactionId)
     {
@@ -475,10 +475,10 @@ public sealed class ConsentInteractionTests : IDisposable
 
         var read = async () => await client.GetAsync(url, Cancellation);
         await read.Should().ThrowAsync<ZeeKayDaInteractionException>();
-        var grant = async () => await client.PostAsync(url, grantForm, Cancellation);
-        await grant.Should().ThrowAsync<ZeeKayDaInteractionException>();
-        var deny = async () => await client.PostAsync(url, denyForm, Cancellation);
-        await deny.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        using var grant = await client.PostAsync(url, grantForm, Cancellation);
+        await grant.ShouldHaveFoundNothingToContinueAsync();
+        using var deny = await client.PostAsync(url, denyForm, Cancellation);
+        await deny.ShouldHaveFoundNothingToContinueAsync();
 
         var probe = await client.GetAsync(WithInteractionId("/test/interaction", interactionId), Cancellation);
         probe.StatusCode.Should().Be(HttpStatusCode.OK, "a refused call leaves the interaction where it was");
@@ -548,9 +548,9 @@ public sealed class ConsentInteractionTests : IDisposable
         var interactionId = InteractionIdFrom(signIn);
         (await GrantAsync(interactionId, "openid")).ShouldHaveIssuedCodeTo(RegisteredRedirect);
 
-        var reSignIn = async () => await PostLoginAsync(interactionId, sub: "user-2");
+        using var reSignIn = await PostLoginAsync(interactionId, sub: "user-2");
 
-        await reSignIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await reSignIn.ShouldHaveFoundNothingToContinueAsync();
     }
 
     [Fact]
@@ -587,9 +587,9 @@ public sealed class ConsentInteractionTests : IDisposable
     {
         await ReachConsentAsync();
 
-        var grant = async () => await GrantAsync(interactionId: null, "openid");
+        using var grant = await GrantAsync(interactionId: null, "openid");
 
-        await grant.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await grant.ShouldHaveFoundNothingToContinueAsync();
     }
 
     [Fact]
@@ -600,10 +600,10 @@ public sealed class ConsentInteractionTests : IDisposable
         var signIn = await ReachConsentAsync();
         using var otherBrowser = NewClient(_factory);
 
-        var grant = async () => await otherBrowser.PostAsync(
+        using var grant = await otherBrowser.PostAsync(
             WithInteractionId(ConsentPath, InteractionIdFrom(signIn)), Form(("scope", "openid")), Cancellation);
 
-        await grant.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await grant.ShouldHaveFoundNothingToContinueAsync();
     }
 
     [Fact]
@@ -629,9 +629,9 @@ public sealed class ConsentInteractionTests : IDisposable
 
         _time.Advance(TimeSpan.FromMinutes(31));
 
-        var grant = async () => await GrantAsync(interactionId, "openid");
+        using var grant = await GrantAsync(interactionId, "openid");
 
-        await grant.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await grant.ShouldHaveFoundNothingToContinueAsync();
     }
 
     [Fact]
@@ -641,9 +641,9 @@ public sealed class ConsentInteractionTests : IDisposable
         using var content = Form();
         await _client.PostAsync(SignOutPath, content, Cancellation);
 
-        var grant = async () => await GrantAsync(InteractionIdFrom(signIn), "openid");
+        using var grant = await GrantAsync(InteractionIdFrom(signIn), "openid");
 
-        await grant.Should().ThrowAsync<ZeeKayDaInteractionException>(
+        await grant.ShouldHaveFoundNothingToContinueAsync(
             "consent is recorded by the user it was asked of, and nobody is signed in any more");
     }
 
@@ -667,8 +667,8 @@ public sealed class ConsentInteractionTests : IDisposable
 
         using var raw = NewClient(_factory, handleCookies: false);
 
-        var grant = async () => await raw.SendAsync(GrantRequest(url, [.. secondInteraction, firstSession]), Cancellation);
-        await grant.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        using var grant = await raw.SendAsync(GrantRequest(url, [.. secondInteraction, firstSession]), Cancellation);
+        await grant.ShouldHaveFoundNothingToContinueAsync();
 
         // The control: the same request under the session that did sign in is accepted, so the
         // refusal above is the binding and not the hand-built cookie header.
@@ -715,8 +715,8 @@ public sealed class ConsentInteractionTests : IDisposable
 
         (await ReadSessionSubjectAsync()).Should().Be("alice", "declining one client does not sign the user out");
         (await ReadInteractionAsync(interactionId)).Should().BeNull();
-        var grant = async () => await GrantAsync(interactionId, "openid");
-        await grant.Should().ThrowAsync<ZeeKayDaInteractionException>("a declined request cannot be resumed");
+        using var grant = await GrantAsync(interactionId, "openid");
+        await grant.ShouldHaveFoundNothingToContinueAsync("a declined request cannot be resumed");
     }
 
     [Fact]
@@ -724,9 +724,9 @@ public sealed class ConsentInteractionTests : IDisposable
     {
         await ReachConsentAsync();
 
-        var deny = async () => await DenyAsync(interactionId: null);
+        using var deny = await DenyAsync(interactionId: null);
 
-        await deny.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await deny.ShouldHaveFoundNothingToContinueAsync();
     }
 
     [Fact]
@@ -736,9 +736,9 @@ public sealed class ConsentInteractionTests : IDisposable
         // the tool for that, and it is bound to the same identifier.
         var handoff = await AuthorizeAsync();
 
-        var deny = async () => await DenyAsync(InteractionIdFrom(handoff));
+        using var deny = await DenyAsync(InteractionIdFrom(handoff));
 
-        await deny.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await deny.ShouldHaveFoundNothingToContinueAsync();
     }
 
     // ── A decision comes only from a form post ────────────────────────────────────────────────
@@ -821,7 +821,7 @@ public sealed class ConsentInteractionTests : IDisposable
         DestinationOf(response).Should().Be(RegisteredRedirect);
         RedirectQueryOf(response)["error"].Should().Equal(["consent_required"]);
         response.Headers.GetValues("Set-Cookie").Should().Contain(
-            cookie => cookie.StartsWith(InteractionBindingCookie.NamePrefix) && cookie.Contains("expires=Thu, 01 Jan 1970"),
+            cookie => cookie.StartsWith(InteractionBindingCookie.NamePrefix) && FlowAssertions.IsRetiredBinding(cookie),
             "a refused request is not left behind for a later sign-in");
     }
 

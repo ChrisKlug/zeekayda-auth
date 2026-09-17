@@ -95,7 +95,7 @@ internal sealed class AuthorizationRequestContextStore
         // binding to a nothing, and evicts no other tab's binding for it.
         var secret = InteractionBindingCookie.NewSecret();
         await SetAsync(requestContext, secret, encoded, cancellationToken).ConfigureAwait(false);
-        _binding.Issue(context, requestContext.Id, requestContext.ExpiresAt, secret);
+        _binding.Issue(context, new(requestContext.Id, requestContext.ExpiresAt, secret, requestContext.ClientId));
 
         return true;
     }
@@ -179,11 +179,12 @@ internal sealed class AuthorizationRequestContextStore
     }
 
     /// <summary>
-    /// Discards the interaction: the binding cookie, and the entry when this browser can address
-    /// it. Called when the flow terminates — the code is issued, consent is denied, or the request
-    /// errors out. Best-effort by construction: the cookie goes first and cannot fail, and a store
-    /// that refuses the removal is logged rather than thrown, since the browser has already lost
-    /// the only thing that could address the entry, which is left to its lifetime.
+    /// Discards the interaction: retires the binding cookie, and removes the entry when this
+    /// browser can address it. Called when the flow terminates — the code is issued, consent is
+    /// denied, or the request errors out. Best-effort by construction: the binding's secret goes
+    /// first and cannot fail, and a store that refuses the removal is logged rather than thrown,
+    /// since the browser has already lost the only thing that could address the entry, which is
+    /// left to its lifetime.
     /// </summary>
     /// <remarks>
     /// Every caller is ending a request — with a code already stored, an error already decided, or
@@ -195,7 +196,7 @@ internal sealed class AuthorizationRequestContextStore
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
         var secret = _binding.Read(context, interactionId);
-        _binding.Delete(context, interactionId);
+        _binding.Retire(context, interactionId);
 
         if (secret is null)
             return;

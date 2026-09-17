@@ -747,11 +747,11 @@ public sealed class ProviderSignInEventTests
         var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
         var interactionId = InteractionIdFrom(handoff);
 
-        var collected = async () => await client.PostAsync(WithInteractionId(CollectMorePath, interactionId), Form(("dept", "sales")), Cancellation);
-        var linked = async () => await client.PostAsync(WithInteractionId(CollectMorePath + "/link-direct", interactionId), Form(("sub", "local-1")), Cancellation);
+        using var collected = await client.PostAsync(WithInteractionId(CollectMorePath, interactionId), Form(("dept", "sales")), Cancellation);
+        using var linked = await client.PostAsync(WithInteractionId(CollectMorePath + "/link-direct", interactionId), Form(("sub", "local-1")), Cancellation);
 
-        await collected.Should().ThrowAsync<ZeeKayDaInteractionException>();
-        await linked.Should().ThrowAsync<ZeeKayDaInteractionException>("the service itself refuses, whether or not the page read first");
+        await collected.ShouldHaveFoundNothingToContinueAsync();
+        await linked.ShouldHaveFoundNothingToContinueAsync("the service itself refuses, whether or not the page read first");
         (await ReadJsonAsync(client, "/test/session")).Should().BeNull();
         var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
         signIn.ShouldHaveReachedConsent("the interaction is untouched");
@@ -766,9 +766,9 @@ public sealed class ProviderSignInEventTests
         var collectMore = resume.Headers.Location!.OriginalString;
         (await client.PostAsync(collectMore, Form(), Cancellation)).ShouldHaveReachedConsent();
 
-        var again = async () => await client.PostAsync(collectMore, Form(), Cancellation);
+        using var again = await client.PostAsync(collectMore, Form(), Cancellation);
 
-        await again.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await again.ShouldHaveFoundNothingToContinueAsync();
     }
 
     [Fact]
@@ -842,15 +842,19 @@ public sealed class ProviderSignInEventTests
     }
 
     [Fact]
-    public async Task GetPendingPrincipalAsync_without_an_interaction_id_is_refused()
+    public async Task GetPendingPrincipalAsync_without_an_interaction_id_reads_nothing_and_warns()
     {
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
+        var logs = new CapturingLoggerProvider();
+        using var factory = NewFaultableFactory(new FaultableInteractionStore(), logs);
         using var client = NewClient(factory);
         await ResumeAsync(client);
 
-        var read = async () => await client.GetAsync(CollectMorePath, Cancellation);
+        using var read = await client.GetAsync(CollectMorePath, Cancellation);
 
-        await read.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        read.StatusCode.Should().Be(HttpStatusCode.NotFound, "the page is told there is nothing to finish");
+        read.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
+        logs.Entries.Should().Contain(entry =>
+            entry.Level == LogLevel.Warning && entry.Message.Contains("without the 'zkd_i' parameter", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1132,8 +1136,8 @@ public sealed class ProviderSignInEventTests
         using var client = NewClient(factory);
         var (interactionId, _) = await ResumeAsync(client);
 
-        var signIn = async () => await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
+        using var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
 
-        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await signIn.ShouldHaveFoundNothingToContinueAsync();
     }
 }

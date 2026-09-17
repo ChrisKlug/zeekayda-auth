@@ -406,9 +406,9 @@ public sealed class LoginInteractionTests : IDisposable
         // user never asked for, and reaches the login page by its own route.
         await AuthorizeAsync();
 
-        var signIn = async () => await PostLoginAsync(interactionId: null, ("sub", "user-1"));
+        using var signIn = await PostLoginAsync(interactionId: null, ("sub", "user-1"));
 
-        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await signIn.ShouldHaveFoundNothingToContinueAsync();
     }
 
     [Fact]
@@ -425,12 +425,12 @@ public sealed class LoginInteractionTests : IDisposable
         });
         using var content = new FormUrlEncodedContent([KeyValuePair.Create("sub", "user-1")]);
 
-        var signIn = async () => await otherBrowser.PostAsync(
+        using var signIn = await otherBrowser.PostAsync(
             QueryHelpers.AddQueryString(LoginPath, InteractionHandoff.InteractionIdParameter, InteractionIdFrom(handoff)),
             content,
             TestContext.Current.CancellationToken);
 
-        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await signIn.ShouldHaveFoundNothingToContinueAsync();
     }
 
     [Fact]
@@ -541,9 +541,9 @@ public sealed class LoginInteractionTests : IDisposable
 
         _time.Advance(TimeSpan.FromMinutes(31));
 
-        var signIn = async () => await PostLoginAsync(interactionId, ("sub", "user-1"));
+        using var signIn = await PostLoginAsync(interactionId, ("sub", "user-1"));
 
-        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await signIn.ShouldHaveFoundNothingToContinueAsync();
     }
 
     // ── Cancelling at the login page ──────────────────────────────────────────────────────────
@@ -672,9 +672,9 @@ public sealed class LoginInteractionTests : IDisposable
 
         // The context is discarded on the way out, so there is nothing left for a later sign-in
         // to pick up and complete.
-        var signIn = async () => await PostLoginAsync(interactionId, ("sub", "user-1"));
+        using var signIn = await PostLoginAsync(interactionId, ("sub", "user-1"));
 
-        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await signIn.ShouldHaveFoundNothingToContinueAsync();
     }
 
     [Fact]
@@ -682,9 +682,9 @@ public sealed class LoginInteractionTests : IDisposable
     {
         await AuthorizeAsync();
 
-        var cancel = async () => await PostCancelAsync(interactionId: null);
+        using var cancel = await PostCancelAsync(interactionId: null);
 
-        await cancel.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await cancel.ShouldHaveFoundNothingToContinueAsync();
     }
 
     [Fact]
@@ -702,12 +702,12 @@ public sealed class LoginInteractionTests : IDisposable
         });
         using var content = new FormUrlEncodedContent([]);
 
-        var cancel = async () => await otherBrowser.PostAsync(
+        using var cancel = await otherBrowser.PostAsync(
             QueryHelpers.AddQueryString(CancelPath, InteractionHandoff.InteractionIdParameter, interactionId),
             content,
             TestContext.Current.CancellationToken);
 
-        await cancel.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await cancel.ShouldHaveFoundNothingToContinueAsync();
 
         // Refusing is only half of it: the interaction must survive the refused deny, or a
         // rejected attempt would still have killed the live request.
@@ -727,9 +727,9 @@ public sealed class LoginInteractionTests : IDisposable
         // The destination comes from the decrypted context and nothing else. With no context there
         // is no destination, and the request fails where it stands rather than redirecting
         // somewhere derived from what this request happened to carry.
-        var cancel = async () => await PostCancelAsync(interactionId);
+        using var cancel = await PostCancelAsync(interactionId);
 
-        await cancel.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await cancel.ShouldHaveFoundNothingToContinueAsync();
     }
 
     // ── A terminal step comes only from a form post ───────────────────────────────────────────
@@ -929,9 +929,9 @@ public sealed class LoginInteractionTests : IDisposable
         query["prompt"] = "none";
         await AuthorizeAsync(query);
 
-        var signIn = async () => await PostLoginAsync("any-interaction-id", ("sub", "user-1"));
+        using var signIn = await PostLoginAsync("any-interaction-id", ("sub", "user-1"));
 
-        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        await signIn.ShouldHaveFoundNothingToContinueAsync();
     }
 
     [Fact]

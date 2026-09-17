@@ -69,6 +69,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         ValidateRedirectUriSet(client.ClientId, client.PostLogoutRedirectUris, "PostLogoutRedirectUris", failures);
         ValidateClientId(client, failures);
         ValidateDisplayName(client, failures);
+        InitiateLoginUriValidator.Validate(client, failures);
         ValidateAllowedTokenEndpointAuthMethods(client, failures);
         ValidatePkceOptOut(client, failures);
         ClientCredentialValidator.Validate(client, _hasher, failures);

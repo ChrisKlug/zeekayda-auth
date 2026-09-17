@@ -29,17 +29,17 @@ internal sealed partial class TwoSiteBrowser : IDisposable
         await FollowAsync(new HttpRequestMessage(HttpMethod.Get, url), cancellationToken);
 
     /// <summary>
-    /// Submits the page's form the way a browser would — with its antiforgery token, to its action
+    /// Submits the page's form the way a browser would — with its hidden inputs, to its action
     /// or back to the page's own URL — and follows the redirects that answer it.
     /// </summary>
     public async Task<Page> SubmitAsync(Page page, Dictionary<string, string> fields, CancellationToken cancellationToken)
     {
-        fields["__RequestVerificationToken"] = AntiforgeryToken().Match(page.Html).Groups[1].Value;
         var action = WebUtility.HtmlDecode(FormAction().Match(page.Html).Groups["action"].Value);
         var target = action.Length == 0 ? page.Url : new Uri(page.Url, action);
+        var posted = HiddenInputs(page.Html).Where(hidden => !fields.ContainsKey(hidden.Key)).Concat(fields);
 
         return await FollowAsync(
-            new HttpRequestMessage(HttpMethod.Post, target) { Content = new FormUrlEncodedContent(fields) },
+            new HttpRequestMessage(HttpMethod.Post, target) { Content = new FormUrlEncodedContent(posted) },
             cancellationToken);
     }
 
@@ -76,8 +76,21 @@ internal sealed partial class TwoSiteBrowser : IDisposable
         }
     }
 
-    [GeneratedRegex("name=\"__RequestVerificationToken\" type=\"hidden\" value=\"([^\"]+)\"")]
-    private static partial Regex AntiforgeryToken();
+    /// <summary>The name and value of every hidden input on the page, in document order, as a browser posts them.</summary>
+    private static IEnumerable<KeyValuePair<string, string>> HiddenInputs(string html) =>
+        InputTag().Matches(html)
+            .Select(input => (Type: Attribute(input.Value, "type"), Name: Attribute(input.Value, "name"), Value: Attribute(input.Value, "value")))
+            .Where(input => string.Equals(input.Type, "hidden", StringComparison.OrdinalIgnoreCase) && input.Name is not null)
+            .Select(input => KeyValuePair.Create(input.Name!, WebUtility.HtmlDecode(input.Value ?? string.Empty)));
+
+    private static string? Attribute(string tag, string name)
+    {
+        var match = Regex.Match(tag, $@"\s{name}\s*=\s*""([^""]*)""", RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
+    [GeneratedRegex("<input\\b[^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex InputTag();
 
     // HTML attribute names are case-insensitive, and a value may be double-, single- or unquoted.
     [GeneratedRegex("""<form\b[^>]*\saction\s*=\s*(?:"(?<action>[^"]*)"|'(?<action>[^']*)'|(?<action>[^\s>"']+))""", RegexOptions.IgnoreCase)]

@@ -32,6 +32,12 @@ The client listens on `https://localhost:5002` using the ASP.NET Core developmen
 | Registering the cookie and OpenID Connect handlers | `Program.cs` |
 | A page that requires a signed-in user | `Pages/Profile.cshtml`, authorized in `Program.cs` |
 | Signing out of both the client and the identity server | `Pages/SignOut.cshtml.cs` |
+| Starting a new sign-in when the identity server asks for one | `/initiate-login` in `Program.cs` |
+
+The identity server registers `https://localhost:5002/initiate-login` as this client's
+`InitiateLoginUri`. When a sign-in page there is submitted after its request is gone — a double
+click, or a page left open too long — the server sends the browser to that address with `iss`,
+and the client starts a new sign-in if `iss` is the server it trusts.
 
 Three settings differ from the handler's defaults, each commented in `Program.cs`:
 

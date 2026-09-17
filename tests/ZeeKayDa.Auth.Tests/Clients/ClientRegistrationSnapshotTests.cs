@@ -267,6 +267,7 @@ public class ClientRegistrationSnapshotTests
         IsPublic = true,
         EnableZkdErrorCodes = true,
         DisplayName = "Fully Populated",
+        InitiateLoginUri = "https://app.example.com/login",
         RequireConsent = true,
         SkipLogoutConfirmation = true,
         AllowNonceInsteadOfPkce = true,
@@ -303,6 +304,7 @@ public class ClientRegistrationSnapshotTests
             ["IsPublic"] = r => r.IsPublic = false,
             ["EnableZkdErrorCodes"] = r => r.EnableZkdErrorCodes = true,
             ["DisplayName"] = r => r.DisplayName = "Other App",
+            ["InitiateLoginUri"] = r => r.InitiateLoginUri = "https://app.example.com/start",
             ["RequireConsent"] = r => r.RequireConsent = false,
             ["SkipLogoutConfirmation"] = r => r.SkipLogoutConfirmation = true,
             ["AllowNonceInsteadOfPkce"] = r => r.AllowNonceInsteadOfPkce = true,
@@ -341,6 +343,8 @@ public class ClientRegistrationSnapshotTests
         public bool EnableZkdErrorCodes { get; set; }
 
         public string? DisplayName { get; set; }
+
+        public string? InitiateLoginUri { get; set; }
 
         public bool RequireConsent { get; set; } = true;
 

@@ -15,6 +15,15 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// client, so a "stay signed in" button can go wherever the host likes, and the unanswered
 /// sign-out expires on its own.
 /// </para>
+/// <para>
+/// <strong>Nothing to continue is answered, not thrown.</strong> When <see cref="SignOutAsync"/>
+/// finds no sign-out left to complete — the request carries no <c>zkd_i</c>; the sign-out expired,
+/// was already completed or was started in another browser; or the browser no longer holds the
+/// session it was started for — the framework answers the request itself: with the signed-out page
+/// when the browser holds no session, and with the error page, with
+/// <see cref="AuthorizationErrorKind.NothingToContinue"/>, when it is still signed in. Nobody is
+/// signed out by such a request. The call is terminal either way.
+/// </para>
 /// </remarks>
 public interface ILogoutInteraction
 {
@@ -34,7 +43,8 @@ public interface ILogoutInteraction
     /// browser. Or the browser no longer holds the session the sign-out was started for, on the
     /// same terms as <see cref="SignOutAsync"/>: the sign-out could not complete anyway, and
     /// <see cref="LogoutRequest.Subject"/> names the user it was started for, who is no longer the
-    /// one at the browser.
+    /// one at the browser. A page that wants to render its own message for these cases calls
+    /// <see cref="TryGetRequestAsync"/> instead.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
     /// <exception cref="InvalidOperationException">
@@ -42,6 +52,24 @@ public interface ILogoutInteraction
     /// </exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     Task<LogoutRequest> GetRequestAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the sign-out the page is asked to confirm, or <see langword="null"/> when there is
+    /// none — for a page that renders its own "nothing to confirm" message.
+    /// </summary>
+    /// <remarks>
+    /// Exactly <see cref="GetRequestAsync"/>, including the headers it stamps, except that each case
+    /// <see cref="GetRequestAsync"/> reports with <see cref="ZeeKayDaInteractionException"/> returns
+    /// <see langword="null"/> instead. A request with no <c>zkd_i</c> is logged as a warning, since
+    /// a form that drops it looks like this on every submission.
+    /// </remarks>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// There is no active HTTP request — the service was resolved outside one.
+    /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    Task<LogoutRequest?> TryGetRequestAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Signs the user out and sends them on: to the client's registered post-logout redirect URI
@@ -66,13 +94,11 @@ public interface ILogoutInteraction
     /// anything is read. A sign-out wired to the <c>GET</c> that renders the page would sign the
     /// user out the moment they arrived, which is exactly what the confirmation exists to prevent.
     /// </para>
+    /// <para>
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// interface remarks.
+    /// </para>
     /// </remarks>
-    /// <exception cref="ZeeKayDaInteractionException">
-    /// There is no sign-out to complete: the request carries no <c>zkd_i</c>, or names one this
-    /// browser is not carrying — it expired, was already completed, or was started in another
-    /// browser. Or the browser no longer holds the session the sign-out was started for, because
-    /// that session ended or the user signed in again while the page was open.
-    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store could not be read. Fail-closed: nobody was signed out.
     /// </exception>

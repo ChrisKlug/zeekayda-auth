@@ -24,22 +24,18 @@ internal sealed class ConsentInteraction : IConsentInteraction
     /// </summary>
     private const string IdentityWithheld = "The user did not consent to being identified to the client.";
 
-    private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly AuthorizationFlow _flow;
-    private readonly InteractionOutcomes _outcomes;
+    private const string Page = "consent";
 
-    public ConsentInteraction(
-        IHttpContextAccessor httpContextAccessor,
-        AuthorizationFlow flow,
-        InteractionOutcomes outcomes)
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly PageInteractionServices _services;
+
+    public ConsentInteraction(IHttpContextAccessor httpContextAccessor, PageInteractionServices services)
     {
         ArgumentNullException.ThrowIfNull(httpContextAccessor);
-        ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(outcomes);
+        ArgumentNullException.ThrowIfNull(services);
 
         _httpContextAccessor = httpContextAccessor;
-        _flow = flow;
-        _outcomes = outcomes;
+        _services = services;
     }
 
     /// <inheritdoc/>
@@ -48,9 +44,11 @@ internal sealed class ConsentInteraction : IConsentInteraction
         var context = RequireHttpContext();
 
         cancellationToken.ThrowIfCancellationRequested();
-        var (requestContext, client) = await ResolveAsync(context, cancellationToken).ConfigureAwait(false);
 
+        // Stamped before the read, so whatever the page renders — the question, or its own
+        // "nothing to ask" after TryGetRequestAsync — is framed by nobody and cached by nothing.
         RenderedPage.Protect(context.Response);
+        var (requestContext, client) = await ResolveAsync(context, cancellationToken).ConfigureAwait(false);
 
         // The subject was written by the same promotion that wrote the session identifier
         // ResolveAsync just matched, so it is present whenever that check passed.
@@ -58,6 +56,20 @@ internal sealed class ConsentInteraction : IConsentInteraction
             new ClientInformation(requestContext.ClientId, client.DisplayName),
             requestContext.Scopes.ToImmutableArray(),
             requestContext.Subject!);
+    }
+
+    /// <inheritdoc/>
+    public async Task<ConsentRequest?> TryGetRequestAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await GetRequestAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (NothingToContinueException missing)
+        {
+            _services.NothingToContinue.Log(Page, missing);
+            return null;
+        }
     }
 
     /// <inheritdoc/>
@@ -72,6 +84,11 @@ internal sealed class ConsentInteraction : IConsentInteraction
             throw new ArgumentException("An entry in scopes is null or blank.", nameof(scopes));
 
         var context = RequireStateChangingRequest();
+        await _services.NothingToContinue.SignInStepAsync(context, Page, () => DecideAsync(context, answered)).ConfigureAwait(false);
+    }
+
+    private async Task DecideAsync(HttpContext context, string[] answered)
+    {
         var (requestContext, client) = await ResolveAsync(context, context.RequestAborted).ConfigureAwait(false);
 
         // The page's answer can only narrow what was asked: intersected in request order, over
@@ -82,20 +99,22 @@ internal sealed class ConsentInteraction : IConsentInteraction
 
         if (!granted.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
         {
-            await _outcomes.DenyAsync(context, requestContext, IdentityWithheld).ConfigureAwait(false);
+            await _services.Outcomes.DenyAsync(context, requestContext, IdentityWithheld).ConfigureAwait(false);
             return;
         }
 
-        await _outcomes.CompleteConsentAsync(context, requestContext, client, granted).ConfigureAwait(false);
+        await _services.Outcomes.CompleteConsentAsync(context, requestContext, client, granted).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task DenyAsync()
     {
         var context = RequireStateChangingRequest();
-        var (requestContext, _) = await ResolveAsync(context, context.RequestAborted).ConfigureAwait(false);
-
-        await _outcomes.DenyAsync(context, requestContext, DeclinedAtConsent).ConfigureAwait(false);
+        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
+        {
+            var (requestContext, _) = await ResolveAsync(context, context.RequestAborted).ConfigureAwait(false);
+            await _services.Outcomes.DenyAsync(context, requestContext, DeclinedAtConsent).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -113,18 +132,20 @@ internal sealed class ConsentInteraction : IConsentInteraction
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+        var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
-        if (!await _flow.IsAuthenticatedByCurrentSessionAsync(context, requestContext).ConfigureAwait(false))
+        if (!await _services.Flow.IsAuthenticatedByCurrentSessionAsync(context, requestContext).ConfigureAwait(false))
         {
-            throw new ZeeKayDaInteractionException(
+            throw new NothingToContinueException(
+                NothingToContinueReason.SessionChanged,
                 "The session that authenticated this authorization request is not the one this browser " +
                 "holds: the user signed out, or signed in again as someone else, before answering the " +
                 "consent page. Start the authorization request again.");
         }
 
-        var client = await _flow.ResolveClientAsync(context, requestContext, cancellationToken).ConfigureAwait(false)
-            ?? throw new ZeeKayDaInteractionException(
+        var client = await _services.Flow.ResolveClientAsync(context, requestContext, cancellationToken).ConfigureAwait(false)
+            ?? throw new NothingToContinueException(
+                NothingToContinueReason.ClientGone,
                 "The client that sent this authorization request is no longer registered, or no longer " +
                 "lists its redirect URI, so there is nothing to consent to. Start the authorization " +
                 "request again.");

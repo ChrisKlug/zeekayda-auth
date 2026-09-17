@@ -12,39 +12,42 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </summary>
 internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
 {
+    private const string Page = "provider sign-in";
+
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ProviderRegistry _providers;
-    private readonly AuthorizationFlow _flow;
-    private readonly InteractionOutcomes _outcomes;
+    private readonly PageInteractionServices _services;
 
     public ProviderSignInInteraction(
         IHttpContextAccessor httpContextAccessor,
         ProviderRegistry providers,
-        AuthorizationFlow flow,
-        InteractionOutcomes outcomes)
+        PageInteractionServices services)
     {
         ArgumentNullException.ThrowIfNull(httpContextAccessor);
         ArgumentNullException.ThrowIfNull(providers);
-        ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(outcomes);
+        ArgumentNullException.ThrowIfNull(services);
 
         _httpContextAccessor = httpContextAccessor;
         _providers = providers;
-        _flow = flow;
-        _outcomes = outcomes;
+        _services = services;
     }
 
     /// <inheritdoc/>
     public async Task<PendingPrincipal?> GetPendingPrincipalAsync(CancellationToken cancellationToken = default)
     {
         var context = RequireHttpContext();
-        var interactionId = await AuthorizationFlow.RequireInteractionIdAsync(context).ConfigureAwait(false);
 
         // Stamped whatever the read finds: the page renders either way, and the one that shows the
         // provider's identity and takes a decision is the one an attacker would frame.
         RenderedPage.Protect(context.Response);
 
-        var pending = await _flow.ReadPendingAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
+        if (await InteractionHandoff.ReadInteractionIdAsync(context.Request).ConfigureAwait(false) is not { } interactionId)
+        {
+            _services.NothingToContinue.Log(Page, NothingToContinueReason.NoInteractionId);
+            return null;
+        }
+
+        var pending = await _services.Flow.ReadPendingAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
         if (pending is null || _providers.Find(pending.Provider) is not { } registration)
             return null;
 
@@ -75,6 +78,11 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         }
 
         var context = RequireStateChangingRequest();
+        await _services.NothingToContinue.SignInStepAsync(context, Page, () => SignInWithParkedAsync(context, collected)).ConfigureAwait(false);
+    }
+
+    private async Task SignInWithParkedAsync(HttpContext context, Claim[] additionalClaims)
+    {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
         // Validated on the parked principal before it is taken, so a principal that cannot be
@@ -82,11 +90,11 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         Promote(parked);
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
         var promoted = Promote(taken);
-        ((ClaimsIdentity)promoted.Identity!).AddClaims(collected.Where(claim => !ReservedClaims.IsReserved(claim)));
+        ((ClaimsIdentity)promoted.Identity!).AddClaims(additionalClaims.Where(claim => !ReservedClaims.IsReserved(claim)));
 
         // Nothing is stated about how the user proved who they are at the provider, as for an
         // external sign-in that involved no page.
-        await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], taken.Provider))
+        await _services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], taken.Provider))
             .ConfigureAwait(false);
     }
 
@@ -116,6 +124,11 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         }
 
         var context = RequireStateChangingRequest();
+        await _services.NothingToContinue.SignInStepAsync(context, Page, () => SignInAsReplacementAsync(context, replacement, methods)).ConfigureAwait(false);
+    }
+
+    private async Task SignInAsReplacementAsync(HttpContext context, ClaimsPrincipal replacement, string[] methods)
+    {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
         RequireRegistered(parked);
@@ -130,7 +143,7 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         if (CarriesUpstreamSubject(replacement, taken.Principal))
             throw UpstreamSubjectRefused();
 
-        await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(replacement, methods, taken.Provider))
+        await _services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(replacement, methods, taken.Provider))
             .ConfigureAwait(false);
     }
 
@@ -138,9 +151,11 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
     public async Task DenyAsync()
     {
         var context = RequireStateChangingRequest();
-        var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-
-        await _outcomes.DenyAsync(context, requestContext, InteractionOutcomes.DeniedAfterProvider).ConfigureAwait(false);
+        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
+        {
+            var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            await _services.Outcomes.DenyAsync(context, requestContext, InteractionOutcomes.DeniedAfterProvider).ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -151,9 +166,9 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
     /// </summary>
     private async Task<(AuthorizationRequestContext RequestContext, PendingTicket Parked)> ResolveParkedAsync(HttpContext context)
     {
-        var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+        var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
-        var parked = await _flow.ReadPendingAsync(context, requestContext.Id, context.RequestAborted).ConfigureAwait(false)
+        var parked = await _services.Flow.ReadPendingAsync(context, requestContext.Id, context.RequestAborted).ConfigureAwait(false)
             ?? throw NothingParked();
 
         return (requestContext, parked);
@@ -166,7 +181,7 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
     /// principal both promote the same person; the completion claim decides which one issues.
     /// </summary>
     private async Task<PendingTicket> TakeParkedAsync(HttpContext context, AuthorizationRequestContext requestContext) =>
-        await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false)
+        await _services.Flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false)
         ?? throw NothingParked();
 
     private static ZeeKayDaInteractionException UpstreamSubjectRefused() => new(
@@ -174,7 +189,8 @@ internal sealed class ProviderSignInInteraction : IProviderSignInInteraction
         "session subject of an external sign-in is never the upstream one verbatim: pass a local " +
         "account's own principal, or let SignInAsync derive the subject.");
 
-    private static ZeeKayDaInteractionException NothingParked() => new(
+    private static NothingToContinueException NothingParked() => new(
+        NothingToContinueReason.NothingParked,
         "No external sign-in is parked for this interaction: it expired, was already used, or the " +
         "user did not arrive here through RedirectToAsync. Send the user back to the login page.");
 

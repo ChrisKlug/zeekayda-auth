@@ -1,7 +1,14 @@
 @page "/error"
 @model ErrorModel
+@using ZeeKayDa.Auth.AspNetCore.Interaction
 @{
     ViewData["Title"] = "Sign-in problem";
+}
+@if (Model.Details is { Kind: AuthorizationErrorKind.NothingToContinue })
+{
+    <h1>This page has expired</h1>
+    <p>There is nothing left to continue here. Go back to the application and sign in again.</p>
+    return;
 }
 <h1>Something went wrong</h1>
 

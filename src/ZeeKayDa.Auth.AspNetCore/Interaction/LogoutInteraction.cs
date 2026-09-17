@@ -14,22 +14,26 @@ internal sealed class LogoutInteraction : ILogoutInteraction
     private readonly LogoutRequestStore _requests;
     private readonly EndSessionResponses _responses;
     private readonly SsoSession _session;
+    private readonly NothingToContinue _nothingToContinue;
 
     public LogoutInteraction(
         IHttpContextAccessor httpContextAccessor,
         LogoutRequestStore requests,
         EndSessionResponses responses,
-        SsoSession session)
+        SsoSession session,
+        NothingToContinue nothingToContinue)
     {
         ArgumentNullException.ThrowIfNull(httpContextAccessor);
         ArgumentNullException.ThrowIfNull(requests);
         ArgumentNullException.ThrowIfNull(responses);
         ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(nothingToContinue);
 
         _httpContextAccessor = httpContextAccessor;
         _requests = requests;
         _responses = responses;
         _session = session;
+        _nothingToContinue = nothingToContinue;
     }
 
     /// <inheritdoc/>
@@ -38,6 +42,10 @@ internal sealed class LogoutInteraction : ILogoutInteraction
         var context = RequireHttpContext();
 
         cancellationToken.ThrowIfCancellationRequested();
+
+        // The page takes a one-click decision, so it renders framed by nobody and cached by nothing
+        // — stamped before the read, so a page rendering its own "nothing to confirm" is covered too.
+        RenderedPage.Protect(context.Response);
         var request = await ResolveAddressedAsync(context, cancellationToken).ConfigureAwait(false);
 
         // Checked here and not only at SignOutAsync: the request names the user it was started for,
@@ -45,9 +53,6 @@ internal sealed class LogoutInteraction : ILogoutInteraction
         // one's subject. Refusing the render is also honest — the sign-out it asks about can no
         // longer complete.
         await RequireAskedSessionAsync(context, request, cancellationToken).ConfigureAwait(false);
-
-        // The page takes a one-click decision, so it renders framed by nobody and cached by nothing.
-        RenderedPage.Protect(context.Response);
 
         if (request.ClientId is null)
             return new LogoutRequest(client: null, request.Subject);
@@ -57,9 +62,28 @@ internal sealed class LogoutInteraction : ILogoutInteraction
     }
 
     /// <inheritdoc/>
+    public async Task<LogoutRequest?> TryGetRequestAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await GetRequestAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (NothingToContinueException missing)
+        {
+            _nothingToContinue.Log("logout", missing);
+            return null;
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task SignOutAsync()
     {
         var context = RequireStateChangingRequest();
+        await _nothingToContinue.SignOutStepAsync(context, () => ConfirmAsync(context)).ConfigureAwait(false);
+    }
+
+    private async Task ConfirmAsync(HttpContext context)
+    {
         var request = await ResolveAddressedAsync(context, context.RequestAborted).ConfigureAwait(false);
         await RequireAskedSessionAsync(context, request, context.RequestAborted).ConfigureAwait(false);
 
@@ -85,14 +109,23 @@ internal sealed class LogoutInteraction : ILogoutInteraction
     private async ValueTask<LogoutRequestContext> ResolveAddressedAsync(HttpContext context, CancellationToken cancellationToken)
     {
         var interactionId = await InteractionHandoff.ReadInteractionIdAsync(context.Request).ConfigureAwait(false)
-            ?? throw new ZeeKayDaInteractionException(
+            ?? throw new NothingToContinueException(
+                NothingToContinueReason.NoInteractionId,
                 $"This request carries no '{InteractionHandoff.InteractionIdParameter}' parameter, so there is " +
                 "no sign-out to confirm. The framework adds it to the URL it redirects the logout page to; a " +
                 "form that regenerates its action from routing drops it, and must pass it back explicitly " +
                 $"(asp-route-{InteractionHandoff.InteractionIdParameter}).");
 
-        return await _requests.ReadAsync(context, interactionId, cancellationToken).ConfigureAwait(false)
-            ?? throw new ZeeKayDaInteractionException(
+        var request = await _requests.ReadAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
+        if (request is not null)
+            return request;
+
+        // Nothing is left for this binding to address, so its secret is retired rather than left
+        // live for the rest of the cookie's life, taking a per-browser slot from a live tab.
+        await _requests.DeleteAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
+
+        throw new NothingToContinueException(
+                NothingToContinueReason.NotFound,
                 "There is no sign-out waiting to be confirmed with this identifier for this browser. It has " +
                 "expired or already completed, the page was reached without going through the end-session " +
                 "endpoint, or the sign-out was started in another browser.");
@@ -117,7 +150,8 @@ internal sealed class LogoutInteraction : ILogoutInteraction
         // One answer either way: a sign-out that cannot be completed is not left for a later try.
         await _requests.DeleteAsync(context, request.Id, cancellationToken).ConfigureAwait(false);
 
-        throw new ZeeKayDaInteractionException(
+        throw new NothingToContinueException(
+            NothingToContinueReason.SessionChanged,
             "The session this sign-out was started for is not the one this browser holds now — it has " +
             "already ended, or the user signed in again since being asked. Start the sign-out again.");
     }

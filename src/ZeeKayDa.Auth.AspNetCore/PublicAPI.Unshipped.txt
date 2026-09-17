@@ -5,6 +5,7 @@ ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.SkipLogoutConfirmation.set -> voi
 ZeeKayDa.Auth.AspNetCore.Interaction.ILogoutInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.ILogoutInteraction.GetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest!>!
 ZeeKayDa.Auth.AspNetCore.Interaction.ILogoutInteraction.SignOutAsync() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.ILogoutInteraction.TryGetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest?>!
 ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest
 ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest.Client.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation?
 ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest.Subject.get -> string!
@@ -49,6 +50,8 @@ ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AllowedResponseTypes.get -> Syste
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AllowedSigningAlgorithms.get -> System.Collections.Generic.ISet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>!
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.DisplayName.get -> string?
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.DisplayName.set -> void
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.InitiateLoginUri.get -> string?
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.InitiateLoginUri.set -> void
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.EnableZkdErrorCodes.get -> bool
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.EnableZkdErrorCodes.set -> void
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.IdTokenLifetime.get -> System.TimeSpan?
@@ -72,6 +75,11 @@ ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Description.init 
 ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Equals(ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails? other) -> bool
 ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Error.get -> string!
 ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Error.init -> void
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Kind.get -> ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorKind
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Kind.init -> void
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorKind
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorKind.NothingToContinue = 1 -> ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorKind
+ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorKind.RequestRejected = 0 -> ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorKind
 ZeeKayDa.Auth.AspNetCore.Interaction.IErrorInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.IErrorInteraction.GetErrorAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails?>
 ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation
@@ -143,5 +151,6 @@ ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction.DenyAsync() -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction.GetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.ConsentRequest!>!
 ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction.GrantAsync(System.Collections.Generic.IEnumerable<string!>! scopes) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.IConsentInteraction.TryGetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.ConsentRequest?>!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderClaimsExtensions.AddClaimsProvider<TProvider>(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderClaimsExtensions

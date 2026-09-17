@@ -104,6 +104,8 @@ ZeeKayDa.Auth.Clients.ClientRegistration.Credentials.get -> System.Collections.G
 ZeeKayDa.Auth.Clients.ClientRegistration.Credentials.init -> void
 ZeeKayDa.Auth.Clients.ClientRegistration.DisplayName.get -> string?
 ZeeKayDa.Auth.Clients.ClientRegistration.DisplayName.init -> void
+ZeeKayDa.Auth.Clients.ClientRegistration.InitiateLoginUri.get -> string?
+ZeeKayDa.Auth.Clients.ClientRegistration.InitiateLoginUri.init -> void
 ZeeKayDa.Auth.Clients.ClientRegistration.EnableZkdErrorCodes.get -> bool
 ZeeKayDa.Auth.Clients.ClientRegistration.EnableZkdErrorCodes.init -> void
 ZeeKayDa.Auth.Clients.ClientRegistration.Equals(ZeeKayDa.Auth.Clients.ClientRegistration? other) -> bool
@@ -136,6 +138,7 @@ ZeeKayDa.Auth.Clients.IClientMetadata.AllowedTokenEndpointAuthMethods.get -> Sys
 ZeeKayDa.Auth.Clients.IClientMetadata.AllowNonceInsteadOfPkce.get -> bool
 ZeeKayDa.Auth.Clients.IClientMetadata.ClientId.get -> string!
 ZeeKayDa.Auth.Clients.IClientMetadata.DisplayName.get -> string?
+ZeeKayDa.Auth.Clients.IClientMetadata.InitiateLoginUri.get -> string?
 ZeeKayDa.Auth.Clients.IClientMetadata.EnableZkdErrorCodes.get -> bool
 ZeeKayDa.Auth.Clients.IClientMetadata.IdTokenLifetime.get -> System.TimeSpan?
 ZeeKayDa.Auth.Clients.IClientMetadata.IsPublic.get -> bool

@@ -119,6 +119,32 @@ A public client's callback receives `PublicClientOptions`. A confidential client
 > Turn `RequireConsent` off only for your own first-party applications. The consent page is what
 > lets a user notice an authorization request they never started.
 
+Set `InitiateLoginUri` to an `https` address in your application that starts a new sign-in. When a
+login or consent page is submitted after its request is gone — a double click, or a page left open
+too long — the server sends the user there, with the server's issuer as `iss`, instead of to its
+error page. Start a sign-in there only when `iss` is the server your application trusts:
+
+```csharp
+options.InitiateLoginUri = "https://app.example.com/initiate-login";
+```
+
+The address must accept both `GET` and `POST`, and should not be frameable, so another site cannot
+start a sign-in the user does not see:
+
+```csharp
+// In the application: an ASP.NET Core site using AddOpenIdConnect.
+app.MapMethods("/initiate-login", [HttpMethods.Get, HttpMethods.Post], async (HttpRequest request) =>
+{
+    var iss = request.HasFormContentType
+        ? (await request.ReadFormAsync())["iss"].ToString()
+        : request.Query["iss"].ToString();
+
+    return iss == "https://login.example.com"
+        ? Results.Challenge(new AuthenticationProperties { RedirectUri = "/" }, [OpenIdConnectDefaults.AuthenticationScheme])
+        : Results.BadRequest();
+});
+```
+
 ## Registering a pre-built client
 
 If you already have a registration built elsewhere, construct a `ClientRegistration` directly and

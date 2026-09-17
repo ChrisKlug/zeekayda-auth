@@ -212,7 +212,7 @@ internal sealed class AuthorizationFlow
     /// the user to a host page for, named by <c>zkd_i</c> and bound to this browser. Never "the
     /// current interaction".
     /// </summary>
-    /// <exception cref="ZeeKayDaInteractionException">
+    /// <exception cref="NothingToContinueException">
     /// The request carries no <c>zkd_i</c>, or names an interaction this browser is not carrying.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
@@ -222,21 +222,32 @@ internal sealed class AuthorizationFlow
 
         var interactionId = await RequireInteractionIdAsync(context).ConfigureAwait(false);
 
-        return await ReadAsync(context, interactionId).ConfigureAwait(false)
-            ?? throw new ZeeKayDaInteractionException(
+        var requestContext = await ReadAsync(context, interactionId).ConfigureAwait(false);
+        if (requestContext is not null)
+            return requestContext;
+
+        // The entry this binding addressed is gone, so the binding's secret addresses nothing and
+        // must not be left live: it would count against the per-browser cap ahead of a tab that is
+        // still running, and hold a usable secret for the rest of the cookie's life. Retiring keeps
+        // the client hint, which is what the restart below is built on.
+        await ClearAsync(context, interactionId).ConfigureAwait(false);
+
+        throw new NothingToContinueException(
+                NothingToContinueReason.NotFound,
                 "There is no active interaction with this identifier for this browser. The authorization " +
                 "request has expired or already completed, the page was reached without going through " +
                 "/connect/authorize, or the request was started in another browser.");
     }
 
     /// <summary>The interaction identifier the request was addressed with.</summary>
-    /// <exception cref="ZeeKayDaInteractionException">The request carries no <c>zkd_i</c>.</exception>
+    /// <exception cref="NothingToContinueException">The request carries no <c>zkd_i</c>.</exception>
     public static async ValueTask<string> RequireInteractionIdAsync(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         return await InteractionHandoff.ReadInteractionIdAsync(context.Request).ConfigureAwait(false)
-            ?? throw new ZeeKayDaInteractionException(
+            ?? throw new NothingToContinueException(
+                NothingToContinueReason.NoInteractionId,
                 $"This request carries no '{InteractionHandoff.InteractionIdParameter}' parameter, so there " +
                 "is no interaction to complete. The framework adds it to the URL it redirects the login " +
                 "page to; a form that regenerates its action from routing drops it, and must pass it back " +
@@ -250,7 +261,7 @@ internal sealed class AuthorizationFlow
     /// the interaction: whichever way, this request has nothing left to complete.
     /// </summary>
     /// <returns>The time the claim was taken, for the outcome to be stamped with.</returns>
-    /// <exception cref="ZeeKayDaInteractionException">
+    /// <exception cref="NothingToContinueException">
     /// Another response already completed, or is completing, the interaction — or it expired while
     /// this response was being prepared.
     /// </exception>
@@ -303,7 +314,7 @@ internal sealed class AuthorizationFlow
     private async ValueTask RefuseAsync(HttpContext context, AuthorizationRequestContext requestContext, string reason)
     {
         await ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-        throw new ZeeKayDaInteractionException(reason);
+        throw new NothingToContinueException(NothingToContinueReason.AlreadyCompleted, reason);
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -43,11 +44,36 @@ builder.Services
 var app = builder.Build();
 
 app.UseHttpsRedirection();
+
+// Nothing in this app is meant to be framed. Refusing it everywhere keeps another site from
+// framing the sign-in pages, /initiate-login included, to start a sign-in the user did not see.
+app.Use((context, next) =>
+{
+    context.Response.Headers.XFrameOptions = "DENY";
+    context.Response.Headers.ContentSecurityPolicy = "frame-ancestors 'none'";
+    return next(context);
+});
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapRazorPages();
+
+// Third-party-initiated login (OpenID Connect Core §4): the identity server sends the browser here
+// to start a new sign-in when one of its pages was submitted after its request was gone — a
+// double click, a page left open too long. The endpoint must accept GET and POST (OpenID Connect
+// Registration §2). Only a request naming the server this app trusts starts one; an app that wants
+// to explain first could render a page here instead.
+app.MapMethods("/initiate-login", [HttpMethods.Get, HttpMethods.Post], async (HttpRequest request) =>
+{
+    var iss = request.HasFormContentType
+        ? (await request.ReadFormAsync(request.HttpContext.RequestAborted))["iss"].ToString()
+        : request.Query["iss"].ToString();
+
+    return string.Equals(iss, identityServer["Authority"], StringComparison.Ordinal)
+        ? Results.Challenge(new AuthenticationProperties { RedirectUri = "/" }, [OpenIdConnectDefaults.AuthenticationScheme])
+        : Results.BadRequest();
+});
 
 app.Run();
 

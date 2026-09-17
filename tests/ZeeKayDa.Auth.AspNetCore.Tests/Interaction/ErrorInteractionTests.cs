@@ -14,7 +14,7 @@ public class ErrorInteractionTests
     {
         var transport = Transport();
         var write = new DefaultHttpContext();
-        var id = transport.CreateAndAttach(write, "invalid_request", "The request is invalid.");
+        var id = transport.CreateAndAttach(write, AuthorizationErrorKind.RequestRejected, "invalid_request", "The request is invalid.");
 
         var read = new DefaultHttpContext();
         read.Request.Headers.Cookie = write.Response.Headers.SetCookie.ToString().Split(';')[0];
