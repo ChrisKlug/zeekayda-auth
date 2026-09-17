@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/samples/">
     <Project Path="samples/IdentityServer/ZeeKayDa.Auth.Samples.IdentityServer.csproj" />
+    <Project Path="samples/WebClient/ZeeKayDa.Auth.Samples.WebClient.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj" />
@@ -17,6 +18,7 @@
     <Project Path="tests/ZeeKayDa.Auth.FileSystem.Tests/ZeeKayDa.Auth.FileSystem.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.Samples.IdentityServer.Tests/ZeeKayDa.Auth.Samples.IdentityServer.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.Windows.Tests/ZeeKayDa.Auth.Windows.Tests.csproj" />
+    <Project Path="tests/ZeeKayDa.Auth.Samples.WebClient.Tests/ZeeKayDa.Auth.Samples.WebClient.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.Tests/ZeeKayDa.Auth.Tests.csproj" />
   </Folder>
 </Solution>

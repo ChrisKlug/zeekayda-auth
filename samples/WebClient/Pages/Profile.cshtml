@@ -1,0 +1,18 @@
+@page
+@{
+    ViewData["Title"] = "Profile";
+}
+<h1>Hello, @User.Identity?.Name</h1>
+<p>These are the claims the identity server's ID token carried.</p>
+<table id="claims">
+    <thead>
+        <tr><th>Type</th><th>Value</th></tr>
+    </thead>
+    <tbody>
+        @foreach (var claim in User.Claims)
+        {
+            <tr><th>@claim.Type</th><td>@claim.Value</td></tr>
+        }
+    </tbody>
+</table>
+<p><a href="/">Home</a></p>

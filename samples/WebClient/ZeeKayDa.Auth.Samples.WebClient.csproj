@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>ZeeKayDa.Auth.Samples.WebClient</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- A relying party knows nothing about ZeeKayDa.Auth: it signs in with Microsoft's handler alone. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The log-hygiene analyzers run on every project the CI check scans, samples included. -->
+    <ProjectReference Include="../../src/ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

@@ -57,8 +57,8 @@ New users can be added through **Create an account** on the login page; they las
 | `conformance-client` | confidential, `client_secret_basic` | `conformance-client-secret` | skipped | Conformance |
 | `conformance-client2` | confidential, `client_secret_basic` | `conformance-client2-secret` | skipped | Conformance |
 
-`sample-public-client` sends users back to `https://localhost:5002/signout-callback-oidc` after a
-sign-out it asked for.
+`sample-public-client` is the [sample web client](../WebClient/README.md). It sends users back to
+`https://localhost:5002/signout-callback-oidc` after a sign-out it asked for.
 
 The conformance clients register the suite's callback for the plan alias `zeekayda`:
 `https://localhost.emobix.co.uk:8443/test/a/zeekayda/callback`.
