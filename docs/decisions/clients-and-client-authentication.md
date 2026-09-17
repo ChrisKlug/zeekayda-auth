@@ -38,7 +38,7 @@ interface method computing it would let a configuration omission quietly change 
 instead of failing a startup check. A default interface method is used only where the default is
 the safe or the forward-compatible answer, never to excuse an omission: the signing-algorithm
 allowlist (`null` inherits the server default), `AllowedPromptValues` (empty permits every value, so
-a new one needs no change), `DisplayName` (`null`: none), `RequireConsent` (`true`: an
+a new one needs no change), `DisplayName` and `InitiateLoginUri` (`null`: none), `RequireConsent` (`true`: an
 implementation that says nothing requires consent), `AllowNonceInsteadOfPkce` (`false`: a
 registration that says nothing is held to PKCE), the two token lifetimes (`null`: the server's
 validated value) and the three claim additions (empty: a registration that says nothing widens

@@ -8,6 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **A page submitted with nothing left to continue is answered, not thrown at** (#700)
+
+  A login, consent, provider sign-in or logout page submitted for an interaction that is gone — a
+  double click, a page left open past its lifetime, a bookmarked page, another browser, or a second
+  response that lost the race to complete it — no longer throws `ZeeKayDaInteractionException` at
+  the host page. The terminal calls answer the request themselves. A sign-in or consent sends the
+  browser to the client's new `InitiateLoginUri` (OpenID Connect Core §4) with `iss`, so the
+  application starts a new sign-in, when the browser can still say which client it came from and
+  the client registered one; otherwise the user goes to the error page, where
+  `AuthorizationErrorDetails.Kind` is the new `AuthorizationErrorKind.NothingToContinue`. A logout
+  shows the signed-out page when the browser is signed out, and the error page when it is still
+  signed in. `IConsentInteraction` and `ILogoutInteraction` gain `TryGetRequestAsync`, which
+  returns `null` where `GetRequestAsync` throws, for a page that renders its own message. A request
+  with no `zkd_i` is logged as a warning, since a form that drops it looks the same; the other
+  cases are logged at information. The `zkd.interaction.<id>` binding cookie now carries an
+  encrypted client hint and outlives its interaction by a day, with the secret removed when the
+  interaction ends.
+
 - **The logout page is told which user is being signed out** (#692)
 
   `LogoutRequest` carries a `Subject` alongside its `Client`, so a host's logout page can name the

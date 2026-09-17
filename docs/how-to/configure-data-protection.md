@@ -49,8 +49,9 @@ binding cookies:
   instance does not yet hold, forcing a silent re-authentication even though the user
   successfully signed in previously.
 - `zkd.external` — carries the result of an external provider callback
-- `zkd.interaction.<id>` — not a scheme: one small cookie per in-flight authorization request,
-  holding a random secret that binds the request to the browser that started it. The request
+- `zkd.interaction.<id>` — not a scheme: one small cookie per authorization request, holding a
+  random secret that binds the request to the browser that started it, and an encrypted hint
+  naming the client, kept for a day after the request ends. The request
   itself is a Data-Protection-encrypted entry in the interaction store, and so is the
   half-authenticated principal parked during a multi-step external sign-in, so a key-ring gap
   loses in-flight requests as well as sessions. (`zkd.pending` is a reserved name that once
