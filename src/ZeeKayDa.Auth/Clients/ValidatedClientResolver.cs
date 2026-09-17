@@ -127,8 +127,9 @@ internal sealed class ValidatedClientResolver
         }
         catch (ClientRegistrationSnapshot.UncopiedCredentialException ex)
         {
-            // A registration the snapshot refused to copy — a credential whose Snapshot() handed
-            // back itself or null. The failure is the snapshot's own text, so it is named; anything
+            // A registration the snapshot refused to copy — a null credential, or one whose
+            // Snapshot() handed back itself or null. The failure is the snapshot's own text, so it is
+            // named; anything
             // else thrown here, a ZeeKayDaConfigurationException included, is reduced to its type.
             return (null, new Verdict(ex.Failure.Message));
         }

@@ -518,7 +518,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   instance or `null`, or throws, fails registration validation as `client.credentials.not_copied`: at
   startup for in-memory clients, at write time for a custom store that runs the validator, and on
   every lookup through the resolver. A `Pbkdf2ClientSecret` with a `null` salt or hash, which used to
-  pass startup and then fail every request, now fails startup this way.
+  pass startup and then fail every request, now fails startup this way, and a `null` entry in
+  `Credentials` fails it as `client.credentials.null_entry`.
 
 - **Registering a public client on a server that does not advertise `none` now says how to fix it**
   (#674). The startup failure named only the mismatch; it now explains that public clients present no

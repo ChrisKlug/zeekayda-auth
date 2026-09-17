@@ -178,8 +178,11 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
     // The one Snapshot() call per credential, checked on the spot. Throws rather than keeping the
     // store's instance: the resolver turns this exception into an unknown client whose log entry
     // carries the failure.
-    private static IClientCredential CopyOf(string clientId, IClientCredential credential)
+    private static IClientCredential CopyOf(string clientId, IClientCredential? credential)
     {
+        if (credential is null)
+            throw new UncopiedCredentialException(ClientCredentialValidator.NullCredential(clientId));
+
         var copy = credential.Snapshot();
 
         return ClientCredentialValidator.DescribeCopyProblem(credential, copy) is { } problem

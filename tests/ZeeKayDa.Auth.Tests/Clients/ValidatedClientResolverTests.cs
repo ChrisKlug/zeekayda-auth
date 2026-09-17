@@ -199,6 +199,20 @@ public class ValidatedClientResolverTests
             .Which.Message.Should().Contain(nameof(ZeeKayDaConfigurationException)).And.NotContain("0badc0de");
     }
 
+    [Fact]
+    public async Task A_null_credential_is_served_as_unknown_and_named_in_the_critical_log()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(Client() with { Credentials = [null!] }), new PassingValidator(), logger);
+
+        var result = await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull();
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
+            .Which.Message.Should().Contain("null entry in Credentials");
+    }
+
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
 
     private static ClientRegistration Client() =>

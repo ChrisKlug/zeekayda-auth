@@ -37,6 +37,11 @@ internal static class ClientCredentialValidator
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
+        // Every other credential rule filters by type, which skips a null entry silently; the
+        // registration would then pass here and fail every lookup.
+        if (client.Credentials.Any(credential => credential is null))
+            failures.Add(NullCredential(client.ClientId));
+
         foreach (var (credential, problem) in client.Credentials
                      .OfType<IClientCredential>()
                      .Select(credential => (credential, DescribeSnapshotProblem(credential)))
@@ -57,6 +62,13 @@ internal static class ClientCredentialValidator
 
         return ReferenceEquals(copy, credential) ? "returned the same instance" : null;
     }
+
+    /// <summary>The failure for a <see langword="null"/> entry in a registration's credentials.</summary>
+    internal static ZeeKayDaConfigurationFailure NullCredential(string clientId) =>
+        new(
+            "client.credentials.null_entry",
+            $"Client '{clientId}' has a null entry in Credentials. A null credential can never be " +
+            "copied or verified; remove it.");
 
     /// <summary>The failure for a credential whose <c>Snapshot</c> did not produce a copy.</summary>
     internal static ZeeKayDaConfigurationFailure NotCopied(

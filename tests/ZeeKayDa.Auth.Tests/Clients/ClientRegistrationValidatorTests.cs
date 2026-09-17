@@ -948,6 +948,20 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
+    public void Validate_fails_with_null_entry_code_if_Credentials_holds_a_null()
+    {
+        // The other credential rules filter by type and skip a null, so without this the
+        // registration passed startup as confidential and then failed every lookup unexplained.
+        var validator = MakeValidator();
+        var client = MakeValidConfidentialClient() with { Credentials = [new FakeSecret(), null!] };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.null_entry");
+    }
+
+    [Fact]
     public void Validate_does_not_throw_on_the_resolver_s_copy_of_a_credential_that_copies_itself()
     {
         // At request time the rule runs on credentials that are already copies; asking a copy for
