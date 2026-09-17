@@ -18,13 +18,26 @@ namespace ZeeKayDa.Auth.Clients;
 /// touches them has to visibly reach for them.
 /// </para>
 /// <para>
-/// <strong>String set comparison invariant.</strong> All <c>IReadOnlySet&lt;string&gt;</c>
-/// members (<see cref="RedirectUris"/>, <see cref="PostLogoutRedirectUris"/>,
-/// <see cref="AllowedScopes"/>, <see cref="AllowedTokenEndpointAuthMethods"/>) MUST be
-/// enumerated with explicit <see cref="System.StringComparer.Ordinal"/> semantics by every
-/// consumer. The set's own comparer is NOT trusted — a custom repository may return an entity
-/// whose set was constructed with a non-ordinal comparer. This is a security contract, not a
-/// suggestion.
+/// <strong>String set comparison invariant.</strong> The values in <see cref="RedirectUris"/>,
+/// <see cref="PostLogoutRedirectUris"/>, <see cref="AllowedScopes"/> and
+/// <see cref="AllowedTokenEndpointAuthMethods"/> are compared with
+/// <see cref="System.StringComparer.Ordinal"/>, never with the comparer the set was built with, and
+/// counted by what the set enumerates, never by its <c>Count</c>. The framework guarantees both for
+/// every registration it hands out — to its own endpoints, and to a host's token issuer through
+/// <c>TokenIssuanceContext.Client</c>: each is a copy whose four sets were rebuilt with
+/// <see cref="System.StringComparer.Ordinal"/> from what the store's sets enumerated, whatever
+/// comparer the store used. Framework code compares explicitly anyway, so a code path that one day
+/// reaches a registration without the copy stays safe.
+/// </para>
+/// <para>
+/// Code that reads a registration straight from an <see cref="IClientRepository"/> gets no such
+/// guarantee, because a custom repository may build a set with a case-insensitive comparer or one
+/// whose <c>Count</c> differs from what it enumerates. That code — an
+/// <see cref="IClientRegistrationValidator"/>, which a custom repository calls on its own entity at
+/// write time, and any host code that resolves the repository itself — MUST compare with explicit
+/// <see cref="System.StringComparer.Ordinal"/> and count by enumerating. This is a security
+/// contract, not a suggestion: a case-insensitive redirect URI or authentication method allowlist
+/// accepts values that were never registered.
 /// </para>
 /// </remarks>
 public interface IClientMetadata
@@ -53,8 +66,9 @@ public interface IClientMetadata
     /// Permitted redirect URIs for the authorization code flow.
     /// </summary>
     /// <remarks>
-    /// Membership checks MUST use <see cref="System.StringComparer.Ordinal"/> — do NOT trust the
-    /// set's own comparer. Exact ordinal string matching is required by
+    /// Matched with <see cref="System.StringComparer.Ordinal"/>, as
+    /// <see cref="IClientMetadata"/>'s string-set comparison invariant describes. Exact string
+    /// matching is required by
     /// <see href="https://www.rfc-editor.org/rfc/rfc9700#section-2.1">RFC 9700 §2.1</see>.
     /// </remarks>
     IReadOnlySet<string> RedirectUris { get; }

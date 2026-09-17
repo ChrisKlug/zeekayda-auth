@@ -20,13 +20,16 @@ determined caller, who could resolve the repository anyway. The framework ships 
 lives in a separate validator rather than in a constructor, so a test can construct an invalid
 registration deliberately.
 
-**Every string set on a registration MUST be compared with explicit `StringComparer.Ordinal`, and
-counted by enumeration.** Neither the set's comparer nor its `Count` is trusted — a custom
-repository's entity type is free to build one with `OrdinalIgnoreCase`, which would silently widen a
+**String sets on a registration are compared ordinally and counted by enumeration, and the
+resolver's snapshot guarantees both for everything the framework serves.** A custom repository's
+entity type is free to build a set with `OrdinalIgnoreCase`, which would silently widen a
 redirect-URI or auth-method allowlist, or to report fewer entries than it yields, which let a 33rd
-redirect URI past the cap and `{ "none", "client_secret_basic" }` past the `IsPublic` rule. A
-refactor swapping such a loop for `.Count` or `.Contains` changes behaviour; the `MiscountingSet`
-tests pin it.
+redirect URI past the cap and `{ "none", "client_secret_basic" }` past the `IsPublic` rule. The
+snapshot rebuilds the four sets with `StringComparer.Ordinal` from what they enumerate. Code reading
+a registration straight from a repository — the snapshot's copy, and the registration validator a
+custom repository calls on its own entity — still compares explicitly and counts by enumerating:
+swapping such a loop for `.Count` or `.Contains` changes behaviour, and the `MiscountingSet` tests
+pin it. Framework code past the snapshot compares explicitly too, so a path that skips it stays safe.
 
 **`IsPublic` is declared, never derived, and the three-way consistency rule is enforced at
 registration:** public ⇔ no credentials ⇔ auth methods are exactly `{ "none" }`. A default

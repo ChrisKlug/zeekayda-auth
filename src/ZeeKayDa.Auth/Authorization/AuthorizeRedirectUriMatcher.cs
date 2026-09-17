@@ -15,9 +15,10 @@ internal static class AuthorizeRedirectUriMatcher
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Membership is checked with explicit <see cref="StringComparer.Ordinal"/> semantics per the
-    /// <see cref="Clients.IClientMetadata"/> string-set invariant — the set's own comparer is not
-    /// trusted. The loopback exception compares scheme, host, path and query exactly and ignores
+    /// Membership is checked with explicit <see cref="StringComparer.Ordinal"/> semantics rather
+    /// than the set's own comparer. The set comes from the client resolver's copy and is ordinal
+    /// already; the explicit comparison keeps a set from anywhere else safe too (see the
+    /// <see cref="Clients.IClientMetadata"/> string-set invariant). The loopback exception compares scheme, host, path and query exactly and ignores
     /// only the port, and applies only when both URIs are <c>http</c> on a loopback host — the
     /// sole registrable combination where the port varies at runtime.
     /// </para>
