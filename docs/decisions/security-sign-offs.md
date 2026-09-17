@@ -1697,3 +1697,20 @@ found the lookups overflowing once issuance saturated; fixed in `558e79f` and ve
   `TryConsumeAsync_consumes_a_grant_whose_expiry_is_saturated`.
 - Saturation never lifts a token above a finite family ceiling. Closed —
   `StoreAsync_saturated_lifetime_still_yields_to_a_finite_FamilyAbsoluteExpiry`.
+
+## 2026-09-17 — a page with nothing to continue is answered, and the client restart (#700, branch head `eda9f3c`)
+
+Scoped to the binding cookie's client hint and tombstone, and the redirect to a registered `InitiateLoginUri`.
+Security and architect agents plus all three Copilot lenses; the one High (null read unstamped) fixed in `fb00b32`.
+
+- The restart goes only to the current registration's address, only for the browser holding the binding, and
+  carries nothing from the request. Closed — `A_page_submitted_from_another_browser_is_not_sent_to_the_client`,
+  `The_restart_carries_nothing_from_the_request`, `A_client_removed_since_the_interaction_is_not_sent_the_browser`,
+  `The_restart_address_is_not_written_to_the_log`.
+- A tombstone addresses nothing, and its hint cannot move between interactions or outlive its expiry. Closed —
+  `A_retired_binding_keeps_its_client_and_loses_its_secret`, `A_client_hint_moved_into_another_interactions_cookie_reads_nothing`,
+  `A_client_hint_past_its_lifetime_reads_nothing`.
+- Tombstones cannot push out a live binding. Closed — `Retired_bindings_are_evicted_before_a_live_one_however_old`.
+- The "nothing to confirm" render stays unframeable. Closed — `A_consent_page_with_nothing_to_ask_is_still_unframeable_and_uncacheable`.
+- Residual, accepted: a framed `initiate_login_uri` can start a sign-in; the app's own headers are its defence —
+  `The_client_refuses_to_be_framed`; an opt-in check is #711.
