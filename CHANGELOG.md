@@ -515,11 +515,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   needs no code; a custom credential sub-interface can declare its own default the same way, so the
   framework's type gets nothing a custom one cannot. **A custom credential type must now implement
   `Snapshot()`** — an immutable record returns `this with { }`. A `Snapshot()` that returns the same
-  instance or `null`, or throws, fails registration validation as `client.credentials.not_copied`: at
-  startup for in-memory clients, at write time for a custom store that runs the validator, and on
-  every lookup through the resolver. A `Pbkdf2ClientSecret` with a `null` salt or hash, which used to
-  pass startup and then fail every request, now fails startup this way, and a `null` entry in
-  `Credentials` fails it as `client.credentials.null_entry`. The secret rules — no matching hasher,
+  instance or `null`, or throws, fails registration validation as `client.credentials.not_copied` —
+  at startup for in-memory clients, and at write time for a custom store that runs the validator. On a
+  lookup the resolver serves such a registration as an unknown client: the same-instance and `null`
+  cases are logged as `not_copied`, and a throw is logged by its exception type only. A
+  `Pbkdf2ClientSecret` with a `null` salt or hash, which used to pass startup and then fail every
+  request, now fails startup this way, and a `null` entry in `Credentials` fails it as
+  `client.credentials.null_entry`. The secret rules — no matching hasher,
   the iteration floor, the empty-secret probe and the two-secret cap — run on the copies, the
   credentials the client is authenticated against, and a secret whose copy is not an `IClientSecret`
   is refused as `not_copied`.
