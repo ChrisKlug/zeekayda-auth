@@ -122,7 +122,7 @@ internal sealed class LogoutRequestStore
         await Guarded(
             () => _store.SetAsync(KeyFor(request.Id, secret), protectedValue, request.ExpiresAt, cancellationToken),
             "store the sign-out request").ConfigureAwait(false);
-        _binding.Issue(context, request.Id, request.ExpiresAt, secret, clientId: null);
+        _binding.Issue(context, new(request.Id, request.ExpiresAt, secret, ClientId: null));
 
         return request;
     }

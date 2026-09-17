@@ -34,34 +34,32 @@ internal sealed class NothingToContinue
     private const string NoSignInToContinue =
         "There is no sign-in to continue. It expired, was already completed, or was started somewhere else.";
 
+    private const string LogoutPage = "logout";
+
     private const string NoSignOutToContinue =
         "There is no sign-out to continue. It expired, or was started somewhere else. You are still signed in.";
 
     private readonly InteractionBindingCookie _binding;
-    private readonly AuthorizationResponses _responses;
-    private readonly EndSessionResponses _endSession;
+    private readonly InteractionAnswers _answers;
     private readonly SsoSession _session;
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly ISanitizingLogger<NothingToContinue> _logger;
 
     public NothingToContinue(
         InteractionBindingCookie binding,
-        AuthorizationResponses responses,
-        EndSessionResponses endSession,
+        InteractionAnswers answers,
         SsoSession session,
         IOptions<AuthorizationServerOptions> options,
         ISanitizingLogger<NothingToContinue> logger)
     {
         ArgumentNullException.ThrowIfNull(binding);
-        ArgumentNullException.ThrowIfNull(responses);
-        ArgumentNullException.ThrowIfNull(endSession);
+        ArgumentNullException.ThrowIfNull(answers);
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
         _binding = binding;
-        _responses = responses;
-        _endSession = endSession;
+        _answers = answers;
         _session = session;
         _options = options;
         _logger = logger;
@@ -74,7 +72,17 @@ internal sealed class NothingToContinue
     /// <param name="context">The request the host page is handling.</param>
     /// <param name="page">The page, as the log names it.</param>
     /// <param name="step">The step, which writes its own response when it completes.</param>
-    public async Task SignInStepAsync(HttpContext context, string page, Func<Task> step)
+    public Task SignInStepAsync(HttpContext context, string page, Func<Task> step) =>
+        StepAsync(context, page, step, RestartOrErrorAsync);
+
+    /// <summary>
+    /// Runs a sign-out step, and answers the request itself when the step finds nothing to
+    /// continue. Terminal either way.
+    /// </summary>
+    public Task SignOutStepAsync(HttpContext context, Func<Task> step) =>
+        StepAsync(context, LogoutPage, step, SignedOutOrErrorAsync);
+
+    private async Task StepAsync(HttpContext context, string page, Func<Task> step, Func<HttpContext, ValueTask<IResult>> answer)
     {
         try
         {
@@ -84,34 +92,25 @@ internal sealed class NothingToContinue
         {
             Log(page, missing);
 
-            var result = await RestartAtClientAsync(context).ConfigureAwait(false)
-                ?? _responses.Local(context, AuthorizationErrorKind.NothingToContinue, ErrorCode, NoSignInToContinue);
+            var result = await answer(context).ConfigureAwait(false);
 
-            await WriteAsync(context, result).ConfigureAwait(false);
+            context.Response.Headers.CacheControl = "no-store";
+            await result.ExecuteAsync(context).ConfigureAwait(false);
+            await context.Response.StartAsync().ConfigureAwait(false);
+            TerminalResponse.MarkCommitted(context);
         }
     }
 
-    /// <summary>
-    /// Runs a sign-out step, and answers the request itself when the step finds nothing to
-    /// continue. Terminal either way.
-    /// </summary>
-    public async Task SignOutStepAsync(HttpContext context, Func<Task> step)
-    {
-        try
-        {
-            await step().ConfigureAwait(false);
-        }
-        catch (NothingToContinueException missing) when (!context.Response.HasStarted)
-        {
-            Log("logout", missing);
+    /// <summary>Back to the client to start again, or the error page.</summary>
+    private async ValueTask<IResult> RestartOrErrorAsync(HttpContext context) =>
+        await RestartAtClientAsync(context).ConfigureAwait(false)
+        ?? _answers.Authorization.Local(context, AuthorizationErrorKind.NothingToContinue, ErrorCode, NoSignInToContinue);
 
-            var result = await _session.ReadAsync(context).ConfigureAwait(false) is null
-                ? _endSession.SignedOut()
-                : _responses.Local(context, AuthorizationErrorKind.NothingToContinue, ErrorCode, NoSignOutToContinue);
-
-            await WriteAsync(context, result).ConfigureAwait(false);
-        }
-    }
+    /// <summary>The signed-out page for a browser that holds no session, and the error page for one that does.</summary>
+    private async ValueTask<IResult> SignedOutOrErrorAsync(HttpContext context) =>
+        await _session.ReadAsync(context).ConfigureAwait(false) is null
+            ? _answers.EndSession.SignedOut()
+            : _answers.Authorization.Local(context, AuthorizationErrorKind.NothingToContinue, ErrorCode, NoSignOutToContinue);
 
     /// <summary>
     /// Records that <paramref name="page"/> had nothing to continue. A missing <c>zkd_i</c> is the
@@ -160,11 +159,4 @@ internal sealed class NothingToContinue
         return new UnloggedRedirect(QueryHelpers.AddQueryString(initiateLoginUri, "iss", _options.Value.Issuer!));
     }
 
-    private static async Task WriteAsync(HttpContext context, IResult result)
-    {
-        context.Response.Headers.CacheControl = "no-store";
-        await result.ExecuteAsync(context).ConfigureAwait(false);
-        await context.Response.StartAsync().ConfigureAwait(false);
-        TerminalResponse.MarkCommitted(context);
-    }
 }

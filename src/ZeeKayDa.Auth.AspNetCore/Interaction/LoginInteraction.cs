@@ -24,31 +24,23 @@ internal sealed class LoginInteraction : ILoginInteraction
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly ProviderRegistry _providers;
-    private readonly AuthorizationFlow _flow;
-    private readonly InteractionOutcomes _outcomes;
-    private readonly NothingToContinue _nothingToContinue;
+    private readonly PageInteractionServices _services;
 
     public LoginInteraction(
         IHttpContextAccessor httpContextAccessor,
         IOptions<AuthorizationServerOptions> options,
         ProviderRegistry providers,
-        AuthorizationFlow flow,
-        InteractionOutcomes outcomes,
-        NothingToContinue nothingToContinue)
+        PageInteractionServices services)
     {
         ArgumentNullException.ThrowIfNull(httpContextAccessor);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(providers);
-        ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(outcomes);
-        ArgumentNullException.ThrowIfNull(nothingToContinue);
+        ArgumentNullException.ThrowIfNull(services);
 
         _httpContextAccessor = httpContextAccessor;
         _options = options;
         _providers = providers;
-        _flow = flow;
-        _outcomes = outcomes;
-        _nothingToContinue = nothingToContinue;
+        _services = services;
     }
 
     /// <inheritdoc/>
@@ -73,15 +65,15 @@ internal sealed class LoginInteraction : ILoginInteraction
         var user = ReservedClaims.Snapshot(principal);
 
         var context = RequireStateChangingRequest();
-        await _nothingToContinue.SignInStepAsync(context, Page, async () =>
+        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
-            var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
             // A principal an external provider parked for this interaction is discarded, not
             // adopted: the login page signs in the host's own principal, and a local sign-in
             // records no provider.
-            await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
-            await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(user, methods, ProviderScheme: null))
+            await _services.Flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
+            await _services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(user, methods, ProviderScheme: null))
                 .ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
@@ -95,10 +87,10 @@ internal sealed class LoginInteraction : ILoginInteraction
     public async Task DenyAsync()
     {
         var context = RequireStateChangingRequest();
-        await _nothingToContinue.SignInStepAsync(context, Page, async () =>
+        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
-            var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-            await _outcomes.DenyAsync(context, requestContext, CancelledAtSignIn).ConfigureAwait(false);
+            var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            await _services.Outcomes.DenyAsync(context, requestContext, CancelledAtSignIn).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 
@@ -116,10 +108,10 @@ internal sealed class LoginInteraction : ILoginInteraction
                 "The provider identifier is not one of the registered providers. Pass the Id of an " +
                 "entry in ILoginInteraction.Providers, as the login page received it.");
 
-        await _nothingToContinue.SignInStepAsync(context, Page, async () =>
+        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
-            var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-            await _outcomes.ChallengeAsync(context, requestContext, registration).ConfigureAwait(false);
+            var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            await _services.Outcomes.ChallengeAsync(context, requestContext, registration).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 

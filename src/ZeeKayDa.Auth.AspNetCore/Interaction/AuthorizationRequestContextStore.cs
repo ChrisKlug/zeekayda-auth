@@ -95,7 +95,7 @@ internal sealed class AuthorizationRequestContextStore
         // binding to a nothing, and evicts no other tab's binding for it.
         var secret = InteractionBindingCookie.NewSecret();
         await SetAsync(requestContext, secret, encoded, cancellationToken).ConfigureAwait(false);
-        _binding.Issue(context, requestContext.Id, requestContext.ExpiresAt, secret, requestContext.ClientId);
+        _binding.Issue(context, new(requestContext.Id, requestContext.ExpiresAt, secret, requestContext.ClientId));
 
         return true;
     }

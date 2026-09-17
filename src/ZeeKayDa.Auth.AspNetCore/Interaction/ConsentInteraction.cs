@@ -27,25 +27,15 @@ internal sealed class ConsentInteraction : IConsentInteraction
     private const string Page = "consent";
 
     private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly AuthorizationFlow _flow;
-    private readonly InteractionOutcomes _outcomes;
-    private readonly NothingToContinue _nothingToContinue;
+    private readonly PageInteractionServices _services;
 
-    public ConsentInteraction(
-        IHttpContextAccessor httpContextAccessor,
-        AuthorizationFlow flow,
-        InteractionOutcomes outcomes,
-        NothingToContinue nothingToContinue)
+    public ConsentInteraction(IHttpContextAccessor httpContextAccessor, PageInteractionServices services)
     {
         ArgumentNullException.ThrowIfNull(httpContextAccessor);
-        ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(outcomes);
-        ArgumentNullException.ThrowIfNull(nothingToContinue);
+        ArgumentNullException.ThrowIfNull(services);
 
         _httpContextAccessor = httpContextAccessor;
-        _flow = flow;
-        _outcomes = outcomes;
-        _nothingToContinue = nothingToContinue;
+        _services = services;
     }
 
     /// <inheritdoc/>
@@ -77,7 +67,7 @@ internal sealed class ConsentInteraction : IConsentInteraction
         }
         catch (NothingToContinueException missing)
         {
-            _nothingToContinue.Log(Page, missing);
+            _services.NothingToContinue.Log(Page, missing);
             return null;
         }
     }
@@ -94,7 +84,7 @@ internal sealed class ConsentInteraction : IConsentInteraction
             throw new ArgumentException("An entry in scopes is null or blank.", nameof(scopes));
 
         var context = RequireStateChangingRequest();
-        await _nothingToContinue.SignInStepAsync(context, Page, () => DecideAsync(context, answered)).ConfigureAwait(false);
+        await _services.NothingToContinue.SignInStepAsync(context, Page, () => DecideAsync(context, answered)).ConfigureAwait(false);
     }
 
     private async Task DecideAsync(HttpContext context, string[] answered)
@@ -109,21 +99,21 @@ internal sealed class ConsentInteraction : IConsentInteraction
 
         if (!granted.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
         {
-            await _outcomes.DenyAsync(context, requestContext, IdentityWithheld).ConfigureAwait(false);
+            await _services.Outcomes.DenyAsync(context, requestContext, IdentityWithheld).ConfigureAwait(false);
             return;
         }
 
-        await _outcomes.CompleteConsentAsync(context, requestContext, client, granted).ConfigureAwait(false);
+        await _services.Outcomes.CompleteConsentAsync(context, requestContext, client, granted).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task DenyAsync()
     {
         var context = RequireStateChangingRequest();
-        await _nothingToContinue.SignInStepAsync(context, Page, async () =>
+        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
             var (requestContext, _) = await ResolveAsync(context, context.RequestAborted).ConfigureAwait(false);
-            await _outcomes.DenyAsync(context, requestContext, DeclinedAtConsent).ConfigureAwait(false);
+            await _services.Outcomes.DenyAsync(context, requestContext, DeclinedAtConsent).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 
@@ -142,9 +132,9 @@ internal sealed class ConsentInteraction : IConsentInteraction
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var requestContext = await _flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+        var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
-        if (!await _flow.IsAuthenticatedByCurrentSessionAsync(context, requestContext).ConfigureAwait(false))
+        if (!await _services.Flow.IsAuthenticatedByCurrentSessionAsync(context, requestContext).ConfigureAwait(false))
         {
             throw new NothingToContinueException(
                 NothingToContinueReason.SessionChanged,
@@ -153,7 +143,7 @@ internal sealed class ConsentInteraction : IConsentInteraction
                 "consent page. Start the authorization request again.");
         }
 
-        var client = await _flow.ResolveClientAsync(context, requestContext, cancellationToken).ConfigureAwait(false)
+        var client = await _services.Flow.ResolveClientAsync(context, requestContext, cancellationToken).ConfigureAwait(false)
             ?? throw new NothingToContinueException(
                 NothingToContinueReason.ClientGone,
                 "The client that sent this authorization request is no longer registered, or no longer " +

@@ -77,15 +77,16 @@ internal sealed class InteractionBindingCookie
     public static string NewSecret() => StoreKeyGenerator.Generate();
 
     /// <summary>
-    /// Writes the binding cookie for <paramref name="interactionId"/> carrying
-    /// <paramref name="secret"/> and, when there is one, a hint naming <paramref name="clientId"/>.
-    /// The cookie lasts until <paramref name="expiresAt"/>, plus <see cref="RetainedFor"/> when it
-    /// names a client. Evicts retired, then the oldest, bindings first when the browser already
-    /// holds the maximum.
+    /// Writes the binding cookie <paramref name="issued"/> describes. The cookie lasts until the
+    /// interaction expires, plus <see cref="RetainedFor"/> when it names a client. Evicts retired,
+    /// then the oldest, bindings first when the browser already holds the maximum.
     /// </summary>
-    public void Issue(HttpContext context, string interactionId, DateTimeOffset expiresAt, string secret, string? clientId)
+    public void Issue(HttpContext context, IssuedBinding issued)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(issued);
+
+        var (interactionId, expiresAt, secret, clientId) = issued;
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
         ArgumentException.ThrowIfNullOrEmpty(secret);
 
@@ -318,6 +319,12 @@ internal sealed class InteractionBindingCookie
         MaxAge = maxAge,
         IsEssential = true,
     };
+
+    /// <summary>
+    /// A binding to write: the interaction it is for, when that interaction expires, the secret the
+    /// store key is derived from, and the client to name in its hint, if any.
+    /// </summary>
+    internal sealed record IssuedBinding(string InteractionId, DateTimeOffset ExpiresAt, string Secret, string? ClientId);
 
     /// <summary>A binding as the cookie holds it: when it was issued, its secret, and its client hint.</summary>
     private sealed record Binding(long IssuedAt, string Secret, string Hint);

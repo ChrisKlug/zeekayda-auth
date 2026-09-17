@@ -394,7 +394,7 @@ public sealed class PendingPrincipalStoreTests
     {
         var context = new DefaultHttpContext();
         new InteractionBindingCookie(new FakeTimeProvider(Now), new EphemeralDataProtectionProvider())
-            .Issue(context, interactionId, Now + AuthorizationRequestContextStore.Lifetime, InteractionBindingCookie.NewSecret(), clientId: null);
+            .Issue(context, new(interactionId, Now + AuthorizationRequestContextStore.Lifetime, InteractionBindingCookie.NewSecret(), null));
         return context;
     }
 
