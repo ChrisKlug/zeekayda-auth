@@ -10,8 +10,10 @@ namespace ZeeKayDa.Auth.Samples.WebClient.Tests;
 /// <summary>
 /// End-to-end tests that host the sample identity server and the sample web client exactly as
 /// they ship, and drive a browser between them. Microsoft's OpenID Connect handler does the
-/// client's side — discovery, the code exchange, ID token and at_hash validation — so these fail
-/// if the server stops producing what an ordinary .NET relying party accepts.
+/// client's side — discovery, the code exchange, ID token validation, and at_hash validation when
+/// the claim is present — so these fail if the server stops producing what an ordinary .NET
+/// relying party accepts. The handler accepts an ID token with no at_hash at all; that the server
+/// emits one is proven by the identity server sample's own tests.
 /// </summary>
 public sealed class SampleWebClientTests : IDisposable
 {
