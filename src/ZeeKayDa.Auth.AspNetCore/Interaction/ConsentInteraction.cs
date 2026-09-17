@@ -54,9 +54,11 @@ internal sealed class ConsentInteraction : IConsentInteraction
         var context = RequireHttpContext();
 
         cancellationToken.ThrowIfCancellationRequested();
-        var (requestContext, client) = await ResolveAsync(context, cancellationToken).ConfigureAwait(false);
 
+        // Stamped before the read, so whatever the page renders — the question, or its own
+        // "nothing to ask" after TryGetRequestAsync — is framed by nobody and cached by nothing.
         RenderedPage.Protect(context.Response);
+        var (requestContext, client) = await ResolveAsync(context, cancellationToken).ConfigureAwait(false);
 
         // The subject was written by the same promotion that wrote the session identifier
         // ResolveAsync just matched, so it is present whenever that check passed.

@@ -231,6 +231,101 @@ public sealed class InteractionBindingCookieTests
         Binding().ReadClientId(read, "interaction-a").Should().BeNull();
     }
 
+    [Fact]
+    public void Issuing_at_the_cap_evicts_the_oldest_binding_first()
+    {
+        // A run of abandoned or planted requests must not grow the Cookie header without bound.
+        // The eldest goes, whatever order the browser presented them in.
+        var binding = Binding();
+        var request = new DefaultHttpContext();
+        request.Request.Headers.Cookie = string.Join("; ",
+            Enumerable.Range(0, InteractionBindingCookie.MaxPerBrowser)
+                .Select(i => $"{InteractionBindingCookie.NamePrefix}interaction-{i}={Now.AddMinutes(i).ToUnixTimeSeconds()}.secret.")
+                .Reverse());
+
+        binding.Issue(request, "interaction-new", ExpiresAt, InteractionBindingCookie.NewSecret(), clientId: null);
+
+        var deleted = DeletedCookieNames(request);
+        deleted.Should().Equal(InteractionBindingCookie.NamePrefix + "interaction-0");
+    }
+
+    [Fact]
+    public void Issuing_below_the_cap_evicts_nothing()
+    {
+        var binding = Binding();
+        var request = new DefaultHttpContext();
+        request.Request.Headers.Cookie = string.Join("; ",
+            Enumerable.Range(0, InteractionBindingCookie.MaxPerBrowser - 1)
+                .Select(i => $"{InteractionBindingCookie.NamePrefix}interaction-{i}={Now.ToUnixTimeSeconds()}.secret."));
+
+        binding.Issue(request, "interaction-new", ExpiresAt, InteractionBindingCookie.NewSecret(), clientId: null);
+
+        DeletedCookieNames(request).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Issuing_over_the_cap_evicts_enough_to_get_back_under_it()
+    {
+        var binding = Binding();
+        var request = new DefaultHttpContext();
+        request.Request.Headers.Cookie = string.Join("; ",
+            Enumerable.Range(0, InteractionBindingCookie.MaxPerBrowser + 2)
+                .Select(i => $"{InteractionBindingCookie.NamePrefix}interaction-{i}={Now.AddMinutes(i).ToUnixTimeSeconds()}.secret."));
+
+        binding.Issue(request, "interaction-new", ExpiresAt, InteractionBindingCookie.NewSecret(), clientId: null);
+
+        DeletedCookieNames(request).Should().Equal(
+            InteractionBindingCookie.NamePrefix + "interaction-0",
+            InteractionBindingCookie.NamePrefix + "interaction-1",
+            InteractionBindingCookie.NamePrefix + "interaction-2");
+    }
+
+    [Fact]
+    public void A_binding_that_does_not_parse_is_evicted_before_any_that_does()
+    {
+        var binding = Binding();
+        var request = new DefaultHttpContext();
+        request.Request.Headers.Cookie = string.Join("; ",
+            Enumerable.Range(0, InteractionBindingCookie.MaxPerBrowser - 1)
+                .Select(i => $"{InteractionBindingCookie.NamePrefix}interaction-{i}={Now.AddMinutes(i).ToUnixTimeSeconds()}.secret.")
+                .Append($"{InteractionBindingCookie.NamePrefix}garbage=not-ours"));
+
+        binding.Issue(request, "interaction-new", ExpiresAt, InteractionBindingCookie.NewSecret(), clientId: null);
+
+        DeletedCookieNames(request).Should().Equal(InteractionBindingCookie.NamePrefix + "garbage");
+    }
+
+    [Fact]
+    public void Other_cookies_never_count_towards_the_cap()
+    {
+        var binding = Binding();
+        var request = new DefaultHttpContext();
+        request.Request.Headers.Cookie = string.Join("; ",
+            Enumerable.Range(0, InteractionBindingCookie.MaxPerBrowser)
+                .Select(i => $"host.cookie{i}=value")
+                .Append($"{ZeeKayDaCookies.Interaction}=not-a-binding")
+                .Append($"{ZeeKayDaCookies.Session}=session"));
+
+        binding.Issue(request, "interaction-new", ExpiresAt, InteractionBindingCookie.NewSecret(), clientId: null);
+
+        DeletedCookieNames(request).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_live_binding_counts_towards_the_cap_like_a_retired_one()
+    {
+        // Retired bindings are kept for their client hint and are evicted by the same rule.
+        var binding = Binding();
+        var request = new DefaultHttpContext();
+        request.Request.Headers.Cookie = string.Join("; ",
+            Enumerable.Range(0, InteractionBindingCookie.MaxPerBrowser)
+                .Select(i => $"{InteractionBindingCookie.NamePrefix}interaction-{i}={Now.AddMinutes(i).ToUnixTimeSeconds()}..hint"));
+
+        binding.Issue(request, "interaction-new", ExpiresAt, InteractionBindingCookie.NewSecret(), clientId: null);
+
+        DeletedCookieNames(request).Should().Equal(InteractionBindingCookie.NamePrefix + "interaction-0");
+    }
+
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
 
     private static readonly EphemeralDataProtectionProvider Keys = new();

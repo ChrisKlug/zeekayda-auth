@@ -1664,7 +1664,9 @@ signed off with #688 and was not re-reviewed here.
 - A confirmation is bound to the browser and to the session it asked about, is answered once, and
   expires. Closed — `A_confirmation_without_the_binding_cookie_signs_nobody_out`,
   `A_confirmation_is_refused_once_the_browser_holds_a_different_session`,
-  `A_confirmation_is_answered_once`, `A_confirmation_after_the_sign_out_expired_is_refused`.
+  `A_confirmation_submitted_twice_ends_on_the_signed_out_page` [renamed from A_confirmation_is_answered_once
+  by #700: the second answer is now the signed-out page, not a 400],
+  `A_confirmation_after_the_sign_out_expired_is_refused`.
 - No session cookie, no deletion; a GET and an unreachable store sign nobody out. Closed —
   `A_request_carrying_no_session_cookie_deletes_no_session`,
   `SignOutAsync_from_a_GET_is_refused_and_signs_nobody_out`,

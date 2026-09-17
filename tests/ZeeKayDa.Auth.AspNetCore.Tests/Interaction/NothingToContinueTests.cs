@@ -243,6 +243,22 @@ public sealed class NothingToContinueTests : IDisposable
     }
 
     [Fact]
+    public async Task A_consent_page_with_nothing_to_ask_is_still_unframeable_and_uncacheable()
+    {
+        using var page = await _client.GetAsync(ConsentPath, Cancellation);
+
+        page.ShouldBeProtectedFromFramingAndCaching();
+    }
+
+    [Fact]
+    public async Task A_logout_page_with_nothing_to_confirm_is_still_unframeable_and_uncacheable()
+    {
+        using var page = await _client.GetAsync(LogoutPath, Cancellation);
+
+        page.ShouldBeProtectedFromFramingAndCaching();
+    }
+
+    [Fact]
     public async Task A_logout_page_with_a_sign_out_to_confirm_reads_it()
     {
         await SignInAsync();
@@ -426,6 +442,14 @@ public sealed class NothingToContinueTests : IDisposable
 
 file static class RestartAssertions
 {
+    public static void ShouldBeProtectedFromFramingAndCaching(this HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("Content-Security-Policy").Should().Contain("frame-ancestors 'none'");
+        response.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+    }
+
     /// <summary>
     /// The response sent the browser to the restarting client's registered initiate_login_uri,
     /// with the issuer added and nothing else.

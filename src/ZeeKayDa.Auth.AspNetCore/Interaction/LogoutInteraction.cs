@@ -42,6 +42,10 @@ internal sealed class LogoutInteraction : ILogoutInteraction
         var context = RequireHttpContext();
 
         cancellationToken.ThrowIfCancellationRequested();
+
+        // The page takes a one-click decision, so it renders framed by nobody and cached by nothing
+        // — stamped before the read, so a page rendering its own "nothing to confirm" is covered too.
+        RenderedPage.Protect(context.Response);
         var request = await ResolveAddressedAsync(context, cancellationToken).ConfigureAwait(false);
 
         // Checked here and not only at SignOutAsync: the request names the user it was started for,
@@ -49,9 +53,6 @@ internal sealed class LogoutInteraction : ILogoutInteraction
         // one's subject. Refusing the render is also honest — the sign-out it asks about can no
         // longer complete.
         await RequireAskedSessionAsync(context, request, cancellationToken).ConfigureAwait(false);
-
-        // The page takes a one-click decision, so it renders framed by nobody and cached by nothing.
-        RenderedPage.Protect(context.Response);
 
         if (request.ClientId is null)
             return new LogoutRequest(client: null, request.Subject);
