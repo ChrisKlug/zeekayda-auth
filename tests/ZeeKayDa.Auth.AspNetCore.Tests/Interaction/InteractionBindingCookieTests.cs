@@ -89,12 +89,23 @@ public sealed class InteractionBindingCookieTests
     }
 
     [Fact]
-    public void Cookie_outlives_its_interaction_by_the_retention_period()
+    public void A_cookie_that_names_no_client_expires_with_its_interaction()
     {
         var binding = Binding();
         var write = new DefaultHttpContext();
 
         binding.Issue(write, "interaction-a", Now.AddMinutes(7), InteractionBindingCookie.NewSecret(), clientId: null);
+
+        write.Response.Headers.SetCookie.ToString().Should().Contain("max-age=420");
+    }
+
+    [Fact]
+    public void A_cookie_that_names_a_client_outlives_its_interaction_by_the_retention_period()
+    {
+        var binding = Binding();
+        var write = new DefaultHttpContext();
+
+        binding.Issue(write, "interaction-a", Now.AddMinutes(7), InteractionBindingCookie.NewSecret(), "client-a");
 
         var expected = (int)(TimeSpan.FromMinutes(7) + InteractionBindingCookie.RetainedFor).TotalSeconds;
         write.Response.Headers.SetCookie.ToString().Should().Contain($"max-age={expected}");
@@ -312,18 +323,82 @@ public sealed class InteractionBindingCookieTests
     }
 
     [Fact]
-    public void A_live_binding_counts_towards_the_cap_like_a_retired_one()
+    public void Retired_bindings_are_evicted_before_a_live_one_however_old()
     {
-        // Retired bindings are kept for their client hint and are evicted by the same rule.
+        // A live login tab must not lose its binding to sign-ins the user already finished.
         var binding = Binding();
         var request = new DefaultHttpContext();
         request.Request.Headers.Cookie = string.Join("; ",
-            Enumerable.Range(0, InteractionBindingCookie.MaxPerBrowser)
-                .Select(i => $"{InteractionBindingCookie.NamePrefix}interaction-{i}={Now.AddMinutes(i).ToUnixTimeSeconds()}..hint"));
+            Enumerable.Range(0, InteractionBindingCookie.MaxPerBrowser - InteractionBindingCookie.MaxRetired)
+                .Select(i => $"{InteractionBindingCookie.NamePrefix}live-{i}={Now.AddMinutes(i).ToUnixTimeSeconds()}.secret.")
+                .Concat(Enumerable.Range(0, InteractionBindingCookie.MaxRetired)
+                    .Select(i => $"{InteractionBindingCookie.NamePrefix}retired-{i}={Now.AddMinutes(60 + i).ToUnixTimeSeconds()}..hint")));
 
         binding.Issue(request, "interaction-new", ExpiresAt, InteractionBindingCookie.NewSecret(), clientId: null);
 
-        DeletedCookieNames(request).Should().Equal(InteractionBindingCookie.NamePrefix + "interaction-0");
+        DeletedCookieNames(request).Should().Equal(InteractionBindingCookie.NamePrefix + "retired-0");
+    }
+
+    [Fact]
+    public void Issuing_keeps_no_more_than_the_retired_maximum()
+    {
+        var binding = Binding();
+        var request = new DefaultHttpContext();
+        request.Request.Headers.Cookie = string.Join("; ",
+            Enumerable.Range(0, InteractionBindingCookie.MaxRetired + 2)
+                .Select(i => $"{InteractionBindingCookie.NamePrefix}retired-{i}={Now.AddMinutes(i).ToUnixTimeSeconds()}..hint"));
+
+        binding.Issue(request, "interaction-new", ExpiresAt, InteractionBindingCookie.NewSecret(), clientId: null);
+
+        DeletedCookieNames(request).Should().Equal(
+            InteractionBindingCookie.NamePrefix + "retired-0",
+            InteractionBindingCookie.NamePrefix + "retired-1");
+    }
+
+    [Fact]
+    public void Retiring_makes_room_among_the_retired_bindings_and_leaves_live_ones_alone()
+    {
+        var binding = Binding();
+        var issue = new DefaultHttpContext();
+        binding.Issue(issue, "interaction-a", ExpiresAt, InteractionBindingCookie.NewSecret(), "client-a");
+        var retire = new DefaultHttpContext();
+        retire.Request.Headers.Cookie = string.Join("; ",
+            Enumerable.Range(0, InteractionBindingCookie.MaxRetired)
+                .Select(i => $"{InteractionBindingCookie.NamePrefix}retired-{i}={Now.AddMinutes(i).ToUnixTimeSeconds()}..hint")
+                .Append($"{InteractionBindingCookie.NamePrefix}live={Now.ToUnixTimeSeconds()}.secret.")
+                .Append(LastSetCookie(issue)));
+
+        binding.Retire(retire, "interaction-a");
+
+        DeletedCookieNames(retire).Should().Equal(InteractionBindingCookie.NamePrefix + "retired-0");
+    }
+
+    [Fact]
+    public void A_client_hint_past_its_lifetime_reads_nothing()
+    {
+        // Judged on the framework's clock: a value replayed by hand after the browser dropped the
+        // cookie names no client.
+        var time = new FakeTimeProvider(Now);
+        var binding = new InteractionBindingCookie(time, Keys);
+        var write = new DefaultHttpContext();
+        binding.Issue(write, "interaction-a", ExpiresAt, InteractionBindingCookie.NewSecret(), "client-a");
+
+        time.Advance(ExpiresAt - Now + InteractionBindingCookie.RetainedFor);
+
+        binding.ReadClientId(RequestCarrying(write), "interaction-a").Should().BeNull();
+    }
+
+    [Fact]
+    public void A_client_hint_within_its_lifetime_reads_its_client()
+    {
+        var time = new FakeTimeProvider(Now);
+        var binding = new InteractionBindingCookie(time, Keys);
+        var write = new DefaultHttpContext();
+        binding.Issue(write, "interaction-a", ExpiresAt, InteractionBindingCookie.NewSecret(), "client-a");
+
+        time.Advance(ExpiresAt - Now + InteractionBindingCookie.RetainedFor - TimeSpan.FromSeconds(1));
+
+        binding.ReadClientId(RequestCarrying(write), "interaction-a").Should().Be("client-a");
     }
 
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
