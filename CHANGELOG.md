@@ -503,8 +503,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   registration over, and it is the copy that is fingerprinted, validated and served. The copy's string
   sets are rebuilt with `StringComparer.Ordinal`, so `IClientMetadata`'s string-set comparison
   invariant holds structurally past that point, and every copied collection is wrapped so that a
-  host reached by `TokenIssuanceContext.Client` cannot cast one back to something mutable. Credentials are copied as a list, not as values:
-  `Pbkdf2ClientSecret` documents that its `Salt` and `Hash` arrays are not defensively copied.
+  host reached by `TokenIssuanceContext.Client` cannot cast one back to something mutable. Each
+  credential is copied by its own type (#697).
+
+- **A client's credentials are copied into the snapshot too, each by its own type** (#697). The
+  snapshot froze the credential list but served the store's credential objects, so a store that wrote
+  into a `Pbkdf2ClientSecret`'s `Salt` or `Hash` array after validation changed the secret the
+  authenticator then checked. `IClientCredential` now has a required `Snapshot()` that returns a new
+  instance sharing no mutable state, and the snapshot serves those copies. `IPbkdf2ClientSecret`
+  supplies it as a default that copies both arrays, so a store entity implementing that interface
+  needs no code; a custom credential sub-interface can declare its own default the same way, so the
+  framework's type gets nothing a custom one cannot. **A custom credential type must now implement
+  `Snapshot()`** — an immutable record returns `this with { }`. A `Snapshot()` that returns the same
+  instance or `null`, or throws, fails registration validation as `client.credentials.not_copied`: at
+  startup for in-memory clients, at write time for a custom store that runs the validator, and on
+  every lookup through the resolver. A `Pbkdf2ClientSecret` with a `null` salt or hash, which used to
+  pass startup and then fail every request, now fails startup this way.
 
 - **Registering a public client on a server that does not advertise `none` now says how to fix it**
   (#674). The startup failure named only the mismatch; it now explains that public clients present no

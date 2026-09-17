@@ -39,11 +39,13 @@ namespace ZeeKayDa.Auth.Clients;
 /// because the framework chose it.
 /// </para>
 /// <para>
-/// <strong>Credentials are copied as a list, not as values.</strong> The list is snapshotted, so a
-/// store cannot add or remove a credential behind a verdict, but the credential objects themselves
-/// are shared with the store's instance. <see cref="Pbkdf2ClientSecret"/> documents that it hands
-/// out its own <c>Salt</c> and <c>Hash</c> arrays and that the framework does not defensively copy
-/// them; deep-copying here would contradict that decision, not extend it.
+/// <strong>Every credential is copied by its own type.</strong> The list is rebuilt from each
+/// credential's <see cref="IClientCredential.Snapshot"/>, so a store can neither add or remove a
+/// credential behind a verdict nor edit one in place — <see cref="Pbkdf2ClientSecret"/> hands out
+/// its <c>Salt</c> and <c>Hash</c> arrays, and <see cref="IPbkdf2ClientSecret"/>'s snapshot copies
+/// them. Copying is the credential type's job rather than this class's, so a custom credential type
+/// is treated exactly as the framework's own. A <c>Snapshot</c> that returns the store's instance is
+/// caught by the registration validator, which runs on this copy.
 /// </para>
 /// </remarks>
 internal sealed class ClientRegistrationSnapshot : IClientRegistration
@@ -73,7 +75,7 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
         AdditionalIdTokenClaims = Copy(client.AdditionalIdTokenClaims);
         AdditionalUserInfoClaims = Copy(client.AdditionalUserInfoClaims);
         AdditionalAccessTokenClaims = Copy(client.AdditionalAccessTokenClaims);
-        Credentials = new ReadOnlyCollection<IClientCredential>([.. client.Credentials]);
+        Credentials = new ReadOnlyCollection<IClientCredential>([.. client.Credentials.Select(CopyOf)]);
     }
 
     /// <inheritdoc/>
@@ -168,4 +170,11 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
 
     private static IReadOnlyCollection<string> Copy(IReadOnlyCollection<string> values) =>
         new ReadOnlyCollection<string>([.. values]);
+
+    // A Snapshot() that returns null keeps the store's instance rather than a null the fingerprint
+    // would fail on unnamed. The registration validator runs on this copy and rejects a credential
+    // whose Snapshot() returns null or itself, so the store's instance is never served either way —
+    // it is kept only so that rejection says which credential and why.
+    private static IClientCredential CopyOf(IClientCredential credential) =>
+        credential.Snapshot() ?? credential;
 }

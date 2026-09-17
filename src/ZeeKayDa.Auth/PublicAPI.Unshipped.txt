@@ -123,6 +123,7 @@ ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.ClientSecretHasher() -> void
 ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.Create(System.ReadOnlySpan<char> plaintext) -> ZeeKayDa.Auth.Clients.IClientSecret!
 ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.Verify(ZeeKayDa.Auth.Clients.IClientSecret! stored, System.ReadOnlySpan<char> presented) -> bool
 ZeeKayDa.Auth.Clients.IClientCredential
+ZeeKayDa.Auth.Clients.IClientCredential.Snapshot() -> ZeeKayDa.Auth.Clients.IClientCredential!
 ZeeKayDa.Auth.Clients.IClientMetadata
 ZeeKayDa.Auth.Clients.IClientMetadata.AccessTokenLifetime.get -> System.TimeSpan?
 ZeeKayDa.Auth.Clients.IClientMetadata.AllowedGrantTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.GrantType>!

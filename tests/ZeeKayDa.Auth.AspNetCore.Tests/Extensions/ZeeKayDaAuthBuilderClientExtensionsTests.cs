@@ -215,7 +215,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
 
     // ── Fake hasher for tests ─────────────────────────────────────────────────────────────────────
 
-    private sealed class TestSecret : IClientSecret { }
+    private sealed class TestSecret : IClientSecret { public IClientCredential Snapshot() => new TestSecret(); }
 
     private sealed class TestHasher : IClientSecretHasher
     {

@@ -55,9 +55,11 @@ against the scope repository, which the validator's cached verdict cannot see
 
 **Credential type identity is the algorithm; there is no string discriminator and no
 `string? ClientSecret`.** A bare string is ambiguous about plaintext versus hash and pushes fixed-time
-comparison onto every implementer; a single `Algorithm` discriminator with nullable per-algorithm
-fields grows a central switch statement unboundedly. Adding bcrypt means defining a credential
-sub-interface and a paired hasher — no framework change.
+comparison onto every implementer; an `Algorithm` discriminator grows a central switch without bound.
+Adding bcrypt means a credential sub-interface with its `IClientCredential.Snapshot()`, and a paired
+hasher — no framework change. `IPbkdf2ClientSecret` declares its copy as a default the same way, so
+the framework's own type is not special-cased. A `Snapshot()` returning itself or `null` fails
+validation as `client.credentials.not_copied`; one still sharing a buffer is the implementer's bug.
 
 **Verification is always fixed-time and never throws.** A hasher returns `false` on internal error
 rather than propagating, so an exception cannot become a timing or behavioural oracle. The shipped
@@ -119,8 +121,7 @@ into a `ClientRegistrationSnapshot` before reading it twice, then fingerprints, 
 the copy. Collections are rebuilt *and* wrapped against a downcast, because `TokenIssuanceContext.Client`
 hands the registration to the host's own `ITokenIssuer`. An uncopied member is not a compile error, so
 `Snapshot_covers_every_IClientRegistration_member` and
-`A_snapshot_carries_every_value_of_the_registration_it_copied` enforce it. Credential *values* are the
-documented exception (#697).
+`A_snapshot_carries_every_value_of_the_registration_it_copied` enforce it. Credentials copy themselves.
 
 **Client lookup returns `null` for unknown or malformed ids and never throws.** Throwing changes
 timing and leaks a signal usable for client-ID enumeration. `invalid_client` covers both unknown

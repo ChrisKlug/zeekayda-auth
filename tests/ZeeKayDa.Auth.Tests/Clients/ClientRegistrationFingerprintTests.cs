@@ -219,5 +219,8 @@ public class ClientRegistrationFingerprintTests
         public byte[] Hash => hash;
     }
 
-    private sealed class CustomCredential : IClientCredential;
+    private sealed class CustomCredential : IClientCredential
+    {
+        public IClientCredential Snapshot() => new CustomCredential();
+    }
 }

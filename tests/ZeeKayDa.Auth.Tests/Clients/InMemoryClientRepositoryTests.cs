@@ -12,7 +12,7 @@ public sealed class InMemoryClientRepositoryTests
 {
     // ── Fake infrastructure ───────────────────────────────────────────────────────────────────────
 
-    private sealed class FakeSecret : IClientSecret { }
+    private sealed class FakeSecret : IClientSecret { public IClientCredential Snapshot() => new FakeSecret(); }
 
     private sealed class CapturingLogger : ISanitizingLogger<InMemoryClientRepository>
     {

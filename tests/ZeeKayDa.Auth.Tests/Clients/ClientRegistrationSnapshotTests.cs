@@ -109,6 +109,40 @@ public class ClientRegistrationSnapshotTests
             "a store must not be able to hand a client a credential behind the verdict that called it public");
     }
 
+    [Theory]
+    [MemberData(nameof(CredentialEdits))]
+    public void Editing_a_credential_in_place_after_the_snapshot_leaves_the_snapshot_alone(
+        string edit,
+        Action<MutablePbkdf2Secret> apply)
+    {
+        // Copying the credential list is not enough: a store entity's salt and hash are arrays it
+        // still holds, and writing into them would change the secret the authenticator checks after
+        // validation approved the old one.
+        var credential = new MutablePbkdf2Secret();
+        var snapshot = ClientRegistrationSnapshot.Of(new MutableRegistration { Credentials = [credential] });
+        var before = ClientRegistrationFingerprint.Compute(snapshot).Value;
+
+        apply(credential);
+
+        ClientRegistrationFingerprint.Compute(snapshot).Value.Should().Be(
+            before, $"a store that {edit} must not change the credential validation approved");
+    }
+
+    [Fact]
+    public void Writing_into_a_served_credential_leaves_the_store_s_credential_alone()
+    {
+        // The registration reaches host code through TokenIssuanceContext.Client, and a downcast
+        // reaches its credentials. The in-memory repository keeps one credential instance for the
+        // host's lifetime, so a write reaching it would change the secret for every later request.
+        var credential = new MutablePbkdf2Secret();
+        var snapshot = ClientRegistrationSnapshot.Of(new MutableRegistration { Credentials = [credential] });
+        var served = (IPbkdf2ClientSecret)snapshot.Credentials.Single();
+
+        served.Hash[0] ^= 0xFF;
+
+        credential.Hash.Should().Equal(MutablePbkdf2Secret.OriginalHash);
+    }
+
     [Fact]
     public void No_copied_collection_can_be_mutated_through_its_writable_interface()
     {
@@ -250,7 +284,16 @@ public class ClientRegistrationSnapshotTests
         AdditionalIdTokenClaims = ["tenant"],
         AdditionalUserInfoClaims = ["department"],
         AdditionalAccessTokenClaims = ["region"],
-        Credentials = [new StubPbkdf2Secret()],
+        // The framework's own type, because the snapshot serves every IPbkdf2ClientSecret as one and
+        // the fingerprint includes the credential's type.
+        Credentials = [new Pbkdf2ClientSecret(600_000, [9, 9, 9], [1, 2, 3])],
+    };
+
+    public static TheoryData<string, Action<MutablePbkdf2Secret>> CredentialEdits() => new()
+    {
+        { "writes into the salt", c => c.Salt[0] ^= 0xFF },
+        { "writes into the hash", c => c.Hash[0] ^= 0xFF },
+        { "changes the iteration count", c => c.Iterations++ },
     };
 
     private static Dictionary<string, Action<MutableRegistration>> MemberMutations() =>
@@ -368,5 +411,20 @@ public class ClientRegistrationSnapshotTests
         public byte[] Salt => [9, 9, 9];
 
         public byte[] Hash => [1, 2, 3];
+    }
+
+    /// <summary>
+    /// A store entity implementing <see cref="IPbkdf2ClientSecret"/> directly, as an ORM entity
+    /// would: its arrays are its own, and it hands them out rather than copies.
+    /// </summary>
+    public sealed class MutablePbkdf2Secret : IPbkdf2ClientSecret
+    {
+        public static IReadOnlyList<byte> OriginalHash { get; } = [1, 2, 3];
+
+        public int Iterations { get; set; } = 600_000;
+
+        public byte[] Salt { get; } = [9, 9, 9];
+
+        public byte[] Hash { get; } = [.. OriginalHash];
     }
 }

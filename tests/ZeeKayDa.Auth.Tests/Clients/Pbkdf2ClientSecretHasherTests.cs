@@ -464,7 +464,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
 
     // ── Nested helpers ───────────────────────────────────────────────────────────────────────────
 
-    private sealed class FakeSecret : IClientSecret { }
+    private sealed class FakeSecret : IClientSecret { public IClientCredential Snapshot() => new FakeSecret(); }
 
     private sealed class ThrowingPbkdf2Secret : IPbkdf2ClientSecret
     {

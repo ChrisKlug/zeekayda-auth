@@ -1,12 +1,12 @@
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Marker interface for shared-secret credentials stored on a client registration.
+/// Base interface for shared-secret credentials stored on a client registration.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This interface carries no behaviour — credential verification is delegated to
-/// <c>IClientSecretHasher</c> implementations so fixed-time comparison is centrally
+/// This interface adds no members to <see cref="IClientCredential"/> — credential verification is
+/// delegated to <c>IClientSecretHasher</c> implementations so fixed-time comparison is centrally
 /// guaranteed and custom algorithms can be added without framework changes.
 /// </para>
 /// <para>

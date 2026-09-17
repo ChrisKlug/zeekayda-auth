@@ -1,22 +1,77 @@
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Validates a client's shared-secret credentials against the registered hashers and records a
-/// <see cref="ZeeKayDaConfigurationFailure"/> for every rule they break.
+/// Validates a client's credentials — that each one copies itself, and that its shared secrets suit
+/// the registered hashers — and records a <see cref="ZeeKayDaConfigurationFailure"/> for every rule
+/// they break.
 /// </summary>
 internal static class ClientCredentialValidator
 {
     /// <summary>
-    /// Validates every <see cref="IClientSecret"/> credential the client holds.
+    /// Validates every credential the client holds.
     /// </summary>
     internal static void Validate(
         IClientRegistration client,
         CompositeClientSecretHasher hasher,
         List<ZeeKayDaConfigurationFailure> failures)
     {
+        ValidateSnapshots(client, failures);
         ValidateEmptySecretProbe(client, hasher, failures);
         ValidateCredentialConstraints(client, hasher, failures);
         ValidateTwoCredentialCap(client, failures);
+    }
+
+    /// <summary>
+    /// Every credential, not only a shared secret, must return a new instance from
+    /// <see cref="IClientCredential.Snapshot"/>: the resolver serves the copy, and a credential that
+    /// hands back itself leaves the store able to change it after this verdict.
+    /// </summary>
+    /// <remarks>
+    /// Runs on the store's own instance at startup and at a custom store's write time, and on the
+    /// resolver's snapshot per request. The snapshot keeps the store's instance wherever
+    /// <c>Snapshot</c> returned it or <see langword="null"/>, so the same check rejects it there too.
+    /// </remarks>
+    private static void ValidateSnapshots(
+        IClientRegistration client,
+        List<ZeeKayDaConfigurationFailure> failures)
+    {
+        foreach (var (credential, problem) in client.Credentials
+                     .OfType<IClientCredential>()
+                     .Select(credential => (credential, DescribeSnapshotProblem(credential)))
+                     .Where(entry => entry.Item2 is not null))
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.credentials.not_copied",
+                $"Client '{client.ClientId}' has a credential of type '{credential.GetType().Name}' " +
+                $"whose Snapshot() {problem}. Snapshot() must return a new instance that shares no " +
+                "mutable state with the credential, so the credential that was validated is the one " +
+                "the client is authenticated against."));
+        }
+    }
+
+    private static string? DescribeSnapshotProblem(IClientCredential credential)
+    {
+        IClientCredential? copy;
+        try
+        {
+            copy = credential.Snapshot();
+        }
+        catch (ZeeKayDaConfigurationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Snapshot() is an extension point, and the built-in PBKDF2 copy throws on a null Salt
+            // or Hash. A named failure beats an unexplained exception escaping startup validation;
+            // only the type is reported, because a credential's exception message may carry its data.
+            return $"threw {ex.GetType().Name}";
+        }
+
+        if (copy is null)
+            return "returned null";
+
+        return ReferenceEquals(copy, credential) ? "returned the same instance" : null;
     }
 
     private static void ValidateEmptySecretProbe(
