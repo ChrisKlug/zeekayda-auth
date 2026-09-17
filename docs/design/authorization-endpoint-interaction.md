@@ -297,7 +297,7 @@ nothing writes it any more. All `HttpOnly`.
 | Cookie | Holds | Lifetime | `SameSite` |
 |---|---|---|---|
 | `zkd.session` | the SSO session | session | `None` only if `prompt=none` silent auth is supported, else `Lax` |
-| `zkd.interaction.<id>` | the binding of one interaction to this browser: a random secret, and an encrypted client hint | the interaction's 30 min plus a day; the secret is removed when the interaction ends | `Lax` |
+| `zkd.interaction.<id>` | the binding of one interaction to this browser: a random secret, and an encrypted client hint | the interaction's 30 min, plus a day when it names a client; the secret is removed when the interaction ends, and at most three such retired bindings are kept, evicted before live ones | `Lax` |
 | `zkd.external` | the raw provider callback, before ZeeKayDa reads it | seconds | `Lax` |
 
 **The parked principal** — a half-authenticated external principal, parked while the host's page

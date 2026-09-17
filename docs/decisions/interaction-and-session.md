@@ -88,10 +88,10 @@ remove is the whole contract (`token-stores.md`).
 
 **Each interaction is bound to its browser by `zkd.interaction.<id>`: a random secret, from which with the
 identifier the store key is derived, and an encrypted client hint.** The identifier travels in URLs and URLs
-leak; a browser without the cookie, or with a forged one, finds nothing. An ended interaction retires its
-cookie to a secret-less tombstone keeping the hint a day, so a late submission can still name its client;
-capped at ten per browser, oldest first, the two-hundred-byte bindings stay clear of the header-budget finding
-a 3 KB payload per cookie had. Simultaneous tabs overshoot by their count, which cross-site content cannot
+leak; a browser without the cookie, or with a forged one, finds nothing. An ended interaction that names a client
+retires its cookie to a secret-less tombstone keeping the hint a day, so a late submission can still name it; at
+most three tombstones, evicted before any live binding, within ten bindings per browser, oldest first, stay clear
+of the header-budget finding a 3 KB payload per cookie had. Simultaneous tabs overshoot by their count, which cross-site content cannot
 force; ten top-level navigations evicting a tab's live binding is accepted. A failed request wrote nothing.
 
 **One terminal outcome per interaction — a code or a denial — decided by the authorization code store.**
