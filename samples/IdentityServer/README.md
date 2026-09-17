@@ -39,6 +39,11 @@ dotnet run --project samples/IdentityServer --launch-profile Conformance
 
 `SignInAsync`, `DenyAsync`, `GrantAsync` and `SignOutAsync` are terminal: the framework writes the
 response, so each page handler simply ends after the call and the framework skips rendering the page.
+They are terminal even when the page is submitted after its request is gone — a double click, a
+page left open too long, a bookmarked login page: the framework sends the user back to the client
+to start again, or to the error page, which tells that case apart by
+`AuthorizationErrorKind.NothingToContinue`. The consent and logout pages read their request with
+`TryGetRequestAsync`, so they can say "nothing to confirm" themselves instead of failing.
 
 To sign out, follow **Sign out** on the home page, or send the browser to the end-session endpoint
 (`/connect/endsession`) from a client.
@@ -58,7 +63,9 @@ New users can be added through **Create an account** on the login page; they las
 | `conformance-client2` | confidential, `client_secret_basic` | `conformance-client2-secret` | skipped | Conformance |
 
 `sample-public-client` is the [sample web client](../WebClient/README.md). It sends users back to
-`https://localhost:5002/signout-callback-oidc` after a sign-out it asked for.
+`https://localhost:5002/signout-callback-oidc` after a sign-out it asked for, and to
+`https://localhost:5002/initiate-login` to start again when a login or consent page is submitted
+after its request is gone.
 
 The conformance clients register the suite's callback for the plan alias `zeekayda`:
 `https://localhost.emobix.co.uk:8443/test/a/zeekayda/callback`.

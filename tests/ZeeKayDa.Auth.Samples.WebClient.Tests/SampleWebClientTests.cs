@@ -83,6 +83,52 @@ public sealed class SampleWebClientTests : IDisposable
         page.Url.GetLeftPart(UriPartial.Path).Should().Be(new Uri(IdentityServerOrigin, "/login").ToString());
     }
 
+    [Fact]
+    public async Task A_consent_submitted_twice_starts_a_new_sign_in_at_the_client_instead_of_failing()
+    {
+        // The double click: the first submission completed the sign-in, so the second has nothing
+        // to continue. The server sends the browser to the client's initiate_login_uri, the client
+        // starts again, and the user — still signed in at the server — is simply asked again.
+        var login = await _browser.GetAsync(new Uri(WebClientOrigin, "/profile"), Cancellation);
+        var consent = await _browser.SubmitAsync(login, AliceCredentials(), Cancellation);
+        await _browser.SubmitAsync(consent, new() { ["action"] = "allow" }, Cancellation);
+
+        var again = await _browser.SubmitAsync(consent, new() { ["action"] = "allow" }, Cancellation);
+
+        _browser.Visited.Should().Contain(url =>
+            url.GetLeftPart(UriPartial.Path) == new Uri(WebClientOrigin, "/initiate-login").ToString()
+            && url.Query == "?iss=https%3A%2F%2Flocalhost%3A5443");
+        again.Url.AbsolutePath.Should().Be("/consent");
+        again.Html.Should().Contain("Allow access?");
+    }
+
+    [Fact]
+    public async Task A_sign_out_confirmed_twice_ends_on_the_signed_out_page()
+    {
+        await SignInAliceAsync();
+        var home = await _browser.GetAsync(WebClientOrigin, Cancellation);
+        var confirmation = await _browser.SubmitAsync(home, [], Cancellation);
+        await _browser.SubmitAsync(confirmation, [], Cancellation);
+
+        var again = await _browser.SubmitAsync(confirmation, [], Cancellation);
+
+        again.Url.Should().Be(new Uri(IdentityServerOrigin, "/signed-out"));
+    }
+
+    [Fact]
+    public async Task The_client_starts_no_sign_in_for_an_issuer_it_does_not_trust()
+    {
+        using var client = _webClient.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = WebClientOrigin,
+            AllowAutoRedirect = false,
+        });
+
+        using var response = await client.GetAsync("/initiate-login?iss=https%3A%2F%2Fattacker.example.net", Cancellation);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+    }
+
     public void Dispose()
     {
         _browser.Dispose();
@@ -95,13 +141,15 @@ public sealed class SampleWebClientTests : IDisposable
     private async Task<Page> SignInAliceAsync()
     {
         var login = await _browser.GetAsync(new Uri(WebClientOrigin, "/profile"), Cancellation);
-        var consent = await _browser.SubmitAsync(login, new()
-        {
-            ["username"] = "alice",
-            ["password"] = "alice-password",
-            ["action"] = "login",
-        }, Cancellation);
+        var consent = await _browser.SubmitAsync(login, AliceCredentials(), Cancellation);
 
         return await _browser.SubmitAsync(consent, new() { ["action"] = "allow" }, Cancellation);
     }
+
+    private static Dictionary<string, string> AliceCredentials() => new()
+    {
+        ["username"] = "alice",
+        ["password"] = "alice-password",
+        ["action"] = "login",
+    };
 }

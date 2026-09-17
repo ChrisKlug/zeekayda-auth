@@ -24,6 +24,12 @@ public sealed class ClientSettings
     public IReadOnlyList<string> Scopes { get; init; } = [];
 
     /// <summary>
+    /// Where the client starts a new sign-in. A login or consent page submitted after its request
+    /// is gone — a double click, a page left open too long — sends the user there to start again.
+    /// </summary>
+    public string? InitiateLoginUri { get; init; }
+
+    /// <summary>
     /// Whether the user is shown the consent page for this client. Turn it off only for an
     /// operator's own applications: consent is what lets a user notice a request they never started.
     /// </summary>

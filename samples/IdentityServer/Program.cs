@@ -1,3 +1,4 @@
+using ZeeKayDa.Auth.AspNetCore.Clients;
 using ZeeKayDa.Auth.Samples.IdentityServer;
 using ZeeKayDa.Auth.Samples.IdentityServer.Users;
 using ZeeKayDa.Auth.Scopes;
@@ -37,13 +38,19 @@ auth.AddInMemoryClients(clients =>
         if (client.Secret is { } secret)
         {
             clients.AddConfidential(client.ClientId, secret, client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes,
-                options => options.RequireConsent = client.RequireConsent);
+                options => Configure(options, client));
         }
         else
         {
             clients.AddPublic(client.ClientId, client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes,
-                options => options.RequireConsent = client.RequireConsent);
+                options => Configure(options, client));
         }
+    }
+
+    static void Configure(ClientOptions options, ClientSettings client)
+    {
+        options.RequireConsent = client.RequireConsent;
+        options.InitiateLoginUri = client.InitiateLoginUri;
     }
 });
 

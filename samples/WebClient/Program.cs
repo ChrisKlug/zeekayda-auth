@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -48,6 +49,15 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapRazorPages();
+
+// Third-party-initiated login (OpenID Connect Core §4): the identity server sends the browser here
+// to start a new sign-in when one of its pages was submitted after its request was gone — a
+// double click, a page left open too long. Only a request naming the server this app trusts
+// starts one; an app that wants to explain first could render a page here instead.
+app.MapGet("/initiate-login", (string? iss) =>
+    string.Equals(iss, identityServer["Authority"], StringComparison.Ordinal)
+        ? Results.Challenge(new AuthenticationProperties { RedirectUri = "/" }, [OpenIdConnectDefaults.AuthenticationScheme])
+        : Results.BadRequest());
 
 app.Run();
 

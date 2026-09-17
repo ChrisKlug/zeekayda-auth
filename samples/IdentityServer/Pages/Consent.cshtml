@@ -3,11 +3,17 @@
 @{
     ViewData["Title"] = "Allow access";
 }
+@if (Model.ConsentRequest is not { } request)
+{
+    <h1>Nothing to allow</h1>
+    <p>This request has expired or was already answered. Return to the application and sign in again.</p>
+    return;
+}
 <h1>Allow access?</h1>
 
-<p><strong>@(Model.ConsentRequest.Client.DisplayName ?? Model.ConsentRequest.Client.ClientId)</strong> is asking for:</p>
+<p><strong>@(request.Client.DisplayName ?? request.Client.ClientId)</strong> is asking for:</p>
 <ul class="scopes">
-    @foreach (var scope in Model.ConsentRequest.Scopes)
+    @foreach (var scope in request.Scopes)
     {
         <li>@scope</li>
     }
