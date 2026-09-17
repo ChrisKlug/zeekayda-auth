@@ -114,6 +114,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
         seen.AllowedTokenEndpointAuthMethods.Should().Equal(TokenEndpointAuthMethods.ClientSecretBasic);
         seen.AllowedSigningAlgorithms.Should().BeEmpty();
         seen.DisplayName.Should().BeNull();
+        seen.InitiateLoginUri.Should().BeNull();
     }
 
     [Fact]
@@ -192,6 +193,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     private static void ChangeEverySharedSetting(ClientOptions options)
     {
         options.DisplayName = "Our app";
+        options.InitiateLoginUri = "https://app.example.com/login";
         options.RequireConsent = false;
         options.SkipLogoutConfirmation = true;
         options.EnableZkdErrorCodes = true;

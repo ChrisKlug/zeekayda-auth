@@ -68,6 +68,9 @@ public sealed record ClientRegistration : IClientRegistration
     public string? DisplayName { get; init; }
 
     /// <inheritdoc/>
+    public string? InitiateLoginUri { get; init; }
+
+    /// <inheritdoc/>
     public bool RequireConsent { get; init; } = true;
 
     /// <inheritdoc/>

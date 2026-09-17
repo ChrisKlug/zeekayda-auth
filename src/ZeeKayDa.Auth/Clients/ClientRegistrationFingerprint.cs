@@ -54,6 +54,7 @@ internal static class ClientRegistrationFingerprint
         Append(builder, "skiplogout", client.SkipLogoutConfirmation ? "1" : "0");
         Append(builder, "noncepkce", client.AllowNonceInsteadOfPkce ? "1" : "0");
         Append(builder, "displayname", client.DisplayName ?? NullSentinel);
+        Append(builder, "initiatelogin", client.InitiateLoginUri ?? NullSentinel);
         AppendSet(builder, "redirect", client.RedirectUris);
         AppendSet(builder, "postlogout", client.PostLogoutRedirectUris);
         AppendSet(builder, "scopes", client.AllowedScopes);

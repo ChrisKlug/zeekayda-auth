@@ -29,6 +29,7 @@ public sealed class ClientMetadataTests
 
         client.RequireConsent.Should().BeTrue();
         client.DisplayName.Should().BeNull();
+        client.InitiateLoginUri.Should().BeNull();
     }
 
     [Fact]

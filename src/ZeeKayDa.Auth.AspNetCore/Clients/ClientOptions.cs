@@ -20,6 +20,7 @@ public abstract class ClientOptions
     private protected ClientOptions(ClientRegistration defaults)
     {
         DisplayName = defaults.DisplayName;
+        InitiateLoginUri = defaults.InitiateLoginUri;
         RequireConsent = defaults.RequireConsent;
         SkipLogoutConfirmation = defaults.SkipLogoutConfirmation;
         EnableZkdErrorCodes = defaults.EnableZkdErrorCodes;
@@ -41,6 +42,7 @@ public abstract class ClientOptions
     internal virtual ClientRegistration ApplyTo(ClientRegistration registration) => registration with
     {
         DisplayName = DisplayName,
+        InitiateLoginUri = InitiateLoginUri,
         RequireConsent = RequireConsent,
         SkipLogoutConfirmation = SkipLogoutConfirmation,
         EnableZkdErrorCodes = EnableZkdErrorCodes,
@@ -60,6 +62,9 @@ public abstract class ClientOptions
 
     /// <inheritdoc cref="IClientMetadata.DisplayName"/>
     public string? DisplayName { get; set; }
+
+    /// <inheritdoc cref="IClientMetadata.InitiateLoginUri"/>
+    public string? InitiateLoginUri { get; set; }
 
     /// <summary>
     /// Whether the user must consent on the host's consent page before an authorization code is

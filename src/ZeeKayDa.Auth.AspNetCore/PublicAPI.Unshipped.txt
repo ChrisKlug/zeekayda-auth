@@ -49,6 +49,8 @@ ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AllowedResponseTypes.get -> Syste
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.AllowedSigningAlgorithms.get -> System.Collections.Generic.ISet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>!
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.DisplayName.get -> string?
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.DisplayName.set -> void
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.InitiateLoginUri.get -> string?
+ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.InitiateLoginUri.set -> void
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.EnableZkdErrorCodes.get -> bool
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.EnableZkdErrorCodes.set -> void
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.IdTokenLifetime.get -> System.TimeSpan?
