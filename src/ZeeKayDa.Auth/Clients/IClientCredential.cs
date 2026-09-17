@@ -35,8 +35,10 @@ public interface IClientCredential
     /// new instance still shares a buffer, so that part of the contract is the implementer's.
     /// </para>
     /// <para>
-    /// The copy must be a type the same <see cref="IClientSecretHasher"/> or client authenticator
-    /// handles as this one.
+    /// The copy is what the client is authenticated against, so it must be a type the framework can
+    /// verify: a shared secret's copy must itself be an <see cref="IClientSecret"/> that a registered
+    /// <see cref="IClientSecretHasher"/> handles. Registration validation checks the copy, not this
+    /// instance.
     /// </para>
     /// </remarks>
     IClientCredential Snapshot();

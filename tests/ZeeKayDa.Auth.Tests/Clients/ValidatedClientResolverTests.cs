@@ -213,6 +213,18 @@ public class ValidatedClientResolverTests
             .Which.Message.Should().Contain("null entry in Credentials");
     }
 
+    [Fact]
+    public async Task A_secret_whose_Snapshot_is_not_a_secret_is_served_as_unknown()
+    {
+        // Served, the client would hold no secret and fail every authentication as a wrong secret,
+        // with nothing in the log to say why.
+        var resolver = Resolver(Client() with { Credentials = [new DemotingSecret()] }, new PassingValidator());
+
+        var result = await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull();
+    }
+
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
 
     private static ClientRegistration Client() =>
@@ -312,6 +324,16 @@ public class ValidatedClientResolverTests
     private sealed class ThrowingSnapshotCredential(Exception exception) : IClientCredential
     {
         public IClientCredential Snapshot() => throw exception;
+    }
+
+    private sealed class CopyingCredential : IClientCredential
+    {
+        public IClientCredential Snapshot() => new CopyingCredential();
+    }
+
+    private sealed class DemotingSecret : IClientSecret
+    {
+        public IClientCredential Snapshot() => new CopyingCredential();
     }
 
     private sealed class PassingValidator : IClientRegistrationValidator

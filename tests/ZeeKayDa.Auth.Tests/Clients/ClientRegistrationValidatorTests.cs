@@ -36,6 +36,30 @@ public sealed class ClientRegistrationValidatorTests
         public IClientCredential Snapshot() => throw exception;
     }
 
+    private sealed class CopyingCredential : IClientCredential
+    {
+        public IClientCredential Snapshot() => new CopyingCredential();
+    }
+
+    /// <summary>A secret whose copy is a credential but no longer a secret.</summary>
+    private sealed class DemotingSecret : IClientSecret
+    {
+        public IClientCredential Snapshot() => new CopyingCredential();
+    }
+
+    /// <summary>A secret <see cref="RetypingHasher"/> handles, whose copy no hasher handles.</summary>
+    private sealed class RetypingSecret : IClientSecret
+    {
+        public IClientCredential Snapshot() => new AnySecret();
+    }
+
+    private sealed class RetypingHasher : IClientSecretHasher
+    {
+        public bool CanHandle(IClientSecret secret) => secret is RetypingSecret;
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new RetypingSecret();
+    }
+
     /// <summary>
     /// A hasher that accepts any credential of type <see cref="FakeSecret"/> and always returns
     /// the configured <paramref name="verifyResult"/> from <c>Verify</c>.
@@ -959,6 +983,32 @@ public sealed class ClientRegistrationValidatorTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.null_entry");
+    }
+
+    [Fact]
+    public void Validate_fails_with_not_copied_code_if_a_secret_s_Snapshot_is_not_a_secret()
+    {
+        // The copy is what the client is authenticated against. A secret that copies into some other
+        // kind of credential would silently leave the client with no secret at all.
+        var failure = NotCopiedFailure(new DemotingSecret());
+
+        failure.Message.Should().Contain("DemotingSecret").And.Contain("which is not an IClientSecret");
+    }
+
+    [Fact]
+    public void Validate_fails_with_no_hasher_code_if_a_secret_s_Snapshot_returns_a_type_no_hasher_handles()
+    {
+        // The secret rules run on the copy, which is what the resolver serves. Run on the store's
+        // instance, this registration passed startup — its hasher handles the original — and then
+        // failed every lookup, because nothing handles the copy.
+        var validator = MakeValidator(hasher: new RetypingHasher());
+        var client = MakeValidConfidentialClient(secret: new RetypingSecret());
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.no_hasher")
+            .Which.Message.Should().Contain(nameof(AnySecret));
     }
 
     [Fact]

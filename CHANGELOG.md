@@ -519,7 +519,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   startup for in-memory clients, at write time for a custom store that runs the validator, and on
   every lookup through the resolver. A `Pbkdf2ClientSecret` with a `null` salt or hash, which used to
   pass startup and then fail every request, now fails startup this way, and a `null` entry in
-  `Credentials` fails it as `client.credentials.null_entry`.
+  `Credentials` fails it as `client.credentials.null_entry`. The secret rules — no matching hasher,
+  the iteration floor, the empty-secret probe and the two-secret cap — run on the copies, the
+  credentials the client is authenticated against, and a secret whose copy is not an `IClientSecret`
+  is refused as `not_copied`.
 
 - **Registering a public client on a server that does not advertise `none` now says how to fix it**
   (#674). The startup failure named only the mismatch; it now explains that public clients present no
