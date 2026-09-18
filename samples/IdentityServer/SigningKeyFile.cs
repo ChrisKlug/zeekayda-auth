@@ -27,6 +27,25 @@ public static class SigningKeyFile
                 CreateOwnerOnlyDirectoryUnix(directory);
         }
 
+        // Written beside the key and renamed into place, because more than one host can start at
+        // once and the check above is not a lock. A rename is atomic, so a racing host sees either
+        // no key or a whole one — never the empty file a plain create-then-write leaves behind.
+        var pending = Path.Join(directory, Path.GetRandomFileName());
+        try
+        {
+            WriteNewKey(pending);
+            Publish(pending, path);
+        }
+        finally
+        {
+            File.Delete(pending);
+        }
+
+        return path;
+    }
+
+    private static void WriteNewKey(string path)
+    {
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest(
             "CN=ZeeKayDa sample signing key", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -39,8 +58,19 @@ public static class SigningKeyFile
         using var stream = OperatingSystem.IsWindows() ? CreateOwnerOnlyWindows(path) : CreateOwnerOnlyUnix(path);
         using var writer = new StreamWriter(stream);
         writer.Write(pem);
+    }
 
-        return path;
+    private static void Publish(string pending, string path)
+    {
+        try
+        {
+            File.Move(pending, path, overwrite: false);
+        }
+        catch (IOException) when (File.Exists(path))
+        {
+            // Another host got there first. Its key is complete and owner-only, so it is the key;
+            // ours is discarded, and both hosts sign with the same one.
+        }
     }
 
     [UnsupportedOSPlatform("windows")]
