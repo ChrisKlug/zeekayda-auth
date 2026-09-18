@@ -60,7 +60,9 @@ public static class SigningKeyFile
         writer.Write(pem);
     }
 
-    private static void Publish(string pending, string path)
+    // Internal rather than private so the losing half of the race can be driven directly,
+    // without depending on thread scheduling to produce it.
+    internal static void Publish(string pending, string path)
     {
         try
         {

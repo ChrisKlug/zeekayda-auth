@@ -55,6 +55,22 @@ public sealed class SigningKeyFileTests : IDisposable
     }
 
     [Fact]
+    public void Publishing_keeps_the_key_that_got_there_first_rather_than_replacing_it()
+    {
+        // The losing half of the race, driven directly rather than raced for: whether publication
+        // replaces a key another host already published does not depend on thread scheduling, so
+        // it should not be tested by hoping the scheduler produces the collision.
+        var winners = GenerateKeyAt(KeyPath);
+        var pending = Path.Join(_directory, "pending.pem");
+        var ours = GenerateKeyAt(pending);
+        ours.Should().NotBe(winners, "two generated keys that matched would make this prove nothing");
+
+        SigningKeyFile.Publish(pending, KeyPath);
+
+        File.ReadAllText(KeyPath).Should().Be(winners, "a key another host published must never be replaced");
+    }
+
+    [Fact]
     public void Ensure_publishes_an_owner_only_key_on_unix()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
@@ -96,6 +112,25 @@ public sealed class SigningKeyFileTests : IDisposable
     {
         if (Directory.Exists(_directory))
             Directory.Delete(_directory, recursive: true);
+    }
+
+    /// <summary>Generates a key of its own at <paramref name="path"/> and returns its PEM.</summary>
+    private static string GenerateKeyAt(string path)
+    {
+        var scratch = Path.Join(Path.GetTempPath(), Path.GetRandomFileName());
+        try
+        {
+            var generated = SigningKeyFile.Ensure(Path.Join(scratch, "signing.pem"));
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.Move(generated, path);
+
+            return File.ReadAllText(path);
+        }
+        finally
+        {
+            if (Directory.Exists(scratch))
+                Directory.Delete(scratch, recursive: true);
+        }
     }
 
     /// <summary>
