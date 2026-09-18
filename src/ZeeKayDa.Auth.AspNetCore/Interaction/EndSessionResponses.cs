@@ -103,6 +103,6 @@ internal sealed class EndSessionResponses
             "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">" +
             $"<title>{title}</title></head><body>{body}</body></html>";
 
-        return Results.Content(html, "text/html; charset=utf-8", statusCode: statusCode);
+        return RenderedPage.Html(statusCode, html);
     }
 }

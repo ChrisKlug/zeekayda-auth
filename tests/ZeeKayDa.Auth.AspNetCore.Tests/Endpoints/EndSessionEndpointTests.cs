@@ -82,6 +82,15 @@ public sealed class EndSessionEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task The_framework_signed_out_page_cannot_be_framed()
+    {
+        var response = await EndSessionAsync(new());
+
+        response.Headers.GetValues("Content-Security-Policy").Should().Contain("frame-ancestors 'none'");
+        response.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
+    }
+
+    [Fact]
     public async Task Without_a_session_a_registered_post_logout_redirect_uri_receives_the_user_and_state()
     {
         var response = await EndSessionAsync(new()
