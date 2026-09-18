@@ -1,4 +1,5 @@
 using System.Security.AccessControl;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Principal;
 
@@ -31,7 +32,7 @@ public sealed class SigningKeyFileTests : IDisposable
         var path = SigningKeyFile.Ensure(KeyPath);
 
         path.Should().Be(KeyPath);
-        AssertWholeKey(path);
+        ObserveWholeKey(path).Should().NotBeEmpty();
     }
 
     [Fact]
@@ -48,9 +49,9 @@ public sealed class SigningKeyFileTests : IDisposable
     [Fact]
     public async Task Ensure_gives_every_racing_caller_the_same_whole_key()
     {
-        var paths = await RaceToEnsureAsync(AssertWholeKey);
+        var keys = await RaceToEnsureAsync(ObserveWholeKey);
 
-        paths.Should().AllBe(KeyPath);
+        keys.Should().AllBe(keys[0], "every racing host has to end up signing with one key");
         Directory.GetFiles(_directory).Should().ContainSingle().Which.Should().Be(KeyPath);
     }
 
@@ -69,7 +70,9 @@ public sealed class SigningKeyFileTests : IDisposable
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
 
-        await RaceToEnsureAsync(path => UnixModeOf(path).Should().Be(OwnerOnly));
+        var modes = await RaceToEnsureAsync(UnixModeOf);
+
+        modes.Should().AllSatisfy(mode => mode.Should().Be(OwnerOnly));
     }
 
     [Fact]
@@ -79,7 +82,7 @@ public sealed class SigningKeyFileTests : IDisposable
 
         SigningKeyFile.Ensure(KeyPath);
 
-        AssertOwnerOnlyProtectedAcl(KeyPath);
+        ObserveOwnerOnlyProtectedAcl(KeyPath);
     }
 
     [Fact]
@@ -87,7 +90,7 @@ public sealed class SigningKeyFileTests : IDisposable
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
-        await RaceToEnsureAsync(AssertOwnerOnlyProtectedAcl);
+        await RaceToEnsureAsync(ObserveOwnerOnlyProtectedAcl);
     }
 
     public void Dispose()
@@ -99,13 +102,15 @@ public sealed class SigningKeyFileTests : IDisposable
     /// <summary>
     /// Calls <c>Ensure</c> from several threads released together, and returns what each was given.
     /// </summary>
-    /// <param name="checkWhatThisCallerGot">
-    /// Run inside each racing task, before it completes. The check has to happen there: a caller
-    /// that returns while another is still writing the key must already be holding a whole one, and
-    /// by the time every task has finished the writer has finished too, so a check afterwards would
-    /// pass against an implementation that publishes the key before it is complete.
+    /// <param name="observeWhatThisCallerGot">
+    /// Run inside each racing task, before it completes, and its return value is what the caller
+    /// saw. Both halves matter. The observation has to happen there, because by the time every task
+    /// has finished the writer has finished too, so a check afterwards would pass against an
+    /// implementation that publishes the key before it is complete. And it has to be returned
+    /// rather than only asserted, so the callers can be compared against each other — a caller
+    /// holding a whole key proves nothing if it is not the same key its neighbour is holding.
     /// </param>
-    private async Task<string[]> RaceToEnsureAsync(Action<string> checkWhatThisCallerGot)
+    private async Task<T[]> RaceToEnsureAsync<T>(Func<string, T> observeWhatThisCallerGot)
     {
         using var start = new ManualResetEventSlim();
         var callers = Enumerable.Range(0, Racers)
@@ -114,8 +119,8 @@ public sealed class SigningKeyFileTests : IDisposable
                 {
                     start.Wait(Cancellation);
                     var path = SigningKeyFile.Ensure(KeyPath);
-                    checkWhatThisCallerGot(path);
-                    return path;
+
+                    return observeWhatThisCallerGot(path);
                 },
                 Cancellation))
             .ToArray();
@@ -125,10 +130,22 @@ public sealed class SigningKeyFileTests : IDisposable
         return await Task.WhenAll(callers);
     }
 
-    private static void AssertWholeKey(string path)
+    /// <summary>
+    /// Reads the key this caller was handed, proves both halves of it are there, and returns it
+    /// verbatim so it can be compared with what the other callers were handed. One read: a second
+    /// one could see a different file and would prove nothing about what this caller got.
+    /// </summary>
+    private string ObserveWholeKey(string path)
     {
-        using var certificate = X509Certificate2.CreateFromPemFile(path);
-        certificate.HasPrivateKey.Should().BeTrue();
+        path.Should().Be(KeyPath);
+
+        var pem = File.ReadAllText(path);
+        using var certificate = X509Certificate2.CreateFromPem(pem);
+        certificate.Subject.Should().Be("CN=ZeeKayDa sample signing key");
+        using var privateKey = RSA.Create();
+        privateKey.ImportFromPem(pem);
+
+        return pem;
     }
 
     // The two helpers below carry their own OperatingSystem guard rather than relying on the
@@ -139,10 +156,10 @@ public sealed class SigningKeyFileTests : IDisposable
     private static UnixFileMode UnixModeOf(string path) =>
         OperatingSystem.IsWindows() ? UnixFileMode.None : File.GetUnixFileMode(path);
 
-    private static void AssertOwnerOnlyProtectedAcl(string path)
+    private static string ObserveOwnerOnlyProtectedAcl(string path)
     {
         if (!OperatingSystem.IsWindows())
-            return;
+            return path;
 
         var security = new FileInfo(path).GetAccessControl();
 
@@ -160,5 +177,7 @@ public sealed class SigningKeyFileTests : IDisposable
 
         identities.Should().NotBeEmpty()
             .And.AllSatisfy(identity => identity.Should().Be(currentUser));
+
+        return path;
     }
 }
