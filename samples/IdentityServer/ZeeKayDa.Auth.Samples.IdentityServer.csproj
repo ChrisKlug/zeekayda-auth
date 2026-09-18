@@ -6,6 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="ZeeKayDa.Auth.Samples.IdentityServer.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../../src/ZeeKayDa.Auth.AspNetCore/ZeeKayDa.Auth.AspNetCore.csproj" />
     <ProjectReference Include="../../src/ZeeKayDa.Auth.FileSystem/ZeeKayDa.Auth.FileSystem.csproj" />
   </ItemGroup>
