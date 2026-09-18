@@ -137,6 +137,22 @@ public sealed class NothingToContinueTests : IDisposable
     }
 
     [Fact]
+    public async Task The_frameworks_own_error_page_cannot_be_framed_or_cached()
+    {
+        // A page the framework renders itself is stamped as it is written, like the host pages
+        // that take a decision: one framework page already carries a button, and a page that can
+        // be framed can acquire one later.
+        var interactionId = await ReachConsentAsync(PlainClient);
+        (await GrantAsync(interactionId)).ShouldHaveIssuedCodeTo(RegisteredRedirect);
+
+        using var again = await GrantAsync(interactionId);
+
+        again.Headers.GetValues("Content-Security-Policy").Should().Contain("frame-ancestors 'none'");
+        again.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
+        again.Headers.CacheControl!.NoStore.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task The_host_error_page_is_told_the_error_is_nothing_to_continue()
     {
         using var factory = NewFactory(errorPath: ErrorPath);

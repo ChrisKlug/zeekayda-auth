@@ -513,6 +513,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **The pages the framework renders itself refuse framing and caching** (#713). The unbranded error,
+  sign-out confirmation, signed-out and refusal pages went out as HTML with no framing headers, while
+  the host pages that take a decision have always been stamped. All of them now carry
+  `Content-Security-Policy: frame-ancestors 'none'`, `X-Frame-Options: DENY` and `Cache-Control:
+  no-store`, stamped as the page is written. One of them — the sign-out confirmation — takes a click,
+  and a framed page can acquire a button later.
+
 - **A client registration is validated and served as one snapshot** (#691). The resolver fingerprinted
   and validated the instance a custom `IClientRepository` returned, then handed that same live instance
   to the protocol; a store free to edit it in between — an ORM entity still attached to a change

@@ -73,7 +73,7 @@ internal sealed class AuthorizationResponses
             $"<p>{advice}</p>" +
             "</body></html>";
 
-        return Results.Content(html, "text/html; charset=utf-8", statusCode: StatusCodes.Status400BadRequest);
+        return RenderedPage.Html(StatusCodes.Status400BadRequest, html);
     }
 
     /// <summary>
