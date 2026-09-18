@@ -1,5 +1,4 @@
 using System.Security.AccessControl;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Principal;
 
@@ -140,10 +139,13 @@ public sealed class SigningKeyFileTests : IDisposable
         path.Should().Be(KeyPath);
 
         var pem = File.ReadAllText(path);
-        using var certificate = X509Certificate2.CreateFromPem(pem);
+
+        // Both halves from one snapshot, and paired: CreateFromPem(pem, pem) fails unless the
+        // private key is the certificate's own. Parsing them separately would accept this
+        // certificate carrying somebody else's key, which the framework could not sign with.
+        using var certificate = X509Certificate2.CreateFromPem(pem, pem);
         certificate.Subject.Should().Be("CN=ZeeKayDa sample signing key");
-        using var privateKey = RSA.Create();
-        privateKey.ImportFromPem(pem);
+        certificate.HasPrivateKey.Should().BeTrue();
 
         return pem;
     }
