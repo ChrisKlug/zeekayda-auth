@@ -22,6 +22,11 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     private const string ClientId = "sample-public-client";
     private const string RedirectUri = "https://localhost:5002/signin-oidc";
     private const string PostLogoutRedirectUri = "https://localhost:5002/signout-callback-oidc";
+    // The Conformance environment issues on a different host from the default one, so that the
+    // conformance suite's containers and a browser on the same machine can both reach one issuer
+    // URL. The framework constrains its endpoints to the issuer's host, so a browser driving that
+    // environment has to address it by that name or every endpoint answers 404.
+    private const string ConformanceIssuer = "https://zeekayda.localtest.me:5443";
     private const string ConformanceClientId = "conformance-client";
     private const string ConformanceRedirectUri = "https://localhost.emobix.co.uk:8443/test/a/zeekayda/callback";
 
@@ -33,9 +38,11 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
 
     private HttpClient NewBrowser() => NewBrowser(_factory);
 
-    private static HttpClient NewBrowser(WebApplicationFactory<Program> factory) => factory.CreateClient(new WebApplicationFactoryClientOptions
+    private static HttpClient NewBrowser(WebApplicationFactory<Program> factory) => NewBrowser(factory, Issuer);
+
+    private static HttpClient NewBrowser(WebApplicationFactory<Program> factory, string issuer) => factory.CreateClient(new WebApplicationFactoryClientOptions
     {
-        BaseAddress = new Uri(Issuer),
+        BaseAddress = new Uri(issuer),
         AllowAutoRedirect = false,
         HandleCookies = true,
     });
@@ -128,7 +135,7 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     public async Task A_client_that_skips_consent_goes_from_the_login_page_straight_back_to_the_client()
     {
         using var factory = _factory.WithWebHostBuilder(host => host.UseEnvironment("Conformance"));
-        using var browser = NewBrowser(factory);
+        using var browser = NewBrowser(factory, ConformanceIssuer);
         var (_, challenge) = NewPkcePair();
 
         var loginPage = await FollowAuthorizeAsync(browser, challenge, ConformanceClientId, ConformanceRedirectUri);
@@ -269,13 +276,16 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
         var posted = HiddenInputs(html).Where(hidden => !fields.ContainsKey(hidden.Key)).Concat(fields);
 
         using var form = new FormUrlEncodedContent(posted);
-        return await browser.PostAsync(FormTarget(html, pageUrl), form, Cancellation);
+        return await browser.PostAsync(FormTarget(browser, html, pageUrl), form, Cancellation);
     }
 
     // An absent or empty action posts to the page's own URL; any other is resolved against it.
-    private static Uri FormTarget(string html, string pageUrl)
+    // Relative URLs resolve against the browser's own base address, not the default issuer: a
+    // browser driving the Conformance environment is on a different host, and posting a form back
+    // to a host the page did not come from loses the antiforgery cookie with it.
+    private static Uri FormTarget(HttpClient browser, string html, string pageUrl)
     {
-        var page = new Uri(new Uri(Issuer), pageUrl);
+        var page = new Uri(browser.BaseAddress!, pageUrl);
         var action = WebUtility.HtmlDecode(FormAction().Match(html).Groups["action"].Value);
         return action.Length == 0 ? page : new Uri(page, action);
     }

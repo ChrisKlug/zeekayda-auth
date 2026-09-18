@@ -1,0 +1,48 @@
+{
+    "alias": "zeekayda",
+    "description": "ZeeKayDa.Auth sample identity server",
+    "server": {
+        "discoveryUrl": "https://zeekayda.localtest.me:5443/.well-known/openid-configuration"
+    },
+    "client": {
+        "client_id": "conformance-client",
+        "client_secret": "conformance-client-secret"
+    },
+    "client2": {
+        "client_id": "conformance-client2",
+        "client_secret": "conformance-client2-secret"
+    },
+    "browser": [
+        {
+            "comment": "Sign in as the seeded user. Every task is optional: modules that reuse an existing session (prompt=none while logged in, max_age=10000) never reach the login page, and consent is skipped because the conformance clients are registered with RequireConsent false.",
+            "match": "https://zeekayda.localtest.me:5443/connect/authorize*",
+            "tasks": [
+                {
+                    "task": "Login",
+                    "optional": true,
+                    "match": "https://zeekayda.localtest.me:5443/login*",
+                    "commands": [
+                        [ "text", "id", "username", "alice", "optional" ],
+                        [ "text", "id", "password", "alice-password", "optional" ],
+                        [ "click", "id", "login-submit", "optional" ]
+                    ]
+                },
+                {
+                    "task": "Consent",
+                    "optional": true,
+                    "match": "https://zeekayda.localtest.me:5443/consent*",
+                    "commands": [
+                        [ "click", "id", "consent-submit", "optional" ]
+                    ]
+                },
+                {
+                    "task": "Verify Complete",
+                    "match": "*/test/a/zeekayda/callback*",
+                    "commands": [
+                        [ "wait", "id", "submission_complete", 10 ]
+                    ]
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,42 @@
+# Layered on top of the suite's own suite/docker-compose-prebuilt.yml. Compose is run with
+# --project-directory conformance/suite, so relative paths here resolve against the suite clone and
+# '..' is this folder.
+#
+# Two things this adds:
+#   * the suite's Java server can resolve the sample identity server's hostname, which points at
+#     127.0.0.1 in public DNS and would otherwise mean "this container";
+#   * a runner container for the suite's own run-test-plan.py, so a run needs only Docker.
+services:
+  server:
+    image: zeekayda-conformance-server:local
+    build:
+      context: ..
+      dockerfile: Dockerfile.suite-server
+      args:
+        SUITE_IMAGE: registry.gitlab.com/openid/conformance-suite:${IMAGE_TAG:-latest}
+    extra_hosts:
+      - "${CONFORMANCE_OP_HOST:-zeekayda.localtest.me}:host-gateway"
+
+  runner:
+    image: zeekayda-conformance-runner:local
+    build:
+      context: ..
+      dockerfile: Dockerfile.runner
+    profiles: [ "runner" ]
+    depends_on:
+      - nginx
+    volumes:
+      - ./scripts:/suite/scripts:ro
+      - ..:/conformance
+    working_dir: /suite/scripts
+    environment:
+      CONFORMANCE_SERVER: https://localhost.emobix.co.uk:8443/
+      # The suite's nginx serves a certificate this container has no reason to trust. Verification
+      # that matters — the sample identity server's certificate — is done by the Java server, which
+      # trusts only the CA baked into it by Dockerfile.suite-server.
+      CONFORMANCE_DEV_MODE: "1"
+      # The runner aborts a run after this many modules in a row fail to complete. Three is right
+      # for CI; raise it from the environment when the point of the run is to enumerate every
+      # module rather than to fail fast.
+      CONFORMANCE_MAX_CONSECUTIVE_FAILURES: "${CONFORMANCE_MAX_CONSECUTIVE_FAILURES:-3}"
+    entrypoint: [ "python3", "/suite/scripts/run-test-plan.py" ]
