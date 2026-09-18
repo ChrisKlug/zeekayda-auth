@@ -59,7 +59,13 @@ cleanup() {
     echo "==> results in ${RESULT_DIR}"
     exit "${status}"
 }
-trap cleanup EXIT INT TERM
+# Cleanup hangs off EXIT alone. Trapping INT and TERM on it too would run cleanup with $? set by
+# whatever command happened to finish last — usually 0 — so a cancelled run tore everything down
+# and then reported success. These two turn the signal into the conventional exit status first,
+# and the EXIT trap then carries that status out.
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # --- the suite's source, for its scripts and compose file -----------------------------------------
 if [[ ! -d "${SUITE_DIR}/.git" ]]; then
