@@ -679,11 +679,11 @@ public sealed class UserInfoEndpointTests : IDisposable
             Base64UrlTextEncoder.Encode(outcome.Signature.ToArray());
     }
 
-    private Task<HttpResponseMessage> GetAsync(string accessToken)
+    private async Task<HttpResponseMessage> GetAsync(string accessToken)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, UserInfoPath);
+        using var request = new HttpRequestMessage(HttpMethod.Get, UserInfoPath);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        return _client.SendAsync(request, Cancellation);
+        return await _client.SendAsync(request, Cancellation);
     }
 
     private async Task<JsonElement> GetUserInfoAsync(string accessToken)
