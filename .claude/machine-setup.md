@@ -177,7 +177,25 @@ server fails to start (harmless, but noisy). Install it if the Aspire tooling is
 dotnet tool install -g aspire.cli
 ```
 
-## 8. Not needed
+## 8. ripgrep — required
+
+The skills and agent briefs tell agents to text-search with `rg`. Inside Claude Code `rg` is only a
+shell function backed by the bundled ripgrep, not a binary on `PATH`, so anything that runs `rg` as
+a real process finds nothing. The case that bit: the `rtk` token-trimming Bash hook rewrites a plain
+`rg …` into `rtk rg …`, which execs `rg` and fails with `rtk: search failed: Failed to execute
+command: No such file or directory`. It looks intermittent because the hook only rewrites simple
+commands — `rg` inside a pipe or an `&&` chain still reaches the shell function — and every agent
+that hits it spends a turn falling back to `grep`.
+
+```sh
+brew install ripgrep          # macOS
+sudo apt-get install -y ripgrep   # Ubuntu/Debian
+```
+
+Verify: `command -v rg` outside Claude Code prints a path; in a session, a plain `rg -n "class " src`
+returns matches rather than the `rtk` error.
+
+## 9. Not needed
 
 - Node/npm: nothing in the loop uses them (Copilot CLI ships as a binary).
 - Docker: present, unused by the loop.
@@ -188,6 +206,7 @@ dotnet tool install -g aspire.cli
 dotnet --version            # 10.0.3xx
 csharp-ls --version
 which csharp-lsp-mcp        # language server for background/parallel agents, section 2a
+/usr/bin/which rg           # a real binary, not Claude Code's shell function (section 8)
 copilot --version
 gh auth status
 git config user.email       # or pass -c on each commit
