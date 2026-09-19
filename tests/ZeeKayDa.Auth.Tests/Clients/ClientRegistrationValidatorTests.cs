@@ -1566,8 +1566,9 @@ public sealed class ClientRegistrationValidatorTests
     [Fact]
     public void Validate_accepts_no_response_types_or_modes_on_a_client_without_the_code_grant()
     {
-        // Only the code grant goes through the authorization endpoint (RFC 7591 §2.1), so a client
-        // that never goes there needs no way to be answered there.
+        // Only the code grant goes through the authorization endpoint, and RFC 7591 §2.1 gives every
+        // other grant no response type, so a client that never goes there needs no way to be
+        // answered there.
         var options = BuildDefaultServerOptions();
         options.GrantTypesSupported.Add(GrantType.RefreshToken);
         var validator = MakeValidator(serverOptions: options);

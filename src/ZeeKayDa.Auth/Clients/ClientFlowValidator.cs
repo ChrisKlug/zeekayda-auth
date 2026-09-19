@@ -43,8 +43,10 @@ internal static class ClientFlowValidator
         var responseModeCount = ValidateEntries(client, responseModes, failures);
 
         // Only the code grant goes through the authorization endpoint, so only a client allowed it
-        // needs a response type and mode to be answered with there (RFC 7591 §2.1). Enumerated,
-        // not Contains: a custom registration's set may answer Contains differently from what it yields.
+        // needs a response type and mode to be answered with there. RFC 7591 §2.1 pairs that grant
+        // with the code response type and gives every other grant none; a response mode only shapes
+        // the authorization response, so it follows the same rule. Enumerated, not Contains: a
+        // custom registration's set may answer Contains differently from what it yields.
         if (!client.AllowedGrantTypes.Any(grantType => grantType == GrantType.AuthorizationCode))
             return;
 
