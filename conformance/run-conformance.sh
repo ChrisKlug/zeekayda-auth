@@ -55,8 +55,9 @@ esac
 # touches neither, and both refusals below leave the lock alone; telling them apart only picks the
 # message. The holder is recorded as pid plus start time, because a killed run's pid can be reused
 # by an unrelated process, which would otherwise pass for the run until a reboot cleared /tmp. The
-# locale and time zone are pinned so every shell formats the start time the same way. An empty
-# holder file is a run that has taken the lock and not yet written it.
+# locale and time zone are pinned so every shell formats the start time the same way. The release
+# trap is set before the holder is written, so a failed write cannot strand the lock; an empty
+# holder file is a run inside that gap.
 identity() { LC_ALL=C TZ=UTC ps -p "$1" -o pid=,lstart= 2>/dev/null || true; }
 LOCK_DIR=/tmp/zeekayda-conformance.lock
 if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
@@ -71,8 +72,8 @@ if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
     fi
     exit 1
 fi
-identity "$$" > "${LOCK_DIR}/holder"
 trap 'rm -rf "${LOCK_DIR}"' EXIT
+identity "$$" > "${LOCK_DIR}/holder"
 
 # Holding the lock, no suite containers should be up. Any that are were started outside this
 # script, or outlived a killed run, and the cleanup below would tear them down.
