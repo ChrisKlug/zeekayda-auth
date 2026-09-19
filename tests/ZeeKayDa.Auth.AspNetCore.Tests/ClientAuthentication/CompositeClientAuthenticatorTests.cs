@@ -340,7 +340,7 @@ public sealed class CompositeClientAuthenticatorTests
         result.Authenticated.Should().BeFalse();
         hasher.CallCount.Should().Be(
             CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient,
-            "VerifyUnknownClientForTimingOnly must fire once per credential-budget slot");
+            "PadToCredentialBudget must fire once per credential-budget slot");
     }
 
     // ── AC 21: multiple mechanisms ────────────────────────────────────────────────────────────────

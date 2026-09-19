@@ -129,11 +129,6 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<TokenRequestHandler>();
         AddAuthorizationRequestServices(services);
 
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<
-                IValidateOptions<AuthorizationServerOptions>,
-                AuthenticatorCoverageValidator>());
-
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
         return builder;
@@ -164,6 +159,12 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             ServiceDescriptor.Singleton<IStartupActivator, HandlerOptionsStartupActivator>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupActivator, ProviderSchemeCollisionValidator>());
+
+        // An activator because it constructs every registered IClientAuthenticator, the host's own
+        // included.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, AuthenticatorCoverageValidator>());
+
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, ExceptionSanitizingDisabledWarningService>());
         services.TryAddEnumerable(

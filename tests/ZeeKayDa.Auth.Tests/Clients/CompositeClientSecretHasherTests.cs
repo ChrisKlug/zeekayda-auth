@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
@@ -168,29 +169,149 @@ public sealed class CompositeClientSecretHasherTests
         defaultHasher.VerifyCallCount.Should().Be(1, "only the real verify; no PadTiming for the default hasher");
     }
 
-    // ── VerifyUnknownClientForTimingOnly ──────────────────────────────────────────────────────────
+    // ── Timing decoy ──────────────────────────────────────────────────────────────────────────────
 
-    [Fact]
-    public void VerifyUnknownClientForTimingOnly_returns_false()
+    /// <summary>
+    /// A hasher that does not override <c>CreateTimingDecoy</c>, as every third-party hasher is,
+    /// recording each plaintext its <c>Create</c> receives.
+    /// </summary>
+    private sealed class PlaintextRecordingHasher : IClientSecretHasher
     {
-        // Runs _default.Verify(_dummySecret, presented).
-        // _dummySecret was created by _default.Create(DummyPresented) with FakeHasher,
-        // which returns false from Verify regardless of presented.
-        var (composite, _) = CreateSingleHasherComposite(defaultVerifyResult: false);
+        public List<string> CreatedFrom { get; } = [];
 
-        var result = composite.VerifyUnknownClientForTimingOnly("any-presented-secret".AsSpan());
+        public bool CanHandle(IClientSecret secret) => secret is DefaultSecret;
 
-        result.Should().BeFalse();
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
+
+        public IClientSecret Create(ReadOnlySpan<char> plaintext)
+        {
+            CreatedFrom.Add(plaintext.ToString());
+            return new DefaultSecret();
+        }
     }
 
     [Fact]
-    public void VerifyUnknownClientForTimingOnly_invokes_default_hasher()
+    public void Default_timing_decoy_is_created_by_the_hashers_own_Create_and_is_one_it_can_handle()
     {
-        var (composite, defaultHasher) = CreateSingleHasherComposite();
+        IClientSecretHasher hasher = new PlaintextRecordingHasher();
 
-        composite.VerifyUnknownClientForTimingOnly("presented".AsSpan());
+        var decoy = hasher.CreateTimingDecoy();
 
-        defaultHasher.VerifyCallCount.Should().Be(1);
+        ((PlaintextRecordingHasher)hasher).CreatedFrom.Should().ContainSingle();
+        hasher.CanHandle(decoy).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Default_timing_decoy_is_created_from_a_random_value_so_no_known_value_verifies_it()
+    {
+        var recorder = new PlaintextRecordingHasher();
+        IClientSecretHasher hasher = recorder;
+
+        hasher.CreateTimingDecoy();
+        hasher.CreateTimingDecoy();
+
+        recorder.CreatedFrom.Should().NotContain(CompositeClientSecretHasher.DummyPresented,
+            "a decoy created from the value every padding verification presents would verify");
+        recorder.CreatedFrom.Should().OnlyHaveUniqueItems();
+    }
+
+    /// <summary>
+    /// A hasher that supplies its own decoy, as the built-in PBKDF2 hasher does, and records what
+    /// every verification is run against. Its <c>Create</c> throws, so any path deriving a decoy
+    /// instead of asking for one fails.
+    /// </summary>
+    private sealed class DecoySupplyingHasher : IClientSecretHasher
+    {
+        public DefaultSecret Decoy { get; } = new();
+
+        public List<IClientSecret> VerifiedAgainst { get; } = [];
+
+        public bool CanHandle(IClientSecret secret) => secret is DefaultSecret;
+
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented)
+        {
+            VerifiedAgainst.Add(stored);
+            return false;
+        }
+
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) =>
+            throw new InvalidOperationException("The decoy must be asked for, not derived.");
+
+        IClientSecret IClientSecretHasher.CreateTimingDecoy() => Decoy;
+    }
+
+    [Fact]
+    public void Composite_pads_against_the_decoy_the_default_hasher_supplies_without_deriving_one()
+    {
+        var hasher = new DecoySupplyingHasher();
+
+        var composite = new CompositeClientSecretHasher(
+            [hasher],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+        composite.PadToCredentialBudget();
+
+        hasher.VerifiedAgainst.Should().HaveCount(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient)
+            .And.AllSatisfy(stored => stored.Should().BeSameAs(hasher.Decoy));
+    }
+
+    [Fact]
+    public void Composite_builds_its_timing_decoy_once_through_the_default_hasher()
+    {
+        var recorder = new PlaintextRecordingHasher();
+
+        var composite = new CompositeClientSecretHasher(
+            [recorder],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+        composite.PadToCredentialBudget();
+
+        recorder.CreatedFrom.Should().ContainSingle(
+            "the decoy is built once, in the constructor, and every padding verification reuses it");
+    }
+
+    [Fact]
+    public void CreateTimingDecoy_is_not_public_so_a_third_party_hasher_cannot_supply_a_cheaper_decoy()
+    {
+        var member = typeof(IClientSecretHasher).GetMethod(
+            nameof(IClientSecretHasher.CreateTimingDecoy),
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+        member.Should().NotBeNull();
+        member!.IsAssembly.Should().BeTrue(
+            "a public decoy member would let a third-party hasher return one that verifies faster " +
+            "than a real credential, reopening the timing oracle the padding exists to close");
+    }
+
+    /// <summary>A hasher whose <c>Create</c> returns whatever it is given, for the decoy guard.</summary>
+    private sealed class MisbehavingCreateHasher(Func<IClientSecret> create) : IClientSecretHasher
+    {
+        public bool CanHandle(IClientSecret secret) => secret is DefaultSecret;
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => create();
+    }
+
+    [Fact]
+    public void Constructor_throws_when_the_default_hasher_cannot_handle_its_own_timing_decoy()
+    {
+        // Every padding verification against such a decoy would return at once, padding nothing.
+        var act = () => new CompositeClientSecretHasher(
+            [new MisbehavingCreateHasher(() => new AltSecret())],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.hashers.timing_decoy_unhandled");
+    }
+
+    [Fact]
+    public void Constructor_throws_when_the_default_hasher_creates_a_null_timing_decoy()
+    {
+        var act = () => new CompositeClientSecretHasher(
+            [new MisbehavingCreateHasher(() => null!)],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.hashers.timing_decoy_unhandled");
     }
 
     // ── PadToCredentialBudget ─────────────────────────────────────────────────────────────────────
