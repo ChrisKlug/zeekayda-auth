@@ -166,6 +166,18 @@ tools, and the delegated call fails silently, coming back looking like a clean r
 calls with the main orchestrator. If a task you are given depends on one, say so and return it —
 do not report the underlying check as done.
 
+## Waiting on a long command
+
+Run a long command (`dotnet test`, a build, a coverage run) with the Bash tool's `run_in_background`
+and let the completion notification wake you; **never write a polling loop** for it. Two loop
+patterns have each hung a session for a full session's length: `until ! pgrep -f "dotnet test"`
+matches the shell running the loop itself, because the pattern is on that shell's own command
+line, so the loop never exits (if a process check is unavoidable, bracket the first character:
+`pgrep -f "[d]otnet test"`); and `dotnet test … | head -N` silently drops the summary line of the
+last project once earlier projects have printed N lines. Filter test output with `grep -E
+"Passed!|Failed!|FAIL|error"` and no `head`. One `dotnet test` at a time: parallel runs of this
+suite collide on ports and key directories.
+
 ## Code navigation
 
 Prefer the LSP tool over text search for symbol-level navigation; text search is for strings, comments, and config values. Stale results: run `/restart-lsp`. Still unavailable: say so and wait for guidance rather than silently falling back.
