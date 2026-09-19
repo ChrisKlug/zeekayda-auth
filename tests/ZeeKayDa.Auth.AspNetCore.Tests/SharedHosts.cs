@@ -307,9 +307,9 @@ public abstract class FlowHostFixture : SharedHostFixture
 /// A provider challenge hands the browser off to <c>https://acme.example.net</c> — a host outside
 /// this app the test never runs a request against, because the round trip's assertions read the
 /// challenge, callback and resume responses one hop at a time rather than following where they
-/// point. <see cref="NewFlowClient"/> is what a round-trip test takes instead of the inherited
-/// <see cref="SharedHostFixture.NewClient"/>, and <see cref="NewClientWithoutCookies"/> covers the
-/// tests proving a stray or cross-browser request without the binding cookie is refused.
+/// point. <see cref="FlowHostFixture.NewFlowClient"/> is what a round-trip test takes instead of the
+/// inherited <see cref="SharedHostFixture.NewClient"/>, and <c>NewFlowClient(handleCookies: false)</c>
+/// covers the tests proving a stray or cross-browser request without the binding cookie is refused.
 /// </remarks>
 public sealed class ProviderRoundTripHostFixture : FlowHostFixture
 {
@@ -503,16 +503,6 @@ public sealed class ProviderSignInHostFixture : FlowHostFixture
                     options => options.OnProviderSignIn = context => OnProviderSignIn?.Invoke(context) ?? Task.CompletedTask);
             },
             mapEndpoints: ProviderTestHost.MapHostPages);
-
-    /// <summary>
-    /// A client that does not follow redirects and keeps its own cookie jar — this class's tests
-    /// read a redirect response itself (status, <c>Location</c>, cookies) and the query parameters
-    /// a relative <c>Location</c> carries, so the base <see cref="SharedHostFixture.NewClient"/>'s
-    /// default <c>WebApplicationFactoryClientOptions</c>, which follows redirects, would answer with
-    /// the followed page instead of the response under test.
-    /// </summary>
-    /// <param name="baseAddress">The base address the client should send to, defaulting to this host's.</param>
-    /// <returns>A fresh client. The caller disposes it.</returns>
 
     /// <summary>
     /// Returns the clock and log to their starting state and clears <see cref="OnProviderSignIn"/>,
