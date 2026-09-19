@@ -72,7 +72,7 @@ for anything unexpected it hits, which is the fastest way to add one honestly.
 
 ## Running it in CI (#307)
 
-**Recommendation: the config plan on every PR, the basic plan nightly once #708 lands.**
+**Recommendation: the config plan on every PR, the basic plan nightly.**
 
 Measured on a developer machine with images and the suite clone already present, both plans
 together take **42.5 s** wall clock end to end — suite boot to teardown. Of that, roughly 25 s is
@@ -80,10 +80,12 @@ waiting for the Java server to answer and about 1 s is the config plan's single 
 cheap enough to put on every PR, and the discovery document is exactly the kind of thing a PR
 breaks by accident.
 
-The 42.5 s is **not** evidence for what a working basic plan costs: all 35 of its modules currently
-abort during setup within a second (see `RESULTS.md`), so the figure measures a plan that does no
-work. Time it again before deciding where the basic plan belongs. Nightly is the safe assumption —
-35 browser-driven modules, run serially because the config carries an `alias`.
+The 42.5 s is **not** evidence for what a working basic plan costs: it was measured when all 35 of
+its modules aborted during setup within a second for want of a `userinfo_endpoint` (see
+`RESULTS.md`), so the figure measures a plan that did no work. The endpoint is served now, so those
+modules will run for real and the figure no longer applies at all. Time it again before deciding
+where the basic plan belongs. Nightly is the safe assumption — 35 browser-driven modules, run
+serially because the config carries an `alias`.
 
 A first CI run must budget for the cold path the measurement excludes: cloning the suite and
 pulling its two images. Cache both by `SUITE_REF`.

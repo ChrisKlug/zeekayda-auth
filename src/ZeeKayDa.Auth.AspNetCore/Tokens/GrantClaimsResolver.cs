@@ -39,19 +39,21 @@ internal sealed class GrantClaimsResolver
     /// <param name="client">The client the tokens are for.</param>
     /// <param name="sub">The subject the grant was issued to.</param>
     /// <param name="scope">The granted scopes, from the stored grant.</param>
-    /// <param name="familyId">The refresh-token family of the grant.</param>
+    /// <param name="familyId">
+    /// The refresh-token family of the grant, or <see langword="null"/> at userinfo, where a token
+    /// proves a grant existed but there is no grant in hand.
+    /// </param>
     public async Task<GrantClaimsOutcome> ResolveAsync(
         HttpContext context,
         IClientMetadata client,
         string sub,
         IReadOnlyList<string> scope,
-        string familyId)
+        string? familyId)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(client);
         ArgumentException.ThrowIfNullOrEmpty(sub);
         ArgumentNullException.ThrowIfNull(scope);
-        ArgumentException.ThrowIfNullOrEmpty(familyId);
 
         var cancellationToken = context.RequestAborted;
         var definitions = await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false)

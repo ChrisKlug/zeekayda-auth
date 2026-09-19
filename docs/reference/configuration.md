@@ -271,6 +271,34 @@ See the [JWKS endpoint reference](jwks-endpoint.md) for the response format.
 
 ---
 
+### `UserInfoEndpoint`
+
+| Attribute | Value |
+|---|---|
+| Type | `UserInfoEndpointOptions` |
+| Default | `new UserInfoEndpointOptions()` |
+| Required | No |
+
+Group for UserInfo endpoint settings.
+
+`UserInfoEndpoint.Uri` overrides the `userinfo_endpoint` value published in the discovery document.
+When `null`, ZeeKayDa.Auth derives the URL from `Issuer` as `{issuer}/connect/userinfo`.
+
+The value must be an absolute HTTPS URI without user information, query, or fragment, and must use
+the same authority as `Issuer`.
+
+```csharp
+options.UserInfoEndpoint.Uri = "https://id.example.com/tenant-a/custom/userinfo";
+```
+
+The endpoint is served, and its URL published, only when `GrantTypesSupported` includes
+`AuthorizationCode`. The browser origins allowed to read its responses are [`CorsOrigins`](#corsorigins).
+
+See the [UserInfo endpoint reference](userinfo-endpoint.md) for the token, response and error
+contract.
+
+---
+
 ### `Response.TypesSupported`
 
 | Attribute | Value |
@@ -601,8 +629,8 @@ only when all relying parties are co-hosted on the same origin or site as the au
 | HTTP endpoint overrides must be loopback | an override uses HTTP with a non-loopback host |
 | Endpoint overrides must share issuer authority | an override host/port differs from `Issuer` |
 | Endpoint overrides must not have user information | an override contains `user:password@host` userinfo |
-| Endpoint fragments are rejected | `AuthorizationEndpoint.Uri`, `TokenEndpoint.Uri`, or `JwksEndpoint.Uri` contains `#` |
-| `JwksEndpoint.Uri` must not have a query string | `JwksEndpoint.Uri` contains `?` |
+| Endpoint fragments are rejected | `AuthorizationEndpoint.Uri`, `TokenEndpoint.Uri`, `JwksEndpoint.Uri`, `EndSessionEndpoint.Uri`, or `UserInfoEndpoint.Uri` contains `#` |
+| Some endpoint overrides must not have a query string | `JwksEndpoint.Uri`, `EndSessionEndpoint.Uri`, or `UserInfoEndpoint.Uri` contains `?` |
 | `Response.TypesSupported` is required | `Response.TypesSupported` is `null` or empty |
 | `Response.ModesSupported` is required | `Response.ModesSupported` is `null` |
 | `GrantTypesSupported` is required | `GrantTypesSupported` is `null` |
@@ -637,3 +665,4 @@ They are visible in the startup output and host logs.
 - [Configure token stores](../how-to/configure-token-stores.md) — step-by-step token store setup
 - [Token stores](token-stores.md) — reference for `IAuthorizationCodeStore`, `IRefreshTokenStore`, lifetime options, and `ZeeKayDaStoreException`
 - [Discovery endpoint](discovery-endpoint.md) — full contract for the discovery endpoint
+- [UserInfo endpoint](userinfo-endpoint.md) — full contract for the userinfo endpoint

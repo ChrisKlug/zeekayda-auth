@@ -7,18 +7,6 @@
         },
         "configuration-filename": "*zeekayda.json",
         "current-block": "",
-        "condition": "CheckDiscEndpointUserinfoEndpoint",
-        "expected-result": "warning",
-        "comment": "No userinfo endpoint is served yet - tracked by #708. Delete this entry when #708 lands; the suite then checks the endpoint for real."
-    },
-    {
-        "test-name": "oidcc-discovery-endpoint-verification",
-        "variant": {
-            "server_metadata": "discovery",
-            "client_registration": "static_client"
-        },
-        "configuration-filename": "*zeekayda.json",
-        "current-block": "",
         "condition": "OIDCCCheckDiscEndpointClaimsSupported",
         "expected-result": "warning",
         "comment": "claims_supported is absent from the discovery document - tracked by #716. Delete this entry when #716 lands."

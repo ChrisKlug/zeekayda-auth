@@ -78,6 +78,7 @@ ZeeKayDa.Auth.AuthorizationServerOptions.Logging.get -> ZeeKayDa.Auth.Logging.Lo
 ZeeKayDa.Auth.AuthorizationServerOptions.Response.get -> ZeeKayDa.Auth.Authorization.ResponseOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.SecurityHeaders.get -> ZeeKayDa.Auth.Security.SecurityHeadersOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.TokenEndpoint.get -> ZeeKayDa.Auth.Tokens.TokenEndpointOptions!
+ZeeKayDa.Auth.AuthorizationServerOptions.UserInfoEndpoint.get -> ZeeKayDa.Auth.Claims.UserInfoEndpointOptions!
 ZeeKayDa.Auth.Clients.ClientRegistration
 ZeeKayDa.Auth.Clients.ClientRegistration.<Clone>$() -> ZeeKayDa.Auth.Clients.ClientRegistration!
 ZeeKayDa.Auth.Clients.ClientRegistration.AccessTokenLifetime.get -> System.TimeSpan?
@@ -219,6 +220,8 @@ ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpoint.get -> string!
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpoint.init -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpointAuthMethodsSupported.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpointAuthMethodsSupported.init -> void
+ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.UserInfoEndpoint.get -> string?
+ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.UserInfoEndpoint.init -> void
 ZeeKayDa.Auth.Extensions.ZeeKayDaAuthCoreServiceCollectionExtensions
 ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyHealthChecksBuilderExtensions
 ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions
@@ -837,3 +840,7 @@ static ZeeKayDa.Auth.Claims.ClaimsProviderContext.operator ==(ZeeKayDa.Auth.Clai
 ~override ZeeKayDa.Auth.Claims.ClaimValue.Equals(object obj) -> bool
 ZeeKayDa.Auth.Claims.ClaimValue.Kind.get -> System.Text.Json.JsonValueKind
 ZeeKayDa.Auth.Claims.ClaimValue.WriteTo(System.Text.Json.Utf8JsonWriter! writer) -> void
+ZeeKayDa.Auth.Claims.UserInfoEndpointOptions
+ZeeKayDa.Auth.Claims.UserInfoEndpointOptions.Uri.get -> string?
+ZeeKayDa.Auth.Claims.UserInfoEndpointOptions.Uri.set -> void
+ZeeKayDa.Auth.Claims.UserInfoEndpointOptions.UserInfoEndpointOptions() -> void

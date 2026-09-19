@@ -19,10 +19,8 @@ internal static class PublicMetadataHeaders
     /// <c>max-age=0</c> would contradict the documented "zero disables caching" contract.
     /// </param>
     /// <param name="allowedOrigins">
-    /// The startup-validated, canonicalized CORS allowlist, in a case-insensitive set. Empty
-    /// emits <c>Access-Control-Allow-Origin: *</c>; non-empty emits <c>Vary: Origin</c> and, when
-    /// the request's <c>Origin</c> matches an allowlist entry, that entry in
-    /// <c>Access-Control-Allow-Origin</c>.
+    /// The startup-validated, canonicalized CORS allowlist, applied by
+    /// <see cref="CorsHeaders.ApplyOrigin"/>.
     /// </param>
     /// <remarks>
     /// <c>must-revalidate</c> (not <c>proxy-revalidate</c>) so browser caches, not just CDN/proxy
@@ -34,22 +32,6 @@ internal static class PublicMetadataHeaders
             ? $"public, max-age={(long)cacheMaxAge.TotalSeconds}, must-revalidate"
             : "no-store";
 
-        if (allowedOrigins.Count == 0)
-        {
-            context.Response.Headers.AccessControlAllowOrigin = "*";
-            return;
-        }
-
-        // Vary: Origin so caches never serve a wildcard-cached response to an
-        // allowlisted-origin request or vice-versa.
-        context.Response.Headers.Append("Vary", "Origin");
-
-        var requestOrigin = context.Request.Headers.Origin.ToString();
-        if (!string.IsNullOrEmpty(requestOrigin) &&
-            allowedOrigins.TryGetValue(requestOrigin, out var allowedOrigin))
-        {
-            // Emit the matching allowlist entry, NEVER the raw incoming header value.
-            context.Response.Headers.AccessControlAllowOrigin = allowedOrigin;
-        }
+        CorsHeaders.ApplyOrigin(context, allowedOrigins);
     }
 }

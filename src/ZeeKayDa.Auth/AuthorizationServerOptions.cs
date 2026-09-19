@@ -1,4 +1,5 @@
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Security;
@@ -113,6 +114,11 @@ public sealed class AuthorizationServerOptions
     /// Gets the JSON Web Key Set endpoint configuration options.
     /// </summary>
     public JwksEndpointOptions JwksEndpoint { get; } = new();
+
+    /// <summary>
+    /// Gets the UserInfo endpoint configuration options.
+    /// </summary>
+    public UserInfoEndpointOptions UserInfoEndpoint { get; } = new();
 
     /// <summary>
     /// Gets the ID token configuration options.
