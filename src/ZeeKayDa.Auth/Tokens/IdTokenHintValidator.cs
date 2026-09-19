@@ -1,8 +1,4 @@
-using System.Buffers.Text;
 using System.Diagnostics.CodeAnalysis;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Tokens;
@@ -29,10 +25,7 @@ internal sealed record IdTokenHint(string ClientId, string Subject);
 /// </remarks>
 internal sealed class IdTokenHintValidator
 {
-    /// <summary>The longest hint read at all, in characters. Far above any ID token this server issues.</summary>
-    internal const int MaxLength = 8192;
-
-    private const string IdTokenType = "JWT";
+    private static readonly string[] IdTokenTypes = ["JWT"];
 
     private readonly ISigningKeyRing _keyRing;
     private readonly IOptions<AuthorizationServerOptions> _options;
@@ -61,102 +54,21 @@ internal sealed class IdTokenHintValidator
     /// </exception>
     public IdTokenHint? Validate(string? idTokenHint, string? clientId)
     {
-        if (!IsReadable(idTokenHint))
+        using var payload = SignedTokenReader.Verify(idTokenHint, IdTokenTypes, _keyRing.Current.Published);
+        if (payload is null)
             return null;
 
-        var segments = idTokenHint.Split('.');
-        if (segments.Length != 3)
-            return null;
-
-        var published = _keyRing.Current.Published;
-
-        try
-        {
-            var key = ResolveSigningKey(segments[0], published);
-            if (key is null || !HasValidSignature(key, idTokenHint, segments[2]))
-                return null;
-
-            return ReadClaims(segments[1], clientId);
-        }
-        catch (Exception ex) when (ex is FormatException or JsonException)
-        {
-            // Malformed Base64Url or malformed JSON: either means the same as a signature that did
-            // not verify.
-            _ = ex;
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// The published key the header names, provided the header is one this server writes and
-    /// names that key's own algorithm. Nothing is verified against a key the server does not
-    /// publish, and the header never chooses how the signature is checked.
-    /// </summary>
-    private static SigningKey? ResolveSigningKey(string headerSegment, IReadOnlyList<SigningKey> published)
-    {
-        using var header = JsonDocument.Parse(Base64Url.DecodeFromChars(headerSegment));
-        var root = header.RootElement;
-
-        // A crit header lists extensions the recipient must understand; this server writes none.
-        if (root.ValueKind != JsonValueKind.Object || root.TryGetProperty("crit", out _))
-            return null;
-
-        if (!string.Equals(ReadString(root, "typ"), IdTokenType, StringComparison.Ordinal))
-            return null;
-
-        var kid = ReadString(root, "kid");
-        var algorithm = ReadString(root, "alg");
-        if (kid is null || algorithm is null)
-            return null;
-
-        var key = published.FirstOrDefault(candidate => string.Equals(candidate.Kid, kid, StringComparison.Ordinal));
-
-        return key is not null && string.Equals(SigningAlgorithms.WireName(key.Algorithm), algorithm, StringComparison.Ordinal)
-            ? key
-            : null;
-    }
-
-    /// <summary>
-    /// Bytes that are not a signature of the key's algorithm at all, wrong length included, do not
-    /// verify; some platforms report that by throwing rather than returning false.
-    /// </summary>
-    private static bool HasValidSignature(SigningKey key, string idTokenHint, string signatureSegment)
-    {
-        var signingInput = Encoding.ASCII.GetBytes(idTokenHint, 0, idTokenHint.LastIndexOf('.'));
-        var signature = Base64Url.DecodeFromChars(signatureSegment);
-
-        try
-        {
-            return SigningAlgorithms.Verify(key.Algorithm, key.PublicKey, signingInput, signature);
-        }
-        catch (Exception ex) when (ex is CryptographicException or ArgumentException or NotSupportedException)
-        {
-            _ = ex;
-            return false;
-        }
-    }
-
-    private IdTokenHint? ReadClaims(string payloadSegment, string? clientId)
-    {
-        using var payload = JsonDocument.Parse(Base64Url.DecodeFromChars(payloadSegment));
         var root = payload.RootElement;
-        if (root.ValueKind != JsonValueKind.Object || !IsThisServer(ReadString(root, "iss")))
+        if (!IsThisServer(SignedTokenReader.ReadString(root, "iss")))
             return null;
 
-        var subject = ReadString(root, "sub");
-        var audience = ReadString(root, "aud");
-        if (string.IsNullOrEmpty(subject) || !IsIssuedTo(audience, clientId))
-            return null;
+        var subject = SignedTokenReader.ReadString(root, "sub");
+        var audience = SignedTokenReader.ReadString(root, "aud");
 
-        return new IdTokenHint(audience, subject);
+        return string.IsNullOrEmpty(subject) || !IsIssuedTo(audience, clientId)
+            ? null
+            : new IdTokenHint(audience, subject);
     }
-
-    /// <summary>
-    /// Whether the hint is worth reading at all. Only ASCII is accepted because every segment of a
-    /// compact JWS is Base64Url, and the signing input is taken as the hint's ASCII bytes.
-    /// </summary>
-    private static bool IsReadable([NotNullWhen(true)] string? idTokenHint) =>
-        !string.IsNullOrEmpty(idTokenHint) && idTokenHint.Length <= MaxLength && Ascii.IsValid(idTokenHint);
 
     private bool IsThisServer(string? issuer) =>
         !string.IsNullOrEmpty(issuer) && string.Equals(issuer, _options.Value.Issuer, StringComparison.Ordinal);
@@ -168,9 +80,4 @@ internal sealed class IdTokenHintValidator
     private static bool IsIssuedTo([NotNullWhen(true)] string? audience, string? clientId) =>
         !string.IsNullOrEmpty(audience)
         && (clientId is null || string.Equals(audience, clientId, StringComparison.Ordinal));
-
-    private static string? ReadString(JsonElement element, string name) =>
-        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
 }

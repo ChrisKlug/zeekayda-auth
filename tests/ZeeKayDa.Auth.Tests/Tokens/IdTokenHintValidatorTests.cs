@@ -237,7 +237,7 @@ public sealed class IdTokenHintValidatorTests
     public void Validate_refuses_a_hint_longer_than_the_size_cap_even_when_correctly_signed()
     {
         var claims = Claims();
-        claims["padding"] = new string('x', IdTokenHintValidator.MaxLength);
+        claims["padding"] = new string('x', SignedTokenReader.MaxLength);
         var token = Sign(Header(), claims);
 
         var hint = CreateValidator().Validate(token, ClientId);
