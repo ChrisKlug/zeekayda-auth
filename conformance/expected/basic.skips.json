@@ -1,0 +1,20 @@
+[
+    {
+        "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+        "variant": {
+            "server_metadata": "discovery",
+            "client_registration": "static_client"
+        },
+        "configuration-filename": "*zeekayda.json",
+        "comment": "The authorize endpoint answers request_not_supported, which the module accepts and skips on. JAR (RFC 9101) is refused in v1 by decision (register: authorization-and-interaction), so this entry is permanent until that decision changes."
+    },
+    {
+        "test-name": "oidcc-refresh-token",
+        "variant": {
+            "server_metadata": "discovery",
+            "client_registration": "static_client"
+        },
+        "configuration-filename": "*zeekayda.json",
+        "comment": "No refresh token is issued: the refresh_token grant is post-skeleton work under #539 and the sample advertises only authorization_code. Delete this entry when #539 puts refresh tokens on an executed path."
+    }
+]

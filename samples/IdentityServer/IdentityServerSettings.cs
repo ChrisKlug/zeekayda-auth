@@ -34,4 +34,11 @@ public sealed class ClientSettings
     /// operator's own applications: consent is what lets a user notice a request they never started.
     /// </summary>
     public bool RequireConsent { get; init; } = true;
+
+    /// <summary>
+    /// Lets a confidential client omit PKCE and rely on the OpenID Connect nonce instead
+    /// (OAuth 2.1 §7.5.1.1). Only a confidential client can set it; the framework refuses to start
+    /// with it on a public one. Set it only for a client the operator knows checks the nonce.
+    /// </summary>
+    public bool AllowNonceInsteadOfPkce { get; init; }
 }

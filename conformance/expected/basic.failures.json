@@ -1,0 +1,87 @@
+[
+    {
+        "test-name": "oidcc-ensure-request-without-nonce-succeeds-for-code-flow",
+        "variant": {
+            "server_metadata": "discovery",
+            "client_registration": "static_client"
+        },
+        "configuration-filename": "*zeekayda.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "CheckIfAuthorizationEndpointError",
+        "expected-result": "failure",
+        "comment": "The request carries neither code_challenge nor nonce and the authorize endpoint refuses it: nonce is mandatory for every openid request, and a client permitted to omit PKCE must still send the nonce it relies on. Both rules change in #732. Delete this entry when #732 lands."
+    },
+    {
+        "test-name": "oidcc-server-client-secret-post",
+        "variant": {
+            "server_metadata": "discovery",
+            "client_registration": "static_client",
+            "client_auth_type": "client_secret_post"
+        },
+        "configuration-filename": "*zeekayda.json",
+        "current-block": "",
+        "condition": "GetStaticClientConfiguration",
+        "expected-result": "failure",
+        "comment": "The module needs a client_secret_post block in the suite config naming a client that authenticates that way, and the sample registers none - tracked by #717. Delete this entry when #717 lands."
+    },
+    {
+        "test-name": "oidcc-scope-email",
+        "variant": {
+            "server_metadata": "discovery",
+            "client_registration": "static_client"
+        },
+        "configuration-filename": "*zeekayda.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
+        "expected-result": "warning",
+        "comment": "The ID token carries email for the code flow. The register ships the standard scopes' claims in both the ID token and userinfo on purpose and lets a host trim the ID token; whether the sample does is #734. Delete this entry when #734 is resolved, or make it permanent with the decision."
+    },
+    {
+        "test-name": "oidcc-alternate-happy-flow",
+        "variant": {
+            "server_metadata": "discovery",
+            "client_registration": "static_client"
+        },
+        "configuration-filename": "*zeekayda.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
+        "expected-result": "warning",
+        "comment": "Same cause as oidcc-scope-email: email in the code flow's ID token, deliberate per the register - decision in #734. Delete this entry when #734 is resolved, or make it permanent with the decision."
+    },
+    {
+        "test-name": "oidcc-ensure-request-with-acr-values-succeeds",
+        "variant": {
+            "server_metadata": "discovery",
+            "client_registration": "static_client"
+        },
+        "configuration-filename": "*zeekayda.json",
+        "current-block": "Verify authorization endpoint response",
+        "condition": "ValidateIdTokenACRClaimAgainstAcrValuesRequest",
+        "expected-result": "warning",
+        "comment": "acr_values was requested and the ID token has no acr claim because the sample's login asserts none - tracked by #735. Delete this entry when #735 lands."
+    },
+    {
+        "test-name": "oidcc-codereuse-30seconds",
+        "variant": {
+            "server_metadata": "discovery",
+            "client_registration": "static_client"
+        },
+        "configuration-filename": "*zeekayda.json",
+        "current-block": "Testing if access token was revoked after authorization code reuse (the AS 'should' have revoked the access token)",
+        "condition": "EnsureHttpStatusCodeIs4xx",
+        "expected-result": "warning",
+        "comment": "RFC 6749 4.1.2 says the server SHOULD revoke tokens issued from a replayed code; the access token is a JWT with no revocation path until the revocation work in #539. Delete this entry when #539 gives access tokens a revocation path."
+    },
+    {
+        "test-name": "oidcc-claims-essential",
+        "variant": {
+            "server_metadata": "discovery",
+            "client_registration": "static_client"
+        },
+        "configuration-filename": "*zeekayda.json",
+        "current-block": "",
+        "condition": "EnsureUserInfoContainsName",
+        "expected-result": "warning",
+        "comment": "The claims request parameter is deferred (register: token-issuance-and-claims) so an essential userinfo name claim under scope=openid is not released - tracked by #736. Delete this entry when #736 lands."
+    }
+]

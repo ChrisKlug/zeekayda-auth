@@ -147,17 +147,30 @@ curl -s --cacert "${HERE}/certs/ca.pem" "${DISCOVERY_URL}" > "${RESULT_DIR}/disc
 # document rather than configured by hand. The config plan fixes
 # both variants itself and rejects the plan outright if either is passed again, so only the basic
 # plan names them.
+# Each plan has its own expected-results manifests, joined with '|' for the runner, because the
+# runner fails a run in which an expected failure never occurred: one shared manifest would make a
+# single-plan run fail on the other plan's entries. A plan without skips has no skips file.
 CONFIG="/conformance/config/zeekayda.json"
+EXPECTED="/conformance/expected"
 PLANS=()
-[[ "${WHICH}" == "config" || "${WHICH}" == "all" ]] && \
+FAILURES=()
+SKIPS=()
+if [[ "${WHICH}" == "config" || "${WHICH}" == "all" ]]; then
     PLANS+=( "oidcc-config-certification-test-plan" "${CONFIG}" )
-[[ "${WHICH}" == "basic"  || "${WHICH}" == "all" ]] && \
+    FAILURES+=( "${EXPECTED}/config.failures.json" )
+fi
+if [[ "${WHICH}" == "basic" || "${WHICH}" == "all" ]]; then
     PLANS+=( "oidcc-basic-certification-test-plan[client_registration=static_client][server_metadata=discovery]" "${CONFIG}" )
+    FAILURES+=( "${EXPECTED}/basic.failures.json" )
+    SKIPS+=( "${EXPECTED}/basic.skips.json" )
+fi
+join() { local IFS='|'; echo "$*"; }
 
 echo "==> running: ${WHICH}"
 set +e
 compose run --rm --build runner \
-    --expected-failures-file /conformance/expected-failures.json \
+    --expected-failures-file "$(join "${FAILURES[@]}")" \
+    --expected-skips-file "$(join "${SKIPS[@]}")" \
     --export-dir "/conformance/results/${RUN_STAMP}" \
     --verbose \
     "${PLANS[@]}" \

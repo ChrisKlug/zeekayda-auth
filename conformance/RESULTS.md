@@ -1,38 +1,53 @@
 # Conformance results
 
-First local run of the OpenID Foundation conformance suite against the sample identity server,
-2026-09-19. Suite `release-v5.3.1`. Reproduce from the repository root with `./conformance/run-conformance.sh`; rewrite this file when
-the numbers change.
-
-> **Stale as of the userinfo endpoint landing (#708).** Every result below was measured against a
-> server that published no `userinfo_endpoint`, which is the cause of every interruption in the
-> basic plan. The endpoint is now served and the expected-failure entry for
-> `CheckDiscEndpointUserinfoEndpoint` is gone. **Nobody has re-run the suite since.** Re-run it and
-> rewrite this file before drawing any conclusion from the numbers here.
+Run of the OpenID Foundation conformance suite against the sample identity server, 2026-09-19,
+suite `release-v5.3.1`. Reproduce from the repository root with `./conformance/run-conformance.sh`;
+rewrite this file when the numbers change.
 
 ## Headline
 
-**The basic certification plan cannot run at all yet.** All 35 of its modules are interrupted
-during setup because the server publishes no `userinfo_endpoint`. The config plan runs and is
-clean apart from two warnings, one of which is that same missing endpoint.
+**Both certification plans run to completion and the run exits zero against the manifests in
+`expected/`.** Of the basic plan's 35 modules, 22 pass outright, 4 finish in the suite's review state
+with the screenshot it wants captured automatically, 5 carry a warning, 2 fail and 2 are skipped.
+Every warning, failure and skip is listed below with its cause and the issue that removes it.
+
+The one setup change that made this possible: the two conformance clients are registered with
+`AllowNonceInsteadOfPkce` (OAuth 2.1 §7.5.1.1). The plan's modules send `nonce` and no
+`code_challenge`, and without the opt-out every module was refused at the authorization endpoint
+and the runner aborted after three interruptions in a row. The suite has no switch to make the basic
+plan send PKCE; only the one dedicated PKCE module does.
+
+## Timing
+
+Measured on a developer machine with the suite clone and images present, wall clock from script
+start to teardown:
+
+| Run | Wall clock | Of which the plan itself |
+|---|---:|---:|
+| `config` | 46 s | 0.8 s |
+| `basic` | 2 min 13 s | 91 s |
+| `all` (both plans) | 2 min 11 s | 92 s |
+
+The fixed cost is about 40 s: waiting for the Java server, building and starting the sample, and
+teardown. Of the basic plan's 91 s, 32 s is `oidcc-codereuse-30seconds` deliberately waiting before
+replaying a code. The 4 review-state modules used to stall for 240 s each until the runner gave up;
+the per-module browser overrides in `config/zeekayda.json` now capture the page the suite wants a
+screenshot of, so they finish in a few seconds.
 
 ## `oidcc-config-certification-test-plan`
 
-One module, finished in about a second.
-
 | Module | Result | Conditions |
 |---|---|---|
-| `oidcc-discovery-endpoint-verification` | WARNING | 30 success, 2 warning, 0 failure |
+| `oidcc-discovery-endpoint-verification` | WARNING | 32 success, 1 warning, 0 failure |
 
 | Warning | Triage |
 |---|---|
-| `CheckDiscEndpointUserinfoEndpoint` — *Skipped evaluation due to missing required element: server userinfo_endpoint* | **Library gap**, already tracked by #708. OpenID Connect Core 1.0 §5.3. |
-| `OIDCCCheckDiscEndpointClaimsSupported` — *claims_supported: not found* | **Library gap**, filed as #716. OpenID Connect Discovery 1.0 §3 lists `claims_supported` as RECOMMENDED. |
+| `OIDCCCheckDiscEndpointClaimsSupported` — *claims_supported: not found* | **Library gap**, #716. OpenID Connect Discovery 1.0 §3 lists `claims_supported` as RECOMMENDED. |
 
-Nothing else in the discovery document drew a complaint. For the record, as served:
+The discovery document as served now carries `userinfo_endpoint`; the rest is as before:
 
 ```
-issuer, authorization_endpoint, token_endpoint, jwks_uri, end_session_endpoint,
+issuer, authorization_endpoint, token_endpoint, userinfo_endpoint, jwks_uri, end_session_endpoint,
 response_types_supported=[code], response_modes_supported=[query],
 grant_types_supported=[authorization_code], scopes_supported=[openid,profile,email,phone,address],
 token_endpoint_auth_methods_supported=[client_secret_basic,none],
@@ -42,80 +57,94 @@ code_challenge_methods_supported=[S256]
 
 ## `oidcc-basic-certification-test-plan`
 
-35 modules, **0 run to completion**, in two distinct ways.
+35 modules, all run. Conditions across the plan: 1747 success, 5 warning, 2 failure.
 
-### Every module, and why
+| # | Module | Result |
+|---:|---|---|
+| 1 | `oidcc-server` | PASSED |
+| 2 | `oidcc-response-type-missing` | PASSED |
+| 3 | `oidcc-userinfo-get` | PASSED |
+| 4 | `oidcc-userinfo-post-header` | PASSED |
+| 5 | `oidcc-userinfo-post-body` | PASSED |
+| 6 | `oidcc-ensure-request-without-nonce-succeeds-for-code-flow` | **FAILED** — A |
+| 7 | `oidcc-scope-profile` | PASSED |
+| 8 | `oidcc-scope-email` | WARNING — C |
+| 9 | `oidcc-scope-address` | PASSED |
+| 10 | `oidcc-scope-phone` | PASSED |
+| 11 | `oidcc-scope-all` | PASSED |
+| 12 | `oidcc-alternate-happy-flow` | WARNING — C |
+| 13 | `oidcc-display-page` | PASSED |
+| 14 | `oidcc-display-popup` | PASSED |
+| 15 | `oidcc-prompt-login` | REVIEW — second login page captured |
+| 16 | `oidcc-prompt-none-not-logged-in` | PASSED |
+| 17 | `oidcc-prompt-none-logged-in` | PASSED |
+| 18 | `oidcc-max-age-1` | REVIEW — second login page captured |
+| 19 | `oidcc-max-age-10000` | PASSED |
+| 20 | `oidcc-ensure-request-with-unknown-parameter-succeeds` | PASSED |
+| 21 | `oidcc-id-token-hint` | PASSED |
+| 22 | `oidcc-login-hint` | PASSED |
+| 23 | `oidcc-ui-locales` | PASSED |
+| 24 | `oidcc-claims-locales` | PASSED |
+| 25 | `oidcc-ensure-request-with-acr-values-succeeds` | WARNING — D |
+| 26 | `oidcc-codereuse` | PASSED |
+| 27 | `oidcc-codereuse-30seconds` | WARNING — E |
+| 28 | `oidcc-ensure-registered-redirect-uri` | REVIEW — error page captured |
+| 29 | `oidcc-ensure-post-request-succeeds` | PASSED |
+| 30 | `oidcc-server-client-secret-post` | **FAILED** — B |
+| 31 | `oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported` | SKIPPED — G |
+| 32 | `oidcc-claims-essential` | WARNING — F |
+| 33 | `oidcc-ensure-request-object-with-redirect-uri` | REVIEW — error page captured |
+| 34 | `oidcc-refresh-token` | SKIPPED — H |
+| 35 | `oidcc-ensure-request-with-valid-pkce-succeeds` | PASSED |
 
-No module reached the authorization endpoint, so none has a pass, a fail or a skip to report —
-`interrupted` is the suite's own status for a module stopped during setup. The two causes:
+REVIEW is the suite's status for a module whose checks all passed and which additionally holds a
+screenshot for a human certifier to look at. Nothing in a REVIEW module failed.
 
-- **A — library gap.** `SetProtectedResourceUrlToUserInfoEndpoint: userinfo_endpoint missing from
-  server configuration. The user info is not a mandatory to implement feature in the OpenID Connect
-  specification, but is mandatory for certification.` Tracked by #708.
-- **B — harness and sample setup, not a library gap.** `GetStaticClientConfiguration: As static
-  client was selected, the test configuration must contain a client configuration` — this module
-  wants a `client_secret_post` block naming a client that authenticates that way, and the sample
-  advertises only `client_secret_basic` and `none`. Tracked by #717. It is reached at all only
-  because the module overrides the setup step that stops the other 34.
+### Failures
 
-| # | Module | Status | Cause |
-|---:|---|---|---|
-| 1 | `oidcc-server` | interrupted | **A** |
-| 2 | `oidcc-response-type-missing` | interrupted | **A** |
-| 3 | `oidcc-userinfo-get` | interrupted | **A** |
-| 4 | `oidcc-userinfo-post-header` | interrupted | **A** |
-| 5 | `oidcc-userinfo-post-body` | interrupted | **A** |
-| 6 | `oidcc-ensure-request-without-nonce-succeeds-for-code-flow` | interrupted | **A** |
-| 7 | `oidcc-scope-profile` | interrupted | **A** |
-| 8 | `oidcc-scope-email` | interrupted | **A** |
-| 9 | `oidcc-scope-address` | interrupted | **A** |
-| 10 | `oidcc-scope-phone` | interrupted | **A** |
-| 11 | `oidcc-scope-all` | interrupted | **A** |
-| 12 | `oidcc-alternate-happy-flow` | interrupted | **A** |
-| 13 | `oidcc-display-page` | interrupted | **A** |
-| 14 | `oidcc-display-popup` | interrupted | **A** |
-| 15 | `oidcc-prompt-login` | interrupted | **A** |
-| 16 | `oidcc-prompt-none-not-logged-in` | interrupted | **A** |
-| 17 | `oidcc-prompt-none-logged-in` | interrupted | **A** |
-| 18 | `oidcc-max-age-1` | interrupted | **A** |
-| 19 | `oidcc-max-age-10000` | interrupted | **A** |
-| 20 | `oidcc-ensure-request-with-unknown-parameter-succeeds` | interrupted | **A** |
-| 21 | `oidcc-id-token-hint` | interrupted | **A** |
-| 22 | `oidcc-login-hint` | interrupted | **A** |
-| 23 | `oidcc-ui-locales` | interrupted | **A** |
-| 24 | `oidcc-claims-locales` | interrupted | **A** |
-| 25 | `oidcc-ensure-request-with-acr-values-succeeds` | interrupted | **A** |
-| 26 | `oidcc-codereuse` | interrupted | **A** |
-| 27 | `oidcc-codereuse-30seconds` | interrupted | **A** |
-| 28 | `oidcc-ensure-registered-redirect-uri` | interrupted | **A** |
-| 29 | `oidcc-ensure-post-request-succeeds` | interrupted | **A** |
-| 30 | `oidcc-server-client-secret-post` | interrupted | **B** |
-| 31 | `oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported` | interrupted | **A** |
-| 32 | `oidcc-claims-essential` | interrupted | **A** |
-| 33 | `oidcc-ensure-request-object-with-redirect-uri` | interrupted | **A** |
-| 34 | `oidcc-refresh-token` | interrupted | **A** |
-| 35 | `oidcc-ensure-request-with-valid-pkce-succeeds` | interrupted | **A** |
+- **A — library, #732.** `CheckIfAuthorizationEndpointError`: the module sends a confidential
+  client's request with neither `nonce` nor `code_challenge` and expects a code. Two rules refuse
+  it: `nonce` is mandatory on every `openid` request, where OIDC Core §3.1.2.1 makes it optional for
+  the code flow; and a client permitted to omit PKCE must still send the nonce it relies on, a
+  reading of OAuth 2.1 §7.5.1.1 that the maintainer has agreed to relax so that the registration
+  itself is the assurance. Both change in #732.
+- **B — harness and sample, #717.** `GetStaticClientConfiguration`: the module wants a
+  `client_secret_post` block in the suite config naming a client that authenticates that way, and
+  the sample advertises only `client_secret_basic` and `none`.
 
-34 × **A**, 1 × **B**. Re-run and rewrite this table once #708 lands: it is the per-module record
-#307 gates against, and the first run where these statuses mean anything about the login flow.
+### Warnings
 
-### Why one missing endpoint blocks everything
+- **C — deliberate, decision pending in #734.** `EnsureIdTokenDoesNotContainEmailForScopeEmail`:
+  the code flow's ID token carries `email`. The register ships the standard scopes' claims in both
+  the ID token and userinfo on purpose and lets a host trim the ID-token list; whether the sample
+  trims to the OIDC Core §5.4 default is #734.
+- **D — library, #735.** `ValidateIdTokenACRClaimAgainstAcrValuesRequest`: `acr_values` was
+  requested and the ID token has no `acr` (OIDC Core §3.1.2.1, SHOULD). The framework carries `acr`
+  from the authorization code into the tokens, but the sign-in API gives a login no way to assert
+  one, so nothing ever sets it.
+- **E — library, #539.** `EnsureHttpStatusCodeIs4xx` after a code replay: RFC 6749 §4.1.2 says the
+  server SHOULD revoke tokens issued from the replayed code. The code is burnt and the refresh-token
+  family would be revoked, but the access token is a JWT with no revocation path until the
+  revocation work in #539.
+- **F — library, #736.** `EnsureUserInfoContainsName`: `scope=openid` with
+  `claims={"userinfo":{"name":{"essential":true}}}` gets no `name`. The `claims` request parameter is
+  deferred by the register and `claims_parameter_supported` is `false`.
 
-This is the finding worth carrying away. The userinfo call is not confined to the three userinfo
-modules: the suite sets the protected-resource URL in
-`AbstractOIDCCServerTest.configureProtectedResourceUrl()`, which every module in the plan inherits,
-and it runs during setup before any request reaches the authorization endpoint. So a module testing
-`prompt=login`, or code reuse, or an unregistered `redirect_uri` — none of which touch userinfo —
-never starts.
+### Skips
 
-The consequence for planning: **no part of the flow is conformance-tested until #708 lands.** Not
-partially, not the non-userinfo majority. The suite's certification profile treats userinfo as
-mandatory even though the spec does not, and it enforces that in the shared setup rather than per
-module.
+- **G — permanent for v1.** The authorize endpoint answers `request_not_supported`, which the
+  module accepts and skips on. JAR (RFC 9101) is refused in v1 by decision
+  (`docs/decisions/authorization-and-interaction.md`).
+- **H — post-skeleton, #539.** No refresh token is issued: the `refresh_token` grant is not on an
+  executed path yet and the sample advertises only `authorization_code`.
 
-Nothing here is a newly discovered spec gap in code that was believed to work: the plan never
-exercised any of it. Re-run and re-triage this section once #708 lands — that run is the one that
-tells us what the flow actually gets wrong.
+### What changed in the sample for this run
+
+- Both conformance clients set `AllowNonceInsteadOfPkce` (see the headline). The sample's
+  `ClientSettings` gained that property; it is applied to confidential clients only.
+- The seeded user carries every OIDC Core §5.4 profile claim. The suite's scope modules expect all
+  fourteen at userinfo, and four of them was a warning on `oidcc-scope-profile` and
+  `oidcc-scope-all`.
 
 ## What was not run
 

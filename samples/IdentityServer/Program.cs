@@ -38,7 +38,11 @@ auth.AddInMemoryClients(clients =>
         if (client.Secret is { } secret)
         {
             clients.AddConfidential(client.ClientId, secret, client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes,
-                options => Configure(options, client));
+                options =>
+                {
+                    Configure(options, client);
+                    options.AllowNonceInsteadOfPkce = client.AllowNonceInsteadOfPkce;
+                });
         }
         else
         {
