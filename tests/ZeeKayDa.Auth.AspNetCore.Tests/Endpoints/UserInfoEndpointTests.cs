@@ -191,6 +191,80 @@ public sealed class UserInfoEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_repeated_access_token_field_alongside_a_valid_header_is_invalid_request()
+    {
+        // The repeated field must not read as no field at all: that would let a request present
+        // its token twice and be answered from the header as though it had presented it once.
+        var token = await AccessTokenAsync("openid profile");
+        using var form = new StringContent(
+            $"access_token={Uri.EscapeDataString(token)}&access_token=second",
+            System.Text.Encoding.UTF8,
+            "application/x-www-form-urlencoded");
+        using var request = new HttpRequestMessage(HttpMethod.Post, UserInfoPath) { Content = form };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _client.SendAsync(request, Cancellation);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Challenge(response).Should().Contain("error=\"invalid_request\"");
+    }
+
+    [Fact]
+    public async Task A_repeated_access_token_field_on_its_own_is_invalid_request_not_a_bare_challenge()
+    {
+        var token = await AccessTokenAsync("openid profile");
+        using var form = new StringContent(
+            $"access_token={Uri.EscapeDataString(token)}&access_token=second",
+            System.Text.Encoding.UTF8,
+            "application/x-www-form-urlencoded");
+
+        var response = await _client.PostAsync(UserInfoPath, form, Cancellation);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "RFC 6750 §3.1: a request repeating a parameter is malformed, not one that forgot its token");
+        Challenge(response).Should().Contain("error=\"invalid_request\"");
+    }
+
+    [Fact]
+    public async Task A_bearer_header_with_nothing_after_the_scheme_is_invalid_request()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, UserInfoPath);
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer");
+
+        var response = await _client.SendAsync(request, Cancellation);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Challenge(response).Should().Contain("error=\"invalid_request\"");
+    }
+
+    [Fact]
+    public async Task Two_authorization_headers_are_invalid_request()
+    {
+        var token = await AccessTokenAsync("openid profile");
+        using var request = new HttpRequestMessage(HttpMethod.Get, UserInfoPath);
+        request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+        request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
+
+        var response = await _client.SendAsync(request, Cancellation);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        Challenge(response).Should().Contain("error=\"invalid_request\"");
+    }
+
+    [Fact]
+    public async Task A_header_naming_another_scheme_gets_the_bare_challenge()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, UserInfoPath);
+        request.Headers.TryAddWithoutValidation("Authorization", "Basic dXNlcjpwYXNz");
+
+        var response = await _client.SendAsync(request, Cancellation);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "the bare challenge is what tells a client which scheme this endpoint wants");
+        Challenge(response).Should().NotContain("error=");
+    }
+
+    [Fact]
     public async Task A_token_in_the_query_string_is_not_read_at_all()
     {
         var token = await AccessTokenAsync("openid profile");

@@ -45,7 +45,9 @@ without it has nothing to answer here — and the metadata and the route never d
 The URI query parameter of RFC 6750 §2.3 is **not** read. It is deprecated there, and it puts a
 live credential into server logs, browser history, and `Referer` headers.
 
-Presenting the token both ways in one request is `invalid_request`.
+Presenting the token both ways in one request is `invalid_request`, and so is presenting it
+malformed: a repeated `access_token` field, more than one `Authorization` header, or a `Bearer`
+header with nothing after the scheme.
 
 ## Response
 

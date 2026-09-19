@@ -152,52 +152,73 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
     /// The token RFC 6750 lets this endpoint read: the <c>Authorization: Bearer</c> header (§2.1)
     /// or, on a form POST, the <c>access_token</c> field (§2.2). The URI query parameter of §2.3
     /// is not read — it is deprecated there and puts a live credential in logs and referrers.
-    /// Presenting more than one is <c>invalid_request</c> (§3.1), as is presenting none of them.
     /// </summary>
+    /// <remarks>
+    /// Whether a transport was <em>used</em> is decided separately from whether it carried one
+    /// well-formed token, because §3.1 answers the two differently: using both transports, or
+    /// using one malformed, is <c>invalid_request</c>, while using neither is the bare challenge.
+    /// Collapsing them would let a repeated <c>access_token</c> field read as no field at all, and
+    /// so escape the check that a request may present its token exactly once.
+    /// </remarks>
     private static async ValueTask<PresentedToken> ReadAccessTokenAsync(HttpContext context)
     {
-        var fromHeader = BearerToken(context.Request.Headers);
-        var fromForm = await FormAccessTokenAsync(context).ConfigureAwait(false);
+        var header = BearerHeader(context.Request.Headers);
+        var form = await FormAccessTokenAsync(context).ConfigureAwait(false);
 
-        if (fromHeader is not null && fromForm is not null)
+        if (header.Used && form.Used)
         {
             return PresentedToken.Rejected(response => UserInfoResponses.InvalidRequest(
                 response, "The access token was presented both in the Authorization header and in the request body."));
         }
 
-        return (fromHeader ?? fromForm) is { } presented
-            ? PresentedToken.Accepted(presented)
-            : PresentedToken.Rejected(UserInfoResponses.MissingToken);
+        if (!header.Used && !form.Used)
+            return PresentedToken.Rejected(UserInfoResponses.MissingToken);
+
+        return (header.Used ? header : form).Token is { } token
+            ? PresentedToken.Accepted(token)
+            : PresentedToken.Rejected(response => UserInfoResponses.InvalidRequest(
+                response, "The access token was not presented as a single well-formed value."));
     }
 
     /// <summary>
-    /// The token of exactly one <c>Authorization: Bearer</c> header. Two headers, or a scheme this
-    /// endpoint does not accept, present no bearer token at all.
+    /// The <c>Authorization: Bearer</c> transport. More than one <c>Authorization</c> header, or a
+    /// Bearer header with nothing after the scheme, uses the transport malformed; a header naming
+    /// another scheme does not use it at all, and is answered with the bare challenge that names
+    /// the scheme this endpoint wants.
     /// </summary>
-    private static string? BearerToken(IHeaderDictionary headers)
+    private static Transport BearerHeader(IHeaderDictionary headers)
     {
         var authorization = headers.Authorization;
-        if (authorization.Count != 1 || authorization[0] is not { } value)
-            return null;
 
-        if (!value.StartsWith(BearerScheme, StringComparison.OrdinalIgnoreCase))
-            return null;
+        if (authorization.Count == 0)
+            return Transport.Unused;
 
-        var remainder = value[BearerScheme.Length..];
-        if (remainder.Length == 0 || !char.IsWhiteSpace(remainder[0]))
-            return null;
+        if (authorization.Count > 1)
+            return authorization.Any(IsBearer) ? Transport.Malformed : Transport.Unused;
 
-        return remainder.Trim() is { Length: > 0 } token ? token : null;
+        if (!IsBearer(authorization[0]))
+            return Transport.Unused;
+
+        return authorization[0]![BearerScheme.Length..].Trim() is { Length: > 0 } token
+            ? Transport.Carrying(token)
+            : Transport.Malformed;
     }
+
+    /// <summary>The scheme, followed by the end of the value or the space separating its token.</summary>
+    private static bool IsBearer(string? value) =>
+        value is not null
+        && value.StartsWith(BearerScheme, StringComparison.OrdinalIgnoreCase)
+        && (value.Length == BearerScheme.Length || char.IsWhiteSpace(value[BearerScheme.Length]));
 
     /// <summary>
     /// The <c>access_token</c> form field of a form-encoded POST (RFC 6750 §2.2). A body in any
-    /// other media type is not read at all, and one the form reader refuses carries no field.
+    /// other media type does not use this transport at all; one that claims to be a form and
+    /// cannot be read, or that repeats the field, uses it malformed.
     /// </summary>
-    private static async ValueTask<string?> FormAccessTokenAsync(HttpContext context)
+    private static async ValueTask<Transport> FormAccessTokenAsync(HttpContext context)
     {
         if (!HttpMethods.IsPost(context.Request.Method) || !IsFormUrlEncoded(context.Request))
-            return null;
+            return Transport.Unused;
 
         IFormCollection form;
         try
@@ -206,17 +227,33 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
         }
         catch (Exception ex) when (ex is InvalidDataException or BadHttpRequestException)
         {
-            return null;
+            return Transport.Malformed;
         }
 
-        return form[AccessTokenFormField] is { Count: 1 } field && field[0] is { Length: > 0 } token
-            ? token
-            : null;
+        if (!form.TryGetValue(AccessTokenFormField, out var field))
+            return Transport.Unused;
+
+        return field is { Count: 1 } && field[0] is { Length: > 0 } token
+            ? Transport.Carrying(token)
+            : Transport.Malformed;
     }
 
     private static bool IsFormUrlEncoded(HttpRequest request) =>
         Microsoft.Net.Http.Headers.MediaTypeHeaderValue.TryParse(request.ContentType, out var contentType) &&
         contentType.MediaType.Equals(FormUrlEncoded, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// One way of presenting the token: whether the request used it at all, and the single token
+    /// it carried, which is <see langword="null"/> when it was used but not well-formed.
+    /// </summary>
+    private readonly record struct Transport(bool Used, string? Token)
+    {
+        public static Transport Unused => new(false, null);
+
+        public static Transport Malformed => new(true, null);
+
+        public static Transport Carrying(string token) => new(true, token);
+    }
 
     /// <summary>The token the request presented, or the refusal that replaces it.</summary>
     private readonly record struct PresentedToken(string? AccessToken, Func<HttpContext, IResult>? Error)
