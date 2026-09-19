@@ -70,7 +70,13 @@ public sealed class TokenEndpointTests : IDisposable
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
     private EndpointHost NewHost(Action<AuthorizationServerOptions>? configureOptions = null) => new(
-        configureOptions: configureOptions,
+        configureOptions: options =>
+        {
+            // Served so the no-code-grant client, allowed only refresh_token, is a registration
+            // startup accepts: a client may be allowed only the grants its server serves.
+            options.GrantTypesSupported.Add(GrantType.RefreshToken);
+            configureOptions?.Invoke(options);
+        },
         configureBuilder: builder =>
         {
             builder.Services.AddSingleton<TimeProvider>(_time);

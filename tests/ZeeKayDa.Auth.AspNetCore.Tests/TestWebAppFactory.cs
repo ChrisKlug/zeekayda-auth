@@ -180,11 +180,7 @@ public sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactory>
             // Register a minimal in-memory client repository so the startup validator passes.
             // Individual tests that override _configureBuilder may call AddInMemoryClients
             // themselves; the TryAdd pattern ensures it is only registered once.
-            authBuilder.AddInMemoryClients(clients =>
-                clients.AddPublic("test-client",
-                    ["https://test.example.com/callback"],
-                    [],
-                    ["openid"]));
+            authBuilder.AddInMemoryClients(clients => clients.AddDefaultTestClient(_configureOptions));
 
             // Invoke the per-test builder delegate first so that any custom store registrations
             // it makes are visible before we decide whether to fall back to in-memory stores.

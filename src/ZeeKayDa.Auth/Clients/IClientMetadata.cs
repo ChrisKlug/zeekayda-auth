@@ -86,12 +86,26 @@ public interface IClientMetadata
     IReadOnlySet<string> AllowedScopes { get; }
 
     /// <summary>OAuth 2.0 grant types this client is permitted to use.</summary>
+    /// <remarks>
+    /// Must be non-empty and a subset of the server's
+    /// <see cref="AuthorizationServerOptions.GrantTypesSupported"/>; registration fails otherwise.
+    /// </remarks>
     IReadOnlySet<GrantType> AllowedGrantTypes { get; }
 
     /// <summary>Response types this client is permitted to request.</summary>
+    /// <remarks>
+    /// Must be a subset of the server's <see cref="ResponseOptions.TypesSupported"/>, and non-empty
+    /// when <see cref="AllowedGrantTypes"/> contains <see cref="GrantType.AuthorizationCode"/>;
+    /// registration fails otherwise.
+    /// </remarks>
     IReadOnlySet<ResponseType> AllowedResponseTypes { get; }
 
     /// <summary>Response modes this client is permitted to request.</summary>
+    /// <remarks>
+    /// Must be a subset of the server's <see cref="ResponseOptions.ModesSupported"/>, and non-empty
+    /// when <see cref="AllowedGrantTypes"/> contains <see cref="GrantType.AuthorizationCode"/>;
+    /// registration fails otherwise.
+    /// </remarks>
     IReadOnlySet<ResponseMode> AllowedResponseModes { get; }
 
     /// <summary>

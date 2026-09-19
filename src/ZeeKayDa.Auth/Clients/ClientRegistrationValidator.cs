@@ -77,7 +77,8 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         ValidateTokenLifetimes(client, failures);
         ValidateAllowedScopes(client, failures);
         ClaimAdditionValidator.Validate(client, failures);
-        ValidateEnumSets(client, failures);
+        ClientFlowValidator.Validate(client, _options.Value, failures);
+        ValidateAllowedPromptValues(client, failures);
 
         if (failures.Count > 0)
             throw new ZeeKayDaConfigurationException([.. failures]);
@@ -268,31 +269,10 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         }
     }
 
-    private static void ValidateEnumSets(
+    private static void ValidateAllowedPromptValues(
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        foreach (var grantType in client.AllowedGrantTypes.Where(grantType => !Enum.IsDefined(grantType)))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.grant_types.undefined_value",
-                $"Client '{client.ClientId}' has an undefined value '{(int)grantType}' in AllowedGrantTypes."));
-        }
-
-        foreach (var responseType in client.AllowedResponseTypes.Where(responseType => !Enum.IsDefined(responseType)))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.response_types.undefined_value",
-                $"Client '{client.ClientId}' has an undefined value '{(int)responseType}' in AllowedResponseTypes."));
-        }
-
-        foreach (var responseMode in client.AllowedResponseModes.Where(responseMode => !Enum.IsDefined(responseMode)))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.response_modes.undefined_value",
-                $"Client '{client.ClientId}' has an undefined value '{(int)responseMode}' in AllowedResponseModes."));
-        }
-
         foreach (var promptValue in client.AllowedPromptValues.Where(promptValue => !Enum.IsDefined(promptValue)))
         {
             failures.Add(new ZeeKayDaConfigurationFailure(

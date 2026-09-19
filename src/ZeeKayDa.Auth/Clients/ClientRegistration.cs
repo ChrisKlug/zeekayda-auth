@@ -51,7 +51,7 @@ public sealed record ClientRegistration : IClientRegistration
 
     /// <inheritdoc/>
     public IReadOnlySet<ResponseMode> AllowedResponseModes { get; init; }
-        = new HashSet<ResponseMode> { ResponseMode.Query, ResponseMode.FormPost };
+        = new HashSet<ResponseMode> { ResponseMode.Query };
 
     /// <inheritdoc/>
     public IReadOnlySet<string> AllowedTokenEndpointAuthMethods { get; init; }

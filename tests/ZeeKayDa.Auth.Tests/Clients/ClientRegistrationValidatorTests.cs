@@ -196,6 +196,26 @@ public sealed class ClientRegistrationValidatorTests
         public bool SetEquals(IEnumerable<string> other) => throw new NotSupportedException();
     }
 
+    /// <summary>
+    /// A custom registration's set that yields its items while reporting a <c>Count</c> of zero and
+    /// denying that it contains any of them — the validator must go by what it enumerates.
+    /// </summary>
+    private sealed class MisreportingSet<T>(IEnumerable<T> items) : IReadOnlySet<T>
+    {
+        private readonly List<T> _items = [.. items];
+
+        public int Count => 0;
+        public IEnumerator<T> GetEnumerator() => _items.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        public bool Contains(T item) => false;
+        public bool IsProperSubsetOf(IEnumerable<T> other) => throw new NotSupportedException();
+        public bool IsProperSupersetOf(IEnumerable<T> other) => throw new NotSupportedException();
+        public bool IsSubsetOf(IEnumerable<T> other) => throw new NotSupportedException();
+        public bool IsSupersetOf(IEnumerable<T> other) => throw new NotSupportedException();
+        public bool Overlaps(IEnumerable<T> other) => throw new NotSupportedException();
+        public bool SetEquals(IEnumerable<T> other) => throw new NotSupportedException();
+    }
+
     private static AuthorizationServerOptions BuildDefaultServerOptions()
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
@@ -1454,6 +1474,161 @@ public sealed class ClientRegistrationValidatorTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.prompt_values.undefined_value");
+    }
+
+    // ── Flow sets against what the server serves ───────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_fails_with_grant_types_not_subset_code_for_a_grant_the_server_does_not_serve()
+    {
+        // The default server serves only authorization_code: a client also allowed refresh_token
+        // would start fine and then have that grant refused at the token endpoint.
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with
+        {
+            AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode, GrantType.RefreshToken }
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f =>
+                f.Code == "client.grant_types.not_subset" && f.Message.Contains("'RefreshToken'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_fails_with_response_types_not_subset_code_for_a_response_type_the_server_does_not_serve()
+    {
+        var options = BuildDefaultServerOptions();
+        options.Response.TypesSupported = [];
+        var validator = MakeValidator(serverOptions: options);
+
+        var act = () => validator.Validate(MakeValidPublicClient());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.response_types.not_subset");
+    }
+
+    [Fact]
+    public void Validate_fails_with_response_modes_not_subset_code_for_form_post_on_a_server_serving_only_query()
+    {
+        // The authorization endpoint answers only in the query string, so a client allowed
+        // form_post is promised a mode nothing delivers.
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with
+        {
+            AllowedResponseModes = new HashSet<ResponseMode> { ResponseMode.Query, ResponseMode.FormPost }
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f =>
+                f.Code == "client.response_modes.not_subset" && f.Message.Contains("'FormPost'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_fails_with_grant_types_empty_code_for_a_client_allowed_no_grant()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { AllowedGrantTypes = new HashSet<GrantType>() };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.grant_types.empty");
+    }
+
+    [Fact]
+    public void Validate_fails_with_response_types_empty_code_for_a_code_grant_client_allowed_no_response_type()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { AllowedResponseTypes = new HashSet<ResponseType>() };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.response_types.empty");
+    }
+
+    [Fact]
+    public void Validate_fails_with_response_modes_empty_code_for_a_code_grant_client_allowed_no_response_mode()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with { AllowedResponseModes = new HashSet<ResponseMode>() };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.response_modes.empty");
+    }
+
+    [Fact]
+    public void Validate_accepts_no_response_types_or_modes_on_a_client_without_the_code_grant()
+    {
+        // Only the code grant goes through the authorization endpoint (RFC 7591 §2.1), so a client
+        // that never goes there needs no way to be answered there.
+        var options = BuildDefaultServerOptions();
+        options.GrantTypesSupported.Add(GrantType.RefreshToken);
+        var validator = MakeValidator(serverOptions: options);
+        var client = MakeValidPublicClient() with
+        {
+            AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken },
+            AllowedResponseTypes = new HashSet<ResponseType>(),
+            AllowedResponseModes = new HashSet<ResponseMode>(),
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Validate_reports_an_undefined_grant_type_as_undefined_and_not_also_as_unsupported()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with
+        {
+            AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode, (GrantType)999 }
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Where(f => f.Code.StartsWith("client.grant_types.", StringComparison.Ordinal))
+            .Should().ContainSingle().Which.Code.Should().Be("client.grant_types.undefined_value");
+    }
+
+    [Fact]
+    public void Validate_counts_the_grant_types_a_set_yields_not_the_Count_it_reports()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with
+        {
+            AllowedGrantTypes = new MisreportingSet<GrantType>([GrantType.AuthorizationCode])
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow("the set yields a grant, whatever Count it reports");
+    }
+
+    [Fact]
+    public void Validate_finds_the_code_grant_by_enumerating_not_by_asking_the_set_whether_it_contains_it()
+    {
+        // The snapshot serves what the set yields, so a set that yields authorization_code while
+        // denying it contains it still sends its client to the authorization endpoint.
+        var validator = MakeValidator();
+        var client = MakeValidPublicClient() with
+        {
+            AllowedGrantTypes = new MisreportingSet<GrantType>([GrantType.AuthorizationCode]),
+            AllowedResponseTypes = new HashSet<ResponseType>(),
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.response_types.empty");
     }
 
     // ── ClientId format ───────────────────────────────────────────────────────────────────────────

@@ -130,11 +130,11 @@ sub-code must not distinguish the two either. Presented secrets, raw `Authorizat
 token-endpoint bodies and `code_verifier` values are never logged (RFC 7636 §7.5).
 
 **Registration-time validation has no runtime twin, and the analyzer is a backstop, not a
-guarantee.** The iteration floor, the two-secret cap, the `IsPublic` consistency rule and the
-allowlist subset checks are enforced only where a registration is written. The framework's own
-in-memory repository validates at construction and throws before the host serves traffic; a custom
-repository must resolve and call the same validator at write time. `ZEEKAYDA0003` warns when an
-out-of-assembly repository never references the validator — it proves a reference, not a call.
+guarantee.** The iteration floor, the two-secret cap, the `IsPublic` consistency rule and the rule
+that a client is allowed only what the server serves (auth methods, signing algorithms, grant types,
+response types and modes) hold only where a registration is written: the in-memory repository checks
+at construction, before the host serves traffic, and a custom one must call the same validator at write
+time. `ZEEKAYDA0003` warns when an out-of-assembly repository never references it — a reference, not a call.
 
 **Client-facing types split on whether they need a request.** Registrations, credentials, hashers,
 the repository and the validator are core; the authenticator seam and its request context types live

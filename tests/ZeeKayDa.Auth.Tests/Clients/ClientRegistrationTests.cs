@@ -140,7 +140,7 @@ public sealed class ClientRegistrationTests
     }
 
     [Fact]
-    public void DefaultProperties_AllowedResponseModes_defaults_to_Query_and_FormPost()
+    public void DefaultProperties_AllowedResponseModes_defaults_to_Query_only()
     {
         var client = new ClientRegistration
         {
@@ -151,7 +151,9 @@ public sealed class ClientRegistrationTests
             PostLogoutRedirectUris = new HashSet<string>(),
         };
 
-        client.AllowedResponseModes.Should().BeEquivalentTo(new[] { ResponseMode.Query, ResponseMode.FormPost });
+        // Query is the one mode the authorization endpoint answers with; a default the server cannot
+        // serve would fail every default client at startup.
+        client.AllowedResponseModes.Should().BeEquivalentTo(new[] { ResponseMode.Query });
     }
 
     [Fact]
