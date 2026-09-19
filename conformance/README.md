@@ -21,7 +21,9 @@ Docker and the .NET SDK are the only prerequisites. The first run clones the sui
 and pulls its images, which takes a few minutes; later runs reuse both. The images are shared by the
 whole machine, but the clone (about 360 MB) is per checkout: with several worktrees, set
 `ZEEKAYDA_CONFORMANCE_SUITE_DIR` to a folder outside all of them, and every checkout clones into it
-once and reuses it. Output lands in
+once and reuses it. Only one run at a time per machine: the ports and the Compose project name are
+fixed, so the script takes a lock at `/tmp/zeekayda-conformance.lock` and refuses to start while
+another run holds it. Output lands in
 `results/<timestamp>/`: the suite's own signed export zip, the run log, the identity server's log,
 the suite server's log, and the discovery document as served.
 
