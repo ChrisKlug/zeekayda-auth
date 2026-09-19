@@ -77,7 +77,7 @@ public sealed record ClientRegistration : IClientRegistration
     public bool SkipLogoutConfirmation { get; init; }
 
     /// <inheritdoc/>
-    public bool AllowNonceInsteadOfPkce { get; init; }
+    public bool RequirePkce { get; init; } = true;
 
     /// <inheritdoc/>
     public IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms { get; init; }

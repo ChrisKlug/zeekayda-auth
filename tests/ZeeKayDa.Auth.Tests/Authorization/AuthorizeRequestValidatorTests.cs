@@ -368,10 +368,24 @@ public class AuthorizeRequestValidatorTests
     }
 
     [Fact]
-    public async Task Phase2_missing_nonce_is_invalid_request()
+    public async Task A_request_without_a_nonce_is_valid_and_carries_none()
     {
+        // OIDC Core §3.1.2.1: nonce is OPTIONAL for the code flow.
         var parameters = ValidParameters();
         parameters.Remove("nonce");
+
+        var result = await Validate(parameters);
+
+        var valid = result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject;
+        valid.Request.Nonce.Should().BeNull();
+        valid.Request.Pkce.Should().Be(new PkceChallenge(Challenge, CodeChallengeMethod.S256));
+    }
+
+    [Fact]
+    public async Task Phase2_empty_nonce_is_invalid_request()
+    {
+        var parameters = ValidParameters();
+        parameters["nonce"] = [""];
 
         var result = await Validate(parameters);
 
@@ -415,7 +429,7 @@ public class AuthorizeRequestValidatorTests
             .Subject.Error.Should().Be("invalid_request");
     }
 
-    // ── PKCE omitted by a client permitted to rely on the nonce ───────────────────────────────
+    // ── PKCE omitted by a client registered without RequirePkce ───────────────────────────────
 
     [Fact]
     public async Task A_confidential_client_permitted_to_omit_pkce_is_valid_without_a_challenge_and_carries_none()
@@ -468,8 +482,10 @@ public class AuthorizeRequestValidatorTests
     }
 
     [Fact]
-    public async Task A_client_permitted_to_omit_pkce_still_needs_the_nonce_it_relies_on_instead()
+    public async Task A_client_permitted_to_omit_pkce_is_valid_with_neither_a_challenge_nor_a_nonce()
     {
+        // The registration is the operator's assurance that the client uses the nonce (OAuth 2.1
+        // §7.5.1.1); the server does not check it per request.
         var parameters = ValidParameters();
         parameters.Remove("code_challenge");
         parameters.Remove("code_challenge_method");
@@ -477,8 +493,9 @@ public class AuthorizeRequestValidatorTests
 
         var result = await Validate(parameters, ConfidentialClientPermittedToOmitPkce());
 
-        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
-            .Subject.Error.Should().Be("invalid_request");
+        var valid = result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject;
+        valid.Request.Pkce.Should().BeNull();
+        valid.Request.Nonce.Should().BeNull();
     }
 
     [Fact]
@@ -490,7 +507,7 @@ public class AuthorizeRequestValidatorTests
         parameters.Remove("code_challenge");
         parameters.Remove("code_challenge_method");
 
-        var result = await Validate(parameters, Client() with { AllowNonceInsteadOfPkce = true });
+        var result = await Validate(parameters, Client() with { RequirePkce = false });
 
         result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
             .Subject.Error.Should().Be("invalid_request");
@@ -556,7 +573,7 @@ public class AuthorizeRequestValidatorTests
     {
         var parameters = ValidParameters();
         parameters["state"] = ["opaque-client-state"];
-        parameters.Remove("nonce");
+        parameters.Remove("code_challenge");
 
         var result = await Validate(parameters);
 
@@ -701,7 +718,7 @@ public class AuthorizeRequestValidatorTests
             postLogoutRedirectUris: [],
             allowedScopes: ["openid", "profile"])
             with
-        { AllowNonceInsteadOfPkce = true };
+        { RequirePkce = false };
 
     private static Dictionary<string, IReadOnlyList<string?>> ValidParameters(
         string clientId = ClientId,

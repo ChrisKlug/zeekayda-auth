@@ -35,8 +35,8 @@ internal sealed record AuthorizationRequestContext
     /// <summary>The client's opaque <c>state</c>, echoed byte for byte, or <see langword="null"/>.</summary>
     public required string? State { get; init; }
 
-    /// <summary>The OpenID Connect <c>nonce</c>.</summary>
-    public required string Nonce { get; init; }
+    /// <summary>The OpenID Connect <c>nonce</c>, or <see langword="null"/> when the request carried none.</summary>
+    public required string? Nonce { get; init; }
 
     /// <summary>The PKCE binding (RFC 7636 §4.3), or <see langword="null"/> when the request carried no challenge.</summary>
     public required PkceChallenge? Pkce { get; init; }

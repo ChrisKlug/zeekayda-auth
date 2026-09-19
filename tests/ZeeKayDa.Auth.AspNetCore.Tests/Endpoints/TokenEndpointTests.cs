@@ -22,7 +22,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 /// code store — the way the authorization endpoint's own issuance would have left it — is
 /// exchanged through <see cref="TokenRequestHandler"/> directly, and what comes back is verified
 /// against the JWKS the same container serves. The security decisions here — PKCE for every
-/// client not permitted to rely on the nonce instead, a burnt code on any binding failure, a
+/// client registered without it switched off, a burnt code on any binding failure, a
 /// replay revoking its family — are recorded by the tests that prove them. Route registration,
 /// the 405 for a wrong method, and <c>AllowAnonymous</c> surviving a host-wide fallback
 /// authorization policy need a real host and live in <see cref="TokenEndpointHostTests"/>.
@@ -38,8 +38,8 @@ public sealed class TokenEndpointTests : IDisposable
     private const string ConfidentialSecret = "very-secret";
     private const string OtherClient = "other-client";
     private const string NoCodeGrantClient = "no-code-grant-client";
-    private const string NoncePkceClient = "nonce-instead-of-pkce-client";
-    private const string NoncePkceSecret = "also-very-secret";
+    private const string PkceOptionalClient = "pkce-optional-client";
+    private const string PkceOptionalSecret = "also-very-secret";
     private const string Nonce = "n-0S6_WzA2Mj";
     private const string Subject = "user-1";
 
@@ -79,7 +79,7 @@ public sealed class TokenEndpointTests : IDisposable
                 .Add(PublicRegistration())
                 .Add(NoCodeGrantRegistration())
                 .AddConfidential(ConfidentialClient, ConfidentialSecret, [RegisteredRedirect], [], ["openid", "profile"])
-                .Add(NoncePkceRegistration())
+                .Add(PkceOptionalRegistration())
                 .AddPublic(OtherClient, ["https://other.example.com/callback"], [], ["openid"]));
 
             // The interaction store is required by startup for a host serving the code grant, even
@@ -102,10 +102,10 @@ public sealed class TokenEndpointTests : IDisposable
         { AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken } };
 
     /// <summary>A first-party confidential client the operator trusts to check the nonce, so it may leave PKCE out.</summary>
-    private static ClientRegistration NoncePkceRegistration() =>
-        ClientRegistration.CreateConfidential(NoncePkceClient, Pbkdf2(NoncePkceSecret), [RegisteredRedirect], [], ["openid", "profile"])
+    private static ClientRegistration PkceOptionalRegistration() =>
+        ClientRegistration.CreateConfidential(PkceOptionalClient, Pbkdf2(PkceOptionalSecret), [RegisteredRedirect], [], ["openid", "profile"])
             with
-        { AllowNonceInsteadOfPkce = true, RequireConsent = false };
+        { RequirePkce = false, RequireConsent = false };
 
     private static Pbkdf2ClientSecret Pbkdf2(string secret)
     {
@@ -120,8 +120,8 @@ public sealed class TokenEndpointTests : IDisposable
     /// would have left it, without driving the authorize/login/consent flow that produced it —
     /// the token endpoint's behaviour is what these tests prove, not how a code comes to exist.
     /// </summary>
-    private Task<string> SeedCodeAsync(string clientId = PublicClient, string scope = "openid profile", bool pkce = true) =>
-        SeedCodeWithAsync(_host, clientId, scope, pkce);
+    private Task<string> SeedCodeAsync(string clientId = PublicClient, string scope = "openid profile", bool pkce = true, string? nonce = Nonce) =>
+        SeedCodeWithAsync(_host, clientId, scope, pkce, nonce: nonce);
 
     private static async Task<string> SeedCodeWithAsync(
         EndpointHost host,
@@ -129,7 +129,8 @@ public sealed class TokenEndpointTests : IDisposable
         string scope = "openid profile",
         bool pkce = true,
         string redirectUri = RegisteredRedirect,
-        string sub = Subject)
+        string sub = Subject,
+        string? nonce = Nonce)
     {
         await host.EnsureStartedAsync();
 
@@ -141,7 +142,7 @@ public sealed class TokenEndpointTests : IDisposable
             Pkce = pkce ? new PkceChallenge(Challenge, CodeChallengeMethod.S256) : null,
             Sub = sub,
             Scope = scope.Split(' ', StringSplitOptions.RemoveEmptyEntries),
-            Nonce = Nonce,
+            Nonce = nonce,
             AuthTime = Now,
             Amr = [AuthenticationMethods.Password],
             SsoSessionId = StoreKeyGenerator.Generate(),
@@ -169,9 +170,9 @@ public sealed class TokenEndpointTests : IDisposable
         PostTokenWithAsync(_host, fields, basic);
 
     /// <summary>The client permitted to omit PKCE exchanges <paramref name="code"/>, authenticating with its secret, with or without a verifier.</summary>
-    private Task<HttpResponseMessage> PostTokenAsNoncePkceClientAsync(string code, string? verifier)
+    private Task<HttpResponseMessage> PostTokenAsPkceOptionalClientAsync(string code, string? verifier)
     {
-        var form = TokenForm(code, NoncePkceClient);
+        var form = TokenForm(code, PkceOptionalClient);
         form.Remove("client_id");
 
         if (verifier is null)
@@ -179,7 +180,7 @@ public sealed class TokenEndpointTests : IDisposable
         else
             form["code_verifier"] = verifier;
 
-        return PostTokenAsync(form, basic: (NoncePkceClient, NoncePkceSecret));
+        return PostTokenAsync(form, basic: (PkceOptionalClient, PkceOptionalSecret));
     }
 
     private static Task<HttpResponseMessage> PostTokenWithAsync(
@@ -544,9 +545,9 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_client_permitted_to_omit_pkce_redeems_a_code_issued_without_a_challenge_with_no_verifier()
     {
-        var code = await SeedCodeAsync(NoncePkceClient, pkce: false);
+        var code = await SeedCodeAsync(PkceOptionalClient, pkce: false);
 
-        var response = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
+        var response = await PostTokenAsPkceOptionalClientAsync(code, verifier: null);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await ReadJsonAsync(response);
@@ -554,12 +555,26 @@ public sealed class TokenEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_client_permitted_to_omit_pkce_redeems_a_code_issued_with_neither_a_challenge_nor_a_nonce()
+    {
+        // The request the conformance module oidcc-ensure-request-without-nonce-succeeds-for-code-flow
+        // sends: the registration is the operator's assurance, and the server does not check it again.
+        var code = await SeedCodeAsync(PkceOptionalClient, pkce: false, nonce: null);
+
+        var response = await PostTokenAsPkceOptionalClientAsync(code, verifier: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await ReadJsonAsync(response);
+        Claims(body.GetProperty("id_token").GetString()!).TryGetProperty("nonce", out _).Should().BeFalse("no nonce was sent, so none is claimed");
+    }
+
+    [Fact]
     public async Task An_empty_code_verifier_is_malformed_not_absent_even_for_a_client_permitted_to_omit_pkce()
     {
-        var code = await SeedCodeAsync(NoncePkceClient, pkce: false);
+        var code = await SeedCodeAsync(PkceOptionalClient, pkce: false);
 
-        var refused = await PostTokenAsNoncePkceClientAsync(code, verifier: "");
-        var retried = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
+        var refused = await PostTokenAsPkceOptionalClientAsync(code, verifier: "");
+        var retried = await PostTokenAsPkceOptionalClientAsync(code, verifier: null);
 
         await ShouldBeErrorAsync(refused, "invalid_request");
         retried.StatusCode.Should().Be(HttpStatusCode.OK, "a request refused at the shape check consumed nothing");
@@ -568,10 +583,10 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_verifier_presented_for_a_code_issued_without_a_challenge_is_refused_and_burns_the_code()
     {
-        var code = await SeedCodeAsync(NoncePkceClient, pkce: false);
+        var code = await SeedCodeAsync(PkceOptionalClient, pkce: false);
 
-        var refused = await PostTokenAsNoncePkceClientAsync(code, verifier: Verifier);
-        var retried = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
+        var refused = await PostTokenAsPkceOptionalClientAsync(code, verifier: Verifier);
+        var retried = await PostTokenAsPkceOptionalClientAsync(code, verifier: null);
 
         await ShouldBeErrorAsync(refused, "invalid_request");
         await ShouldBeErrorAsync(retried, "invalid_grant"); // consumed by the refused exchange
@@ -580,10 +595,10 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_code_issued_with_a_challenge_to_a_client_permitted_to_omit_pkce_is_refused_without_the_verifier_and_burns()
     {
-        var code = await SeedCodeAsync(NoncePkceClient);
+        var code = await SeedCodeAsync(PkceOptionalClient);
 
-        var refused = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
-        var retried = await PostTokenAsNoncePkceClientAsync(code, verifier: Verifier);
+        var refused = await PostTokenAsPkceOptionalClientAsync(code, verifier: null);
+        var retried = await PostTokenAsPkceOptionalClientAsync(code, verifier: Verifier);
 
         await ShouldBeErrorAsync(refused, "invalid_grant");
         await ShouldBeErrorAsync(retried, "invalid_grant");
@@ -592,8 +607,8 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_code_issued_with_a_challenge_to_a_client_permitted_to_omit_pkce_is_verified_like_any_other()
     {
-        var wrong = await PostTokenAsNoncePkceClientAsync(await SeedCodeAsync(NoncePkceClient), verifier: WrongVerifier);
-        var right = await PostTokenAsNoncePkceClientAsync(await SeedCodeAsync(NoncePkceClient), verifier: Verifier);
+        var wrong = await PostTokenAsPkceOptionalClientAsync(await SeedCodeAsync(PkceOptionalClient), verifier: WrongVerifier);
+        var right = await PostTokenAsPkceOptionalClientAsync(await SeedCodeAsync(PkceOptionalClient), verifier: Verifier);
 
         await ShouldBeErrorAsync(wrong, "invalid_grant");
         right.StatusCode.Should().Be(HttpStatusCode.OK);

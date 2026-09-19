@@ -29,7 +29,7 @@ internal static class AuthorizationRequestContextSerializer
     /// The format version. A payload carrying any other value is refused rather than misread —
     /// positional formats have no way to detect a field that moved.
     /// </summary>
-    private const byte Version = 2;
+    private const byte Version = 3;
 
     public static byte[] Encode(AuthorizationRequestContext context)
     {
@@ -45,7 +45,7 @@ internal static class AuthorizationRequestContextSerializer
         writer.Write(context.RedirectUri);
         WriteStrings(writer, context.Scopes);
         WriteNullableString(writer, context.State);
-        writer.Write(context.Nonce);
+        WriteNullableString(writer, context.Nonce);
         WritePkce(writer, context.Pkce);
 
         writer.Write7BitEncodedInt(context.Prompts.Count);
@@ -118,7 +118,7 @@ internal static class AuthorizationRequestContextSerializer
         var redirectUri = reader.ReadString();
         var scopes = ReadStrings(reader);
         var state = ReadNullableString(reader);
-        var nonce = reader.ReadString();
+        var nonce = ReadNullableString(reader);
         if (!TryReadPkce(reader, out var pkce))
             return null;
 
@@ -177,13 +177,14 @@ internal static class AuthorizationRequestContextSerializer
     /// <summary>
     /// Rejects a decoded context missing a value the validator guarantees. The payload is
     /// encrypted, so this is not a defence against a forged one — it is a floor under what the
-    /// rest of the flow may be handed if this format is ever written wrongly.
+    /// rest of the flow may be handed if this format is ever written wrongly. The <c>nonce</c> is
+    /// optional, but the validator never lets an empty one through, so an empty one is refused.
     /// </summary>
     private static bool IsComplete(AuthorizationRequestContext context) =>
         !string.IsNullOrEmpty(context.Id) &&
         !string.IsNullOrEmpty(context.ClientId) &&
         !string.IsNullOrEmpty(context.RedirectUri) &&
-        !string.IsNullOrEmpty(context.Nonce) &&
+        context.Nonce is not { Length: 0 } &&
         context.Scopes.Count > 0;
 
     private static void WritePkce(BinaryWriter writer, PkceChallenge? pkce)

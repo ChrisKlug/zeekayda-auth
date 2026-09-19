@@ -545,6 +545,20 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
     }
 
     [Fact]
+    public async Task A_request_without_a_nonce_is_issued_a_code_whose_entry_carries_none()
+    {
+        // OIDC Core §3.1.2.1: nonce is OPTIONAL for the code flow. The request survives the
+        // interaction cookie and reaches the code without one.
+        var query = ValidQuery();
+        query.Remove("nonce");
+
+        var code = (await CompleteFlowAsync(query)).ShouldHaveIssuedCodeTo(RegisteredRedirect);
+
+        var redeemed = (await RedeemAsync(code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>().Subject;
+        redeemed.Entry.Nonce.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Two_completed_flows_produce_different_codes()
     {
         var first = (await CompleteFlowAsync()).ShouldHaveIssuedCodeTo(RegisteredRedirect);

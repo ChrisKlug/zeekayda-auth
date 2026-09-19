@@ -12,10 +12,11 @@ with the screenshot it wants captured automatically, 5 carry a warning, 2 fail a
 Every warning, failure and skip is listed below with its cause and the issue that removes it.
 
 The one setup change that made this possible: the two conformance clients are registered with
-`AllowNonceInsteadOfPkce` (OAuth 2.1 §7.5.1.1). The plan's modules send `nonce` and no
-`code_challenge`, and without the opt-out every module was refused at the authorization endpoint
-and the runner aborted after three interruptions in a row. The suite has no switch to make the basic
-plan send PKCE; only the one dedicated PKCE module does.
+`RequirePkce` set to `false` (OAuth 2.1 §7.5.1.1; the setting was then named
+`AllowNonceInsteadOfPkce`). The plan's modules send no `code_challenge`, and without the opt-out
+every module was refused at the authorization endpoint and the runner aborted after three
+interruptions in a row. The suite has no switch to make the basic plan send PKCE; only the one
+dedicated PKCE module does.
 
 ## Timing
 
@@ -139,7 +140,7 @@ screenshot for a human certifier to look at. Nothing in a REVIEW module failed.
 
 ### What changed in the sample for this run
 
-- Both conformance clients set `AllowNonceInsteadOfPkce` (see the headline). The sample's
+- Both conformance clients set `RequirePkce` to `false` (see the headline). The sample's
   `ClientSettings` gained that property; it is applied to confidential clients only.
 - The seeded user carries every OIDC Core §5.4 profile claim. The suite's scope modules expect all
   fourteen at userinfo, and four of them was a warning on `oidcc-scope-profile` and
