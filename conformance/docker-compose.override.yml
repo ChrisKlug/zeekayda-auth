@@ -28,7 +28,13 @@ services:
       - nginx
     volumes:
       - ./scripts:/suite/scripts:ro
-      - ..:/conformance
+      # This container runs the suite's own third-party script, so it gets the test config and the
+      # expected-failures manifest read-only and a writable results directory — and nothing else.
+      # Mounting the whole conformance/ folder read-write handed it the generated private keys and
+      # let it rewrite expected-failures.json, which is the gate a run is judged against.
+      - ../config:/conformance/config:ro
+      - ../expected-failures.json:/conformance/expected-failures.json:ro
+      - ../results:/conformance/results
     working_dir: /suite/scripts
     environment:
       CONFORMANCE_SERVER: https://localhost.emobix.co.uk:8443/

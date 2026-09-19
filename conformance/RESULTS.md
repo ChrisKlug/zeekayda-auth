@@ -1,7 +1,7 @@
 # Conformance results
 
 First local run of the OpenID Foundation conformance suite against the sample identity server,
-2026-09-18. Suite `release-v5.3.1`. Reproduce with `./run-conformance.sh`; rewrite this file when
+2026-09-19. Suite `release-v5.3.1`. Reproduce from the repository root with `./conformance/run-conformance.sh`; rewrite this file when
 the numbers change.
 
 ## Headline
@@ -36,20 +36,62 @@ code_challenge_methods_supported=[S256]
 
 ## `oidcc-basic-certification-test-plan`
 
-35 modules, **0 run to completion**. 34 are interrupted by
+35 modules, **0 run to completion**, in two distinct ways.
 
-```
-SetProtectedResourceUrlToUserInfoEndpoint: userinfo_endpoint missing from server configuration.
-The user info is not a mandatory to implement feature in the OpenID Connect specification, but is
-mandatory for certification.
-```
+### Every module, and why
 
-and the 35th, `oidcc-server-client-secret-post`, by
+No module reached the authorization endpoint, so none has a pass, a fail or a skip to report —
+`interrupted` is the suite's own status for a module stopped during setup. The two causes:
 
-```
-GetStaticClientConfiguration: As static client was selected, the test configuration must contain a
-client configuration
-```
+- **A — library gap.** `SetProtectedResourceUrlToUserInfoEndpoint: userinfo_endpoint missing from
+  server configuration. The user info is not a mandatory to implement feature in the OpenID Connect
+  specification, but is mandatory for certification.` Tracked by #708.
+- **B — harness and sample setup, not a library gap.** `GetStaticClientConfiguration: As static
+  client was selected, the test configuration must contain a client configuration` — this module
+  wants a `client_secret_post` block naming a client that authenticates that way, and the sample
+  advertises only `client_secret_basic` and `none`. Tracked by #717. It is reached at all only
+  because the module overrides the setup step that stops the other 34.
+
+| # | Module | Status | Cause |
+|---:|---|---|---|
+| 1 | `oidcc-server` | interrupted | **A** |
+| 2 | `oidcc-response-type-missing` | interrupted | **A** |
+| 3 | `oidcc-userinfo-get` | interrupted | **A** |
+| 4 | `oidcc-userinfo-post-header` | interrupted | **A** |
+| 5 | `oidcc-userinfo-post-body` | interrupted | **A** |
+| 6 | `oidcc-ensure-request-without-nonce-succeeds-for-code-flow` | interrupted | **A** |
+| 7 | `oidcc-scope-profile` | interrupted | **A** |
+| 8 | `oidcc-scope-email` | interrupted | **A** |
+| 9 | `oidcc-scope-address` | interrupted | **A** |
+| 10 | `oidcc-scope-phone` | interrupted | **A** |
+| 11 | `oidcc-scope-all` | interrupted | **A** |
+| 12 | `oidcc-alternate-happy-flow` | interrupted | **A** |
+| 13 | `oidcc-display-page` | interrupted | **A** |
+| 14 | `oidcc-display-popup` | interrupted | **A** |
+| 15 | `oidcc-prompt-login` | interrupted | **A** |
+| 16 | `oidcc-prompt-none-not-logged-in` | interrupted | **A** |
+| 17 | `oidcc-prompt-none-logged-in` | interrupted | **A** |
+| 18 | `oidcc-max-age-1` | interrupted | **A** |
+| 19 | `oidcc-max-age-10000` | interrupted | **A** |
+| 20 | `oidcc-ensure-request-with-unknown-parameter-succeeds` | interrupted | **A** |
+| 21 | `oidcc-id-token-hint` | interrupted | **A** |
+| 22 | `oidcc-login-hint` | interrupted | **A** |
+| 23 | `oidcc-ui-locales` | interrupted | **A** |
+| 24 | `oidcc-claims-locales` | interrupted | **A** |
+| 25 | `oidcc-ensure-request-with-acr-values-succeeds` | interrupted | **A** |
+| 26 | `oidcc-codereuse` | interrupted | **A** |
+| 27 | `oidcc-codereuse-30seconds` | interrupted | **A** |
+| 28 | `oidcc-ensure-registered-redirect-uri` | interrupted | **A** |
+| 29 | `oidcc-ensure-post-request-succeeds` | interrupted | **A** |
+| 30 | `oidcc-server-client-secret-post` | interrupted | **B** |
+| 31 | `oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported` | interrupted | **A** |
+| 32 | `oidcc-claims-essential` | interrupted | **A** |
+| 33 | `oidcc-ensure-request-object-with-redirect-uri` | interrupted | **A** |
+| 34 | `oidcc-refresh-token` | interrupted | **A** |
+| 35 | `oidcc-ensure-request-with-valid-pkce-succeeds` | interrupted | **A** |
+
+34 × **A**, 1 × **B**. Re-run and rewrite this table once #708 lands: it is the per-module record
+#307 gates against, and the first run where these statuses mean anything about the login flow.
 
 ### Why one missing endpoint blocks everything
 
@@ -64,13 +106,6 @@ The consequence for planning: **no part of the flow is conformance-tested until 
 partially, not the non-userinfo majority. The suite's certification profile treats userinfo as
 mandatory even though the spec does not, and it enforces that in the shared setup rather than per
 module.
-
-### Triage
-
-| Finding | Classification | Tracked |
-|---|---|---|
-| 34 modules interrupted: no `userinfo_endpoint` | **Library gap** — no userinfo endpoint is implemented | #708 |
-| `oidcc-server-client-secret-post` interrupted: no `client_secret_post` client in the test config | **Harness and sample setup**, not a library gap — the framework supports the method, the sample advertises only `client_secret_basic` and `none`, and `AuthMethodsSupported` is server-wide | #717 |
 
 Nothing here is a newly discovered spec gap in code that was believed to work: the plan never
 exercised any of it. Re-run and re-triage this section once #708 lands — that run is the one that

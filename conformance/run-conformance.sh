@@ -77,9 +77,20 @@ if [[ ! -d "${SUITE_DIR}/.git" ]]; then
     echo "==> cloning the conformance suite at ${SUITE_REF}"
     git clone --depth 1 --branch "${SUITE_REF}" \
         https://gitlab.com/openid/conformance-suite.git "${SUITE_DIR}"
-else
-    echo "==> using the existing suite clone ($(git -C "${SUITE_DIR}" rev-parse --short HEAD))"
 fi
+
+# An existing clone is only reusable if it is the ref the images are tagged from. Reusing whatever
+# was cloned first, while IMAGE_TAG follows a newly-set SUITE_REF, would run one release's scripts
+# against another release's server image — the exact mismatch pinning both to SUITE_REF exists to
+# prevent, and one that would look like a conformance failure rather than a setup error.
+WANTED_REF="$(git -C "${SUITE_DIR}" rev-parse --verify --quiet "refs/tags/${SUITE_REF}" || true)"
+if [[ -z "${WANTED_REF}" || "$(git -C "${SUITE_DIR}" rev-parse HEAD)" != "${WANTED_REF}" ]]; then
+    echo "==> moving the suite clone to ${SUITE_REF}"
+    git -C "${SUITE_DIR}" fetch --depth 1 --force origin \
+        "refs/tags/${SUITE_REF}:refs/tags/${SUITE_REF}"
+    git -C "${SUITE_DIR}" checkout -q --detach "refs/tags/${SUITE_REF}"
+fi
+echo "==> suite at ${SUITE_REF} ($(git -C "${SUITE_DIR}" rev-parse --short HEAD))"
 
 # --- TLS the Java server will accept --------------------------------------------------------------
 "${HERE}/make-certs.sh"

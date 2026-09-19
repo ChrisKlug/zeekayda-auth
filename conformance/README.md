@@ -9,10 +9,12 @@ package.
 
 ## Run it
 
+From the repository root:
+
 ```bash
-./run-conformance.sh          # both plans
-./run-conformance.sh config   # discovery and JWKS only, no browser
-./run-conformance.sh basic    # the authorization code flow, ~35 modules
+./conformance/run-conformance.sh          # both plans
+./conformance/run-conformance.sh config   # discovery and JWKS only, no browser
+./conformance/run-conformance.sh basic    # the authorization code flow, 35 modules
 ```
 
 Docker and the .NET SDK are the only prerequisites. The first run clones the suite into `suite/`
