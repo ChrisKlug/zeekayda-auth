@@ -16,4 +16,14 @@ The Windows precedent does not generalize: `net10.0-windows` needs no `dotnet wo
 installs none. Check `dotnet workload list` and restore a throwaway project with the candidate TFM
 first.
 
+**Coverage collection is opt-in, never automatic.** The four test projects with a
+`coverage.runsettings` reference it through a `RunSettingsFilePath` gated on
+`Condition="'$(EnableCoverage)' == 'true'"`. A `DataCollector` entry in runsettings enables coverlet
+on its own, so an unconditional reference instruments the output assemblies on *every* `dotnet test`
+— roughly a third of wall time, and two concurrent runs of the same project overwrite each other's
+instrumented DLLs and fail with `BadImageFormatException`. Anything that wants coverage asks for it
+explicitly: CI's `build-and-test` job passes `-p:EnableCoverage=true`, while `coverage-regression`
+and the `check-code-coverage` skill pass `--collect` and the `Include` filter on the command line
+and need no MSBuild property at all.
+
 ## Tried, didn't work
