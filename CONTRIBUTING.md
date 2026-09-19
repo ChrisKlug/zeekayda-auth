@@ -313,7 +313,7 @@ Coverage reports are uploaded as build artifacts and can be downloaded from the 
 
 ### Coverage regression check
 
-The `coverage-regression` job protects critical paths from silent coverage drops. It does **not** compare the PR against a committed baseline file. It measures the PR head live, and takes the base-branch side from the coverage artifact that the base branch's own most recent CI run already produced. Both line and branch coverage are gated.
+The `coverage-regression` job protects critical paths from silent coverage drops. It does **not** compare the PR against a committed baseline file. It measures the PR head live, and takes the base-branch side from a coverage artifact the base branch's own CI already produced — the most recent one that is actually usable, which is not always the newest green run (see step 4). Both line and branch coverage are gated.
 
 **How the check works:**
 
