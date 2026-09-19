@@ -7,8 +7,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Time.Testing;
-using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 using ZeeKayDa.Auth.Authorization;
@@ -27,17 +25,23 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 /// The test host maps a logout page written as a real one would be — a GET that reads
 /// <see cref="ILogoutInteraction.GetRequestAsync"/> and a POST that ends in
 /// <see cref="ILogoutInteraction.SignOutAsync"/> — for the tests that configure one, and a probe
-/// that reports whether the encrypted session cookie still authenticates.
+/// that reports whether the encrypted session cookie still authenticates. Two hosts serve the
+/// class: <see cref="EndSessionHostFixture"/> asks through the framework's own confirmation page,
+/// and <see cref="EndSessionLogoutPageHostFixture"/> through the host's logout page.
 /// </remarks>
-public sealed class EndSessionEndpointHostTests : IDisposable
+public sealed class EndSessionEndpointHostTests
+    : IClassFixture<EndSessionHostFixture>,
+      IClassFixture<EndSessionLogoutPageHostFixture>,
+      IClassFixture<FallbackPolicyHostFixture>
 {
+    internal const string LogoutPath = "/account/logout";
+    internal const string SignedOutPath = "/account/signed-out";
+
     private const string EndSessionPath = "/connect/endsession";
     private const string ConfirmPath = "/connect/endsession/confirm";
     private const string TokenPath = "/connect/token";
     private const string LoginPath = "/account/login";
-    private const string LogoutPath = "/account/logout";
     private const string SignOutByLinkPath = "/account/logout/by-link";
-    private const string SignedOutPath = "/account/signed-out";
     private const string SessionProbePath = "/test/session";
     private const string Redirect = "https://test.example.com/callback";
     private const string App = "app";
@@ -54,20 +58,22 @@ public sealed class EndSessionEndpointHostTests : IDisposable
     private const string Verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
     private const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 
-    private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero));
-    private readonly TestWebAppFactory _factory;
+    private readonly EndSessionHostFixture _host;
+    private readonly EndSessionLogoutPageHostFixture _withLogoutPage;
+    private readonly FallbackPolicyHostFixture _fallback;
     private readonly HttpClient _client;
 
-    public EndSessionEndpointHostTests()
+    public EndSessionEndpointHostTests(
+        EndSessionHostFixture host,
+        EndSessionLogoutPageHostFixture withLogoutPage,
+        FallbackPolicyHostFixture fallback)
     {
-        _factory = NewFactory();
-        _client = NewClient(_factory);
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-        _factory.Dispose();
+        _host = host;
+        _withLogoutPage = withLogoutPage;
+        _fallback = fallback;
+        _host.Reset();
+        _withLogoutPage.Reset();
+        _client = _host.NewFlowClient();
     }
 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
@@ -78,11 +84,29 @@ public sealed class EndSessionEndpointHostTests : IDisposable
     public async Task The_endpoint_is_not_served_on_a_host_without_the_code_grant()
     {
         using var factory = new TestWebAppFactory(options => options.GrantTypesSupported = [GrantType.ClientCredentials]);
-        using var client = NewClient(factory);
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com") });
 
         var response = await client.GetAsync(EndSessionPath, Cancellation);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task The_endpoint_and_its_confirmation_page_are_answered_under_a_host_wide_fallback_authorization_policy()
+    {
+        // AllowAnonymous on both routes, proven against a host that 401s anything without it. The
+        // SSO session is not the host's scheme, so the host's policy must not decide who may sign out.
+        var canary = await _fallback.Client.GetAsync("/host-route", Cancellation);
+        canary.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            because: "the canary must prove the fallback policy is actually in force on this host");
+
+        var endSession = await _fallback.Client.GetAsync(EndSessionPath, Cancellation);
+        var confirm = await _fallback.Client.GetAsync(ConfirmPath, Cancellation);
+
+        endSession.StatusCode.Should().Be(HttpStatusCode.OK,
+            because: "with no session to end, the framework's signed-out page is served");
+        confirm.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            because: "with no sign-out to confirm, the handler's own refusal comes back rather than the host's 401");
     }
 
     // ── With a session: the question ──────────────────────────────────────────────────────────────
@@ -90,12 +114,7 @@ public sealed class EndSessionEndpointHostTests : IDisposable
     [Fact]
     public async Task A_confirmation_submitted_twice_to_a_host_page_ends_on_the_hosts_signed_out_page()
     {
-        using var factory = NewFactory(options =>
-        {
-            options.LogoutPath = LogoutPath;
-            options.SignedOutPath = SignedOutPath;
-        });
-        using var client = NewClient(factory);
+        var client = _withLogoutPage.NewFlowClient();
         await SignInAsync(client);
         var asked = await EndSessionAsync(client, new());
         await PostEmptyFormAsync(client, Location(asked));
@@ -177,7 +196,7 @@ public sealed class EndSessionEndpointHostTests : IDisposable
     public async Task A_valid_hint_for_someone_other_than_the_signed_in_user_is_still_asked()
     {
         var idToken = await SignInForIdTokenAsync(_client, TrustedApp, subject: "user-1");
-        using var otherBrowser = NewClient(_factory);
+        var otherBrowser = _host.NewFlowClient();
         await SignInAsync(otherBrowser, TrustedApp, subject: "user-2");
 
         var asked = await EndSessionAsync(otherBrowser, new() { ["id_token_hint"] = idToken });
@@ -225,8 +244,7 @@ public sealed class EndSessionEndpointHostTests : IDisposable
     [Fact]
     public async Task A_host_logout_page_reads_the_client_and_completes_the_sign_out()
     {
-        using var factory = NewFactory(options => options.LogoutPath = LogoutPath);
-        using var client = NewClient(factory);
+        var client = _withLogoutPage.NewFlowClient();
         await SignInAsync(client);
 
         var asked = await EndSessionAsync(client, new()
@@ -255,8 +273,7 @@ public sealed class EndSessionEndpointHostTests : IDisposable
     [Fact]
     public async Task A_host_logout_page_reached_for_a_sign_out_naming_no_client_is_given_none()
     {
-        using var factory = NewFactory(options => options.LogoutPath = LogoutPath);
-        using var client = NewClient(factory);
+        var client = _withLogoutPage.NewFlowClient();
         await SignInAsync(client);
         var asked = await EndSessionAsync(client, new());
 
@@ -273,8 +290,7 @@ public sealed class EndSessionEndpointHostTests : IDisposable
     [Fact]
     public async Task A_host_logout_page_is_told_which_user_is_being_signed_out()
     {
-        using var factory = NewFactory(options => options.LogoutPath = LogoutPath);
-        using var client = NewClient(factory);
+        var client = _withLogoutPage.NewFlowClient();
         await SignInAsync(client, subject: "user-7");
         var asked = await EndSessionAsync(client, new() { ["client_id"] = App });
 
@@ -293,8 +309,7 @@ public sealed class EndSessionEndpointHostTests : IDisposable
         // The sign-out carries the subject it was started for. A confirmation left open across a
         // fresh sign-in must not hand the new user the previous one's identifier — the binding
         // cookie survives a sign-in, so nothing but the session check refuses this.
-        using var factory = NewFactory(options => options.LogoutPath = LogoutPath);
-        using var client = NewClient(factory);
+        var client = _withLogoutPage.NewFlowClient();
         await SignInAsync(client, subject: "user-7");
         var asked = await EndSessionAsync(client, new() { ["client_id"] = App });
 
@@ -308,8 +323,7 @@ public sealed class EndSessionEndpointHostTests : IDisposable
     [Fact]
     public async Task A_host_with_its_own_logout_page_serves_no_framework_confirmation_route()
     {
-        using var factory = NewFactory(options => options.LogoutPath = LogoutPath);
-        using var client = NewClient(factory);
+        var client = _withLogoutPage.NewFlowClient();
 
         var response = await client.GetAsync(ConfirmPath, Cancellation);
 
@@ -322,8 +336,7 @@ public sealed class EndSessionEndpointHostTests : IDisposable
         // The framework reaches the logout page with a GET. A page that signed out in its render
         // handler would end the session the moment the user arrived, which is what the question
         // exists to prevent.
-        using var factory = NewFactory(options => options.LogoutPath = LogoutPath);
-        using var client = NewClient(factory);
+        var client = _withLogoutPage.NewFlowClient();
         await SignInAsync(client);
         var asked = await EndSessionAsync(client, new());
 
@@ -338,8 +351,7 @@ public sealed class EndSessionEndpointHostTests : IDisposable
     [Fact]
     public async Task GetRequestAsync_without_a_sign_out_to_confirm_throws()
     {
-        using var factory = NewFactory(options => options.LogoutPath = LogoutPath);
-        using var client = NewClient(factory);
+        var client = _withLogoutPage.NewFlowClient();
 
         var read = async () => await client.GetAsync(LogoutPath, Cancellation);
 
@@ -348,36 +360,26 @@ public sealed class EndSessionEndpointHostTests : IDisposable
 
     // ── Host and helpers ──────────────────────────────────────────────────────────────────────────
 
-    private TestWebAppFactory NewFactory(Action<EndSessionEndpointOptions>? configure = null) => new(
-        configureOptions: options => configure?.Invoke(options.EndSessionEndpoint),
-        configureBuilder: builder =>
-        {
-            builder.Services.AddSingleton<TimeProvider>(_time);
-
-            builder.AddInMemoryClients(clients => clients
-                .AddPublic(App, [Redirect], [AppSignedOut], ["openid"], client =>
-                {
-                    client.RequireConsent = false;
-                    client.DisplayName = AppName;
-                })
-                .AddPublic(TrustedApp, [Redirect], [TrustedSignedOut], ["openid"], client =>
-                {
-                    client.RequireConsent = false;
-                    client.SkipLogoutConfirmation = true;
-                })
-                .AddPublic(OtherApp, [Redirect], [OtherSignedOut], ["openid"], client => client.RequireConsent = false));
-        },
-        mapEndpoints: MapHostPages);
-
-    private static HttpClient NewClient(TestWebAppFactory factory, bool handleCookies = true) => factory.CreateClient(new()
-    {
-        BaseAddress = new Uri("https://test.example.com"),
-        AllowAutoRedirect = false,
-        HandleCookies = handleCookies,
-    });
+    /// <summary>
+    /// The clients these tests sign in to: one that asks before signing out, one that opted out of
+    /// the question, and one more whose redirect URI the others must not be able to use.
+    /// </summary>
+    internal static void AddClients(ZeeKayDaAuthBuilder builder) =>
+        builder.AddInMemoryClients(clients => clients
+            .AddPublic(App, [Redirect], [AppSignedOut], ["openid"], client =>
+            {
+                client.RequireConsent = false;
+                client.DisplayName = AppName;
+            })
+            .AddPublic(TrustedApp, [Redirect], [TrustedSignedOut], ["openid"], client =>
+            {
+                client.RequireConsent = false;
+                client.SkipLogoutConfirmation = true;
+            })
+            .AddPublic(OtherApp, [Redirect], [OtherSignedOut], ["openid"], client => client.RequireConsent = false));
 
     /// <summary>The host's pages: sign-in, a logout page, a miswired logout link, and a session probe.</summary>
-    private static void MapHostPages(IEndpointRouteBuilder endpoints)
+    internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
         {

@@ -1,10 +1,12 @@
 using System.Net;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
+using ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Providers;
 
@@ -174,6 +176,23 @@ public sealed class FallbackPolicyHostFixture : SharedHostFixture
 }
 
 /// <summary>
+/// The default issuer with one external provider registered, so the host maps every route the
+/// framework can serve — the resume route and the provider callback included, which a host without
+/// providers leaves unmapped.
+/// </summary>
+public sealed class EveryRouteHostFixture : SharedHostFixture
+{
+    /// <inheritdoc/>
+    protected override string DefaultBaseAddress => "https://test.example.com";
+
+    /// <inheritdoc/>
+    protected override WebApplicationFactory<TestWebAppFactory> CreateFactory()
+        => new TestWebAppFactory(
+            configureBuilder: builder => builder.WithProviders(
+                auth => auth.AddOAuth("acme", "Acme", ProviderTestHost.ConfigureAcme)));
+}
+
+/// <summary>
 /// A loopback host with <c>AllowInsecureIssuer</c>, issuer <c>http://localhost:5000</c>, for the
 /// tests that prove plain HTTP is served to loopback and refused to anything else.
 /// </summary>
@@ -307,9 +326,9 @@ public abstract class FlowHostFixture : SharedHostFixture
 /// A provider challenge hands the browser off to <c>https://acme.example.net</c> — a host outside
 /// this app the test never runs a request against, because the round trip's assertions read the
 /// challenge, callback and resume responses one hop at a time rather than following where they
-/// point. <see cref="NewFlowClient"/> is what a round-trip test takes instead of the inherited
-/// <see cref="SharedHostFixture.NewClient"/>, and <see cref="NewClientWithoutCookies"/> covers the
-/// tests proving a stray or cross-browser request without the binding cookie is refused.
+/// point. <see cref="FlowHostFixture.NewFlowClient"/> is what a round-trip test takes instead of the
+/// inherited <see cref="SharedHostFixture.NewClient"/>, and <c>NewFlowClient(handleCookies: false)</c>
+/// covers the tests proving a stray or cross-browser request without the binding cookie is refused.
 /// </remarks>
 public sealed class ProviderRoundTripHostFixture : FlowHostFixture
 {
@@ -505,16 +524,6 @@ public sealed class ProviderSignInHostFixture : FlowHostFixture
             mapEndpoints: ProviderTestHost.MapHostPages);
 
     /// <summary>
-    /// A client that does not follow redirects and keeps its own cookie jar — this class's tests
-    /// read a redirect response itself (status, <c>Location</c>, cookies) and the query parameters
-    /// a relative <c>Location</c> carries, so the base <see cref="SharedHostFixture.NewClient"/>'s
-    /// default <c>WebApplicationFactoryClientOptions</c>, which follows redirects, would answer with
-    /// the followed page instead of the response under test.
-    /// </summary>
-    /// <param name="baseAddress">The base address the client should send to, defaulting to this host's.</param>
-    /// <returns>A fresh client. The caller disposes it.</returns>
-
-    /// <summary>
     /// Returns the clock and log to their starting state and clears <see cref="OnProviderSignIn"/>,
     /// so a test that sets no callback does not inherit the previous test's.
     /// </summary>
@@ -523,4 +532,82 @@ public sealed class ProviderSignInHostFixture : FlowHostFixture
         base.Reset();
         OnProviderSignIn = null;
     }
+}
+
+/// <summary>
+/// The host shared by the <see cref="EndSessionEndpointHostTests"/> cases that sign out through the
+/// framework's own confirmation page: the default issuer, the clients that class registers, and the
+/// pages it maps.
+/// </summary>
+public sealed class EndSessionHostFixture : FlowHostFixture
+{
+    /// <inheritdoc/>
+    protected override DateTimeOffset StartTime => new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+
+    /// <inheritdoc/>
+    protected override string DefaultBaseAddress => "https://test.example.com";
+
+    /// <inheritdoc/>
+    protected override WebApplicationFactory<TestWebAppFactory> CreateFactory()
+        => new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                AddTestDoubles(builder);
+                EndSessionEndpointHostTests.AddClients(builder);
+            },
+            mapEndpoints: EndSessionEndpointHostTests.MapHostPages);
+}
+
+/// <summary>
+/// The same host as <see cref="EndSessionHostFixture"/>, configured with a logout page and a
+/// signed-out page of the host's own — shared by the <see cref="EndSessionEndpointHostTests"/> cases
+/// that sign out through a host-authored page.
+/// </summary>
+public sealed class EndSessionLogoutPageHostFixture : FlowHostFixture
+{
+    /// <inheritdoc/>
+    protected override DateTimeOffset StartTime => new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+
+    /// <inheritdoc/>
+    protected override string DefaultBaseAddress => "https://test.example.com";
+
+    /// <inheritdoc/>
+    protected override WebApplicationFactory<TestWebAppFactory> CreateFactory()
+        => new TestWebAppFactory(
+            configureOptions: options =>
+            {
+                options.EndSessionEndpoint.LogoutPath = EndSessionEndpointHostTests.LogoutPath;
+                options.EndSessionEndpoint.SignedOutPath = EndSessionEndpointHostTests.SignedOutPath;
+            },
+            configureBuilder: builder =>
+            {
+                AddTestDoubles(builder);
+                EndSessionEndpointHostTests.AddClients(builder);
+            },
+            mapEndpoints: EndSessionEndpointHostTests.MapHostPages);
+}
+
+/// <summary>
+/// The host shared by <see cref="MvcTerminalInteractionTests"/>: Razor Pages and controllers mapped
+/// beside the framework, and one <c>acme</c> provider for the page that challenges it.
+/// </summary>
+public sealed class MvcTerminalHostFixture : SharedHostFixture
+{
+    /// <inheritdoc/>
+    protected override string DefaultBaseAddress => "https://test.example.com";
+
+    /// <inheritdoc/>
+    protected override WebApplicationFactory<TestWebAppFactory> CreateFactory()
+        => new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.Services.AddRazorPages();
+                builder.Services.AddControllers();
+                builder.WithProviders(auth => auth.AddOAuth("acme", "Acme", ProviderTestHost.ConfigureAcme));
+            },
+            mapEndpoints: endpoints =>
+            {
+                endpoints.MapRazorPages();
+                endpoints.MapControllers();
+            });
 }
