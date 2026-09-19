@@ -53,8 +53,8 @@ and resource-owner password credentials are not merely disabled — they have no
 
 **`nonce` is optional, because `response_type=code` is the only response type** and OIDC Core
 §3.1.2.1 makes it optional there. One that is sent reaches the ID token's `nonce` claim (§3.1.3.7);
-one sent empty is refused with `invalid_request`. **`iss` is returned on every authorization
-response**, unconditionally, as mix-up-attack mitigation (RFC 9207, RFC 9700 §4.4).
+one sent without a value is treated as omitted (RFC 6749 §3.1). **`iss` is returned on every
+authorization response**, unconditionally, as mix-up-attack mitigation (RFC 9207, RFC 9700 §4.4).
 
 **`prompt=none` never renders interactive UI** (OIDC Core §3.1.2.1) — login or consent inside a
 relying party's silent-auth iframe is a clickjacking vector. It succeeds only against an existing

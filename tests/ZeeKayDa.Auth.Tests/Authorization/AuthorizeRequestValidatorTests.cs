@@ -382,15 +382,16 @@ public class AuthorizeRequestValidatorTests
     }
 
     [Fact]
-    public async Task Phase2_empty_nonce_is_invalid_request()
+    public async Task An_empty_nonce_is_treated_as_omitted()
     {
+        // RFC 6749 §3.1: a parameter sent without a value is treated as omitted.
         var parameters = ValidParameters();
         parameters["nonce"] = [""];
 
         var result = await Validate(parameters);
 
-        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
-            .Subject.Error.Should().Be("invalid_request");
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>()
+            .Subject.Request.Nonce.Should().BeNull();
     }
 
     [Theory]

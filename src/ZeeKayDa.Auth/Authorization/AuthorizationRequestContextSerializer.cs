@@ -178,7 +178,7 @@ internal static class AuthorizationRequestContextSerializer
     /// Rejects a decoded context missing a value the validator guarantees. The payload is
     /// encrypted, so this is not a defence against a forged one — it is a floor under what the
     /// rest of the flow may be handed if this format is ever written wrongly. The <c>nonce</c> is
-    /// optional, but the validator never lets an empty one through, so an empty one is refused.
+    /// optional, but the validator reads an empty one as absent, so an empty one is refused.
     /// </summary>
     private static bool IsComplete(AuthorizationRequestContext context) =>
         !string.IsNullOrEmpty(context.Id) &&

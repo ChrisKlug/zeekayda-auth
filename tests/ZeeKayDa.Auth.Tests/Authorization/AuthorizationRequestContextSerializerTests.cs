@@ -74,7 +74,7 @@ public class AuthorizationRequestContextSerializerTests
     [Fact]
     public void Context_with_an_empty_nonce_is_refused()
     {
-        // The validator refuses an empty nonce, so a context carrying one was not written by it.
+        // The validator reads an empty nonce as absent, so a context carrying one was not written by it.
         var payload = AuthorizationRequestContextSerializer.Encode(MinimalContext() with { Nonce = "" });
 
         AuthorizationRequestContextSerializer.TryDecode(payload, out var decoded).Should().BeFalse();

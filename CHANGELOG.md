@@ -588,9 +588,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
   OIDC Core §3.1.2.1 makes `nonce` optional for `response_type=code`, the only response type the
   authorize endpoint accepts, and a request without one is now issued a code; its ID token carries
-  no `nonce` claim. A `nonce` sent empty is still refused with `invalid_request`. The interaction
-  context's wire format is versioned up, so a context minted before an upgrade is refused rather
-  than misread.
+  no `nonce` claim. A `nonce` sent without a value is treated as omitted (RFC 6749 §3.1). The
+  interaction context's wire format is versioned up, so a context minted before an upgrade is
+  refused rather than misread.
 
 - **Per-process stores in Development log at `Information`, not `Warning`** (#677)
 
