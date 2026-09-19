@@ -1,21 +1,14 @@
 using System.Buffers.Text;
 using System.Net;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
-using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
+using ZeeKayDa.Auth.AspNetCore.Tokens;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Extensions;
@@ -25,11 +18,14 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 
 /// <summary>
-/// Integration tests for the token endpoint: a code obtained through the real authorization
-/// flow is exchanged over HTTP, and what comes back is verified against the JWKS the same host
-/// serves. The security decisions here — PKCE for every client not permitted to rely on the nonce
-/// instead, a burnt code on any binding failure, a replay revoking its family — are recorded by
-/// the tests that prove them.
+/// The token endpoint's own behaviour, host-free: a code seeded directly into the authorization
+/// code store — the way the authorization endpoint's own issuance would have left it — is
+/// exchanged through <see cref="TokenRequestHandler"/> directly, and what comes back is verified
+/// against the JWKS the same container serves. The security decisions here — PKCE for every
+/// client not permitted to rely on the nonce instead, a burnt code on any binding failure, a
+/// replay revoking its family — are recorded by the tests that prove them. Route registration,
+/// the 405 for a wrong method, and <c>AllowAnonymous</c> surviving a host-wide fallback
+/// authorization policy need a real host and live in <see cref="TokenEndpointHostTests"/>.
 /// </summary>
 public sealed class TokenEndpointTests : IDisposable
 {
@@ -37,8 +33,6 @@ public sealed class TokenEndpointTests : IDisposable
     private const string JwksPath = "/connect/jwks";
     private const string Issuer = "https://test.example.com";
     private const string RegisteredRedirect = "https://test.example.com/callback";
-    private const string LoginPath = "/account/login";
-    private const string ConsentPath = FlowAssertions.ConsentPath;
     private const string PublicClient = "public-client";
     private const string ConfidentialClient = "confidential-client";
     private const string ConfidentialSecret = "very-secret";
@@ -47,6 +41,11 @@ public sealed class TokenEndpointTests : IDisposable
     private const string NoncePkceClient = "nonce-instead-of-pkce-client";
     private const string NoncePkceSecret = "also-very-secret";
     private const string Nonce = "n-0S6_WzA2Mj";
+    private const string Subject = "user-1";
+
+    // The lifetime every seeded code carries, standing in for the authorization endpoint's own
+    // AuthorizationCodeLifetime default (RFC 6749 §4.1.2 guidance recommends a short one).
+    private static readonly TimeSpan CodeLifetime = TimeSpan.FromSeconds(60);
 
     // RFC 7636 Appendix B.
     private const string Verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
@@ -59,29 +58,19 @@ public sealed class TokenEndpointTests : IDisposable
     private readonly CapturingLoggerProvider _logs = new();
     private readonly RecordingRefreshTokenStore _refreshTokens = new();
     private readonly SwitchableBackingStore _backingStore = new();
-    private readonly TestWebAppFactory _factory;
-    private readonly HttpClient _client;
+    private readonly EndpointHost _host;
 
     public TokenEndpointTests()
     {
-        _factory = NewFactory();
-        _client = NewClient(_factory);
+        _host = NewHost();
     }
 
-    public void Dispose()
-    {
-        _client.Dispose();
-        _factory.Dispose();
-    }
+    public void Dispose() => _host.Dispose();
 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
-    private TestWebAppFactory NewFactory(Action<AuthorizationServerOptions>? configureOptions = null) => new(
-        configureOptions: options =>
-        {
-            options.AuthorizationEndpoint.AuthorizationCodeLifetime = TimeSpan.FromSeconds(60);
-            configureOptions?.Invoke(options);
-        },
+    private EndpointHost NewHost(Action<AuthorizationServerOptions>? configureOptions = null) => new(
+        configureOptions: configureOptions,
         configureBuilder: builder =>
         {
             builder.Services.AddSingleton<TimeProvider>(_time);
@@ -93,14 +82,13 @@ public sealed class TokenEndpointTests : IDisposable
                 .Add(NoncePkceRegistration())
                 .AddPublic(OtherClient, ["https://other.example.com/callback"], [], ["openid"]));
 
-            // The interaction and code stores are the framework's; the refresh-token store is
-            // a recorder, so a replay's family revocation is observable.
+            // The interaction store is required by startup for a host serving the code grant, even
+            // though these tests never drive an interaction: a code arrives here already seeded.
             builder.AddInMemoryInteractionStore(allowOutsideDevelopment: true);
             builder.AddAuthorizationCodeStore<SwitchableBackingStore>();
             builder.Services.AddSingleton<IAuthorizationCodeBackingStore>(_backingStore);
             builder.Services.AddSingleton<IRefreshTokenStore>(_refreshTokens);
-        },
-        mapEndpoints: MapHostPages);
+        });
 
     /// <summary>A first-party public client: no consent, so sign-in ends the flow with a code.</summary>
     private static ClientRegistration PublicRegistration() =>
@@ -125,98 +113,46 @@ public sealed class TokenEndpointTests : IDisposable
         return new Pbkdf2ClientSecret(600_000, salt, Rfc2898DeriveBytes.Pbkdf2(secret, salt, 600_000, HashAlgorithmName.SHA256, 32));
     }
 
-    private static HttpClient NewClient(WebApplicationFactory<TestWebAppFactory> factory) => factory.CreateClient(new()
-    {
-        BaseAddress = new Uri(Issuer),
-        AllowAutoRedirect = false,
-        HandleCookies = true,
-    });
-
-    private static void MapHostPages(IEndpointRouteBuilder endpoints)
-    {
-        endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
-        {
-            var form = await context.Request.ReadFormAsync(context.RequestAborted);
-            var subject = form["sub"].FirstOrDefault() ?? "user-1";
-
-            await login.SignInAsync(
-                new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", subject)], "test")),
-                AuthenticationMethods.Password);
-        });
-
-        endpoints.MapPost(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
-        {
-            var form = await context.Request.ReadFormAsync(context.RequestAborted);
-            await consent.GrantAsync(form["scope"].Select(scope => scope ?? string.Empty));
-        });
-    }
-
-    // ── Driving the authorization flow to a code ──────────────────────────────────────────────
-
-    private static Dictionary<string, string?> AuthorizeQuery(string clientId = PublicClient, string scope = "openid profile", bool pkce = true)
-    {
-        var query = new Dictionary<string, string?>
-        {
-            ["client_id"] = clientId,
-            ["redirect_uri"] = RegisteredRedirect,
-            ["response_type"] = "code",
-            ["scope"] = scope,
-            ["nonce"] = Nonce,
-        };
-
-        if (pkce)
-        {
-            query["code_challenge"] = Challenge;
-            query["code_challenge_method"] = "S256";
-        }
-
-        return query;
-    }
-
-    private static string InteractionIdFrom(HttpResponseMessage response)
-    {
-        var location = response.Headers.Location!.OriginalString;
-        return QueryHelpers.ParseQuery(location[location.IndexOf('?')..])[InteractionHandoff.InteractionIdParameter]!;
-    }
-
-    private static FormUrlEncodedContent Form(params (string Key, string Value)[] fields) =>
-        new(fields.Select(field => KeyValuePair.Create(field.Key, field.Value)));
+    // ── Seeding a code directly into the store ───────────────────────────────────────────────
 
     /// <summary>
-    /// Authorize and follow the flow to a code: sign in when the host asks, consent when the
-    /// client asks. A browser that already holds an SSO session is handed the code straight away.
+    /// Stores an authorization code entry exactly as the authorization endpoint's own issuance
+    /// would have left it, without driving the authorize/login/consent flow that produced it —
+    /// the token endpoint's behaviour is what these tests prove, not how a code comes to exist.
     /// </summary>
-    private Task<string> ObtainCodeAsync(string clientId = PublicClient, string scope = "openid profile", bool pkce = true) =>
-        ObtainCodeWithAsync(_client, clientId, scope, pkce);
+    private Task<string> SeedCodeAsync(string clientId = PublicClient, string scope = "openid profile", bool pkce = true) =>
+        SeedCodeWithAsync(_host, clientId, scope, pkce);
 
-    private static async Task<string> ObtainCodeWithAsync(HttpClient client, string clientId = PublicClient, string scope = "openid profile", bool pkce = true)
+    private static async Task<string> SeedCodeWithAsync(
+        EndpointHost host,
+        string clientId = PublicClient,
+        string scope = "openid profile",
+        bool pkce = true,
+        string redirectUri = RegisteredRedirect,
+        string sub = Subject)
     {
-        var response = await client.GetAsync(QueryHelpers.AddQueryString("/connect/authorize", AuthorizeQuery(clientId, scope, pkce)), Cancellation);
-        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        await host.EnsureStartedAsync();
 
-        if (IsHandoffTo(response, LoginPath))
+        var code = StoreKeyGenerator.Generate();
+        var entry = new AuthorizationCodeEntry
         {
-            using var login = Form(("sub", "user-1"));
-            response = await client.PostAsync(
-                QueryHelpers.AddQueryString(LoginPath, InteractionHandoff.InteractionIdParameter, InteractionIdFrom(response)),
-                login,
-                Cancellation);
-        }
+            ClientId = clientId,
+            RedirectUri = redirectUri,
+            Pkce = pkce ? new PkceChallenge(Challenge, CodeChallengeMethod.S256) : null,
+            Sub = sub,
+            Scope = scope.Split(' ', StringSplitOptions.RemoveEmptyEntries),
+            Nonce = Nonce,
+            AuthTime = Now,
+            Amr = [AuthenticationMethods.Password],
+            SsoSessionId = StoreKeyGenerator.Generate(),
+            InteractionId = StoreKeyGenerator.Generate(),
+            IssuedAt = Now,
+            ExpiresAt = Now + CodeLifetime,
+        };
 
-        if (IsHandoffTo(response, ConsentPath))
-        {
-            using var grant = Form([.. scope.Split(' ').Select(s => ("scope", s))]);
-            response = await client.PostAsync(
-                QueryHelpers.AddQueryString(ConsentPath, InteractionHandoff.InteractionIdParameter, InteractionIdFrom(response)),
-                grant,
-                Cancellation);
-        }
-
-        return response.ShouldHaveIssuedCodeTo(RegisteredRedirect);
+        await host.Resolve<IAuthorizationCodeStore>().StoreAsync(code, entry, Cancellation);
+        return code;
     }
-
-    private static bool IsHandoffTo(HttpResponseMessage response, string path) =>
-        response.Headers.Location!.OriginalString.StartsWith(path, StringComparison.Ordinal);
 
     // ── The token request ─────────────────────────────────────────────────────────────────────
 
@@ -229,8 +165,8 @@ public sealed class TokenEndpointTests : IDisposable
         ["code_verifier"] = verifier,
     };
 
-    private Task<HttpResponseMessage> PostTokenAsync(Dictionary<string, string> form, (string Id, string Secret)? basic = null) =>
-        PostTokenAsync(form.Select(field => KeyValuePair.Create(field.Key, field.Value)), basic);
+    private Task<HttpResponseMessage> PostTokenAsync(IEnumerable<KeyValuePair<string, string>> fields, (string Id, string Secret)? basic = null) =>
+        PostTokenWithAsync(_host, fields, basic);
 
     /// <summary>The client permitted to omit PKCE exchanges <paramref name="code"/>, authenticating with its secret, with or without a verifier.</summary>
     private Task<HttpResponseMessage> PostTokenAsNoncePkceClientAsync(string code, string? verifier)
@@ -246,22 +182,23 @@ public sealed class TokenEndpointTests : IDisposable
         return PostTokenAsync(form, basic: (NoncePkceClient, NoncePkceSecret));
     }
 
-    private async Task<HttpResponseMessage> PostTokenAsync(IEnumerable<KeyValuePair<string, string>> fields, (string Id, string Secret)? basic = null)
+    private static Task<HttpResponseMessage> PostTokenWithAsync(
+        EndpointHost host, IEnumerable<KeyValuePair<string, string>> fields, (string Id, string Secret)? basic = null)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, TokenPath)
-        {
-            Content = new FormUrlEncodedContent(fields),
-        };
+        var request = host.Post(TokenPath).WithForm(fields);
 
         if (basic is { } credentials)
         {
-            request.Headers.Authorization = new AuthenticationHeaderValue(
-                "Basic",
-                Convert.ToBase64String(Encoding.UTF8.GetBytes($"{credentials.Id}:{credentials.Secret}")));
+            request.WithHeader(
+                "Authorization",
+                "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{credentials.Id}:{credentials.Secret}")));
         }
 
-        return await _client.SendAsync(request, Cancellation);
+        return host.InvokeAsync<TokenRequestHandler>(h => h.HandleAsync, request);
     }
+
+    private static Task<HttpResponseMessage> PostRawAsync(EndpointHost host, string body, string contentType) =>
+        host.InvokeAsync<TokenRequestHandler>(h => h.HandleAsync, host.Post(TokenPath).WithBody(body, contentType));
 
     private static async Task<JsonElement> ReadJsonAsync(HttpResponseMessage response)
     {
@@ -271,9 +208,13 @@ public sealed class TokenEndpointTests : IDisposable
 
     private static async Task ShouldBeErrorAsync(HttpResponseMessage response, string error, HttpStatusCode status = HttpStatusCode.BadRequest)
     {
-        response.StatusCode.Should().Be(status);
+        // The body is read before the status is asserted so a wrong status reports what the endpoint
+        // actually said, rather than leaving the reader to guess which error it was.
+        var raw = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(status, because: "the endpoint answered with {0}", raw);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
-        var body = await ReadJsonAsync(response);
+        var body = JsonDocument.Parse(raw).RootElement;
         body.GetProperty("error").GetString().Should().Be(error);
         body.GetProperty("error_description").GetString().Should().NotBeNullOrEmpty();
     }
@@ -294,8 +235,10 @@ public sealed class TokenEndpointTests : IDisposable
         parts.Should().HaveCount(3, "a compact JWS has three segments");
         var kid = Header(jwt).GetProperty("kid").GetString();
 
-        var jwks = await _client.GetFromJsonAsync<JsonDocument>(JwksPath, Cancellation);
-        var jwk = jwks!.RootElement.GetProperty("keys").EnumerateArray()
+        using var jwksResponse = await _host.InvokeAsync<JwksEndpoint>(e => e.Handle, _host.Get(JwksPath));
+        var jwksBody = await jwksResponse.Content.ReadAsStringAsync(Cancellation);
+        var jwks = JsonDocument.Parse(jwksBody);
+        var jwk = jwks.RootElement.GetProperty("keys").EnumerateArray()
             .Single(key => key.GetProperty("kid").GetString() == kid);
 
         using var rsa = RSA.Create(new RSAParameters
@@ -331,7 +274,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_valid_exchange_answers_with_an_access_token_and_an_ID_token()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
 
         var response = await PostTokenAsync(TokenForm(code));
 
@@ -349,7 +292,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_token_response_is_never_cacheable()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
 
         var response = await PostTokenAsync(TokenForm(code));
 
@@ -360,7 +303,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task The_access_token_is_a_JWT_carrying_the_grant_and_verifiable_against_the_served_JWKS()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
 
         var body = await ReadJsonAsync(await PostTokenAsync(TokenForm(code)));
 
@@ -385,7 +328,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task The_ID_token_is_a_JWT_carrying_the_request_binding_and_verifiable_against_the_served_JWKS()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
 
         var body = await ReadJsonAsync(await PostTokenAsync(TokenForm(code)));
 
@@ -407,8 +350,8 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task Two_exchanges_mint_distinct_jti_values()
     {
-        var first = Claims((await ReadJsonAsync(await PostTokenAsync(TokenForm(await ObtainCodeAsync())))).GetProperty("access_token").GetString()!);
-        var second = Claims((await ReadJsonAsync(await PostTokenAsync(TokenForm(await ObtainCodeAsync())))).GetProperty("access_token").GetString()!);
+        var first = Claims((await ReadJsonAsync(await PostTokenAsync(TokenForm(await SeedCodeAsync())))).GetProperty("access_token").GetString()!);
+        var second = Claims((await ReadJsonAsync(await PostTokenAsync(TokenForm(await SeedCodeAsync())))).GetProperty("access_token").GetString()!);
 
         first.GetProperty("jti").GetString().Should().NotBe(second.GetProperty("jti").GetString());
     }
@@ -416,7 +359,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_confidential_client_authenticates_with_client_secret_basic()
     {
-        var code = await ObtainCodeAsync(ConfidentialClient);
+        var code = await SeedCodeAsync(ConfidentialClient);
         var form = TokenForm(code, ConfidentialClient);
         form.Remove("client_id");
 
@@ -431,7 +374,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task The_ID_token_is_bound_to_the_access_token_by_at_hash()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
 
         var body = await ReadJsonAsync(await PostTokenAsync(TokenForm(code)));
 
@@ -445,12 +388,12 @@ public sealed class TokenEndpointTests : IDisposable
     }
 
     [Fact]
-    public void A_client_pinned_to_an_algorithm_the_current_key_does_not_use_fails_startup()
+    public async Task A_client_pinned_to_an_algorithm_the_current_key_does_not_use_fails_startup()
     {
         // ES256 is published as the next key, so the subset rule passes; the key that signs is
         // RS256, and a client that will accept only ES256 could never be issued an ID token.
         using var keys = new RsaCurrentEcNextKeySource();
-        using var factory = new TestWebAppFactory(
+        using var host = new EndpointHost(
             configureBuilder: builder =>
             {
                 builder.AddInMemoryClients(clients => clients.Add(PublicRegistration() with
@@ -460,9 +403,11 @@ public sealed class TokenEndpointTests : IDisposable
                 builder.Services.AddZeeKayDaSigningKeySource(_ => keys);
             });
 
-        var act = () => factory.CreateClient();
+        var failure = await host.StartupFailureAsync();
 
-        act.Should().Throw<Exception>().WithMessage("*excludes_signing_key*RS256*", "the validator requires the current signing key's algorithm in the set");
+        var messages = failure.AllMessages();
+        messages.Should().Contain("excludes_signing_key");
+        messages.Should().Contain("RS256", "the validator requires the current signing key's algorithm in the set");
     }
 
     [Fact]
@@ -473,7 +418,7 @@ public sealed class TokenEndpointTests : IDisposable
         // access tokens is never handed one whose ID token will be refused.
         var ring = new SwitchableRing(_time);
         var accessTokens = new CountingAccessTokenIssuer();
-        using var factory = new TestWebAppFactory(
+        using var host = new EndpointHost(
             configureBuilder: builder =>
             {
                 builder.Services.AddSingleton<TimeProvider>(_time);
@@ -484,13 +429,19 @@ public sealed class TokenEndpointTests : IDisposable
                 }));
                 builder.Services.AddSingleton<ISigningKeyRing>(ring);
                 builder.Services.AddKeyedSingleton<ITokenIssuer>(TokenKind.AccessToken, accessTokens);
-            },
-            mapEndpoints: MapHostPages);
-        using var client = NewClient(factory);
-        var code = await ObtainCodeWithAsync(client);
+            });
+        var code = await SeedCodeWithAsync(host);
+
+        // The client is resolved once while the ring still offers RS256, which is what the
+        // authorization request did before the code was issued. ValidatedClientResolver caches its
+        // verdict, so without this the rotation below would make the token request fail client
+        // resolution instead of reaching the signing refusal this test is about.
+        (await host.Resolve<ValidatedClientResolver>().FindByClientIdAsync(PublicClient, Cancellation))
+            .Should().NotBeNull();
+
         ring.SwitchToEs256();
 
-        var response = await PostTokenWithAsync(client, TokenForm(code));
+        var response = await PostTokenWithAsync(host, TokenForm(code));
 
         await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
         accessTokens.IssuedCount.Should().Be(0, "the refusal precedes every issuance");
@@ -508,15 +459,14 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task Server_wide_lifetimes_set_the_expiry_of_both_tokens()
     {
-        using var factory = NewFactory(options =>
+        using var host = NewHost(options =>
         {
             options.TokenEndpoint.AccessTokenLifetime = TimeSpan.FromMinutes(20);
             options.TokenEndpoint.IdTokenLifetime = TimeSpan.FromMinutes(2);
         });
-        using var client = NewClient(factory);
-        var code = await ObtainCodeWithAsync(client);
+        var code = await SeedCodeWithAsync(host);
 
-        var body = await ReadJsonAsync(await PostTokenWithAsync(client, TokenForm(code)));
+        var body = await ReadJsonAsync(await PostTokenWithAsync(host, TokenForm(code)));
 
         body.GetProperty("expires_in").GetInt64().Should().Be(1200);
         Claims(body.GetProperty("access_token").GetString()!).GetProperty("exp").GetInt64().Should().Be(Now.AddMinutes(20).ToUnixTimeSeconds());
@@ -526,7 +476,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_client_override_replaces_the_server_lifetime_for_that_client_only()
     {
-        using var factory = new TestWebAppFactory(
+        using var host = new EndpointHost(
             configureBuilder: builder =>
             {
                 builder.Services.AddSingleton<TimeProvider>(_time);
@@ -535,12 +485,10 @@ public sealed class TokenEndpointTests : IDisposable
                     AccessTokenLifetime = TimeSpan.FromMinutes(30),
                     IdTokenLifetime = TimeSpan.FromMinutes(1),
                 }));
-            },
-            mapEndpoints: MapHostPages);
-        using var client = NewClient(factory);
-        var code = await ObtainCodeWithAsync(client);
+            });
+        var code = await SeedCodeWithAsync(host);
 
-        var body = await ReadJsonAsync(await PostTokenWithAsync(client, TokenForm(code)));
+        var body = await ReadJsonAsync(await PostTokenWithAsync(host, TokenForm(code)));
 
         body.GetProperty("expires_in").GetInt64().Should().Be(1800);
         body.GetProperty("expires_in").GetInt64().Should().NotBe(
@@ -559,18 +507,16 @@ public sealed class TokenEndpointTests : IDisposable
         var repository = new FirstReadThenOtherRepository(
             first: PublicRegistration() with { AccessTokenLifetime = TimeSpan.FromMinutes(30) },
             other: PublicRegistration() with { AccessTokenLifetime = TimeSpan.FromMinutes(20) });
-        using var factory = new TestWebAppFactory(
+        using var host = new EndpointHost(
             configureBuilder: builder =>
             {
                 builder.Services.AddSingleton<TimeProvider>(_time);
                 builder.Services.AddSingleton<IClientRepository>(repository);
-            },
-            mapEndpoints: MapHostPages);
-        using var client = NewClient(factory);
-        var code = await ObtainCodeWithAsync(client);
+            });
+        var code = await SeedCodeWithAsync(host);
         repository.ResetToFirst();
 
-        var body = await ReadJsonAsync(await PostTokenWithAsync(client, TokenForm(code)));
+        var body = await ReadJsonAsync(await PostTokenWithAsync(host, TokenForm(code)));
 
         body.GetProperty("expires_in").GetInt64().Should().Be(1800, "the lifetime comes from the registration the credential was checked against");
         body.GetProperty("expires_in").GetInt64().Should().NotBe(
@@ -584,7 +530,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_request_without_a_code_verifier_is_refused_before_the_code_is_touched_for_a_client_held_to_pkce()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
         var form = TokenForm(code);
         form.Remove("code_verifier");
 
@@ -598,7 +544,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_client_permitted_to_omit_pkce_redeems_a_code_issued_without_a_challenge_with_no_verifier()
     {
-        var code = await ObtainCodeAsync(NoncePkceClient, pkce: false);
+        var code = await SeedCodeAsync(NoncePkceClient, pkce: false);
 
         var response = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
 
@@ -610,7 +556,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task An_empty_code_verifier_is_malformed_not_absent_even_for_a_client_permitted_to_omit_pkce()
     {
-        var code = await ObtainCodeAsync(NoncePkceClient, pkce: false);
+        var code = await SeedCodeAsync(NoncePkceClient, pkce: false);
 
         var refused = await PostTokenAsNoncePkceClientAsync(code, verifier: "");
         var retried = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
@@ -622,7 +568,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_verifier_presented_for_a_code_issued_without_a_challenge_is_refused_and_burns_the_code()
     {
-        var code = await ObtainCodeAsync(NoncePkceClient, pkce: false);
+        var code = await SeedCodeAsync(NoncePkceClient, pkce: false);
 
         var refused = await PostTokenAsNoncePkceClientAsync(code, verifier: Verifier);
         var retried = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
@@ -634,7 +580,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_code_issued_with_a_challenge_to_a_client_permitted_to_omit_pkce_is_refused_without_the_verifier_and_burns()
     {
-        var code = await ObtainCodeAsync(NoncePkceClient);
+        var code = await SeedCodeAsync(NoncePkceClient);
 
         var refused = await PostTokenAsNoncePkceClientAsync(code, verifier: null);
         var retried = await PostTokenAsNoncePkceClientAsync(code, verifier: Verifier);
@@ -646,8 +592,8 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_code_issued_with_a_challenge_to_a_client_permitted_to_omit_pkce_is_verified_like_any_other()
     {
-        var wrong = await PostTokenAsNoncePkceClientAsync(await ObtainCodeAsync(NoncePkceClient), verifier: WrongVerifier);
-        var right = await PostTokenAsNoncePkceClientAsync(await ObtainCodeAsync(NoncePkceClient), verifier: Verifier);
+        var wrong = await PostTokenAsNoncePkceClientAsync(await SeedCodeAsync(NoncePkceClient), verifier: WrongVerifier);
+        var right = await PostTokenAsNoncePkceClientAsync(await SeedCodeAsync(NoncePkceClient), verifier: Verifier);
 
         await ShouldBeErrorAsync(wrong, "invalid_grant");
         right.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -656,7 +602,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_confidential_client_held_to_pkce_is_refused_without_a_code_verifier_before_the_code_is_touched()
     {
-        var code = await ObtainCodeAsync(ConfidentialClient);
+        var code = await SeedCodeAsync(ConfidentialClient);
         var form = TokenForm(code, ConfidentialClient);
         form.Remove("client_id");
         form.Remove("code_verifier");
@@ -676,7 +622,7 @@ public sealed class TokenEndpointTests : IDisposable
     [InlineData("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk=")]
     public async Task A_malformed_code_verifier_is_refused_before_the_code_is_touched(string verifier)
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
 
         var refused = await PostTokenAsync(TokenForm(code, verifier: verifier));
         var retried = await PostTokenAsync(TokenForm(code));
@@ -688,7 +634,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_code_verifier_that_does_not_match_the_challenge_is_refused_and_burns_the_code()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
 
         var refused = await PostTokenAsync(TokenForm(code, verifier: WrongVerifier));
         var retried = await PostTokenAsync(TokenForm(code));
@@ -703,7 +649,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_code_presented_by_another_client_is_refused_and_left_for_its_owner()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
 
         var refused = await PostTokenAsync(TokenForm(code, OtherClient));
         var owner = await PostTokenAsync(TokenForm(code));
@@ -715,7 +661,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_redirect_uri_that_differs_from_the_one_the_code_was_issued_to_is_refused_and_burns_the_code()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
         var form = TokenForm(code);
         form["redirect_uri"] = "https://test.example.com/Callback";
 
@@ -729,7 +675,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_code_is_single_use()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
 
         var first = await PostTokenAsync(TokenForm(code));
         var replay = await PostTokenAsync(TokenForm(code));
@@ -741,7 +687,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_replayed_code_revokes_the_family_its_first_exchange_started()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
 
         await PostTokenAsync(TokenForm(code));
         await PostTokenAsync(TokenForm(code));
@@ -754,8 +700,8 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task Every_code_starts_its_own_family()
     {
-        var first = await ObtainCodeAsync();
-        var second = await ObtainCodeAsync();
+        var first = await SeedCodeAsync();
+        var second = await SeedCodeAsync();
 
         foreach (var code in new[] { first, second })
         {
@@ -769,8 +715,8 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task An_expired_code_is_refused()
     {
-        var code = await ObtainCodeAsync();
-        _time.Advance(TimeSpan.FromSeconds(60) + TimeSpan.FromSeconds(5) + TimeSpan.FromSeconds(1));
+        var code = await SeedCodeAsync();
+        _time.Advance(CodeLifetime + TimeSpan.FromSeconds(5) + TimeSpan.FromSeconds(1));
 
         var response = await PostTokenAsync(TokenForm(code));
 
@@ -813,10 +759,9 @@ public sealed class TokenEndpointTests : IDisposable
     {
         var form = TokenForm(StoreKeyGenerator.Generate());
         form.Remove("client_id");
-        using var request = new HttpRequestMessage(HttpMethod.Post, TokenPath) { Content = new FormUrlEncodedContent(form) };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "not-a-client-credential");
+        var request = _host.Post(TokenPath).WithForm(form).WithHeader("Authorization", "Bearer not-a-client-credential");
 
-        var response = await _client.SendAsync(request, Cancellation);
+        var response = await _host.InvokeAsync<TokenRequestHandler>(h => h.HandleAsync, request);
 
         await ShouldBeErrorAsync(response, "invalid_client", HttpStatusCode.Unauthorized);
         response.Headers.WwwAuthenticate.Should().ContainSingle().Which.Scheme.Should().Be("Bearer", "RFC 6749 §5.2: the challenge matches the scheme the client used");
@@ -826,32 +771,20 @@ public sealed class TokenEndpointTests : IDisposable
     public async Task Two_Authorization_headers_are_refused_as_a_malformed_request_without_a_challenge()
     {
         var form = TokenForm(StoreKeyGenerator.Generate(), ConfidentialClient);
-        using var request = new HttpRequestMessage(HttpMethod.Post, TokenPath) { Content = new FormUrlEncodedContent(form) };
-        request.Headers.TryAddWithoutValidation("Authorization", ["Basic YTpi", "Basic Yzpk"]);
+        var request = _host.Post(TokenPath).WithForm(form)
+            .WithHeader("Authorization", "Basic YTpi")
+            .WithHeader("Authorization", "Basic Yzpk");
 
-        var response = await _client.SendAsync(request, Cancellation);
+        var response = await _host.InvokeAsync<TokenRequestHandler>(h => h.HandleAsync, request);
 
         await ShouldBeErrorAsync(response, "invalid_client");
         response.Headers.WwwAuthenticate.Should().BeEmpty("two headers is not an authentication attempt but a malformed one (RFC 7235 §4.2)");
     }
 
     [Fact]
-    public async Task The_token_endpoint_is_reachable_under_a_host_fallback_authorization_policy()
-    {
-        using var factory = new TestWebAppFactoryWithFallbackAuthorizationPolicy();
-        using var client = NewClient(factory);
-
-        var canary = await client.GetAsync("/host-route", Cancellation);
-        var response = await PostTokenWithAsync(client, TokenForm(StoreKeyGenerator.Generate(), clientId: "test-client"));
-
-        canary.StatusCode.Should().Be(HttpStatusCode.Unauthorized, "the fallback policy is in force on the host's own routes");
-        await ShouldBeErrorAsync(response, "invalid_grant");
-    }
-
-    [Fact]
     public async Task A_confidential_client_without_credentials_is_refused()
     {
-        var code = await ObtainCodeAsync(ConfidentialClient);
+        var code = await SeedCodeAsync(ConfidentialClient);
 
         var response = await PostTokenAsync(TokenForm(code, ConfidentialClient));
 
@@ -896,13 +829,12 @@ public sealed class TokenEndpointTests : IDisposable
         // A code issued before the grant was switched off, or one shared across hosts through a
         // common store, must not be redeemable on a host whose configuration no longer serves it.
         var repository = new FirstReadThenOtherRepository(PublicRegistration(), PublicRegistration());
-        using var factory = new TestWebAppFactory(
+        using var host = new EndpointHost(
             configureOptions: options => options.GrantTypesSupported = [GrantType.ClientCredentials],
             configureBuilder: builder => builder.Services.AddSingleton<IClientRepository>(repository));
-        using var client = NewClient(factory);
         repository.ResetToFirst();
 
-        var response = await PostTokenWithAsync(client, TokenForm(StoreKeyGenerator.Generate()));
+        var response = await PostTokenWithAsync(host, TokenForm(StoreKeyGenerator.Generate()));
 
         await ShouldBeErrorAsync(response, "unsupported_grant_type");
         repository.ReadsSinceReset.Should().Be(0, "the refusal precedes client identification and touches nothing");
@@ -940,12 +872,9 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_multipart_body_is_invalid_request_and_consumes_nothing()
     {
-        var code = await ObtainCodeAsync();
-        using var multipart = new MultipartFormDataContent();
-        foreach (var (key, value) in TokenForm(code))
-            multipart.Add(new StringContent(value), key);
+        var code = await SeedCodeAsync();
 
-        var refused = await _client.PostAsync(TokenPath, multipart, Cancellation);
+        var refused = await PostRawAsync(_host, "irrelevant", "multipart/form-data; boundary=ABC123");
         var retried = await PostTokenAsync(TokenForm(code));
 
         await ShouldBeErrorAsync(refused, "invalid_request");
@@ -967,23 +896,10 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_body_that_is_not_form_encoded_is_invalid_request()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, TokenPath)
-        {
-            Content = new StringContent("{\"grant_type\":\"authorization_code\"}", Encoding.UTF8, "application/json"),
-        };
-
-        var response = await _client.SendAsync(request, Cancellation);
+        var response = await PostRawAsync(_host, "{\"grant_type\":\"authorization_code\"}", "application/json");
 
         await ShouldBeErrorAsync(response, "invalid_request");
         response.Headers.CacheControl!.NoStore.Should().BeTrue("error responses are not cacheable either");
-    }
-
-    [Fact]
-    public async Task The_token_endpoint_answers_POST_only()
-    {
-        var response = await _client.GetAsync(TokenPath, Cancellation);
-
-        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
     }
 
     // ── Faults ────────────────────────────────────────────────────────────────────────────────
@@ -991,7 +907,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_store_failure_during_redemption_is_server_error_and_names_no_material()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
         _backingStore.Fail = true;
 
         var response = await PostTokenAsync(TokenForm(code));
@@ -1004,7 +920,7 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_replay_whose_family_revocation_fails_is_still_refused_and_the_failure_is_logged()
     {
-        var code = await ObtainCodeAsync();
+        var code = await SeedCodeAsync();
         await PostTokenAsync(TokenForm(code));
         _refreshTokens.FailRevocation = true;
 
@@ -1018,30 +934,20 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_signing_failure_is_server_error_and_no_token_leaves()
     {
-        using var factory = new TestWebAppFactory(
+        using var host = new EndpointHost(
             configureBuilder: builder =>
             {
                 builder.Services.AddSingleton<TimeProvider>(_time);
                 builder.AddInMemoryClients(clients => clients.Add(PublicRegistration()));
                 builder.Services.AddKeyedSingleton<ITokenIssuer>(TokenKind.IdToken, new FailingTokenIssuer());
-            },
-            mapEndpoints: MapHostPages);
-        using var client = NewClient(factory);
-        var code = await ObtainCodeWithAsync(client);
+            });
+        var code = await SeedCodeWithAsync(host);
 
-        var response = await PostTokenWithAsync(client, TokenForm(code));
+        var response = await PostTokenWithAsync(host, TokenForm(code));
 
         await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
         var body = await response.Content.ReadAsStringAsync(Cancellation);
         body.Should().NotContain("access_token", "the access token was signed before the ID token failed, and must not leave alone");
-    }
-
-    // ── Helpers for hosts other than the default ──────────────────────────────────────────────
-
-    private static async Task<HttpResponseMessage> PostTokenWithAsync(HttpClient client, Dictionary<string, string> form)
-    {
-        using var content = new FormUrlEncodedContent(form);
-        return await client.PostAsync(TokenPath, content, Cancellation);
     }
 
     // ── Fakes ─────────────────────────────────────────────────────────────────────────────────
@@ -1220,34 +1126,4 @@ public sealed class TokenEndpointTests : IDisposable
     }
 
     /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>
-    private sealed class CapturingLoggerProvider : ILoggerProvider
-    {
-        private readonly List<(string Category, LogLevel Level, string Message)> _entries = [];
-
-        public IReadOnlyList<(string Category, LogLevel Level, string Message)> Entries
-        {
-            get { lock (_entries) return [.. _entries]; }
-        }
-
-        public ILogger CreateLogger(string categoryName) => new Logger(this, categoryName);
-
-        public void Dispose()
-        {
-        }
-
-        private void Add(string category, LogLevel level, string message)
-        {
-            lock (_entries) _entries.Add((category, level, message));
-        }
-
-        private sealed class Logger(CapturingLoggerProvider owner, string category) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-                owner.Add(category, logLevel, formatter(state, exception) + (exception is null ? string.Empty : " " + exception));
-        }
-    }
 }

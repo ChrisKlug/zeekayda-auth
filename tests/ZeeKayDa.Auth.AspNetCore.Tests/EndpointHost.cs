@@ -6,9 +6,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using ZeeKayDa.Auth.Extensions;
+using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
@@ -69,11 +70,13 @@ internal sealed class EndpointHost : IDisposable
             configureOptions?.Invoke(options);
         });
 
-        configureBuilder?.Invoke(authBuilder);
+        // Registered before configureBuilder, as TestWebAppFactory does it, so a test that brings its
+        // own clients gets them *in addition* to test-client rather than instead of it. Registering
+        // this second would silently drop test-client from every such test.
+        authBuilder.AddInMemoryClients(clients =>
+            clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]));
 
-        if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IClientRepository)))
-            authBuilder.AddInMemoryClients(clients =>
-                clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]));
+        configureBuilder?.Invoke(authBuilder);
 
         if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IAuthorizationCodeStore)))
             authBuilder.AddInMemoryStores(allowOutsideDevelopment: true);
@@ -171,6 +174,13 @@ internal sealed class EndpointHost : IDisposable
         await using var scope = _services.CreateAsyncScope();
 
         var context = request.Build(scope.ServiceProvider);
+
+        // A real host's hosting layer stamps this onto every request; a service resolved here
+        // that reaches for the ambient HttpContext through IHttpContextAccessor — rather than
+        // taking it as a handler parameter — would otherwise see none.
+        if (scope.ServiceProvider.GetService<IHttpContextAccessor>() is { } accessor)
+            accessor.HttpContext = context;
+
         var result = await InvokeHandlerAsync(handler(ResolveEndpoint<TEndpoint>()), context, scope.ServiceProvider)
             .ConfigureAwait(false);
 
@@ -304,7 +314,7 @@ internal sealed class TestRequest
 {
     private readonly string _method;
     private readonly string _pathAndQuery;
-    private readonly Dictionary<string, string> _headers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, StringValues> _headers = new(StringComparer.OrdinalIgnoreCase);
 
     private string _host = "test.example.com";
     private string _scheme = "https";
@@ -331,10 +341,17 @@ internal sealed class TestRequest
         return this;
     }
 
-    /// <summary>Adds a request header. A repeated name appends, so a duplicate-header test can set two.</summary>
+    /// <summary>
+    /// Adds a request header value. A repeated name adds a second, distinct value under that
+    /// name — as two literal header lines would — rather than joining them into one comma
+    /// separated string, so a test proving a request with two <c>Authorization</c> headers is
+    /// refused sees the same header count a real request would carry.
+    /// </summary>
     public TestRequest WithHeader(string name, string value)
     {
-        _headers[name] = _headers.TryGetValue(name, out var existing) ? $"{existing},{value}" : value;
+        _headers[name] = _headers.TryGetValue(name, out var existing)
+            ? StringValues.Concat(existing, value)
+            : new StringValues(value);
         return this;
     }
 

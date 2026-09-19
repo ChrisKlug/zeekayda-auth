@@ -1,5 +1,8 @@
 using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 
@@ -73,6 +76,28 @@ public abstract class SharedHostFixture : IDisposable
             _clients.Add(client);
             return client;
         }
+    }
+
+    /// <summary>
+    /// A client with its own cookie jar, for a test whose flow depends on the cookies it sets. Unlike
+    /// <see cref="ClientFor"/> this is never reused, so a session cookie one test establishes cannot
+    /// silently sign the next one in.
+    /// </summary>
+    /// <param name="baseAddress">The base address the client should send to, defaulting to this host's.</param>
+    /// <returns>A fresh client. The fixture disposes it.</returns>
+    public HttpClient NewClient(string? baseAddress = null)
+    {
+        var factory = Factory;
+
+        var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri(baseAddress ?? DefaultBaseAddress),
+        });
+
+        lock (_gate)
+            _clients.Add(client);
+
+        return client;
     }
 
     /// <inheritdoc/>
@@ -158,4 +183,60 @@ public sealed class DefaultHostCollection :
 {
     /// <summary>The collection name to put on a test class with <c>[Collection]</c>.</summary>
     public const string Name = "shared hosts";
+}
+
+/// <summary>
+/// A host shared across one test class whose tests drive a full request flow — login, consent, a code
+/// exchange — together with the mutable test doubles that host was built with: a clock the tests move
+/// and a log they read.
+/// </summary>
+/// <remarks>
+/// <para>
+/// One host per class rather than one per test. xUnit runs the tests within a class sequentially, so
+/// nothing here has to be safe against a concurrent sibling — only against what the previous test
+/// left behind. <see cref="Reset"/> is what clears that, and the test class calls it from its own
+/// constructor, which xUnit runs once per test.
+/// </para>
+/// <para>
+/// A test whose flow depends on its own cookies takes <see cref="SharedHostFixture.NewClient"/>, not
+/// <see cref="SharedHostFixture.Client"/> — a shared client would carry a session cookie from one test
+/// into the next and sign it in silently. A test needing a different configuration, or one asserting
+/// that a store is empty, still builds its own host.
+/// </para>
+/// </remarks>
+public abstract class FlowHostFixture : SharedHostFixture
+{
+    /// <summary>The instant every test in the class starts from.</summary>
+    protected abstract DateTimeOffset StartTime { get; }
+
+    /// <summary>The clock the host runs on, for a test that needs time to pass.</summary>
+    public FakeTimeProvider Time => _time ??= new FakeTimeProvider(StartTime);
+
+    /// <summary>What the host has logged.</summary>
+    public CapturingLoggerProvider Logs { get; } = new();
+
+    private FakeTimeProvider? _time;
+
+    /// <summary>
+    /// Returns the clock to <see cref="StartTime"/> and discards captured log entries, so a test does
+    /// not inherit them from the test that ran before it.
+    /// </summary>
+    public void Reset()
+    {
+        Time.SetUtcNow(StartTime);
+        Logs.Clear();
+    }
+
+    /// <summary>
+    /// Registers the shared clock and log capture. A fixture's <see cref="SharedHostFixture.CreateFactory"/>
+    /// passes this as the host's <c>configureBuilder</c>, chaining its own registrations after it.
+    /// </summary>
+    /// <param name="builder">The builder the host is being configured through.</param>
+    protected void AddTestDoubles(ZeeKayDaAuthBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Services.AddSingleton<TimeProvider>(Time);
+        builder.Services.AddLogging(logging => logging.AddProvider(Logs));
+    }
 }

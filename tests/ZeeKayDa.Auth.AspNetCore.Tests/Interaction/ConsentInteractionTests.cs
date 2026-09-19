@@ -882,34 +882,4 @@ public sealed class ConsentInteractionTests : IDisposable
     }
 
     /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>
-    private sealed class CapturingLoggerProvider : ILoggerProvider
-    {
-        private readonly List<(LogLevel Level, string Message)> _entries = [];
-
-        public IReadOnlyList<(LogLevel Level, string Message)> Entries
-        {
-            get { lock (_entries) return [.. _entries]; }
-        }
-
-        public ILogger CreateLogger(string categoryName) => new Logger(this);
-
-        public void Dispose()
-        {
-        }
-
-        private void Add(LogLevel level, string message)
-        {
-            lock (_entries) _entries.Add((level, message));
-        }
-
-        private sealed class Logger(CapturingLoggerProvider owner) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-                owner.Add(logLevel, formatter(state, exception));
-        }
-    }
 }
