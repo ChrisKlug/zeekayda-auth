@@ -46,6 +46,40 @@ case "${WHICH}" in
     *) echo "usage: $(basename "$0") [config|basic|all]" >&2; exit 2 ;;
 esac
 
+# One run at a time per machine. The host ports and the Compose project name are fixed, so a second
+# run would attach to the first one's containers, fail on the ports, and then its cleanup would tear
+# down the first one's suite; with a shared clone it could also move the clone to another SUITE_REF
+# under the running one. mkdir is atomic, so two runs started together cannot both take this lock,
+# and the path is fixed rather than under $TMPDIR, which differs per user and per session, so every
+# checkout sees the same one. It is taken above the cleanup trap and the clone, so a refused run
+# touches neither. An empty pid file is a run that has taken the lock and not yet written it.
+LOCK_DIR=/tmp/zeekayda-conformance.lock
+if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
+    HOLDER="$(cat "${LOCK_DIR}/pid" 2>/dev/null || true)"
+    if [[ -z "${HOLDER}" ]] || kill -0 "${HOLDER}" 2>/dev/null; then
+        echo "Another conformance run${HOLDER:+ (pid ${HOLDER})} is active; wait for it." >&2
+    else
+        echo "A conformance run (pid ${HOLDER}) was killed and left its lock behind." >&2
+        echo "Clear the lock and anything that run left up with:" >&2
+        echo "    rm -rf ${LOCK_DIR} && docker compose -p zeekayda-conformance down" >&2
+    fi
+    exit 1
+fi
+echo "$$" > "${LOCK_DIR}/pid"
+trap 'rm -rf "${LOCK_DIR}"' EXIT
+
+# Holding the lock, no suite containers should be up. Any that are were started outside this
+# script, or outlived a killed run, and the cleanup below would tear them down.
+RUNNING="$(docker ps --format '{{.Names}}' \
+    --filter label=com.docker.compose.project=zeekayda-conformance)"
+if [[ -n "${RUNNING}" ]]; then
+    echo "No other conformance run is active, but these suite containers are up:" >&2
+    echo "${RUNNING}" | sed 's/^/    /' >&2
+    echo "Remove them with:" >&2
+    echo "    docker compose -p zeekayda-conformance down" >&2
+    exit 1
+fi
+
 RUN_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 RESULT_DIR="${HERE}/results/${RUN_STAMP}"
 mkdir -p "${RESULT_DIR}"
@@ -70,6 +104,7 @@ cleanup() {
     fi
     compose logs --no-color server > "${RESULT_DIR}/suite-server.log" 2>&1 || true
     compose down --remove-orphans >/dev/null 2>&1 || true
+    rm -rf "${LOCK_DIR}"
     echo "==> results in ${RESULT_DIR}"
     exit "${status}"
 }
