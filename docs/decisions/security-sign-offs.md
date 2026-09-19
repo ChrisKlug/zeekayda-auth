@@ -1636,9 +1636,10 @@ verified on the fix diff.
   Closed — `A_public_client_cannot_be_permitted_to_omit_pkce`,
   `A_public_client_never_omits_pkce_whatever_its_registration_says`,
   `Only_a_confidential_client_that_opted_in_may_omit_the_challenge`.
-- A nonce-only code is always an `openid` code carrying the nonce; a sent challenge, empty or
-  half-sent included, is held to its shape. Closed —
-  `A_client_permitted_to_omit_pkce_still_needs_the_nonce_it_relies_on_instead`,
+- A nonce-only code is always an `openid` code carrying the nonce [reversed by the 2026-09-19 entry
+  for #732 below: the nonce is no longer required]; a sent challenge, empty or half-sent included, is
+  held to its shape. Closed —
+  A_client_permitted_to_omit_pkce_still_needs_the_nonce_it_relies_on_instead [deleted by #732],
   `A_client_permitted_to_omit_pkce_redeems_a_code_issued_without_a_challenge_with_no_verifier`,
   `A_client_permitted_to_omit_pkce_that_sends_a_bad_challenge_is_refused`,
   `A_client_permitted_to_omit_pkce_that_sends_a_method_without_a_challenge_is_refused`.
@@ -1756,3 +1757,25 @@ Security and architect agents plus all three Copilot lenses; two Highs from the 
   per-resource tokens via `resource` would close it; recorded already in `token-contents.md`.
 - **Explicit scope limit:** this sign-off does **not** cover a replaced `ITokenIssuer`. Userinfo reads a
   compact JWS only, so a host-supplied access-token issuer has no reader; deferred to #725.
+
+## 2026-09-19 — `nonce` optional, and `RequirePkce` is the OAuth 2.1 §7.5.1.1 assurance (#732, code frozen at `16b5352`)
+
+Scoped to `AuthorizeRequestValidator`, `PkceRules`, context format v3, code issuance and registration
+validation. Copilot code lens, security agent and Copilot security lens, one round, no High or
+Critical. Reverses one point of the #662 entry: a client allowed to omit PKCE need not send a nonce.
+
+- `nonce` is optional on every request, empty reads as absent (RFC 6749 §3.1), and the ID token
+  claims one only when sent. Closed — `A_request_without_a_nonce_is_valid_and_carries_none`,
+  `An_empty_nonce_is_treated_as_omitted`, `A_request_without_a_nonce_is_issued_a_code_whose_entry_carries_none`,
+  `An_ID_token_for_a_grant_without_a_nonce_omits_the_claim`.
+- A pre-v3 context, or one carrying an empty nonce, is refused rather than misread. Closed —
+  `Payload_written_by_another_version_is_refused`, `Context_with_an_empty_nonce_is_refused`.
+- PKCE stays the default and is forced on a public client whatever it says. Closed —
+  `ConfidentialClientOptions_start_with_the_defaults_of_a_registration_that_sets_nothing`,
+  `A_public_client_cannot_be_permitted_to_omit_pkce`, `A_public_client_never_omits_pkce_whatever_its_registration_says`.
+- **Accepted residual (maintainer):** a confidential client with `RequirePkce = false` that sends
+  neither `code_challenge` nor `nonce` gets a code and is open to code injection (RFC 9700 §4.5).
+  Proven by `A_client_permitted_to_omit_pkce_is_valid_with_neither_a_challenge_nor_a_nonce`,
+  `A_client_permitted_to_omit_pkce_redeems_a_code_issued_with_neither_a_challenge_nor_a_nonce`.
+- **Declined (maintainer):** a startup warning on `RequirePkce = false`; only in-memory clients are
+  known at startup.
