@@ -629,11 +629,11 @@ public class AuthorizeRequestValidatorTests
     {
         var client = Client() with
         {
-            AllowedResponseModes = new HashSet<ResponseMode> { ResponseMode.FormPost },
+            AllowedResponseModes = new HashSet<ResponseMode>(),
         };
 
         // No response_mode parameter — the effective mode is still query and must be checked, or a
-        // form_post-only client silently receives its code in the query string.
+        // client registered without it silently receives its code in the query string.
         var result = await Validate(ValidParameters(), client);
 
         result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()

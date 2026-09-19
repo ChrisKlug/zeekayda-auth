@@ -315,7 +315,7 @@ public class ClientRegistrationSnapshotTests
                 r.AllowedTokenEndpointAuthMethods = Ordinal(TokenEndpointAuthMethods.ClientSecretBasic),
             ["AllowedGrantTypes"] = r => r.AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken },
             ["AllowedResponseTypes"] = r => r.AllowedResponseTypes = new HashSet<ResponseType>(),
-            ["AllowedResponseModes"] = r => r.AllowedResponseModes = new HashSet<ResponseMode> { ResponseMode.FormPost },
+            ["AllowedResponseModes"] = r => r.AllowedResponseModes = new HashSet<ResponseMode>(),
             ["AllowedPromptValues"] = r => r.AllowedPromptValues = new HashSet<PromptValue> { PromptValue.Login },
             ["AllowedSigningAlgorithms"] = r =>
                 r.AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 },

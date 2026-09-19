@@ -1510,21 +1510,17 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_with_response_modes_not_subset_code_for_form_post_on_a_server_serving_only_query()
+    public void Validate_fails_with_response_modes_not_subset_code_for_a_response_mode_the_server_does_not_serve()
     {
-        // The authorization endpoint answers only in the query string, so a client allowed
-        // form_post is promised a mode nothing delivers.
-        var validator = MakeValidator();
-        var client = MakeValidPublicClient() with
-        {
-            AllowedResponseModes = new HashSet<ResponseMode> { ResponseMode.Query, ResponseMode.FormPost }
-        };
+        var options = BuildDefaultServerOptions();
+        options.Response.ModesSupported = [];
+        var validator = MakeValidator(serverOptions: options);
 
-        var act = () => validator.Validate(client);
+        var act = () => validator.Validate(MakeValidPublicClient());
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle(f =>
-                f.Code == "client.response_modes.not_subset" && f.Message.Contains("'FormPost'", StringComparison.Ordinal));
+                f.Code == "client.response_modes.not_subset" && f.Message.Contains("'Query'", StringComparison.Ordinal));
     }
 
     [Fact]
