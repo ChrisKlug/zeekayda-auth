@@ -51,9 +51,9 @@ is the issuer that came back. So:
   command carries `update-image-placeholder`, which captures the page into the placeholder. Without
   it the module sits in `WAITING` until the runner gives up after 240 s. Such a module finishes as
   `REVIEW`, which the runner treats as a pass.
-- The conformance clients are registered with `AllowNonceInsteadOfPkce`. The basic plan's modules
-  send `nonce` and no `code_challenge`, and the suite has no way to make them send PKCE, so without
-  the OAuth 2.1 §7.5.1.1 opt-out every module is refused at the authorization endpoint.
+- The conformance clients are registered with `RequirePkce` set to `false`. The basic plan's
+  modules send no `code_challenge`, and the suite has no way to make them send PKCE, so without the
+  OAuth 2.1 §7.5.1.1 opt-out every module is refused at the authorization endpoint.
 
 The suite's scripts and its published images have to agree, so `SUITE_REF` in `run-conformance.sh`
 pins both to one release. Moving to a newer suite is a deliberate edit there, with a re-run.

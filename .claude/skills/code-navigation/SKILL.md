@@ -12,11 +12,15 @@ These rules apply to **every agent working with C# code in this repository**, re
 
 **Before your first code search or file exploration, run `ToolSearch("select:LSP")` to load the LSP tool.** The LSP tool arrives deferred in this environment — it is not callable until its schema is loaded — and skipping this step is why agents fall back to grep. Load it up front, every session, before touching any code. The ToolSearch result gives you the exact parameter schema, so never guess parameter names from memory.
 
-## LSP is not available to a background agent
+**If that returns "No matching deferred tools found", you are a background subagent** — Claude Code strips the native `LSP` tool from those by design, and retrying never helps. Do not fall back to grep. Load the MCP language server your agent definition carries instead: `ToolSearch("csharp")` returns the `mcp__csharp-lsp-<your agent name>__*` tools. It is the same `csharp-ls` server behind a different front, with three differences that matter:
 
-`ToolSearch("select:LSP")` returns no match in an agent spawned with `run_in_background: true`, however the agent's `tools:` list reads — so the agent navigates C# by `rg` and says so in its result. **This is the orchestrator's mistake, not the agent's.** An agent that needs to navigate code is spawned in the foreground, which is what `work-on-issue` means by "foreground, never background".
+1. **Call `csharp_set_workspace` first**, once, with the absolute path of the checkout you are working in — the worktree root if you are in one, never the primary repository when your files are in a worktree. The server holds one workspace at a time, and this is what points it at your checkout.
+2. **Positions are 0-based** (`line` and `character`), where the native `LSP` tool is 1-based. Line 30 in `Read` output is `line: 29`. A wrong position returns "No references found" or references to a different symbol rather than an error, so check that the result names the symbol you asked about.
+3. **Leave `content` out.** The server then reads the file from disk. Anything you pass as `content` *replaces* the file for that lookup, so a stub or an excerpt gives "No references found" or line numbers that do not match the file.
 
-If you are that agent and LSP will not load: say so in your result in one line, navigate by `rg`, and carry on. Do not treat it as something to work around silently, and do not spend turns retrying.
+Point `character` at the first letter of the identifier. Results come back with 1-based lines and columns, so they match `Read` output although the input is 0-based; a property's `get` and `set` accessors are listed as extra hits on its declaration line. If `csharp_references` answers `Internal error: AggregateException`, that is `csharp-ls` failing on that one symbol — the native tool fails on it identically — so use `rg` for that symbol and carry on with the server for the rest.
+
+The operations map as `findReferences` → `csharp_references`, `goToDefinition` → `csharp_definition`, `documentSymbol` → `csharp_symbols`, `hover` → `csharp_hover`, diagnostics → `csharp_diagnostics`. There is no `workspaceSymbol` or call hierarchy; find the declaration with `rg` and run `csharp_references` on it. Say in your result which of the two you used.
 
 ## Symbol lookups: LSP, not text search
 

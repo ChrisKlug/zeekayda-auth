@@ -1,21 +1,23 @@
 # Conformance results
 
 Run of the OpenID Foundation conformance suite against the sample identity server, 2026-09-19,
-suite `release-v5.3.1`. Reproduce from the repository root with `./conformance/run-conformance.sh`;
-rewrite this file when the numbers change.
+suite `release-v5.3.1`; the basic plan was re-run the same day once #732 made `nonce` optional.
+Reproduce from the repository root with `./conformance/run-conformance.sh`; rewrite this file when
+the numbers change.
 
 ## Headline
 
 **Both certification plans run to completion and the run exits zero against the manifests in
-`expected/`.** Of the basic plan's 35 modules, 22 pass outright, 4 finish in the suite's review state
-with the screenshot it wants captured automatically, 5 carry a warning, 2 fail and 2 are skipped.
+`expected/`.** Of the basic plan's 35 modules, 23 pass outright, 4 finish in the suite's review state
+with the screenshot it wants captured automatically, 5 carry a warning, 1 fails and 2 are skipped.
 Every warning, failure and skip is listed below with its cause and the issue that removes it.
 
 The one setup change that made this possible: the two conformance clients are registered with
-`AllowNonceInsteadOfPkce` (OAuth 2.1 §7.5.1.1). The plan's modules send `nonce` and no
-`code_challenge`, and without the opt-out every module was refused at the authorization endpoint
-and the runner aborted after three interruptions in a row. The suite has no switch to make the basic
-plan send PKCE; only the one dedicated PKCE module does.
+`RequirePkce` set to `false` (OAuth 2.1 §7.5.1.1; the setting was then named
+`AllowNonceInsteadOfPkce`). The plan's modules send no `code_challenge`, and without the opt-out
+every module was refused at the authorization endpoint and the runner aborted after three
+interruptions in a row. The suite has no switch to make the basic plan send PKCE; only the one
+dedicated PKCE module does.
 
 ## Timing
 
@@ -57,7 +59,7 @@ code_challenge_methods_supported=[S256]
 
 ## `oidcc-basic-certification-test-plan`
 
-35 modules, all run. Conditions across the plan: 1747 success, 5 warning, 2 failure.
+35 modules, all run. Conditions across the plan: 1750 success, 5 warning, 1 failure.
 
 | # | Module | Result |
 |---:|---|---|
@@ -66,7 +68,7 @@ code_challenge_methods_supported=[S256]
 | 3 | `oidcc-userinfo-get` | PASSED |
 | 4 | `oidcc-userinfo-post-header` | PASSED |
 | 5 | `oidcc-userinfo-post-body` | PASSED |
-| 6 | `oidcc-ensure-request-without-nonce-succeeds-for-code-flow` | **FAILED** — A |
+| 6 | `oidcc-ensure-request-without-nonce-succeeds-for-code-flow` | PASSED |
 | 7 | `oidcc-scope-profile` | PASSED |
 | 8 | `oidcc-scope-email` | WARNING — C |
 | 9 | `oidcc-scope-address` | PASSED |
@@ -102,12 +104,6 @@ screenshot for a human certifier to look at. Nothing in a REVIEW module failed.
 
 ### Failures
 
-- **A — library, #732.** `CheckIfAuthorizationEndpointError`: the module sends a confidential
-  client's request with neither `nonce` nor `code_challenge` and expects a code. Two rules refuse
-  it: `nonce` is mandatory on every `openid` request, where OIDC Core §3.1.2.1 makes it optional for
-  the code flow; and a client permitted to omit PKCE must still send the nonce it relies on, a
-  reading of OAuth 2.1 §7.5.1.1 that the maintainer has agreed to relax so that the registration
-  itself is the assurance. Both change in #732.
 - **B — harness and sample, #717.** `GetStaticClientConfiguration`: the module wants a
   `client_secret_post` block in the suite config naming a client that authenticates that way, and
   the sample advertises only `client_secret_basic` and `none`.
@@ -139,7 +135,7 @@ screenshot for a human certifier to look at. Nothing in a REVIEW module failed.
 
 ### What changed in the sample for this run
 
-- Both conformance clients set `AllowNonceInsteadOfPkce` (see the headline). The sample's
+- Both conformance clients set `RequirePkce` to `false` (see the headline). The sample's
   `ClientSettings` gained that property; it is applied to confidential clients only.
 - The seeded user carries every OIDC Core §5.4 profile claim. The suite's scope modules expect all
   fourteen at userinfo, and four of them was a warning on `oidcc-scope-profile` and

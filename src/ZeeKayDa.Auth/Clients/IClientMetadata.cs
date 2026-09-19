@@ -178,17 +178,22 @@ public interface IClientMetadata
     bool SkipLogoutConfirmation => false;
 
     /// <summary>
-    /// Whether this client may omit PKCE from an authorization request and rely on the OpenID
-    /// Connect <c>nonce</c> for code-injection protection instead. Defaults to
-    /// <see langword="false"/>, and is only valid on a confidential client.
+    /// Whether this client must send a PKCE <c>code_challenge</c> with every authorization request.
+    /// Defaults to <see langword="true"/>; only a confidential client may be registered with
+    /// <see langword="false"/>.
     /// </summary>
     /// <remarks>
-    /// PKCE is enforced for every client unless the client is confidential and the operator has
-    /// reasonable assurance it implements the <c>nonce</c> check properly (OAuth 2.1 §7.5.1.1,
-    /// RFC 9700 §2.1.1). This opt-in is that assurance; PKCE stays recommended even then, and a
-    /// challenge the client does send is enforced as for any other client.
+    /// A confidential client may skip PKCE when the operator has reasonable assurance that it
+    /// implements the OpenID Connect <c>nonce</c> check properly (OAuth 2.1 §7.5.1.1, RFC 9700
+    /// §2.1.1). Setting this to <see langword="false"/> is that assurance, and the server does not
+    /// check it per request: a client registered this way that sends neither a challenge nor a
+    /// <c>nonce</c> is issued a code with nothing protecting it from code injection (RFC 9700 §4.5).
+    /// PKCE stays recommended even then, and a challenge the client does send is enforced as for
+    /// any other client. On a public client, <see langword="false"/> fails startup and is ignored
+    /// by the authorize endpoint. It is a default interface member because requiring PKCE is what a
+    /// registration means unless it says otherwise.
     /// </remarks>
-    bool AllowNonceInsteadOfPkce => false;
+    bool RequirePkce => true;
 
     /// <summary>
     /// JWS signing algorithms permitted for ID tokens issued to this client.

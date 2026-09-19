@@ -24,12 +24,15 @@ internal sealed record ValidatedAuthorizeRequest
     /// <summary>The client's opaque <c>state</c>, echoed byte for byte, or <see langword="null"/>.</summary>
     public required string? State { get; init; }
 
-    /// <summary>The OpenID Connect <c>nonce</c>. Required in v1, so never null or empty.</summary>
-    public required string Nonce { get; init; }
+    /// <summary>
+    /// The OpenID Connect <c>nonce</c>, or <see langword="null"/> when the request carried none,
+    /// which the code flow allows (OIDC Core §3.1.2.1). Never empty.
+    /// </summary>
+    public required string? Nonce { get; init; }
 
     /// <summary>
-    /// The PKCE binding (RFC 7636 §4.3), or <see langword="null"/> when the client may rely on
-    /// the nonce instead and sent no challenge.
+    /// The PKCE binding (RFC 7636 §4.3), or <see langword="null"/> when the client is not required
+    /// to use PKCE and sent no challenge.
     /// </summary>
     public required PkceChallenge? Pkce { get; init; }
 

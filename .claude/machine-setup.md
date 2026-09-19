@@ -59,6 +59,41 @@ on any `.cs` file returns a location.
 `.claude/skills/restart-lsp` handles `csharp-ls` as well as `Microsoft.CodeAnalysis.LanguageServer`
 and `OmniSharp`.
 
+### 2a. `csharp-lsp-mcp` on `PATH` — required for background and parallel agents
+
+Claude Code strips the native `LSP` tool from every **background** subagent, by design, and
+subagents run in the background by default — so two reviewers running in parallel have no `LSP`
+tool, whatever their `tools:` list says. Background subagents do keep MCP tools. The four
+code-touching agents (`architect`, `security`, `developer`, `tester`) therefore each declare their
+own MCP language server in frontmatter (`mcpServers:` → `csharp-lsp-<agent>`, command
+`csharp-lsp-mcp`), which wraps the same `csharp-ls`. One server name per agent is deliberate: agents
+sharing a name share one server process, the server holds one workspace, and two agents in
+different worktrees would repoint each other.
+
+The frontmatter names the bare command, so **`csharp-lsp-mcp` must resolve on the `PATH` Claude
+Code runs with**. It is [HYMMA/csharp-lsp-mcp](https://github.com/HYMMA/csharp-lsp-mcp) with a
+local patch: upstream targets .NET 8, and declares `content` as a required parameter that agents
+cannot send as JSON null — they send a stub, which replaces the file and returns no references.
+
+```sh
+git clone https://github.com/HYMMA/csharp-lsp-mcp ~/.claude/tools/csharp-lsp-mcp && cd ~/.claude/tools/csharp-lsp-mcp/csharp-lsp-mcp
+# retarget to the installed SDK
+perl -pi -e 's/"8\.0\.0"/"10.0.300"/' global.json
+perl -pi -e 's/net8\.0/net10.0/' src/CSharpLspMcp/CSharpLspMcp.csproj
+# make `content` optional, and read the file when it is absent, blank or the string "null"
+perl -pi -e 's/string\? content,(\r?)$/string? content = null,$1/; s/CancellationToken cancellationToken\)(\r?)$/CancellationToken cancellationToken = default)$1/; s/content \?\?= (await File\.ReadAllTextAsync\(filePath, ct\);)/if (string.IsNullOrWhiteSpace(content) || content == "null") content = $1/' src/CSharpLspMcp/Tools/CSharpTools.cs
+dotnet publish src/CSharpLspMcp/CSharpLspMcp.csproj -c Release -o ~/.claude/tools/csharp-lsp-mcp/patched
+ln -sfn ~/.claude/tools/csharp-lsp-mcp/patched/csharp-lsp-mcp ~/.local/bin/csharp-lsp-mcp
+```
+
+Do **not** register it with `claude mcp add`: that loads its 17 tool schemas into every main
+session, which already has the native `LSP` tool. Declared in agent frontmatter it starts only
+for the subagent that needs it. A missing binary is silent — the agent finds no `csharp` tools and
+greps — so verify: `which csharp-lsp-mcp`; then, in a **new** session (agent files are cached per
+session), spawn `architect` and `security` in parallel in the background and check that each reports
+using `mcp__csharp-lsp-<agent>__csharp_references`. Tool differences from native `LSP` (0-based
+positions, `csharp_set_workspace` first) are in `.claude/skills/code-navigation`.
+
 ## 3. GitHub CLI and Copilot CLI — required for review and PRs
 
 - `gh` must be installed and logged in (`gh auth status`). It is used for issues, PRs, the
@@ -142,7 +177,25 @@ server fails to start (harmless, but noisy). Install it if the Aspire tooling is
 dotnet tool install -g aspire.cli
 ```
 
-## 8. Not needed
+## 8. ripgrep — required
+
+The skills and agent briefs tell agents to text-search with `rg`. Inside Claude Code `rg` is only a
+shell function backed by the bundled ripgrep, not a binary on `PATH`, so anything that runs `rg` as
+a real process finds nothing. The case that bit: the `rtk` token-trimming Bash hook rewrites a plain
+`rg …` into `rtk rg …`, which execs `rg` and fails with `rtk: search failed: Failed to execute
+command: No such file or directory`. It looks intermittent because the hook only rewrites simple
+commands — `rg` inside a pipe or an `&&` chain still reaches the shell function — and every agent
+that hits it spends a turn falling back to `grep`.
+
+```sh
+brew install ripgrep          # macOS
+sudo apt-get install -y ripgrep   # Ubuntu/Debian
+```
+
+Verify: `command -v rg` outside Claude Code prints a path; in a session, a plain `rg -n "class " src`
+returns matches rather than the `rtk` error.
+
+## 9. Not needed
 
 - Node/npm: nothing in the loop uses them (Copilot CLI ships as a binary).
 - Docker: present, unused by the loop.
@@ -152,6 +205,8 @@ dotnet tool install -g aspire.cli
 ```sh
 dotnet --version            # 10.0.3xx
 csharp-ls --version
+which csharp-lsp-mcp        # language server for background/parallel agents, section 2a
+/usr/bin/which rg           # a real binary, not Claude Code's shell function (section 8)
 copilot --version
 gh auth status
 git config user.email       # or pass -c on each commit

@@ -41,7 +41,7 @@ auth.AddInMemoryClients(clients =>
                 options =>
                 {
                     Configure(options, client);
-                    options.AllowNonceInsteadOfPkce = client.AllowNonceInsteadOfPkce;
+                    options.RequirePkce = client.RequirePkce;
                 });
         }
         else

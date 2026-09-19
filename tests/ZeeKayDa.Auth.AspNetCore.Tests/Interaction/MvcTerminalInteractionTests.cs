@@ -1,12 +1,10 @@
 using System.Net;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Pages;
-using ZeeKayDa.Auth.AspNetCore.Tests.Providers;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 
@@ -15,42 +13,14 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 /// interaction call with a plain <c>await</c>. Without the framework's result filter the page
 /// handler would go on to render against a response that is already committed, and throw.
 /// </summary>
-public sealed class MvcTerminalInteractionTests : IDisposable
+public sealed class MvcTerminalInteractionTests(MvcTerminalHostFixture host) : IClassFixture<MvcTerminalHostFixture>
 {
     private const string RegisteredRedirect = "https://test.example.com/callback";
     private const string ConsentPath = "/account/consent";
 
-    private readonly TestWebAppFactory _factory;
-    private readonly HttpClient _client;
-
-    public MvcTerminalInteractionTests()
-    {
-        _factory = new TestWebAppFactory(
-            configureBuilder: builder =>
-            {
-                builder.Services.AddRazorPages();
-                builder.Services.AddControllers();
-                builder.WithProviders(auth => auth.AddOAuth("acme", "Acme", ProviderTestHost.ConfigureAcme));
-            },
-            mapEndpoints: endpoints =>
-            {
-                endpoints.MapRazorPages();
-                endpoints.MapControllers();
-            });
-
-        _client = _factory.CreateClient(new()
-        {
-            BaseAddress = new Uri("https://test.example.com"),
-            AllowAutoRedirect = false,
-            HandleCookies = true,
-        });
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-        _factory.Dispose();
-    }
+    // A client per test, so each test's flow runs in a cookie jar of its own. Redirects are left
+    // unfollowed: every test asserts on the 3xx the page answered with.
+    private readonly HttpClient _client = host.NewClient(options => options.AllowAutoRedirect = false);
 
     [Theory]
     [InlineData("/TerminalCall?handler=SignIn")]

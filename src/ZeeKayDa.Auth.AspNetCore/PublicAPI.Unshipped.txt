@@ -60,8 +60,8 @@ ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.RequireConsent.get -> bool
 ZeeKayDa.Auth.AspNetCore.Clients.ClientOptions.RequireConsent.set -> void
 ZeeKayDa.Auth.AspNetCore.Clients.ConfidentialClientOptions
 ZeeKayDa.Auth.AspNetCore.Clients.ConfidentialClientOptions.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.ISet<string!>!
-ZeeKayDa.Auth.AspNetCore.Clients.ConfidentialClientOptions.AllowNonceInsteadOfPkce.get -> bool
-ZeeKayDa.Auth.AspNetCore.Clients.ConfidentialClientOptions.AllowNonceInsteadOfPkce.set -> void
+ZeeKayDa.Auth.AspNetCore.Clients.ConfidentialClientOptions.RequirePkce.get -> bool
+ZeeKayDa.Auth.AspNetCore.Clients.ConfidentialClientOptions.RequirePkce.set -> void
 ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder
 ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder.Add(ZeeKayDa.Auth.Clients.IClientRegistration! registration) -> ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder!
 ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder.AddConfidential(string! clientId, string! clientSecret, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes, System.Action<ZeeKayDa.Auth.AspNetCore.Clients.ConfidentialClientOptions!>? configure = null) -> ZeeKayDa.Auth.AspNetCore.Clients.IInMemoryClientRegistrationBuilder!

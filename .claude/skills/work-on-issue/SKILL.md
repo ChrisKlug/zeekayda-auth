@@ -79,9 +79,9 @@ The coding standards in `.claude/agents/developer.md` apply to code you write yo
 "Rules that exist because review found them repeatedly" and the API self-check sections especially.
 Run the suite once per change, then `/check-formatting` and `/check-code-coverage` once each.
 
-Spawn `developer` (foreground, never background — a background agent cannot load the LSP tool, so it
-navigates C# by text search and tells you so in its result) only when the work is **large, mechanical,
-and fully specified** — roughly 300+ lines of implementation logic with no open design questions. Fix rounds,
+Spawn `developer` (foreground — nothing else happens until its result is in; backgrounded it would
+still navigate by language server, through its own `csharp-lsp-developer` MCP server, never by text
+search) only when the work is **large, mechanical, and fully specified** — roughly 300+ lines of implementation logic with no open design questions. Fix rounds,
 nits, and small changes are never delegated; a spawn that must re-derive context costs more than the
 edit.
 
@@ -129,9 +129,13 @@ it as a High finding on every PR that touches the area. Neither reviewer ever ca
 findings, or your own opinion of where the weak spot is — independence is what makes a finding
 raised twice high-confidence, and a primed reviewer raises nothing independently.
 
-Reviewers run **foreground** — a background agent cannot load the LSP tool, and a reviewer reduced to
-text search reads the change less well than one that can follow a symbol to its callers. Alongside them, run CodeScene `analyze_change_set` yourself (agents
-cannot reach MCP tools) — **production files only. Findings on `tests/` are ignored entirely, not
+Reviewers run **in the background, in parallel** — that is what "launched in one message" buys, and
+it is safe: a background subagent loses the native `LSP` tool, but each reviewer carries its own MCP
+C# language server (`csharp-lsp-<agent>`) and the `code-navigation` skill sends it there. A reviewer
+result that says it navigated with grep because no language server was available means
+`csharp-lsp-mcp` is not on `PATH` — fix that (`.claude/machine-setup.md` §2a) rather than accepting
+the review. Alongside them, run CodeScene `analyze_change_set` yourself (agents reach only the MCP
+servers their own frontmatter names) — **production files only. Findings on `tests/` are ignored entirely, not
 argued with**: test code is specification, duplication is how specifications read, and clearly named
 repetitive tests beat clever compact ones.
 

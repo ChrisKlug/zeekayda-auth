@@ -56,16 +56,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   a registration's defaults, so a host can turn off `RequireConsent` for its own first-party app,
   set a `DisplayName` or shorten a token lifetime without building
   a `ClientRegistration` by hand. Settings that only make sense on a confidential client —
-  `AllowNonceInsteadOfPkce` and the token endpoint auth methods — exist only on
+  `RequirePkce` and the token endpoint auth methods — exist only on
   `ConfidentialClientOptions`. A confidential client registered this way still has its plaintext
   secret hashed at startup, as before.
 
-- **A confidential client may rely on the OpenID Connect nonce instead of PKCE** (#662)
+- **A confidential client may be registered without PKCE** (#662, #732)
 
-  `AllowNonceInsteadOfPkce` on a client registration, off by default, lets a confidential client
-  omit `code_challenge` from an authorization request; the `openid` scope and `nonce` the request
-  must carry anyway then protect the code (OAuth 2.1 §7.5.1.1, RFC 9700 §2.1.1). Startup rejects
-  the opt-in on a public client, and the authorize endpoint ignores it on one. A challenge the
+  `RequirePkce` on a client registration, `true` by default, lets a confidential client omit
+  `code_challenge` from an authorization request when set to `false`. The registration is the
+  operator's assurance that the client checks the OpenID Connect `nonce` (OAuth 2.1 §7.5.1.1,
+  RFC 9700 §2.1.1), and the server does not check per request that one was sent. Startup rejects
+  `false` on a public client, and the authorize endpoint ignores it on one. A challenge the
   client does send is validated and enforced exactly as before, and a code issued without one
   answers a `code_verifier` with `invalid_request` and consumes the code. A client held to PKCE
   that leaves the verifier out is still refused before its code is touched. `AuthorizationCodeEntry`
@@ -582,6 +583,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   unaffected: it never touched the endpoint.
 
 ### Changed
+
+- **`nonce` is optional on an authorization request** (#732)
+
+  OIDC Core §3.1.2.1 makes `nonce` optional for `response_type=code`, the only response type the
+  authorize endpoint accepts, and a request without one is now issued a code; its ID token carries
+  no `nonce` claim. A `nonce` sent without a value is treated as omitted (RFC 6749 §3.1). The
+  interaction context's wire format is versioned up, so a context minted before an upgrade is
+  refused rather than misread.
 
 - **Per-process stores in Development log at `Information`, not `Warning`** (#677)
 

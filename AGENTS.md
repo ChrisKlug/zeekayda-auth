@@ -160,11 +160,11 @@ If no route fits, tell the user — it might be a gap in the process.
 
 Some tools (e.g. `LSP`, `WebFetch`) may arrive deferred — the schema is not loaded and calling them fails with `InputValidationError`. Load such a tool once with `ToolSearch("select:<ToolName>")` before its first call; don't guess parameters from memory. If it still fails after that, report the exact error to whoever called you instead of silently working around it.
 
-**Never delegate an MCP call (`mcp__*`) to a specialist agent** — an agent with an explicit
-`tools:` list in its frontmatter (developer, tester, architect, security, docs) cannot reach MCP
-tools, and the delegated call fails silently, coming back looking like a clean result. Keep MCP
-calls with the main orchestrator. If a task you are given depends on one, say so and return it —
-do not report the underlying check as done.
+**Never delegate an MCP call (`mcp__*`) to a specialist agent** — an agent with an explicit `tools:`
+list reaches only the MCP servers its own frontmatter names (today one: its `csharp-lsp-<agent>`
+language server, which is how background and parallel agents navigate C# — `.claude/machine-setup.md`
+§2a). Any other delegated MCP call fails silently and reads as a clean result. Keep those with the
+main orchestrator; if a task you are given depends on one, say so and return it.
 
 ## Waiting on a long command
 
