@@ -322,7 +322,7 @@ The `coverage-regression` job protects critical paths from silent coverage drops
 3. Each discovered package is tested separately with `--collect:"XPlat Code Coverage"` and an explicit `Include` filter of `[<Package>]*`, so each package's coverage is scoped to its own assembly.
 4. For the base side, the job walks back through the base branch's recent successful push runs until it finds one that actually uploaded a non-expired `coverage-Linux` artifact, and downloads that. Walking back is necessary because a docs-only push short-circuits the coverage steps via the `detect-changes` gate while the run still reports success, so "most recent successful run" is not the same as "most recent run with coverage".
 5. [`.github/scripts/check_coverage_regression.cs`](.github/scripts/check_coverage_regression.cs) — a standalone [file-based C# program](https://learn.microsoft.com/dotnet/core/tutorials/file-based-programs) — sums `lines-covered` / `lines-valid` and `branches-covered` / `branches-valid` across every Cobertura file in each results tree, and compares both deltas against `COVERAGE_ALLOWED_REGRESSION_PERCENT`. The job sets it to `0.50` to absorb run-to-run noise; the script's own fallback when the variable is unset is `0`.
-6. A markdown summary is written to `$GITHUB_STEP_SUMMARY` showing the base value, PR value, and delta for both metrics, and the ten worst per-file regressions are printed to the log.
+6. A markdown summary is written to `$GITHUB_STEP_SUMMARY` showing the base value, PR value, and delta for both metrics. The log additionally lists up to ten per-file regressions, worst first — but only for files present on *both* sides, and only for files that individually exceed the tolerance. A file the PR adds without covering it has no baseline entry and never appears, so an aggregate failure can legitimately come with no per-file list at all.
 7. The job fails with an `::error::` annotation if either delta is more negative than the allowed regression.
 
 **Reproducing locally:**
@@ -357,9 +357,9 @@ The CI log emits a single error line of the form:
 ::error::Coverage regression detected: line coverage 97.58% -> 96.16% (delta -1.42, allowed -0.50 pp)
 ```
 
-Before that line, the job also prints the ten files with the largest regressions, which is usually enough on its own. To go further:
+Before that line, the job usually prints the worst per-file regressions, which is often enough on its own. When the failure comes from files the PR added rather than files it made worse, that list will be empty — see step 6 above. To go further:
 
-1. Download the `coverage-Linux` artifact from both the PR's run and the latest `main` run.
+1. Download the `coverage-Linux` artifact from the PR's own run, and from the most recent successful `main` push run that actually has one. Not simply the latest successful run: a docs-only push skips the coverage steps via `detect-changes` while still reporting success, so the newest green run may carry no artifact. This is the same walk-back the job itself does.
 2. Generate an HTML report with `dotnet tool install -g dotnet-reportgenerator-globaltool` then `reportgenerator -reports:**/coverage.cobertura.xml -targetdir:./coverage-html`.
 3. Compare the two reports file by file — the regressed lines will be the new uncovered ones in the PR.
 
