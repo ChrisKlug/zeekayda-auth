@@ -67,7 +67,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
         _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes, options =>
         {
             ChangeEverySharedSetting(options);
-            options.AllowNonceInsteadOfPkce = true;
+            options.RequirePkce = false;
             options.AllowedTokenEndpointAuthMethods.Clear();
             options.AllowedTokenEndpointAuthMethods.Add(TokenEndpointAuthMethods.ClientSecretPost);
             configured = options;
@@ -109,7 +109,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
 
         seen!.RequireConsent.Should().BeTrue();
         seen.SkipLogoutConfirmation.Should().BeFalse();
-        seen.AllowNonceInsteadOfPkce.Should().BeFalse();
+        seen.RequirePkce.Should().BeTrue();
         seen.AllowedGrantTypes.Should().Equal(GrantType.AuthorizationCode);
         seen.AllowedTokenEndpointAuthMethods.Should().Equal(TokenEndpointAuthMethods.ClientSecretBasic);
         seen.AllowedSigningAlgorithms.Should().BeEmpty();
@@ -148,7 +148,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
 
     private static readonly string[] ConfidentialOnly =
     [
-        nameof(ConfidentialClientOptions.AllowNonceInsteadOfPkce),
+        nameof(ConfidentialClientOptions.RequirePkce),
         nameof(ConfidentialClientOptions.AllowedTokenEndpointAuthMethods),
     ];
 

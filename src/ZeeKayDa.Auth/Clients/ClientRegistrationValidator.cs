@@ -178,19 +178,19 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
 
     /// <summary>
     /// A public client has no credential, so PKCE is its only proof that the party redeeming the
-    /// code is the one that started the flow; the nonce alone cannot stand in for it.
+    /// code is the one that started the flow; nothing else can stand in for it.
     /// </summary>
     private static void ValidatePkceOptOut(
         IClientRegistration client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        if (client.IsPublic && client.AllowNonceInsteadOfPkce)
+        if (client.IsPublic && !client.RequirePkce)
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.allow_nonce_instead_of_pkce.on_public",
-                $"Public client '{client.ClientId}' has AllowNonceInsteadOfPkce set. " +
+                "client.require_pkce.disabled_on_public",
+                $"Public client '{client.ClientId}' has RequirePkce set to false. " +
                 "A public client must always use PKCE (OAuth 2.1 §7.5.1.1, RFC 9700 §2.1.1); " +
-                "the opt-in is only valid on a confidential client."));
+                "only a confidential client may be registered without it."));
         }
     }
 

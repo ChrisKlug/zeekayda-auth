@@ -12,19 +12,19 @@ public sealed class ConfidentialClientOptions : ClientOptions
     internal ConfidentialClientOptions(ClientRegistration defaults)
         : base(defaults)
     {
-        AllowNonceInsteadOfPkce = defaults.AllowNonceInsteadOfPkce;
+        RequirePkce = defaults.RequirePkce;
         AllowedTokenEndpointAuthMethods = new HashSet<string>(
             defaults.AllowedTokenEndpointAuthMethods, StringComparer.Ordinal);
     }
 
     internal override ClientRegistration ApplyTo(ClientRegistration registration) => base.ApplyTo(registration) with
     {
-        AllowNonceInsteadOfPkce = AllowNonceInsteadOfPkce,
+        RequirePkce = RequirePkce,
         AllowedTokenEndpointAuthMethods = new HashSet<string>(AllowedTokenEndpointAuthMethods, StringComparer.Ordinal),
     };
 
-    /// <inheritdoc cref="IClientMetadata.AllowNonceInsteadOfPkce"/>
-    public bool AllowNonceInsteadOfPkce { get; set; }
+    /// <inheritdoc cref="IClientMetadata.RequirePkce"/>
+    public bool RequirePkce { get; set; }
 
     /// <summary>
     /// Token endpoint authentication methods this client is permitted to use. Contains

@@ -1,17 +1,5 @@
 [
     {
-        "test-name": "oidcc-ensure-request-without-nonce-succeeds-for-code-flow",
-        "variant": {
-            "server_metadata": "discovery",
-            "client_registration": "static_client"
-        },
-        "configuration-filename": "*zeekayda.json",
-        "current-block": "Verify authorization endpoint response",
-        "condition": "CheckIfAuthorizationEndpointError",
-        "expected-result": "failure",
-        "comment": "The request carries neither code_challenge nor nonce and the authorize endpoint refuses it: nonce is mandatory for every openid request, and a client permitted to omit PKCE must still send the nonce it relies on. Both rules change in #732. Delete this entry when #732 lands."
-    },
-    {
         "test-name": "oidcc-server-client-secret-post",
         "variant": {
             "server_metadata": "discovery",

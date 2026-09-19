@@ -270,7 +270,7 @@ public class ClientRegistrationSnapshotTests
         InitiateLoginUri = "https://app.example.com/login",
         RequireConsent = true,
         SkipLogoutConfirmation = true,
-        AllowNonceInsteadOfPkce = true,
+        RequirePkce = true,
         RedirectUris = Ordinal("https://app.example.com/callback"),
         PostLogoutRedirectUris = Ordinal("https://app.example.com/bye"),
         AllowedScopes = Ordinal("openid", "profile"),
@@ -307,7 +307,7 @@ public class ClientRegistrationSnapshotTests
             ["InitiateLoginUri"] = r => r.InitiateLoginUri = "https://app.example.com/start",
             ["RequireConsent"] = r => r.RequireConsent = false,
             ["SkipLogoutConfirmation"] = r => r.SkipLogoutConfirmation = true,
-            ["AllowNonceInsteadOfPkce"] = r => r.AllowNonceInsteadOfPkce = true,
+            ["RequirePkce"] = r => r.RequirePkce = false,
             ["RedirectUris"] = r => r.RedirectUris = Ordinal("https://app.example.com/other"),
             ["PostLogoutRedirectUris"] = r => r.PostLogoutRedirectUris = Ordinal("https://app.example.com/bye"),
             ["AllowedScopes"] = r => r.AllowedScopes = Ordinal("openid", "admin"),
@@ -350,7 +350,7 @@ public class ClientRegistrationSnapshotTests
 
         public bool SkipLogoutConfirmation { get; set; }
 
-        public bool AllowNonceInsteadOfPkce { get; set; }
+        public bool RequirePkce { get; set; } = true;
 
         public IReadOnlySet<string> RedirectUris { get; set; } = Ordinal("https://app.example.com/callback");
 

@@ -36,9 +36,9 @@ public sealed class ClientSettings
     public bool RequireConsent { get; init; } = true;
 
     /// <summary>
-    /// Lets a confidential client omit PKCE and rely on the OpenID Connect nonce instead
-    /// (OAuth 2.1 §7.5.1.1). Only a confidential client can set it; the framework refuses to start
-    /// with it on a public one. Set it only for a client the operator knows checks the nonce.
+    /// Whether the client must use PKCE. Only a confidential client can turn it off, and then only
+    /// when the operator knows it checks the OpenID Connect nonce (OAuth 2.1 §7.5.1.1); the
+    /// framework refuses to start with it off on a public one.
     /// </summary>
-    public bool AllowNonceInsteadOfPkce { get; init; }
+    public bool RequirePkce { get; init; } = true;
 }

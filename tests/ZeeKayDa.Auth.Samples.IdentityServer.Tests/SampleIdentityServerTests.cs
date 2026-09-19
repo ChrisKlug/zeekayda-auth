@@ -149,9 +149,9 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     [Fact]
     public async Task A_conformance_client_is_issued_a_code_for_a_request_with_a_nonce_and_no_code_challenge()
     {
-        // The certification plan's modules send nonce and no PKCE, so the conformance clients are
-        // registered with AllowNonceInsteadOfPkce; this proves the sample's settings wiring
-        // actually applies it, which a request carrying PKCE cannot tell apart from the default.
+        // The certification plan's modules send no PKCE, so the conformance clients are registered
+        // with RequirePkce off; this proves the sample's settings wiring actually applies it, which
+        // a request carrying PKCE cannot tell apart from the default.
         using var factory = _factory.WithWebHostBuilder(host => host.UseEnvironment("Conformance"));
         using var browser = NewBrowser(factory, ConformanceIssuer);
 
