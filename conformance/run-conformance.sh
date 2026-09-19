@@ -46,6 +46,20 @@ case "${WHICH}" in
     *) echo "usage: $(basename "$0") [config|basic|all]" >&2; exit 2 ;;
 esac
 
+# One run at a time per machine. The host ports and the Compose project name are fixed, so a second
+# run would attach to the first one's containers, fail on the ports, and then its cleanup would tear
+# down the first one's suite; with a shared clone it could also move the clone to another SUITE_REF
+# under the running one. This check sits above the cleanup trap and the clone, so a refused run
+# touches neither.
+RUNNING="$(docker ps --filter label=com.docker.compose.project=zeekayda-conformance --format '{{.Names}}')"
+if [[ -n "${RUNNING}" ]]; then
+    echo "Another conformance run is using these containers:" >&2
+    echo "${RUNNING}" | sed 's/^/    /' >&2
+    echo "Wait for it to finish. If no run is active, a killed run left them behind; remove them with:" >&2
+    echo "    docker compose -p zeekayda-conformance down" >&2
+    exit 1
+fi
+
 RUN_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 RESULT_DIR="${HERE}/results/${RUN_STAMP}"
 mkdir -p "${RESULT_DIR}"
