@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
+using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.ClientAuthentication;
@@ -36,7 +38,7 @@ public sealed class AuthenticatorCoverageValidatorTests
     /// <summary>
     /// An authenticator whose constructor has an unsatisfied DI dependency. Registering this
     /// by type (not instance) causes <c>GetServices&lt;IClientAuthenticator&gt;()</c> to throw
-    /// during construction, which exercises the validator's catch-and-skip path.
+    /// during construction.
     /// </summary>
     private sealed class BrokenAuthenticator : IClientAuthenticator
     {
@@ -61,62 +63,65 @@ public sealed class AuthenticatorCoverageValidatorTests
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
-    private static AuthenticatorCoverageValidator CreateValidator(
+    private static async Task<IReadOnlyList<ZeeKayDaConfigurationFailure>> VerifyAsync(
+        string[] serverMethods,
         params IClientAuthenticator[] authenticators)
     {
         var services = new ServiceCollection();
         foreach (var a in authenticators)
             services.AddSingleton(a);
-        return new AuthenticatorCoverageValidator(services.BuildServiceProvider());
+
+        return await VerifyAsync(services, serverMethods);
     }
 
-    private static AuthorizationServerOptions CreateOptions(params string[] methods)
+    private static async Task<IReadOnlyList<ZeeKayDaConfigurationFailure>> VerifyAsync(
+        ServiceCollection services,
+        string[] serverMethods)
     {
         var options = new AuthorizationServerOptions();
-        options.TokenEndpoint.AuthMethodsSupported = [.. methods];
-        return options;
+        options.TokenEndpoint.AuthMethodsSupported = [.. serverMethods];
+
+        await using var provider = services.BuildServiceProvider();
+        var context = new StartupVerificationContext();
+
+        await new AuthenticatorCoverageValidator(Options.Create(options))
+            .VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        return context.Failures;
     }
 
     // ── Happy path ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_succeeds_when_all_server_methods_are_covered_by_registered_authenticators()
+    public async Task Verify_succeeds_when_all_server_methods_are_covered_by_registered_authenticators()
     {
-        var validator = CreateValidator(
+        var failures = await VerifyAsync(
+            [TokenEndpointAuthMethods.ClientSecretBasic],
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
 
-        var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
-
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
-    public void Validate_succeeds_when_none_is_in_server_methods_without_a_matching_authenticator()
+    public async Task Verify_succeeds_when_none_is_in_server_methods_without_a_matching_authenticator()
     {
         // "none" is always covered by the composite fallback — no authenticator needed.
-        var validator = CreateValidator(
+        var failures = await VerifyAsync(
+            [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None],
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
 
-        var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None));
-
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
-    public void Validate_succeeds_when_multiple_authenticators_each_cover_distinct_methods()
+    public async Task Verify_succeeds_when_multiple_authenticators_each_cover_distinct_methods()
     {
-        var validator = CreateValidator(
+        var failures = await VerifyAsync(
+            [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.ClientSecretPost],
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic),
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretPost));
 
-        var result = validator.Validate(null,
-            CreateOptions(
-                TokenEndpointAuthMethods.ClientSecretBasic,
-                TokenEndpointAuthMethods.ClientSecretPost));
-
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     // ── Whitespace in method string ───────────────────────────────────────────────────────────────
@@ -127,17 +132,16 @@ public sealed class AuthenticatorCoverageValidatorTests
     [InlineData(" client_secret_basic ")]  // both
     [InlineData("client_secret_post ")]    // trailing space on a different known method
     [InlineData(" none")]                  // leading space on the reserved method
-    public void Validate_fails_when_authenticator_declares_method_with_surrounding_whitespace(
+    public async Task Verify_fails_when_authenticator_declares_method_with_surrounding_whitespace(
         string methodWithWhitespace)
     {
-        var validator = CreateValidator(
+        var failures = await VerifyAsync(
+            [TokenEndpointAuthMethods.ClientSecretBasic],
             new FakeAuthenticator(methodWithWhitespace));
 
-        var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
-
-        result.Succeeded.Should().BeFalse();
-        result.FailureMessage.Should().ContainEquivalentOf("whitespace");
+        failures.Should().Contain(failure =>
+            failure.Code == "authenticators.method_whitespace" &&
+            failure.Message.Contains("whitespace"));
     }
 
     // ── Non-canonical casing ──────────────────────────────────────────────────────────────────────
@@ -148,111 +152,149 @@ public sealed class AuthenticatorCoverageValidatorTests
     [InlineData("CLIENT_SECRET_POST")]     // upper-case on a different known method
     [InlineData("Client_Secret_Post")]     // title-case on a different known method
     [InlineData("NONE")]                   // upper-case on the reserved method
-    public void Validate_fails_when_authenticator_declares_known_method_with_wrong_casing(
+    public async Task Verify_fails_when_authenticator_declares_known_method_with_wrong_casing(
         string methodWithWrongCasing)
     {
-        var validator = CreateValidator(
+        var failures = await VerifyAsync(
+            [TokenEndpointAuthMethods.ClientSecretBasic],
             new FakeAuthenticator(methodWithWrongCasing));
 
-        var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
-
-        result.Succeeded.Should().BeFalse();
-        result.FailureMessage.Should().MatchRegex("(?i)canonical|casing");
+        failures.Should().Contain(failure =>
+            failure.Code == "authenticators.method_casing" &&
+            failure.Message.Contains("canonical"));
     }
 
     // ── none reserved ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_an_authenticator_declares_none()
+    public async Task Verify_fails_when_an_authenticator_declares_none()
     {
-        var validator = CreateValidator(
+        var failures = await VerifyAsync(
+            [TokenEndpointAuthMethods.None],
             new FakeAuthenticator(TokenEndpointAuthMethods.None));
 
-        var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethods.None));
-
-        result.Succeeded.Should().BeFalse();
-        result.FailureMessage.Should().Contain(TokenEndpointAuthMethods.None);
+        failures.Should().ContainSingle()
+            .Which.Should().Match<ZeeKayDaConfigurationFailure>(failure =>
+                failure.Code == "authenticators.none_declared" &&
+                failure.Message.Contains(TokenEndpointAuthMethods.None));
     }
 
     // ── Overlapping declarations ───────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_two_authenticators_declare_the_same_method()
+    public async Task Verify_fails_when_two_authenticators_declare_the_same_method()
     {
-        var validator = CreateValidator(
+        var failures = await VerifyAsync(
+            [TokenEndpointAuthMethods.ClientSecretBasic],
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic),
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
 
-        var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
-
-        result.Succeeded.Should().BeFalse();
-        result.FailureMessage.Should().Contain(TokenEndpointAuthMethods.ClientSecretBasic);
+        failures.Should().ContainSingle()
+            .Which.Should().Match<ZeeKayDaConfigurationFailure>(failure =>
+                failure.Code == "authenticators.method_overlap" &&
+                failure.Message.Contains(TokenEndpointAuthMethods.ClientSecretBasic));
     }
 
     // ── Uncovered server method ────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_server_advertises_a_method_with_no_registered_authenticator()
+    public async Task Verify_fails_when_server_advertises_a_method_with_no_registered_authenticator()
     {
-        var validator = CreateValidator(
+        // Server also advertises ClientSecretPost but nothing handles it.
+        var failures = await VerifyAsync(
+            [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.ClientSecretPost],
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
 
-        // Server also advertises ClientSecretPost but nothing handles it.
-        var result = validator.Validate(null,
-            CreateOptions(
-                TokenEndpointAuthMethods.ClientSecretBasic,
-                TokenEndpointAuthMethods.ClientSecretPost));
-
-        result.Succeeded.Should().BeFalse();
-        result.FailureMessage.Should().Contain(TokenEndpointAuthMethods.ClientSecretPost);
+        failures.Should().ContainSingle()
+            .Which.Should().Match<ZeeKayDaConfigurationFailure>(failure =>
+                failure.Code == "authenticators.method_uncovered" &&
+                failure.Message.Contains(TokenEndpointAuthMethods.ClientSecretPost));
     }
 
     [Fact]
-    public void Validate_fails_when_no_authenticators_are_registered_and_server_requires_a_method()
+    public async Task Verify_fails_when_no_authenticators_are_registered_and_server_requires_a_method()
     {
-        var validator = CreateValidator();
+        var failures = await VerifyAsync([TokenEndpointAuthMethods.ClientSecretBasic]);
 
-        var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
+        failures.Should().ContainSingle()
+            .Which.Code.Should().Be("authenticators.method_uncovered");
+    }
 
-        result.Succeeded.Should().BeFalse();
+    [Fact]
+    public async Task Verify_reports_a_method_advertised_twice_as_uncovered_once()
+    {
+        var failures = await VerifyAsync(
+            [TokenEndpointAuthMethods.ClientSecretPost, TokenEndpointAuthMethods.ClientSecretPost]);
+
+        failures.Should().ContainSingle();
     }
 
     // ── Authenticator does not over-advertise ─────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_succeeds_when_authenticator_declares_method_not_in_server_AuthMethodsSupported()
+    public async Task Verify_succeeds_when_authenticator_declares_method_not_in_server_AuthMethodsSupported()
     {
         // An authenticator may declare methods the server does not advertise — coverage validation
         // only checks that every advertised server method has exactly one authenticator; it does
         // not require that every authenticator method is in AuthMethodsSupported.
-        var validator = CreateValidator(
+        var failures = await VerifyAsync(
+            [TokenEndpointAuthMethods.ClientSecretBasic],
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.ClientSecretPost));
 
-        var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
-
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     // ── DI construction failure ───────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_returns_Skip_when_resolving_IClientAuthenticator_throws()
+    public async Task An_authenticator_that_fails_to_construct_is_not_swallowed()
     {
-        // If a registered IClientAuthenticator has an unsatisfied constructor dependency,
-        // GetServices<IClientAuthenticator>() throws during enumeration. The validator must
-        // catch the exception and return Skip so that the root-cause DI error surfaces instead.
+        // The startup runner reports an exception from a check as a failure naming its type, with
+        // the exception as the root cause. Catching it here instead would skip the coverage check
+        // and leave the host to start with an authenticator it cannot build.
         var services = new ServiceCollection();
         services.AddSingleton<IClientAuthenticator, BrokenAuthenticator>();
-        var validator = new AuthenticatorCoverageValidator(services.BuildServiceProvider());
 
-        var result = validator.Validate(null,
-            CreateOptions(TokenEndpointAuthMethods.ClientSecretBasic));
+        var act = () => VerifyAsync(services, [TokenEndpointAuthMethods.ClientSecretBasic]);
 
-        result.Skipped.Should().BeTrue();
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    // ── Not part of options resolution ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Reading_the_server_options_constructs_no_client_authenticator()
+    {
+        // As an options validator this check made the first read of the server options build every
+        // authenticator — and with it the secret hasher's startup work — inside whatever happened
+        // to read the options first.
+        var constructed = false;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+        services.AddSingleton<IClientRepository>(_ =>
+            throw new InvalidOperationException("Only its registration is checked in this test."));
+        services.AddSingleton<IClientAuthenticator>(_ =>
+        {
+            constructed = true;
+            return new FakeAuthenticator("private_key_jwt");
+        });
+        using var provider = services.BuildServiceProvider();
+
+        _ = provider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
+
+        constructed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void AddZeeKayDaAuth_registers_the_coverage_check_as_a_startup_activator()
+    {
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+
+        services.Should().ContainSingle(descriptor =>
+            descriptor.ImplementationType == typeof(AuthenticatorCoverageValidator))
+            .Which.ServiceType.Should().Be(typeof(IStartupActivator));
     }
 }
