@@ -181,10 +181,10 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
     }
 
     /// <summary>
-    /// The <c>Authorization: Bearer</c> transport. More than one <c>Authorization</c> header, or a
-    /// Bearer header with nothing after the scheme, uses the transport malformed; a header naming
-    /// another scheme does not use it at all, and is answered with the bare challenge that names
-    /// the scheme this endpoint wants.
+    /// The <c>Authorization: Bearer</c> transport. More than one <c>Authorization</c> header is
+    /// malformed whatever the schemes name — RFC 9110 §11.6.2 allows one — as is a Bearer header
+    /// with nothing after the scheme. A single header naming another scheme does not use this
+    /// transport at all, and draws the bare challenge that names the scheme this endpoint wants.
     /// </summary>
     private static Transport BearerHeader(IHeaderDictionary headers)
     {
@@ -194,7 +194,7 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
             return Transport.Unused;
 
         if (authorization.Count > 1)
-            return authorization.Any(IsBearer) ? Transport.Malformed : Transport.Unused;
+            return Transport.Malformed;
 
         if (!IsBearer(authorization[0]))
             return Transport.Unused;

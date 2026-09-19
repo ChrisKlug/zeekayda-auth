@@ -252,6 +252,20 @@ public sealed class UserInfoEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task Two_authorization_headers_are_invalid_request_whatever_scheme_they_name()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, UserInfoPath);
+        request.Headers.TryAddWithoutValidation("Authorization", "Basic dXNlcjpwYXNz");
+        request.Headers.TryAddWithoutValidation("Authorization", "Basic dXNlcjpwYXNz");
+
+        var response = await _client.SendAsync(request, Cancellation);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "RFC 9110 §11.6.2 allows one Authorization header; two is malformed however they read");
+        Challenge(response).Should().Contain("error=\"invalid_request\"");
+    }
+
+    [Fact]
     public async Task A_header_naming_another_scheme_gets_the_bare_challenge()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, UserInfoPath);
