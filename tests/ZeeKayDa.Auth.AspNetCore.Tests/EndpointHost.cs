@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using Microsoft.AspNetCore.Http;
@@ -35,6 +36,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests;
 internal sealed class EndpointHost : IDisposable
 {
     private static readonly Lazy<EndpointHost> LazyDefault = new(() => new EndpointHost());
+
+    private static readonly ConcurrentDictionary<string, Lazy<EndpointHost>> SharedHosts = new(StringComparer.Ordinal);
 
     private readonly ServiceProvider _services;
     private readonly Lazy<Task> _started;
@@ -93,6 +96,30 @@ internal sealed class EndpointHost : IDisposable
 
     /// <summary>A container with the default test configuration, shared across the test project.</summary>
     public static EndpointHost Default => LazyDefault.Value;
+
+    /// <summary>
+    /// Returns the container cached under <paramref name="key"/>, building it on first use. Several
+    /// tests asserting different things about one configuration then pay for it once.
+    /// </summary>
+    /// <param name="key">
+    /// Names the configuration. Two callers using the same key get the same container, and the
+    /// second caller's delegates are never invoked — so the key must describe the configuration, not
+    /// the test.
+    /// </param>
+    /// <param name="configureOptions">Applied on top of the default options, on first use only.</param>
+    /// <param name="configureBuilder">Applied after <c>AddZeeKayDaAuth()</c>, on first use only.</param>
+    /// <remarks>
+    /// For a configuration the tests only read from. A test that writes to a store, registers a
+    /// client, or advances a clock constructs its own <see cref="EndpointHost"/> instead, so its state
+    /// cannot reach a sibling test.
+    /// </remarks>
+    public static EndpointHost Shared(
+        string key,
+        Action<AuthorizationServerOptions>? configureOptions = null,
+        Action<ZeeKayDaAuthBuilder>? configureBuilder = null)
+        => SharedHosts.GetOrAdd(
+            key,
+            _ => new Lazy<EndpointHost>(() => new EndpointHost(configureOptions, configureBuilder))).Value;
 
     /// <summary>The container the endpoint under test resolves from.</summary>
     public IServiceProvider Services => _services;
