@@ -52,11 +52,14 @@ esac
 # under the running one. mkdir is atomic, so two runs started together cannot both take this lock,
 # and the path is fixed rather than under $TMPDIR, which differs per user and per session, so every
 # checkout sees the same one. It is taken above the cleanup trap and the clone, so a refused run
-# touches neither. An empty pid file is a run that has taken the lock and not yet written it.
+# touches neither. An empty pid file is a run that has taken the lock and not yet written it. A pid
+# counts as the holder only while it is still running this script: a killed run's pid can be reused
+# by an unrelated process, which would otherwise pin the lock until a reboot.
 LOCK_DIR=/tmp/zeekayda-conformance.lock
 if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
     HOLDER="$(cat "${LOCK_DIR}/pid" 2>/dev/null || true)"
-    if [[ -z "${HOLDER}" ]] || kill -0 "${HOLDER}" 2>/dev/null; then
+    if [[ -z "${HOLDER}" ]] \
+        || ps -p "${HOLDER}" -o command= 2>/dev/null | grep -q run-conformance.sh; then
         echo "Another conformance run${HOLDER:+ (pid ${HOLDER})} is active; wait for it." >&2
     else
         echo "A conformance run (pid ${HOLDER}) was killed and left its lock behind." >&2
