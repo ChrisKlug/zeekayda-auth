@@ -221,11 +221,16 @@ minute added to it is a minute added to the window. [RFC 7009
 §3](https://www.rfc-editor.org/rfc/rfc7009#section-3) sanctions that trade for self-contained
 tokens: keep them short and renew them.
 
-Renewal today is a fresh authorization request, which is silent for a browser that still holds its
-sign-in session — a client gets a new token by redirecting through the authorization endpoint,
-roughly every ten minutes instead of every hour. The refresh-token grant is not served yet, so
-putting `GrantType.RefreshToken` in `GrantTypesSupported` advertises it in discovery without making
-it work.
+Renewal today is a fresh authorization request the client starts itself, by redirecting through the
+authorization endpoint roughly every ten minutes instead of every hour. A browser that still holds
+its sign-in session is not asked to sign in again, but it **is** asked for consent again: consent is
+not remembered between requests, so a client left at the default `RequireConsent = true` prompts the
+user on every renewal, and a renewal sent with `prompt=none` is answered `consent_required`. Only a
+client registered with `RequireConsent = false` renews without the user seeing anything. Turn
+consent off for that reason alone only for your own first-party applications — it is the control
+that lets a user notice an authorization request they never started. The refresh-token grant is not
+served yet, so putting `GrantType.RefreshToken` in `GrantTypesSupported` advertises it in discovery
+without making it work.
 
 ---
 

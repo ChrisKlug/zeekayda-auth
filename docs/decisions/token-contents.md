@@ -93,7 +93,8 @@ that passed validation fails at issuance. Both defaults are short, for different
 is consumed once, at the client, on receipt; an access token is self-contained and checked against no
 store, so its lifetime *is* the window in which it still works after the grant behind it is gone, the
 trade RFC 7009 §3 sanctions for self-contained tokens. Renewal is a fresh authorization request until
-the refresh-token grant is served. Nothing else
+the refresh-token grant is served, and it re-prompts for consent unless the client has
+`RequireConsent` off, because consent is not remembered between requests. Nothing else
 derives from these values — key retirement is an operator emptying a slot, not a computed window.
 
 **A client whose allowed ID-token algorithms exclude the signing key's algorithm fails closed.** The

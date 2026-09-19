@@ -86,8 +86,12 @@ public sealed class TokenEndpointOptions
     /// the window by exactly the amount added.
     /// </para>
     /// <para>
-    /// Renewal today is a fresh authorization request, which is silent for a browser that still
-    /// holds its sign-in session. The refresh-token grant is not served yet, so putting
+    /// Renewal today is a fresh authorization request the client starts itself. A browser that
+    /// still holds its sign-in session is not asked to sign in again, but it is asked for consent
+    /// again unless the client is registered with
+    /// <see cref="Clients.IClientMetadata.RequireConsent"/> off — consent is not remembered
+    /// between requests, so a default registration prompts on every renewal. The refresh-token
+    /// grant is not served yet, so putting
     /// <see cref="GrantType.RefreshToken"/> in
     /// <see cref="AuthorizationServerOptions.GrantTypesSupported"/> advertises it in discovery
     /// without making it work.

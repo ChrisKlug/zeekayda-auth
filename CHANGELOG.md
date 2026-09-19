@@ -150,8 +150,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   Both must be positive; a value past `AbsoluteFamilyLifetime` warns at startup. The access-token
   default is short because the token is self-contained and checked against no store: its lifetime is
   the window in which it still works after the grant behind it is gone (RFC 7009 §3). Renewal is a
-  fresh authorization request — silent for a browser that still holds its sign-in session — until
-  the refresh-token grant is served.
+  fresh authorization request, which reuses the browser's sign-in session but re-prompts for consent
+  unless the client has `RequireConsent` off, until the refresh-token grant is served.
   `AuthorizationEndpoint.CodeChallengeMethodsSupported` now defaults to `[S256]`, and startup fails
   when `GrantTypesSupported` contains the authorization code grant and the collection lacks it, so
   the grant is never served with its enforcement path unadvertised.
