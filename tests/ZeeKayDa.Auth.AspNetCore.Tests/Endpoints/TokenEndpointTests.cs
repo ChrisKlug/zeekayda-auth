@@ -499,6 +499,12 @@ public sealed class TokenEndpointTests : IDisposable
 
     // ── Lifetimes ─────────────────────────────────────────────────────────────────────────────
 
+    // The override tests below assert a literal expires_in. Read against this, they also assert the
+    // override is not simply the server default — which is what made them stop proving anything the
+    // last time the default moved.
+    private static readonly TimeSpan ServerDefaultAccessTokenLifetime =
+        new TokenEndpointOptions().AccessTokenLifetime;
+
     [Fact]
     public async Task Server_wide_lifetimes_set_the_expiry_of_both_tokens()
     {
@@ -537,6 +543,9 @@ public sealed class TokenEndpointTests : IDisposable
         var body = await ReadJsonAsync(await PostTokenWithAsync(client, TokenForm(code)));
 
         body.GetProperty("expires_in").GetInt64().Should().Be(1800);
+        body.GetProperty("expires_in").GetInt64().Should().NotBe(
+            (long)ServerDefaultAccessTokenLifetime.TotalSeconds,
+            "an override equal to the server default would prove nothing about the override");
         Claims(body.GetProperty("access_token").GetString()!).GetProperty("exp").GetInt64().Should().Be(Now.AddMinutes(30).ToUnixTimeSeconds());
         Claims(body.GetProperty("id_token").GetString()!).GetProperty("exp").GetInt64().Should().Be(Now.AddMinutes(1).ToUnixTimeSeconds());
     }
@@ -564,6 +573,9 @@ public sealed class TokenEndpointTests : IDisposable
         var body = await ReadJsonAsync(await PostTokenWithAsync(client, TokenForm(code)));
 
         body.GetProperty("expires_in").GetInt64().Should().Be(1800, "the lifetime comes from the registration the credential was checked against");
+        body.GetProperty("expires_in").GetInt64().Should().NotBe(
+            (long)ServerDefaultAccessTokenLifetime.TotalSeconds,
+            "an override equal to the server default would prove nothing about which registration was used");
         repository.ReadsSinceReset.Should().Be(1, "the token request reads the repository once, for authentication, and never again");
     }
 
