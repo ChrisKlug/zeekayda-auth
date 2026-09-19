@@ -34,7 +34,7 @@
         "current-block": "Verify authorization endpoint response",
         "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
         "expected-result": "warning",
-        "comment": "The ID token carries email for the code flow. The register ships the standard scopes' claims in both the ID token and userinfo on purpose and lets a host trim the ID token; whether the sample does is #734. Delete this entry when #734 is resolved, or make it permanent with the decision."
+        "comment": "The code flow's ID token carries email. OIDC Core 5.4 routes the standard scopes' claims to userinfo when an access token is issued, and #734 changes the framework default to match. Delete this entry when #734 lands."
     },
     {
         "test-name": "oidcc-alternate-happy-flow",
@@ -46,7 +46,7 @@
         "current-block": "Verify authorization endpoint response",
         "condition": "EnsureIdTokenDoesNotContainEmailForScopeEmail",
         "expected-result": "warning",
-        "comment": "Same cause as oidcc-scope-email: email in the code flow's ID token, deliberate per the register - decision in #734. Delete this entry when #734 is resolved, or make it permanent with the decision."
+        "comment": "The code flow's ID token carries email. OIDC Core 5.4 routes the standard scopes' claims to userinfo when an access token is issued, and #734 changes the framework default to match. Delete this entry when #734 lands."
     },
     {
         "test-name": "oidcc-ensure-request-with-acr-values-succeeds",

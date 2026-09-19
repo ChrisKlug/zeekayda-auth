@@ -114,10 +114,9 @@ screenshot for a human certifier to look at. Nothing in a REVIEW module failed.
 
 ### Warnings
 
-- **C — deliberate, decision pending in #734.** `EnsureIdTokenDoesNotContainEmailForScopeEmail`:
-  the code flow's ID token carries `email`. The register ships the standard scopes' claims in both
-  the ID token and userinfo on purpose and lets a host trim the ID-token list; whether the sample
-  trims to the OIDC Core §5.4 default is #734.
+- **C — library, #734.** `EnsureIdTokenDoesNotContainEmailForScopeEmail`: the code flow's ID token
+  carries `email`. OIDC Core §5.4 routes the standard scopes' claims to userinfo when an access
+  token is issued; the framework ships them in both places today, and #734 changes that default.
 - **D — library, #735.** `ValidateIdTokenACRClaimAgainstAcrValuesRequest`: `acr_values` was
   requested and the ID token has no `acr` (OIDC Core §3.1.2.1, SHOULD). The framework carries `acr`
   from the authorization code into the tokens, but the sign-in API gives a login no way to assert
