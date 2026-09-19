@@ -8,7 +8,8 @@
 # is for local conformance runs only and must never be used for anything else.
 set -euo pipefail
 
-HOSTNAME_="${CONFORMANCE_OP_HOST:-zeekayda.localtest.me}"
+# Fixed, not overridable — see the note on OP_HOST in run-conformance.sh.
+HOSTNAME_=zeekayda.localtest.me
 CERT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/certs"
 DAYS=825
 

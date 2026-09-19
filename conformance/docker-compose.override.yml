@@ -15,7 +15,8 @@ services:
       args:
         SUITE_IMAGE: registry.gitlab.com/openid/conformance-suite:${IMAGE_TAG:-latest}
     extra_hosts:
-      - "${CONFORMANCE_OP_HOST:-zeekayda.localtest.me}:host-gateway"
+      # Fixed, not overridable — see the note on OP_HOST in run-conformance.sh.
+      - "zeekayda.localtest.me:host-gateway"
 
   runner:
     image: zeekayda-conformance-runner:local

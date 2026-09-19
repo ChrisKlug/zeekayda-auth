@@ -20,8 +20,13 @@ SUITE_DIR="${HERE}/suite"
 SUITE_REF="${SUITE_REF:-release-v5.3.1}"
 export IMAGE_TAG="${IMAGE_TAG:-${SUITE_REF}}"
 
-OP_HOST="${CONFORMANCE_OP_HOST:-zeekayda.localtest.me}"
-export CONFORMANCE_OP_HOST="${OP_HOST}"
+# Fixed, not overridable. The name also appears literally in the sample's issuer
+# (samples/IdentityServer/appsettings.Conformance.json) and in the browser-match strings
+# (config/zeekayda.json), which no environment variable can reach, so an override here would
+# change the certificate and the container's host mapping while the issuer stayed behind — a
+# broken run wearing the look of a supported knob. Changing the hostname means editing those two
+# files, docker-compose.override.yml and make-certs.sh alongside this line.
+OP_HOST=zeekayda.localtest.me
 OP_BASE="https://${OP_HOST}:5443"
 DISCOVERY_URL="${OP_BASE}/.well-known/openid-configuration"
 SUITE_URL="https://localhost.emobix.co.uk:8443"
