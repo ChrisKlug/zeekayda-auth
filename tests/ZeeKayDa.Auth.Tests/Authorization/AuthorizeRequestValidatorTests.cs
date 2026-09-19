@@ -502,8 +502,8 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task A_public_client_never_omits_pkce_whatever_its_registration_says()
     {
-        // Registration validation refuses the opt-in on a public client, but a custom repository
-        // may not run it; the endpoint must not trust the flag on its own.
+        // Registration validation refuses RequirePkce = false on a public client, but a custom
+        // repository may not run it; the endpoint must not trust the flag on its own.
         var parameters = ValidParameters();
         parameters.Remove("code_challenge");
         parameters.Remove("code_challenge_method");

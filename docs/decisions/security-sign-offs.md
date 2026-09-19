@@ -1635,7 +1635,8 @@ verified on the fix diff.
 - Opt-in off by default, refused at startup on a public client, one predicate at both endpoints.
   Closed — `A_public_client_cannot_be_permitted_to_omit_pkce`,
   `A_public_client_never_omits_pkce_whatever_its_registration_says`,
-  `Only_a_confidential_client_that_opted_in_may_omit_the_challenge`.
+  `Only_a_confidential_client_registered_without_RequirePkce_may_omit_the_challenge`
+  [renamed by #732 from Only_a_confidential_client_that_opted_in_may_omit_the_challenge].
 - A nonce-only code is always an `openid` code carrying the nonce [reversed by the 2026-09-19 entry
   for #732 below: the nonce is no longer required]; a sent challenge, empty or half-sent included, is
   held to its shape. Closed —

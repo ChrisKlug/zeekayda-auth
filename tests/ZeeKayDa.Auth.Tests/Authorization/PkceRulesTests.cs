@@ -14,7 +14,7 @@ public sealed class PkceRulesTests
     [InlineData(false, true, false)]
     [InlineData(true, false, false)]
     [InlineData(true, true, false)]
-    public void Only_a_confidential_client_that_opted_in_may_omit_the_challenge(bool isPublic, bool requirePkce, bool expected)
+    public void Only_a_confidential_client_registered_without_RequirePkce_may_omit_the_challenge(bool isPublic, bool requirePkce, bool expected)
     {
         var client = ClientRegistration.CreatePublic("client", ["https://app.example.com/cb"], [], ["openid"])
             with
