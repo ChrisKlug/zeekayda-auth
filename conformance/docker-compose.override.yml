@@ -1,6 +1,7 @@
-# Layered on top of the suite's own suite/docker-compose-prebuilt.yml. Compose is run with
-# --project-directory conformance/suite, so relative paths here resolve against the suite clone and
-# '..' is this folder.
+# Layered on top of the suite's own docker-compose-prebuilt.yml. Compose is run with
+# --project-directory set to the suite clone, so relative paths here resolve against the clone. The
+# clone may live outside this folder (ZEEKAYDA_CONFORMANCE_SUITE_DIR in run-conformance.sh), so this
+# folder's own files are reached through CONFORMANCE_DIR, which the script exports, never '..'.
 #
 # Two things this adds:
 #   * the suite's Java server can resolve the sample identity server's hostname, which points at
@@ -10,7 +11,7 @@ services:
   server:
     image: zeekayda-conformance-server:local
     build:
-      context: ..
+      context: ${CONFORMANCE_DIR:?set by run-conformance.sh}
       dockerfile: Dockerfile.suite-server
       args:
         SUITE_IMAGE: registry.gitlab.com/openid/conformance-suite:${IMAGE_TAG:-latest}
@@ -21,7 +22,7 @@ services:
   runner:
     image: zeekayda-conformance-runner:local
     build:
-      context: ..
+      context: ${CONFORMANCE_DIR:?set by run-conformance.sh}
       dockerfile: Dockerfile.runner
     profiles: [ "runner" ]
     depends_on:
@@ -32,9 +33,9 @@ services:
       # expected-results manifests read-only and a writable results directory — and nothing else.
       # Mounting the whole conformance/ folder read-write handed it the generated private keys and
       # let it rewrite the manifests, which are the gate a run is judged against.
-      - ../config:/conformance/config:ro
-      - ../expected:/conformance/expected:ro
-      - ../results:/conformance/results
+      - ${CONFORMANCE_DIR:?set by run-conformance.sh}/config:/conformance/config:ro
+      - ${CONFORMANCE_DIR:?set by run-conformance.sh}/expected:/conformance/expected:ro
+      - ${CONFORMANCE_DIR:?set by run-conformance.sh}/results:/conformance/results
     working_dir: /suite/scripts
     environment:
       CONFORMANCE_SERVER: https://localhost.emobix.co.uk:8443/

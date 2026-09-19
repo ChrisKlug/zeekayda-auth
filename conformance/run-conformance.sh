@@ -13,7 +13,16 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/.." && pwd)"
-SUITE_DIR="${HERE}/suite"
+
+# Where the suite's source is cloned. Inside this folder by default, so a fresh checkout, CI's
+# included, needs nothing set. With several worktrees, point ZEEKAYDA_CONFORMANCE_SUITE_DIR at one
+# shared clone outside all of them instead of cloning ~360 MB into each. The clone is moved to
+# SUITE_REF below either way, so a shared one follows whichever worktree ran last.
+SUITE_DIR="${ZEEKAYDA_CONFORMANCE_SUITE_DIR:-${HERE}/suite}"
+
+# docker-compose.override.yml finds this folder's files through this, not through '..' from the
+# suite clone, because the clone may live outside this folder.
+export CONFORMANCE_DIR="${HERE}"
 
 # The suite's scripts and its published images have to agree, so both are pinned to one release and
 # moved together. A newer suite is a deliberate change, made here, with a re-run to prove it.
