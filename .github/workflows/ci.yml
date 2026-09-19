@@ -102,9 +102,14 @@ jobs:
         if: needs.detect-changes.outputs.non-docs == 'true'
         run: dotnet build ${{ env.SOLUTION }} --no-restore --configuration Release
 
+      # -p:EnableCoverage=true switches on the per-test-project coverage.runsettings, which is what
+      # scopes each package's coverage to its own assembly. Without it the collector still runs but
+      # measures everything each test project loads, and this artifact is the baseline the
+      # coverage-regression gate compares against. The property is off by default so a local
+      # `dotnet test` is not instrumented — see tests/*/*.Tests.csproj.
       - name: Test
         if: needs.detect-changes.outputs.non-docs == 'true'
-        run: dotnet test ${{ env.SOLUTION }} --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults
+        run: dotnet test ${{ env.SOLUTION }} --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults -p:EnableCoverage=true
 
       - name: Upload coverage-${{ matrix.os }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -168,7 +173,8 @@ jobs:
       # tests — as a side effect), reuse the coverage already produced by build-and-test's most
       # recent successful run on the base branch. That job already uploads a per-OS
       # coverage.cobertura.xml artifact on every push, scoped per-package the same way this job's
-      # own Include-filtered measurement is (see the per-project coverage.runsettings files), so
+      # own Include-filtered measurement is (the per-project coverage.runsettings files, which that
+      # job switches on with -p:EnableCoverage=true), so
       # its Linux artifact is equivalent input for this comparison without rerunning anything.
       #
       # A "successful" run on the base branch does not guarantee it has that artifact: a docs-only

@@ -5,7 +5,11 @@
     <IsTestProject>true</IsTestProject>
     <!-- Compiles the test hosts' Razor Pages, for the interaction tests that run under MVC. -->
     <AddRazorSupportForMvc>true</AddRazorSupportForMvc>
-    <RunSettingsFilePath>$(MSBuildProjectDirectory)/coverage.runsettings</RunSettingsFilePath>
+    <!-- Opt-in only: a DataCollector entry in runsettings enables coverlet by itself, so wiring
+         this unconditionally instruments the output assemblies on every `dotnet test` — about a
+         third of wall time, and two concurrent runs of the same project corrupt each other's
+         DLLs. CI's build-and-test job passes -p:EnableCoverage=true to get the filter back. -->
+    <RunSettingsFilePath Condition="'$(EnableCoverage)' == 'true'">$(MSBuildProjectDirectory)/coverage.runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
   <ItemGroup>
