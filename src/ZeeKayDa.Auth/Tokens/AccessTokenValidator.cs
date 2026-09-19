@@ -12,6 +12,17 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <param name="Scopes">The scopes the grant carries, in the order the token lists them.</param>
 internal sealed record ValidatedAccessToken(string Subject, string ClientId, IReadOnlyList<string> Scopes);
 
+/// <summary>A NumericDate claim as read from a payload: whether it was written, and what it says.</summary>
+internal readonly record struct NumericDate(bool Present, DateTimeOffset? Value)
+{
+    public static NumericDate Absent => new(false, null);
+
+    public static NumericDate Unreadable => new(true, null);
+
+    /// <summary>The issuer wrote the claim and this code cannot tell what instant it names.</summary>
+    public bool IsUnreadable => Present && Value is null;
+}
+
 /// <summary>
 /// Validates an access token the way RFC 9068 §4 obliges a resource server to: this server's
 /// signature, its <c>typ</c>, its <c>iss</c>, an <c>aud</c> naming this server, and a validity
@@ -103,39 +114,53 @@ internal sealed class AccessTokenValidator
     /// The token has not expired and has become valid, each allowed the configured clock-skew
     /// tolerance. <c>exp</c> is required of an access token (RFC 9068 §2.2), so a token without a
     /// readable one is refused rather than treated as eternal; <c>nbf</c> is honoured when present
-    /// (RFC 7519 §4.1.5) and absent from what this server writes.
+    /// (RFC 7519 §4.1.5), and one present but unreadable is refused rather than ignored, since a
+    /// token says it becomes valid later and this code cannot tell when.
     /// </summary>
+    /// <remarks>
+    /// The tolerance is applied to <see cref="TimeProvider.GetUtcNow"/>, never to the claim.
+    /// <c>exp</c> and <c>nbf</c> come off the wire and may sit at the edge of what
+    /// <see cref="DateTimeOffset"/> represents — the framework itself emits the maximum when an
+    /// operator configures an enormous lifetime — where adding to them overflows. The clock is
+    /// always far from either edge, and validation is bounded to well under an hour.
+    /// </remarks>
     private bool IsWithinValidityWindow(JsonElement payload)
     {
-        if (ReadUnixTimeSeconds(payload, "exp") is not { } expiresAt)
+        if (ReadNumericDate(payload, "exp").Value is not { } expiresAt)
+            return false;
+
+        var notBefore = ReadNumericDate(payload, "nbf");
+        if (notBefore.IsUnreadable)
             return false;
 
         var now = _time.GetUtcNow();
         var skew = _options.Value.ClockSkewTolerance;
 
-        if (now > expiresAt + skew)
-            return false;
-
-        return ReadUnixTimeSeconds(payload, "nbf") is not { } notBefore || now >= notBefore - skew;
+        return now - skew <= expiresAt
+            && (notBefore.Value is not { } validFrom || now + skew >= validFrom);
     }
 
-    /// <summary>A NumericDate claim (RFC 7519 §2), or <see langword="null"/> when absent or unreadable.</summary>
-    private static DateTimeOffset? ReadUnixTimeSeconds(JsonElement payload, string name)
+    /// <summary>
+    /// A NumericDate claim (RFC 7519 §2): absent, present but unreadable, or an instant. The
+    /// middle case is distinct because a claim the issuer wrote and this code cannot read is not
+    /// the same as one the issuer never wrote.
+    /// </summary>
+    private static NumericDate ReadNumericDate(JsonElement payload, string name)
     {
-        if (!payload.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Number ||
-            !value.TryGetInt64(out var seconds))
-        {
-            return null;
-        }
+        if (!payload.TryGetProperty(name, out var value))
+            return NumericDate.Absent;
+
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt64(out var seconds))
+            return NumericDate.Unreadable;
 
         try
         {
-            return DateTimeOffset.FromUnixTimeSeconds(seconds);
+            return new NumericDate(true, DateTimeOffset.FromUnixTimeSeconds(seconds));
         }
         catch (ArgumentOutOfRangeException)
         {
-            // A NumericDate outside the representable range is as unreadable as a missing one.
-            return null;
+            // Outside the representable range: written, and unreadable.
+            return NumericDate.Unreadable;
         }
     }
 

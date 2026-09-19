@@ -5,11 +5,11 @@ What must be true when a grant becomes tokens. The stores underneath are `token-
 the wire, its audience, its lifetime and its signature are `token-contents.md`.
 
 **The token endpoint issues the authorization code grant with subject claims, and userinfo answers
-an access token with them.** The endpoint writes the protocol claims from the grant, asks the host's
-`IClaimsProvider` for the subject's claims, selects per destination from the granted scopes and the
-client's registration, and hands a finalized `TokenPayload` to `ITokenIssuer`, a shape-agnostic seam
-resolved per `TokenKind` as a keyed DI service and filled by `JwtTokenIssuer` over the signing key
-ring. The refresh grant is not built; the entries about it are constraints it inherits.
+an access token with them.** Protocol claims come from the grant, subject claims from the host's
+`IClaimsProvider`, selected per destination; the endpoint hands a finalized `TokenPayload` to
+`ITokenIssuer`, keyed per `TokenKind` and filled by `JwtTokenIssuer`. That seam is shape-agnostic for
+*issuing* only — userinfo reads a compact JWS, so a replaced access-token issuer is refused there,
+which the opaque-token work closes. The refresh grant is unbuilt; its entries are inherited.
 
 ## Decisions in force
 

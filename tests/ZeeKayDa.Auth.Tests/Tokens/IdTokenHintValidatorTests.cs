@@ -249,7 +249,7 @@ public sealed class IdTokenHintValidatorTests
 
     [Theory]
     [InlineData("at+jwt")]
-    [InlineData("jwt")]
+    [InlineData("application/at+jwt")]
     [InlineData(null)]
     public void Validate_refuses_a_correctly_signed_hint_whose_typ_is_not_JWT(string? typ)
     {
@@ -263,6 +263,22 @@ public sealed class IdTokenHintValidatorTests
         var hint = CreateValidator().Validate(token, ClientId);
 
         hint.Should().BeNull("an access token, or any other token, is not an ID token hint");
+    }
+
+    [Theory]
+    [InlineData("jwt")]
+    [InlineData("Jwt")]
+    public void Validate_accepts_a_hint_whose_typ_differs_only_in_case(string typ)
+    {
+        // RFC 7515 §4.1.9: typ carries a media type, and media type comparison is case-insensitive,
+        // so this is the same type the server writes rather than a different kind of token. Only a
+        // token this server signed can reach the check at all, and it always writes "JWT".
+        var header = Header();
+        header["typ"] = typ;
+
+        var hint = CreateValidator().Validate(Sign(header, Claims()), ClientId);
+
+        hint.Should().Be(new IdTokenHint(ClientId, Subject));
     }
 
     [Theory]

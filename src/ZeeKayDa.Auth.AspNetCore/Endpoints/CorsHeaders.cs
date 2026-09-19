@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Http;
 
 namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
@@ -13,6 +14,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// </remarks>
 internal static class CorsHeaders
 {
+    /// <summary>How long a browser may cache a preflight. One hour, the common ceiling.</summary>
+    private const int PreflightMaxAgeSeconds = 3600;
+
     /// <summary>
     /// Applies the allowlist to <paramref name="context"/>'s response. An empty allowlist emits
     /// <c>Access-Control-Allow-Origin: *</c>; a non-empty one emits <c>Vary: Origin</c> and, when
@@ -52,14 +56,14 @@ internal static class CorsHeaders
     /// <param name="allowedOrigins">The startup-validated, canonicalized allowlist.</param>
     /// <param name="methods">The <c>Access-Control-Allow-Methods</c> value.</param>
     /// <param name="headers">The <c>Access-Control-Allow-Headers</c> value.</param>
-    /// <param name="maxAge">How long a browser may cache this preflight, in seconds.</param>
     public static void ApplyPreflight(
-        HttpContext context, HashSet<string> allowedOrigins, string methods, string headers, int maxAge)
+        HttpContext context, HashSet<string> allowedOrigins, string methods, string headers)
     {
         ApplyOrigin(context, allowedOrigins);
 
         context.Response.Headers.AccessControlAllowMethods = methods;
         context.Response.Headers.AccessControlAllowHeaders = headers;
-        context.Response.Headers.AccessControlMaxAge = maxAge.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        context.Response.Headers.AccessControlMaxAge =
+            PreflightMaxAgeSeconds.ToString(CultureInfo.InvariantCulture);
     }
 }

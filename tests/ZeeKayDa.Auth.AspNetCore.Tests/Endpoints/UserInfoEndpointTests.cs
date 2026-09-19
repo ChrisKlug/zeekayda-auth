@@ -48,6 +48,11 @@ public sealed class UserInfoEndpointTests : IDisposable
     ];
 
     private readonly ScriptedClaimsProvider _provider = new();
+    private readonly MutableScopeRepository _scopes = new(
+    [
+        .. StandardScopes.All,
+        new ScopeDefinition { Name = "orders.read", Audience = OrdersAudience, AccessTokenClaims = ["role"], UserInfoClaims = ["customer_number"] },
+    ]);
     private readonly TestWebAppFactory _factory;
     private readonly HttpClient _client;
 
@@ -56,11 +61,7 @@ public sealed class UserInfoEndpointTests : IDisposable
         _factory = new TestWebAppFactory(
             configureBuilder: builder =>
             {
-                builder.Services.AddSingleton<IScopeRepository>(new InMemoryScopeRepository(
-                [
-                    .. StandardScopes.All,
-                    new ScopeDefinition { Name = "orders.read", Audience = OrdersAudience, AccessTokenClaims = ["role"], UserInfoClaims = ["customer_number"] },
-                ]));
+                builder.Services.AddSingleton<IScopeRepository>(_scopes);
                 builder.Services.AddSingleton<IClaimsProvider>(_provider);
                 builder.AddInMemoryClients(clients => clients
                     .Add(ClientRegistration.CreatePublic(App, [Redirect], [], ["openid", "profile", "email", "orders.read"]) with { RequireConsent = false }));
@@ -433,6 +434,57 @@ public sealed class UserInfoEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_cross_origin_caller_may_read_the_challenge()
+    {
+        // WWW-Authenticate is not CORS-safelisted, so without this a browser script sees a bare
+        // 401 and the deliberate split between invalid_token and insufficient_scope buys nothing.
+        var response = await _client.GetAsync(UserInfoPath, Cancellation);
+
+        response.Headers.GetValues("Access-Control-Expose-Headers").Should().ContainSingle()
+            .Which.Should().Contain("WWW-Authenticate");
+    }
+
+    [Fact]
+    public async Task The_claims_response_carries_no_allow_credentials()
+    {
+        var response = await GetAsync(await AccessTokenAsync("openid profile"));
+
+        response.Headers.Contains("Access-Control-Allow-Credentials").Should().BeFalse(
+            "the wildcard origin is only safe while no response enables a credentialed request");
+    }
+
+    [Fact]
+    public async Task A_scope_whose_audience_turned_ambiguous_still_answers_userinfo()
+    {
+        // Userinfo's response has no audience, so a scope set that names two resource servers is
+        // no bearing on it and must not turn a valid call into a server error.
+        var token = await AccessTokenAsync("openid orders.read");
+        _scopes.Scopes =
+        [
+            .. StandardScopes.All,
+            new ScopeDefinition { Name = "orders.read", Audience = "https://elsewhere.example.com/", UserInfoClaims = ["customer_number"] },
+        ];
+
+        var claims = await GetUserInfoAsync(token);
+
+        claims.GetProperty("customer_number").GetString().Should().Be("CUST-00042");
+    }
+
+    [Fact]
+    public async Task The_provider_is_asked_only_for_the_claim_types_userinfo_will_keep()
+    {
+        var token = await AccessTokenAsync("openid orders.read");
+        _provider.Reset();
+
+        await GetUserInfoAsync(token);
+
+        var context = _provider.Calls.Should().ContainSingle().Subject;
+        context.ClaimTypes.Should().Contain("customer_number");
+        context.ClaimTypes.Should().NotContain("role",
+            "role is an access-token claim of that scope; fetching it here is I/O on personal data nothing uses");
+    }
+
+    [Fact]
     public async Task An_explicit_allowlist_answers_a_listed_origin_with_its_own_entry()
     {
         using var factory = new TestWebAppFactory(
@@ -581,6 +633,15 @@ public sealed class UserInfoEndpointTests : IDisposable
 
     private static ClaimsResolutionResult Resolved(IReadOnlyList<ClaimRecord> claims) =>
         new ClaimsResolutionResult.Resolved { Claims = claims };
+
+    /// <summary>A scope repository whose definitions a test can change between requests.</summary>
+    private sealed class MutableScopeRepository(IReadOnlyCollection<ScopeDefinition> scopes) : IScopeRepository
+    {
+        public IReadOnlyCollection<ScopeDefinition> Scopes { get; set; } = scopes;
+
+        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Scopes);
+    }
 
     /// <summary>Answers from <see cref="Script"/> when set, otherwise the default pool; records every context it is handed.</summary>
     private sealed class ScriptedClaimsProvider : IClaimsProvider

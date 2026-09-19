@@ -9,10 +9,12 @@ using ZeeKayDa.Auth.Scopes;
 namespace ZeeKayDa.Auth.AspNetCore.Tokens;
 
 /// <summary>
-/// Turns a grant into the subject claims its tokens carry and the audience its access token
-/// names: resolves the granted scopes, derives the audience, checks the client's additions
-/// against the scopes, asks the host's <see cref="IClaimsProvider"/> for the pool, and selects
-/// from it. Every failure is logged here, once, and answered to the caller as an outcome.
+/// Turns a set of granted scopes into the subject claims one destination carries, and — for the
+/// tokens the token endpoint issues — the audience its access token names: resolves the scopes,
+/// checks the client's additions against them, asks the host's <see cref="IClaimsProvider"/> for
+/// the pool, and selects from it. Every failure is logged here, once, and answered as an outcome.
+/// One path for both destinations, so the selection rules cannot drift apart between the tokens a
+/// grant becomes and the claims userinfo answers with.
 /// </summary>
 /// <remarks>
 /// The provider is resolved from the request's services on every call: it is registered scoped,
@@ -34,27 +36,15 @@ internal sealed class GrantClaimsResolver
         _logger = logger;
     }
 
-    /// <summary>Resolves the subject claims and the resource audience of one grant, or says why it could not.</summary>
+    /// <summary>Resolves the subject claims a destination carries, or says why it could not.</summary>
     /// <param name="context">The request, whose services supply the provider.</param>
-    /// <param name="client">The client the tokens are for.</param>
-    /// <param name="sub">The subject the grant was issued to.</param>
-    /// <param name="scope">The granted scopes, from the stored grant.</param>
-    /// <param name="familyId">
-    /// The refresh-token family of the grant, or <see langword="null"/> at userinfo, where a token
-    /// proves a grant existed but there is no grant in hand.
-    /// </param>
-    public async Task<GrantClaimsOutcome> ResolveAsync(
-        HttpContext context,
-        IClientMetadata client,
-        string sub,
-        IReadOnlyList<string> scope,
-        string? familyId)
+    /// <param name="request">The subject, the client, the granted scopes and what they are wanted for.</param>
+    public async Task<GrantClaimsOutcome> ResolveAsync(HttpContext context, ClaimsRequest request)
     {
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(client);
-        ArgumentException.ThrowIfNullOrEmpty(sub);
-        ArgumentNullException.ThrowIfNull(scope);
+        ArgumentNullException.ThrowIfNull(request);
 
+        var (client, sub, scope, familyId, destination) = request;
         var cancellationToken = context.RequestAborted;
         var definitions = await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The registered IScopeRepository returned null from GetScopesAsync.");
@@ -64,29 +54,20 @@ internal sealed class GrantClaimsResolver
         // that changed under a live grant: the server's fault, and answered as such.
         if (!ScopeResolution.TryResolve(definitions, scope, out var granted, out var undefined))
         {
-            _logger.LogError("Client {ClientId} holds a grant for the scope {Scope}, which IScopeRepository no longer defines; nothing was issued.", client.ClientId, undefined);
+            _logger.LogError("Client {ClientId} holds a grant for the scope {Scope}, which IScopeRepository no longer defines; no claims were resolved.", client.ClientId, undefined);
             return GrantClaimsOutcome.Failed.Instance;
         }
 
-        if (!ScopeResolution.TryResolveAudience(granted, out var resourceAudience))
-        {
-            _logger.LogError("Client {ClientId} holds a grant whose scopes name more than one resource server audience; nothing was issued.", client.ClientId);
+        if (!TryResolveAudience(client, granted, destination, out var resourceAudience))
             return GrantClaimsOutcome.Failed.Instance;
-        }
-
-        if (ScopeResolution.FirstWithMalformedAudience(granted) is { } malformed)
-        {
-            _logger.LogError("Client {ClientId} holds a grant for the scope {Scope}, whose Audience is not an absolute URI without a fragment; nothing was issued.", client.ClientId, malformed.Name);
-            return GrantClaimsOutcome.Failed.Instance;
-        }
 
         if (ClientClaimAdditions.FindCollision(client, definitions) is { } collision)
         {
-            _logger.LogError("Client {ClientId} could not be issued tokens: {Detail}", client.ClientId, collision.Describe(client.ClientId));
+            _logger.LogError("Client {ClientId} could not be served claims: {Detail}", client.ClientId, collision.Describe(client.ClientId));
             return GrantClaimsOutcome.Failed.Instance;
         }
 
-        var plan = ClaimSelectionPlan.For(granted, client);
+        var plan = ClaimSelectionPlan.For(granted, client).For(destination);
         var result = await ResolvePoolAsync(context, client, new ClaimsProviderContext(sub, scope, plan.All, familyId), cancellationToken).ConfigureAwait(false);
 
         return result switch
@@ -95,6 +76,38 @@ internal sealed class GrantClaimsResolver
             ClaimsResolutionResult.SubjectInvalid => SubjectInvalid(client),
             _ => GrantClaimsOutcome.Failed.Instance,
         };
+    }
+
+    /// <summary>
+    /// The resource server the granted scopes name, for a destination that carries one. Userinfo
+    /// does not: its response has no audience, so a scope set that names two, or one whose audience
+    /// is malformed, must not turn a request it has no bearing on into a server error.
+    /// </summary>
+    private bool TryResolveAudience(
+        IClientMetadata client,
+        IReadOnlyList<ScopeDefinition> granted,
+        ClaimsDestination destination,
+        out string? resourceAudience)
+    {
+        resourceAudience = null;
+
+        if (destination is not ClaimsDestination.Tokens)
+            return true;
+
+        if (!ScopeResolution.TryResolveAudience(granted, out resourceAudience))
+        {
+            _logger.LogError("Client {ClientId} holds a grant whose scopes name more than one resource server audience; nothing was issued.", client.ClientId);
+            return false;
+        }
+
+        if (ScopeResolution.FirstWithMalformedAudience(granted) is { } malformed)
+        {
+            _logger.LogError("Client {ClientId} holds a grant for the scope {Scope}, whose Audience is not an absolute URI without a fragment; nothing was issued.", client.ClientId, malformed.Name);
+            resourceAudience = null;
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -170,6 +183,36 @@ internal sealed class GrantClaimsResolver
         _logger.LogWarning("The claims provider reported the subject of a grant to client {ClientId} invalid; nothing was issued.", client.ClientId);
         return GrantClaimsOutcome.SubjectInvalid.Instance;
     }
+}
+
+/// <summary>
+/// One claims resolution's inputs: whose claims, for which client, under which granted scopes, and
+/// what for.
+/// </summary>
+/// <param name="Client">The client the claims are for.</param>
+/// <param name="Sub">The subject the grant was issued to.</param>
+/// <param name="Scope">The granted scopes, from the stored grant or the presented token.</param>
+/// <param name="FamilyId">
+/// The refresh-token family of the grant, or <see langword="null"/> at userinfo, where a token
+/// proves a grant existed but there is no grant in hand.
+/// </param>
+/// <param name="Destination">Which claims are wanted, and whether an audience must be derived.</param>
+/// <exception cref="ArgumentException">Thrown when <paramref name="Sub"/> is null or empty.</exception>
+/// <exception cref="ArgumentNullException">Thrown when <paramref name="Client"/> or <paramref name="Scope"/> is null.</exception>
+internal sealed record ClaimsRequest(
+    IClientMetadata Client,
+    string Sub,
+    IReadOnlyList<string> Scope,
+    string? FamilyId,
+    ClaimsDestination Destination)
+{
+    public IClientMetadata Client { get; } = Client ?? throw new ArgumentNullException(nameof(Client));
+
+    public string Sub { get; } = !string.IsNullOrEmpty(Sub)
+        ? Sub
+        : throw new ArgumentException("The subject identifier must not be null or empty.", nameof(Sub));
+
+    public IReadOnlyList<string> Scope { get; } = Scope ?? throw new ArgumentNullException(nameof(Scope));
 }
 
 /// <summary>What resolving a grant's claims came to. Closed: a caller handles exactly these three.</summary>

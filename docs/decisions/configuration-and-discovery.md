@@ -45,9 +45,7 @@ check: CORS-origin canonicalisation runs earlier in an `IPostConfigureOptions<T>
 the collection to read-only so nothing mutates it after validation.
 
 **One CORS allowlist, on the root, for every endpoint a browser script calls.** `CorsOrigins` governs
-discovery, JWKS and userinfo alike; empty means `*`. Per-endpoint lists were deleted: none of these
-routes authenticates with a cookie, so the list only decides who may read a public document or a
-response whose token the caller already holds — an answer that does not vary by endpoint.
+discovery, JWKS and userinfo alike; none uses a cookie, so who may read one does not vary by endpoint.
 
 **A host that supports no grant using the authorization endpoint serves neither the endpoint nor the
 metadata describing it.** Without `authorization_code` nobody signs in, so `/connect/authorize` and
@@ -135,6 +133,9 @@ empty-and-subset checks are what turn the resulting gap into a startup failure r
 narrowed server.
 
 ## Tried, didn't work
+
+- **A CORS allowlist per endpoint.** Two shipped and were signed off, then collapsed into one root list
+  when userinfo would have been the third; the knob had no security behind it.
 
 - **A closed `TokenEndpointAuthMethod` enum for the advertised auth-method set.** Shipped alongside
   the per-client string set, then removed: with the enum as discovery's source, the document could

@@ -284,6 +284,55 @@ public sealed class AccessTokenValidatorTests
     }
 
     [Fact]
+    public void Validate_does_not_throw_for_a_NumericDate_at_the_edge_of_the_representable_range()
+    {
+        // The framework itself emits the maximum when an operator configures an enormous lifetime,
+        // so adding the skew to the claim rather than to the clock would overflow on its own token.
+        var claims = Claims();
+        claims["exp"] = DateTimeOffset.MaxValue.ToUnixTimeSeconds();
+
+        var act = () => CreateValidator().Validate(Sign(Header(), claims));
+
+        act.Should().NotThrow();
+        act().Should().NotBeNull("a token that expires at the end of time has not expired");
+    }
+
+    [Fact]
+    public void Validate_does_not_throw_for_an_nbf_at_the_start_of_the_representable_range()
+    {
+        var claims = Claims();
+        claims["nbf"] = DateTimeOffset.MinValue.ToUnixTimeSeconds();
+
+        var act = () => CreateValidator().Validate(Sign(Header(), claims));
+
+        act.Should().NotThrow();
+        act().Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData("not-a-number")]
+    [InlineData(true)]
+    public void Validate_refuses_a_token_whose_nbf_is_present_but_unreadable(object nbf)
+    {
+        // RFC 7519 §4.1.5: a token that says it becomes valid later must not be used before then,
+        // and a claim this code cannot read is not the same as one the issuer never wrote.
+        var claims = Claims();
+        claims["nbf"] = nbf;
+
+        CreateValidator().Validate(Sign(Header(), claims)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("AT+JWT")]
+    [InlineData("at+JWT")]
+    [InlineData("Application/At+Jwt")]
+    public void Validate_accepts_the_typ_header_regardless_of_case(string type)
+    {
+        // RFC 7515 §4.1.9: typ carries a media type, whose comparison is case-insensitive.
+        CreateValidator().Validate(Sign(Header(typ: type), Claims())).Should().NotBeNull();
+    }
+
+    [Fact]
     public void Validate_refuses_a_token_that_is_not_yet_valid()
     {
         var claims = Claims();

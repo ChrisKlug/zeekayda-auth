@@ -19,6 +19,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </remarks>
 internal static class SignedTokenReader
 {
+    /// <summary>The two header members that decide which key verifies, and under which algorithm.</summary>
+    private readonly record struct JoseHeader(string Kid, string Algorithm);
+
     /// <summary>The longest token read at all, in characters. Far above anything this server issues.</summary>
     internal const int MaxLength = 8192;
 
@@ -29,7 +32,7 @@ internal static class SignedTokenReader
     /// caller able to tell them apart could map the keys and header shapes the server accepts.
     /// </summary>
     /// <param name="token">The token as presented, verbatim.</param>
-    /// <param name="acceptedTypes">The <c>typ</c> header values to accept, compared ordinally.</param>
+    /// <param name="acceptedTypes">The <c>typ</c> header values to accept, compared ignoring case.</param>
     /// <param name="published">The keys the server still publishes. Nothing else may verify.</param>
     /// <returns>
     /// The parsed payload object, which the caller owns and must dispose, or <see langword="null"/>.
@@ -85,6 +88,22 @@ internal static class SignedTokenReader
     private static SigningKey? ResolveSigningKey(
         string headerSegment, string[] acceptedTypes, IReadOnlyList<SigningKey> published)
     {
+        if (ReadHeader(headerSegment, acceptedTypes) is not { } header)
+            return null;
+
+        var key = published.FirstOrDefault(candidate => string.Equals(candidate.Kid, header.Kid, StringComparison.Ordinal));
+
+        return key is not null && string.Equals(SigningAlgorithms.WireName(key.Algorithm), header.Algorithm, StringComparison.Ordinal)
+            ? key
+            : null;
+    }
+
+    /// <summary>
+    /// The <c>kid</c> and <c>alg</c> of a header shaped the way this server's issuer writes one,
+    /// or <see langword="null"/> for any other header.
+    /// </summary>
+    private static JoseHeader? ReadHeader(string headerSegment, string[] acceptedTypes)
+    {
         using var header = JsonDocument.Parse(Base64Url.DecodeFromChars(headerSegment));
         var root = header.RootElement;
 
@@ -92,18 +111,12 @@ internal static class SignedTokenReader
         if (root.ValueKind != JsonValueKind.Object || root.TryGetProperty("crit", out _))
             return null;
 
-        if (ReadString(root, "typ") is not { } type || !acceptedTypes.Contains(type, StringComparer.Ordinal))
+        // RFC 7515 §4.1.9: typ carries a media type, whose comparison is case-insensitive.
+        if (ReadString(root, "typ") is not { } type || !acceptedTypes.Contains(type, StringComparer.OrdinalIgnoreCase))
             return null;
 
-        var kid = ReadString(root, "kid");
-        var algorithm = ReadString(root, "alg");
-        if (kid is null || algorithm is null)
-            return null;
-
-        var key = published.FirstOrDefault(candidate => string.Equals(candidate.Kid, kid, StringComparison.Ordinal));
-
-        return key is not null && string.Equals(SigningAlgorithms.WireName(key.Algorithm), algorithm, StringComparison.Ordinal)
-            ? key
+        return ReadString(root, "kid") is { } kid && ReadString(root, "alg") is { } algorithm
+            ? new JoseHeader(kid, algorithm)
             : null;
     }
 

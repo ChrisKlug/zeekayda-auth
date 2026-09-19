@@ -34,9 +34,6 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
     private const string AccessTokenFormField = "access_token";
     private const string FormUrlEncoded = "application/x-www-form-urlencoded";
 
-    /// <summary>How long a browser may cache the preflight. One hour, the common ceiling.</summary>
-    private const int PreflightMaxAgeSeconds = 3600;
-
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly HashSet<string> _allowedOrigins;
 
@@ -85,8 +82,7 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
             context,
             _allowedOrigins,
             methods: "GET, POST, OPTIONS",
-            headers: "Authorization, Content-Type",
-            PreflightMaxAgeSeconds);
+            headers: "Authorization, Content-Type");
 
         return Results.StatusCode(StatusCodes.Status204NoContent);
     }
@@ -99,35 +95,52 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
     {
         CorsHeaders.ApplyOrigin(context, _allowedOrigins);
 
+        var authorization = await AuthorizeAsync(context, tokens, clients).ConfigureAwait(false);
+        if (authorization is not Authorization.Caller caller)
+            return ((Authorization.Refused)authorization).Response(context);
+
+        // No family id: there is no grant here, only a token that proves one existed.
+        var resolved = await claims.ResolveAsync(
+            context,
+            new ClaimsRequest(caller.Client, caller.Token.Subject, caller.Token.Scopes, FamilyId: null, ClaimsDestination.UserInfo))
+            .ConfigureAwait(false);
+
+        return resolved switch
+        {
+            GrantClaimsOutcome.Issue issue => UserInfoResponses.Claims(context, Body(caller.Token.Subject, issue.Claims)),
+            GrantClaimsOutcome.SubjectInvalid => UserInfoResponses.InvalidToken(context),
+            _ => UserInfoResponses.ServerError(context),
+        };
+    }
+
+    /// <summary>
+    /// Everything the request must prove before a claim is fetched: that it presented one
+    /// well-formed bearer token, that this server issued it and it is still live and addressed
+    /// here, that it carries <c>openid</c>, and that the client it names is still registered.
+    /// </summary>
+    private static async ValueTask<Authorization> AuthorizeAsync(
+        HttpContext context, AccessTokenValidator tokens, ValidatedClientResolver clients)
+    {
         var presented = await ReadAccessTokenAsync(context).ConfigureAwait(false);
         if (presented.Error is { } error)
-            return error(context);
+            return new Authorization.Refused(error);
 
         if (tokens.Validate(presented.AccessToken) is not { } token)
-            return UserInfoResponses.InvalidToken(context);
+            return new Authorization.Refused(UserInfoResponses.InvalidToken);
 
         // OpenID Connect Core §5.3.1: userinfo answers a token issued under the openid scope.
         // Distinct from an invalid token, because the client can act on this one by asking for
         // the scope, and RFC 6750 §3.1 gives it its own code.
         if (!token.Scopes.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
-            return UserInfoResponses.InsufficientScope(context);
+            return new Authorization.Refused(UserInfoResponses.InsufficientScope);
 
         // The client the token was issued to decides its own claim additions. A registration that
         // is gone, or no longer validates, means the grant behind the token is gone with it.
         var client = await clients.FindByClientIdAsync(token.ClientId, context.RequestAborted).ConfigureAwait(false);
-        if (client is null)
-            return UserInfoResponses.InvalidToken(context);
 
-        // No family id: there is no grant here, only a token that proves one existed.
-        var resolved = await claims.ResolveAsync(
-            context, client, token.Subject, token.Scopes, familyId: null).ConfigureAwait(false);
-
-        return resolved switch
-        {
-            GrantClaimsOutcome.Issue issue => UserInfoResponses.Claims(context, Body(token.Subject, issue.Claims)),
-            GrantClaimsOutcome.SubjectInvalid => UserInfoResponses.InvalidToken(context),
-            _ => UserInfoResponses.ServerError(context),
-        };
+        return client is null
+            ? new Authorization.Refused(UserInfoResponses.InvalidToken)
+            : new Authorization.Caller(token, client);
     }
 
     /// <summary>
@@ -253,6 +266,20 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
         public static Transport Malformed => new(true, null);
 
         public static Transport Carrying(string token) => new(true, token);
+    }
+
+    /// <summary>What authorizing a request came to. Closed: it proved a caller, or it did not.</summary>
+    private abstract record Authorization
+    {
+        private Authorization()
+        {
+        }
+
+        /// <summary>The token the request proved, and the client registration it names.</summary>
+        public sealed record Caller(ValidatedAccessToken Token, IClientRegistration Client) : Authorization;
+
+        /// <summary>The refusal to answer with, already chosen.</summary>
+        public sealed record Refused(Func<HttpContext, IResult> Response) : Authorization;
     }
 
     /// <summary>The token the request presented, or the refusal that replaces it.</summary>
