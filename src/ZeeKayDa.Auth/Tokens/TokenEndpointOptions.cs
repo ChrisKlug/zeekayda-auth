@@ -74,17 +74,34 @@ public sealed class TokenEndpointOptions
     public TimeSpan AbsoluteFamilyLifetime { get; set; } = TimeSpan.FromDays(90);
 
     /// <summary>
-    /// Gets or sets the server-wide lifetime of issued access tokens. Defaults to one hour.
+    /// Gets or sets the server-wide lifetime of issued access tokens. Defaults to ten minutes.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// Short by design. An access token is a self-contained JWT that no code path checks against a
+    /// store, so a resource server accepts it until it expires however the grant behind it ended —
+    /// revoked, signed out, or deleted. This value <em>is</em> that window.
+    /// <see href="https://www.rfc-editor.org/rfc/rfc7009#section-3">RFC 7009 §3</see> sanctions the
+    /// trade for self-contained tokens: keep them short-lived and renew them. Lengthening it widens
+    /// the window by exactly the amount added.
+    /// </para>
+    /// <para>
+    /// Renewal today is a fresh authorization request, which is silent for a browser that still
+    /// holds its sign-in session. The refresh-token grant is not served yet, so putting
+    /// <see cref="GrantType.RefreshToken"/> in
+    /// <see cref="AuthorizationServerOptions.GrantTypesSupported"/> advertises it in discovery
+    /// without making it work.
+    /// </para>
+    /// <para>
     /// A client registration may override it through
     /// <see cref="Clients.IClientMetadata.AccessTokenLifetime"/>; a <see langword="null"/>
     /// override means this value. Must be greater than <see cref="TimeSpan.Zero"/>; rejected at
     /// startup otherwise. No upper bound is enforced — a value past
     /// <see cref="AbsoluteFamilyLifetime"/> warns at startup, since a token would then outlive
     /// the grant that produced it.
+    /// </para>
     /// </remarks>
-    public TimeSpan AccessTokenLifetime { get; set; } = TimeSpan.FromHours(1);
+    public TimeSpan AccessTokenLifetime { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>
     /// Gets or sets the server-wide lifetime of issued ID tokens. Defaults to five minutes.

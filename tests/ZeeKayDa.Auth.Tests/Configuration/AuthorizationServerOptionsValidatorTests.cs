@@ -628,12 +628,14 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
     // ── TokenEndpoint.AccessTokenLifetime / IdTokenLifetime ──────────────────────────────────────
 
+    // An access token is a self-contained JWT checked against no store, so the default lifetime is
+    // the window in which it still works after the grant behind it is gone (RFC 7009 section 3).
     [Fact]
-    public void Token_lifetimes_default_to_one_hour_and_five_minutes()
+    public void Token_lifetimes_default_to_ten_minutes_and_five_minutes()
     {
         var options = new AuthorizationServerOptions().TokenEndpoint;
 
-        options.AccessTokenLifetime.Should().Be(TimeSpan.FromHours(1));
+        options.AccessTokenLifetime.Should().Be(TimeSpan.FromMinutes(10));
         options.IdTokenLifetime.Should().Be(TimeSpan.FromMinutes(5));
     }
 
