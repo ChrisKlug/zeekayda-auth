@@ -1,7 +1,12 @@
 ---
 name: developer
 description: Senior .NET developer for ZeeKayDa.Auth. Executes LARGE, mechanical, fully-specified implementation tasks (roughly 300+ lines of implementation logic with no open design questions) when isolating the file churn from the main session's context is worth a handoff. Small changes, fix rounds, nits, and anything with open design questions are done by the main session directly — do not spawn this agent for them.
-tools: Read, Write, Edit, Grep, Glob, Bash, LSP, ToolSearch, Skill, WebFetch
+tools: Read, Write, Edit, Grep, Glob, Bash, LSP, ToolSearch, Skill, WebFetch, mcp__csharp-lsp-developer
+mcpServers:
+  - csharp-lsp-developer:
+      type: stdio
+      command: csharp-lsp-mcp
+      args: []
 model: sonnet
 effort: medium
 skills:
