@@ -169,14 +169,17 @@ do not report the underlying check as done.
 ## Waiting on a long command
 
 Run a long command (`dotnet test`, a build, a coverage run) with the Bash tool's `run_in_background`
-and let the completion notification wake you; **never write a polling loop** for it. Two loop
-patterns have each hung a session for a full session's length: `until ! pgrep -f "dotnet test"`
-matches the shell running the loop itself, because the pattern is on that shell's own command
-line, so the loop never exits (if a process check is unavoidable, bracket the first character:
-`pgrep -f "[d]otnet test"`); and `dotnet test … | head -N` silently drops the summary line of the
-last project once earlier projects have printed N lines. Filter test output with `grep -E
-"Passed!|Failed!|FAIL|error"` and no `head`. One `dotnet test` at a time: parallel runs of this
-suite collide on ports and key directories.
+and let the completion notification wake you; **never write a polling loop** for it. Three
+patterns have each hung a session for a session's length: `until ! pgrep -f "dotnet test"` matches
+the shell running the loop itself, because the pattern is on that shell's own command line, so the
+loop never exits (if a process check is unavoidable, bracket the first character: `pgrep -f
+"[d]otnet test"`); `dotnet test … | head -N` silently drops the summary line of the last project
+once earlier projects have printed N lines, so filter test output with `grep -E
+"Passed!|Failed!|FAIL|error"` and no `head`; and a Monitor built as `tail -F log | … | while read`
+that `exit`s on a marker line stays alive until its timeout, because `tail` only dies on its next
+write and a finished log never writes again — watch a single completion with `until grep -q MARKER
+log; do sleep 2; done` in a background Bash instead. One `dotnet test` at a time: parallel runs of
+this suite collide on ports and key directories.
 
 ## Code navigation
 
