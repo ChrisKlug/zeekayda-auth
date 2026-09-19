@@ -30,7 +30,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 /// and <see cref="EndSessionLogoutPageHostFixture"/> through the host's logout page.
 /// </remarks>
 public sealed class EndSessionEndpointHostTests
-    : IClassFixture<EndSessionHostFixture>, IClassFixture<EndSessionLogoutPageHostFixture>
+    : IClassFixture<EndSessionHostFixture>,
+      IClassFixture<EndSessionLogoutPageHostFixture>,
+      IClassFixture<FallbackPolicyHostFixture>
 {
     internal const string LogoutPath = "/account/logout";
     internal const string SignedOutPath = "/account/signed-out";
@@ -58,12 +60,17 @@ public sealed class EndSessionEndpointHostTests
 
     private readonly EndSessionHostFixture _host;
     private readonly EndSessionLogoutPageHostFixture _withLogoutPage;
+    private readonly FallbackPolicyHostFixture _fallback;
     private readonly HttpClient _client;
 
-    public EndSessionEndpointHostTests(EndSessionHostFixture host, EndSessionLogoutPageHostFixture withLogoutPage)
+    public EndSessionEndpointHostTests(
+        EndSessionHostFixture host,
+        EndSessionLogoutPageHostFixture withLogoutPage,
+        FallbackPolicyHostFixture fallback)
     {
         _host = host;
         _withLogoutPage = withLogoutPage;
+        _fallback = fallback;
         _host.Reset();
         _withLogoutPage.Reset();
         _client = _host.NewFlowClient();
@@ -82,6 +89,24 @@ public sealed class EndSessionEndpointHostTests
         var response = await client.GetAsync(EndSessionPath, Cancellation);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task The_endpoint_and_its_confirmation_page_are_answered_under_a_host_wide_fallback_authorization_policy()
+    {
+        // AllowAnonymous on both routes, proven against a host that 401s anything without it. The
+        // SSO session is not the host's scheme, so the host's policy must not decide who may sign out.
+        var canary = await _fallback.Client.GetAsync("/host-route", Cancellation);
+        canary.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            because: "the canary must prove the fallback policy is actually in force on this host");
+
+        var endSession = await _fallback.Client.GetAsync(EndSessionPath, Cancellation);
+        var confirm = await _fallback.Client.GetAsync(ConfirmPath, Cancellation);
+
+        endSession.StatusCode.Should().Be(HttpStatusCode.OK,
+            because: "with no session to end, the framework's signed-out page is served");
+        confirm.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            because: "with no sign-out to confirm, the handler's own refusal comes back rather than the host's 401");
     }
 
     // ── With a session: the question ──────────────────────────────────────────────────────────────
