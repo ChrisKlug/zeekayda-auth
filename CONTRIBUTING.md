@@ -325,13 +325,19 @@ The `coverage-regression` job protects critical paths from silent coverage drops
 
 **Reproducing locally:**
 
+`-p:EnableCoverage=true` is what switches on the per-test-project `coverage.runsettings` files, and
+those are what scope each package's coverage to its own assembly. Without it the collector still
+runs, but it measures every assembly each test project loads — a different, larger number than CI
+compares, on both sides of the comparison. Coverage is opt-in precisely so that an ordinary
+`dotnet test` is not instrumented; see `docs/decisions/build-and-ci.md`.
+
 ```bash
 # 1. Run tests with coverage on your branch
-dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr
+dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr -p:EnableCoverage=true
 
 # 2. Run the same on a clean checkout of main
 git worktree add ../coverage-base origin/main
-( cd ../coverage-base && dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults/base )
+( cd ../coverage-base && dotnet test --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults/base -p:EnableCoverage=true )
 
 # 3. Run the regression check
 dotnet run .github/scripts/check_coverage_regression.cs -- ./TestResults/pr ../coverage-base/TestResults/base
