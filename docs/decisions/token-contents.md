@@ -84,12 +84,17 @@ repository that changed under a live server, and a scope whose audience is the i
 one recipient, written once.
 
 **Lifetimes are server-wide defaults with per-client overrides that inherit when null.** The token
-endpoint options hold the access-token and ID-token lifetimes, one hour and five minutes by default;
+endpoint options hold the access-token and ID-token lifetimes, ten minutes and five minutes by default;
 a client registration may override either, and a null override means the server value. Both must
 exceed zero, checked at startup for the server values and by the registration validator for the
 client's; there is no upper bound. A lifetime longer than the family's absolute ceiling warns at
 startup, as the family sentinel does, and expiry arithmetic saturates rather than throws, so no value
-that passed validation fails at issuance. The ID-token default is short because it is consumed once, at the client, on receipt. Nothing else
+that passed validation fails at issuance. Both defaults are short, for different reasons: an ID token
+is consumed once, at the client, on receipt; an access token is self-contained and checked against no
+store, so its lifetime *is* the window in which it still works after the grant behind it is gone, the
+trade RFC 7009 §3 sanctions for self-contained tokens. Renewal is a fresh authorization request until
+the refresh-token grant is served, and it re-prompts for consent unless the client has
+`RequireConsent` off, because consent is not remembered between requests. Nothing else
 derives from these values — key retirement is an operator emptying a slot, not a computed window.
 
 **A client whose allowed ID-token algorithms exclude the signing key's algorithm fails closed.** The

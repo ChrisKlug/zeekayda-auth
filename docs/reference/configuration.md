@@ -202,16 +202,40 @@ The override must use the same authority as `Issuer`.
 options.TokenEndpoint.Uri = "https://id.example.com/tenant-a/custom/token";
 ```
 
-`TokenEndpoint.AccessTokenLifetime` (default one hour) and `TokenEndpoint.IdTokenLifetime` (default
-five minutes) are the server-wide lifetimes of the tokens the endpoint issues. Both must be greater
-than zero; there is no upper bound, but a value longer than `TokenEndpoint.AbsoluteFamilyLifetime`
-logs a startup warning. A client registration may override either through its own
-`AccessTokenLifetime` and `IdTokenLifetime`, where `null` (the default) means the server value.
+`TokenEndpoint.AccessTokenLifetime` (default ten minutes) and `TokenEndpoint.IdTokenLifetime`
+(default five minutes) are the server-wide lifetimes of the tokens the endpoint issues. Both must be
+greater than zero; there is no upper bound, but a value longer than
+`TokenEndpoint.AbsoluteFamilyLifetime` logs a startup warning. A client registration may override
+either through its own `AccessTokenLifetime` and `IdTokenLifetime`, where `null` (the default) means
+the server value.
 
 ```csharp
 options.TokenEndpoint.AccessTokenLifetime = TimeSpan.FromMinutes(30);
 options.TokenEndpoint.IdTokenLifetime = TimeSpan.FromMinutes(2);
 ```
+
+The access-token default is short because the token is a self-contained JWT: nothing checks it
+against a store, so a resource server keeps accepting it until it expires however the grant behind
+it ended — revoked, signed out, or deleted. `AccessTokenLifetime` is that window, and every minute
+added to it is a minute added to the window. Budget for a little more than the value you set: a
+resource server applies its own clock-skew tolerance to `exp`, five minutes being a common default,
+and that tolerance is added to this lifetime. [RFC 7009
+§3](https://www.rfc-editor.org/rfc/rfc7009#section-3) sanctions that trade for self-contained
+tokens: keep them short and renew them.
+
+Renewal today is a fresh authorization request the client starts itself, by redirecting through the
+authorization endpoint roughly every ten minutes instead of every hour. That is the path [RFC 9700
+§4.14.2](https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2) describes for a server that issues
+no refresh token: the client obtains a new access token through another grant, and the server uses
+the sign-in session to keep that cheap. A browser that still holds
+its sign-in session is not asked to sign in again, but it **is** asked for consent again: consent is
+not remembered between requests, so a client left at the default `RequireConsent = true` prompts the
+user on every renewal, and a renewal sent with `prompt=none` is answered `consent_required`. Only a
+client registered with `RequireConsent = false` renews without the user seeing anything. Turn
+consent off for that reason alone only for your own first-party applications — it is the control
+that lets a user notice an authorization request they never started. The refresh-token grant is not
+served yet, so putting `GrantType.RefreshToken` in `GrantTypesSupported` advertises it in discovery
+without making it work.
 
 ---
 

@@ -108,7 +108,7 @@ builder.AddInMemoryClients(clients =>
         {
             options.RequireConsent = false;
             options.DisplayName = "Example Web";
-            options.AccessTokenLifetime = TimeSpan.FromMinutes(10);
+            options.AccessTokenLifetime = TimeSpan.FromMinutes(2);
         }));
 ```
 

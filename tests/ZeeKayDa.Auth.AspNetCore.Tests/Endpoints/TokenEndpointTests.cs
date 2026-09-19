@@ -339,7 +339,7 @@ public sealed class TokenEndpointTests : IDisposable
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
         var body = await ReadJsonAsync(response);
         body.GetProperty("token_type").GetString().Should().Be("Bearer");
-        body.GetProperty("expires_in").GetInt64().Should().Be(3600, "the server default is one hour");
+        body.GetProperty("expires_in").GetInt64().Should().Be(600, "the server default is ten minutes");
         body.GetProperty("scope").GetString().Should().Be("openid profile");
         body.GetProperty("access_token").GetString().Should().MatchRegex(@"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$");
         body.GetProperty("id_token").GetString().Should().MatchRegex(@"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$");
@@ -375,7 +375,7 @@ public sealed class TokenEndpointTests : IDisposable
         claims.GetProperty("client_id").GetString().Should().Be(PublicClient);
         claims.GetProperty("scope").GetString().Should().Be("openid profile");
         claims.GetProperty("iat").GetInt64().Should().Be(Now.ToUnixTimeSeconds());
-        claims.GetProperty("exp").GetInt64().Should().Be(Now.AddHours(1).ToUnixTimeSeconds());
+        claims.GetProperty("exp").GetInt64().Should().Be(Now.AddMinutes(10).ToUnixTimeSeconds());
         claims.GetProperty("auth_time").GetInt64().Should().Be(Now.ToUnixTimeSeconds());
         claims.GetProperty("jti").GetString().Should().MatchRegex("^[A-Za-z0-9_-]{43}$", "a 256-bit CSPRNG value, fresh per token");
         claims.GetProperty("amr").EnumerateArray().Select(e => e.GetString()).Should().Equal(AuthenticationMethods.Password);
@@ -499,6 +499,12 @@ public sealed class TokenEndpointTests : IDisposable
 
     // ── Lifetimes ─────────────────────────────────────────────────────────────────────────────
 
+    // The override tests below assert a literal expires_in. Read against this, they also assert the
+    // override is not simply the server default — which is what made them stop proving anything the
+    // last time the default moved.
+    private static readonly TimeSpan ServerDefaultAccessTokenLifetime =
+        new TokenEndpointOptions().AccessTokenLifetime;
+
     [Fact]
     public async Task Server_wide_lifetimes_set_the_expiry_of_both_tokens()
     {
@@ -526,7 +532,7 @@ public sealed class TokenEndpointTests : IDisposable
                 builder.Services.AddSingleton<TimeProvider>(_time);
                 builder.AddInMemoryClients(clients => clients.Add(PublicRegistration() with
                 {
-                    AccessTokenLifetime = TimeSpan.FromMinutes(10),
+                    AccessTokenLifetime = TimeSpan.FromMinutes(30),
                     IdTokenLifetime = TimeSpan.FromMinutes(1),
                 }));
             },
@@ -536,8 +542,11 @@ public sealed class TokenEndpointTests : IDisposable
 
         var body = await ReadJsonAsync(await PostTokenWithAsync(client, TokenForm(code)));
 
-        body.GetProperty("expires_in").GetInt64().Should().Be(600);
-        Claims(body.GetProperty("access_token").GetString()!).GetProperty("exp").GetInt64().Should().Be(Now.AddMinutes(10).ToUnixTimeSeconds());
+        body.GetProperty("expires_in").GetInt64().Should().Be(1800);
+        body.GetProperty("expires_in").GetInt64().Should().NotBe(
+            (long)ServerDefaultAccessTokenLifetime.TotalSeconds,
+            "an override equal to the server default would prove nothing about the override");
+        Claims(body.GetProperty("access_token").GetString()!).GetProperty("exp").GetInt64().Should().Be(Now.AddMinutes(30).ToUnixTimeSeconds());
         Claims(body.GetProperty("id_token").GetString()!).GetProperty("exp").GetInt64().Should().Be(Now.AddMinutes(1).ToUnixTimeSeconds());
     }
 
@@ -548,7 +557,7 @@ public sealed class TokenEndpointTests : IDisposable
         // is the authentication, and what the credential was checked against is what the grant
         // must use — a later read could hand the request lifetimes and grants nobody authenticated.
         var repository = new FirstReadThenOtherRepository(
-            first: PublicRegistration() with { AccessTokenLifetime = TimeSpan.FromMinutes(10) },
+            first: PublicRegistration() with { AccessTokenLifetime = TimeSpan.FromMinutes(30) },
             other: PublicRegistration() with { AccessTokenLifetime = TimeSpan.FromMinutes(20) });
         using var factory = new TestWebAppFactory(
             configureBuilder: builder =>
@@ -563,7 +572,10 @@ public sealed class TokenEndpointTests : IDisposable
 
         var body = await ReadJsonAsync(await PostTokenWithAsync(client, TokenForm(code)));
 
-        body.GetProperty("expires_in").GetInt64().Should().Be(600, "the lifetime comes from the registration the credential was checked against");
+        body.GetProperty("expires_in").GetInt64().Should().Be(1800, "the lifetime comes from the registration the credential was checked against");
+        body.GetProperty("expires_in").GetInt64().Should().NotBe(
+            (long)ServerDefaultAccessTokenLifetime.TotalSeconds,
+            "an override equal to the server default would prove nothing about which registration was used");
         repository.ReadsSinceReset.Should().Be(1, "the token request reads the repository once, for authentication, and never again");
     }
 
