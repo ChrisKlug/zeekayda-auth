@@ -1,0 +1,7 @@
+suite/
+results/
+# Dockerfile.suite-server needs the CA to trust and nothing else from certs/. Without these two
+# lines the generated private keys travel to the Docker daemon in every build context, which the
+# comment in make-certs.sh calling them local-only would then be wrong about.
+certs/*
+!certs/ca.pem

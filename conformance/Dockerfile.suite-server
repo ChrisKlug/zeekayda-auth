@@ -1,0 +1,17 @@
+# The conformance suite's Java server, with the local CA from make-certs.sh added to the JDK trust
+# store so it will talk TLS to the sample identity server.
+#
+# Importing into the JDK's own cacerts keeps every public CA trusted as well; pointing
+# javax.net.ssl.trustStore at a store holding only our CA would replace them, and the suite makes
+# outbound calls of its own.
+ARG SUITE_IMAGE=registry.gitlab.com/openid/conformance-suite:latest
+FROM ${SUITE_IMAGE}
+
+COPY certs/ca.pem /tmp/zeekayda-conformance-ca.pem
+
+RUN keytool -importcert -noprompt -trustcacerts \
+        -alias zeekayda-conformance-ca \
+        -file /tmp/zeekayda-conformance-ca.pem \
+        -keystore /opt/java/openjdk/lib/security/cacerts \
+        -storepass changeit \
+    && rm /tmp/zeekayda-conformance-ca.pem

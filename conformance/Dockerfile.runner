@@ -1,0 +1,5 @@
+# Runs the suite's own scripts/run-test-plan.py. Building it here means a conformance run needs
+# nothing on the machine but Docker — no Python, no pip install, no virtualenv.
+FROM python:3.13-alpine3.20
+RUN apk add --no-cache bash \
+    && pip install --no-cache-dir httpx pyparsing
