@@ -181,6 +181,10 @@ write and a finished log never writes again — watch a single completion with `
 log; do sleep 2; done` in a background Bash instead. One `dotnet test` at a time: parallel runs of
 this suite collide on ports and key directories.
 
+**Run the tests your change touches, not the project**: change `TokenEndpoint.cs`, run `dotnet test
+… --filter "FullyQualifiedName~TokenEndpoint"` — 20–30s against 158s. Run the whole project once
+before opening a PR, which is what CI gates on anyway.
+
 ## Code navigation
 
 Prefer the LSP tool over text search for symbol-level navigation; text search is for strings, comments, and config values. Stale results: run `/restart-lsp`. Still unavailable: say so and wait for guidance rather than silently falling back.
