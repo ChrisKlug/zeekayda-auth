@@ -12,6 +12,12 @@ These rules apply to **every agent working with C# code in this repository**, re
 
 **Before your first code search or file exploration, run `ToolSearch("select:LSP")` to load the LSP tool.** The LSP tool arrives deferred in this environment — it is not callable until its schema is loaded — and skipping this step is why agents fall back to grep. Load it up front, every session, before touching any code. The ToolSearch result gives you the exact parameter schema, so never guess parameter names from memory.
 
+## LSP is not available to a background agent
+
+`ToolSearch("select:LSP")` returns no match in an agent spawned with `run_in_background: true`, however the agent's `tools:` list reads — so the agent navigates C# by `rg` and says so in its result. **This is the orchestrator's mistake, not the agent's.** An agent that needs to navigate code is spawned in the foreground, which is what `work-on-issue` means by "foreground, never background".
+
+If you are that agent and LSP will not load: say so in your result in one line, navigate by `rg`, and carry on. Do not treat it as something to work around silently, and do not spend turns retrying.
+
 ## Symbol lookups: LSP, not text search
 
 Use the **LSP tool** for all symbol-level navigation: `goToDefinition`, `findReferences`, `workspaceSymbol`, `documentSymbol`, `hover`, `incomingCalls`/`outgoingCalls`. Point LSP calls at a specific `.cs` file (absolute path), never a directory or a `.csproj`.
