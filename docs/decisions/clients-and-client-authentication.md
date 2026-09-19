@@ -73,12 +73,12 @@ possible; authenticators try both before failing.
 verifies against a decoy the default hasher builds once at startup: it costs a full verification, and
 no known value verifies it. The built-in PBKDF2 decoy is random bytes, free to build; a custom default
 hasher pays one `Create` and cannot supply a cheaper decoy. The budget is burned on every path with
-no real credentials: unknown client, a method outside the server's or the client's allowlist, and
-every `none` rejection. A non-default hasher's failure is padded too, so a faster custom hasher cannot
-reopen the oracle. A client mid-rotation is thus not timing-distinguishable from an unknown one, nor
-"public client rejected" from "no such client". Successful `none` authentication is deliberately
-*not* padded: the outcome is visible in the HTTP response and `client_id` is not an OAuth secret.
-Enumeration by request volume is left to rate limiting, the primary mitigation (RFC 9700 §2.1).
+nothing real to verify: unknown client, a method outside the server's or the client's allowlist, an
+empty secret, and every `none` rejection. A non-default hasher's failure is padded too, so a faster
+custom hasher cannot reopen the oracle. A client mid-rotation is thus not timing-distinguishable from
+an unknown one, nor "public client rejected" from "no such client". Successful `none` authentication
+is deliberately *not* padded: the outcome is visible in the HTTP response and `client_id` is not an
+OAuth secret. Enumeration by request volume is left to rate limiting (RFC 9700 §2.1).
 
 **The composite hasher is registered as its own concrete type, never as the hasher interface.**
 Registering it under the interface would let it be injected into its own `IEnumerable<>` dependency
