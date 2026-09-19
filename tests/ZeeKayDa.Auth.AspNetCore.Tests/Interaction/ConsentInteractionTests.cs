@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
-using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
@@ -27,7 +26,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 /// plus probes that report what the encrypted session and interaction cookies carry, since
 /// nothing else can observe them.
 /// </remarks>
-public sealed class ConsentInteractionTests : IDisposable
+public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHostFixture>
 {
     private const string RegisteredRedirect = "https://test.example.com/callback";
     private const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
@@ -42,23 +41,14 @@ public sealed class ConsentInteractionTests : IDisposable
     private const string ConsentingClient = "consenting-client";
     private const string TrustedClient = "trusted-client";
 
-    private static readonly DateTimeOffset Now = new(2026, 9, 5, 12, 0, 0, TimeSpan.Zero);
-
-    private readonly FakeTimeProvider _time = new(Now);
-    private readonly CapturingLoggerProvider _logs = new();
-    private readonly TestWebAppFactory _factory;
+    private readonly ConsentInteractionHostFixture _fixture;
     private readonly HttpClient _client;
 
-    public ConsentInteractionTests()
+    public ConsentInteractionTests(ConsentInteractionHostFixture fixture)
     {
-        _factory = NewFactory(ConsentPath);
-        _client = NewClient(_factory);
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-        _factory.Dispose();
+        _fixture = fixture;
+        _fixture.Reset();
+        _client = _fixture.NewFlowClient();
     }
 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
@@ -67,8 +57,8 @@ public sealed class ConsentInteractionTests : IDisposable
         configureOptions: options => options.AuthorizationEndpoint.Interaction.ConsentPath = consentPath,
         configureBuilder: builder =>
         {
-            builder.Services.AddSingleton<TimeProvider>(_time);
-            builder.Services.AddLogging(logging => logging.AddProvider(_logs));
+            builder.Services.AddSingleton<TimeProvider>(_fixture.Time);
+            builder.Services.AddLogging(logging => logging.AddProvider(_fixture.Logs));
             builder.AddInMemoryClients(clients => clients
                 .Add(ConsentingRegistration())
                 .Add(TrustedRegistration()));
@@ -80,14 +70,14 @@ public sealed class ConsentInteractionTests : IDisposable
         },
         mapEndpoints: MapHostPages);
 
-    private static ClientRegistration ConsentingRegistration()
+    internal static ClientRegistration ConsentingRegistration()
     {
         var client = ClientRegistration.CreatePublic(ConsentingClient, [RegisteredRedirect], [], ["openid", "profile", "email"]);
         return client with { DisplayName = "Example App" };
     }
 
     /// <summary>A first-party client the operator chose to exempt from consent.</summary>
-    private static ClientRegistration TrustedRegistration()
+    internal static ClientRegistration TrustedRegistration()
     {
         var client = ClientRegistration.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid", "profile"]);
         return client with { RequireConsent = false };
@@ -101,7 +91,7 @@ public sealed class ConsentInteractionTests : IDisposable
     });
 
     /// <summary>The host's pages: sign-in, the consent page, a sign-out, and two probes.</summary>
-    private static void MapHostPages(IEndpointRouteBuilder endpoints)
+    internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
         {
@@ -338,7 +328,7 @@ public sealed class ConsentInteractionTests : IDisposable
         signIn.StatusCode.Should().Be(HttpStatusCode.Redirect);
         DestinationOf(signIn).Should().Be(RegisteredRedirect);
         RedirectQueryOf(signIn)["error"].Should().Equal(["server_error"]);
-        _logs.Entries.Should().Contain(entry =>
+        _fixture.Logs.Entries.Should().Contain(entry =>
             entry.Level == LogLevel.Error && entry.Message.Contains("ConsentPath", StringComparison.Ordinal),
             "a developer finds a configuration gap in the log, not by reading the client's error page");
     }
@@ -598,7 +588,7 @@ public sealed class ConsentInteractionTests : IDisposable
         // The interaction identifier travels in the consent page's URL, and URLs leak. Another
         // browser that learned it must not be able to answer for the request.
         var signIn = await ReachConsentAsync();
-        using var otherBrowser = NewClient(_factory);
+        using var otherBrowser = _fixture.NewFlowClient();
 
         using var grant = await otherBrowser.PostAsync(
             WithInteractionId(ConsentPath, InteractionIdFrom(signIn)), Form(("scope", "openid")), Cancellation);
@@ -627,7 +617,7 @@ public sealed class ConsentInteractionTests : IDisposable
         var signIn = await ReachConsentAsync();
         var interactionId = InteractionIdFrom(signIn);
 
-        _time.Advance(TimeSpan.FromMinutes(31));
+        _fixture.Time.Advance(TimeSpan.FromMinutes(31));
 
         using var grant = await GrantAsync(interactionId, "openid");
 
@@ -653,19 +643,25 @@ public sealed class ConsentInteractionTests : IDisposable
         // The interaction context names the session that authenticated it. A browser presenting
         // that context with a different user's session cookie — the shape of a session swapped
         // underneath a half-answered consent page — must not be able to answer for the first.
-        var firstSignIn = await ReachConsentAsync(sub: "user-1");
+        // This needs a client with its own hand-built Cookie header rather than the shared host's
+        // cookie-handling client, so it builds its own host.
+        using var factory = NewFactory(ConsentPath);
+        using var client = NewClient(factory);
+        var firstHandoff = await AuthorizeAsync(client);
+        var firstSignIn = await PostLoginAsync(client, InteractionIdFrom(firstHandoff), sub: "user-1");
+        firstSignIn.ShouldHaveReachedConsent();
         var firstSession = CookiesFrom(firstSignIn, ZeeKayDaCookies.Session).Single();
 
         var query = ValidQuery();
         query["prompt"] = "login";
-        var secondHandoff = await AuthorizeAsync(query);
-        var secondSignIn = await PostLoginAsync(InteractionIdFrom(secondHandoff), sub: "user-2");
+        var secondHandoff = await AuthorizeAsync(client, query);
+        var secondSignIn = await PostLoginAsync(client, InteractionIdFrom(secondHandoff), sub: "user-2");
         secondSignIn.ShouldHaveReachedConsent();
         var secondInteraction = CookiesFrom(secondHandoff, InteractionBindingCookie.NamePrefix);
         var secondSession = CookiesFrom(secondSignIn, ZeeKayDaCookies.Session).Single();
         var url = WithInteractionId(ConsentPath, InteractionIdFrom(secondSignIn));
 
-        using var raw = NewClient(_factory, handleCookies: false);
+        using var raw = NewClient(factory, handleCookies: false);
 
         using var grant = await raw.SendAsync(GrantRequest(url, [.. secondInteraction, firstSession]), Cancellation);
         await grant.ShouldHaveFoundNothingToContinueAsync();
@@ -857,7 +853,7 @@ public sealed class ConsentInteractionTests : IDisposable
         signIn.StatusCode.Should().Be(HttpStatusCode.Redirect);
         DestinationOf(signIn).Should().Be(RegisteredRedirect);
         RedirectQueryOf(signIn)["error"].Should().Equal(["consent_required"]);
-        _logs.Entries.Should().NotContain(entry => entry.Level == LogLevel.Error);
+        _fixture.Logs.Entries.Should().NotContain(entry => entry.Level == LogLevel.Error);
     }
 
     [Fact]
@@ -880,6 +876,4 @@ public sealed class ConsentInteractionTests : IDisposable
         public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
             new(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
     }
-
-    /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>
 }

@@ -17,12 +17,15 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 /// with a broken configuration. The handler's own behaviour — the document and the headers it writes
 /// itself — is covered host-free in <see cref="DiscoveryEndpointTests"/>.
 /// </summary>
-[Collection(DefaultHostCollection.Name)]
 public sealed class DiscoveryEndpointHostTests(
     DefaultHostFixture host,
     TenantIssuerHostFixture tenant,
     FallbackPolicyHostFixture fallback,
     LoopbackHostFixture loopback)
+    : IClassFixture<DefaultHostFixture>,
+      IClassFixture<TenantIssuerHostFixture>,
+      IClassFixture<FallbackPolicyHostFixture>,
+      IClassFixture<LoopbackHostFixture>
 {
     private const string DiscoveryPath = "/.well-known/openid-configuration";
     private const string OAuthMetadataPath = "/.well-known/oauth-authorization-server";

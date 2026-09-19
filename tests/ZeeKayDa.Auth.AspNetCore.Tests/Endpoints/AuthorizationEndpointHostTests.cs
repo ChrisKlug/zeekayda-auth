@@ -13,8 +13,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 /// framework's own login handoff. The two-phase error model itself — status codes, redirects,
 /// cookies — is covered host-free in <see cref="AuthorizationEndpointTests"/>.
 /// </summary>
-[Collection(DefaultHostCollection.Name)]
 public sealed class AuthorizationEndpointHostTests(FallbackPolicyHostFixture fallback)
+    : IClassFixture<FallbackPolicyHostFixture>
 {
     private const string RegisteredRedirect = "https://test.example.com/callback";
     private const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";

@@ -12,11 +12,13 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 /// the JWK Set body and the headers it writes itself — is covered host-free in
 /// <see cref="JwksEndpointTests"/>.
 /// </summary>
-[Collection(DefaultHostCollection.Name)]
 public sealed class JwksEndpointHostTests(
     DefaultHostFixture host,
     TenantIssuerHostFixture tenant,
     FallbackPolicyHostFixture fallback)
+    : IClassFixture<DefaultHostFixture>,
+      IClassFixture<TenantIssuerHostFixture>,
+      IClassFixture<FallbackPolicyHostFixture>
 {
     private const string JwksPath = "/connect/jwks";
 

@@ -17,9 +17,20 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Providers;
 /// principal into the SSO session — with every way a stray, replayed or failed callback is kept
 /// from completing or cancelling a live authorization request.
 /// </summary>
-public sealed class ProviderRoundTripTests
+public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHostFixture>, IClassFixture<ProviderRoundTripTenantHostFixture>
 {
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
+
+    private readonly ProviderRoundTripHostFixture _fixture;
+    private readonly ProviderRoundTripTenantHostFixture _tenantFixture;
+
+    public ProviderRoundTripTests(ProviderRoundTripHostFixture fixture, ProviderRoundTripTenantHostFixture tenantFixture)
+    {
+        _fixture = fixture;
+        _fixture.Reset();
+        _tenantFixture = tenantFixture;
+        _tenantFixture.Reset();
+    }
 
     private static TestWebAppFactory NewFactory(
         Action<AuthorizationServerOptions>? configureOptions = null,
@@ -38,8 +49,7 @@ public sealed class ProviderRoundTripTests
     public async Task Provider_route_returns_404_when_the_path_differs_from_the_route_only_in_case_or_a_trailing_slash(
         string route, string wrongPath)
     {
-        using var factory = NewFactory(configureOptions: options => options.Issuer = "https://test.example.com/tenant1");
-        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com"), AllowAutoRedirect = false });
+        using var client = _tenantFixture.NewFlowClient();
 
         var mapped = await client.GetAsync(route, Cancellation);
         var wrong = await client.GetAsync(wrongPath, Cancellation);
@@ -103,8 +113,7 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task The_challenge_sends_the_user_to_the_provider_with_the_pinned_callback()
     {
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
 
         var (_, challenge) = await ChallengeAsync(client);
 
@@ -132,8 +141,7 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task ChallengeAsync_with_a_provider_that_is_not_registered_is_refused()
     {
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
 
         var challenge = async () => await ChallengeAsync(client, provider: "not-registered");
 
@@ -143,8 +151,7 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task ChallengeAsync_without_an_interaction_id_is_refused()
     {
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
         await client.GetAsync(AuthorizeUrl(), Cancellation);
 
         using var challenge = await client.PostAsync(LoginPath, Form(("provider", "acme")), Cancellation);
@@ -157,8 +164,7 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task The_provider_callback_signs_in_and_returns_through_resume_carrying_the_interaction_id()
     {
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
         var (interactionId, challenge) = await ChallengeAsync(client);
 
         var callback = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
@@ -171,8 +177,7 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task Resume_promotes_the_provider_principal_into_the_session_under_a_derived_subject()
     {
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
 
         var resume = await RoundTripAsync(client);
 
@@ -188,8 +193,7 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task Resume_consumes_the_external_ticket()
     {
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
         var (_, challenge) = await ChallengeAsync(client);
         var callback = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
 
@@ -241,8 +245,7 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task A_refusal_by_the_user_at_the_provider_reaches_the_client_as_access_denied()
     {
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
         var (_, challenge) = await ChallengeAsync(client, state: "client-state");
 
         var callback = await client.GetAsync(CallbackUrlOf(challenge, error: "access_denied"), Cancellation);
@@ -259,8 +262,7 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task A_refusal_at_the_provider_discards_the_interaction()
     {
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
         var (interactionId, challenge) = await ChallengeAsync(client);
         await client.GetAsync(CallbackUrlOf(challenge, error: "access_denied"), Cancellation);
 
@@ -274,10 +276,9 @@ public sealed class ProviderRoundTripTests
     {
         // The correlation cookie alone, as a form_post callback — a cross-site POST the Lax
         // interaction cookie does not accompany — would carry it.
-        using var factory = NewFactory();
-        using var browser = NewClient(factory);
+        using var browser = _fixture.NewFlowClient();
         var (_, challenge) = await ChallengeAsync(browser);
-        using var crossSite = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com"), AllowAutoRedirect = false, HandleCookies = false });
+        using var crossSite = _fixture.NewFlowClient(handleCookies: false);
         using var request = new HttpRequestMessage(HttpMethod.Get, CallbackUrlOf(challenge, error: "access_denied"));
         request.Headers.Add("Cookie", CorrelationCookieOf(challenge));
 
@@ -308,8 +309,7 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task A_replayed_callback_neither_completes_nor_cancels_the_live_request()
     {
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
         var (_, challenge) = await ChallengeAsync(client);
         var callback = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
 
@@ -323,10 +323,9 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task A_callback_with_no_correlation_cookie_renders_locally()
     {
-        using var factory = NewFactory();
-        using var browser = NewClient(factory);
+        using var browser = _fixture.NewFlowClient();
         var (_, challenge) = await ChallengeAsync(browser);
-        using var stranger = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com"), AllowAutoRedirect = false, HandleCookies = false });
+        using var stranger = _fixture.NewFlowClient(handleCookies: false);
 
         var callback = await stranger.GetAsync(CallbackUrlOf(challenge), Cancellation);
 
@@ -519,8 +518,7 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task Resume_naming_an_interaction_the_ticket_was_not_issued_for_is_refused()
     {
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
         var (_, challenge) = await ChallengeAsync(client);
         await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
 
@@ -535,8 +533,7 @@ public sealed class ProviderRoundTripTests
     {
         // Concurrent tabs: the second authorization request replaces nothing, so the provider
         // round trip the first tab is in the middle of still lands.
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
         var (_, challenge) = await ChallengeAsync(client);
         var callback = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
         await client.GetAsync(AuthorizeUrl(), Cancellation);
@@ -554,8 +551,7 @@ public sealed class ProviderRoundTripTests
         // resume — one redirect chain per tab, which is how a browser does it — and each
         // completes its own interaction. zkd.external is one cookie, consumed by the very next
         // request, so the chains interleave at the tab level and nowhere finer.
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
         var (_, firstChallenge) = await ChallengeAsync(client);
         var (_, secondChallenge) = await ChallengeAsync(client);
 
@@ -574,11 +570,10 @@ public sealed class ProviderRoundTripTests
     {
         // The external ticket alone — the resume URL and its cookie replayed from another browser —
         // names an interaction that browser never started, so there is nothing for it to resume.
-        using var factory = NewFactory();
-        using var browser = NewClient(factory);
+        using var browser = _fixture.NewFlowClient();
         var (interactionId, challenge) = await ChallengeAsync(browser);
         var callback = await browser.GetAsync(CallbackUrlOf(challenge), Cancellation);
-        using var otherBrowser = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com"), AllowAutoRedirect = false, HandleCookies = false });
+        using var otherBrowser = _fixture.NewFlowClient(handleCookies: false);
         using var request = new HttpRequestMessage(HttpMethod.Get, callback.Headers.Location!.OriginalString);
         request.Headers.Add("Cookie", ExternalCookieOf(callback));
 
@@ -597,8 +592,7 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task Resume_without_an_external_ticket_is_refused()
     {
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
         var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
 
         var resume = await client.GetAsync(WithInteractionId("/connect/resume", InteractionIdFrom(handoff)), Cancellation);
@@ -609,8 +603,7 @@ public sealed class ProviderRoundTripTests
     [Fact]
     public async Task A_host_page_cannot_sign_into_the_external_scheme()
     {
-        using var factory = NewFactory();
-        using var client = NewClient(factory);
+        using var client = _fixture.NewFlowClient();
 
         var signIn = async () => await client.GetAsync("/test/sign-in-external", Cancellation);
 

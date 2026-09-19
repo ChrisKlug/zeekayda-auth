@@ -23,8 +23,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 /// bearer transports, the refusals it writes itself — is covered host-free in
 /// <see cref="UserInfoEndpointTests"/>.
 /// </summary>
-[Collection(DefaultHostCollection.Name)]
 public sealed class UserInfoEndpointHostTests(DefaultHostFixture host, TenantIssuerHostFixture tenant)
+    : IClassFixture<DefaultHostFixture>,
+      IClassFixture<TenantIssuerHostFixture>
 {
     private const string UserInfoPath = "/connect/userinfo";
     private const string TokenPath = "/connect/token";

@@ -11,8 +11,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 /// handler's own behaviour — client authentication, PKCE, code redemption, issuance — is covered
 /// host-free in <see cref="TokenEndpointTests"/>.
 /// </summary>
-[Collection(DefaultHostCollection.Name)]
 public sealed class TokenEndpointHostTests(DefaultHostFixture host, FallbackPolicyHostFixture fallback)
+    : IClassFixture<DefaultHostFixture>,
+      IClassFixture<FallbackPolicyHostFixture>
 {
     private const string TokenPath = "/connect/token";
 
