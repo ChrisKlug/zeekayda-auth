@@ -261,11 +261,15 @@ public abstract class FlowHostFixture : SharedHostFixture
     /// <param name="builder">The builder the host is being configured through.</param>
     /// <param name="fakeClock">
     /// Whether the host runs on <see cref="Time"/> rather than the real clock. Pass
-    /// <see langword="false"/> for a host whose flow goes through ASP.NET Core's own authentication
-    /// handlers: their correlation cookies and data-protection payloads are stamped against the real
-    /// clock, and a host reading a fake one rejects its own callback. <see cref="Time"/> means nothing
-    /// on such a host, and a test there that needs to control time registers its own clock and takes
-    /// its own host.
+    /// <see langword="false"/> for a host whose flow round-trips an expiring cookie through
+    /// <see cref="HttpClient"/> — an external provider sign-in, for one. ASP.NET Core's remote
+    /// authentication handlers do honour <see cref="TimeProvider"/>, and stamp the correlation
+    /// cookie's expiry from it; the client's <see cref="System.Net.CookieContainer"/> does not, and
+    /// expires cookies against the real system clock with no seam to change that. So a faked server
+    /// clock sitting more than <c>RemoteAuthenticationTimeout</c> away from real time has the cookie
+    /// jar discard a cookie the server considers live, and the callback is refused for want of it.
+    /// <see cref="Time"/> means nothing on such a host, and a test there that needs to control time
+    /// registers its own clock and takes its own host.
     /// </param>
     protected void AddTestDoubles(ZeeKayDaAuthBuilder builder, bool fakeClock = true)
     {
