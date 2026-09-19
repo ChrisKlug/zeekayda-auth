@@ -14,6 +14,7 @@ using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 
@@ -345,6 +346,35 @@ public sealed class UserInfoEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_token_without_the_openid_scope_is_insufficient_scope()
+    {
+        // Unreachable through the flow: the authorization endpoint requires openid on every
+        // request, so the only token that can carry anything else is one minted here, through
+        // the host's own signing ring so it is genuinely this server's.
+        var token = await MintAccessTokenAsync(scope: "profile");
+
+        var response = await GetAsync(token);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "the client can act on this one by asking for the scope, so RFC 6750 §3.1 gives it its own code");
+        var challenge = Challenge(response);
+        challenge.Should().Contain("error=\"insufficient_scope\"");
+        challenge.Should().Contain("scope=\"openid\"", "the challenge must say which scope would satisfy it");
+    }
+
+    [Fact]
+    public async Task A_token_this_server_signed_for_another_audience_is_invalid_token()
+    {
+        var token = await MintAccessTokenAsync(scope: "openid", audience: OrdersAudience);
+
+        var response = await GetAsync(token);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "RFC 9068 §4: a resource server rejects a token that was not addressed to it, however it was signed");
+        Challenge(response).Should().Contain("error=\"invalid_token\"");
+    }
+
+    [Fact]
     public async Task A_subject_the_provider_has_since_disowned_is_invalid_token()
     {
         var token = await AccessTokenAsync("openid profile");
@@ -609,6 +639,44 @@ public sealed class UserInfoEndpointTests : IDisposable
         tokens.StatusCode.Should().Be(HttpStatusCode.OK, await tokens.Content.ReadAsStringAsync(Cancellation));
 
         return JsonDocument.Parse(await tokens.Content.ReadAsStringAsync(Cancellation)).RootElement.Clone();
+    }
+
+    /// <summary>
+    /// An access token signed by the host's own ring, carrying exactly the claims asked for. The
+    /// ring builds the header from the key it resolves, so the token is indistinguishable from one
+    /// the framework issued — which is the point: it isolates the claim under test from the
+    /// signature check that would otherwise refuse it first.
+    /// </summary>
+    private async Task<string> MintAccessTokenAsync(string scope, string? audience = null)
+    {
+        var ring = _factory.Services.GetRequiredService<ISigningKeyRing>();
+        var claims = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["iss"] = Issuer,
+            ["sub"] = Subject,
+            ["aud"] = audience ?? Issuer,
+            ["client_id"] = App,
+            ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            ["exp"] = DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds(),
+            ["jti"] = Guid.NewGuid().ToString("N"),
+            ["scope"] = scope,
+        };
+
+        var outcome = await ring.SignAsync(claims, static (signing, state) =>
+        {
+            var header = Base64UrlTextEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["alg"] = "RS256",
+                    ["typ"] = "at+jwt",
+                    ["kid"] = signing.Key.Kid,
+                }));
+            var payload = Base64UrlTextEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(state));
+            return System.Text.Encoding.ASCII.GetBytes($"{header}.{payload}");
+        }, Cancellation);
+
+        return $"{System.Text.Encoding.ASCII.GetString(outcome.SigningInput.Span)}." +
+            Base64UrlTextEncoder.Encode(outcome.Signature.ToArray());
     }
 
     private Task<HttpResponseMessage> GetAsync(string accessToken)
