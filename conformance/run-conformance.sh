@@ -52,23 +52,26 @@ esac
 # under the running one. mkdir is atomic, so two runs started together cannot both take this lock,
 # and the path is fixed rather than under $TMPDIR, which differs per user and per session, so every
 # checkout sees the same one. It is taken above the cleanup trap and the clone, so a refused run
-# touches neither. An empty pid file is a run that has taken the lock and not yet written it. A pid
-# counts as the holder only while it is still running this script: a killed run's pid can be reused
-# by an unrelated process, which would otherwise pin the lock until a reboot.
+# touches neither, and both refusals below leave the lock alone; telling them apart only picks the
+# message. The holder is recorded as pid plus start time, because a killed run's pid can be reused
+# by an unrelated process, which would otherwise pass for the run until a reboot cleared /tmp. The
+# locale and time zone are pinned so every shell formats the start time the same way. An empty
+# holder file is a run that has taken the lock and not yet written it.
+identity() { LC_ALL=C TZ=UTC ps -p "$1" -o pid=,lstart= 2>/dev/null || true; }
 LOCK_DIR=/tmp/zeekayda-conformance.lock
 if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
-    HOLDER="$(cat "${LOCK_DIR}/pid" 2>/dev/null || true)"
-    if [[ -z "${HOLDER}" ]] \
-        || ps -p "${HOLDER}" -o command= 2>/dev/null | grep -q run-conformance.sh; then
-        echo "Another conformance run${HOLDER:+ (pid ${HOLDER})} is active; wait for it." >&2
+    HOLDER="$(cat "${LOCK_DIR}/holder" 2>/dev/null || true)"
+    read -r HOLDER_PID _ <<< "${HOLDER}" || true
+    if [[ -z "${HOLDER}" || "$(identity "${HOLDER_PID}")" == "${HOLDER}" ]]; then
+        echo "Another conformance run${HOLDER_PID:+ (pid ${HOLDER_PID})} is active." >&2
     else
-        echo "A conformance run (pid ${HOLDER}) was killed and left its lock behind." >&2
+        echo "A conformance run (pid ${HOLDER_PID}) was killed and left its lock behind." >&2
         echo "Clear the lock and anything that run left up with:" >&2
         echo "    rm -rf ${LOCK_DIR} && docker compose -p zeekayda-conformance down" >&2
     fi
     exit 1
 fi
-echo "$$" > "${LOCK_DIR}/pid"
+identity "$$" > "${LOCK_DIR}/holder"
 trap 'rm -rf "${LOCK_DIR}"' EXIT
 
 # Holding the lock, no suite containers should be up. Any that are were started outside this
