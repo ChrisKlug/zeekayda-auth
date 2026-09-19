@@ -44,5 +44,97 @@
                 }
             ]
         }
-    ]
+    ],
+    "override": {
+        "oidcc-prompt-login": {
+            "browser": [
+                {
+                    "comment": "The module asks the user to sign in twice and holds an image placeholder for the second login page. The wait on the sign-in heading captures the page into it; 'optional' because the first login has no placeholder to fill.",
+                    "match": "https://zeekayda.localtest.me:5443/connect/authorize*",
+                    "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://zeekayda.localtest.me:5443/login*",
+                            "commands": [
+                                [ "wait", "xpath", "//*", 10, "Sign in", "update-image-placeholder-optional" ],
+                                [ "text", "id", "username", "alice", "optional" ],
+                                [ "text", "id", "password", "alice-password", "optional" ],
+                                [ "click", "id", "login-submit", "optional" ]
+                            ]
+                        },
+                        {
+                            "task": "Verify Complete",
+                            "match": "*/test/a/zeekayda/callback*",
+                            "commands": [
+                                [ "wait", "id", "submission_complete", 10 ]
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "oidcc-max-age-1": {
+            "browser": [
+                {
+                    "comment": "The module asks the user to sign in twice and holds an image placeholder for the second login page. The wait on the sign-in heading captures the page into it; 'optional' because the first login has no placeholder to fill.",
+                    "match": "https://zeekayda.localtest.me:5443/connect/authorize*",
+                    "tasks": [
+                        {
+                            "task": "Login",
+                            "optional": true,
+                            "match": "https://zeekayda.localtest.me:5443/login*",
+                            "commands": [
+                                [ "wait", "xpath", "//*", 10, "Sign in", "update-image-placeholder-optional" ],
+                                [ "text", "id", "username", "alice", "optional" ],
+                                [ "text", "id", "password", "alice-password", "optional" ],
+                                [ "click", "id", "login-submit", "optional" ]
+                            ]
+                        },
+                        {
+                            "task": "Verify Complete",
+                            "match": "*/test/a/zeekayda/callback*",
+                            "commands": [
+                                [ "wait", "id", "submission_complete", 10 ]
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "oidcc-ensure-registered-redirect-uri": {
+            "browser": [
+                {
+                    "comment": "The request fails phase-1 validation and the sample renders its own error page instead of redirecting, which is the behaviour under test. The module holds an image placeholder for that page; the wait on the heading captures it. No callback is ever reached, so there is no Verify Complete task.",
+                    "match": "https://zeekayda.localtest.me:5443/connect/authorize*",
+                    "tasks": [
+                        {
+                            "task": "Expect the sample's error page",
+                            "match": "https://zeekayda.localtest.me:5443/error*",
+                            "commands": [
+                                [ "wait", "xpath", "//*", 10, "Something went wrong", "update-image-placeholder" ]
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        "oidcc-ensure-request-object-with-redirect-uri": {
+            "browser": [
+                {
+                    "comment": "The request fails phase-1 validation and the sample renders its own error page instead of redirecting, which is the behaviour under test. The module holds an image placeholder for that page; the wait on the heading captures it. No callback is ever reached, so there is no Verify Complete task.",
+                    "match": "https://zeekayda.localtest.me:5443/connect/authorize*",
+                    "tasks": [
+                        {
+                            "task": "Expect the sample's error page",
+                            "match": "https://zeekayda.localtest.me:5443/error*",
+                            "commands": [
+                                [ "wait", "xpath", "//*", 10, "Something went wrong", "update-image-placeholder" ]
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    }
 }

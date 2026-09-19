@@ -33,10 +33,22 @@ public sealed class UserStore
         // A fixed subject, so alice is the same user on every run.
         Add("alice", "alice-password", subject: "a1ice000000000000000000000000001",
         [
+            // Every OpenID Connect Core §5.4 profile claim: the conformance suite's scope modules
+            // expect all of them at userinfo, not just the ones a real user would have filled in.
             new("name", "Alice Example"),
             new("given_name", "Alice"),
             new("family_name", "Example"),
+            new("middle_name", "Marie"),
+            new("nickname", "ali"),
             new("preferred_username", "alice"),
+            new("profile", "https://example.com/alice"),
+            new("picture", "https://example.com/alice.png"),
+            new("website", "https://example.com"),
+            new("gender", "female"),
+            new("birthdate", "1990-01-01"),
+            new("zoneinfo", "Europe/Stockholm"),
+            new("locale", "sv-SE"),
+            new("updated_at", 1700000000L),
             new("email", "alice@example.com"),
             new("email_verified", true),
             new("phone_number", "+1 555 0100"),

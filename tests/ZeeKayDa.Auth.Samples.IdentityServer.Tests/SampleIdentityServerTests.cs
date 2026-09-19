@@ -147,6 +147,38 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     }
 
     [Fact]
+    public async Task A_conformance_client_is_issued_a_code_for_a_request_with_a_nonce_and_no_code_challenge()
+    {
+        // The certification plan's modules send nonce and no PKCE, so the conformance clients are
+        // registered with AllowNonceInsteadOfPkce; this proves the sample's settings wiring
+        // actually applies it, which a request carrying PKCE cannot tell apart from the default.
+        using var factory = _factory.WithWebHostBuilder(host => host.UseEnvironment("Conformance"));
+        using var browser = NewBrowser(factory, ConformanceIssuer);
+
+        var loginPage = await AuthorizeWithoutPkceAsync(browser, ConformanceClientId, ConformanceRedirectUri);
+        loginPage.Should().StartWith("/login?",
+            because: "a confidential client permitted to rely on its nonce is not refused for omitting code_challenge");
+        var callback = await PostFormAsync(browser, loginPage, AliceLogin());
+
+        callback.Should().StartWith(ConformanceRedirectUri + "?");
+        QueryHelpers.ParseQuery(new Uri(callback).Query)["code"].ToString().Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_sample_public_client_is_still_refused_without_a_code_challenge_in_the_conformance_environment()
+    {
+        // The opt-out is applied per registration, not to the environment: the public client in the
+        // same settings file has no secret and never gets it.
+        using var factory = _factory.WithWebHostBuilder(host => host.UseEnvironment("Conformance"));
+        using var browser = NewBrowser(factory, ConformanceIssuer);
+
+        var response = await AuthorizeWithoutPkceAsync(browser, ClientId, RedirectUri);
+
+        response.Should().StartWith(RedirectUri + "?");
+        QueryHelpers.ParseQuery(new Uri(response).Query)["error"].ToString().Should().Be("invalid_request");
+    }
+
+    [Fact]
     public async Task A_client_initiated_sign_out_is_confirmed_on_the_logout_page_and_returns_to_the_client_with_its_state()
     {
         using var browser = NewBrowser();
@@ -239,6 +271,17 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
             ["state"] = "sample-state",
             ["code_challenge"] = challenge,
             ["code_challenge_method"] = "S256",
+        }));
+
+    private static Task<string> AuthorizeWithoutPkceAsync(HttpClient browser, string clientId, string redirectUri) =>
+        RedirectOfAsync(browser, QueryHelpers.AddQueryString("/connect/authorize", new Dictionary<string, string?>
+        {
+            ["client_id"] = clientId,
+            ["redirect_uri"] = redirectUri,
+            ["response_type"] = "code",
+            ["scope"] = "openid profile",
+            ["nonce"] = "sample-nonce",
+            ["state"] = "sample-state",
         }));
 
     /// <summary>Requests a URL the server answers with a redirect, and returns where it points.</summary>

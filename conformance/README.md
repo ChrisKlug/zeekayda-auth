@@ -22,8 +22,8 @@ and pulls its images, which takes a few minutes; later runs reuse both. Output l
 `results/<timestamp>/`: the suite's own signed export zip, the run log, the identity server's log,
 the suite server's log, and the discovery document as served.
 
-A non-zero exit means the run produced a failure or warning that `expected-failures.json` does not
-account for. That file is the gate — see below.
+A non-zero exit means the run produced a failure, warning or skip that the manifests in `expected/`
+do not account for, or that an entry there did not occur. Those files are the gate — see below.
 
 ## What it sets up, and why
 
@@ -45,14 +45,27 @@ is the issuer that came back. So:
   login page has stable ids (`username`, `password`, `login-submit`), and the conformance clients
   are registered with `RequireConsent` false, so there is no consent page to script. Deleting that
   block makes the same config run interactively, for confirming a suspicious failure by hand.
+- Four modules hold an image placeholder a human certifier would fill with a screenshot: the two
+  that ask for a second login and the two that must end on the server's own error page. The
+  `override` block in the same file gives each of those modules a browser script whose `wait`
+  command carries `update-image-placeholder`, which captures the page into the placeholder. Without
+  it the module sits in `WAITING` until the runner gives up after 240 s. Such a module finishes as
+  `REVIEW`, which the runner treats as a pass.
+- The conformance clients are registered with `AllowNonceInsteadOfPkce`. The basic plan's modules
+  send `nonce` and no `code_challenge`, and the suite has no way to make them send PKCE, so without
+  the OAuth 2.1 §7.5.1.1 opt-out every module is refused at the authorization endpoint.
 
 The suite's scripts and its published images have to agree, so `SUITE_REF` in `run-conformance.sh`
 pins both to one release. Moving to a newer suite is a deliberate edit there, with a re-run.
 
-## The expected-results manifest
+## The expected-results manifests
 
-`expected-failures.json` lists the failures and warnings a run is allowed to produce. It is the
-suite's own format, and the runner takes it with `--expected-failures-file`:
+`expected/` holds one failures file per plan (`config.failures.json`, `basic.failures.json`)
+listing the failures and warnings that plan is allowed to produce, and `basic.skips.json` listing
+the modules allowed to skip. They are the suite's own format, and the runner takes them with
+`--expected-failures-file` and `--expected-skips-file`. They are split per plan because the runner
+also fails a run in which an expected entry never occurred, so one shared file would make a
+single-plan run fail on the other plan's entries.
 
 ```json
 {
@@ -66,26 +79,24 @@ suite's own format, and the runner takes it with `--expected-failures-file`:
 }
 ```
 
-Every entry names the issue that deletes it. An entry without one is a gap nobody has agreed to
-live with. Run with `--verbose` (the script always does) and the runner prints a ready-made entry
-for anything unexpected it hits, which is the fastest way to add one honestly.
+A skip entry has the same shape minus `current-block`, `condition` and `expected-result`.
+
+Every entry names the issue that deletes it, or the register decision that makes it permanent. An
+entry with neither is a gap nobody has agreed to live with. Run with `--verbose` (the script always
+does) and the runner prints a ready-made entry for anything unexpected it hits, which is the fastest
+way to add one honestly.
 
 ## Running it in CI (#307)
 
-**Recommendation: the config plan on every PR, the basic plan nightly.**
+**Recommendation: both plans on every PR.**
 
 Measured on a developer machine with images and the suite clone already present, both plans
-together take **42.5 s** wall clock end to end — suite boot to teardown. Of that, roughly 25 s is
-waiting for the Java server to answer and about 1 s is the config plan's single module. That is
-cheap enough to put on every PR, and the discovery document is exactly the kind of thing a PR
-breaks by accident.
-
-The 42.5 s is **not** evidence for what a working basic plan costs: it was measured when all 35 of
-its modules aborted during setup within a second for want of a `userinfo_endpoint` (see
-`RESULTS.md`), so the figure measures a plan that did no work. The endpoint is served now, so those
-modules will run for real and the figure no longer applies at all. Time it again before deciding
-where the basic plan belongs. Nightly is the safe assumption — 35 browser-driven modules, run
-serially because the config carries an `alias`.
+together take **2 min 11 s** wall clock end to end — suite boot to teardown. The config plan alone
+is 46 s, almost all of it fixed cost: waiting for the Java server, building and starting the
+sample, teardown. The basic plan's 35 modules add about 90 s, a third of which is one module's
+deliberate 30 s wait before replaying a code. The full breakdown is in `RESULTS.md`. Two and a bit
+minutes is cheap enough for every PR, and the login flow is exactly the kind of thing a PR breaks
+by accident; a nightly-only basic plan would find that a day late.
 
 A first CI run must budget for the cold path the measurement excludes: cloning the suite and
 pulling its two images. Cache both by `SUITE_REF`.
