@@ -29,7 +29,10 @@ namespace ZeeKayDa.Auth.Clients;
 /// start safely while signalling that reconfiguration is needed.
 /// </para>
 /// </remarks>
-internal sealed class Pbkdf2ClientSecretHasher : ClientSecretHasher<IPbkdf2ClientSecret>
+// IClientSecretHasher is re-listed on purpose. Inherited through ClientSecretHasher<T> alone, the
+// interface's default members stay bound to their defaults, and a public method here with the same
+// signature — GetRegistrationFailures — is silently not an implementation of them.
+internal sealed class Pbkdf2ClientSecretHasher : ClientSecretHasher<IPbkdf2ClientSecret>, IClientSecretHasher
 {
     /// <summary>
     /// Minimum allowed iteration count (OWASP PBKDF2-HMAC-SHA256 minimum as of 2025).

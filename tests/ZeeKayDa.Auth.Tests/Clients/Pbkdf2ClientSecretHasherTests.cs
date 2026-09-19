@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
@@ -386,6 +387,26 @@ public sealed class Pbkdf2ClientSecretHasherTests
             f.Message.Contains("my-client") &&
             f.Message.Contains($"{Pbkdf2ClientSecretHasher.MaxIterations + 1:N0}") &&
             f.Message.Contains($"{Pbkdf2ClientSecretHasher.MaxIterations:N0}"));
+    }
+
+    [Theory]
+    [InlineData(Pbkdf2ClientSecretHasher.MinIterations - 1, "client.credentials.pbkdf2_iterations_below_minimum")]
+    [InlineData(Pbkdf2ClientSecretHasher.MaxIterations + 1, "client.credentials.pbkdf2_iterations_above_maximum")]
+    public void Registration_validation_reaches_the_iteration_bounds_through_IClientSecretHasher(
+        int iterations, string expectedCode)
+    {
+        // Registration validation calls the hasher through the composite, which holds it as
+        // IClientSecretHasher — never as the concrete type the tests above call. A public method on a
+        // class that inherits the interface without re-listing it does not implement the
+        // interface's default member, so only this path proves the bounds check runs at startup.
+        var composite = new CompositeClientSecretHasher(
+            [CreateHasher()],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+        var secret = new Pbkdf2ClientSecret(iterations, new byte[16], new byte[32]);
+
+        var failures = composite.GetRegistrationFailures(secret, "my-client");
+
+        failures.Should().ContainSingle().Which.Code.Should().Be(expectedCode);
     }
 
     [Fact]
