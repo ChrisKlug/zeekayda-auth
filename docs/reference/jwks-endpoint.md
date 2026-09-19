@@ -79,7 +79,7 @@ Example:
 |---|---|
 | `Content-Type` | `application/jwk-set+json` |
 | `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `JwksEndpoint.CacheMaxAge` is below one second |
-| `Access-Control-Allow-Origin` | `*` when `JwksEndpoint.CorsOrigins` is empty; the matching allowlist entry (plus `Vary: Origin`) otherwise |
+| `Access-Control-Allow-Origin` | `*` when `CorsOrigins` is empty; the matching allowlist entry (plus `Vary: Origin`) otherwise |
 
 `JwksEndpoint.CacheMaxAge` governs how long a relying party may keep trusting a cached key set —
 including a key that has since been removed from configuration. See

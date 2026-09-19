@@ -64,6 +64,32 @@ public sealed class AuthorizationServerOptions
     public ICollection<GrantType> GrantTypesSupported { get; set; } = [GrantType.AuthorizationCode];
 
     /// <summary>
+    /// Gets the list of browser origins allowed to read the responses of the endpoints a script
+    /// may call: discovery, JWKS and userinfo. When empty (the default), each of them emits
+    /// <c>Access-Control-Allow-Origin: *</c>. When non-empty, each performs an exact canonical
+    /// match against the request <c>Origin</c> header and emits the matching allowlist entry in
+    /// <c>Access-Control-Allow-Origin</c>, plus <c>Vary: Origin</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One list for every endpoint rather than one per endpoint: none of them authenticates with
+    /// a cookie, so the allowlist decides which origins may read a public document or a response
+    /// the caller already holds the token for, and that answer does not vary by endpoint.
+    /// </para>
+    /// <para>
+    /// Each entry must be an absolute origin in the form <c>scheme://host[:port]</c> with no path,
+    /// query, fragment, userinfo, wildcards, or <c>null</c> literal. Entries are validated at
+    /// startup, canonicalized (lowercased), deduplicated, then replaced with an immutable snapshot.
+    /// Invalid entries fail startup.
+    /// </para>
+    /// <para>
+    /// HTTP origins are rejected by default. Set <see cref="AllowInsecureIssuer"/> to
+    /// <see langword="true"/> to permit HTTP loopback origins for local development only.
+    /// </para>
+    /// </remarks>
+    public IList<string> CorsOrigins { get; internal set; } = [];
+
+    /// <summary>
     /// Gets the discovery document configuration options.
     /// </summary>
     public DiscoveryOptions DiscoveryDocument { get; } = new();

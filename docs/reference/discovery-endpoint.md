@@ -74,8 +74,8 @@ app.Run();
 |---|---|
 | `Content-Type` | `application/json` |
 | `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `DiscoveryDocument.CacheMaxAge` is below one second |
-| `Access-Control-Allow-Origin` | `*` when `DiscoveryDocument.CorsOrigins` is empty; the matched allowlist entry when non-empty |
-| `Vary` | `Origin` (only when `DiscoveryDocument.CorsOrigins` is non-empty), appended to any existing `Vary` value |
+| `Access-Control-Allow-Origin` | `*` when `CorsOrigins` is empty; the matched allowlist entry when non-empty |
+| `Vary` | `Origin` (only when `CorsOrigins` is non-empty), appended to any existing `Vary` value |
 | `X-Content-Type-Options` | `nosniff` (default; disable with `SecurityHeaders.ContentTypeOptionsNoSniff = false`) |
 | `Referrer-Policy` | `no-referrer` (default; configurable via `SecurityHeaders.ReferrerPolicy`) |
 | `Cross-Origin-Resource-Policy` | `cross-origin` (default; configurable via `SecurityHeaders.CrossOriginResourcePolicy`) |
@@ -87,11 +87,12 @@ By default ZeeKayDa.Auth returns `Access-Control-Allow-Origin: *`, which allows 
 client to fetch the discovery document. This is intentional: the discovery document is public
 information with no credentials and no user-specific data.
 
-To restrict CORS to a known set of origins, populate `DiscoveryDocument.CorsOrigins`:
+To restrict CORS to a known set of origins, populate the server-wide `CorsOrigins`, which
+governs the discovery document, the JWKS and userinfo alike:
 
 ```csharp
-options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
-options.DiscoveryDocument.CorsOrigins.Add("https://admin.example.com");
+options.CorsOrigins.Add("https://app.example.com");
+options.CorsOrigins.Add("https://admin.example.com");
 ```
 
 When the list is non-empty:

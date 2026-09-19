@@ -1,10 +1,9 @@
 namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
-/// One CORS allowlist entry, checked against the rules every allowlist option
-/// (<see cref="Discovery.DiscoveryOptions.CorsOrigins"/>,
-/// <see cref="Discovery.JwksEndpointOptions.CorsOrigins"/>) shares. Construction runs every rule
-/// once; the properties expose the outcome.
+/// One entry of <see cref="AuthorizationServerOptions.CorsOrigins"/>, checked against the rules a
+/// CORS allowlist origin must satisfy. Construction runs every rule once; the properties expose
+/// the outcome.
 /// </summary>
 internal sealed class CorsOrigin
 {

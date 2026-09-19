@@ -293,7 +293,7 @@ public sealed class JwksEndpointTests : IDisposable
     public async Task GetJwks_returns_specific_origin_and_Vary_Origin_for_matching_origin_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
-            opts.JwksEndpoint.CorsOrigins.Add("https://app.example.com"));
+            opts.CorsOrigins.Add("https://app.example.com"));
         using var client = CreateClient(factory);
         client.DefaultRequestHeaders.Add("Origin", "https://app.example.com");
 
@@ -309,7 +309,7 @@ public sealed class JwksEndpointTests : IDisposable
     public async Task GetJwks_has_no_ACAO_header_but_still_Vary_Origin_for_non_matching_origin_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
-            opts.JwksEndpoint.CorsOrigins.Add("https://app.example.com"));
+            opts.CorsOrigins.Add("https://app.example.com"));
         using var client = CreateClient(factory);
         client.DefaultRequestHeaders.Add("Origin", "https://evil.example.com");
 
@@ -540,5 +540,23 @@ public sealed class JwksEndpointTests : IDisposable
         var response = await client.GetAsync(JwksPath, TestContext.Current.CancellationToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task One_allowlist_governs_the_JWKS_and_the_discovery_document_alike()
+    {
+        using var factory = new TestWebAppFactory(opts =>
+            opts.CorsOrigins.Add("https://app.example.com"));
+        using var client = CreateClient(factory);
+        client.DefaultRequestHeaders.Add("Origin", "https://app.example.com");
+
+        var jwks = await client.GetAsync(JwksPath, TestContext.Current.CancellationToken);
+        var discovery = await client.GetAsync(
+            "/.well-known/openid-configuration", TestContext.Current.CancellationToken);
+
+        jwks.Headers.GetValues("Access-Control-Allow-Origin").Should().ContainSingle()
+            .Which.Should().Be("https://app.example.com");
+        discovery.Headers.GetValues("Access-Control-Allow-Origin").Should().ContainSingle()
+            .Which.Should().Be("https://app.example.com");
     }
 }

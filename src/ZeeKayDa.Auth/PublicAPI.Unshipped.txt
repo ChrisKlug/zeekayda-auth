@@ -8,6 +8,7 @@ ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.SignedOutPath.get -> strin
 ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.SignedOutPath.set -> void
 ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.Uri.set -> void
+ZeeKayDa.Auth.AuthorizationServerOptions.CorsOrigins.get -> System.Collections.Generic.IList<string!>!
 ZeeKayDa.Auth.AuthorizationServerOptions.EndSessionEndpoint.get -> ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions!
 ZeeKayDa.Auth.Clients.ClientRegistration.SkipLogoutConfirmation.get -> bool
 ZeeKayDa.Auth.Clients.ClientRegistration.SkipLogoutConfirmation.init -> void
@@ -182,14 +183,12 @@ ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasherOptions.Pbkdf2ClientSecretHasherOp
 ZeeKayDa.Auth.Discovery.DiscoveryOptions
 ZeeKayDa.Auth.Discovery.DiscoveryOptions.CacheMaxAge.get -> System.TimeSpan
 ZeeKayDa.Auth.Discovery.DiscoveryOptions.CacheMaxAge.set -> void
-ZeeKayDa.Auth.Discovery.DiscoveryOptions.CorsOrigins.get -> System.Collections.Generic.IList<string!>!
 ZeeKayDa.Auth.Discovery.DiscoveryOptions.DiscoveryOptions() -> void
 ZeeKayDa.Auth.Discovery.IDiscoveryDocumentProvider
 ZeeKayDa.Auth.Discovery.IDiscoveryDocumentProvider.GetDocumentAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument!>
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CacheMaxAge.get -> System.TimeSpan
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CacheMaxAge.set -> void
-ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CorsOrigins.get -> System.Collections.Generic.IList<string!>!
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.JwksEndpointOptions() -> void
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.Uri.set -> void

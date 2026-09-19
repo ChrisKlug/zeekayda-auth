@@ -115,18 +115,16 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     }
 
     /// <summary>
-    /// Validates the CORS allowlists: each entry must be a strict absolute origin
+    /// Validates the CORS allowlist: each entry must be a strict absolute origin
     /// (<c>scheme://host[:port]</c>) with no path other than "/", query, fragment, userinfo,
     /// wildcards or CRLF. Invalid entries fail startup.
     /// </summary>
     private static void ValidateCors(AuthorizationServerOptions options, List<string> errors)
     {
-        ValidateCorsOrigins(
-            options.DiscoveryDocument.CorsOrigins, "DiscoveryDocument.CorsOrigins",
-            options.AllowInsecureIssuer, errors);
-        ValidateCorsOrigins(
-            options.JwksEndpoint.CorsOrigins, "JwksEndpoint.CorsOrigins",
-            options.AllowInsecureIssuer, errors);
+        errors.AddRange(options.CorsOrigins
+            .Select(origin => new CorsOrigin(origin, options.AllowInsecureIssuer).ErrorMessage)
+            .OfType<string>()
+            .Select(problem => $"AuthorizationServerOptions.CorsOrigins: {problem}"));
     }
 
     /// <summary>
@@ -315,16 +313,5 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
             "absolute path within the host application (starting with '/'), without scheme, " +
             "authority, query, fragment, control characters, or a leading '//' or '/\\' " +
             "that a browser would resolve to another origin.");
-    }
-
-    private static void ValidateCorsOrigins(
-        IList<string> origins, string optionPath, bool allowInsecureIssuer, List<string> errors)
-    {
-        // Each message names the list it came from: with two allowlists, an unprefixed
-        // "CORS origin 'x' is invalid" leaves the operator guessing which option to fix.
-        errors.AddRange(origins
-            .Select(origin => new CorsOrigin(origin, allowInsecureIssuer).ErrorMessage)
-            .Where(problem => problem is not null)
-            .Select(problem => $"AuthorizationServerOptions.{optionPath}: {problem}"));
     }
 }

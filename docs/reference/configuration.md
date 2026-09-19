@@ -267,13 +267,6 @@ validation. This value governs how long a relying party may keep trusting a cach
 including a key that has since been removed from configuration — so a shorter TTL shortens that
 revocation window at the cost of more JWKS traffic.
 
-`JwksEndpoint.CorsOrigins` (`IList<string>`, default empty) is the JWKS endpoint's CORS allowlist,
-with exactly the semantics and validation rules of
-[`DiscoveryDocument.CorsOrigins`](#discoverydocumentcorsorigins): empty emits
-`Access-Control-Allow-Origin: *`, non-empty performs an exact canonical match against the request
-`Origin` and emits the matching entry plus `Vary: Origin`. The two lists are configured
-independently.
-
 See the [JWKS endpoint reference](jwks-endpoint.md) for the response format.
 
 ---
@@ -488,7 +481,7 @@ The JWKS endpoint has its own, independently configured equivalent:
 
 ---
 
-### `DiscoveryDocument.CorsOrigins`
+### `CorsOrigins`
 
 | Attribute | Value |
 |---|---|
@@ -496,10 +489,14 @@ The JWKS endpoint has its own, independently configured equivalent:
 | Default | `[]` (empty) |
 | Required | No |
 
-The list of origins permitted to fetch the discovery document from a browser via CORS. When empty
-(the default), the endpoint returns `Access-Control-Allow-Origin: *`. When non-empty, only requests
-whose `Origin` header matches an allowlist entry receive an `Access-Control-Allow-Origin` response
-header.
+The list of browser origins permitted to read the responses of the endpoints a script may call:
+the discovery document, the JWKS and userinfo. When empty (the default), each returns
+`Access-Control-Allow-Origin: *`. When non-empty, only requests whose `Origin` header matches an
+allowlist entry receive an `Access-Control-Allow-Origin` response header.
+
+One list covers every one of those endpoints. None of them authenticates with a cookie, so the
+allowlist decides which origins may read a public document or a response the caller already holds
+the access token for, and that answer does not vary by endpoint.
 
 Each entry must be an absolute origin in the form `scheme://host[:port]` with no path, query,
 fragment, user information, wildcards, or the literal string `null`. Entries are canonicalized
@@ -510,12 +507,9 @@ the host to fail fast.
 `AllowInsecureIssuer = true`; when enabled, HTTP origins must still target loopback hosts only.
 
 ```csharp
-options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
-options.DiscoveryDocument.CorsOrigins.Add("https://admin.example.com");
+options.CorsOrigins.Add("https://app.example.com");
+options.CorsOrigins.Add("https://admin.example.com");
 ```
-
-The JWKS endpoint has its own, independently configured allowlist with the same rules:
-[`JwksEndpoint.CorsOrigins`](#jwksendpoint).
 
 See [Discovery endpoint — CORS configuration](discovery-endpoint.md#cors-configuration) for the
 full CORS behaviour and an OPTIONS preflight note.
@@ -621,8 +615,8 @@ only when all relying parties are co-hosted on the same origin or site as the au
 | The code grant requires `S256` | `GrantTypesSupported` contains `AuthorizationCode` and `AuthorizationEndpoint.CodeChallengeMethodsSupported` is `null` or lacks `CodeChallengeMethod.S256` |
 | Token lifetimes must be positive | `TokenEndpoint.AccessTokenLifetime` or `TokenEndpoint.IdTokenLifetime` is zero or negative |
 | `AuthorizationEndpoint.MaxRequestContextBytes` must be greater than zero | `AuthorizationEndpoint.MaxRequestContextBytes` is zero or negative |
-| CORS origins must use HTTPS by default | a `DiscoveryDocument.CorsOrigins` or `JwksEndpoint.CorsOrigins` entry uses HTTP while `AllowInsecureIssuer` is `false` |
-| HTTP CORS origins must be loopback when allowed | a `DiscoveryDocument.CorsOrigins` or `JwksEndpoint.CorsOrigins` entry uses HTTP with a non-loopback host |
+| CORS origins must use HTTPS by default | a `CorsOrigins` entry uses HTTP while `AllowInsecureIssuer` is `false` |
+| HTTP CORS origins must be loopback when allowed | a `CorsOrigins` entry uses HTTP with a non-loopback host |
 | `SecurityHeaders.ReferrerPolicy` must be a defined enum value | `SecurityHeaders.ReferrerPolicy` is set via an out-of-range cast |
 | `SecurityHeaders.CrossOriginResourcePolicy` must be a defined enum value | `SecurityHeaders.CrossOriginResourcePolicy` is set via an out-of-range cast |
 

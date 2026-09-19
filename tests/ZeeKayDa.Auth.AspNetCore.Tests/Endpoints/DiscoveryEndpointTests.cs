@@ -818,7 +818,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public async Task GetDiscoveryDocument_returns_specific_origin_for_matching_origin_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
-            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+            opts.CorsOrigins.Add("https://app.example.com"));
         using var client = CreateClient(factory);
         client.DefaultRequestHeaders.Add("Origin", "https://app.example.com");
 
@@ -832,7 +832,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public async Task GetDiscoveryDocument_returns_Vary_Origin_header_for_matching_origin_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
-            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+            opts.CorsOrigins.Add("https://app.example.com"));
         using var client = CreateClient(factory);
         client.DefaultRequestHeaders.Add("Origin", "https://app.example.com");
 
@@ -846,7 +846,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public async Task GetDiscoveryDocument_has_no_ACAO_header_for_non_matching_origin_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
-            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+            opts.CorsOrigins.Add("https://app.example.com"));
         using var client = CreateClient(factory);
         client.DefaultRequestHeaders.Add("Origin", "https://evil.example.com");
 
@@ -859,7 +859,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public async Task GetDiscoveryDocument_returns_Vary_Origin_header_for_non_matching_origin_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
-            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+            opts.CorsOrigins.Add("https://app.example.com"));
         using var client = CreateClient(factory);
         client.DefaultRequestHeaders.Add("Origin", "https://evil.example.com");
 
@@ -873,7 +873,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public async Task GetDiscoveryDocument_has_no_ACAO_header_when_no_Origin_header_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
-            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+            opts.CorsOrigins.Add("https://app.example.com"));
         using var client = CreateClient(factory);
 
         var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
@@ -885,7 +885,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public async Task GetDiscoveryDocument_returns_Vary_Origin_header_when_no_Origin_header_in_explicit_allow_list()
     {
         using var factory = new TestWebAppFactory(opts =>
-            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+            opts.CorsOrigins.Add("https://app.example.com"));
         using var client = CreateClient(factory);
 
         var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
@@ -900,7 +900,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
         // The allowlist stores lowercase canonical entries.
         // The request sends mixed-case. The response must echo the canonical stored value.
         using var factory = new TestWebAppFactory(opts =>
-            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+            opts.CorsOrigins.Add("https://app.example.com"));
         using var client = CreateClient(factory);
         // Send mixed-case — matches case-insensitively but the response must use the stored form.
         client.DefaultRequestHeaders.Add("Origin", "HTTPS://APP.EXAMPLE.COM");
@@ -928,7 +928,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public void Startup_throws_via_ValidateOnStart_for_invalid_CORS_origin(string invalidOrigin, string reason)
     {
         var act = () => new TestWebAppFactory(opts =>
-            opts.DiscoveryDocument.CorsOrigins.Add(invalidOrigin)).CreateClient();
+            opts.CorsOrigins.Add(invalidOrigin)).CreateClient();
 
         act.Should().Throw<Exception>(because: $"'{invalidOrigin}' is invalid ({reason})");
     }
@@ -955,13 +955,13 @@ public sealed class DiscoveryEndpointTests : IDisposable
     public void Startup_makes_CorsOriginAllowList_read_only()
     {
         using var factory = new TestWebAppFactory(opts =>
-            opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+            opts.CorsOrigins.Add("https://app.example.com"));
         using var client = CreateClient(factory);
         using var scope = factory.Services.CreateScope();
         var options = scope.ServiceProvider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
 
-        options.DiscoveryDocument.CorsOrigins.IsReadOnly.Should().BeTrue();
-        var act = () => options.DiscoveryDocument.CorsOrigins.Add("https://admin.example.com");
+        options.CorsOrigins.IsReadOnly.Should().BeTrue();
+        var act = () => options.CorsOrigins.Add("https://admin.example.com");
         act.Should().Throw<NotSupportedException>();
     }
 
@@ -1081,7 +1081,7 @@ public sealed class DiscoveryEndpointTests : IDisposable
         // appended, not replace it.
         using var factory = new TestWebAppFactoryWithVaryMiddleware(
             varyToAdd: "Accept-Encoding",
-            configureOptions: opts => opts.DiscoveryDocument.CorsOrigins.Add("https://app.example.com"));
+            configureOptions: opts => opts.CorsOrigins.Add("https://app.example.com"));
         using var client = CreateClient(factory);
         client.DefaultRequestHeaders.Add("Origin", "https://app.example.com");
 
