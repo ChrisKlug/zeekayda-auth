@@ -70,7 +70,16 @@ internal sealed class TestSigningKeySource : ISigningKeySource, IDisposable
 {
     private static readonly SourceKeyId KeyId = new("test-signing-key");
 
-    private readonly RSA _rsa = RSA.Create(2048);
+    // Generating a 2048-bit key takes long enough that doing it per source would dominate the cost
+    // of a host-free test. Generated once for the process; each source still gets its own RSA
+    // instance over those parameters, so ownership and disposal stay per-source.
+    private static readonly Lazy<RSAParameters> SharedKey = new(() =>
+    {
+        using var rsa = RSA.Create(2048);
+        return rsa.ExportParameters(includePrivateParameters: true);
+    });
+
+    private readonly RSA _rsa = RSA.Create(SharedKey.Value);
 
     public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
     {

@@ -59,7 +59,7 @@ internal sealed class JwksEndpoint : IZeeKayDaEndpoint
     // [FromServices] because the ring is conditionally registered: without it, a host with no
     // signing source would fail at route mapping with a body-inference error instead of reaching
     // the startup check that names the actual problem.
-    private IResult Handle([FromServices] ISigningKeyRing ring, HttpContext context)
+    internal IResult Handle([FromServices] ISigningKeyRing ring, HttpContext context)
     {
         PublicMetadataHeaders.Apply(
             context, _options.Value.JwksEndpoint.CacheMaxAge, _allowedOrigins);

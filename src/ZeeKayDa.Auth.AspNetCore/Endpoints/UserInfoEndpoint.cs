@@ -76,7 +76,7 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
             .AllowAnonymous();
     }
 
-    private IResult HandlePreflight(HttpContext context)
+    internal IResult HandlePreflight(HttpContext context)
     {
         CorsHeaders.ApplyPreflight(
             context,
@@ -87,7 +87,7 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
         return Results.StatusCode(StatusCodes.Status204NoContent);
     }
 
-    private async Task<IResult> HandleAsync(
+    internal async Task<IResult> HandleAsync(
         HttpContext context,
         AccessTokenValidator tokens,
         ValidatedClientResolver clients,

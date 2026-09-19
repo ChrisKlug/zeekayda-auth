@@ -95,7 +95,7 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
             .AllowAnonymous();
     }
 
-    private async Task<IResult> HandleAsync(HttpContext context, IdTokenHintValidator hints, ValidatedClientResolver clients)
+    internal async Task<IResult> HandleAsync(HttpContext context, IdTokenHintValidator hints, ValidatedClientResolver clients)
     {
         context.Response.Headers.CacheControl = "no-store";
 
