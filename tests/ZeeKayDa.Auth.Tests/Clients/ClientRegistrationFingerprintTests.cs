@@ -124,7 +124,7 @@ public class ClientRegistrationFingerprintTests
         ["AllowedTokenEndpointAuthMethods"] = Client() with { AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.ClientSecretBasic } },
         ["AllowedGrantTypes"] = Client() with { AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken } },
         ["AllowedResponseTypes"] = Client() with { AllowedResponseTypes = new HashSet<ResponseType>() },
-        ["AllowedResponseModes"] = Client() with { AllowedResponseModes = new HashSet<ResponseMode> { ResponseMode.FormPost } },
+        ["AllowedResponseModes"] = Client() with { AllowedResponseModes = new HashSet<ResponseMode>() },
         ["AllowedPromptValues"] = Client() with { AllowedPromptValues = new HashSet<PromptValue> { PromptValue.Login } },
         ["AllowedSigningAlgorithms"] = Client() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } },
         ["AccessTokenLifetime"] = Client() with { AccessTokenLifetime = TimeSpan.FromMinutes(10) },

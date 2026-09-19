@@ -75,8 +75,7 @@ internal sealed class EndpointHost : IDisposable
         // Registered before configureBuilder, as TestWebAppFactory does it, so a test that brings its
         // own clients gets them *in addition* to test-client rather than instead of it. Registering
         // this second would silently drop test-client from every such test.
-        authBuilder.AddInMemoryClients(clients =>
-            clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]));
+        authBuilder.AddInMemoryClients(clients => clients.AddDefaultTestClient(configureOptions));
 
         configureBuilder?.Invoke(authBuilder);
 

@@ -518,6 +518,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **A client is allowed only the grant types, response types and response modes the server serves**
+  (#689). A client registered with a value outside the server's `GrantTypesSupported`,
+  `Response.TypesSupported` or `Response.ModesSupported` — `refresh_token` on a server that serves
+  only `authorization_code`, for one — started fine and the setting silently did nothing. Startup now
+  rejects it (`client.grant_types.not_subset`, `client.response_types.not_subset`,
+  `client.response_modes.not_subset`), for in-memory clients and for a custom repository through the
+  registration validator alike. An empty `AllowedGrantTypes` is rejected too, and so is an empty
+  `AllowedResponseTypes` or `AllowedResponseModes` on a client allowed the code grant (`.empty`), which
+  refused every request without saying why. `ResponseMode.FormPost` is removed and
+  `ClientRegistration.AllowedResponseModes` defaults to `query` alone: the authorization endpoint
+  answers in no other mode, so a host could list `form_post` in `Response.ModesSupported` and have
+  every request from a `form_post`-only client refused. The member returns when the mode is built.
+
 - **The pages the framework renders itself refuse framing and caching** (#713). The unbranded error,
   sign-out confirmation, signed-out and refusal pages went out as HTML with no framing headers, while
   the host pages that take a decision have always been stamped. All of them now carry
@@ -1316,7 +1329,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **`ResponseMode.Fragment` enum member removed** (#160)
 
   Fragment response mode was configurable but permanently unsupported. Removing it prevents silent
-  no-ops when operators configure it. Use `ResponseMode.Query` or `ResponseMode.FormPost`.
+  no-ops when operators configure it. Use `ResponseMode.Query`.
 
 ### Changed
 

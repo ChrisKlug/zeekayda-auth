@@ -50,7 +50,6 @@ ZeeKayDa.Auth.Authorization.PromptValue.Login = 1 -> ZeeKayDa.Auth.Authorization
 ZeeKayDa.Auth.Authorization.PromptValue.None = 0 -> ZeeKayDa.Auth.Authorization.PromptValue
 ZeeKayDa.Auth.Authorization.PromptValue.SelectAccount = 3 -> ZeeKayDa.Auth.Authorization.PromptValue
 ZeeKayDa.Auth.Authorization.ResponseMode
-ZeeKayDa.Auth.Authorization.ResponseMode.FormPost = 1 -> ZeeKayDa.Auth.Authorization.ResponseMode
 ZeeKayDa.Auth.Authorization.ResponseMode.Query = 0 -> ZeeKayDa.Auth.Authorization.ResponseMode
 ZeeKayDa.Auth.Authorization.ResponseOptions
 ZeeKayDa.Auth.Authorization.ResponseOptions.ModesSupported.get -> System.Collections.Generic.ICollection<ZeeKayDa.Auth.Authorization.ResponseMode>!

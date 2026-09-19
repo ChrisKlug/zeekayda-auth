@@ -77,11 +77,11 @@ extension point and a custom `tls_client_auth` must be expressible without a fra
 strings carry that vocabulary end to end, and the option is the operator's global allowlist and the
 only source discovery reads from.
 
-**`GrantType` has no `implicit` and no `password` member, and `CodeChallengeMethod` has no `plain`
-member — not even an `[Obsolete]` one.** OAuth 2.1 removes the first two; RFC 9700 §2.1.1 prohibits
-the third outright and the framework has no verifier for it. `[Obsolete]` is a warning, not an error:
-a host suppressing warnings could still configure and advertise a control with nothing behind it, and
-"migrate off this" is the wrong message for something that never worked here. The type system makes
+**`GrantType` has no `implicit` or `password` member, `CodeChallengeMethod` no `plain` and `ResponseMode`
+no `form_post` — not even `[Obsolete]` ones.** OAuth 2.1 removes the first two, RFC 9700 §2.1.1 prohibits
+the third, and the authorization endpoint cannot answer with the fourth. `[Obsolete]` is a warning, not an
+error: a host suppressing warnings could still configure and advertise a control with nothing behind it,
+and "migrate off this" is the wrong message for something that never worked here. The type system makes
 the state unrepresentable, so no validator rule compensates for it.
 
 **A control is advertised only while it is enforced, and the code grant is not served without

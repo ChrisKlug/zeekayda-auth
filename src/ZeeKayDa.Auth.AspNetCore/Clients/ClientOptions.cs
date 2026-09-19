@@ -97,7 +97,7 @@ public abstract class ClientOptions
 
     /// <summary>
     /// Response modes this client is permitted to request. Contains <see cref="ResponseMode.Query"/>
-    /// and <see cref="ResponseMode.FormPost"/> by default.
+    /// by default, the one mode the server's authorization endpoint answers with.
     /// </summary>
     public ISet<ResponseMode> AllowedResponseModes { get; }
 

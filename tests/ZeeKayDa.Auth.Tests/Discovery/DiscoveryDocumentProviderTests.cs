@@ -225,7 +225,7 @@ public sealed class DiscoveryDocumentProviderTests
             Response =
             {
                 TypesSupported = [ResponseType.Code],
-                ModesSupported = [ResponseMode.Query, ResponseMode.FormPost],
+                ModesSupported = [ResponseMode.Query],
             },
             GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic, "tls_client_auth"] },
@@ -233,7 +233,7 @@ public sealed class DiscoveryDocumentProviderTests
 
         doc.ResponseTypesSupported.Should().Equal(ResponseType.Code);
         doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
-        doc.ResponseModesSupported.Should().Equal(ResponseMode.Query, ResponseMode.FormPost);
+        doc.ResponseModesSupported.Should().Equal(ResponseMode.Query);
         doc.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode, GrantType.RefreshToken);
         doc.TokenEndpointAuthMethodsSupported.Should().Equal(
             TokenEndpointAuthMethods.ClientSecretBasic,
