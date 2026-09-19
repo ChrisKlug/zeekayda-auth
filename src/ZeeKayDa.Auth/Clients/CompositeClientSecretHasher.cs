@@ -143,10 +143,11 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(
                 "configuration.hashers.timing_decoy_unhandled",
-                $"The default IClientSecretHasher '{hasher.GetType().FullName}' returned no credential " +
-                "from Create, or one its own CanHandle rejects. Failure-path timing padding verifies " +
-                "against a credential the default hasher creates, and against one it cannot handle every " +
-                "padding verification returns at once, which would reopen the timing oracle."));
+                $"The default IClientSecretHasher '{hasher.GetType().FullName}' returned no timing decoy, " +
+                "or one its own CanHandle rejects. For a hasher that does not build its own decoy, the " +
+                "decoy is what its Create returns for a random value. Failure-path timing padding " +
+                "verifies against that decoy, and against one the hasher cannot handle every padding " +
+                "verification returns at once, which would reopen the timing oracle."));
     }
 
     private static IClientSecretHasher ResolveDefault(
