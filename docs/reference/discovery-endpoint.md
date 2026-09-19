@@ -74,8 +74,8 @@ app.Run();
 |---|---|
 | `Content-Type` | `application/json` |
 | `Cache-Control` | `public, max-age=3600, must-revalidate` by default; `no-store` when `DiscoveryDocument.CacheMaxAge` is below one second |
-| `Access-Control-Allow-Origin` | `*` when `DiscoveryDocument.CorsOrigins` is empty; the matched allowlist entry when non-empty |
-| `Vary` | `Origin` (only when `DiscoveryDocument.CorsOrigins` is non-empty), appended to any existing `Vary` value |
+| `Access-Control-Allow-Origin` | `*` when `CorsOrigins` is empty; the matched allowlist entry when non-empty |
+| `Vary` | `Origin` (only when `CorsOrigins` is non-empty), appended to any existing `Vary` value |
 | `X-Content-Type-Options` | `nosniff` (default; disable with `SecurityHeaders.ContentTypeOptionsNoSniff = false`) |
 | `Referrer-Policy` | `no-referrer` (default; configurable via `SecurityHeaders.ReferrerPolicy`) |
 | `Cross-Origin-Resource-Policy` | `cross-origin` (default; configurable via `SecurityHeaders.CrossOriginResourcePolicy`) |
@@ -87,11 +87,12 @@ By default ZeeKayDa.Auth returns `Access-Control-Allow-Origin: *`, which allows 
 client to fetch the discovery document. This is intentional: the discovery document is public
 information with no credentials and no user-specific data.
 
-To restrict CORS to a known set of origins, populate `DiscoveryDocument.CorsOrigins`:
+To restrict CORS to a known set of origins, populate the server-wide `CorsOrigins`, which
+governs the discovery document, the JWKS and userinfo alike:
 
 ```csharp
-options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
-options.DiscoveryDocument.CorsOrigins.Add("https://admin.example.com");
+options.CorsOrigins.Add("https://app.example.com");
+options.CorsOrigins.Add("https://admin.example.com");
 ```
 
 When the list is non-empty:
@@ -127,6 +128,7 @@ come from `AuthorizationServerOptions`.
 | `authorization_endpoint` | `AuthorizationEndpoint.Uri` or derived from `Issuer` | Default is `{issuer}/connect/authorize`. |
 | `token_endpoint` | `TokenEndpoint.Uri` or derived from `Issuer` | Default is `{issuer}/connect/token`. |
 | `jwks_uri` | `JwksEndpoint.Uri` or derived from `Issuer` | Default is `{issuer}/connect/jwks`. |
+| `userinfo_endpoint` | `UserInfoEndpoint.Uri` or derived from `Issuer` | Default is `{issuer}/connect/userinfo`. Omitted on a host whose `GrantTypesSupported` lacks `authorization_code`, which serves no userinfo route. |
 | `response_types_supported` | `Response.TypesSupported` | Defaults to `["code"]`. Required by OIDC Discovery 1.0 Section 3. |
 | `scopes_supported` | `IScopeRepository` | By default, published from the built-in `InMemoryScopeRepository` seeded with `StandardScopes.All` (`openid`, `profile`, `email`, `phone`, `address`). |
 | `response_modes_supported` | `Response.ModesSupported` | Defaults to `["query"]`. |
@@ -178,12 +180,14 @@ Only scopes with `IsDiscoverable = true` are included in `scopes_supported`.
 ## Pre-alpha advertised endpoints
 
 ZeeKayDa.Auth is pre-alpha. Every advertised endpoint is implemented; the `jwks_uri` endpoint is
-described in [JWKS endpoint](jwks-endpoint.md).
+described in [JWKS endpoint](jwks-endpoint.md) and `userinfo_endpoint` in
+[UserInfo endpoint](userinfo-endpoint.md).
 
 | Endpoint | Methods | Serves |
 |---|---|---|
 | `{issuer}/connect/authorize` | `GET`, `POST` | The authorization code flow with PKCE, through the host's login and consent pages |
 | `{issuer}/connect/token` | `POST` | The `authorization_code` grant: an access token and an ID token, after client authentication and `code_verifier` verification |
+| `{issuer}/connect/userinfo` | `GET`, `POST`, `OPTIONS` | The signed-in user's claims, to a caller presenting an access token this server issued with the `openid` scope |
 
 ## Endpoint URI derivation
 
@@ -201,6 +205,7 @@ the default published endpoints are:
 - `https://id.example.com/tenant-a/connect/authorize`
 - `https://id.example.com/tenant-a/connect/token`
 - `https://id.example.com/tenant-a/connect/jwks`
+- `https://id.example.com/tenant-a/connect/userinfo`
 
 This matters for issuers with path segments.
 
@@ -212,6 +217,7 @@ This matters for issuers with path segments.
   "authorization_endpoint": "https://id.example.com/tenant-a/connect/authorize",
   "token_endpoint": "https://id.example.com/tenant-a/connect/token",
   "jwks_uri": "https://id.example.com/tenant-a/connect/jwks",
+  "userinfo_endpoint": "https://id.example.com/tenant-a/connect/userinfo",
   "response_types_supported": ["code"],
   "scopes_supported": ["openid", "profile", "api.read"],
   "response_modes_supported": ["query"],

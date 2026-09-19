@@ -33,7 +33,7 @@ internal sealed class JwksEndpoint : IZeeKayDaEndpoint
         _options = options;
         // Config values are already validated and canonicalized to lowercase by startup validation.
         _allowedOrigins = new HashSet<string>(
-            options.Value.JwksEndpoint.CorsOrigins,
+            options.Value.CorsOrigins,
             StringComparer.OrdinalIgnoreCase);
     }
 

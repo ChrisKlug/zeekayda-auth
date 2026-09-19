@@ -4,12 +4,12 @@ What must be true when a grant becomes tokens. The stores underneath are `token-
 `refresh-token-grants.md`; key selection and signing are `signing-keys.md`; what each token carries on
 the wire, its audience, its lifetime and its signature are `token-contents.md`.
 
-**The token endpoint issues the authorization code grant with subject claims.** The endpoint writes
-the protocol claims from the grant, asks the host's `IClaimsProvider` for the subject's claims, selects
-per destination from the granted scopes and the client's registration, and hands a finalized
-`TokenPayload` to `ITokenIssuer`, a shape-agnostic seam resolved per `TokenKind` as a keyed DI service
-and filled by `JwtTokenIssuer` over the signing key ring. The refresh grant and userinfo are not built;
-the entries about them are constraints they inherit.
+**The token endpoint issues the authorization code grant with subject claims, and userinfo answers
+an access token with them.** Protocol claims come from the grant, subject claims from the host's
+`IClaimsProvider`, selected per destination; the endpoint hands a finalized `TokenPayload` to
+`ITokenIssuer`, keyed per `TokenKind` and filled by `JwtTokenIssuer`. That seam is shape-agnostic for
+*issuing* only — userinfo reads a compact JWS, so a replaced access-token issuer is refused there,
+which the opaque-token work closes. The refresh grant is unbuilt; its entries are inherited.
 
 ## Decisions in force
 
@@ -118,13 +118,13 @@ exception message.** A provider's exception is logged through the sanitizing log
 message and keeps its type and stack; selection's own failures name the claim type only; the
 provider context prints its scopes and never its subject. The family id is likewise not raw-loggable.
 
-**Userinfo, when built, validates the presented access token as an RFC 9068 §4 resource server** —
-signature through the ring, `iss`, `exp`, `typ` of `at+jwt`, `aud` containing the issuer and `openid`
-in `scope` — then resolves the pool fresh with a `null` family id, never from anything stored, and
-returns `sub` plus the `UserInfoClaims` of the granted scopes and the client's additions. Open for that
-issue: how the client is resolved for its additions, what `SubjectInvalid` answers, and whether the
-`Claim[]` overload of `IProviderSignInInteraction.SignInAsync` still earns its place now that token
-claims come from the provider.
+**Userinfo validates the presented access token as an RFC 9068 §4 resource server** — signature
+through the ring, `typ` of `at+jwt` or its media-type form, `iss`, an `aud` containing the issuer, and
+a validity window allowing `ClockSkewTolerance` — then requires `openid` in `scope`, resolves the
+client its `client_id` names, and resolves the pool fresh with a `null` family id, never from anything
+stored. It returns `sub` plus the `UserInfoClaims` of the token's scopes and that client's additions.
+A registration that is gone and a subject now reported invalid are both `invalid_token`: the grant is
+gone either way. Refusals go in `WWW-Authenticate` with no body (RFC 6750 §3).
 
 ## Tried, didn't work
 

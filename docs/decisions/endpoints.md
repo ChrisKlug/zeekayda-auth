@@ -109,6 +109,16 @@ session cookie has none deleted and leaves the browser's other interactions alon
 cookie, and answering one with a deletion would end a session unasked. There is no cancel call: a
 sign-out has no error response.
 
+**The userinfo endpoint is mapped and published on the authorization endpoint's condition, and
+answers a bearer token rather than a client credential.** Only the code grant issues an access token
+for an end user, so a host without it serves no userinfo route and publishes no `userinfo_endpoint` —
+metadata and route never disagree. The token is read from the `Authorization: Bearer` header or, on a
+form POST, the `access_token` field (RFC 6750 §2.1, §2.2); the §2.3 query parameter is not read at
+all, being deprecated there and a live credential in logs and referrers, and presenting the token two
+ways at once is `invalid_request`. A separate `OPTIONS` route answers the CORS preflight that a
+browser sends before any request carrying an `Authorization` header, with no
+`Access-Control-Allow-Credentials` — which is what keeps the default wildcard origin safe.
+
 **Every protocol endpoint is implemented; nothing answers `501` any more.** Routes were
 mapped and shaped before their implementations landed so discovery stayed stable; the last stub,
 the token route, is gone.

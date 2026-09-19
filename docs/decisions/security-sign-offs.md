@@ -1714,3 +1714,45 @@ Security and architect agents plus all three Copilot lenses; the one High (null 
 - The "nothing to confirm" render stays unframeable. Closed — `A_consent_page_with_nothing_to_ask_is_still_unframeable_and_uncacheable`.
 - Residual, accepted: a framed `initiate_login_uri` can start a sign-in; the app's own headers are its defence —
   `The_client_refuses_to_be_framed`; an opt-in check is #711.
+
+## 2026-09-19 — the userinfo endpoint as an RFC 9068 §4 resource server (#708, branch head `cc580b3`)
+
+Scoped to the access-token validation, the bearer transports, the shared compact-JWS reader, and the
+consolidated CORS allowlist; not the claims seam or the issuer, both covered by the 2026-09-14 entry.
+Security and architect agents plus all three Copilot lenses; two Highs from the code lens (a repeated
+`access_token` field read as absent, and duplicate `Authorization` headers) fixed in `a4e02a3` and `9bcf3c1`.
+
+- Only a token this server signed, addressed to this server, live, and carrying `openid` is answered.
+  Closed — `Validate_refuses_a_token_signed_by_a_key_this_server_does_not_publish`,
+  `Validate_refuses_a_token_whose_audience_does_not_name_this_server`,
+  `Validate_refuses_a_token_with_no_exp_rather_than_treating_it_as_eternal`,
+  `A_token_without_the_openid_scope_is_insufficient_scope`,
+  `A_token_this_server_signed_for_another_audience_is_invalid_token`.
+- An ID token cannot be spent as an access token, nor an access token as a logout hint. Closed —
+  `Validate_refuses_an_id_token_presented_as_an_access_token`,
+  `The_id_token_issued_alongside_is_not_spendable_here`,
+  `Validate_refuses_a_correctly_signed_hint_whose_typ_is_not_JWT`.
+- Extracting the shared reader did not weaken the logout hint; its `typ` is now case-insensitive per
+  RFC 7515 §4.1.9, which is the same media type and not a second kind of token. Closed —
+  `Validate_accepts_a_hint_whose_typ_differs_only_in_case`, `Validate_accepts_an_id_token_issued_by_JwtTokenIssuer`.
+- A request presents its token exactly once, or is refused before any token is read. Closed —
+  `A_repeated_access_token_field_alongside_a_valid_header_is_invalid_request`,
+  `Two_authorization_headers_are_invalid_request_whatever_scheme_they_name`,
+  `A_token_in_the_query_string_is_not_read_at_all`.
+- No refusal says which cause applied, and no claim value reaches a body or a log. Closed —
+  `A_subject_the_provider_has_since_disowned_is_invalid_token`,
+  `A_provider_that_throws_answers_500_and_no_claim_value_reaches_the_caller`.
+- The wildcard origin is safe because no response enables a credentialed request. Closed —
+  `A_preflight_carries_no_allow_credentials_so_the_wildcard_stays_safe`,
+  `The_claims_response_carries_no_allow_credentials`, `An_unlisted_origin_gets_no_allow_origin_header`.
+- Validity arithmetic cannot throw on a NumericDate at the edge of the representable range. Closed —
+  `Validate_does_not_throw_for_a_NumericDate_at_the_edge_of_the_representable_range`.
+- **Accepted residual:** an access token is checked against no store, so it works at userinfo until it
+  expires however the grant behind it ended — the window is `TokenEndpoint.AccessTokenLifetime` (ten
+  minutes) plus the resource server's own skew. A disowned subject is refused at the next call, since
+  claims are resolved fresh. Closed for the subject — `A_subject_the_provider_has_since_disowned_is_invalid_token`.
+- **Accepted residual:** an API holding a token whose scopes name a resource server can still call
+  userinfo with it, because the issuer is always an audience when `openid` is granted. Only
+  per-resource tokens via `resource` would close it; recorded already in `token-contents.md`.
+- **Explicit scope limit:** this sign-off does **not** cover a replaced `ITokenIssuer`. Userinfo reads a
+  compact JWS only, so a host-supplied access-token issuer has no reader; deferred to #725.

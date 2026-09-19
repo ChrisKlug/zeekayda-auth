@@ -22,7 +22,7 @@ The client listens on `https://localhost:5002` using the ASP.NET Core developmen
 
 1. Open `https://localhost:5002` and follow **Sign in**.
 2. Sign in on the identity server as `alice` / `alice-password`, and allow access.
-3. The profile page lists the claims from alice's ID token.
+3. The profile page lists alice's claims, from her ID token and the userinfo endpoint.
 4. **Sign out** on the home page signs you out of both sites and brings you back.
 
 ## What it shows
@@ -43,8 +43,8 @@ Three settings differ from the handler's defaults, each commented in `Program.cs
 
 - `ResponseMode` is `query`: the handler asks for `form_post` by default, and the server returns
   the code in the query string.
-- `GetClaimsFromUserInfoEndpoint` is off: the server has no userinfo endpoint yet, so the claims
-  come from the ID token.
+- `GetClaimsFromUserInfoEndpoint` is on, so the handler fetches the claims from the server's
+  userinfo endpoint and merges them into the signed-in user.
 - `MapInboundClaims` is off, so the claims keep the names the server gave them (`sub`, `name`).
 
 The identity server's address and the client ID are in `appsettings.json`.

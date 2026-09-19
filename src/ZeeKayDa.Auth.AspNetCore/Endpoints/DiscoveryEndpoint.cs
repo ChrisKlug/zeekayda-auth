@@ -32,7 +32,7 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
         _options = options;
         // Config values are already validated and canonicalized to lowercase by startup validation.
         _allowedOrigins = new HashSet<string>(
-            options.Value.DiscoveryDocument.CorsOrigins,
+            options.Value.CorsOrigins,
             StringComparer.OrdinalIgnoreCase);
     }
 

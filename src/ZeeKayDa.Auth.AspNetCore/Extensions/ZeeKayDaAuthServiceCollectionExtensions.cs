@@ -87,6 +87,8 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, JwksEndpoint>());
         services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IZeeKayDaEndpoint, UserInfoEndpoint>());
+        services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, EndSessionEndpoint>());
 
         // Every framework route matches its path exactly; see ExactPathMatcherPolicy.
@@ -230,6 +232,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<IConsentInteraction, ConsentInteraction>();
         services.TryAddSingleton<IProviderSignInInteraction, ProviderSignInInteraction>();
         services.TryAddSingleton<IdTokenHintValidator>();
+        services.TryAddSingleton<AccessTokenValidator>();
         services.TryAddSingleton<LogoutRequestStore>();
         services.TryAddSingleton<EndSessionResponses>();
         services.TryAddSingleton<ILogoutInteraction, LogoutInteraction>();

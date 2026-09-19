@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Stores;
@@ -132,7 +133,9 @@ internal sealed class AuthorizationCodeGrant
 
         // Resolved fresh for this issuance, keyed on the family the code just started, so a
         // subject the provider no longer serves gets nothing, and both tokens come from one pool.
-        var claims = await _claims.ResolveAsync(context, client, entry.Sub, entry.Scope, familyId).ConfigureAwait(false);
+        var claims = await _claims.ResolveAsync(
+            context,
+            new ClaimsRequest(client, entry.Sub, entry.Scope, familyId, ClaimsDestination.Tokens)).ConfigureAwait(false);
 
         return claims switch
         {

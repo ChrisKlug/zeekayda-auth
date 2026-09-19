@@ -8,6 +8,7 @@ ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.SignedOutPath.get -> strin
 ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.SignedOutPath.set -> void
 ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.Uri.set -> void
+ZeeKayDa.Auth.AuthorizationServerOptions.CorsOrigins.get -> System.Collections.Generic.IList<string!>!
 ZeeKayDa.Auth.AuthorizationServerOptions.EndSessionEndpoint.get -> ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions!
 ZeeKayDa.Auth.Clients.ClientRegistration.SkipLogoutConfirmation.get -> bool
 ZeeKayDa.Auth.Clients.ClientRegistration.SkipLogoutConfirmation.init -> void
@@ -77,6 +78,7 @@ ZeeKayDa.Auth.AuthorizationServerOptions.Logging.get -> ZeeKayDa.Auth.Logging.Lo
 ZeeKayDa.Auth.AuthorizationServerOptions.Response.get -> ZeeKayDa.Auth.Authorization.ResponseOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.SecurityHeaders.get -> ZeeKayDa.Auth.Security.SecurityHeadersOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.TokenEndpoint.get -> ZeeKayDa.Auth.Tokens.TokenEndpointOptions!
+ZeeKayDa.Auth.AuthorizationServerOptions.UserInfoEndpoint.get -> ZeeKayDa.Auth.Claims.UserInfoEndpointOptions!
 ZeeKayDa.Auth.Clients.ClientRegistration
 ZeeKayDa.Auth.Clients.ClientRegistration.<Clone>$() -> ZeeKayDa.Auth.Clients.ClientRegistration!
 ZeeKayDa.Auth.Clients.ClientRegistration.AccessTokenLifetime.get -> System.TimeSpan?
@@ -182,14 +184,12 @@ ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasherOptions.Pbkdf2ClientSecretHasherOp
 ZeeKayDa.Auth.Discovery.DiscoveryOptions
 ZeeKayDa.Auth.Discovery.DiscoveryOptions.CacheMaxAge.get -> System.TimeSpan
 ZeeKayDa.Auth.Discovery.DiscoveryOptions.CacheMaxAge.set -> void
-ZeeKayDa.Auth.Discovery.DiscoveryOptions.CorsOrigins.get -> System.Collections.Generic.IList<string!>!
 ZeeKayDa.Auth.Discovery.DiscoveryOptions.DiscoveryOptions() -> void
 ZeeKayDa.Auth.Discovery.IDiscoveryDocumentProvider
 ZeeKayDa.Auth.Discovery.IDiscoveryDocumentProvider.GetDocumentAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument!>
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CacheMaxAge.get -> System.TimeSpan
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CacheMaxAge.set -> void
-ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CorsOrigins.get -> System.Collections.Generic.IList<string!>!
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.JwksEndpointOptions() -> void
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.Uri.set -> void
@@ -220,6 +220,8 @@ ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpoint.get -> string!
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpoint.init -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpointAuthMethodsSupported.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpointAuthMethodsSupported.init -> void
+ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.UserInfoEndpoint.get -> string?
+ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.UserInfoEndpoint.init -> void
 ZeeKayDa.Auth.Extensions.ZeeKayDaAuthCoreServiceCollectionExtensions
 ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyHealthChecksBuilderExtensions
 ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions
@@ -838,3 +840,7 @@ static ZeeKayDa.Auth.Claims.ClaimsProviderContext.operator ==(ZeeKayDa.Auth.Clai
 ~override ZeeKayDa.Auth.Claims.ClaimValue.Equals(object obj) -> bool
 ZeeKayDa.Auth.Claims.ClaimValue.Kind.get -> System.Text.Json.JsonValueKind
 ZeeKayDa.Auth.Claims.ClaimValue.WriteTo(System.Text.Json.Utf8JsonWriter! writer) -> void
+ZeeKayDa.Auth.Claims.UserInfoEndpointOptions
+ZeeKayDa.Auth.Claims.UserInfoEndpointOptions.Uri.get -> string?
+ZeeKayDa.Auth.Claims.UserInfoEndpointOptions.Uri.set -> void
+ZeeKayDa.Auth.Claims.UserInfoEndpointOptions.UserInfoEndpointOptions() -> void

@@ -4,6 +4,12 @@ First local run of the OpenID Foundation conformance suite against the sample id
 2026-09-19. Suite `release-v5.3.1`. Reproduce from the repository root with `./conformance/run-conformance.sh`; rewrite this file when
 the numbers change.
 
+> **Stale as of the userinfo endpoint landing (#708).** Every result below was measured against a
+> server that published no `userinfo_endpoint`, which is the cause of every interruption in the
+> basic plan. The endpoint is now served and the expected-failure entry for
+> `CheckDiscEndpointUserinfoEndpoint` is gone. **Nobody has re-run the suite since.** Re-run it and
+> rewrite this file before drawing any conclusion from the numbers here.
+
 ## Headline
 
 **The basic certification plan cannot run at all yet.** All 35 of its modules are interrupted

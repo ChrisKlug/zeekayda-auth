@@ -6,8 +6,7 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
-/// Canonicalizes and freezes <see cref="DiscoveryOptions.CorsOrigins"/> and
-/// <see cref="JwksEndpointOptions.CorsOrigins"/>, and freezes
+/// Canonicalizes and freezes <see cref="AuthorizationServerOptions.CorsOrigins"/>, and freezes
 /// <see cref="Tokens.IdTokenOptions.AdvertisedSigningAlgorithms"/>, before startup validation runs.
 /// </summary>
 /// <remarks>
@@ -23,10 +22,7 @@ internal sealed class AuthorizationServerOptionsPostConfigurer : IPostConfigureO
     /// <inheritdoc/>
     public void PostConfigure(string? name, AuthorizationServerOptions options)
     {
-        options.DiscoveryDocument.CorsOrigins =
-            Canonicalize(options.DiscoveryDocument.CorsOrigins, options.AllowInsecureIssuer);
-        options.JwksEndpoint.CorsOrigins =
-            Canonicalize(options.JwksEndpoint.CorsOrigins, options.AllowInsecureIssuer);
+        options.CorsOrigins = Canonicalize(options.CorsOrigins, options.AllowInsecureIssuer);
 
         // Frozen for the same reason as CorsOrigins: the discovery document reads this filter on
         // every request, and the startup checks that reconcile it with the key set run exactly

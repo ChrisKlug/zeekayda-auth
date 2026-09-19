@@ -950,43 +950,32 @@ public sealed class AuthorizationServerOptionsValidatorTests
         result.FailureMessage.Should().Contain("JwksEndpoint.CacheMaxAge");
     }
 
-    // ── JwksEndpoint.CorsOrigins — same rules as the discovery allowlist ─────────────────────────
+    // ── CorsOrigins — one allowlist for every endpoint that answers a script ─────────────────────
 
     [Fact]
-    public void Validate_accepts_https_origin_in_jwks_CORS_allow_list()
+    public void Validate_fails_for_a_wildcard_origin_and_names_the_option()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.JwksEndpoint.CorsOrigins.Add("https://app.example.com");
-
-        var result = Validate(options);
-
-        result.Succeeded.Should().BeTrue();
-    }
-
-    [Fact]
-    public void Validate_fails_for_wildcard_origin_in_jwks_CORS_allow_list()
-    {
-        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.JwksEndpoint.CorsOrigins.Add("https://*.example.com");
+        options.CorsOrigins.Add("https://*.example.com");
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("wildcard");
-        result.FailureMessage.Should().Contain("JwksEndpoint.CorsOrigins",
-            because: "with two allowlists, the failure must name the list the bad entry is in");
+        result.FailureMessage.Should().Contain("AuthorizationServerOptions.CorsOrigins",
+            because: "the failure must name the option the operator has to fix");
     }
 
     [Fact]
     public void Validate_fails_with_named_list_for_an_origin_whose_host_is_not_a_valid_idn()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.DiscoveryDocument.CorsOrigins.Add("https://℀.example");
+        options.CorsOrigins.Add("https://℀.example");
 
         var result = Validate(options);
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("DiscoveryDocument.CorsOrigins");
+        result.FailureMessage.Should().Contain("AuthorizationServerOptions.CorsOrigins");
         result.FailureMessage.Should().Contain("valid host name");
     }
 
@@ -998,23 +987,11 @@ public sealed class AuthorizationServerOptionsValidatorTests
             Issuer = "https://auth.example.com",
             AllowInsecureIssuer = true,
         };
-        options.DiscoveryDocument.CorsOrigins.Add("http://[::1]:5001");
+        options.CorsOrigins.Add("http://[::1]:5001");
 
         var result = Validate(options);
 
         result.Succeeded.Should().BeTrue();
-    }
-
-    [Fact]
-    public void Validate_fails_for_http_non_loopback_origin_in_jwks_CORS_allow_list()
-    {
-        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.JwksEndpoint.CorsOrigins.Add("http://app.example.com");
-
-        var result = Validate(options);
-
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("https");
     }
 
     // ── CorsOrigins — scheme validation ──────────────────────────────────────────────────────────
@@ -1023,7 +1000,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     public void Validate_succeeds_for_HTTPS_CORS_origin()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.DiscoveryDocument.CorsOrigins.Add("https://app.example.com");
+        options.CorsOrigins.Add("https://app.example.com");
 
         var result = Validate(options);
 
@@ -1034,7 +1011,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     public void Validate_fails_for_HTTP_CORS_origin_without_AllowInsecureIssuer_flag()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.DiscoveryDocument.CorsOrigins.Add("http://app.example.com");
+        options.CorsOrigins.Add("http://app.example.com");
 
         var result = Validate(options);
 
@@ -1046,7 +1023,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     public void Validate_fails_for_FTP_CORS_origin()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.DiscoveryDocument.CorsOrigins.Add("ftp://files.example.com");
+        options.CorsOrigins.Add("ftp://files.example.com");
 
         var result = Validate(options);
 
@@ -1062,7 +1039,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
             Issuer = "http://localhost",
             AllowInsecureIssuer = true,
         };
-        options.DiscoveryDocument.CorsOrigins.Add("http://localhost:3000");
+        options.CorsOrigins.Add("http://localhost:3000");
 
         var result = Validate(options);
 
@@ -1077,7 +1054,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
             Issuer = "http://localhost",
             AllowInsecureIssuer = true,
         };
-        options.DiscoveryDocument.CorsOrigins.Add("http://app.example.com");
+        options.CorsOrigins.Add("http://app.example.com");
 
         var result = Validate(options);
 
@@ -1099,7 +1076,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     public void Validate_fails_with_specific_reason_for_invalid_CORS_origins(string? origin, string expectedMessageFragment)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.DiscoveryDocument.CorsOrigins.Add(origin!);
+        options.CorsOrigins.Add(origin!);
 
         var result = Validate(options);
 

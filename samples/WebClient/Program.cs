@@ -30,8 +30,9 @@ builder.Services
         options.Scope.Add("profile");
         options.Scope.Add("email");
 
-        // The server has no userinfo endpoint yet (#708), so the claims come from the ID token.
-        options.GetClaimsFromUserInfoEndpoint = false;
+        // The handler calls the server's userinfo endpoint after the code exchange and merges
+        // what it returns into the signed-in user's claims.
+        options.GetClaimsFromUserInfoEndpoint = true;
 
         // Keep the claim types the server sent ("sub", "name") instead of .NET's long URIs.
         options.MapInboundClaims = false;

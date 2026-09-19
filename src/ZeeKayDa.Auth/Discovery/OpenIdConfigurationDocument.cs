@@ -39,6 +39,15 @@ public sealed record OpenIdConfigurationDocument
     public required string JwksUri { get; init; }
 
     /// <summary>
+    /// Gets the URL of the UserInfo endpoint (OpenID Connect Core §5.3). Absent from the document
+    /// when <see langword="null"/>: the endpoint is served only alongside the authorization
+    /// endpoint, the one flow that issues an access token for an end user to present there.
+    /// </summary>
+    [JsonPropertyName("userinfo_endpoint")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UserInfoEndpoint { get; init; }
+
+    /// <summary>
     /// Gets the URL of the end-session endpoint, where a relying party sends the user to sign out
     /// (OpenID Connect RP-Initiated Logout 1.0 §2.1). Absent from the document when
     /// <see langword="null"/>: the endpoint is served only alongside the authorization endpoint,
