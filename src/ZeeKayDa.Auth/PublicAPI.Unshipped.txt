@@ -97,8 +97,8 @@ ZeeKayDa.Auth.Clients.ClientRegistration.AllowedSigningAlgorithms.get -> System.
 ZeeKayDa.Auth.Clients.ClientRegistration.AllowedSigningAlgorithms.init -> void
 ZeeKayDa.Auth.Clients.ClientRegistration.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.IReadOnlySet<string!>!
 ZeeKayDa.Auth.Clients.ClientRegistration.AllowedTokenEndpointAuthMethods.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowNonceInsteadOfPkce.get -> bool
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowNonceInsteadOfPkce.init -> void
+ZeeKayDa.Auth.Clients.ClientRegistration.RequirePkce.get -> bool
+ZeeKayDa.Auth.Clients.ClientRegistration.RequirePkce.init -> void
 ZeeKayDa.Auth.Clients.ClientRegistration.ClientId.get -> string!
 ZeeKayDa.Auth.Clients.ClientRegistration.ClientId.init -> void
 ZeeKayDa.Auth.Clients.ClientRegistration.ClientRegistration() -> void
@@ -137,7 +137,7 @@ ZeeKayDa.Auth.Clients.IClientMetadata.AllowedResponseTypes.get -> System.Collect
 ZeeKayDa.Auth.Clients.IClientMetadata.AllowedScopes.get -> System.Collections.Generic.IReadOnlySet<string!>!
 ZeeKayDa.Auth.Clients.IClientMetadata.AllowedSigningAlgorithms.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
 ZeeKayDa.Auth.Clients.IClientMetadata.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Clients.IClientMetadata.AllowNonceInsteadOfPkce.get -> bool
+ZeeKayDa.Auth.Clients.IClientMetadata.RequirePkce.get -> bool
 ZeeKayDa.Auth.Clients.IClientMetadata.ClientId.get -> string!
 ZeeKayDa.Auth.Clients.IClientMetadata.DisplayName.get -> string?
 ZeeKayDa.Auth.Clients.IClientMetadata.InitiateLoginUri.get -> string?

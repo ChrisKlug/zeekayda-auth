@@ -73,7 +73,8 @@ public sealed record AuthorizationCodeEntry
 
     /// <summary>
     /// The OpenID Connect nonce value carried forward from the authorization request, or
-    /// <see langword="null"/> for pure OAuth 2.0 flows that did not include a nonce.
+    /// <see langword="null"/> when the request carried none, which the code flow allows
+    /// (OpenID Connect Core 1.0 §3.1.2.1).
     /// </summary>
     /// <remarks>
     /// When non-null, this value MUST be included verbatim in the <c>nonce</c> claim of the

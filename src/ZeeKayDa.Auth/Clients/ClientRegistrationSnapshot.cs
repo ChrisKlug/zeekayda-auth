@@ -62,7 +62,7 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
         InitiateLoginUri = client.InitiateLoginUri;
         RequireConsent = client.RequireConsent;
         SkipLogoutConfirmation = client.SkipLogoutConfirmation;
-        AllowNonceInsteadOfPkce = client.AllowNonceInsteadOfPkce;
+        RequirePkce = client.RequirePkce;
         RedirectUris = OrdinalCopy(client.RedirectUris);
         PostLogoutRedirectUris = OrdinalCopy(client.PostLogoutRedirectUris);
         AllowedScopes = OrdinalCopy(client.AllowedScopes);
@@ -105,7 +105,7 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
     public bool SkipLogoutConfirmation { get; }
 
     /// <inheritdoc/>
-    public bool AllowNonceInsteadOfPkce { get; }
+    public bool RequirePkce { get; }
 
     /// <inheritdoc/>
     public IReadOnlySet<string> RedirectUris { get; }

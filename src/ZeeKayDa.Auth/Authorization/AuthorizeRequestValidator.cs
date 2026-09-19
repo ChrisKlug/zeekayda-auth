@@ -50,7 +50,6 @@ internal sealed partial class AuthorizeRequestValidator
         EffectiveScopeAudienceIsAResourceIndicator,
         EffectiveScopesNameOneResource,
         ClientAdditionsNameNoScopeClaim,
-        NonceIsPresent,
         CodeChallengeIsPresentUnlessTheClientMayOmitIt,
         CodeChallengeIsWellFormed,
         CodeChallengeMethodIsS256,
@@ -307,21 +306,10 @@ internal sealed partial class AuthorizeRequestValidator
                 collision.Describe(context.Client.ClientId))
             : null;
 
-    private static Problem? NonceIsPresent(RequestContext context)
-    {
-        var nonce = context.Single("nonce");
-        if (string.IsNullOrEmpty(nonce))
-            return InvalidRequest("The nonce parameter is required.");
-
-        context.Nonce = nonce;
-        return null;
-    }
-
     /// <remarks>
-    /// The opt-in is honoured only on a confidential client, whatever the registration says: a
-    /// custom repository may skip registration validation, and a public client's PKCE is the only
-    /// thing binding the redemption to the party that started the flow. The nonce this request
-    /// relies on instead was already required by <c>NonceIsPresent</c>.
+    /// A registration that does not require PKCE is honoured only on a confidential client,
+    /// whatever it says: a custom repository may skip registration validation, and a public
+    /// client's PKCE is the only thing binding the redemption to the party that started the flow.
     /// </remarks>
     private static Problem? CodeChallengeIsPresentUnlessTheClientMayOmitIt(RequestContext context)
     {
@@ -425,11 +413,21 @@ internal sealed partial class AuthorizeRequestValidator
             RedirectUri = redirectUri,
             Scopes = context.EffectiveScopes,
             State = state,
-            Nonce = context.Nonce,
+            Nonce = NonceOf(context),
             Pkce = context.CodeChallenge is { } challenge ? new PkceChallenge(challenge, CodeChallengeMethod.S256) : null,
             Prompts = context.Prompts,
             MaxAge = context.MaxAge,
         };
+
+    /// <summary>The request's <c>nonce</c>, or <see langword="null"/> when it carried none.</summary>
+    /// <remarks>
+    /// Not a rule, because nothing about it can fail. The <c>nonce</c> is optional for the code
+    /// flow (OIDC Core §3.1.2.1), for every client: one registered without PKCE is not asked for it
+    /// either, because that registration is the operator's assurance that the client uses it (OAuth
+    /// 2.1 §7.5.1.1). One sent without a value is treated as omitted (RFC 6749 §3.1).
+    /// </remarks>
+    private static string? NonceOf(RequestContext context) =>
+        context.Single("nonce") is { Length: > 0 } nonce ? nonce : null;
 
     private static bool TryParsePrompt(string value, out PromptValue parsed)
     {
@@ -508,9 +506,6 @@ internal sealed partial class AuthorizeRequestValidator
         public HashSet<PromptValue> Prompts { get; } = [];
 
         public TimeSpan? MaxAge { get; set; }
-
-        /// <summary>Set by <c>NonceIsPresent</c>; non-empty by the time <c>Build</c> runs.</summary>
-        public string Nonce { get; set; } = string.Empty;
 
         /// <summary>Set by <c>CodeChallengeIsPresentUnlessTheClientMayOmitIt</c>; <see langword="null"/> when the client omitted it and may.</summary>
         public string? CodeChallenge { get; set; }

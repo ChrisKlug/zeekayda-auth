@@ -39,7 +39,7 @@ instead of failing a startup check. A default interface method is used only wher
 the safe or the forward-compatible answer, never to excuse an omission: the signing-algorithm
 allowlist (`null` inherits the server default), `AllowedPromptValues` (empty permits every value, so
 a new one needs no change), `DisplayName` and `InitiateLoginUri` (`null`: none), `RequireConsent` (`true`: an
-implementation that says nothing requires consent), `AllowNonceInsteadOfPkce` (`false`: a
+implementation that says nothing requires consent), `RequirePkce` (`true`: a
 registration that says nothing is held to PKCE), the two token lifetimes (`null`: the server's
 validated value) and the three claim additions (empty: a registration that says nothing widens
 nothing). Every one of them is in the registration fingerprint, because each changes what a
@@ -69,16 +69,16 @@ another IdP bypasses the constructor entirely, so the import check is the only t
 a weak stored hash and production. At most two active shared secrets per client, to make rotation
 possible; authenticators try both before failing.
 
-**Failure paths are padded to a fixed two-credential budget; the success path is not.** The composite
-hasher pre-computes a dummy credential with the default hasher at host startup — roughly 600 ms paid
-once — and burns exactly that budget on every path that has no real credentials to verify: unknown
-client, method not in the server allowlist, method not in the client's allowlist, and every `none`
-rejection. It also pads a failure from a non-default hasher, so a faster custom hasher cannot reopen
-the oracle. A client mid-rotation is therefore not timing-distinguishable from an unknown one, and
-"public client rejected" is not distinguishable from "no such client". Successful `none`
-authentication is deliberately *not* padded: the outcome is already visible in the HTTP response and
-`client_id` is not a secret in OAuth. Client-ID enumeration by request volume is out of scope for the
-timing design — rate limiting is the primary mitigation (RFC 9700 §2.1).
+**Failure paths are padded to a fixed two-credential budget; the success path is not.** Padding
+verifies against a decoy the default hasher builds once at startup: it costs a full verification, and
+no known value verifies it. The built-in PBKDF2 decoy is random bytes, free to build; a custom default
+hasher pays one `Create` and cannot supply a cheaper decoy. The budget is burned on every path with
+nothing real to verify: unknown client, a method outside the server's or the client's allowlist, an
+empty secret, and every `none` rejection. A non-default hasher's failure is padded too, so a faster
+custom hasher cannot reopen the oracle. A client mid-rotation is thus not timing-distinguishable from
+an unknown one, nor "public client rejected" from "no such client". Successful `none` authentication
+is deliberately *not* padded: the outcome is visible in the HTTP response and `client_id` is not an
+OAuth secret. Enumeration by request volume is left to rate limiting (RFC 9700 §2.1).
 
 **The composite hasher is registered as its own concrete type, never as the hasher interface.**
 Registering it under the interface would let it be injected into its own `IEnumerable<>` dependency

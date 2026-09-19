@@ -113,7 +113,7 @@ builder.AddInMemoryClients(clients =>
 ```
 
 A public client's callback receives `PublicClientOptions`. A confidential client's receives
-`ConfidentialClientOptions`, which adds `AllowNonceInsteadOfPkce` and
+`ConfidentialClientOptions`, which adds `RequirePkce` and
 `AllowedTokenEndpointAuthMethods` — settings a public client cannot have.
 
 > Turn `RequireConsent` off only for your own first-party applications. The consent page is what

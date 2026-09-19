@@ -252,19 +252,19 @@ public sealed class ClientRegistrationValidatorTests
     public void A_public_client_cannot_be_permitted_to_omit_pkce()
     {
         var validator = MakeValidator();
-        var client = MakeValidPublicClient() with { AllowNonceInsteadOfPkce = true };
+        var client = MakeValidPublicClient() with { RequirePkce = false };
 
         var act = () => validator.Validate(client);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.allow_nonce_instead_of_pkce.on_public");
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.require_pkce.disabled_on_public");
     }
 
     [Fact]
     public void A_confidential_client_may_be_permitted_to_omit_pkce()
     {
         var validator = MakeValidator();
-        var client = MakeValidConfidentialClient() with { AllowNonceInsteadOfPkce = true };
+        var client = MakeValidConfidentialClient() with { RequirePkce = false };
 
         var act = () => validator.Validate(client);
 
@@ -934,6 +934,24 @@ public sealed class ClientRegistrationValidatorTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.too_many_secrets");
+    }
+
+    [Fact]
+    public void Validate_fails_for_a_PBKDF2_credential_below_the_iteration_floor()
+    {
+        // The real hasher, reached the way production reaches it: through the composite, as
+        // IClientSecretHasher. A fake here would prove nothing about whether the bound is live.
+        var hasher = new Pbkdf2ClientSecretHasher(
+            Options.Create(new Pbkdf2ClientSecretHasherOptions()),
+            NullSanitizingLogger<Pbkdf2ClientSecretHasher>.Instance);
+        var validator = MakeValidator(hasher);
+        var client = MakeValidConfidentialClient(
+            secret: new Pbkdf2ClientSecret(Pbkdf2ClientSecretHasher.MinIterations - 1, new byte[16], new byte[32]));
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.pbkdf2_iterations_below_minimum");
     }
 
     // ── Credential snapshots ──────────────────────────────────────────────────────────────────────

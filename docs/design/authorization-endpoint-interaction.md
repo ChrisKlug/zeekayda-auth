@@ -610,10 +610,10 @@ is the opt-in `zkd_error` sub-code per the register.
 **Scopes: silent narrow.** Effective scope starts as `requested ∩ client.AllowedScopes`
 (RFC 6749 §3.3 sanctions partial ignoring; the granted `scope` is reported in the token response).
 Empty intersection → `invalid_scope`. **`openid` is required in v1** — a request without it is
-`invalid_scope`; OIDC leaves that behavior unspecified so requiring it is conformant, `nonce`
-becomes unconditionally required, and the token endpoint always issues an ID token. Pure OAuth
-(no ID token) can be added later without breaking anyone, since loosening validation is
-non-breaking. `AuthorizationCodeEntry.Nonce` stays nullable for that day.
+`invalid_scope`; OIDC leaves that behavior unspecified so requiring it is conformant, and the
+token endpoint always issues an ID token. `nonce` stays optional, as OIDC Core §3.1.2.1 makes it
+for the code flow, so `AuthorizationCodeEntry.Nonce` is nullable. Pure OAuth (no ID token) can be
+added later without breaking anyone, since loosening validation is non-breaking.
 
 ## Rejected
 

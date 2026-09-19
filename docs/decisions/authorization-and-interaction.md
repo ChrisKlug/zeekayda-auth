@@ -43,17 +43,18 @@ one *is* recoverable, redirect to the client with the spec error (`interaction_r
 relying party decides whether to retry.
 
 **PKCE with `S256` is enforced for every client, with the one exception OAuth 2.1 §7.5.1.1 allows:**
-a confidential client whose registration sets `AllowNonceInsteadOfPkce` may omit `code_challenge`,
-and the `openid` scope plus `nonce` that every request must carry anyway then protect the code. The
-opt-in is the operator's assurance that the client checks the nonce; startup rejects it on a public
-client, and the authorize endpoint ignores it on one. A challenge the client does send is enforced as
-for any other client, and a code issued without one refuses a `code_verifier` (RFC 9700 §4.8.2). The
-implicit flow and resource-owner password credentials are not merely disabled — they have no
-`GrantType` member.
+a confidential client whose registration sets `RequirePkce` to `false` may omit `code_challenge`.
+That registration is the operator's assurance that the client checks the `nonce`, and the server does
+not check it again per request: such a client that sends neither gets a code, and nothing protects
+it from code injection (RFC 9700 §4.5). Startup rejects the setting on a public client, and the
+authorize endpoint ignores it on one. A challenge the client does send is enforced as for any other
+client, and a code issued without one refuses a `code_verifier` (RFC 9700 §4.8.2). The implicit flow
+and resource-owner password credentials are not merely disabled — they have no `GrantType` member.
 
-**`nonce` is required whenever `openid` scope is requested**, rejected with `invalid_request` when
-absent (OIDC Core §3.1.2.1, §3.1.3.7). **`iss` is returned on every authorization response**,
-unconditionally, as mix-up-attack mitigation (RFC 9207, RFC 9700 §4.4).
+**`nonce` is optional, because `response_type=code` is the only response type** and OIDC Core
+§3.1.2.1 makes it optional there. One that is sent reaches the ID token's `nonce` claim (§3.1.3.7);
+one sent without a value is treated as omitted (RFC 6749 §3.1). **`iss` is returned on every
+authorization response**, unconditionally, as mix-up-attack mitigation (RFC 9207, RFC 9700 §4.4).
 
 **`prompt=none` never renders interactive UI** (OIDC Core §3.1.2.1) — login or consent inside a
 relying party's silent-auth iframe is a clickjacking vector. It succeeds only against an existing
@@ -141,3 +142,5 @@ step occurred goes only to clients that opted in (RFC 9700 information disclosur
   protects little — while costing hand-rolled HTTPS/header/rate-limit reimplementation and a
   meaningless scheme registration. Do not re-propose without new facts; the full analysis is in
   `docs/design/authorization-endpoint-interaction.md`.
+- **`nonce` required on every `openid` request.** OIDC Core §3.1.2.1 requires it only where the
+  authorization endpoint returns an ID token, and the conformance suite refuses the stricter rule.

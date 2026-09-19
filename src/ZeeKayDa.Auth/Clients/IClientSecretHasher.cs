@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
@@ -102,4 +104,19 @@ public interface IClientSecretHasher
     /// </remarks>
     IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
         IClientSecret credential, string clientId) => [];
+
+    /// <summary>
+    /// Creates the stored credential that failure-path timing padding verifies against: one that
+    /// costs this hasher exactly as much to verify as a real credential, and that no value a caller
+    /// can know will verify.
+    /// </summary>
+    /// <remarks>
+    /// Internal on purpose. A third-party hasher inherits this default, which pays one real
+    /// <see cref="Create(string)"/> of a random value, once, when the default hasher is chosen. It
+    /// cannot supply a cheaper decoy of its own: one that verified faster than a real credential
+    /// would reopen the timing oracle the padding exists to close, and nothing would report it. A
+    /// built-in hasher overrides this where it can build the decoy without the derivation.
+    /// </remarks>
+    internal IClientSecret CreateTimingDecoy() =>
+        Create(Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)));
 }
