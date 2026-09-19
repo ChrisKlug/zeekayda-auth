@@ -36,10 +36,7 @@ internal static class TokenEndpointAuthMethodValidator
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var method in client.AllowedTokenEndpointAuthMethods)
-        {
-            if (ValidateEntry(client, method, seen, serverMethods) is { } failure)
-                failures.Add(failure);
-        }
+            ValidateEntry(client, method, seen, serverMethods, failures);
     }
 
     private static void ValidateIsPublicTrinity(
@@ -84,35 +81,34 @@ internal static class TokenEndpointAuthMethodValidator
     }
 
     /// <summary>
-    /// The entry's first broken rule, or <see langword="null"/> when it broke none: a malformed
-    /// entry is not also a duplicate, and a duplicate is not also checked against the server's methods.
+    /// Records the entry's first broken rule, if any: a malformed entry is not also a duplicate,
+    /// and a duplicate is not also checked against the server's methods.
     /// </summary>
-    private static ZeeKayDaConfigurationFailure? ValidateEntry(
+    private static void ValidateEntry(
         IClientRegistration client,
         string? method,
         HashSet<string> seen,
-        IReadOnlySet<string> serverMethods)
+        IReadOnlySet<string> serverMethods,
+        List<ZeeKayDaConfigurationFailure> failures)
     {
         if (!TokenEndpointAuthMethodRules.IsWellFormed(method))
         {
-            return new ZeeKayDaConfigurationFailure(
+            failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.token_endpoint_auth_methods.invalid_entry",
                 $"Client '{client.ClientId}' has an invalid entry in AllowedTokenEndpointAuthMethods: " +
                 $"'{method}'. Entries must be non-null, non-empty, have no leading/trailing whitespace, " +
-                "and contain no control characters.");
+                "and contain no control characters."));
         }
-
-        if (!seen.Add(method))
+        else if (!seen.Add(method))
         {
-            return new ZeeKayDaConfigurationFailure(
+            failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.token_endpoint_auth_methods.duplicate",
-                $"Client '{client.ClientId}' has a duplicate entry in AllowedTokenEndpointAuthMethods: '{method}'.");
+                $"Client '{client.ClientId}' has a duplicate entry in AllowedTokenEndpointAuthMethods: '{method}'."));
         }
-
-        if (!serverMethods.Contains(method))
-            return NotSupportedByServer(client, method, serverMethods);
-
-        return null;
+        else if (!serverMethods.Contains(method))
+        {
+            failures.Add(NotSupportedByServer(client, method, serverMethods));
+        }
     }
 
     // 'none' outside the server's methods on a public client is a host that registered one without
