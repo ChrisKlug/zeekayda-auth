@@ -58,26 +58,12 @@
           }
         ]
       }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/foreground-agents.sh\""
-          }
-        ]
-      }
     ]
   },
   "mcpServers": {
     "aspire": {
       "command": "aspire",
-      "args": [
-        "mcp",
-        "start"
-      ],
+      "args": ["mcp", "start"],
       "env": {
         "DOTNET_ROOT": "${DOTNET_ROOT}"
       }
