@@ -18,7 +18,11 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 /// itself — is covered host-free in <see cref="DiscoveryEndpointTests"/>.
 /// </summary>
 [Collection(DefaultHostCollection.Name)]
-public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
+public sealed class DiscoveryEndpointHostTests(
+    DefaultHostFixture host,
+    TenantIssuerHostFixture tenant,
+    FallbackPolicyHostFixture fallback,
+    LoopbackHostFixture loopback)
 {
     private const string DiscoveryPath = "/.well-known/openid-configuration";
     private const string OAuthMetadataPath = "/.well-known/oauth-authorization-server";
@@ -60,8 +64,7 @@ public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
     [Fact]
     public async Task GetDiscoveryDocument_returns_200_under_a_host_wide_fallback_authorization_policy()
     {
-        using var factory = new TestWebAppFactoryWithFallbackAuthorizationPolicy();
-        using var client = CreateClient(factory);
+        var client = fallback.Client;
 
         // The canary proves the fallback policy is actually enforced on this host...
         var hostRoute = await client.GetAsync("/host-route", Cancellation);
@@ -75,8 +78,7 @@ public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
     [Fact]
     public async Task GetOAuthMetadata_returns_200_under_a_host_wide_fallback_authorization_policy()
     {
-        using var factory = new TestWebAppFactoryWithFallbackAuthorizationPolicy();
-        using var client = CreateClient(factory);
+        var client = fallback.Client;
 
         var response = await client.GetAsync(OAuthMetadataPath, Cancellation);
 
@@ -88,8 +90,7 @@ public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
     [Fact]
     public async Task GetDiscoveryDocument_registers_at_Issuer_prefixed_path_for_path_bearing_Issuer()
     {
-        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
-        using var client = CreateClient(factory);
+        var client = tenant.Client;
 
         var response = await client.GetAsync("/tenant1/.well-known/openid-configuration", Cancellation);
 
@@ -103,8 +104,7 @@ public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
     [Fact]
     public async Task GetDiscoveryDocument_returns_404_for_root_path_when_Issuer_has_path()
     {
-        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
-        using var client = CreateClient(factory);
+        var client = tenant.Client;
 
         // When the issuer has a path, the root discovery path is not registered.
         var response = await client.GetAsync(DiscoveryPath, Cancellation);
@@ -139,8 +139,7 @@ public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
     [Fact]
     public async Task GetOAuthMetadata_inserts_the_well_known_segment_before_the_Issuer_path()
     {
-        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
-        using var client = CreateClient(factory);
+        var client = tenant.Client;
 
         var response = await client.GetAsync("/.well-known/oauth-authorization-server/tenant1", Cancellation);
 
@@ -153,8 +152,7 @@ public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
     [Fact]
     public async Task GetOAuthMetadata_is_also_served_at_the_appended_form_so_a_path_prefix_proxy_reaches_it()
     {
-        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
-        using var client = CreateClient(factory);
+        var client = tenant.Client;
 
         var response = await client.GetAsync("/tenant1/.well-known/oauth-authorization-server", Cancellation);
 
@@ -167,8 +165,7 @@ public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
     [Fact]
     public async Task GetOAuthMetadata_returns_404_at_the_root_form_when_Issuer_has_path()
     {
-        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
-        using var client = CreateClient(factory);
+        var client = tenant.Client;
 
         var response = await client.GetAsync(OAuthMetadataPath, Cancellation);
 
@@ -183,8 +180,7 @@ public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
     [InlineData("/tenant1/.well-known/OPENID-CONFIGURATION")]
     public async Task GetDiscoveryDocument_returns_404_when_the_path_differs_from_the_route_only_in_case(string path)
     {
-        using var factory = new TestWebAppFactory(opts => opts.Issuer = "https://test.example.com/tenant1");
-        using var client = CreateClient(factory);
+        var client = tenant.Client;
 
         var response = await client.GetAsync(path, Cancellation);
 
@@ -213,159 +209,17 @@ public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
     // ── Startup validation ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Startup_throws_when_Issuer_is_not_configured()
+    public void A_host_refuses_to_start_on_a_configuration_startup_validation_rejects()
     {
+        // The individual configuration rules are asserted host-free in DiscoveryEndpointTests. This
+        // is the one thing only a host shows: MapZeeKayDaAuth forces options validation, so the
+        // failure reaches the operator as ValidateOnStart reports it rather than wrapped.
         using var factory = new TestWebAppFactory(opts => opts.Issuer = null);
 
-        // MapZeeKayDaAuth forces options validation first, so a null issuer fails the way
-        // ValidateOnStart reports it (OptionsValidationException message text).
         var act = () => factory.CreateClient();
 
-        act.Should().Throw<Exception>().WithMessage("*AuthorizationServerOptions.Issuer must be set to a non-empty value.*");
-    }
-
-    [Fact]
-    public void Startup_throws_via_ValidateOnStart_for_HTTP_Issuer_without_AllowInsecureIssuer_flag()
-    {
-        var act = () => new TestWebAppFactory(opts =>
-        {
-            opts.Issuer = "http://auth.example.com";
-            opts.AllowInsecureIssuer = false;
-        }).CreateClient();
-
-        act.Should().Throw<Exception>().WithMessage("*HTTPS*");
-    }
-
-    [Fact]
-    public void Startup_throws_validator_message_for_malformed_Issuer()
-    {
-        var act = () => new TestWebAppFactory(opts =>
-        {
-            opts.Issuer = "not-a-valid-uri";
-        }).CreateClient();
-
-        act.Should().Throw<Exception>().WithMessage("*not a valid absolute URI*");
-    }
-
-    [Fact]
-    public void Startup_throws_via_ValidateOnStart_when_endpoint_override_has_different_authority()
-    {
-        var act = () => new TestWebAppFactory(opts =>
-        {
-            opts.Issuer = "https://test.example.com";
-            opts.TokenEndpoint.Uri = "https://login.example.com/custom/token";
-        }).CreateClient();
-
-        act.Should().Throw<Exception>().WithMessage("*same authority*");
-    }
-
-    [Fact]
-    public void Startup_throws_via_ValidateOnStart_for_custom_scope_repository_without_openid_scope()
-    {
-        var act = () => new TestWebAppFactory(
-            configureBuilder: builder =>
-            {
-                builder.Services.Replace(
-                    ServiceDescriptor.Singleton<IScopeRepository, CustomScopeRepositoryWithoutOpenId>());
-            }).CreateClient();
-
-        act.Should().Throw<Exception>().WithMessage($"*{StandardScopes.OpenId.Name}*");
-    }
-
-    [Fact]
-    public void Startup_succeeds_when_None_auth_method_and_no_AuthorizationCode_grant()
-    {
-        var act = () => new TestWebAppFactory(opts =>
-        {
-            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
-            opts.GrantTypesSupported = [GrantType.RefreshToken];
-        }).CreateClient();
-
-        act.Should().NotThrow();
-    }
-
-    [Fact]
-    public void Startup_succeeds_when_None_auth_method_and_AuthorizationCode_grant()
-    {
-        var act = () => new TestWebAppFactory(opts =>
-        {
-            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
-            opts.GrantTypesSupported = [GrantType.AuthorizationCode];
-        }).CreateClient();
-
-        act.Should().NotThrow();
-    }
-
-    [Fact]
-    public void Startup_throws_via_ValidateOnStart_for_out_of_range_GrantType()
-    {
-        var act = () => new TestWebAppFactory(opts =>
-        {
-            opts.GrantTypesSupported = [(GrantType)9999];
-        }).CreateClient();
-
-        act.Should().Throw<Exception>().WithMessage("*GrantTypesSupported*");
-    }
-
-    [Fact]
-    public void Startup_throws_via_ValidateOnStart_for_whitespace_TokenEndpointAuthMethod()
-    {
-        var act = () => new TestWebAppFactory(opts =>
-        {
-            opts.TokenEndpoint.AuthMethodsSupported = ["   "];
-        }).CreateClient();
-
-        act.Should().Throw<Exception>().WithMessage("*TokenEndpoint.AuthMethodsSupported*");
-    }
-
-    [Fact]
-    public void Startup_throws_via_ValidateOnStart_when_CodeChallengeMethodsSupported_is_empty()
-    {
-        var act = () => new TestWebAppFactory(opts =>
-        {
-            opts.AuthorizationEndpoint.CodeChallengeMethodsSupported = [];
-        }).CreateClient();
-
-        act.Should().Throw<Exception>().WithMessage("*CodeChallengeMethodsSupported*");
-    }
-
-    // ── CORS startup validation ───────────────────────────────────────────────────────────────────
-
-    [Theory]
-    [InlineData("", "empty")]
-    [InlineData("https://example.com/path", "path")]
-    [InlineData("https://example.com?q=1", "query")]
-    [InlineData("https://example.com#frag", "fragment")]
-    [InlineData("https://user@example.com", "userinfo")]
-    [InlineData("*", "wildcard")]
-    [InlineData("https://*.example.com", "wildcard")]
-    [InlineData("null", "null literal")]
-    [InlineData("https://example.com\r\n", "CRLF")]
-    [InlineData("http://app.example.com", "http scheme without AllowInsecureIssuer")]
-    public void Startup_throws_via_ValidateOnStart_for_invalid_CORS_origin(string invalidOrigin, string reason)
-    {
-        var act = () => new TestWebAppFactory(opts =>
-            opts.CorsOrigins.Add(invalidOrigin)).CreateClient();
-
-        act.Should().Throw<Exception>(because: $"'{invalidOrigin}' is invalid ({reason})");
-    }
-
-    [Fact]
-    public void Startup_throws_via_ValidateOnStart_for_invalid_ReferrerPolicy()
-    {
-        var act = () => new TestWebAppFactory(opts =>
-            opts.SecurityHeaders.ReferrerPolicy = (ReferrerPolicy)9999).CreateClient();
-
-        act.Should().Throw<Exception>().WithMessage("*ReferrerPolicy*");
-    }
-
-    [Fact]
-    public void Startup_throws_via_ValidateOnStart_for_invalid_CrossOriginResourcePolicy()
-    {
-        var act = () => new TestWebAppFactory(opts =>
-            opts.SecurityHeaders.CrossOriginResourcePolicy = (CrossOriginResourcePolicy)9999).CreateClient();
-
-        act.Should().Throw<Exception>().WithMessage("*CrossOriginResourcePolicy*");
+        act.Should().Throw<Exception>()
+            .WithMessage("*AuthorizationServerOptions.Issuer must be set to a non-empty value.*");
     }
 
     // ── Host binding ──────────────────────────────────────────────────────────────────────────────
@@ -468,8 +322,7 @@ public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
         string path,
         HttpStatusCode expectedStatusCode)
     {
-        using var factory = new TestWebAppFactoryWithRemoteIp(IPAddress.Loopback);
-        using var client = CreateClient(factory, "http://localhost:5000");
+        var client = loopback.Client;
         using var request = new HttpRequestMessage(new HttpMethod(method), path);
 
         var response = await client.SendAsync(request, Cancellation);
@@ -570,8 +423,7 @@ public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
     [Fact]
     public async Task GetDiscoveryDocument_returns_insecure_issuer_header_when_AllowInsecureIssuer_is_true()
     {
-        using var factory = new TestWebAppFactoryWithRemoteIp(IPAddress.Loopback);
-        using var client = CreateClient(factory, "http://localhost:5000");
+        var client = loopback.Client;
 
         var response = await client.GetAsync(DiscoveryPath, Cancellation);
 
@@ -607,11 +459,5 @@ public sealed class DiscoveryEndpointHostTests(DefaultHostFixture host)
             .ToList();
         varyValues.Should().Contain("Accept-Encoding");
         varyValues.Should().Contain("Origin");
-    }
-
-    private sealed class CustomScopeRepositoryWithoutOpenId : IScopeRepository
-    {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
     }
 }

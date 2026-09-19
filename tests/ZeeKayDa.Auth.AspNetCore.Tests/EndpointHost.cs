@@ -1,5 +1,5 @@
-using System.Collections.Concurrent;
 using System.Net;
+using System.Reflection;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,8 +36,6 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests;
 internal sealed class EndpointHost : IDisposable
 {
     private static readonly Lazy<EndpointHost> LazyDefault = new(() => new EndpointHost());
-
-    private static readonly ConcurrentDictionary<string, Lazy<EndpointHost>> SharedHosts = new(StringComparer.Ordinal);
 
     private readonly ServiceProvider _services;
     private readonly Lazy<Task> _started;
@@ -97,30 +95,6 @@ internal sealed class EndpointHost : IDisposable
     /// <summary>A container with the default test configuration, shared across the test project.</summary>
     public static EndpointHost Default => LazyDefault.Value;
 
-    /// <summary>
-    /// Returns the container cached under <paramref name="key"/>, building it on first use. Several
-    /// tests asserting different things about one configuration then pay for it once.
-    /// </summary>
-    /// <param name="key">
-    /// Names the configuration. Two callers using the same key get the same container, and the
-    /// second caller's delegates are never invoked — so the key must describe the configuration, not
-    /// the test.
-    /// </param>
-    /// <param name="configureOptions">Applied on top of the default options, on first use only.</param>
-    /// <param name="configureBuilder">Applied after <c>AddZeeKayDaAuth()</c>, on first use only.</param>
-    /// <remarks>
-    /// For a configuration the tests only read from. A test that writes to a store, registers a
-    /// client, or advances a clock constructs its own <see cref="EndpointHost"/> instead, so its state
-    /// cannot reach a sibling test.
-    /// </remarks>
-    public static EndpointHost Shared(
-        string key,
-        Action<AuthorizationServerOptions>? configureOptions = null,
-        Action<ZeeKayDaAuthBuilder>? configureBuilder = null)
-        => SharedHosts.GetOrAdd(
-            key,
-            _ => new Lazy<EndpointHost>(() => new EndpointHost(configureOptions, configureBuilder))).Value;
-
     /// <summary>The container the endpoint under test resolves from.</summary>
     public IServiceProvider Services => _services;
 
@@ -137,6 +111,32 @@ internal sealed class EndpointHost : IDisposable
     /// is that startup fails.
     /// </remarks>
     public Task EnsureStartedAsync() => _started.Value;
+
+    /// <summary>
+    /// Runs the startup phase expecting it to fail, and returns the exception it failed with, for a
+    /// test asserting that a configuration is rejected.
+    /// </summary>
+    /// <returns>The exception startup threw.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when startup succeeded instead.</exception>
+    /// <remarks>
+    /// Startup aggregates every failing check into one exception and carries each root cause as an
+    /// inner exception, so assert against <see cref="ExceptionChain.FindInChain{T}(Exception?)"/> or
+    /// <see cref="EndpointHostExtensions.AllMessages(Exception)"/> rather than the top-level message.
+    /// </remarks>
+    public async Task<Exception> StartupFailureAsync()
+    {
+        try
+        {
+            await EnsureStartedAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return ex;
+        }
+
+        throw new InvalidOperationException(
+            "Startup succeeded, but the test expected it to reject this configuration.");
+    }
 
     /// <summary>Begins a <c>GET</c> request at <paramref name="pathAndQuery"/>.</summary>
     public TestRequest Get(string pathAndQuery) => new(HttpMethods.Get, pathAndQuery);
@@ -215,9 +215,7 @@ internal sealed class EndpointHost : IDisposable
         Delegate handler, HttpContext context, IServiceProvider services)
     {
         var arguments = handler.Method.GetParameters()
-            .Select(p => p.ParameterType == typeof(HttpContext)
-                ? context
-                : services.GetRequiredService(p.ParameterType))
+            .Select(p => Bind(p, handler, context, services))
             .ToArray();
 
         var returned = handler.DynamicInvoke(arguments);
@@ -232,6 +230,32 @@ internal sealed class EndpointHost : IDisposable
             _ => throw new InvalidOperationException(
                 $"{handler.Method.Name} returns {returned.GetType().FullName}, which is not an IResult."),
         };
+    }
+
+    /// <summary>
+    /// Supplies one handler argument: the request's <see cref="HttpContext"/>, or a service.
+    /// </summary>
+    /// <remarks>
+    /// Minimal APIs bind far more than this — route and query values, request bodies,
+    /// <c>[AsParameters]</c> types. This harness deliberately does not, because reimplementing that
+    /// binding is how a test harness starts disagreeing with production. A handler that takes
+    /// anything else is rejected by name rather than being asked of the container, where it would
+    /// surface as an unresolvable service.
+    /// </remarks>
+    private static object Bind(
+        ParameterInfo parameter, Delegate handler, HttpContext context, IServiceProvider services)
+    {
+        if (parameter.ParameterType == typeof(HttpContext))
+            return context;
+
+        if (services.GetService(parameter.ParameterType) is { } service)
+            return service;
+
+        throw new InvalidOperationException(
+            $"{handler.Method.DeclaringType?.Name}.{handler.Method.Name} takes " +
+            $"'{parameter.ParameterType.Name} {parameter.Name}', which is neither an HttpContext nor a " +
+            "registered service. EndpointHost does not reproduce minimal-API parameter binding, so " +
+            "test this handler through a real host instead.");
     }
 
     private static HttpResponseMessage ReadResponse(HttpContext context)
@@ -362,5 +386,36 @@ internal sealed class TestRequest
         context.Response.Body = new MemoryStream();
 
         return context;
+    }
+}
+
+/// <summary>Assertion helpers for what <see cref="EndpointHost"/> hands back.</summary>
+internal static class EndpointHostExtensions
+{
+    /// <summary>
+    /// Joins the messages of <paramref name="exception"/> and every exception beneath it, so a test
+    /// can assert on a root cause without knowing how many layers wrapped it.
+    /// </summary>
+    /// <param name="exception">The exception to flatten.</param>
+    /// <returns>Every distinct message in the chain, newline-separated.</returns>
+    public static string AllMessages(this Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        // Distinct, because startup reports one root cause once per failing check and five
+        // copies of the same sentence make an assertion failure unreadable.
+        return string.Join(Environment.NewLine, Messages(exception).Distinct(StringComparer.Ordinal));
+
+        static IEnumerable<string> Messages(Exception ex)
+        {
+            yield return ex.Message;
+
+            var inner = ex is AggregateException aggregate
+                ? aggregate.InnerExceptions
+                : (IReadOnlyList<Exception>)(ex.InnerException is { } single ? [single] : []);
+
+            foreach (var message in inner.SelectMany(Messages))
+                yield return message;
+        }
     }
 }

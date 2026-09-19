@@ -106,7 +106,7 @@ internal sealed class TestSigningKeySource : ISigningKeySource, IDisposable
 /// A <see cref="WebApplicationFactory{TEntryPoint}"/> that stands up a minimal ASP.NET Core host
 /// with ZeeKayDa.Auth services registered, for use in integration tests.
 /// </summary>
-internal sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactory>
+public sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactory>
 {
     private readonly Action<AuthorizationServerOptions>? _configureOptions;
     private readonly Action<ZeeKayDaAuthBuilder>? _configureBuilder;

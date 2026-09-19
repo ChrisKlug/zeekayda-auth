@@ -2,10 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Security;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
@@ -19,10 +21,6 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 public sealed class DiscoveryEndpointTests
 {
     private const string DiscoveryPath = "/.well-known/openid-configuration";
-
-    // Configuration keys for EndpointHost.Shared. Each names a configuration several tests read.
-    private const string CorsAllowList = "cors allow list of app.example.com";
-    private const string NoCodeGrant = "client credentials only, no authorization code grant";
 
     private static Task<HttpResponseMessage> GetAsync(EndpointHost host, string? origin = null)
     {
@@ -134,7 +132,7 @@ public sealed class DiscoveryEndpointTests
     {
         // The endpoint is not served on such a host, so the metadata does not name it: a document
         // pointing at a 404 is worse than one without the field (RFC 8414 §2).
-        var host = EndpointHost.Shared(NoCodeGrant, opts => opts.GrantTypesSupported = [GrantType.ClientCredentials]);
+        using var host = new EndpointHost(opts => opts.GrantTypesSupported = [GrantType.ClientCredentials]);
 
         var doc = await GetDocumentAsync(host);
 
@@ -170,7 +168,7 @@ public sealed class DiscoveryEndpointTests
     {
         // The omitted fields are optional on the way in as well: a consumer binding the document
         // to OpenIdConfigurationDocument must not be told a required member is missing.
-        var host = EndpointHost.Shared(NoCodeGrant, opts => opts.GrantTypesSupported = [GrantType.ClientCredentials]);
+        using var host = new EndpointHost(opts => opts.GrantTypesSupported = [GrantType.ClientCredentials]);
         using var response = await GetAsync(host);
         var json = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
@@ -366,7 +364,7 @@ public sealed class DiscoveryEndpointTests
     [Fact]
     public async Task GetDiscoveryDocument_returns_specific_origin_for_matching_origin_in_explicit_allow_list()
     {
-        var host = EndpointHost.Shared(CorsAllowList, opts => opts.CorsOrigins.Add("https://app.example.com"));
+        using var host = new EndpointHost(opts => opts.CorsOrigins.Add("https://app.example.com"));
 
         using var response = await GetAsync(host, origin: "https://app.example.com");
 
@@ -377,7 +375,7 @@ public sealed class DiscoveryEndpointTests
     [Fact]
     public async Task GetDiscoveryDocument_returns_Vary_Origin_header_for_matching_origin_in_explicit_allow_list()
     {
-        var host = EndpointHost.Shared(CorsAllowList, opts => opts.CorsOrigins.Add("https://app.example.com"));
+        using var host = new EndpointHost(opts => opts.CorsOrigins.Add("https://app.example.com"));
 
         using var response = await GetAsync(host, origin: "https://app.example.com");
 
@@ -387,7 +385,7 @@ public sealed class DiscoveryEndpointTests
     [Fact]
     public async Task GetDiscoveryDocument_has_no_ACAO_header_for_non_matching_origin_in_explicit_allow_list()
     {
-        var host = EndpointHost.Shared(CorsAllowList, opts => opts.CorsOrigins.Add("https://app.example.com"));
+        using var host = new EndpointHost(opts => opts.CorsOrigins.Add("https://app.example.com"));
 
         using var response = await GetAsync(host, origin: "https://evil.example.com");
 
@@ -397,7 +395,7 @@ public sealed class DiscoveryEndpointTests
     [Fact]
     public async Task GetDiscoveryDocument_returns_Vary_Origin_header_for_non_matching_origin_in_explicit_allow_list()
     {
-        var host = EndpointHost.Shared(CorsAllowList, opts => opts.CorsOrigins.Add("https://app.example.com"));
+        using var host = new EndpointHost(opts => opts.CorsOrigins.Add("https://app.example.com"));
 
         using var response = await GetAsync(host, origin: "https://evil.example.com");
 
@@ -407,7 +405,7 @@ public sealed class DiscoveryEndpointTests
     [Fact]
     public async Task GetDiscoveryDocument_has_no_ACAO_header_when_no_Origin_header_in_explicit_allow_list()
     {
-        var host = EndpointHost.Shared(CorsAllowList, opts => opts.CorsOrigins.Add("https://app.example.com"));
+        using var host = new EndpointHost(opts => opts.CorsOrigins.Add("https://app.example.com"));
 
         using var response = await GetAsync(host);
 
@@ -417,7 +415,7 @@ public sealed class DiscoveryEndpointTests
     [Fact]
     public async Task GetDiscoveryDocument_returns_Vary_Origin_header_when_no_Origin_header_in_explicit_allow_list()
     {
-        var host = EndpointHost.Shared(CorsAllowList, opts => opts.CorsOrigins.Add("https://app.example.com"));
+        using var host = new EndpointHost(opts => opts.CorsOrigins.Add("https://app.example.com"));
 
         using var response = await GetAsync(host);
 
@@ -429,7 +427,7 @@ public sealed class DiscoveryEndpointTests
     {
         // The allowlist stores lowercase canonical entries. The request sends mixed-case, which
         // matches case-insensitively, but the response must echo the canonical stored value.
-        var host = EndpointHost.Shared(CorsAllowList, opts => opts.CorsOrigins.Add("https://app.example.com"));
+        using var host = new EndpointHost(opts => opts.CorsOrigins.Add("https://app.example.com"));
 
         using var response = await GetAsync(host, origin: "HTTPS://APP.EXAMPLE.COM");
 
@@ -440,7 +438,7 @@ public sealed class DiscoveryEndpointTests
     [Fact]
     public async Task Startup_makes_CorsOriginAllowList_read_only()
     {
-        var host = EndpointHost.Shared(CorsAllowList, opts => opts.CorsOrigins.Add("https://app.example.com"));
+        using var host = new EndpointHost(opts => opts.CorsOrigins.Add("https://app.example.com"));
         await host.EnsureStartedAsync();
 
         var options = host.Services.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
@@ -448,5 +446,179 @@ public sealed class DiscoveryEndpointTests
         options.CorsOrigins.IsReadOnly.Should().BeTrue();
         var act = () => options.CorsOrigins.Add("https://admin.example.com");
         act.Should().Throw<NotSupportedException>();
+    }
+
+    // ── Startup validation ────────────────────────────────────────────────────────────────────────
+    //
+    // Host-free: the startup phase runs the same gates, verifiers and activators a host runs.
+    // Startup aggregates every failing check into one exception carrying each root cause beneath it,
+    // so these assert against the whole chain. DiscoveryEndpointHostTests keeps the one test proving
+    // that a host refuses to start at all.
+
+    [Fact]
+    public async Task Startup_rejects_an_Issuer_that_is_not_configured()
+    {
+        using var host = new EndpointHost(opts => opts.Issuer = null);
+
+        var failure = await host.StartupFailureAsync();
+
+        failure.AllMessages().Should().Contain("AuthorizationServerOptions.Issuer must be set to a non-empty value.");
+    }
+
+    [Fact]
+    public async Task Startup_rejects_an_HTTP_Issuer_without_the_AllowInsecureIssuer_flag()
+    {
+        using var host = new EndpointHost(opts =>
+        {
+            opts.Issuer = "http://auth.example.com";
+            opts.AllowInsecureIssuer = false;
+        });
+
+        var failure = await host.StartupFailureAsync();
+
+        failure.AllMessages().Should().Contain("Only 'https' is permitted");
+    }
+
+    [Fact]
+    public async Task Startup_rejects_a_malformed_Issuer()
+    {
+        using var host = new EndpointHost(opts => opts.Issuer = "not-a-valid-uri");
+
+        var failure = await host.StartupFailureAsync();
+
+        failure.AllMessages().Should().Contain("not a valid absolute URI");
+    }
+
+    [Fact]
+    public async Task Startup_rejects_an_endpoint_override_on_a_different_authority()
+    {
+        using var host = new EndpointHost(opts =>
+        {
+            opts.Issuer = "https://test.example.com";
+            opts.TokenEndpoint.Uri = "https://login.example.com/custom/token";
+        });
+
+        var failure = await host.StartupFailureAsync();
+
+        failure.AllMessages().Should().Contain("same authority");
+    }
+
+    [Fact]
+    public async Task Startup_rejects_a_custom_scope_repository_without_the_openid_scope()
+    {
+        using var host = new EndpointHost(
+            configureBuilder: builder => builder.Services.Replace(
+                ServiceDescriptor.Singleton<IScopeRepository, CustomScopeRepositoryWithoutOpenId>()));
+
+        var failure = await host.StartupFailureAsync();
+
+        failure.AllMessages().Should().Contain(StandardScopes.OpenId.Name);
+    }
+
+    [Fact]
+    public async Task Startup_accepts_the_None_auth_method_without_the_AuthorizationCode_grant()
+    {
+        using var host = new EndpointHost(opts =>
+        {
+            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
+            opts.GrantTypesSupported = [GrantType.RefreshToken];
+        });
+
+        var act = async () => await host.EnsureStartedAsync();
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Startup_accepts_the_None_auth_method_with_the_AuthorizationCode_grant()
+    {
+        using var host = new EndpointHost(opts =>
+        {
+            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
+            opts.GrantTypesSupported = [GrantType.AuthorizationCode];
+        });
+
+        var act = async () => await host.EnsureStartedAsync();
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Startup_rejects_an_out_of_range_GrantType()
+    {
+        using var host = new EndpointHost(opts => opts.GrantTypesSupported = [(GrantType)9999]);
+
+        var failure = await host.StartupFailureAsync();
+
+        failure.AllMessages().Should().Contain("GrantTypesSupported");
+    }
+
+    [Fact]
+    public async Task Startup_rejects_a_whitespace_TokenEndpointAuthMethod()
+    {
+        using var host = new EndpointHost(opts => opts.TokenEndpoint.AuthMethodsSupported = ["   "]);
+
+        var failure = await host.StartupFailureAsync();
+
+        failure.AllMessages().Should().Contain("TokenEndpoint.AuthMethodsSupported");
+    }
+
+    [Fact]
+    public async Task Startup_rejects_an_empty_CodeChallengeMethodsSupported()
+    {
+        using var host = new EndpointHost(opts => opts.AuthorizationEndpoint.CodeChallengeMethodsSupported = []);
+
+        var failure = await host.StartupFailureAsync();
+
+        failure.AllMessages().Should().Contain("CodeChallengeMethodsSupported");
+    }
+
+    // ── CORS startup validation ───────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("", "empty")]
+    [InlineData("https://example.com/path", "path")]
+    [InlineData("https://example.com?q=1", "query")]
+    [InlineData("https://example.com#frag", "fragment")]
+    [InlineData("https://user@example.com", "userinfo")]
+    [InlineData("*", "wildcard")]
+    [InlineData("https://*.example.com", "wildcard")]
+    [InlineData("null", "null literal")]
+    [InlineData("https://example.com\r\n", "CRLF")]
+    [InlineData("http://app.example.com", "http scheme without AllowInsecureIssuer")]
+    public async Task Startup_rejects_an_invalid_CORS_origin(string invalidOrigin, string reason)
+    {
+        using var host = new EndpointHost(opts => opts.CorsOrigins.Add(invalidOrigin));
+
+        var act = async () => await host.EnsureStartedAsync();
+
+        await act.Should().ThrowAsync<Exception>(because: $"'{invalidOrigin}' is invalid ({reason})");
+    }
+
+    [Fact]
+    public async Task Startup_rejects_an_invalid_ReferrerPolicy()
+    {
+        using var host = new EndpointHost(opts => opts.SecurityHeaders.ReferrerPolicy = (ReferrerPolicy)9999);
+
+        var failure = await host.StartupFailureAsync();
+
+        failure.AllMessages().Should().Contain("ReferrerPolicy");
+    }
+
+    [Fact]
+    public async Task Startup_rejects_an_invalid_CrossOriginResourcePolicy()
+    {
+        using var host = new EndpointHost(
+            opts => opts.SecurityHeaders.CrossOriginResourcePolicy = (CrossOriginResourcePolicy)9999);
+
+        var failure = await host.StartupFailureAsync();
+
+        failure.AllMessages().Should().Contain("CrossOriginResourcePolicy");
+    }
+
+    private sealed class CustomScopeRepositoryWithoutOpenId : IScopeRepository
+    {
+        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
     }
 }
