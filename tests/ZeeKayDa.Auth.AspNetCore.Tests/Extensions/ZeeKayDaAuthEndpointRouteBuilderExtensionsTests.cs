@@ -3,12 +3,78 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthEndpointRouteBuilderExtensionsTests
+public sealed class ZeeKayDaAuthEndpointRouteBuilderExtensionsTests(EveryRouteHostFixture everyRoute)
+    : IClassFixture<EveryRouteHostFixture>
 {
     private const string DiscoveryPath = "/.well-known/openid-configuration";
+
+    /// <summary>
+    /// Every route the framework maps on <see cref="EveryRouteHostFixture"/>, with one method each
+    /// route accepts. The route group's filter runs per endpoint, not per method, so one request per
+    /// endpoint proves it applies.
+    /// </summary>
+    private static readonly (string Method, string Path)[] FrameworkRoutes =
+    [
+        ("GET", "/.well-known/openid-configuration"),
+        ("GET", "/.well-known/oauth-authorization-server"),
+        ("GET", "/connect/jwks"),
+        ("GET", "/connect/authorize"),
+        ("POST", "/connect/token"),
+        ("GET", "/connect/userinfo"),
+        ("OPTIONS", "/connect/userinfo"),
+        ("GET", "/connect/endsession"),
+        ("GET", "/connect/endsession/confirm"),
+        ("GET", "/connect/resume"),
+        ("GET", "/connect/callback/acme"),
+    ];
+
+    public static TheoryData<string, string> FrameworkRouteRows => new(FrameworkRoutes);
+
+    // ── Defensive security headers ────────────────────────────────────────────────────────────────
+    //
+    // The route group's filter adds these, not any handler, so a route has them only while it is
+    // mapped inside the group — which no host-free handler test can see.
+
+    [Theory]
+    [MemberData(nameof(FrameworkRouteRows))]
+    public async Task Every_framework_route_answers_with_the_route_groups_security_headers(string method, string path)
+    {
+        // Redirects are left unfollowed: an error page the host maps is outside the group.
+        var client = everyRoute.NewClient(options => options.AllowAutoRedirect = false);
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        HeaderOf(response, "X-Content-Type-Options").Should().Be("nosniff");
+        HeaderOf(response, "Referrer-Policy").Should().Be("no-referrer");
+        HeaderOf(response, "Cross-Origin-Resource-Policy").Should().Be("same-origin");
+    }
+
+    [Fact]
+    public void The_security_header_rows_name_every_route_the_framework_maps()
+    {
+        var mapped = everyRoute.Services.GetRequiredService<EndpointDataSource>().Endpoints
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.Metadata.GetMetadata<ExactPathMetadata>() is not null)
+            .Select(endpoint => (
+                Path: endpoint.RoutePattern.RawText,
+                Methods: endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? []))
+            .ToList();
+
+        mapped.Select(endpoint => endpoint.Path).Should().BeEquivalentTo(FrameworkRoutes.Select(row => row.Path),
+            because: "a framework route without a row has no test proving it carries the security headers");
+        FrameworkRoutes.Should().OnlyContain(
+            row => mapped.Any(endpoint => endpoint.Path == row.Path && endpoint.Methods.Contains(row.Method)),
+            because: "each row must send a method its route accepts, or it would test a 405 instead");
+    }
+
+    private static string? HeaderOf(HttpResponseMessage response, string name) =>
+        response.Headers.TryGetValues(name, out var values) ? string.Join(", ", values) : null;
 
     private static HttpClient CreateLoopbackClient(
         WebApplicationFactory<TestWebAppFactory> factory,

@@ -176,6 +176,23 @@ public sealed class FallbackPolicyHostFixture : SharedHostFixture
 }
 
 /// <summary>
+/// The default issuer with one external provider registered, so the host maps every route the
+/// framework can serve — the resume route and the provider callback included, which a host without
+/// providers leaves unmapped.
+/// </summary>
+public sealed class EveryRouteHostFixture : SharedHostFixture
+{
+    /// <inheritdoc/>
+    protected override string DefaultBaseAddress => "https://test.example.com";
+
+    /// <inheritdoc/>
+    protected override WebApplicationFactory<TestWebAppFactory> CreateFactory()
+        => new TestWebAppFactory(
+            configureBuilder: builder => builder.WithProviders(
+                auth => auth.AddOAuth("acme", "Acme", ProviderTestHost.ConfigureAcme)));
+}
+
+/// <summary>
 /// A loopback host with <c>AllowInsecureIssuer</c>, issuer <c>http://localhost:5000</c>, for the
 /// tests that prove plain HTTP is served to loopback and refused to anything else.
 /// </summary>
