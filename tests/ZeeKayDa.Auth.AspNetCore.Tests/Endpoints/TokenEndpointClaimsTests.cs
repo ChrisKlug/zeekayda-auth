@@ -1,40 +1,34 @@
 using System.Buffers.Text;
 using System.Net;
-using System.Security.Claims;
 using System.Text.Json;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using ZeeKayDa.Auth.AspNetCore.Interaction;
-using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
+using ZeeKayDa.Auth.AspNetCore.Endpoints;
+using ZeeKayDa.Auth.AspNetCore.Tokens;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Scopes;
-using ZeeKayDa.Auth.Tokens;
+using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 
 /// <summary>
-/// The claims seam and claim selection, end to end: a host's <see cref="IClaimsProvider"/> is
-/// asked for the subject's claims on every exchange, the granted scopes and the client's
-/// additions decide which of them each token carries, and the granted scopes decide the access
-/// token's audience. The refusals — a subject the provider rejects, a provider that faults, a
-/// misconfigured client — are recorded by the tests that prove them.
+/// The claims seam and claim selection, host-free: a code seeded directly into the authorization
+/// code store is exchanged through <see cref="TokenRequestHandler"/> directly. A host's
+/// <see cref="IClaimsProvider"/> is asked for the subject's claims on every exchange, the granted
+/// scopes and the client's additions decide which of them each token carries, and the granted
+/// scopes decide the access token's audience. The refusals — a subject the provider rejects, a
+/// provider that faults, a misconfigured client — are recorded by the tests that prove them. The
+/// one scenario a host-free container cannot reproduce — a host with no claims provider
+/// registered at all — needs a real host and lives in <see cref="TokenEndpointClaimsHostTests"/>.
 /// </summary>
 public sealed class TokenEndpointClaimsTests : IDisposable
 {
     private const string TokenPath = "/connect/token";
     private const string Issuer = "https://test.example.com";
     private const string Redirect = "https://test.example.com/callback";
-    private const string LoginPath = "/account/login";
     private const string OrdersAudience = "https://orders.example.com/";
     private const string ReportsAudience = "https://reports.example.com/";
     private const string App = "app";
@@ -66,12 +60,11 @@ public sealed class TokenEndpointClaimsTests : IDisposable
         new ScopeDefinition { Name = "reports.read", Audience = ReportsAudience },
     ]);
     private readonly CapturingLoggerProvider _logs = new();
-    private readonly TestWebAppFactory _factory;
-    private readonly HttpClient _client;
+    private readonly EndpointHost _host;
 
     public TokenEndpointClaimsTests()
     {
-        _factory = new TestWebAppFactory(
+        _host = new EndpointHost(
             configureBuilder: builder =>
             {
                 builder.Services.AddLogging(logging => logging.AddProvider(_logs));
@@ -85,16 +78,10 @@ public sealed class TokenEndpointClaimsTests : IDisposable
                         AdditionalIdTokenClaims = ["tenant"],
                         AdditionalAccessTokenClaims = ["tenant"],
                     }));
-            },
-            mapEndpoints: MapLoginPage);
-        _client = _factory.CreateClient(new() { BaseAddress = new Uri(Issuer), AllowAutoRedirect = false, HandleCookies = true });
+            });
     }
 
-    public void Dispose()
-    {
-        _client.Dispose();
-        _factory.Dispose();
-    }
+    public void Dispose() => _host.Dispose();
 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
@@ -199,24 +186,29 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     }
 
     [Fact]
-    public void A_client_addition_naming_a_claim_a_scope_unlocks_fails_startup()
+    public async Task A_client_addition_naming_a_claim_a_scope_unlocks_fails_startup()
     {
-        using var factory = new StartupFactory(clients => clients.Add(
-            ClientRegistration.CreatePublic("bad", [Redirect], [], ["openid"]) with { AdditionalAccessTokenClaims = ["email"] }));
+        using var host = new EndpointHost(
+            configureBuilder: builder => builder.AddInMemoryClients(clients => clients.Add(
+                ClientRegistration.CreatePublic("bad", [Redirect], [], ["openid"]) with { AdditionalAccessTokenClaims = ["email"] })));
 
-        var act = () => factory.CreateClient();
+        var failure = await host.StartupFailureAsync();
 
-        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(act.Should().Throw<Exception>().Which)!
+        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(failure)!
             .AggregatedFailures.Should().Contain(f => f.Code == "client.claim_additions.scope_claim");
     }
 
     [Fact]
     public async Task A_client_addition_that_collides_with_a_scope_added_after_startup_is_refused_at_the_next_request()
     {
-        // The startup guard cannot see a scope added later; the per-request guard can.
+        // The startup guard cannot see a scope added later; the per-request guard can. Startup has to
+        // run before the scope is added, or the guard under test is not the one that fires: a
+        // host-free container starts lazily on first use, where a host started in the constructor.
+        await _host.EnsureStartedAsync();
+
         _scopes.Scopes = [.. _scopes.Scopes, new ScopeDefinition { Name = "hr", UserInfoClaims = ["tenant"] }];
 
-        var response = await _client.GetAsync(AuthorizeUrl(TenantApp, "openid profile"), Cancellation);
+        var response = await _host.InvokeAsync<AuthorizationEndpoint>(e => e.Handle, _host.Get(AuthorizeUrl(TenantApp, "openid profile")));
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         var query = QueryHelpers.ParseQuery(new Uri(response.Headers.Location!.OriginalString).Query);
@@ -255,7 +247,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     [Fact]
     public async Task Two_granted_scopes_with_different_audiences_are_refused_at_authorize_before_any_interaction()
     {
-        var response = await _client.GetAsync(AuthorizeUrl(App, "openid orders.read reports.read"), Cancellation);
+        var response = await _host.InvokeAsync<AuthorizationEndpoint>(e => e.Handle, _host.Get(AuthorizeUrl(App, "openid orders.read reports.read")));
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         var location = response.Headers.Location!.OriginalString;
@@ -266,7 +258,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     [Fact]
     public async Task A_scope_no_longer_defined_at_exchange_is_server_error()
     {
-        var code = await ObtainCodeAsync(App, "openid orders.read");
+        var code = await SeedCodeAsync(App, "openid orders.read");
         _scopes.Scopes = [.. StandardScopes.All];
 
         var response = await PostTokenAsync(code, App);
@@ -277,7 +269,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     [Fact]
     public async Task An_audience_malformed_at_exchange_is_server_error()
     {
-        var code = await ObtainCodeAsync(App, "openid orders.read");
+        var code = await SeedCodeAsync(App, "openid orders.read");
         _scopes.Scopes = [.. StandardScopes.All, new ScopeDefinition { Name = "orders.read", Audience = "orders" }];
 
         var response = await PostTokenAsync(code, App);
@@ -286,24 +278,26 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     }
 
     [Fact]
-    public void An_audience_that_is_not_an_absolute_URI_fails_startup()
+    public async Task An_audience_that_is_not_an_absolute_URI_fails_startup()
     {
-        using var factory = new StartupFactory(scopes: [.. StandardScopes.All, new ScopeDefinition { Name = "orders.read", Audience = "orders" }]);
+        using var host = new EndpointHost(
+            configureBuilder: builder => builder.AddInMemoryScopes([.. StandardScopes.All, new ScopeDefinition { Name = "orders.read", Audience = "orders" }]));
 
-        var act = () => factory.CreateClient();
+        var failure = await host.StartupFailureAsync();
 
-        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(act.Should().Throw<Exception>().Which)!
+        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(failure)!
             .AggregatedFailures.Should().Contain(f => f.Code == "scopes.audience.invalid");
     }
 
     [Fact]
-    public void A_client_allowing_a_scope_no_repository_defines_fails_startup()
+    public async Task A_client_allowing_a_scope_no_repository_defines_fails_startup()
     {
-        using var factory = new StartupFactory(clients => clients.AddPublic("bad", [Redirect], [], ["openid", "undefined"]));
+        using var host = new EndpointHost(
+            configureBuilder: builder => builder.AddInMemoryClients(clients => clients.AddPublic("bad", [Redirect], [], ["openid", "undefined"])));
 
-        var act = () => factory.CreateClient();
+        var failure = await host.StartupFailureAsync();
 
-        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(act.Should().Throw<Exception>().Which)!
+        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(failure)!
             .AggregatedFailures.Should().Contain(f => f.Code == "client.allowed_scopes.undefined");
     }
 
@@ -313,7 +307,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     public async Task SubjectInvalid_answers_invalid_grant_and_issues_nothing()
     {
         _provider.Script = _ => new ClaimsResolutionResult.SubjectInvalid();
-        var code = await ObtainCodeAsync(App, "openid profile");
+        var code = await SeedCodeAsync(App, "openid profile");
 
         var response = await PostTokenAsync(code, App);
 
@@ -326,7 +320,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     public async Task A_throwing_provider_answers_server_error_and_no_claim_value_reaches_a_log()
     {
         _provider.Script = _ => throw new InvalidOperationException("Could not load chris@example.com");
-        var code = await ObtainCodeAsync(App, "openid profile");
+        var code = await SeedCodeAsync(App, "openid profile");
 
         var response = await PostTokenAsync(code, App);
 
@@ -349,7 +343,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
         // An HttpClient timeout inside the provider surfaces as TaskCanceledException while the
         // request itself is still live; it must not escape as an unhandled exception.
         _provider.Script = _ => throw new TaskCanceledException("the identity store timed out");
-        var code = await ObtainCodeAsync(App, "openid profile");
+        var code = await SeedCodeAsync(App, "openid profile");
 
         var response = await PostTokenAsync(code, App);
 
@@ -361,7 +355,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     {
         // The list is the provider's own code; a message it throws with must reach no log line.
         _provider.Script = _ => new ClaimsResolutionResult.Resolved { Claims = new ThrowingClaimList("row for chris@example.com is corrupt") };
-        var code = await ObtainCodeAsync(App, "openid profile");
+        var code = await SeedCodeAsync(App, "openid profile");
 
         var response = await PostTokenAsync(code, App);
 
@@ -372,19 +366,17 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     [Fact]
     public async Task A_provider_whose_construction_fails_answers_server_error_and_leaks_nothing()
     {
-        using var factory = new TestWebAppFactory(
+        using var host = new EndpointHost(
             configureBuilder: builder =>
             {
                 builder.Services.AddLogging(logging => logging.AddProvider(_logs));
                 builder.AddClaimsProvider<UnconstructibleClaimsProvider>();
                 builder.AddInMemoryClients(clients => clients.Add(
                     ClientRegistration.CreatePublic(App, [Redirect], [], ["openid", "profile"]) with { RequireConsent = false }));
-            },
-            mapEndpoints: MapLoginPage);
-        using var client = factory.CreateClient(new() { BaseAddress = new Uri(Issuer), AllowAutoRedirect = false, HandleCookies = true });
-        var code = await ObtainCodeWithAsync(client, App, "openid profile");
+            });
+        var code = await SeedCodeWithAsync(host, App, "openid profile");
 
-        var response = await PostTokenWithAsync(client, code, App);
+        var response = await PostTokenWithAsync(host, code, App);
 
         await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
         _logs.Entries.Should().NotContain(entry => entry.Message.Contains("connection string", StringComparison.Ordinal));
@@ -394,7 +386,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     public async Task A_provider_returning_null_answers_server_error()
     {
         _provider.Script = _ => null!;
-        var code = await ObtainCodeAsync(App, "openid profile");
+        var code = await SeedCodeAsync(App, "openid profile");
 
         var response = await PostTokenAsync(code, App);
 
@@ -405,7 +397,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     public async Task A_provider_that_throws_for_this_subject_only_does_not_affect_the_next_exchange()
     {
         _provider.Script = _ => throw new InvalidOperationException("transient");
-        await PostTokenAsync(await ObtainCodeAsync(App, "openid profile"), App);
+        await PostTokenAsync(await SeedCodeAsync(App, "openid profile"), App);
         _provider.Script = null;
 
         var tokens = await ExchangeAsync(scope: "openid profile");
@@ -429,7 +421,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     public async Task A_repeated_boolean_aborts_issuance_as_server_error()
     {
         _provider.Script = _ => Resolved([new("email_verified", true), new("email_verified", false)]);
-        var code = await ObtainCodeAsync(App, "openid email");
+        var code = await SeedCodeAsync(App, "openid email");
 
         var response = await PostTokenAsync(code, App);
 
@@ -450,27 +442,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
         address.TryGetProperty("street_address", out _).Should().BeFalse();
     }
 
-    // ── Startup ───────────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void A_host_with_no_claims_provider_fails_startup_naming_the_registration()
-    {
-        using var factory = new StartupFactory(registerProvider: false);
-
-        var act = () => factory.CreateClient();
-
-        var failure = ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(act.Should().Throw<Exception>().Which)!
-            .AggregatedFailures.Should().Contain(f => f.Code == "claims.provider.missing").Subject;
-        failure.Message.Should().Contain("AddClaimsProvider");
-    }
-
     // ── Driving the flow ──────────────────────────────────────────────────────────────────────
-
-    private static void MapLoginPage(IEndpointRouteBuilder endpoints) =>
-        endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
-            await login.SignInAsync(
-                new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", Subject)], "test")),
-                AuthenticationMethods.Password));
 
     private static string AuthorizeUrl(string clientId, string scope) =>
         QueryHelpers.AddQueryString("/connect/authorize", new Dictionary<string, string?>
@@ -484,43 +456,57 @@ public sealed class TokenEndpointClaimsTests : IDisposable
             ["code_challenge_method"] = "S256",
         });
 
-    private Task<string> ObtainCodeAsync(string clientId, string scope) => ObtainCodeWithAsync(_client, clientId, scope);
+    /// <summary>
+    /// Stores an authorization code entry exactly as the authorization endpoint's own issuance
+    /// would have left it, without driving the authorize/login flow that produced it — the token
+    /// endpoint's claims behaviour is what these tests prove, not how a code comes to exist.
+    /// </summary>
+    private Task<string> SeedCodeAsync(string clientId, string scope) => SeedCodeWithAsync(_host, clientId, scope);
 
-    private static async Task<string> ObtainCodeWithAsync(HttpClient client, string clientId, string scope)
+    private static async Task<string> SeedCodeWithAsync(EndpointHost host, string clientId, string scope)
     {
-        var response = await client.GetAsync(AuthorizeUrl(clientId, scope), Cancellation);
-        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        await host.EnsureStartedAsync();
 
-        if (response.Headers.Location!.OriginalString.StartsWith(LoginPath, StringComparison.Ordinal))
+        var now = DateTimeOffset.UtcNow;
+        var code = StoreKeyGenerator.Generate();
+        var entry = new AuthorizationCodeEntry
         {
-            var location = response.Headers.Location!.OriginalString;
-            var interactionId = QueryHelpers.ParseQuery(location[location.IndexOf('?')..])[InteractionHandoff.InteractionIdParameter].ToString();
-            using var login = new FormUrlEncodedContent([]);
-            response = await client.PostAsync(QueryHelpers.AddQueryString(LoginPath, InteractionHandoff.InteractionIdParameter, interactionId), login, Cancellation);
-        }
+            ClientId = clientId,
+            RedirectUri = Redirect,
+            Pkce = new PkceChallenge(Challenge, CodeChallengeMethod.S256),
+            Sub = Subject,
+            Scope = scope.Split(' ', StringSplitOptions.RemoveEmptyEntries),
+            Nonce = Nonce,
+            AuthTime = now,
+            SsoSessionId = StoreKeyGenerator.Generate(),
+            InteractionId = StoreKeyGenerator.Generate(),
+            IssuedAt = now,
+            ExpiresAt = now.AddSeconds(60),
+        };
 
-        return response.ShouldHaveIssuedCodeTo(Redirect);
+        await host.Resolve<IAuthorizationCodeStore>().StoreAsync(code, entry, Cancellation);
+        return code;
     }
 
-    private Task<HttpResponseMessage> PostTokenAsync(string code, string clientId) => PostTokenWithAsync(_client, code, clientId);
+    private Task<HttpResponseMessage> PostTokenAsync(string code, string clientId) => PostTokenWithAsync(_host, code, clientId);
 
-    private static async Task<HttpResponseMessage> PostTokenWithAsync(HttpClient client, string code, string clientId)
+    private static Task<HttpResponseMessage> PostTokenWithAsync(EndpointHost host, string code, string clientId)
     {
-        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        var form = new Dictionary<string, string>
         {
             ["grant_type"] = "authorization_code",
             ["code"] = code,
             ["redirect_uri"] = Redirect,
             ["client_id"] = clientId,
             ["code_verifier"] = Verifier,
-        });
+        };
 
-        return await client.PostAsync(TokenPath, form, Cancellation);
+        return host.InvokeAsync<TokenRequestHandler>(h => h.HandleAsync, host.Post(TokenPath).WithForm(form));
     }
 
     private async Task<(JsonElement AccessToken, JsonElement IdToken)> ExchangeAsync(string clientId = App, string scope = "openid profile")
     {
-        var response = await PostTokenAsync(await ObtainCodeAsync(clientId, scope), clientId);
+        var response = await PostTokenAsync(await SeedCodeAsync(clientId, scope), clientId);
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Cancellation));
 
         var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Cancellation)).RootElement.Clone();
@@ -604,72 +590,5 @@ public sealed class TokenEndpointClaimsTests : IDisposable
             ValueTask.FromResult(Scopes);
     }
 
-    /// <summary>A host built by hand, for the startup failures the shared factory papers over.</summary>
-    private sealed class StartupFactory(
-        Action<Clients.IInMemoryClientRegistrationBuilder>? clients = null,
-        IEnumerable<ScopeDefinition>? scopes = null,
-        bool registerProvider = true) : WebApplicationFactory<StartupFactory>
-    {
-        protected override IHostBuilder CreateHostBuilder()
-            => Host.CreateDefaultBuilder().ConfigureWebHostDefaults(webBuilder => webBuilder.UseTestServer());
-
-        protected override void ConfigureWebHost(IWebHostBuilder builder)
-        {
-            builder.UseContentRoot(AppContext.BaseDirectory);
-            builder.ConfigureServices(services =>
-            {
-                services.AddRouting();
-                var auth = services.AddZeeKayDaAuth(options =>
-                {
-                    options.Issuer = Issuer;
-                    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-                })
-                .AddInMemoryScopes(scopes ?? StandardScopes.All)
-                .AddInMemoryClients(clients ?? (c => c.AddPublic(App, [Redirect], [], ["openid"])))
-                .AddInMemoryStores(allowOutsideDevelopment: true)
-                .AddTestSigningKeys();
-
-                if (registerProvider)
-                    auth.AddTestClaimsProvider();
-            });
-
-            builder.Configure(app =>
-            {
-                app.UseRouting();
-                app.UseEndpoints(endpoints => endpoints.MapZeeKayDaAuth());
-            });
-        }
-    }
-
     /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>
-    private sealed class CapturingLoggerProvider : ILoggerProvider
-    {
-        private readonly List<(string Category, LogLevel Level, string Message)> _entries = [];
-
-        public IReadOnlyList<(string Category, LogLevel Level, string Message)> Entries
-        {
-            get { lock (_entries) return [.. _entries]; }
-        }
-
-        public ILogger CreateLogger(string categoryName) => new Logger(this, categoryName);
-
-        public void Dispose()
-        {
-        }
-
-        private void Add(string category, LogLevel level, string message)
-        {
-            lock (_entries) _entries.Add((category, level, message));
-        }
-
-        private sealed class Logger(CapturingLoggerProvider owner, string category) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-                owner.Add(category, logLevel, formatter(state, exception) + (exception is null ? string.Empty : " " + exception));
-        }
-    }
 }

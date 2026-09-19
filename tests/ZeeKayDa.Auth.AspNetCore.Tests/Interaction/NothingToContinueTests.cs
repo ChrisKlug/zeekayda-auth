@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
@@ -19,37 +18,28 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 /// page left open too long, a bookmarked page, another browser — is answered by the framework:
 /// back to the client to start again when it can be, and to the error page otherwise.
 /// </summary>
-public sealed class NothingToContinueTests : IDisposable
+public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHostFixture>
 {
     private const string Issuer = "https://test.example.com";
     private const string RegisteredRedirect = "https://test.example.com/callback";
     private const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
     private const string LoginPath = "/account/login";
     private const string ConsentPath = FlowAssertions.ConsentPath;
-    private const string LogoutPath = "/account/logout";
+    internal const string LogoutPath = "/account/logout";
     private const string ErrorPath = "/auth-error";
     private const string RestartingClient = "restarting-client";
     private const string PlainClient = "plain-client";
     private const string TrustedClient = "trusted-client";
     private const string InitiateLoginUri = "https://app.example.com/start?from=idp";
 
-    private static readonly DateTimeOffset Now = new(2026, 9, 17, 12, 0, 0, TimeSpan.Zero);
-
-    private readonly FakeTimeProvider _time = new(Now);
-    private readonly CapturingLoggerProvider _logs = new();
-    private readonly TestWebAppFactory _factory;
+    private readonly NothingToContinueHostFixture _fixture;
     private readonly HttpClient _client;
 
-    public NothingToContinueTests()
+    public NothingToContinueTests(NothingToContinueHostFixture fixture)
     {
-        _factory = NewFactory();
-        _client = NewClient(_factory);
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-        _factory.Dispose();
+        _fixture = fixture;
+        _fixture.Reset();
+        _client = _fixture.NewFlowClient();
     }
 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
@@ -71,7 +61,7 @@ public sealed class NothingToContinueTests : IDisposable
     public async Task A_login_submitted_after_the_interaction_expired_sends_the_browser_to_the_clients_initiate_login_uri()
     {
         var interactionId = InteractionIdFrom(await AuthorizeAsync(RestartingClient));
-        _time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
+        _fixture.Time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
 
         using var signIn = await PostLoginAsync(interactionId);
 
@@ -115,12 +105,12 @@ public sealed class NothingToContinueTests : IDisposable
         // A registered initiate_login_uri may carry query values of its own; the redirect to it is
         // written without the framework's redirect result, which logs the whole Location.
         var interactionId = InteractionIdFrom(await AuthorizeAsync(RestartingClient));
-        _time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
+        _fixture.Time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
 
         using var signIn = await PostLoginAsync(interactionId);
 
         signIn.ShouldRestartAtTheClient();
-        _logs.Entries.Should().NotContain(entry => entry.Message.Contains("app.example.com", StringComparison.Ordinal));
+        _fixture.Logs.Entries.Should().NotContain(entry => entry.Message.Contains("app.example.com", StringComparison.Ordinal));
     }
 
     // ── Not back to the client ────────────────────────────────────────────────────────────────
@@ -158,7 +148,7 @@ public sealed class NothingToContinueTests : IDisposable
         using var factory = NewFactory(errorPath: ErrorPath);
         using var client = NewClient(factory);
         var interactionId = InteractionIdFrom(await AuthorizeAsync(PlainClient, client));
-        _time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
+        _fixture.Time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
 
         using var signIn = await PostLoginAsync(interactionId, client);
 
@@ -175,7 +165,7 @@ public sealed class NothingToContinueTests : IDisposable
         // The browser that learned the identifier from a leaked URL holds no binding, so nothing
         // names the client for it: it gets the error page, never the client's restart.
         var interactionId = InteractionIdFrom(await AuthorizeAsync(RestartingClient));
-        using var otherBrowser = NewClient(_factory);
+        using var otherBrowser = _fixture.NewFlowClient();
 
         using var signIn = await PostLoginAsync(interactionId, otherBrowser);
 
@@ -189,7 +179,7 @@ public sealed class NothingToContinueTests : IDisposable
         using var factory = NewFactory(repository: repository);
         using var client = NewClient(factory);
         var interactionId = InteractionIdFrom(await AuthorizeAsync(RestartingClient, client));
-        _time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
+        _fixture.Time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
 
         repository.Current = null;
         using var signIn = await PostLoginAsync(interactionId, client);
@@ -205,7 +195,7 @@ public sealed class NothingToContinueTests : IDisposable
         using var factory = NewFactory(repository: repository);
         using var client = NewClient(factory);
         var interactionId = InteractionIdFrom(await AuthorizeAsync(RestartingClient, client));
-        _time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
+        _fixture.Time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
 
         repository.Current = RestartingRegistration() with { InitiateLoginUri = "https://app.example.com/moved" };
         using var signIn = await PostLoginAsync(interactionId, client);
@@ -220,7 +210,7 @@ public sealed class NothingToContinueTests : IDisposable
         // would hold a usable secret for the rest of the cookie's life and take a per-browser slot
         // from a tab that is still running. The tombstone keeps the client hint the restart uses.
         var interactionId = InteractionIdFrom(await AuthorizeAsync(RestartingClient));
-        _time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
+        _fixture.Time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
 
         using var signIn = await PostLoginAsync(interactionId);
 
@@ -237,7 +227,7 @@ public sealed class NothingToContinueTests : IDisposable
         using var signIn = await PostLoginAsync(interactionId: null);
 
         await signIn.ShouldHaveFoundNothingToContinueAsync();
-        _logs.Entries.Should().Contain(entry =>
+        _fixture.Logs.Entries.Should().Contain(entry =>
             entry.Level == LogLevel.Warning && entry.Message.Contains("without the 'zkd_i' parameter", StringComparison.Ordinal));
     }
 
@@ -245,12 +235,12 @@ public sealed class NothingToContinueTests : IDisposable
     public async Task A_login_submitted_for_an_expired_interaction_is_logged_as_information_only()
     {
         var interactionId = InteractionIdFrom(await AuthorizeAsync(PlainClient));
-        _time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
+        _fixture.Time.Advance(AuthorizationRequestContextStore.Lifetime + TimeSpan.FromMinutes(1));
 
         using var signIn = await PostLoginAsync(interactionId);
 
         await signIn.ShouldHaveFoundNothingToContinueAsync();
-        var entry = _logs.Entries.Single(entry => entry.Message.Contains("page was reached", StringComparison.Ordinal));
+        var entry = _fixture.Logs.Entries.Single(entry => entry.Message.Contains("page was reached", StringComparison.Ordinal));
         entry.Level.Should().Be(LogLevel.Information);
         entry.Message.Should().Contain(nameof(NothingToContinueReason.NotFound));
     }
@@ -274,7 +264,7 @@ public sealed class NothingToContinueTests : IDisposable
         var page = await ReadJsonAsync(_client, ConsentPath);
 
         page.GetProperty("found").GetBoolean().Should().BeFalse();
-        _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Warning && entry.Message.Contains("consent", StringComparison.Ordinal));
+        _fixture.Logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Warning && entry.Message.Contains("consent", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -282,7 +272,7 @@ public sealed class NothingToContinueTests : IDisposable
     {
         await SignInAsync();
         var asked = await _client.GetAsync("/connect/endsession", Cancellation);
-        _time.Advance(LogoutRequestStore.Lifetime);
+        _fixture.Time.Advance(LogoutRequestStore.Lifetime);
 
         var page = await ReadJsonAsync(_client, asked.Headers.Location!.OriginalString);
 
@@ -326,26 +316,33 @@ public sealed class NothingToContinueTests : IDisposable
         },
         configureBuilder: builder =>
         {
-            builder.Services.AddSingleton<TimeProvider>(_time);
-            builder.Services.AddLogging(logging => logging.AddProvider(_logs));
+            builder.Services.AddSingleton<TimeProvider>(_fixture.Time);
+            builder.Services.AddLogging(logging => logging.AddProvider(_fixture.Logs));
             builder.AddInMemoryClients(clients => clients
                 .Add(RestartingRegistration())
-                .Add(ClientRegistration.CreatePublic(PlainClient, [RegisteredRedirect], [], ["openid"]))
-                .Add(ClientRegistration.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid"]) with { RequireConsent = false }));
+                .Add(PlainRegistration())
+                .Add(TrustedRegistration()));
 
             if (repository is not null)
                 builder.Services.AddSingleton(repository);
         },
         mapEndpoints: MapHostPages);
 
-    private static ClientRegistration RestartingRegistration() =>
+    internal static ClientRegistration RestartingRegistration() =>
         ClientRegistration.CreatePublic(RestartingClient, [RegisteredRedirect], [], ["openid"]) with
         {
             InitiateLoginUri = InitiateLoginUri,
         };
 
+    internal static ClientRegistration PlainRegistration() =>
+        ClientRegistration.CreatePublic(PlainClient, [RegisteredRedirect], [], ["openid"]);
+
+    /// <summary>A first-party client the operator chose to exempt from consent.</summary>
+    internal static ClientRegistration TrustedRegistration() =>
+        ClientRegistration.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid"]) with { RequireConsent = false };
+
     /// <summary>The host's pages, written as a host that renders its own "nothing here" would write them.</summary>
-    private static void MapHostPages(IEndpointRouteBuilder endpoints)
+    internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost(LoginPath, (ILoginInteraction login) => login.SignInAsync(
             new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
@@ -452,38 +449,6 @@ public sealed class NothingToContinueTests : IDisposable
 
         public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
             new(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
-    }
-
-    /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>
-    private sealed class CapturingLoggerProvider : ILoggerProvider
-    {
-        private readonly List<(LogLevel Level, string Message)> _entries = [];
-
-        public IReadOnlyList<(LogLevel Level, string Message)> Entries
-        {
-            get { lock (_entries) return [.. _entries]; }
-        }
-
-        public ILogger CreateLogger(string categoryName) => new Logger(this);
-
-        public void Dispose()
-        {
-        }
-
-        private void Add(LogLevel level, string message)
-        {
-            lock (_entries) _entries.Add((level, message));
-        }
-
-        private sealed class Logger(CapturingLoggerProvider owner) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-                owner.Add(logLevel, formatter(state, exception));
-        }
     }
 }
 

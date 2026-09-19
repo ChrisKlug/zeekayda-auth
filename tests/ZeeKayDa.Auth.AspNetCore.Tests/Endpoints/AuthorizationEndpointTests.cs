@@ -1,39 +1,24 @@
 using System.Net;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 
 /// <summary>
-/// Integration tests for <c>/connect/authorize</c> request validation (#83): the two-phase error
-/// model over real HTTP. The default test host registers the public client <c>test-client</c>
-/// with redirect URI <c>https://test.example.com/callback</c> and allowed scope <c>openid</c>.
+/// Host-free tests for <c>/connect/authorize</c> request validation (#83): the two-phase error
+/// model, invoked directly on the handler. The default test host registers the public client
+/// <c>test-client</c> with redirect URI <c>https://test.example.com/callback</c> and allowed scope
+/// <c>openid</c>. Whether the route is mapped at all, and whether a host-wide authorization
+/// fallback policy is bypassed, need a real host and live in
+/// <see cref="AuthorizationEndpointHostTests"/>.
 /// </summary>
-public sealed class AuthorizationEndpointTests : IDisposable
+public sealed class AuthorizationEndpointTests
 {
     private const string RegisteredRedirect = "https://test.example.com/callback";
     private const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
-
-    private readonly TestWebAppFactory _factory;
-    private readonly HttpClient _client;
-
-    public AuthorizationEndpointTests()
-    {
-        _factory = new TestWebAppFactory();
-        _client = _factory.CreateClient(new()
-        {
-            BaseAddress = new Uri("https://test.example.com"),
-            AllowAutoRedirect = false,
-        });
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-        _factory.Dispose();
-    }
 
     private static Dictionary<string, string?> ValidQuery(
         string clientId = "test-client",
@@ -51,12 +36,17 @@ public sealed class AuthorizationEndpointTests : IDisposable
     private static string AuthorizeUrl(Dictionary<string, string?> query) =>
         QueryHelpers.AddQueryString("/connect/authorize", query);
 
+    private static Task<HttpResponseMessage> GetAsync(EndpointHost host, Dictionary<string, string?> query) =>
+        host.InvokeAsync<AuthorizationEndpoint>(e => e.Handle, host.Get(AuthorizeUrl(query)));
+
     // ── Valid requests ────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task Valid_GET_request_passes_validation_and_hands_off_to_the_login_page()
     {
-        var response = await _client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
+        using var host = new EndpointHost();
+
+        using var response = await GetAsync(host, ValidQuery());
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect,
             "validation passed and no session exists, so the user is sent to the host's login page");
@@ -66,37 +56,23 @@ public sealed class AuthorizationEndpointTests : IDisposable
     [Fact]
     public async Task Valid_POST_form_request_passes_validation()
     {
-        using var content = new FormUrlEncodedContent(
+        using var host = new EndpointHost();
+        var request = host.Post("/connect/authorize").WithForm(
             ValidQuery().Where(kv => kv.Value is not null).Select(kv => KeyValuePair.Create(kv.Key, kv.Value!)));
 
-        var response = await _client.PostAsync("/connect/authorize", content, TestContext.Current.CancellationToken);
+        using var response = await host.InvokeAsync<AuthorizationEndpoint>(e => e.Handle, request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location!.OriginalString.Should().StartWith("/account/login?");
     }
 
     [Fact]
-    public async Task The_authorize_endpoint_is_reachable_under_a_host_fallback_authorization_policy()
-    {
-        // The user arriving here is not signed in yet, so a host-wide RequireAuthenticatedUser
-        // fallback must not challenge the request before the framework's own handoff runs. The
-        // request is deliberately invalid, so the framework's local error proves who answered.
-        using var factory = new TestWebAppFactoryWithFallbackAuthorizationPolicy();
-        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com"), AllowAutoRedirect = false });
-
-        var canary = await client.GetAsync("/host-route", TestContext.Current.CancellationToken);
-        var response = await client.GetAsync(AuthorizeUrl(ValidQuery(clientId: "no-such-client")), TestContext.Current.CancellationToken);
-
-        canary.StatusCode.Should().Be(HttpStatusCode.Unauthorized, "the fallback policy is in force on the host's own routes");
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, "the framework answered, not the host's authentication challenge");
-    }
-
-    [Fact]
     public async Task POST_without_form_content_type_is_a_local_error()
     {
-        using var content = new StringContent("""{"client_id":"test-client"}""", System.Text.Encoding.UTF8, "application/json");
+        var request = EndpointHost.Default.Post("/connect/authorize")
+            .WithBody("""{"client_id":"test-client"}""", "application/json");
 
-        var response = await _client.PostAsync("/connect/authorize", content, TestContext.Current.CancellationToken);
+        using var response = await EndpointHost.Default.InvokeAsync<AuthorizationEndpoint>(e => e.Handle, request);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -108,8 +84,7 @@ public sealed class AuthorizationEndpointTests : IDisposable
     [InlineData("test-client", "https://evil.example.com/callback")]
     public async Task Phase1_failures_render_a_local_400_and_never_redirect(string clientId, string redirectUri)
     {
-        var response = await _client.GetAsync(
-            AuthorizeUrl(ValidQuery(clientId, redirectUri)), TestContext.Current.CancellationToken);
+        using var response = await GetAsync(EndpointHost.Default, ValidQuery(clientId, redirectUri));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Headers.Location.Should().BeNull("a phase-1 error must never redirect (open-redirect defence)");
@@ -119,9 +94,8 @@ public sealed class AuthorizationEndpointTests : IDisposable
     [Fact]
     public async Task Phase1_error_page_never_echoes_request_values()
     {
-        var response = await _client.GetAsync(
-            AuthorizeUrl(ValidQuery(redirectUri: "https://evil.example.com/callback")),
-            TestContext.Current.CancellationToken);
+        using var response = await GetAsync(
+            EndpointHost.Default, ValidQuery(redirectUri: "https://evil.example.com/callback"));
 
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         body.Should().NotContain("evil.example.com").And.NotContain("test-client");
@@ -136,7 +110,7 @@ public sealed class AuthorizationEndpointTests : IDisposable
         query.Remove("code_challenge");
         query["state"] = "opaque-client-state";
 
-        var response = await _client.GetAsync(AuthorizeUrl(query), TestContext.Current.CancellationToken);
+        using var response = await GetAsync(EndpointHost.Default, query);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         var location = response.Headers.Location!;
@@ -155,27 +129,31 @@ public sealed class AuthorizationEndpointTests : IDisposable
         var query = ValidQuery();
         query["response_type"] = "token";
 
-        var response = await _client.GetAsync(AuthorizeUrl(query), TestContext.Current.CancellationToken);
+        using var response = await GetAsync(EndpointHost.Default, query);
 
         var parameters = QueryHelpers.ParseQuery(response.Headers.Location!.Query);
         parameters.Should().NotContainKey("state");
         parameters["error"].ToString().Should().Be("unsupported_response_type");
     }
 
+    // ── Interaction context ───────────────────────────────────────────────────────────────────
+
     [Fact]
     public async Task Authorize_responses_are_never_cacheable()
     {
-        var response = await _client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
+        using var host = new EndpointHost();
+
+        using var response = await GetAsync(host, ValidQuery());
 
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
 
-    // ── Interaction context ───────────────────────────────────────────────────────────────────
-
     [Fact]
     public async Task Valid_request_writes_a_binding_cookie_named_for_its_interaction()
     {
-        var response = await _client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
+        using var host = new EndpointHost();
+
+        using var response = await GetAsync(host, ValidQuery());
 
         var interactionId = InteractionIdFrom(response);
         response.Headers.GetValues("Set-Cookie").Should().Contain(c =>
@@ -185,10 +163,11 @@ public sealed class AuthorizationEndpointTests : IDisposable
     [Fact]
     public async Task Binding_cookie_never_carries_request_values_in_the_clear()
     {
+        using var host = new EndpointHost();
         var query = ValidQuery();
         query["state"] = "client-state-value";
 
-        var response = await _client.GetAsync(AuthorizeUrl(query), TestContext.Current.CancellationToken);
+        using var response = await GetAsync(host, query);
 
         var cookie = response.Headers.GetValues("Set-Cookie")
             .Single(c => c.StartsWith(InteractionBindingCookie.NamePrefix));
@@ -200,11 +179,13 @@ public sealed class AuthorizationEndpointTests : IDisposable
     {
         // state is deliberately not length-capped; the store's cap is 16 KB by default, far above
         // the 3 KB the cookie transport could carry.
+        using var host = new EndpointHost();
         var form = ValidQuery();
         form["state"] = new string('s', 10_000);
+        var request = host.Post("/connect/authorize").WithForm(
+            form.Where(kv => kv.Value is not null).Select(kv => KeyValuePair.Create(kv.Key, kv.Value!)));
 
-        using var content = new FormUrlEncodedContent(form!);
-        var response = await _client.PostAsync("/connect/authorize", content, TestContext.Current.CancellationToken);
+        using var response = await host.InvokeAsync<AuthorizationEndpoint>(e => e.Handle, request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location!.OriginalString.Should().StartWith("/account/login?");
@@ -216,11 +197,13 @@ public sealed class AuthorizationEndpointTests : IDisposable
         // An authorize request needs no authentication and is stored for 30 minutes, so what one
         // may make the store hold is bounded. Rendered locally rather than redirected: echoing an
         // oversized state builds a Location the client's server may not accept.
+        using var host = new EndpointHost();
         var form = ValidQuery();
         form["state"] = new string('s', 20_000);
+        var request = host.Post("/connect/authorize").WithForm(
+            form.Where(kv => kv.Value is not null).Select(kv => KeyValuePair.Create(kv.Key, kv.Value!)));
 
-        using var content = new FormUrlEncodedContent(form!);
-        var response = await _client.PostAsync("/connect/authorize", content, TestContext.Current.CancellationToken);
+        using var response = await host.InvokeAsync<AuthorizationEndpoint>(e => e.Handle, request);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Headers.Location.Should().BeNull();
@@ -233,12 +216,13 @@ public sealed class AuthorizationEndpointTests : IDisposable
     {
         // Concurrent tabs share nothing: a request that fails validation never wrote an
         // interaction of its own, and must not end the one another tab is completing.
-        var first = await _client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
+        using var host = new EndpointHost();
+        using var first = await GetAsync(host, ValidQuery());
         var firstInteraction = InteractionIdFrom(first);
         var query = ValidQuery();
         query["response_type"] = "token";
 
-        var failed = await _client.GetAsync(AuthorizeUrl(query), TestContext.Current.CancellationToken);
+        using var failed = await GetAsync(host, query);
 
         failed.Headers.TryGetValues("Set-Cookie", out var cookies);
         (cookies ?? []).Should().NotContain(c => c.StartsWith(InteractionBindingCookie.NamePrefix + firstInteraction + "="));
@@ -252,17 +236,16 @@ public sealed class AuthorizationEndpointTests : IDisposable
         // remove what it wrote — otherwise every such request would cost the store an entry for
         // 30 minutes.
         var interactions = new InMemoryInteractionBackingStore(TimeProvider.System);
-        using var factory = new TestWebAppFactory(configureBuilder: builder =>
+        using var host = new EndpointHost(configureBuilder: builder =>
         {
             builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)
                 .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
             builder.Services.AddSingleton<IInteractionBackingStore>(interactions);
         });
-        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com"), AllowAutoRedirect = false });
         var query = ValidQuery();
         query["prompt"] = "none";
 
-        var response = await client.GetAsync(AuthorizeUrl(query), TestContext.Current.CancellationToken);
+        using var response = await GetAsync(host, query);
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         response.Headers.Location!.OriginalString.Should().Contain("error=login_required");
@@ -276,45 +259,15 @@ public sealed class AuthorizationEndpointTests : IDisposable
         return QueryHelpers.ParseQuery(location[location.IndexOf('?')..])[InteractionHandoff.InteractionIdParameter]!;
     }
 
-    // ── A host without the code grant ─────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task Authorize_is_not_served_on_a_host_without_the_code_grant()
-    {
-        // GrantTypesSupported is the declaration that the interactive machinery is unused. Before,
-        // such a host accepted response_type=code, wrote an interaction context and answered
-        // server_error while its metadata said the grant was unsupported.
-        using var factory = new TestWebAppFactory(opts => opts.GrantTypesSupported = [GrantType.ClientCredentials]);
-        using var client = factory.CreateClient(new()
-        {
-            BaseAddress = new Uri("https://test.example.com"),
-            AllowAutoRedirect = false,
-        });
-
-        var response = await client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Headers.TryGetValues("Set-Cookie", out var cookies);
-        (cookies ?? []).Should().BeEmpty("no binding was issued");
-        ((InMemoryInteractionBackingStore)factory.Services.GetRequiredService<IInteractionBackingStore>()).Count
-            .Should().Be(0, "nothing was written to the interaction store");
-    }
-
     // ── ErrorPath handoff ─────────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task Phase1_failure_with_configured_ErrorPath_redirects_with_an_opaque_id_only()
     {
-        using var factory = new TestWebAppFactory(opts =>
+        using var host = new EndpointHost(opts =>
             opts.AuthorizationEndpoint.Interaction.ErrorPath = "/auth-error");
-        using var client = factory.CreateClient(new()
-        {
-            BaseAddress = new Uri("https://test.example.com"),
-            AllowAutoRedirect = false,
-        });
 
-        var response = await client.GetAsync(
-            AuthorizeUrl(ValidQuery(clientId: "unknown-client")), TestContext.Current.CancellationToken);
+        using var response = await GetAsync(host, ValidQuery(clientId: "unknown-client"));
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         var location = response.Headers.Location!;

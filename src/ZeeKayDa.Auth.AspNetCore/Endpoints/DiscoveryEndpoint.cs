@@ -63,7 +63,7 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
         }
     }
 
-    private async ValueTask<IResult> Handle(
+    internal async ValueTask<IResult> Handle(
         IDiscoveryDocumentProvider provider,
         HttpContext context)
     {

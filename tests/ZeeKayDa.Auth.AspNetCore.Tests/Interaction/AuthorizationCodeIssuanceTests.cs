@@ -28,7 +28,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 /// is redeemed through the host's own <see cref="IAuthorizationCodeStore"/>, which is what the
 /// token endpoint will do with it.
 /// </remarks>
-public sealed class AuthorizationCodeIssuanceTests : IDisposable
+public sealed class AuthorizationCodeIssuanceTests : IClassFixture<AuthorizationCodeIssuanceHostFixture>
 {
     private const string RegisteredRedirect = "https://test.example.com/callback";
     private const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
@@ -37,25 +37,25 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     private const string ConsentPath = FlowAssertions.ConsentPath;
     private const string ConsentingClient = "consenting-client";
     private const string TrustedClient = "trusted-client";
-    private const string OtherClient = "other-client";
+    internal const string OtherClient = "other-client";
 
     private static readonly DateTimeOffset Now = new(2026, 9, 5, 12, 0, 0, TimeSpan.Zero);
 
-    private readonly FakeTimeProvider _time = new(Now);
-    private readonly CapturingLoggerProvider _logs = new();
-    private readonly TestWebAppFactory _factory;
+    private readonly AuthorizationCodeIssuanceHostFixture _fixture;
+    private readonly FakeTimeProvider _time;
+    private readonly CapturingLoggerProvider _logs;
     private readonly HttpClient _client;
 
-    public AuthorizationCodeIssuanceTests()
+    public AuthorizationCodeIssuanceTests(AuthorizationCodeIssuanceHostFixture fixture)
     {
-        _factory = NewFactory();
-        _client = NewClient(_factory);
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-        _factory.Dispose();
+        _fixture = fixture;
+        _fixture.Reset();
+        _time = fixture.Time;
+        _logs = fixture.Logs;
+        // A fresh cookie jar per test: a shared client would carry a session cookie from one test
+        // into the next and sign it in silently, which this class's whole subject — what a code is
+        // bound to — must never do.
+        _client = fixture.NewFlowClient();
     }
 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
@@ -87,11 +87,11 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         },
         mapEndpoints: MapHostPages);
 
-    private static ClientRegistration ConsentingRegistration() =>
+    internal static ClientRegistration ConsentingRegistration() =>
         ClientRegistration.CreatePublic(ConsentingClient, [RegisteredRedirect], [], ["openid", "profile", "email"]);
 
     /// <summary>A first-party client the operator chose to exempt from consent.</summary>
-    private static ClientRegistration TrustedRegistration()
+    internal static ClientRegistration TrustedRegistration()
     {
         var client = ClientRegistration.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid", "profile"]);
         return client with { RequireConsent = false };
@@ -105,7 +105,7 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     });
 
     /// <summary>The host's pages: sign-in, the consent page, and two probes.</summary>
-    private static void MapHostPages(IEndpointRouteBuilder endpoints)
+    internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
         {
@@ -224,11 +224,11 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
 
     /// <summary>Redeems the code as the token endpoint will, through the host's own store.</summary>
     private Task<AuthorizationCodeRedemptionResult> RedeemAsync(string code, string clientId = ConsentingClient) =>
-        RedeemAsync(_factory, code, clientId);
+        RedeemAsync(_fixture.Services, code, clientId);
 
-    private static async Task<AuthorizationCodeRedemptionResult> RedeemAsync(TestWebAppFactory factory, string code, string clientId = ConsentingClient)
+    private static async Task<AuthorizationCodeRedemptionResult> RedeemAsync(IServiceProvider services, string code, string clientId = ConsentingClient)
     {
-        var store = factory.Services.GetRequiredService<IAuthorizationCodeStore>();
+        var store = services.GetRequiredService<IAuthorizationCodeStore>();
         return await store.TryRedeemAsync(code, clientId, familyId: StoreKeyGenerator.Generate(), Cancellation);
     }
 
@@ -594,7 +594,7 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         var response = await GrantAsync(client, interactionId, "openid", "profile", "email");
 
         var code = response.ShouldHaveIssuedCodeTo(RegisteredRedirect);
-        var redeemed = (await RedeemAsync(factory, code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>().Subject;
+        var redeemed = (await RedeemAsync(factory.Services, code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>().Subject;
         redeemed.Entry.Scope.Should().Equal("openid", "profile");
     }
 
@@ -644,7 +644,7 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
 
         _time.Advance(TimeSpan.FromSeconds(30) + skew + TimeSpan.FromSeconds(1));
 
-        (await RedeemAsync(factory, code)).Should().BeOfType<AuthorizationCodeRedemptionResult.NotFound>(
+        (await RedeemAsync(factory.Services, code)).Should().BeOfType<AuthorizationCodeRedemptionResult.NotFound>(
             "past its lifetime and the skew grace, the code is unknown");
     }
 
@@ -658,7 +658,7 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
 
         _time.Advance(TimeSpan.FromSeconds(29));
 
-        (await RedeemAsync(factory, code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>();
+        (await RedeemAsync(factory.Services, code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>();
     }
 
     [Fact]
@@ -759,7 +759,7 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         var response = await GrantAsync(client, interactionId, "openid");
 
         var code = response.ShouldHaveIssuedCodeTo(RegisteredRedirect);
-        (await RedeemAsync(factory, code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>();
+        (await RedeemAsync(factory.Services, code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>();
         response.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
             cookie.StartsWith(InteractionBindingCookie.NamePrefix + interactionId + "=") && FlowAssertions.IsRetiredBinding(cookie));
         _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains("left to expire", StringComparison.Ordinal));
@@ -782,8 +782,8 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     {
         // No path through the flow reaches issuance without a session on the context; a future
         // one that did would fail here rather than issue a code bound to nobody.
-        var issuer = _factory.Services.GetRequiredService<AuthorizationCodeIssuer>();
-        var context = new DefaultHttpContext { RequestServices = _factory.Services };
+        var issuer = _fixture.Services.GetRequiredService<AuthorizationCodeIssuer>();
+        var context = new DefaultHttpContext { RequestServices = _fixture.Services };
 
         var issue = async () => await issuer.IssueAsync(context, UnauthenticatedContext(), TrustedRegistration());
 
@@ -797,9 +797,9 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
         // resolved the context alive, then stalled inside the store past the interaction's expiry,
         // would otherwise mint a code after an earlier response's claim had already lapsed. The
         // store here moves the clock past expiry during the claim itself.
-        var issuer = _factory.Services.GetRequiredService<AuthorizationCodeIssuer>();
-        var stalling = new StallingCodeStore(_factory.Services.GetRequiredService<IAuthorizationCodeStore>(), _time, TimeSpan.FromMinutes(11));
-        var context = new DefaultHttpContext { RequestServices = new OverridingServiceProvider(_factory.Services, stalling) };
+        var issuer = _fixture.Services.GetRequiredService<AuthorizationCodeIssuer>();
+        var stalling = new StallingCodeStore(_fixture.Services.GetRequiredService<IAuthorizationCodeStore>(), _time, TimeSpan.FromMinutes(11));
+        var context = new DefaultHttpContext { RequestServices = new OverridingServiceProvider(_fixture.Services, stalling) };
         var alive = UnauthenticatedContext() with
         {
             ClientId = TrustedClient,
@@ -819,9 +819,9 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     {
         // A response that reaches issuance with a request already past its lifetime is refused as
         // expired, without handing the store a claim it would reject for a past expiry.
-        var issuer = _factory.Services.GetRequiredService<AuthorizationCodeIssuer>();
-        var recording = new StallingCodeStore(_factory.Services.GetRequiredService<IAuthorizationCodeStore>(), _time, TimeSpan.Zero);
-        var context = new DefaultHttpContext { RequestServices = new OverridingServiceProvider(_factory.Services, recording) };
+        var issuer = _fixture.Services.GetRequiredService<AuthorizationCodeIssuer>();
+        var recording = new StallingCodeStore(_fixture.Services.GetRequiredService<IAuthorizationCodeStore>(), _time, TimeSpan.Zero);
+        var context = new DefaultHttpContext { RequestServices = new OverridingServiceProvider(_fixture.Services, recording) };
         var expired = UnauthenticatedContext() with
         {
             ClientId = TrustedClient,
@@ -843,8 +843,8 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     {
         // The dispatch sends a consent-requiring client to the page and the page records the
         // decision; issuance refuses to assume one.
-        var issuer = _factory.Services.GetRequiredService<AuthorizationCodeIssuer>();
-        var context = new DefaultHttpContext { RequestServices = _factory.Services };
+        var issuer = _fixture.Services.GetRequiredService<AuthorizationCodeIssuer>();
+        var context = new DefaultHttpContext { RequestServices = _fixture.Services };
         var authenticated = UnauthenticatedContext() with { SsoSessionId = "session-1", Subject = "user-1", AuthTime = Now };
 
         var issue = async () => await issuer.IssueAsync(context, authenticated, ConsentingRegistration());
@@ -963,34 +963,4 @@ public sealed class AuthorizationCodeIssuanceTests : IDisposable
     }
 
     /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>
-    private sealed class CapturingLoggerProvider : ILoggerProvider
-    {
-        private readonly List<(string Category, LogLevel Level, string Message)> _entries = [];
-
-        public IReadOnlyList<(string Category, LogLevel Level, string Message)> Entries
-        {
-            get { lock (_entries) return [.. _entries]; }
-        }
-
-        public ILogger CreateLogger(string categoryName) => new Logger(this, categoryName);
-
-        public void Dispose()
-        {
-        }
-
-        private void Add(string category, LogLevel level, string message)
-        {
-            lock (_entries) _entries.Add((category, level, message));
-        }
-
-        private sealed class Logger(CapturingLoggerProvider owner, string category) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-                owner.Add(category, logLevel, formatter(state, exception));
-        }
-    }
 }

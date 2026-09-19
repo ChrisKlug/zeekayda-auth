@@ -25,7 +25,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 /// the framework wrote — the session cookie is encrypted, so its contents are otherwise only
 /// observable through a handler.
 /// </remarks>
-public sealed class LoginInteractionTests : IDisposable
+public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFixture>, IDisposable
 {
     private const string RegisteredRedirect = "https://test.example.com/callback";
     private const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
@@ -41,35 +41,28 @@ public sealed class LoginInteractionTests : IDisposable
 
     private static readonly DateTimeOffset Now = new(2026, 8, 29, 12, 0, 0, TimeSpan.Zero);
 
-    private readonly FakeTimeProvider _time = new(Now);
-    private readonly TestWebAppFactory _factory;
+    private readonly LoginInteractionHostFixture _fixture;
     private readonly HttpClient _client;
 
-    public LoginInteractionTests()
-    {
-        _factory = new TestWebAppFactory(
-            configureBuilder: builder => builder.Services.AddSingleton<TimeProvider>(_time),
-            mapEndpoints: MapHostPages);
+    private FakeTimeProvider Time => _fixture.Time;
 
-        _client = _factory.CreateClient(new()
-        {
-            BaseAddress = new Uri("https://test.example.com"),
-            AllowAutoRedirect = false,
-            HandleCookies = true,
-        });
+    public LoginInteractionTests(LoginInteractionHostFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.Reset();
+        // Not the base fixture's NewClient(): this class asserts on unfollowed redirect responses
+        // throughout (status, Location, absence of a header value), so the client must not follow
+        // them the way NewClient's default WebApplicationFactoryClientOptions would.
+        _client = _fixture.NewFlowClient();
     }
 
-    public void Dispose()
-    {
-        _client.Dispose();
-        _factory.Dispose();
-    }
+    public void Dispose() => _client.Dispose();
 
     /// <summary>
     /// The host's own pages: a login form that signs a fixed user in, and a probe reporting what
     /// the session cookie carries.
     /// </summary>
-    private static void MapHostPages(IEndpointRouteBuilder endpoints)
+    internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
         {
@@ -417,12 +410,7 @@ public sealed class LoginInteractionTests : IDisposable
         // The identifier travels in the login page's URL, and URLs leak. Another browser that
         // learned it holds no binding for the request, and must not be able to complete it.
         var handoff = await AuthorizeAsync();
-        using var otherBrowser = _factory.CreateClient(new()
-        {
-            BaseAddress = new Uri("https://test.example.com"),
-            AllowAutoRedirect = false,
-            HandleCookies = true,
-        });
+        using var otherBrowser = _fixture.NewFlowClient();
         using var content = new FormUrlEncodedContent([KeyValuePair.Create("sub", "user-1")]);
 
         using var signIn = await otherBrowser.PostAsync(
@@ -539,7 +527,7 @@ public sealed class LoginInteractionTests : IDisposable
         var handoff = await AuthorizeAsync();
         var interactionId = InteractionIdFrom(handoff);
 
-        _time.Advance(TimeSpan.FromMinutes(31));
+        Time.Advance(TimeSpan.FromMinutes(31));
 
         using var signIn = await PostLoginAsync(interactionId, ("sub", "user-1"));
 
@@ -694,12 +682,7 @@ public sealed class LoginInteractionTests : IDisposable
         // denial of service on anyone whose login URL leaked.
         var handoff = await AuthorizeAsync();
         var interactionId = InteractionIdFrom(handoff);
-        using var otherBrowser = _factory.CreateClient(new()
-        {
-            BaseAddress = new Uri("https://test.example.com"),
-            AllowAutoRedirect = false,
-            HandleCookies = true,
-        });
+        using var otherBrowser = _fixture.NewFlowClient();
         using var content = new FormUrlEncodedContent([]);
 
         using var cancel = await otherBrowser.PostAsync(
@@ -722,7 +705,7 @@ public sealed class LoginInteractionTests : IDisposable
         var handoff = await AuthorizeAsync();
         var interactionId = InteractionIdFrom(handoff);
 
-        _time.Advance(TimeSpan.FromMinutes(31));
+        Time.Advance(TimeSpan.FromMinutes(31));
 
         // The destination comes from the decrypted context and nothing else. With no context there
         // is no destination, and the request fails where it stands rather than redirecting
@@ -913,7 +896,7 @@ public sealed class LoginInteractionTests : IDisposable
             ("forge_type", "ZKD:auth_time"),
             ("forge_value", Now.AddYears(1).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
-        _time.Advance(TimeSpan.FromMinutes(10));
+        Time.Advance(TimeSpan.FromMinutes(10));
         var query = ValidQuery();
         query["max_age"] = "60";
 
@@ -1015,7 +998,7 @@ public sealed class LoginInteractionTests : IDisposable
     public async Task max_age_re_authenticates_only_a_session_older_than_it_allows(int maxAge, bool expectsLogin)
     {
         await SignInAsync();
-        _time.Advance(TimeSpan.FromMinutes(10));
+        Time.Advance(TimeSpan.FromMinutes(10));
 
         var query = ValidQuery();
         query["max_age"] = maxAge.ToString(System.Globalization.CultureInfo.InvariantCulture);

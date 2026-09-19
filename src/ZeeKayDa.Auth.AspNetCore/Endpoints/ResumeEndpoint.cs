@@ -92,7 +92,7 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
             .AllowAnonymous();
     }
 
-    private async Task<IResult> HandleAsync(HttpContext context)
+    internal async Task<IResult> HandleAsync(HttpContext context)
     {
         context.Response.Headers.CacheControl = "no-store";
 

@@ -16,8 +16,16 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Providers;
 /// The host's say in an external sign-in: <c>OnProviderSignIn</c> at <c>/connect/resume</c>, the
 /// parked principal a redirect leaves behind, and the page that reads it back and finishes.
 /// </summary>
-public sealed class ProviderSignInEventTests
+public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostFixture>
 {
+    private readonly ProviderSignInHostFixture _fixture;
+
+    public ProviderSignInEventTests(ProviderSignInHostFixture fixture)
+    {
+        _fixture = fixture;
+        _fixture.Reset();
+    }
+
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
     private static TestWebAppFactory NewFactory(
@@ -139,36 +147,6 @@ public sealed class ProviderSignInEventTests
     }
 
     /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>
-    private sealed class CapturingLoggerProvider : ILoggerProvider
-    {
-        private readonly List<(LogLevel Level, string Message)> _entries = [];
-
-        public IReadOnlyList<(LogLevel Level, string Message)> Entries
-        {
-            get { lock (_entries) return [.. _entries]; }
-        }
-
-        public ILogger CreateLogger(string categoryName) => new Logger(this);
-
-        public void Dispose()
-        {
-        }
-
-        private void Add(LogLevel level, string message)
-        {
-            lock (_entries) _entries.Add((level, message));
-        }
-
-        private sealed class Logger(CapturingLoggerProvider owner) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-                owner.Add(logLevel, formatter(state, exception));
-        }
-    }
 
     private static async Task<System.Text.Json.JsonElement?> ReadJsonAsync(HttpClient client, string url)
     {
@@ -186,12 +164,12 @@ public sealed class ProviderSignInEventTests
     public async Task The_handler_sees_the_provider_principal_the_provider_the_client_and_the_effective_scopes()
     {
         ProviderSignInContext? seen = null;
-        using var factory = NewFactory(context =>
+        _fixture.OnProviderSignIn = context =>
         {
             seen = context;
             return Task.CompletedTask;
-        });
-        using var client = NewClient(factory);
+        };
+        using var client = _fixture.NewFlowClient();
 
         await ResumeAsync(client);
 
@@ -212,7 +190,7 @@ public sealed class ProviderSignInEventTests
         var observedCancellation = false;
         var isTheRequestsToken = false;
         IHttpContextAccessor accessor = null!;
-        using var factory = NewFactory(async context =>
+        _fixture.OnProviderSignIn = async context =>
         {
             // The handler runs on the request's own async flow, so the accessor sees the resume
             // request; a token from anywhere else would not compare equal.
@@ -220,9 +198,9 @@ public sealed class ProviderSignInEventTests
             entered.SetResult();
             await proceed.Task;
             observedCancellation = context.RequestAborted.IsCancellationRequested;
-        });
-        using var client = NewClient(factory);
-        accessor = factory.Services.GetRequiredService<IHttpContextAccessor>();
+        };
+        using var client = _fixture.NewFlowClient();
+        accessor = _fixture.Services.GetRequiredService<IHttpContextAccessor>();
         var (_, resumeUrl) = await ReachResumeAsync(client);
 
         // The test server links the request's abort token to the client's: cancelling the
@@ -248,7 +226,7 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task A_handler_that_changes_the_principal_it_was_handed_does_not_change_what_is_promoted()
     {
-        using var factory = NewFactory(context =>
+        _fixture.OnProviderSignIn = context =>
         {
             // What a host keeping a reference and mutating it later could do, done synchronously
             // so the test is deterministic: the framework must promote its own copy regardless.
@@ -256,8 +234,8 @@ public sealed class ProviderSignInEventTests
             context.Principal.Identities.First().RemoveClaim(context.Principal.FindFirst("sub"));
             context.Principal.Identities.First().AddClaim(new System.Security.Claims.Claim("sub", "chosen", "s", "acme"));
             return Task.CompletedTask;
-        });
-        using var client = NewClient(factory);
+        };
+        using var client = _fixture.NewFlowClient();
 
         var (_, resume) = await ResumeAsync(client);
 
@@ -269,8 +247,8 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task A_handler_that_calls_neither_terminal_method_lets_the_framework_promote()
     {
-        using var factory = NewFactory(_ => Task.CompletedTask);
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = _ => Task.CompletedTask;
+        using var client = _fixture.NewFlowClient();
 
         var (_, resume) = await ResumeAsync(client);
 
@@ -301,8 +279,8 @@ public sealed class ProviderSignInEventTests
     {
         // The page shows the provider's identity and takes a one-click decision, so an attacker
         // who can frame it can steer that click — the consent page's rule, and the same stamp.
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        using var client = _fixture.NewFlowClient();
         var (_, resume) = await ResumeAsync(client);
 
         var response = await client.GetAsync(resume.Headers.Location!.OriginalString, Cancellation);
@@ -316,8 +294,8 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task The_host_page_reads_the_parked_principal_back_without_the_framework_claims()
     {
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        using var client = _fixture.NewFlowClient();
         var (_, resume) = await ResumeAsync(client);
 
         var pending = (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString))!.Value;
@@ -371,8 +349,8 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task SignInAsync_with_no_collected_claims_promotes_the_parked_principal_as_it_is()
     {
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        using var client = _fixture.NewFlowClient();
         var (_, resume) = await ResumeAsync(client);
 
         var signIn = await client.PostAsync(resume.Headers.Location!.OriginalString, Form(), Cancellation);
@@ -564,8 +542,8 @@ public sealed class ProviderSignInEventTests
     {
         // The bug this service exists to close, written the obvious way: the replacement is the
         // provider's principal itself, upstream subject and all. Refused before the take.
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        using var client = _fixture.NewFlowClient();
         var (interactionId, resume) = await ResumeAsync(client);
 
         var signIn = async () => await client.PostAsync(WithInteractionId(CollectMorePath + "/link-passthrough", interactionId), Form(), Cancellation);
@@ -582,8 +560,8 @@ public sealed class ProviderSignInEventTests
     {
         // A local principal built around the upstream subject value is the same bypass with an
         // extra step, whatever the claim type or issuer.
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        using var client = _fixture.NewFlowClient();
         var (interactionId, resume) = await ResumeAsync(client);
 
         var signIn = async () => await client.PostAsync(WithInteractionId(CollectMorePath + "/link-direct", interactionId), Form((claimType, UpstreamSubject)), Cancellation);
@@ -642,8 +620,8 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task Both_sign_ins_from_the_host_page_record_the_provider_that_parked_the_principal()
     {
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        using var client = _fixture.NewFlowClient();
         var (collected, collectedResume) = await ResumeAsync(client);
         var (replaced, _) = await ResumeAsync(client);
 
@@ -706,8 +684,8 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task Reserved_claims_among_the_collected_ones_are_stripped()
     {
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        using var client = _fixture.NewFlowClient();
         var (_, resume) = await ResumeAsync(client);
 
         var signIn = await client.PostAsync(resume.Headers.Location!.OriginalString, Form(("zkd:sid", "forged"), ("ZKD:amr", "forged")), Cancellation);
@@ -742,8 +720,8 @@ public sealed class ProviderSignInEventTests
     {
         // The page finishes an external sign-in; an interaction that never went through
         // RedirectToAsync has none to finish, and the sign-in from nothing belongs to the login page.
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        using var client = _fixture.NewFlowClient();
         var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
         var interactionId = InteractionIdFrom(handoff);
 
@@ -760,8 +738,8 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task A_second_post_after_the_parked_principal_was_consumed_is_refused()
     {
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        using var client = _fixture.NewFlowClient();
         var (_, resume) = await ResumeAsync(client);
         var collectMore = resume.Headers.Location!.OriginalString;
         (await client.PostAsync(collectMore, Form(), Cancellation)).ShouldHaveReachedConsent();
@@ -831,8 +809,8 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task A_parked_principal_bound_to_another_interaction_is_refused()
     {
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        using var client = _fixture.NewFlowClient();
         await ResumeAsync(client);
         var secondTab = await client.GetAsync(AuthorizeUrl(), Cancellation);
 
@@ -860,8 +838,8 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task GetPendingPrincipalAsync_honours_a_cancelled_token()
     {
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        using var client = _fixture.NewFlowClient();
         var (interactionId, _) = await ResumeAsync(client);
 
         var read = async () => await client.GetAsync(WithInteractionId(CollectMorePath + "/cancelled", interactionId), Cancellation);
@@ -970,12 +948,12 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task Calling_a_second_terminal_method_fails()
     {
-        using var factory = NewFactory(async context =>
+        _fixture.OnProviderSignIn = async context =>
         {
             await context.RedirectToAsync(CollectMorePath);
             await context.DenyAsync();
-        });
-        using var client = NewClient(factory);
+        };
+        using var client = _fixture.NewFlowClient();
 
         var resume = async () => await ResumeAsync(client);
 
@@ -985,8 +963,8 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task A_handler_that_throws_renders_locally_and_leaves_the_interaction_alive()
     {
-        using var factory = NewFactory(_ => throw new InvalidOperationException("provisioning store down: secret-dsn"));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = _ => throw new InvalidOperationException("provisioning store down: secret-dsn");
+        using var client = _fixture.NewFlowClient();
 
         var (interactionId, resume) = await ResumeAsync(client);
 
@@ -1034,8 +1012,8 @@ public sealed class ProviderSignInEventTests
     {
         // Concurrent tabs: each interaction parks its own principal, so the second tab's park
         // replaces nothing, and the first tab's sign-in consumes only its own.
-        using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        using var client = _fixture.NewFlowClient();
         var (firstTab, firstResume) = await ResumeAsync(client);
         var (secondTab, secondResume) = await ResumeAsync(client);
 
@@ -1053,8 +1031,8 @@ public sealed class ProviderSignInEventTests
     public async Task Automatic_promotion_in_another_tab_leaves_a_parked_principal_alone()
     {
         var calls = 0;
-        using var factory = NewFactory(context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : Task.CompletedTask);
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : Task.CompletedTask;
+        using var client = _fixture.NewFlowClient();
         var (_, firstResume) = await ResumeAsync(client);
 
         var (_, secondResume) = await ResumeAsync(client);
@@ -1067,8 +1045,8 @@ public sealed class ProviderSignInEventTests
     public async Task DenyAsync_in_another_tab_leaves_a_parked_principal_alone()
     {
         var calls = 0;
-        using var factory = NewFactory(context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : context.DenyAsync());
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => ++calls == 1 ? context.RedirectToAsync(CollectMorePath) : context.DenyAsync();
+        using var client = _fixture.NewFlowClient();
         var (_, firstResume) = await ResumeAsync(client);
 
         var (_, secondResume) = await ResumeAsync(client);
@@ -1115,8 +1093,8 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task DenyAsync_answers_the_client_with_access_denied_naming_the_provider_stage()
     {
-        using var factory = NewFactory(context => context.DenyAsync());
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.DenyAsync();
+        using var client = _fixture.NewFlowClient();
 
         var (_, resume) = await ResumeAsync(client);
 
@@ -1132,8 +1110,8 @@ public sealed class ProviderSignInEventTests
     [Fact]
     public async Task DenyAsync_discards_the_interaction()
     {
-        using var factory = NewFactory(context => context.DenyAsync());
-        using var client = NewClient(factory);
+        _fixture.OnProviderSignIn = context => context.DenyAsync();
+        using var client = _fixture.NewFlowClient();
         var (interactionId, _) = await ResumeAsync(client);
 
         using var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);

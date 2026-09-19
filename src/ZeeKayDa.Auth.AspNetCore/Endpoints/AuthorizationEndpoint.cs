@@ -76,7 +76,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
             .AllowAnonymous();
     }
 
-    private async Task<IResult> Handle(AuthorizeRequestValidator validator, HttpContext context)
+    internal async Task<IResult> Handle(AuthorizeRequestValidator validator, HttpContext context)
     {
         // Authorization responses carry codes and errors that must never be cached or logged
         // from an intermediary cache (RFC 6749 §10.12 guidance, RFC 9700 §4.16).
