@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
@@ -386,6 +387,84 @@ public sealed class Pbkdf2ClientSecretHasherTests
             f.Message.Contains("my-client") &&
             f.Message.Contains($"{Pbkdf2ClientSecretHasher.MaxIterations + 1:N0}") &&
             f.Message.Contains($"{Pbkdf2ClientSecretHasher.MaxIterations:N0}"));
+    }
+
+    // ── Timing decoy ─────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Supplies_its_own_timing_decoy_rather_than_deriving_one()
+    {
+        // The interface's default decoy is a real Create — one full derivation at host startup.
+        var map = typeof(Pbkdf2ClientSecretHasher).GetInterfaceMap(typeof(IClientSecretHasher));
+        var index = Array.FindIndex(
+            map.InterfaceMethods,
+            method => method.Name == nameof(IClientSecretHasher.CreateTimingDecoy));
+
+        map.TargetMethods[index].DeclaringType.Should().Be(typeof(Pbkdf2ClientSecretHasher));
+    }
+
+    [Theory]
+    [InlineData(Pbkdf2ClientSecretHasher.MinIterations, Pbkdf2ClientSecretHasher.MinIterations)]
+    [InlineData(1_200_000, 1_200_000)]
+    [InlineData(Pbkdf2ClientSecretHasher.MaxIterations + 1, Pbkdf2ClientSecretHasher.MaxIterations)]
+    public void Timing_decoy_carries_the_iteration_count_real_credentials_are_created_with(
+        int configured, int expected)
+    {
+        // A decoy above MaxIterations would make VerifyCore return before deriving, and the
+        // padding would pad nothing — so a clamped configuration must give a clamped decoy.
+        IClientSecretHasher hasher = CreateHasher(configured);
+
+        var decoy = hasher.CreateTimingDecoy().Should().BeOfType<Pbkdf2ClientSecret>().Subject;
+
+        decoy.Iterations.Should().Be(expected);
+        decoy.Salt.Should().HaveCount(16);
+        decoy.Hash.Should().HaveCount(32);
+    }
+
+    [Fact]
+    public void Two_timing_decoys_share_neither_salt_nor_hash()
+    {
+        IClientSecretHasher hasher = CreateHasher();
+
+        var first = (Pbkdf2ClientSecret)hasher.CreateTimingDecoy();
+        var second = (Pbkdf2ClientSecret)hasher.CreateTimingDecoy();
+
+        first.Salt.Should().NotEqual(second.Salt);
+        first.Hash.Should().NotEqual(second.Hash);
+    }
+
+    [Theory]
+    [InlineData(CompositeClientSecretHasher.DummyPresented)]
+    [InlineData("s3cr3t-v4lu3")]
+    public void Timing_decoy_verifies_no_presented_value(string presented)
+    {
+        // DummyPresented is what every padding verification presents; a decoy derived from it would
+        // verify.
+        IClientSecretHasher hasher = CreateHasher();
+
+        var decoy = hasher.CreateTimingDecoy();
+
+        hasher.Verify(decoy, presented).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(Pbkdf2ClientSecretHasher.MinIterations - 1, "client.credentials.pbkdf2_iterations_below_minimum")]
+    [InlineData(Pbkdf2ClientSecretHasher.MaxIterations + 1, "client.credentials.pbkdf2_iterations_above_maximum")]
+    public void Registration_validation_reaches_the_iteration_bounds_through_IClientSecretHasher(
+        int iterations, string expectedCode)
+    {
+        // Registration validation calls the hasher through the composite, which holds it as
+        // IClientSecretHasher — never as the concrete type the tests above call. A public method on a
+        // class that inherits the interface without re-listing it does not implement the
+        // interface's default member, so only this path proves the bounds check runs at startup.
+        var composite = new CompositeClientSecretHasher(
+            [CreateHasher()],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+        var secret = new Pbkdf2ClientSecret(iterations, new byte[16], new byte[32]);
+
+        var failures = composite.GetRegistrationFailures(secret, "my-client");
+
+        failures.Should().ContainSingle().Which.Code.Should().Be(expectedCode);
     }
 
     [Fact]

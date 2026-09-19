@@ -31,8 +31,15 @@ public sealed class CompositeClientAuthenticatorTests
     {
         private readonly Func<IClientSecret, bool> _verifyResult;
         private int _callCount;
+        private int _derivationCount;
 
         public int CallCount => _callCount;
+
+        /// <summary>
+        /// Verifications that would do real work: the built-in PBKDF2 hasher returns without
+        /// deriving for an empty presented value, so those are not counted here.
+        /// </summary>
+        public int DerivationCount => _derivationCount;
 
         public FakeHasher(bool result = false) : this(_ => result) { }
         public FakeHasher(Func<IClientSecret, bool> verifyResult) => _verifyResult = verifyResult;
@@ -41,6 +48,8 @@ public sealed class CompositeClientAuthenticatorTests
         public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented)
         {
             Interlocked.Increment(ref _callCount);
+            if (!presented.IsEmpty)
+                Interlocked.Increment(ref _derivationCount);
             return _verifyResult(stored);
         }
         public IClientSecret Create(ReadOnlySpan<char> plaintext) => new FakeSecret();
@@ -340,7 +349,7 @@ public sealed class CompositeClientAuthenticatorTests
         result.Authenticated.Should().BeFalse();
         hasher.CallCount.Should().Be(
             CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient,
-            "VerifyUnknownClientForTimingOnly must fire once per credential-budget slot");
+            "PadToCredentialBudget must fire once per credential-budget slot");
     }
 
     // ── AC 21: multiple mechanisms ────────────────────────────────────────────────────────────────
@@ -796,7 +805,7 @@ public sealed class CompositeClientAuthenticatorTests
     public async Task AuthenticateAsync_returns_Authenticated_false_when_client_secret_post_value_is_empty()
     {
         // client_secret= (empty value): ContainsKey is true, so CanHandle returns (true, client_secret_post).
-        // AuthenticateAsync enters the post path and passes "" to the hasher — not the none fallback.
+        // AuthenticateAsync enters the post path and pads from zero — not the none fallback.
         var secret = new FakeSecret();
         var client = CreateConfidentialClient(
             secret: secret,
@@ -818,6 +827,51 @@ public sealed class CompositeClientAuthenticatorTests
         result.Authenticated.Should().BeFalse();
         hasher.CallCount.Should().BeGreaterThan(1,
             "client_secret_post path is entered and PadFailureToCredentialBudget fires — not the none fallback");
+    }
+
+    [Theory]
+    [InlineData(1, TokenEndpointAuthMethods.ClientSecretPost)]
+    [InlineData(2, TokenEndpointAuthMethods.ClientSecretPost)]
+    [InlineData(1, TokenEndpointAuthMethods.ClientSecretBasic)]
+    [InlineData(2, TokenEndpointAuthMethods.ClientSecretBasic)]
+    public async Task An_empty_secret_pads_the_full_budget_whatever_the_clients_secret_count(
+        int secretCount, string method)
+    {
+        // An unknown client always costs the full budget. Were an empty secret tried against each
+        // stored secret — no work at all for PBKDF2 — a one-secret client would cost one derivation
+        // and a two-secret client none, and timing would reveal both that the client exists and
+        // whether it is mid-rotation.
+        var client = new MinimalClient
+        {
+            ClientId = "client-1",
+            Credentials = [.. Enumerable.Range(0, secretCount).Select(_ => new FakeSecret())],
+            IsPublic = false,
+            AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal) { method },
+        };
+        var (composite, hasher) = CreateCompositeWithHasher(
+            client,
+            new FakeHasher(false),
+            allowedMethods: [method]);
+
+        var httpContext = method == TokenEndpointAuthMethods.ClientSecretBasic
+            ? CreateHttpContextWithBasicAuth("client-1:", "client-1")
+            : CreateHttpContextWithPostSecret("client-1", string.Empty);
+
+        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        hasher.DerivationCount.Should().Be(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
+    }
+
+    private static DefaultHttpContext CreateHttpContextWithPostSecret(string clientId, string secret)
+    {
+        var ctx = new DefaultHttpContext();
+        ctx.Request.Form = new FormCollection(new Dictionary<string, StringValues>
+        {
+            ["client_id"] = clientId,
+            ["client_secret"] = secret,
+        });
+        return ctx;
     }
 
     // ── Malformed Basic credentials ───────────────────────────────────────────────────────────────

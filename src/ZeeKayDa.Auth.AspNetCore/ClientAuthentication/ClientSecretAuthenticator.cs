@@ -113,7 +113,11 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
 
         var secrets = context.Client.Credentials.OfType<IClientSecret>().ToList();
 
-        if (secrets.Count == 0)
+        // An empty secret can never verify, and the built-in hasher returns without deriving for
+        // one, so trying it against each stored credential would cost nothing. Counted as attempts,
+        // those would pad short, and timing would tell a known client — and how many secrets it
+        // holds — from an unknown one. It is padded from zero instead, like no credentials at all.
+        if (secrets.Count == 0 || presented.Length == 0)
         {
             _hasher.PadFailureToCredentialBudget(0);
             return ValueTask.FromResult(ClientAuthenticationResult.NotValid());

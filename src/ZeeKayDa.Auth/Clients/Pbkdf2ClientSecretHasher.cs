@@ -29,7 +29,10 @@ namespace ZeeKayDa.Auth.Clients;
 /// start safely while signalling that reconfiguration is needed.
 /// </para>
 /// </remarks>
-internal sealed class Pbkdf2ClientSecretHasher : ClientSecretHasher<IPbkdf2ClientSecret>
+// IClientSecretHasher is re-listed on purpose. Inherited through ClientSecretHasher<T> alone, the
+// interface's default members stay bound to their defaults, and a public method here with the same
+// signature — GetRegistrationFailures — is silently not an implementation of them.
+internal sealed class Pbkdf2ClientSecretHasher : ClientSecretHasher<IPbkdf2ClientSecret>, IClientSecretHasher
 {
     /// <summary>
     /// Minimum allowed iteration count (OWASP PBKDF2-HMAC-SHA256 minimum as of 2025).
@@ -169,4 +172,17 @@ internal sealed class Pbkdf2ClientSecretHasher : ClientSecretHasher<IPbkdf2Clien
 
         return new Pbkdf2ClientSecret(_iterations, salt, hash);
     }
+
+    /// <summary>
+    /// A random salt and a random hash at the configured iteration count. <see cref="VerifyCore"/>
+    /// derives from the presented value with the stored salt and iterations and only then compares,
+    /// so verifying against this costs exactly what a real credential costs — and no presented value
+    /// derives a random hash. Building it costs nothing, where deriving one would cost a full
+    /// derivation at host startup.
+    /// </summary>
+    IClientSecret IClientSecretHasher.CreateTimingDecoy() =>
+        new Pbkdf2ClientSecret(
+            _iterations,
+            RandomNumberGenerator.GetBytes(SaltLength),
+            RandomNumberGenerator.GetBytes(HashLength));
 }
