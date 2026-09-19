@@ -24,9 +24,11 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests;
 /// Registers what a real host registers, so the endpoint under test resolves the same collaborators
 /// it would in production, and invokes its handler the way minimal APIs do — every parameter other
 /// than <see cref="HttpContext"/> comes from the container. Nothing about routing is involved, so a
-/// behaviour carried by the route table or the middleware pipeline cannot be tested here: the
-/// issuer-host constraint, path-prefixed discovery routes, <c>AllowAnonymous</c> against a host-wide
-/// fallback policy, and CORS preflight all need a real host.
+/// behaviour carried by the route table or the endpoint group's filters cannot be tested here: the
+/// issuer-host constraint, path-prefixed discovery routes, method and path matching, the security
+/// headers and the 421 HTTPS refusal the group adds, and <c>AllowAnonymous</c> against a host-wide
+/// fallback policy all need a real host. A preflight <em>response</em> is written by the handler, so
+/// that part is testable here; that an <c>OPTIONS</c> route exists to reach it is not.
 /// </para>
 /// <para>
 /// <see cref="Default"/> is shared by every test wanting the default configuration. A test that needs

@@ -359,11 +359,6 @@ public sealed class ProviderRoundTripTenantHostFixture : FlowHostFixture
             },
             mapEndpoints: Providers.ProviderTestHost.MapHostPages);
 
-    /// <summary>
-    /// A client with redirects surfaced rather than followed, matching the raw client the theory
-    /// this fixture serves used to build for itself directly.
-    /// </summary>
-    /// <returns>A fresh client, addressed at <see cref="DefaultBaseAddress"/>. The caller disposes it.</returns>
 }
 
 /// <summary>
@@ -384,14 +379,6 @@ public sealed class LoginInteractionHostFixture : FlowHostFixture
             configureBuilder: builder => AddTestDoubles(builder),
             mapEndpoints: LoginInteractionTests.MapHostPages);
 
-    /// <summary>
-    /// A client that does not follow redirects and keeps its own cookie jar — this class's tests
-    /// read a redirect response itself (status, <c>Location</c>, the absence of a header) rather
-    /// than the page it points to, so the base <see cref="NewClient"/>'s default
-    /// <c>WebApplicationFactoryClientOptions</c>, which follows redirects, would answer with the
-    /// followed page instead of the response under test.
-    /// </summary>
-    /// <returns>A fresh client, addressed at <see cref="DefaultBaseAddress"/>. The caller disposes it.</returns>
 }
 
 /// <summary>

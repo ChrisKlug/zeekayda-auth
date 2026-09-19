@@ -23,9 +23,13 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 /// bearer transports, the refusals it writes itself — is covered host-free in
 /// <see cref="UserInfoEndpointTests"/>.
 /// </summary>
-public sealed class UserInfoEndpointHostTests(DefaultHostFixture host, TenantIssuerHostFixture tenant)
+public sealed class UserInfoEndpointHostTests(
+    DefaultHostFixture host,
+    TenantIssuerHostFixture tenant,
+    FallbackPolicyHostFixture fallback)
     : IClassFixture<DefaultHostFixture>,
-      IClassFixture<TenantIssuerHostFixture>
+      IClassFixture<TenantIssuerHostFixture>,
+      IClassFixture<FallbackPolicyHostFixture>
 {
     private const string UserInfoPath = "/connect/userinfo";
     private const string TokenPath = "/connect/token";
@@ -71,11 +75,11 @@ public sealed class UserInfoEndpointHostTests(DefaultHostFixture host, TenantIss
 
     // ── Two Authorization headers ─────────────────────────────────────────────────────────────
     //
-    // TestRequest.WithHeader (the host-free harness) joins a repeated header into one comma-separated
-    // string, which StringValues reports as a single value — it cannot reproduce two genuinely
-    // separate Authorization header lines (StringValues.Count == 2), which is what RFC 9110 §11.6.2
-    // and the endpoint's own Count > 1 check are about. Only a real request over the wire, built with
-    // two calls to TryAddWithoutValidation, produces that.
+    // The host-free harness can express this — TestRequest.WithHeader keeps repeated names as
+    // distinct StringValues — but a rule about how a request arrives on the wire is proved on the
+    // wire. RFC 9110 §11.6.2 forbids the duplicate, and the endpoint refuses it by counting values,
+    // so the test sends two real header lines through a real server rather than two values a test
+    // helper placed on a DefaultHttpContext.
 
     [Fact]
     public async Task Two_authorization_headers_are_invalid_request()
@@ -219,4 +223,44 @@ public sealed class UserInfoEndpointHostTests(DefaultHostFixture host, TenantIss
 
     private static string Challenge(HttpResponseMessage response) =>
         response.Headers.WwwAuthenticate.Should().ContainSingle().Subject.ToString();
+
+    // ── The preflight route ───────────────────────────────────────────────────────────────────
+    //
+    // What HandlePreflight writes is covered host-free. That an OPTIONS route exists to reach it,
+    // and that it is anonymous, is route metadata — so a dropped OPTIONS mapping, or one missing
+    // AllowAnonymous, would only show up here. A browser sends the bearer token in an Authorization
+    // header, which is not CORS-safelisted, so it preflights first: if this fails, no browser client
+    // reaches userinfo at all.
+
+    [Fact]
+    public async Task An_OPTIONS_preflight_reaches_the_endpoint_and_is_answered()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Options, UserInfoPath);
+        request.Headers.TryAddWithoutValidation("Origin", "https://app.example.com");
+        request.Headers.TryAddWithoutValidation("Access-Control-Request-Method", "GET");
+        request.Headers.TryAddWithoutValidation("Access-Control-Request-Headers", "Authorization");
+
+        var response = await host.Client.SendAsync(request, Cancellation);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task An_OPTIONS_preflight_is_answered_under_a_host_wide_fallback_authorization_policy()
+    {
+        // AllowAnonymous on the preflight route, proven against a host that 401s anything without it.
+        using var canary = new HttpRequestMessage(HttpMethod.Get, "/host-route");
+        var challenged = await fallback.Client.SendAsync(canary, Cancellation);
+        challenged.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            because: "the canary must prove the fallback policy is actually in force on this host");
+
+        using var request = new HttpRequestMessage(HttpMethod.Options, UserInfoPath);
+        request.Headers.TryAddWithoutValidation("Origin", "https://app.example.com");
+        request.Headers.TryAddWithoutValidation("Access-Control-Request-Method", "GET");
+
+        var response = await fallback.Client.SendAsync(request, Cancellation);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent,
+            because: "a preflight carries no credentials, so the host's own scheme must not challenge it");
+    }
 }
