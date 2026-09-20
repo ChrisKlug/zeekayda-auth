@@ -145,6 +145,7 @@ public sealed class DiscoveryDocumentProviderTests
         doc.ResponseTypesSupported.Should().BeNull();
         doc.ResponseModesSupported.Should().BeNull();
         doc.CodeChallengeMethodsSupported.Should().BeNull();
+        doc.ClaimsSupported.Should().BeNull();
         doc.GrantTypesSupported.Should().Equal(GrantType.ClientCredentials);
         doc.TokenEndpoint.Should().Be("https://auth.example.com/connect/token", "the token endpoint is what such a host serves");
     }
@@ -322,6 +323,34 @@ public sealed class DiscoveryDocumentProviderTests
         // from whether the server issues them. It does not, and advertising a claim that never
         // arrives is worse for a relying party than the metadata being absent.
         doc.ClaimsSupported.Should().NotContain(["azp", "at_hash", "c_hash", "sid", "nbf", "jti"]);
+    }
+
+    [Fact]
+    public async Task GetDocument_omits_ClaimsSupported_when_no_supported_grant_issues_an_ID_token()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition
+            {
+                Name = StandardScopes.Email.Name,
+                IdTokenClaims = ["email"],
+                UserInfoClaims = ["email", "email_verified"],
+            },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions
+            {
+                Issuer = "https://auth.example.com",
+                GrantTypesSupported = [GrantType.ClientCredentials],
+            },
+            repository);
+
+        // Only the authorization code grant issues an ID token or answers the UserInfo endpoint,
+        // so a client_credentials-only host can supply none of these claims. Discovery §3 asks for
+        // claims the server MAY supply, and advertising one nothing can produce is worse than the
+        // RECOMMENDED field being absent — the same rule that omits the endpoints themselves.
+        doc.ClaimsSupported.Should().BeNull();
     }
 
     [Fact]

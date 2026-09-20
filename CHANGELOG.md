@@ -17,7 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   scope's `AccessTokenClaims` are not advertised — Discovery §3 covers the ID token and the
   UserInfo endpoint — and neither are reserved names the server never issues, such as `azp` and
   `sid`, because a relying party told about a claim that never arrives is worse off than one
-  reading no list at all.
+  reading no list at all. For the same reason the whole field is omitted by a host that does not
+  serve the authorization code grant, alongside the endpoints and response types it already
+  omits: nothing else issues an ID token or answers a UserInfo request.
 
 - **A page submitted with nothing left to continue is answered, not thrown at** (#700)
 

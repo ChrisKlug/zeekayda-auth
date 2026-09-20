@@ -59,7 +59,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
         var issuerUri = new Uri(options.Issuer!);
 
         var scopes = await _scopeRepository.GetScopesAsync(cancellationToken).ConfigureAwait(false);
-        var interactive = InteractiveMetadata.For(options, issuerUri);
+        var interactive = InteractiveMetadata.For(options, issuerUri, scopes);
 
         return new OpenIdConfigurationDocument
         {
@@ -75,7 +75,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
             ScopesSupported = [.. scopes
                 .Where(scope => scope.IsDiscoverable)
                 .Select(scope => scope.Name)],
-            ClaimsSupported = ClaimsSupportedFrom(scopes),
+            ClaimsSupported = interactive.ClaimsSupported,
             ResponseModesSupported = interactive.ResponseModesSupported,
             GrantTypesSupported = [.. options.GrantTypesSupported],
             TokenEndpointAuthMethodsSupported = [.. options.TokenEndpoint.AuthMethodsSupported
@@ -98,6 +98,13 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
     /// is excluded — Discovery §3 is about the ID token and the UserInfo endpoint, and an access
     /// token is for the resource server, not the relying party reading this document. A scope
     /// hidden from discovery hides its claims too, the same filter <c>scopes_supported</c> uses.
+    /// </remarks>
+    /// <remarks>
+    /// Called only from <see cref="InteractiveMetadata.For"/>, so the list is published only by a
+    /// host that serves the authorization code grant. Nothing else issues an ID token or answers
+    /// the UserInfo endpoint, so on a <c>client_credentials</c>-only host every one of these
+    /// claims is unreachable, and §3's "MAY be able to supply" would be a promise the server
+    /// cannot keep.
     /// </remarks>
     private static IReadOnlyCollection<string> ClaimsSupportedFrom(IReadOnlyCollection<ScopeDefinition> scopes) =>
         [.. IdTokenProtocolClaims.Names
@@ -130,7 +137,12 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
 
         public IReadOnlyCollection<CodeChallengeMethod>? CodeChallengeMethodsSupported { get; init; }
 
-        public static InteractiveMetadata For(AuthorizationServerOptions options, Uri issuerUri) =>
+        public IReadOnlyCollection<string>? ClaimsSupported { get; init; }
+
+        public static InteractiveMetadata For(
+            AuthorizationServerOptions options,
+            Uri issuerUri,
+            IReadOnlyCollection<ScopeDefinition> scopes) =>
             options.GrantTypesSupported.Contains(GrantType.AuthorizationCode)
                 ? new InteractiveMetadata
                 {
@@ -145,6 +157,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
                     CodeChallengeMethodsSupported = options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { } methods
                         ? [.. methods]
                         : null,
+                    ClaimsSupported = ClaimsSupportedFrom(scopes),
                 }
                 : None;
     }
