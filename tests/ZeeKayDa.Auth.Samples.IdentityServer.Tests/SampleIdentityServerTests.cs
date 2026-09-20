@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -221,6 +222,27 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     }
 
     [Fact]
+    public async Task The_conformance_post_client_is_refused_when_it_sends_its_secret_as_basic_auth()
+    {
+        // The settings list replaces the framework default rather than adding to it, so this client
+        // may use client_secret_post and nothing else. Without that, the same credentials would
+        // also be accepted in an Authorization header and the registration would say one thing
+        // while permitting two — which the happy-path test above cannot tell apart.
+        using var factory = _factory.WithWebHostBuilder(host => host.UseEnvironment("Conformance"));
+        using var browser = NewBrowser(factory, ConformanceIssuer);
+
+        var loginPage = await AuthorizeWithoutPkceAsync(browser, ConformancePostClientId, ConformanceRedirectUri);
+        var callback = await PostFormAsync(browser, loginPage, AliceLogin());
+        var code = QueryHelpers.ParseQuery(new Uri(callback).Query)["code"].ToString();
+
+        using var response = await RedeemWithBasicAuthAsync(browser, code);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var error = await response.Content.ReadFromJsonAsync<JsonElement>(Cancellation);
+        error.GetProperty("error").GetString().Should().Be("invalid_client");
+    }
+
+    [Fact]
     public async Task A_client_initiated_sign_out_is_confirmed_on_the_logout_page_and_returns_to_the_client_with_its_state()
     {
         using var browser = NewBrowser();
@@ -417,6 +439,24 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
         }
 
         return await response.Content.ReadFromJsonAsync<JsonElement>(Cancellation);
+    }
+
+    /// <summary>Redeems a code with client_secret_basic: the credentials are an Authorization header.</summary>
+    private static async Task<HttpResponseMessage> RedeemWithBasicAuthAsync(HttpClient client, string code)
+    {
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "authorization_code",
+            ["code"] = code,
+            ["redirect_uri"] = ConformanceRedirectUri,
+        });
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/connect/token") { Content = form };
+        var credentials = $"{Uri.EscapeDataString(ConformancePostClientId)}:{Uri.EscapeDataString(ConformancePostClientSecret)}";
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials)));
+
+        return await client.SendAsync(request, Cancellation);
     }
 
     private static (string Verifier, string Challenge) NewPkcePair()
