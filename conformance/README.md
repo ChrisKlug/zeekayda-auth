@@ -107,6 +107,21 @@ in `RESULTS.md`. Two and a bit minutes is cheap enough for every PR, and the log
 the kind of thing a PR breaks by accident; a nightly-only basic plan would find that a day late.
 
 CI caches the suite clone by `SUITE_REF`, which the job reads out of `run-conformance.sh` rather
-than repeating. The suite's two images are pulled cold on every run — whether that pull is worth
-caching as well is a decision to take from the times this job actually reports, not one to guess
-in advance.
+than repeating. **The suite's images are deliberately not cached.** Measured on the runner, a job
+with the clone cached takes the same 3 min 05 s as one without it, and breaks down as:
+
+| Phase | Time |
+|---|---:|
+| job setup, checkout, .NET, cache restore | 8 s |
+| pull nginx and mongo, build the suite-server image | 19 s |
+| suite boots until it answers | 12 s |
+| sample builds and starts until discovery answers | 39 s |
+| both plans | 93 s |
+| teardown | 11 s |
+
+The images are 19 s of that. Caching them means `docker save`/`docker load` of roughly 600-700 MB,
+which is not obviously faster than the pull, costs that much again on every miss, and competes for
+the repository's 10 GB Actions cache with the NuGet caches every other job depends on. If this job
+ever needs to be faster, the two rows worth attacking are the sample's 39 s — it is built serially
+after the suite is already up, and could be built while the suite boots — and the plans' 93 s, of
+which about 31 s is `oidcc-codereuse-30seconds` deliberately sleeping and therefore fixed.
