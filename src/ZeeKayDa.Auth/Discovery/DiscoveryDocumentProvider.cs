@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Scopes;
 using ZeeKayDa.Auth.Tokens;
 
@@ -74,6 +75,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
             ScopesSupported = [.. scopes
                 .Where(scope => scope.IsDiscoverable)
                 .Select(scope => scope.Name)],
+            ClaimsSupported = ClaimsSupportedFrom(scopes),
             ResponseModesSupported = interactive.ResponseModesSupported,
             GrantTypesSupported = [.. options.GrantTypesSupported],
             TokenEndpointAuthMethodsSupported = [.. options.TokenEndpoint.AuthMethodsSupported
@@ -83,6 +85,26 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
             CodeChallengeMethodsSupported = interactive.CodeChallengeMethodsSupported,
         };
     }
+
+    /// <summary>
+    /// The claims the server may supply: what the discoverable scopes unlock in an ID token or at
+    /// the UserInfo endpoint, plus the protocol claims the ID token carries.
+    /// </summary>
+    /// <remarks>
+    /// Derived from the scope repository on every read rather than configured, for the reason
+    /// <c>id_token_signing_alg_values_supported</c> is derived from the key ring: an operator-set
+    /// list can name a claim no scope unlocks, and metadata promising a claim the server cannot
+    /// produce is worse than metadata without it. <see cref="ScopeDefinition.AccessTokenClaims"/>
+    /// is excluded — Discovery §3 is about the ID token and the UserInfo endpoint, and an access
+    /// token is for the resource server, not the relying party reading this document. A scope
+    /// hidden from discovery hides its claims too, the same filter <c>scopes_supported</c> uses.
+    /// </remarks>
+    private static IReadOnlyCollection<string> ClaimsSupportedFrom(IReadOnlyCollection<ScopeDefinition> scopes) =>
+        [.. IdTokenProtocolClaims.Names
+            .Concat(scopes
+                .Where(scope => scope.IsDiscoverable)
+                .SelectMany(scope => scope.IdTokenClaims.Concat(scope.UserInfoClaims)))
+            .Distinct(StringComparer.Ordinal)];
 
     /// <summary>
     /// The metadata a host publishes only while it serves a grant that uses the authorization

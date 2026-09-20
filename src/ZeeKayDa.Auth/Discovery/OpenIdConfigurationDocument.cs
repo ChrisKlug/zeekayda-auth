@@ -72,6 +72,15 @@ public sealed record OpenIdConfigurationDocument
     public required IReadOnlyCollection<string> ScopesSupported { get; init; }
 
     /// <summary>
+    /// Gets the claim names this authorization server may supply in an ID token or at the UserInfo
+    /// endpoint (OpenID Connect Discovery 1.0 §3, RECOMMENDED): the claims the discoverable scopes
+    /// unlock, plus the protocol claims an ID token carries. A claim listed here is one the server
+    /// <em>may</em> supply, not one it always does.
+    /// </summary>
+    [JsonPropertyName("claims_supported")]
+    public required IReadOnlyCollection<string> ClaimsSupported { get; init; }
+
+    /// <summary>
     /// Gets the response modes supported by this authorization server. Absent from the document
     /// when <see langword="null"/>, on the same condition as <see cref="ResponseTypesSupported"/>.
     /// </summary>

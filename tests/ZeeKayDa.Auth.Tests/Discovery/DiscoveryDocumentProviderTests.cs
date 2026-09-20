@@ -294,6 +294,124 @@ public sealed class DiscoveryDocumentProviderTests
         doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name);
     }
 
+    // ── claims_supported is derived from the scopes and the ID token's own claims ───────────────
+
+    [Fact]
+    public async Task GetDocument_advertises_the_protocol_claims_the_id_token_carries()
+    {
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+        });
+
+        // OpenID Connect Discovery 1.0 §3: the claims the server may supply. A relying party
+        // reading this list must not be told about a claim no grant produces, so it is exactly
+        // what CodeGrantTokenPayloads.IdToken writes.
+        doc.ClaimsSupported.Should().Contain(["iss", "sub", "aud", "iat", "exp", "auth_time", "nonce", "acr", "amr"]);
+    }
+
+    [Fact]
+    public async Task GetDocument_does_not_advertise_reserved_claims_the_id_token_never_emits()
+    {
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+        });
+
+        // These are reserved so a claims provider cannot mint them, which is a different question
+        // from whether the server issues them. It does not, and advertising a claim that never
+        // arrives is worse for a relying party than the metadata being absent.
+        doc.ClaimsSupported.Should().NotContain(["azp", "at_hash", "c_hash", "sid", "nbf", "jti"]);
+    }
+
+    [Fact]
+    public async Task GetDocument_advertises_the_claims_the_discoverable_scopes_unlock()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition
+            {
+                Name = StandardScopes.OpenId.Name,
+                IdTokenClaims = ["sub"],
+            },
+            new ScopeDefinition
+            {
+                Name = StandardScopes.Email.Name,
+                IdTokenClaims = ["email"],
+                UserInfoClaims = ["email", "email_verified"],
+            },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            repository);
+
+        doc.ClaimsSupported.Should().Contain(["email", "email_verified"]);
+    }
+
+    [Fact]
+    public async Task GetDocument_excludes_access_token_only_claims_from_ClaimsSupported()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition
+            {
+                Name = StandardScopes.OpenId.Name,
+                IdTokenClaims = ["sub"],
+                AccessTokenClaims = ["tenant_id"],
+            },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            repository);
+
+        // Discovery §3 is about the ID token and the UserInfo endpoint. An access-token claim is
+        // for the resource server, and a relying party cannot ask for it here.
+        doc.ClaimsSupported.Should().NotContain("tenant_id");
+    }
+
+    [Fact]
+    public async Task GetDocument_excludes_claims_of_non_discoverable_scopes_from_ClaimsSupported()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name, IdTokenClaims = ["sub"] },
+            new ScopeDefinition
+            {
+                Name = "internal.admin",
+                IsDiscoverable = false,
+                IdTokenClaims = ["internal_role"],
+                UserInfoClaims = ["internal_department"],
+            },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            repository);
+
+        // A scope hidden from discovery hides what it unlocks too, or the claim list leaks the
+        // existence of the scope that scopes_supported was asked to hide.
+        doc.ClaimsSupported.Should().NotContain(["internal_role", "internal_department"]);
+    }
+
+    [Fact]
+    public async Task GetDocument_lists_a_claim_two_scopes_share_once()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name, IdTokenClaims = ["sub"] },
+            new ScopeDefinition { Name = StandardScopes.Profile.Name, IdTokenClaims = ["sub", "name"] },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            repository);
+
+        // "sub" is both a protocol claim and one the scopes declare; the document is a set.
+        doc.ClaimsSupported.Should().OnlyHaveUniqueItems();
+    }
+
     // ── id_token_signing_alg_values_supported is derived from the key set ────────────────────────
 
     [Fact]
