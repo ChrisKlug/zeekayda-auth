@@ -142,6 +142,83 @@ public sealed class ScopePresenceStartupValidatorTests
         context.Failures.Should().HaveCount(2);
     }
 
+    // ── A custom repository's own output ──────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task VerifyAsync_adds_a_failure_when_a_scope_has_no_name(string? name)
+    {
+        // InMemoryScopeRepository would refuse this in its constructor, but a custom repository
+        // never runs that constructor and ScopeDefinition's non-nullable declarations are not
+        // enforced at runtime. Unnamed, the scope is published into scopes_supported, which
+        // Discovery 1.0 §3 defines as a list of strings.
+        var (sut, provider) = BuildSut(new CustomRepository(
+            [StandardScopes.OpenId, new ScopeDefinition { Name = name! }]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle().Which.Code.Should().Be("scopes.name.blank");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task VerifyAsync_adds_a_failure_when_a_scope_lists_a_claim_with_no_name(string? claim)
+    {
+        // ClaimRecord refuses a null, empty or whitespace claim type, so this claim can never be
+        // delivered by any provider. Before this check the operator was told nothing: selection
+        // carried the blank type and the discovery document quietly dropped it.
+        var (sut, provider) = BuildSut(new CustomRepository(
+            [StandardScopes.OpenId, new ScopeDefinition { Name = "custom", IdTokenClaims = [claim!] }]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle().Which.Code.Should().Be("scopes.claims.blank");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_reports_a_scope_listing_several_unnamed_claims_once()
+    {
+        // One failure names the scope and the fix; repeating it per blank entry would tell the
+        // operator nothing new and pad a startup exception they have to read.
+        var (sut, provider) = BuildSut(new CustomRepository(
+        [
+            StandardScopes.OpenId,
+            new ScopeDefinition { Name = "custom", IdTokenClaims = ["", "  "], UserInfoClaims = [null!] },
+        ]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle().Which.Code.Should().Be("scopes.claims.blank");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_tolerates_a_custom_repository_returning_null_claim_lists()
+    {
+        // A null list is read as no claims, the way ClaimSelectionPlan and ClientClaimAdditions
+        // already read it — the check must not turn a tolerated shape into a startup failure.
+        var (sut, provider) = BuildSut(new CustomRepository(
+        [
+            StandardScopes.OpenId,
+            new ScopeDefinition { Name = "custom", IdTokenClaims = null!, UserInfoClaims = null!, AccessTokenClaims = null! },
+        ]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().BeEmpty();
+    }
+
     // ── Reserved claim names in a scope's lists ───────────────────────────────────────────────
 
     [Theory]
@@ -180,5 +257,15 @@ public sealed class ScopePresenceStartupValidatorTests
         public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(
             CancellationToken cancellationToken = default)
             => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
+    }
+
+    /// <summary>
+    /// A custom repository that returns whatever it is given. <c>InMemoryScopeRepository</c>
+    /// validates in its constructor, so it cannot express the shapes these tests are about.
+    /// </summary>
+    private sealed class CustomRepository(IReadOnlyCollection<ScopeDefinition> scopes) : IScopeRepository
+    {
+        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(scopes);
     }
 }
