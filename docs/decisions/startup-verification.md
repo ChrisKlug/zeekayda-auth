@@ -94,9 +94,9 @@ sink unformatted, so structured backends index them and by-key redaction acts on
 call site. The runner's prefix placeholder is `{ErrorCode}`, never `{Code}`: `code` is a redaction key
 elsewhere, and `{Code}` would silently redact every startup warning's discriminator in production.
 
-**The level is data spanning the whole `LogLevel` range, chosen at the call site.** The same check
-records `Warning` in Development, `Critical` for a deliberate non-Development override, and
-`Information` where the message is informational. There is no suppression path and no operator knob,
+**The level is data spanning the whole `LogLevel` range, chosen at the call site.** A
+development-only resource records `Information` in `Development` and `Critical` for a deliberate
+non-`Development` override; anything else records `Warning`. No suppression path, no operator knob,
 and no check can downgrade a failure to a warning — `AddFailure` and `AddWarning` are distinct.
 
 **`ZEEKAYDA0002` requires a compile-time-constant message template, including on `AddWarning`.** The
@@ -130,9 +130,9 @@ have one at all; `SigningKeyRingPresenceValidator` is the cheap-phase check that
 
 **Two instances of one check type register with plain `AddSingleton`.** `TryAddEnumerable`
 deduplicates by implementation type and would silently drop the second, which is why the per-store
-in-memory checks — one per registration call, each capturing its own store name and
-`allowOutsideDevelopment` — are added directly. The log category is the shared type, so the instance
-`Name` tells them apart. Store presence and in-memory gating are in `token-stores.md`.
+checks — one per registration call, each capturing its own store name and opt-out — are added
+directly, for in-memory and distributed-cache token stores alike. The log category is the shared
+type, so the instance `Name` tells them apart. Gating is in `token-stores.md`.
 
 **No check's warning is suppressed because another check failed.** Warnings log inline during a
 phase; failures surface only in the exception thrown after it, so a warning can appear *ahead of* the

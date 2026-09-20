@@ -290,6 +290,12 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Multi-instance production deployments MUST replace these stores with an atomic implementation.
     /// </summary>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <param name="allowMemoryCacheOutsideDevelopment">
+    /// Permits the per-process <see cref="MemoryDistributedCache"/> to back this store outside a
+    /// Development environment. Startup fails without it; with it, the configuration is logged at
+    /// <c>Critical</c> on every start. Intended for an integration test host, not
+    /// for production.
+    /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
@@ -298,15 +304,19 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Thrown when an <see cref="IAuthorizationCodeStore"/> has already been registered.
     /// Only one store registration per interface is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddDistributedCacheAuthorizationCodeStore(this ZeeKayDaAuthBuilder builder)
+    public static ZeeKayDaAuthBuilder AddDistributedCacheAuthorizationCodeStore(
+        this ZeeKayDaAuthBuilder builder,
+        bool allowMemoryCacheOutsideDevelopment = false)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeStore));
         builder.Services.AddSingleton<IAuthorizationCodeBackingStore, DistributedCacheAuthorizationCodeBackingStore>();
         builder.Services.AddSingleton<IAuthorizationCodeStore, AuthorizationCodeStore>();
-        builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, DistributedCacheStoreStartupValidator>());
+        builder.Services.AddSingleton<IStartupActivator>(sp => new DistributedCacheStoreStartupValidator(
+            sp.GetRequiredService<IHostEnvironment>(),
+            DistributedCacheStoreStartupValidator.AuthorizationCodeStoreName,
+            allowMemoryCacheOutsideDevelopment));
 
         return builder;
     }
@@ -316,6 +326,12 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Multi-instance production deployments MUST replace these stores with an atomic implementation.
     /// </summary>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <param name="allowMemoryCacheOutsideDevelopment">
+    /// Permits the per-process <see cref="MemoryDistributedCache"/> to back this store outside a
+    /// Development environment. Startup fails without it; with it, the configuration is logged at
+    /// <c>Critical</c> on every start. Intended for an integration test host, not
+    /// for production.
+    /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
@@ -324,15 +340,19 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Thrown when an <see cref="IRefreshTokenStore"/> has already been registered.
     /// Only one store registration per interface is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddDistributedCacheRefreshTokenStore(this ZeeKayDaAuthBuilder builder)
+    public static ZeeKayDaAuthBuilder AddDistributedCacheRefreshTokenStore(
+        this ZeeKayDaAuthBuilder builder,
+        bool allowMemoryCacheOutsideDevelopment = false)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenStore));
         builder.Services.AddSingleton<IRefreshTokenGrantStore, DistributedCacheRefreshTokenGrantStore>();
         builder.Services.AddSingleton<IRefreshTokenStore, RefreshTokenStore>();
-        builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, DistributedCacheStoreStartupValidator>());
+        builder.Services.AddSingleton<IStartupActivator>(sp => new DistributedCacheStoreStartupValidator(
+            sp.GetRequiredService<IHostEnvironment>(),
+            DistributedCacheStoreStartupValidator.RefreshTokenStoreName,
+            allowMemoryCacheOutsideDevelopment));
 
         return builder;
     }
@@ -342,6 +362,12 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Multi-instance production deployments MUST replace these stores with an atomic implementation.
     /// </summary>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <param name="allowMemoryCacheOutsideDevelopment">
+    /// Permits the per-process <see cref="MemoryDistributedCache"/> to back this store outside a
+    /// Development environment. Startup fails without it; with it, the configuration is logged at
+    /// <c>Critical</c> on every start. Intended for an integration test host, not
+    /// for production.
+    /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
@@ -350,12 +376,14 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Thrown when an <see cref="IAuthorizationCodeStore"/> or <see cref="IRefreshTokenStore"/>
     /// has already been registered. Only one store registration per interface is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddDistributedCacheTokenStores(this ZeeKayDaAuthBuilder builder)
+    public static ZeeKayDaAuthBuilder AddDistributedCacheTokenStores(
+        this ZeeKayDaAuthBuilder builder,
+        bool allowMemoryCacheOutsideDevelopment = false)
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.AddDistributedCacheAuthorizationCodeStore();
-        builder.AddDistributedCacheRefreshTokenStore();
+        builder.AddDistributedCacheAuthorizationCodeStore(allowMemoryCacheOutsideDevelopment);
+        builder.AddDistributedCacheRefreshTokenStore(allowMemoryCacheOutsideDevelopment);
 
         return builder;
     }

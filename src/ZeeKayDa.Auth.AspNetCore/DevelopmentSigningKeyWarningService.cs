@@ -71,7 +71,10 @@ internal sealed class DevelopmentSigningKeyWarningService : IStartupVerifier
         }
         else
         {
-            context.AddWarning("signing.dev_keys.active", WarningMessage);
+            // Information, not Warning: in Development a development signing key is the expected
+            // choice, and a Warning an operator sees on every local start is one they learn to
+            // scroll past — which is what a real Warning then hides behind.
+            context.AddWarning("signing.dev_keys.active", WarningMessage, LogLevel.Information);
         }
 
         return ValueTask.CompletedTask;

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -614,16 +615,19 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddDistributedCacheAuthorizationCodeStore_registers_DistributedCacheStoreStartupValidator_as_IStartupActivator()
+    public void AddDistributedCacheAuthorizationCodeStore_registers_a_startup_activator()
     {
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddDistributedCacheAuthorizationCodeStore();
 
+        // Registered through a factory, because the validator captures this registration's own
+        // store name and allowMemoryCacheOutsideDevelopment value, so there is no
+        // ImplementationType to match on.
         services.Should().Contain(sd =>
             sd.ServiceType == typeof(IStartupActivator) &&
-            sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator));
+            sd.ImplementationFactory != null);
     }
 
     // ── AddDistributedCacheAuthorizationCodeStore: double-registration guard ─────────────────────
@@ -688,7 +692,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddDistributedCacheRefreshTokenStore_registers_DistributedCacheStoreStartupValidator_as_IStartupActivator()
+    public void AddDistributedCacheRefreshTokenStore_registers_a_startup_activator()
     {
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -697,7 +701,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 
         services.Should().Contain(sd =>
             sd.ServiceType == typeof(IStartupActivator) &&
-            sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator));
+            sd.ImplementationFactory != null);
     }
 
     // ── AddDistributedCacheRefreshTokenStore: double-registration guard ───────────────────────────
@@ -763,32 +767,76 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddDistributedCacheTokenStores_registers_DistributedCacheStoreStartupValidator_exactly_once()
+    public void AddDistributedCacheTokenStores_registers_one_startup_activator_per_store()
     {
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddDistributedCacheTokenStores();
 
+        // Two, not one. Each validator carries its own store name so a failure says which
+        // registration is broken, and its own opt-out so two registrations can differ. This is
+        // why the registration is a plain AddSingleton: TryAddEnumerable deduplicates by
+        // implementation type and would keep only the first.
         services.Count(sd =>
             sd.ServiceType == typeof(IStartupActivator) &&
-            sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator))
-            .Should().Be(1, "TryAddEnumerable ensures idempotent registration across both calls");
+            sd.ImplementationFactory != null)
+            .Should().Be(2);
     }
 
     [Fact]
-    public void Calling_AddDistributedCacheAuthorizationCodeStore_and_AddDistributedCacheRefreshTokenStore_separately_registers_DistributedCacheStoreStartupValidator_exactly_once()
+    public async Task The_two_store_registrations_do_not_log_one_warning_twice()
     {
-        var services = new ServiceCollection();
+        // One validator per store registration means both inspect the same IDistributedCache, and
+        // the startup runner de-duplicates failures but NOT warnings. An unnamed non-atomicity
+        // template would therefore print the identical warning twice for every host that registers
+        // both token stores on a shared cache — noise that teaches an operator to skip it.
+        var services = CreateServicesWithWarningServiceDependencies("Production");
+        services.AddSingleton<IDistributedCache, SharedCache>();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheTokenStores();
+
+        using var provider = services.BuildServiceProvider();
+        var context = new StartupVerificationContext();
+        foreach (var activator in provider.GetServices<IStartupActivator>())
+            await activator.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().BeEmpty();
+        context.Warnings.Should().HaveCount(2)
+            .And.OnlyContain(w => w.Code == "stores.idistributedcache.non_atomic");
+        context.Warnings.Select(w => w.Args.Single()).Should().BeEquivalentTo(
+            [DistributedCacheStoreStartupValidator.AuthorizationCodeStoreName,
+             DistributedCacheStoreStartupValidator.RefreshTokenStoreName],
+            "each warning must say which store it is about, or the pair is indistinguishable noise");
+    }
+
+    [Fact]
+    public async Task The_two_store_registrations_each_keep_their_own_opt_out()
+    {
+        // Counting the descriptors is not enough: two factories that both captured `true` would
+        // also be two. What matters is that the store registered WITHOUT the opt-out still fails
+        // startup on the per-process cache in Production while the one registered with it does
+        // not. Under the old TryAddEnumerable registration the second call was dropped as a
+        // duplicate implementation type, so a host got one of the two answers for both stores.
+        var services = CreateServicesWithWarningServiceDependencies("Production");
+        services.AddDistributedMemoryCache();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddDistributedCacheAuthorizationCodeStore();
-        builder.AddDistributedCacheRefreshTokenStore();
+        builder.AddDistributedCacheRefreshTokenStore(allowMemoryCacheOutsideDevelopment: true);
 
-        services.Count(sd =>
-            sd.ServiceType == typeof(IStartupActivator) &&
-            sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator))
-            .Should().Be(1, "TryAddEnumerable ensures idempotent registration when called independently");
+        using var provider = services.BuildServiceProvider();
+        var context = new StartupVerificationContext();
+        foreach (var activator in provider.GetServices<IStartupActivator>())
+            await activator.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle()
+            .Which.Message.Should().Contain(DistributedCacheStoreStartupValidator.AuthorizationCodeStoreName);
+        context.Warnings.Should().ContainSingle()
+            .Which.Code.Should().Be("stores.token.per_process_cache_override");
+        context.Warnings.Single().Args.Should().ContainSingle()
+            .Which.Should().Be(DistributedCacheStoreStartupValidator.RefreshTokenStoreName);
     }
 
     // ── AddDistributedCacheTokenStores: per-interface guard independence ──────────────────────────
@@ -887,5 +935,18 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 
         public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
             => ValueTask.FromResult(false);
+    }
+
+    /// <summary>A stand-in for a real shared cache: anything that is not MemoryDistributedCache.</summary>
+    private sealed class SharedCache : IDistributedCache
+    {
+        public byte[]? Get(string key) => null;
+        public Task<byte[]?> GetAsync(string key, CancellationToken token = default) => Task.FromResult<byte[]?>(null);
+        public void Refresh(string key) { }
+        public Task RefreshAsync(string key, CancellationToken token = default) => Task.CompletedTask;
+        public void Remove(string key) { }
+        public Task RemoveAsync(string key, CancellationToken token = default) => Task.CompletedTask;
+        public void Set(string key, byte[] value, DistributedCacheEntryOptions options) { }
+        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default) => Task.CompletedTask;
     }
 }

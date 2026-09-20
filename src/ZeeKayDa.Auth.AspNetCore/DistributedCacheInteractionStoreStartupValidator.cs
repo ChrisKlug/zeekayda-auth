@@ -64,31 +64,32 @@ internal sealed class DistributedCacheInteractionStoreStartupValidator : IStartu
         if (cache is not MemoryDistributedCache)
             return ValueTask.CompletedTask;
 
-        if (_environment.IsDevelopment())
+        switch (EnvironmentGate.Evaluate(_environment, _allowMemoryCacheOutsideDevelopment))
         {
-            context.AddWarning(
-                "stores.interaction.per_process_cache_active",
-                PerProcessCacheActiveMessage,
-                LogLevel.Information);
-            return ValueTask.CompletedTask;
-        }
+            case EnvironmentGate.Verdict.ExpectedInDevelopment:
+                context.AddWarning(
+                    "stores.interaction.per_process_cache_active",
+                    PerProcessCacheActiveMessage,
+                    LogLevel.Information);
+                break;
 
-        if (_allowMemoryCacheOutsideDevelopment)
-        {
-            context.AddWarning(
-                "stores.interaction.per_process_cache_override",
-                PerProcessCacheOverrideWarningMessage,
-                LogLevel.Critical);
-            return ValueTask.CompletedTask;
-        }
+            case EnvironmentGate.Verdict.AllowedByOptOut:
+                context.AddWarning(
+                    "stores.interaction.per_process_cache_override",
+                    PerProcessCacheOverrideWarningMessage,
+                    LogLevel.Critical);
+                break;
 
-        context.AddFailure(
-            "stores.interaction.per_process_cache",
-            "The distributed-cache interaction store resolves IDistributedCache to MemoryDistributedCache " +
-            "outside a Development environment. Despite its name, that cache is shared with nothing: an " +
-            "authorization request started on one instance cannot be completed by another. Register a " +
-            "shared IDistributedCache (Redis, SQL Server, ...) or pass allowMemoryCacheOutsideDevelopment: " +
-            "true if this host is an intentional non-Development test host.");
+            default:
+                context.AddFailure(
+                    "stores.interaction.per_process_cache",
+                    "The distributed-cache interaction store resolves IDistributedCache to MemoryDistributedCache " +
+                    "outside a Development environment. Despite its name, that cache is shared with nothing: an " +
+                    "authorization request started on one instance cannot be completed by another. Register a " +
+                    "shared IDistributedCache (Redis, SQL Server, ...) or pass allowMemoryCacheOutsideDevelopment: " +
+                    "true if this host is an intentional non-Development test host.");
+                break;
+        }
 
         return ValueTask.CompletedTask;
     }
