@@ -54,8 +54,10 @@ public static ZeeKayDaAuthBuilder AddDatabaseClients(this ZeeKayDaAuthBuilder bu
 
 **You must call `IClientRegistrationValidator.Validate` before persisting a new or updated
 client registration.** The validator enforces all redirect URI rules, the `IsPublic` consistency
-check, credential integrity checks, and auth-method subset constraints. Not calling it means
-your clients bypass the security checks that the framework enforces on in-memory registrations.
+check, credential integrity checks, and auth-method subset constraints. Not calling it means a bad
+registration is stored, and is then discovered at the worst moment: the framework validates every
+registration it serves, so the client is refused as an unknown client on a live request — an error
+the operator sees in the log rather than one you saw when you wrote the row.
 
 Inject `IClientRegistrationValidator` from DI and call it at write time:
 
