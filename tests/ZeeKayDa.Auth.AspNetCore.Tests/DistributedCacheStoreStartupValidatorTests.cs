@@ -149,6 +149,7 @@ public sealed class DistributedCacheStoreStartupValidatorTests
         context.Failures.Should().BeEmpty();
         var warning = context.Warnings.Should().ContainSingle().Which;
         warning.Code.Should().Be("stores.idistributedcache.non_atomic");
-        warning.MessageTemplate.Should().Be(DistributedCacheStoreStartupValidator.WarningMessage);
+        warning.MessageTemplate.Should().Be(DistributedCacheStoreStartupValidator.WarningMessageFormat);
+        warning.Args.Should().ContainSingle().Which.Should().Be(StoreName);
     }
 }

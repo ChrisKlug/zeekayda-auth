@@ -30,7 +30,9 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <para>
 /// The non-atomicity warning is a separate concern and is raised whatever the environment: a real
 /// shared cache still cannot make check-and-set atomic, so a multi-instance deployment is exposed
-/// to double redemption regardless of which cache is behind it.
+/// to double redemption regardless of which cache is behind it. It names its store for the same
+/// reason the others do — two registrations mean two instances, and the runner de-duplicates
+/// failures but not warnings.
 /// </para>
 /// </remarks>
 internal sealed class DistributedCacheStoreStartupValidator : IStartupActivator
@@ -41,11 +43,12 @@ internal sealed class DistributedCacheStoreStartupValidator : IStartupActivator
     /// <summary>The store name passed for the refresh token store registration.</summary>
     internal const string RefreshTokenStoreName = "refresh token store";
 
-    internal const string WarningMessage =
-        "ZeeKayDa.Auth: IDistributedCache resolves to a non-MemoryDistributedCache implementation. " +
-        "The distributed-cache-backed token stores are non-atomic; multi-instance deployments are " +
-        "exposed to TOCTOU double-redemption/double-consumption. Replace these stores with an " +
-        "atomic implementation before going to production. See docs/reference/token-stores.md for guidance.";
+    /// <summary>Named-placeholder template for the non-atomicity warning.</summary>
+    internal const string WarningMessageFormat =
+        "ZeeKayDa.Auth: the distributed-cache {StoreName} is running on a shared IDistributedCache, " +
+        "but it is non-atomic; multi-instance deployments are exposed to TOCTOU " +
+        "double-redemption/double-consumption. Replace this store with an atomic implementation " +
+        "before going to production. See docs/reference/token-stores.md for guidance.";
 
     internal const string MissingCacheMessage =
         "IDistributedCache is not registered. Call services.AddDistributedMemoryCache() " +
@@ -109,7 +112,10 @@ internal sealed class DistributedCacheStoreStartupValidator : IStartupActivator
 
         if (cache is not MemoryDistributedCache)
         {
-            context.AddWarning("stores.idistributedcache.non_atomic", WarningMessage);
+            // Named per store, like every other message here. One validator is registered per
+            // store registration, so an unnamed template would have AddDistributedCacheTokenStores
+            // log the identical warning twice — the runner de-duplicates failures, not warnings.
+            context.AddWarning("stores.idistributedcache.non_atomic", WarningMessageFormat, _storeName);
             return ValueTask.CompletedTask;
         }
 

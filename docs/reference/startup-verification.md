@@ -151,26 +151,26 @@ internal sealed class ScopePresenceVerifier : IStartupVerifier
 }
 ```
 
-**Warn only:**
+**Warn only:** a host-authored check, to keep the example about the API rather than about any
+framework check whose own behaviour may change.
 
 ```csharp
-internal sealed class InsecureIssuerVerifier(IOptions<AuthorizationServerOptions> options) : IStartupVerifier
+internal sealed class SeedDataVerifier(IOptions<MyHostOptions> options) : IStartupVerifier
 {
-    public string Name => "InsecureIssuer";
+    public string Name => "SeedData";
 
     public ValueTask VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
-        if (options.Value.AllowInsecureIssuer)
+        if (options.Value.SeedDemoUsers)
         {
             context.AddWarning(
-                "issuer.insecure_allowed",
-                "AllowInsecureIssuer is enabled for issuer '{Issuer}'. This is a LOOPBACK " +
-                "DEVELOPMENT-ONLY setting and must NEVER be used in production. Remove " +
-                "AllowInsecureIssuer = true before deploying to any non-development environment.",
-                options.Value.Issuer);
+                "myhost.seed_users_enabled",
+                "Demo users are seeded for '{Tenant}'. They have well-known passwords and must " +
+                "never be enabled outside local development.",
+                options.Value.Tenant);
         }
 
         return ValueTask.CompletedTask;

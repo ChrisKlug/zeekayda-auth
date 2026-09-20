@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -784,6 +785,33 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
+    public async Task The_two_store_registrations_do_not_log_one_warning_twice()
+    {
+        // One validator per store registration means both inspect the same IDistributedCache, and
+        // the startup runner de-duplicates failures but NOT warnings. An unnamed non-atomicity
+        // template would therefore print the identical warning twice for every host that registers
+        // both token stores on a shared cache — noise that teaches an operator to skip it.
+        var services = CreateServicesWithWarningServiceDependencies("Production");
+        services.AddSingleton<IDistributedCache, SharedCache>();
+        var builder = new ZeeKayDaAuthBuilder(services);
+
+        builder.AddDistributedCacheTokenStores();
+
+        using var provider = services.BuildServiceProvider();
+        var context = new StartupVerificationContext();
+        foreach (var activator in provider.GetServices<IStartupActivator>())
+            await activator.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().BeEmpty();
+        context.Warnings.Should().HaveCount(2)
+            .And.OnlyContain(w => w.Code == "stores.idistributedcache.non_atomic");
+        context.Warnings.Select(w => w.Args.Single()).Should().BeEquivalentTo(
+            [DistributedCacheStoreStartupValidator.AuthorizationCodeStoreName,
+             DistributedCacheStoreStartupValidator.RefreshTokenStoreName],
+            "each warning must say which store it is about, or the pair is indistinguishable noise");
+    }
+
+    [Fact]
     public async Task The_two_store_registrations_each_keep_their_own_opt_out()
     {
         // Counting the descriptors is not enough: two factories that both captured `true` would
@@ -907,5 +935,18 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 
         public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
             => ValueTask.FromResult(false);
+    }
+
+    /// <summary>A stand-in for a real shared cache: anything that is not MemoryDistributedCache.</summary>
+    private sealed class SharedCache : IDistributedCache
+    {
+        public byte[]? Get(string key) => null;
+        public Task<byte[]?> GetAsync(string key, CancellationToken token = default) => Task.FromResult<byte[]?>(null);
+        public void Refresh(string key) { }
+        public Task RefreshAsync(string key, CancellationToken token = default) => Task.CompletedTask;
+        public void Remove(string key) { }
+        public Task RemoveAsync(string key, CancellationToken token = default) => Task.CompletedTask;
+        public void Set(string key, byte[] value, DistributedCacheEntryOptions options) { }
+        public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default) => Task.CompletedTask;
     }
 }
