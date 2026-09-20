@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Logging;
 
@@ -156,10 +158,12 @@ internal sealed class ValidatedClientResolver
     /// critical entry per request on exactly the uncached paths this set exists to cover.
     /// </para>
     /// <para>
-    /// The two parts are length-prefixed rather than joined by a separator, the same reason
-    /// <see cref="ClientRegistrationFingerprint"/> does it: a <c>client_id</c> or a rule code
-    /// containing the separator could otherwise make two different client/failure pairs share one
-    /// key, and the second failure would go unlogged.
+    /// Every part of the key is length-prefixed rather than joined by a separator, the same reason
+    /// <see cref="ClientRegistrationFingerprint"/> does it, and at both levels — the
+    /// <c>client_id</c> against the failure identity, and the rule codes within it. A
+    /// <c>client_id</c> or a rule code containing the separator could otherwise make two different
+    /// client/failure pairs share one key, and the second failure would go unlogged. See
+    /// <see cref="FailureIdentity"/>.
     /// </para>
     /// <para>
     /// A registration that could not be read has no <c>client_id</c> to key on, so every
@@ -180,13 +184,45 @@ internal sealed class ValidatedClientResolver
         return true;
     }
 
-    /// <summary>Writes each part as <c>{length}:{value}</c> so neither can spill into the other.</summary>
+    /// <summary>
+    /// The key a failure is suppressed under: the registration's <c>client_id</c> and the
+    /// failure's identity, each length-prefixed so neither can spill into the other.
+    /// </summary>
     private static string SuppressionKeyFor(string? clientId, string? suppressionKey)
     {
-        var id = clientId ?? NullSentinel;
-        var failure = suppressionKey ?? NullSentinel;
-        return $"{id.Length}:{id}{failure.Length}:{failure}";
+        var builder = new StringBuilder();
+        AppendLengthPrefixed(builder, clientId ?? NullSentinel);
+        AppendLengthPrefixed(builder, suppressionKey ?? NullSentinel);
+        return builder.ToString();
     }
+
+    /// <summary>
+    /// What a failure <em>is</em>, as a string that no two different failures can share:
+    /// <paramref name="kind"/>, how many <paramref name="parts"/> there are, and each part, all
+    /// length-prefixed.
+    /// </summary>
+    /// <remarks>
+    /// The count and the per-part prefixes are both load-bearing. A rule code is a host-supplied
+    /// string with no syntax restriction, so joining a set of them on a delimiter is not
+    /// reversible: <c>["a; b", "c"]</c> and <c>["a", "b; c"]</c> would read the same, and the
+    /// second — a materially different failure — would be suppressed as a repeat of the first and
+    /// never reach the operator. The kind keeps the three sources of an identity apart, so a rule
+    /// code can never be mistaken for a thrown type's name.
+    /// </remarks>
+    private static string FailureIdentity(string kind, params IReadOnlyList<string> parts)
+    {
+        var builder = new StringBuilder();
+        AppendLengthPrefixed(builder, kind);
+        AppendLengthPrefixed(builder, parts.Count.ToString(CultureInfo.InvariantCulture));
+        foreach (var part in parts)
+            AppendLengthPrefixed(builder, part);
+
+        return builder.ToString();
+    }
+
+    /// <summary>Writes <c>{length}:{value}</c> so no value can be mistaken for a boundary.</summary>
+    private static void AppendLengthPrefixed(StringBuilder builder, string value) =>
+        builder.Append(value.Length).Append(':').Append(value);
 
     /// <summary>
     /// The copy of <paramref name="client"/> the protocol will see, and the verdict on it. The
@@ -210,7 +246,7 @@ internal sealed class ValidatedClientResolver
             // Snapshot() handed back itself or null. The failure is the snapshot's own text, so it is
             // named; anything
             // else thrown here, a ZeeKayDaConfigurationException included, is reduced to its type.
-            return (null, new Verdict(ex.Failure.Message, ex.Failure.Code));
+            return (null, new Verdict(ex.Failure.Message, FailureIdentity("snapshot", [ex.Failure.Code])));
         }
         catch (Exception ex)
         {
@@ -219,7 +255,7 @@ internal sealed class ValidatedClientResolver
             // rather than let a 500 escape from every protocol endpoint.
             return (null, new Verdict(
                 $"The registration could not be read: {ex.GetType().FullName}.",
-                $"unreadable:{ex.GetType().FullName}"));
+                FailureIdentity("unreadable", [ex.GetType().FullName ?? ex.GetType().Name])));
         }
 
         return (snapshot, GetOrAddVerdict(snapshot, fingerprint));
@@ -269,9 +305,7 @@ internal sealed class ValidatedClientResolver
             // validator that reports the same rules in a different order is still the same failure.
             return new Verdict(
                 string.Join("; ", ex.AggregatedFailures.Select(f => f.Message)),
-                string.Join(
-                    "; ",
-                    ex.AggregatedFailures.Select(f => f.Code).Order(StringComparer.Ordinal)));
+                FailureIdentity("rules", [.. ex.AggregatedFailures.Select(f => f.Code).Order(StringComparer.Ordinal)]));
         }
         catch (Exception ex)
         {
@@ -283,7 +317,7 @@ internal sealed class ValidatedClientResolver
             // ValidationException would otherwise be indistinguishable to the operator reading it.
             return new Verdict(
                 $"The registration validator threw {ex.GetType().FullName}.",
-                $"threw:{ex.GetType().FullName}");
+                FailureIdentity("threw", [ex.GetType().FullName ?? ex.GetType().Name]));
         }
     }
 

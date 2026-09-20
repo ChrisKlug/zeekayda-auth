@@ -192,6 +192,24 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
+    public async Task Two_rule_code_sets_that_join_identically_are_both_logged()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new JoiningCodeSetsValidator(),
+            logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // A rule code is a host-supplied string with no syntax restriction, so the set of codes
+        // cannot be identified by joining them: ["a; b", "c"] and ["a", "b; c"] join to the same
+        // text. The second registration is broken a different way and the operator must hear so.
+        logger.Entries.Should().HaveCount(2).And.OnlyContain(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
     public async Task Unknown_client_returns_null()
     {
         var resolver = Resolver(Client(), new PassingValidator());
@@ -519,6 +537,28 @@ public class ValidatedClientResolverTests
         public void Validate(IClientRegistration client) =>
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure("test_rule", $"Rejected by the test, attempt {++_calls}."));
+    }
+
+    /// <summary>
+    /// Rejects every registration for two rules whose codes carry the delimiter a naive key would
+    /// join on, reporting a different set of them each time.
+    /// </summary>
+    private sealed class JoiningCodeSetsValidator : IClientRegistrationValidator
+    {
+        private bool _second;
+
+        public void Validate(IClientRegistration client)
+        {
+            _second = !_second;
+
+            throw _second
+                ? new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure("a; b", "Rules a and b were broken."),
+                    new ZeeKayDaConfigurationFailure("c", "Rule c was broken."))
+                : new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure("a", "Rule a was broken."),
+                    new ZeeKayDaConfigurationFailure("b; c", "Rules b and c were broken."));
+        }
     }
 
     /// <summary>Rejects every registration, reporting two rules in a different order each time.</summary>
