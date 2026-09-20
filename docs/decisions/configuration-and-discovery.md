@@ -124,8 +124,8 @@ is not an absolute URI without a fragment (RFC 8707 §2, `scopes.audience.invali
 lists a protocol claim other than `sub` that selection would never deliver (`scopes.claims.reserved`),
 and when an in-memory client allows a scope no definition exists for (`client.allowed_scopes.undefined`);
 the authorization endpoint applies the last rule per request, which covers custom repositories.
-`claims_supported` is not published; when it is, it is derived from the discoverable scopes' lists and
-the protocol claims, never configured as a separate list.
+`claims_supported` is derived from the discoverable scopes' claim lists plus the ID token's own
+protocol claims, never configured, and is omitted by a host without the code grant.
 
 **Collection keys bind by replacement, not merge.** An operator who sets one entry of an
 `IConfiguration` collection key loses the rest of that key's defaults. The validator's

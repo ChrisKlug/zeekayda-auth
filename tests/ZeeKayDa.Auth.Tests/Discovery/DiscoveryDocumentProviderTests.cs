@@ -308,7 +308,7 @@ public sealed class DiscoveryDocumentProviderTests
         // OpenID Connect Discovery 1.0 §3: the claims the server may supply. A relying party
         // reading this list must not be told about a claim no grant produces, so it is exactly
         // what CodeGrantTokenPayloads.IdToken writes.
-        doc.ClaimsSupported.Should().Contain(["iss", "sub", "aud", "iat", "exp", "auth_time", "nonce", "acr", "amr"]);
+        doc.ClaimsSupported.Should().Contain(["iss", "sub", "aud", "iat", "exp", "auth_time", "at_hash", "nonce", "acr", "amr"]);
     }
 
     [Fact]
@@ -321,8 +321,9 @@ public sealed class DiscoveryDocumentProviderTests
 
         // These are reserved so a claims provider cannot mint them, which is a different question
         // from whether the server issues them. It does not, and advertising a claim that never
-        // arrives is worse for a relying party than the metadata being absent.
-        doc.ClaimsSupported.Should().NotContain(["azp", "at_hash", "c_hash", "sid", "nbf", "jti"]);
+        // arrives is worse for a relying party than the metadata being absent. at_hash is not in
+        // this list: the issuer does write it, so it is advertised.
+        doc.ClaimsSupported.Should().NotContain(["azp", "c_hash", "sid", "nbf", "jti"]);
     }
 
     [Fact]
@@ -422,6 +423,26 @@ public sealed class DiscoveryDocumentProviderTests
         // A scope hidden from discovery hides what it unlocks too, or the claim list leaks the
         // existence of the scope that scopes_supported was asked to hide.
         doc.ClaimsSupported.Should().NotContain(["internal_role", "internal_department"]);
+    }
+
+    [Fact]
+    public async Task GetDocument_lists_a_claim_two_scopes_spell_differently_once()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name, IdTokenClaims = ["sub"] },
+            new ScopeDefinition { Name = StandardScopes.Email.Name, IdTokenClaims = ["email"] },
+            new ScopeDefinition { Name = "billing", UserInfoClaims = ["Email"] },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            repository);
+
+        // ClaimSelection groups claim names ignoring case, so these two scopes unlock one claim
+        // and the token carries one. Advertising both would name one the relying party will never
+        // see under that spelling.
+        doc.ClaimsSupported.Should().ContainSingle(name => string.Equals(name, "email", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

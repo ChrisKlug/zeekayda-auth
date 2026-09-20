@@ -1,3 +1,7 @@
+using System.Buffers.Text;
+using System.Security.Cryptography;
+using System.Text.Json;
+using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Clients;
@@ -8,8 +12,8 @@ namespace ZeeKayDa.Auth.Tests.Claims;
 
 /// <summary>
 /// The set the discovery document advertises as <c>claims_supported</c> beyond what the scopes
-/// unlock, held to the two things that make it safe to publish: every name in it is one an ID
-/// token really carries, and every name in it is one a claims provider cannot mint.
+/// unlock, held to the two things that make it safe to publish: every name in it is one a signed
+/// ID token really carries, and every name in it is one a claims provider cannot mint.
 /// </summary>
 public sealed class IdTokenProtocolClaimsTests
 {
@@ -29,37 +33,41 @@ public sealed class IdTokenProtocolClaimsTests
     }
 
     [Fact]
-    public void Every_advertised_protocol_claim_is_one_an_ID_token_carries()
+    public async Task The_advertised_protocol_claims_are_exactly_what_a_signed_ID_token_carries()
     {
-        // The guard against the other drift: a claim removed from the ID token but left here
-        // would have the server advertising something no grant ever produces. The grant below
-        // carries everything optional — a nonce, an acr and an amr — so every name must appear.
-        var entry = new AuthorizationCodeEntry
-        {
-            ClientId = "app",
-            RedirectUri = "https://app.example.com/cb",
-            Pkce = new PkceChallenge("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", CodeChallengeMethod.S256),
-            Sub = "user-1",
-            Scope = ["openid"],
-            Nonce = "n-0S6_WzA2Mj",
-            AuthTime = AuthTime,
-            Acr = "urn:mace:incommon:iap:silver",
-            Amr = ["pwd", "otp"],
-            SsoSessionId = "session-1",
-            InteractionId = "interaction-1",
-            IssuedAt = Now.AddSeconds(-10),
-            ExpiresAt = Now.AddSeconds(50),
-        };
+        // Equality, not containment, and against the *signed* token rather than the grant's
+        // payload. An ID token is assembled at more than one seam: JwtTokenIssuer writes at_hash
+        // after CodeGrantTokenPayloads has built the payload, and a guard on the payload alone
+        // could not see it — which is how at_hash was missing from this set to begin with.
+        // Asserting equality fails in both directions: a claim added to the token and not
+        // advertised, and a claim advertised that the token stopped carrying.
+        using var rsa = RSA.Create(2048);
+        ISigningKeyRing ring = new StaticSigningKeyRing(new SingleKeySource(rsa), new FakeTimeProvider(Now));
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
-        var idToken = new CodeGrantTokenPayloads(
+        // Everything optional is present, so the token carries every name the set claims it may.
+        var payload = new CodeGrantTokenPayloads(
             Issuer,
             ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]),
-            entry,
+            Entry(),
             Now,
             SelectedClaims.None,
             resourceAudience: null).IdToken(TimeSpan.FromHours(1)).Payload;
 
-        idToken.Claims.Keys.Should().Contain(IdTokenProtocolClaims.Names);
+        var idToken = await new JwtTokenIssuer(ring).IssueAsync(
+            new IdTokenIssuanceContext(
+                ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]),
+                new IssuedToken("header.payload.signature", TokenKind.AccessToken)),
+            payload,
+            TestContext.Current.CancellationToken);
+
+        var claims = JsonDocument
+            .Parse(Base64Url.DecodeFromChars(idToken.Value.Split('.')[1]))
+            .RootElement
+            .EnumerateObject()
+            .Select(property => property.Name);
+
+        claims.Should().BeEquivalentTo(IdTokenProtocolClaims.Names);
     }
 
     [Fact]
@@ -67,7 +75,45 @@ public sealed class IdTokenProtocolClaimsTests
     {
         // Reserved is the wider set by design. These are blocked so a provider cannot mint them,
         // not because the server issues them — nothing does — and publishing one would promise a
-        // relying party a claim that never arrives.
-        IdTokenProtocolClaims.Names.Should().NotContain(["azp", "at_hash", "c_hash", "sid", "nbf", "jti"]);
+        // relying party a claim that never arrives. at_hash is deliberately absent from this list:
+        // the issuer does write it, which is what the equality test above proves.
+        IdTokenProtocolClaims.Names.Should().NotContain(["azp", "c_hash", "sid", "nbf", "jti"]);
+    }
+
+    private static AuthorizationCodeEntry Entry() => new()
+    {
+        ClientId = "app",
+        RedirectUri = "https://app.example.com/cb",
+        Pkce = new PkceChallenge("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", CodeChallengeMethod.S256),
+        Sub = "user-1",
+        Scope = ["openid"],
+        Nonce = "n-0S6_WzA2Mj",
+        AuthTime = AuthTime,
+        Acr = "urn:mace:incommon:iap:silver",
+        Amr = ["pwd", "otp"],
+        SsoSessionId = "session-1",
+        InteractionId = "interaction-1",
+        IssuedAt = Now.AddSeconds(-10),
+        ExpiresAt = Now.AddSeconds(50),
+    };
+
+    private sealed class SingleKeySource(RSA rsa) : ISigningKeySource
+    {
+        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) =>
+            new(SourceKeySet.Create(
+                previous: null,
+                new SourceKey(
+                    new SourceKeyId("current"),
+                    SigningAlgorithm.RS256,
+                    PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)),
+                    ExpiresAt: null),
+                next: null));
+
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        {
+            var copy = RSA.Create();
+            copy.ImportParameters(rsa.ExportParameters(includePrivateParameters: true));
+            return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, copy));
+        }
     }
 }

@@ -87,38 +87,14 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
     }
 
     /// <summary>
-    /// The claims the server may supply: what the discoverable scopes unlock in an ID token or at
-    /// the UserInfo endpoint, plus the protocol claims the ID token carries.
-    /// </summary>
-    /// <remarks>
-    /// Derived from the scope repository on every read rather than configured, for the reason
-    /// <c>id_token_signing_alg_values_supported</c> is derived from the key ring: an operator-set
-    /// list can name a claim no scope unlocks, and metadata promising a claim the server cannot
-    /// produce is worse than metadata without it. <see cref="ScopeDefinition.AccessTokenClaims"/>
-    /// is excluded — Discovery §3 is about the ID token and the UserInfo endpoint, and an access
-    /// token is for the resource server, not the relying party reading this document. A scope
-    /// hidden from discovery hides its claims too, the same filter <c>scopes_supported</c> uses.
-    /// </remarks>
-    /// <remarks>
-    /// Called only from <see cref="InteractiveMetadata.For"/>, so the list is published only by a
-    /// host that serves the authorization code grant. Nothing else issues an ID token or answers
-    /// the UserInfo endpoint, so on a <c>client_credentials</c>-only host every one of these
-    /// claims is unreachable, and §3's "MAY be able to supply" would be a promise the server
-    /// cannot keep.
-    /// </remarks>
-    private static IReadOnlyCollection<string> ClaimsSupportedFrom(IReadOnlyCollection<ScopeDefinition> scopes) =>
-        [.. IdTokenProtocolClaims.Names
-            .Concat(scopes
-                .Where(scope => scope.IsDiscoverable)
-                .SelectMany(scope => scope.IdTokenClaims.Concat(scope.UserInfoClaims)))
-            .Distinct(StringComparer.Ordinal)];
-
-    /// <summary>
     /// The metadata a host publishes only while it serves a grant that uses the authorization
     /// endpoint; every field is <see langword="null"/> otherwise. RFC 8414 §2 lets the endpoint be
     /// omitted on that condition, and OpenID Connect Discovery §4.2 omits a zero-element claim
     /// rather than publishing an empty array: metadata naming an endpoint that answers 404, or a
     /// response type nothing serves, is worse than metadata without.
+    /// <c>claims_supported</c> rides the same gate: an ID token is born from the authorization
+    /// code grant, and a host without it answers no UserInfo request either, so it can supply
+    /// none of those claims.
     /// </summary>
     private sealed record InteractiveMetadata
     {
@@ -138,6 +114,25 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
         public IReadOnlyCollection<CodeChallengeMethod>? CodeChallengeMethodsSupported { get; init; }
 
         public IReadOnlyCollection<string>? ClaimsSupported { get; init; }
+
+        /// <summary>
+        /// The claims the server may supply: what the discoverable scopes unlock in an ID token or
+        /// at the UserInfo endpoint, plus the protocol claims an ID token carries.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="ScopeDefinition.AccessTokenClaims"/> are excluded, because Discovery §3 is
+        /// about the ID token and the UserInfo endpoint and an access token is for the resource
+        /// server. A scope hidden from discovery hides its claims too, the same filter
+        /// <c>scopes_supported</c> uses. Names are de-duplicated case-insensitively, because
+        /// <see cref="Claims.ClaimSelection"/> groups them that way: two scopes spelling a claim
+        /// <c>email</c> and <c>Email</c> unlock one claim, so the document must not name two.
+        /// </remarks>
+        private static IReadOnlyCollection<string> ClaimsSupportedFrom(IReadOnlyCollection<ScopeDefinition> scopes) =>
+            [.. IdTokenProtocolClaims.Names
+                .Concat(scopes
+                    .Where(scope => scope.IsDiscoverable)
+                    .SelectMany(scope => scope.IdTokenClaims.Concat(scope.UserInfoClaims)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)];
 
         public static InteractiveMetadata For(
             AuthorizationServerOptions options,

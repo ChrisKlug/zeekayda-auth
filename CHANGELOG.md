@@ -9,11 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - **The discovery document advertises `claims_supported`** (#716). `OpenIdConfigurationDocument`
-  gains a required `ClaimsSupported`, which OpenID Connect Discovery 1.0 §3 lists as RECOMMENDED
+  gains an optional `ClaimsSupported`, which OpenID Connect Discovery 1.0 §3 lists as RECOMMENDED
   and the conformance suite's `oidcc-discovery-endpoint-verification` module warned was missing.
   It is derived, never configured: the ID Token and UserInfo claims declared by every discoverable
-  scope in the `IScopeRepository`, plus the nine protocol claims an ID token carries (`iss`, `sub`,
-  `aud`, `iat`, `exp`, `auth_time`, and `nonce`, `acr` and `amr` when the grant has them). A
+  scope in the `IScopeRepository`, plus the ten protocol claims an ID token carries (`iss`, `sub`,
+  `aud`, `iat`, `exp`, `auth_time` and `at_hash`, and `nonce`, `acr` and `amr` when the request or
+  the grant has them). A
   scope's `AccessTokenClaims` are not advertised — Discovery §3 covers the ID token and the
   UserInfo endpoint — and neither are reserved names the server never issues, such as `azp` and
   `sid`, because a relying party told about a claim that never arrives is worse off than one
