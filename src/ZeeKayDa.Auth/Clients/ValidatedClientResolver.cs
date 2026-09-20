@@ -209,7 +209,7 @@ internal sealed class ValidatedClientResolver
     /// never reach the operator. The kind keeps the three sources of an identity apart, so a rule
     /// code can never be mistaken for a thrown type's name.
     /// </remarks>
-    private static string FailureIdentity(string kind, params IReadOnlyList<string> parts)
+    private static string FailureIdentity(string kind, IReadOnlyList<string> parts)
     {
         var builder = new StringBuilder();
         AppendLengthPrefixed(builder, kind);
