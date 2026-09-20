@@ -44,6 +44,16 @@ namespace ZeeKayDa.Auth.Clients;
 /// grown by a caller. On reaching the cap the cache is cleared wholesale rather than evicting
 /// selectively; at this size that is a rare event, and the cost is one revalidation per client.
 /// </para>
+/// <para>
+/// <strong>The critical log is suppressed separately from the verdict cache.</strong> Two paths
+/// answer without a cached verdict — a registration that could not be read at all, and one whose
+/// fingerprint is not content-addressable — so a verdict's own "already logged" flag left both
+/// writing a critical entry per request, which is an unauthenticated log-amplification lever
+/// aimed at the level that pages on-call. Suppression is therefore keyed by <c>client_id</c> and
+/// the violation text together: a registration that breaks a second, different way is a new fact
+/// and still logged, while a repeat of the same failure is silent. That set is bounded and
+/// cleared the same way, and a clear costs one extra log line per client rather than a PBKDF2.
+/// </para>
 /// </remarks>
 internal sealed class ValidatedClientResolver
 {
@@ -51,6 +61,12 @@ internal sealed class ValidatedClientResolver
     private readonly IClientRegistrationValidator _validator;
     private readonly ISanitizingLogger<ValidatedClientResolver> _logger;
     private readonly ConcurrentDictionary<string, Lazy<Verdict>> _verdicts = new(StringComparer.Ordinal);
+
+    // Failures already written to the critical log, so a repeat of one is not written again. Held
+    // apart from _verdicts because the two paths that most need suppressing never reach that cache.
+    // Bounded by the same cap: an entry is a short string, and the two sets are the same order of
+    // magnitude because both are keyed by things the store resolves.
+    private readonly ConcurrentDictionary<string, byte> _loggedFailures = new(StringComparer.Ordinal);
 
     // Sized for a multi-tenant deployment: each entry is a fingerprint string plus a verdict
     // reference, so the ceiling costs on the order of a megabyte. Undersizing this is not a
@@ -95,18 +111,41 @@ internal sealed class ValidatedClientResolver
         if (snapshot is not null && verdict.IsValid)
             return snapshot;
 
-        // Logged once per memoized verdict, not per request — a known-bad client_id must not be
-        // an unauthenticated log-amplification lever.
-        if (verdict.MarkLogged())
+        // Logged once per distinct failure, not per request — a known-bad client_id must not be
+        // an unauthenticated log-amplification lever. The registration's own ClientId is what
+        // names it where it could be read; the looked-up one is all there is where it could not.
+        var loggedClientId = snapshot?.ClientId ?? clientId;
+        if (MarkLogged(loggedClientId, verdict.Violations))
         {
             _logger.LogCritical(
                 "Client registration for '{ClientId}' failed validation and was served to the protocol as an unknown client. " +
                 "Fix the registration in the client store. Violations: {Violations}",
-                snapshot?.ClientId ?? clientId,
+                loggedClientId,
                 verdict.Violations);
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> the first time a given failure is seen for a given
+    /// <c>client_id</c>, and <see langword="false"/> for every repeat of it.
+    /// </summary>
+    /// <remarks>
+    /// Neither half of the key is caller-controlled: the store decides which <c>client_id</c>s
+    /// resolve to a registration at all, and the violation text is the validator's own message or
+    /// the type name of what it threw. A deployment large enough to reach the cap pays one further
+    /// critical entry per failing registration after the clear.
+    /// </remarks>
+    private bool MarkLogged(string clientId, string? violations)
+    {
+        if (!_loggedFailures.TryAdd($"{clientId}\n{violations}", 0))
+            return false;
+
+        if (_loggedFailures.Count >= MaxCachedVerdicts)
+            _loggedFailures.Clear();
+
+        return true;
     }
 
     /// <summary>
@@ -200,15 +239,10 @@ internal sealed class ValidatedClientResolver
     {
         public static readonly Verdict Valid = new(null);
 
-        private int _logged;
-
         public Verdict(string? violations) => Violations = violations;
 
         public string? Violations { get; }
 
         public bool IsValid => Violations is null;
-
-        /// <summary>Returns <see langword="true"/> exactly once per verdict instance.</summary>
-        public bool MarkLogged() => Interlocked.Exchange(ref _logged, 1) == 0;
     }
 }

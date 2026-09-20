@@ -65,6 +65,56 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
+    public async Task A_registration_that_cannot_be_read_logs_critical_once_however_many_lookups()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(new ThrowingRepository(), new PassingValidator(), logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // An unreadable registration never reaches the verdict cache, so suppressing by verdict
+        // instance wrote a Critical entry per request: an unauthenticated caller naming this
+        // client_id could drive the log level that pages on-call as fast as it could send.
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
+    public async Task A_registration_validated_uncached_logs_critical_once_however_many_lookups()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new RejectingValidator(),
+            logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // A custom IClientCredential has no content to fingerprint, so this registration is
+        // revalidated on every lookup by design — which also gave it a fresh verdict, and so a
+        // fresh Critical entry, every time.
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
+    public async Task A_registration_that_fails_a_second_different_way_is_logged_again()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new DifferentFailureEachTimeValidator(),
+            logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // Suppression is keyed by the failure as well as the client_id. A registration breaking a
+        // second, different way is a fact the operator has not been told yet.
+        logger.Entries.Should().HaveCount(2).And.OnlyContain(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
     public async Task Unknown_client_returns_null()
     {
         var resolver = Resolver(Client(), new PassingValidator());
@@ -348,6 +398,16 @@ public class ValidatedClientResolverTests
         public void Validate(IClientRegistration client) =>
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure("test_rule", "Deliberately rejected by the test."));
+    }
+
+    /// <summary>Rejects every registration, with a different failure message each time.</summary>
+    private sealed class DifferentFailureEachTimeValidator : IClientRegistrationValidator
+    {
+        private int _calls;
+
+        public void Validate(IClientRegistration client) =>
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure("test_rule", $"Rejected by the test, reason {++_calls}."));
     }
 
     private sealed class CountingValidator : IClientRegistrationValidator
