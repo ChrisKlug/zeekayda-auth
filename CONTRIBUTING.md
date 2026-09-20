@@ -294,6 +294,7 @@ Every pull request and every push to `main` runs the following GitHub Actions jo
 | `codeql` | Runs GitHub CodeQL static analysis (`security-and-quality` query suite). Findings must be fixed or explicitly justified before a PR can be merged. See [SECURITY.md](SECURITY.md). |
 | `log-hygiene` | Runs `.github/scripts/check_log_hygiene.cs` — fails if any `src`/`samples` project uses a sensitive OAuth/OIDC parameter name (`client_secret`, `access_token`, etc.) as a structured-log placeholder, resolves ZEEKAYDA0001/ZEEKAYDA0002 below Error anywhere MSBuild/Roslyn would resolve severity, or lacks a required suppression justification — then runs the log-hygiene canary as a backstop. |
 | `log-hygiene-script-tests` | Runs the fixture-driven smoke tests for `.github/scripts/check_log_hygiene.cs`. |
+| `conformance` | Runs the OpenID Foundation conformance suite against `samples/IdentityServer` — both the config plan and the 35-module basic code-flow plan — and fails on any failure, warning or skip that `conformance/expected/*.json` does not account for. See [Conformance suite](#conformance-suite). |
 
 **All jobs must be green before a PR can be merged.**
 
@@ -310,6 +311,36 @@ dotnet format
 ```
 
 Coverage reports are uploaded as build artifacts and can be downloaded from the Actions run summary.
+
+### Conformance suite
+
+The `conformance` job is the framework's end-to-end spec check: the OpenID Foundation conformance
+suite drives a real authorization code flow against the sample identity server, browser and all.
+It runs on every pull request and every push to `main` — both plans together take about two
+minutes once the suite's clone and images are warm, and a broken login flow is exactly the kind of
+thing a pull request breaks by accident.
+
+What passes is not the run's raw output but `conformance/expected/config.failures.json`,
+`conformance/expected/basic.failures.json` and `conformance/expected/basic.skips.json`. Those files
+list the failures, warnings and skips the current framework is allowed to produce, each one naming
+either the issue that removes it or the decision-register entry that makes it permanent. The
+suite's runner fails a run that produces anything they do not account for **and** a run in which an
+entry never occurred, so a regression is loud and a module that starts passing is ratcheted in by
+deleting its entry in the same pull request.
+
+To run it locally — Docker and the .NET SDK are the only prerequisites:
+
+```bash
+./conformance/run-conformance.sh          # both plans
+./conformance/run-conformance.sh config   # discovery and JWKS only, no browser
+./conformance/run-conformance.sh basic    # the authorization code flow, 35 modules
+```
+
+The first run clones the suite and pulls its images, which takes a few minutes. Output, including
+the suite's signed export, lands in `conformance/results/<timestamp>/`, and CI uploads the same
+tree as a `conformance-results` artifact on every run, passing or failing.
+[`conformance/README.md`](conformance/README.md) explains the setup — the fixed issuer hostname, the
+throwaway CA, and how to add a manifest entry honestly.
 
 ### Coverage regression check
 

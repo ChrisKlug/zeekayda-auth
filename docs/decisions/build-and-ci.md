@@ -26,4 +26,12 @@ explicitly: CI's `build-and-test` job passes `-p:EnableCoverage=true`, while `co
 and the `check-code-coverage` skill pass `--collect` and the `Include` filter on the command line
 and need no MSBuild property at all.
 
+**Conformance runs on every PR, and the expected-results manifests are the gate.** The OpenID
+Foundation suite's config and basic plans both run in CI's `conformance` job and block the merge —
+about two minutes warm, cheap enough that a broken login flow is caught by the PR that broke it
+rather than by the next night's run. What passes is `conformance/expected/*.json`: the runner fails
+on anything they do not account for *and* on an entry that never occurred, so a regression is loud
+and a newly-passing module is ratcheted in by deleting its entry. Every entry names the issue that
+removes it or the register decision that makes it permanent.
+
 ## Tried, didn't work
