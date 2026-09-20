@@ -94,6 +94,13 @@ session), spawn `architect` and `security` in parallel in the background and che
 using `mcp__csharp-lsp-<agent>__csharp_references`. Tool differences from native `LSP` (0-based
 positions, `csharp_set_workspace` first) are in `.claude/skills/code-navigation`.
 
+The `SessionStart` hook `.claude/hooks/scripts/check-lsp-tooling.sh` now checks both `csharp-ls`
+and `csharp-lsp-mcp` on every session start and prints a fix-it message when either is absent; it
+never blocks. A session that starts silently has both. Note that the binary is a hand-patched local
+build, reproducible only from the block above — it is **not** restored by reinstalling the
+`csharp-lsp` plugin, by `dotnet tool restore`, or by restarting Claude Code, and a `git pull` in
+`~/.claude/tools/csharp-lsp-mcp` drops the patches and needs the `perl` lines re-run.
+
 ## 3. GitHub CLI and Copilot CLI — required for review and PRs
 
 - `gh` must be installed and logged in (`gh auth status`). It is used for issues, PRs, the
