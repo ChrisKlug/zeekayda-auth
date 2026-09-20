@@ -87,7 +87,10 @@ method that needs it, never a bindable option — it is meaningless without the 
 call, because its production story differs from the token stores' (below): a shared cache is a
 complete answer, while the per-process `MemoryDistributedCache` is logged at `Information` in
 `Development` and fails startup outside it unless the call opts out, which downgrades to a
-`Critical` warning on every start.
+`Critical` warning on every start. The distributed-cache *token* store registrations carry the same
+per-registration gate on the same `allowMemoryCacheOutsideDevelopment` parameter — a cache shared
+with nothing loses single-use enforcement and reuse detection across instances — on top of the
+non-atomicity warning a shared cache does not clear.
 
 **One terminal outcome per interaction is the code store's invariant, keyed `zkd:code:i:{hex(sha256(id))}`.**
 `IAuthorizationCodeStore.TryClaimInteractionAsync` writes the claim — taken by issuance and by

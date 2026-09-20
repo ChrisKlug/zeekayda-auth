@@ -58,18 +58,22 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
         act.Should().Throw<ArgumentNullException>().WithParameterName("devOptions");
     }
 
-    // ── VerifyAsync: Development environment — warning only ──────────────────────────────────────
+    // ── VerifyAsync: Development environment — recorded, not warned about ────────────────────────
 
     [Fact]
-    public async Task VerifyAsync_adds_a_Warning_in_Development_environment()
+    public async Task Development_signing_keys_in_Development_log_at_Information()
     {
+        // Information, not Warning: in Development a development key is the expected choice, and a
+        // Warning on every local start is one an operator learns to scroll past — which is what a
+        // real Warning then hides behind.
         var sut = BuildSut(Environments.Development);
         var context = new StartupVerificationContext();
 
         await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
 
-        context.Warnings.Should().ContainSingle()
-            .Which.Level.Should().Be(LogLevel.Warning);
+        var warning = context.Warnings.Should().ContainSingle().Which;
+        warning.Code.Should().Be("signing.dev_keys.active");
+        warning.Level.Should().Be(LogLevel.Information);
     }
 
     [Fact]

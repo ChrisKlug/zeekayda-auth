@@ -529,6 +529,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   same failure is silent while a registration that breaks a second, different way is still
   reported.
 
+- **Startup checks treat the environment the same way** (#681). Three checks did not follow the rule
+  the rest do — a development-only resource is logged at `Information` in `Development`, and outside
+  it startup fails unless the caller opts out, which logs `Critical` on every start instead.
+
+  The distributed-cache **token** stores never looked at the environment at all, so a store backed
+  by `MemoryDistributedCache` started silently in Production. Despite its name that cache is shared
+  with nothing: an authorization code issued by one instance cannot be redeemed at another, and
+  single-use enforcement and reuse detection hold only within one process. It now follows the rule,
+  and `AddDistributedCacheAuthorizationCodeStore`, `AddDistributedCacheRefreshTokenStore` and
+  `AddDistributedCacheTokenStores` gain the `allowMemoryCacheOutsideDevelopment` parameter that
+  `AddDistributedCacheInteractionStore` already had. Each registration keeps its own value — they
+  previously shared one validator instance, so a host opting one store out and not the other got
+  one answer for both. The separate warning that these stores are non-atomic is unchanged and still
+  applies to a shared cache.
+
+  `signing.dev_keys.active` logged at `Warning` in `Development`, where a development key is the
+  expected choice; it is now `Information`. `issuer.insecure_allowed` ignored the environment
+  entirely and said no more about an `http` issuer in Production than on a laptop; outside
+  `Development` it is now `issuer.insecure_allowed_outside_development` at `Critical`. It does not
+  fail startup: `AllowInsecureIssuer` is itself the opt-out, and a non-loopback `http` issuer
+  already fails startup whatever the environment.
+
 - **A client is allowed only the grant types, response types and response modes the server serves**
   (#689). A client registered with a value outside the server's `GrantTypesSupported`,
   `Response.TypesSupported` or `Response.ModesSupported` — `refresh_token` on a server that serves

@@ -1,13 +1,28 @@
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
-using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 
+/// <summary>
+/// The startup gate on a distributed-cache-backed token store: a cache must be registered, and
+/// outside Development it must not be the per-process one.
+/// </summary>
 public sealed class DistributedCacheStoreStartupValidatorTests
 {
+    private const string StoreName = DistributedCacheStoreStartupValidator.AuthorizationCodeStoreName;
+
     // ── Fake infrastructure ───────────────────────────────────────────────────────────────────────
+
+    private sealed class FakeHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "TestApp";
+        public string ContentRootPath { get; set; } = "/";
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
 
     private sealed class FakeDistributedCache : IDistributedCache
     {
@@ -21,99 +36,119 @@ public sealed class DistributedCacheStoreStartupValidatorTests
         public Task SetAsync(string key, byte[] value, DistributedCacheEntryOptions options, CancellationToken token = default) => Task.CompletedTask;
     }
 
-    private static (DistributedCacheStoreStartupValidator Sut, IServiceProvider Provider) BuildSut(
-        Action<IServiceCollection> configure)
+    private static async Task<StartupVerificationContext> VerifyAsync(
+        string environment,
+        Action<IServiceCollection> configure,
+        bool allowMemoryCacheOutsideDevelopment = false,
+        string storeName = StoreName)
     {
         var services = new ServiceCollection();
         configure(services);
-        return (new DistributedCacheStoreStartupValidator(), services.BuildServiceProvider());
-    }
-
-    // ── VerifyAsync: IDistributedCache absent ─────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task VerifyAsync_adds_a_failure_when_IDistributedCache_is_not_registered()
-    {
-        var (sut, provider) = BuildSut(_ => { });
+        using var provider = services.BuildServiceProvider();
+        var sut = new DistributedCacheStoreStartupValidator(
+            new FakeHostEnvironment(environment),
+            storeName,
+            allowMemoryCacheOutsideDevelopment);
         var context = new StartupVerificationContext();
 
         await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
 
-        context.Failures.Should().ContainSingle();
+        return context;
     }
 
-    [Fact]
-    public async Task VerifyAsync_adds_a_failure_with_code_stores_idistributedcache_missing()
-    {
-        var (sut, provider) = BuildSut(_ => { });
-        var context = new StartupVerificationContext();
+    // ── IDistributedCache absent ──────────────────────────────────────────────────────────────────
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+    [Fact]
+    public async Task No_cache_registered_fails_startup()
+    {
+        var context = await VerifyAsync(Environments.Development, _ => { });
 
         context.Failures.Should().ContainSingle()
             .Which.Code.Should().Be("stores.idistributedcache.missing");
     }
 
     [Fact]
-    public async Task VerifyAsync_adds_a_failure_mentioning_AddDistributedMemoryCache()
+    public async Task No_cache_registered_names_AddDistributedMemoryCache_in_the_failure()
     {
-        var (sut, provider) = BuildSut(_ => { });
-        var context = new StartupVerificationContext();
-
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        var context = await VerifyAsync(Environments.Development, _ => { });
 
         context.Failures.Single().Message.Should().Contain("AddDistributedMemoryCache");
     }
 
-    // ── VerifyAsync: MemoryDistributedCache — no warning ──────────────────────────────────────────
+    // ── The per-process cache, by environment ─────────────────────────────────────────────────────
 
     [Fact]
-    public async Task VerifyAsync_adds_nothing_when_IDistributedCache_is_MemoryDistributedCache()
+    public async Task The_per_process_cache_in_Development_logs_at_Information_on_every_start()
     {
-        var (sut, provider) = BuildSut(services => services.AddDistributedMemoryCache());
-        var context = new StartupVerificationContext();
+        var context = await VerifyAsync(Environments.Development, services => services.AddDistributedMemoryCache());
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
-
-        context.Warnings.Should().BeEmpty("MemoryDistributedCache is the expected dev/test implementation");
         context.Failures.Should().BeEmpty();
+        var warning = context.Warnings.Should().ContainSingle().Which;
+        warning.Code.Should().Be("stores.token.per_process_cache_active");
+        warning.Level.Should().Be(LogLevel.Information);
+        warning.MessageTemplate.Should().Be(DistributedCacheStoreStartupValidator.PerProcessCacheActiveMessageFormat);
     }
 
-    // ── VerifyAsync: non-memory implementation — warning emitted ──────────────────────────────────
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    public async Task The_per_process_cache_outside_Development_fails_startup_for_a_token_store(string environment)
+    {
+        // The gap this issue closes: the validator did not look at the environment at all, so a
+        // MemoryDistributedCache-backed token store started silently in Production. Despite its
+        // name that cache is shared with nothing, so an authorization code issued by one instance
+        // cannot be redeemed at another and single-use enforcement holds only per process.
+        var context = await VerifyAsync(environment, services => services.AddDistributedMemoryCache());
+
+        context.Failures.Should().ContainSingle()
+            .Which.Code.Should().Be("stores.token.per_process_cache");
+        context.Failures.Single().Message.Should().Contain("allowMemoryCacheOutsideDevelopment");
+    }
 
     [Fact]
-    public async Task VerifyAsync_adds_a_warning_when_IDistributedCache_is_not_MemoryDistributedCache()
+    public async Task The_per_process_cache_outside_Development_with_the_override_warns_at_Critical_on_every_start()
     {
-        var (sut, provider) = BuildSut(services => services.AddSingleton<IDistributedCache, FakeDistributedCache>());
-        var context = new StartupVerificationContext();
+        var context = await VerifyAsync(
+            Environments.Production,
+            services => services.AddDistributedMemoryCache(),
+            allowMemoryCacheOutsideDevelopment: true);
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
-
-        context.Warnings.Should().ContainSingle();
         context.Failures.Should().BeEmpty();
+        var warning = context.Warnings.Should().ContainSingle().Which;
+        warning.Code.Should().Be("stores.token.per_process_cache_override");
+        warning.Level.Should().Be(LogLevel.Critical);
+        warning.MessageTemplate.Should().Be(DistributedCacheStoreStartupValidator.PerProcessCacheOverrideWarningMessageFormat);
     }
 
     [Fact]
-    public async Task VerifyAsync_adds_a_warning_with_code_stores_idistributedcache_non_atomic()
+    public async Task The_failure_names_the_store_it_is_about()
     {
-        var (sut, provider) = BuildSut(services => services.AddSingleton<IDistributedCache, FakeDistributedCache>());
-        var context = new StartupVerificationContext();
+        // One validator is registered per store, both report in the same phase, and the runner
+        // collapses failures identical in code and message. A message naming no store would report
+        // one of two broken registrations and hide the other until the next restart.
+        var context = await VerifyAsync(
+            Environments.Production,
+            services => services.AddDistributedMemoryCache(),
+            storeName: DistributedCacheStoreStartupValidator.RefreshTokenStoreName);
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
-
-        context.Warnings.Should().ContainSingle()
-            .Which.Code.Should().Be("stores.idistributedcache.non_atomic");
+        context.Failures.Single().Message.Should().Contain(DistributedCacheStoreStartupValidator.RefreshTokenStoreName);
     }
 
-    [Fact]
-    public async Task VerifyAsync_adds_the_exact_WarningMessage_text()
+    // ── A real shared cache ───────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")]
+    public async Task A_shared_cache_warns_that_the_stores_are_non_atomic_in_every_environment(string environment)
     {
-        var (sut, provider) = BuildSut(services => services.AddSingleton<IDistributedCache, FakeDistributedCache>());
-        var context = new StartupVerificationContext();
+        // A different concern from the environment gate, and not fixed by a shared cache: these
+        // stores cannot make check-and-set atomic, so a multi-instance deployment is exposed to
+        // double redemption whatever is behind IDistributedCache.
+        var context = await VerifyAsync(environment, services => services.AddSingleton<IDistributedCache, FakeDistributedCache>());
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
-
-        context.Warnings.Should().ContainSingle()
-            .Which.MessageTemplate.Should().Be(DistributedCacheStoreStartupValidator.WarningMessage);
+        context.Failures.Should().BeEmpty();
+        var warning = context.Warnings.Should().ContainSingle().Which;
+        warning.Code.Should().Be("stores.idistributedcache.non_atomic");
+        warning.MessageTemplate.Should().Be(DistributedCacheStoreStartupValidator.WarningMessage);
     }
 }

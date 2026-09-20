@@ -614,16 +614,19 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddDistributedCacheAuthorizationCodeStore_registers_DistributedCacheStoreStartupValidator_as_IStartupActivator()
+    public void AddDistributedCacheAuthorizationCodeStore_registers_a_startup_activator()
     {
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddDistributedCacheAuthorizationCodeStore();
 
+        // Registered through a factory, because the validator captures this registration's own
+        // store name and allowMemoryCacheOutsideDevelopment value, so there is no
+        // ImplementationType to match on.
         services.Should().Contain(sd =>
             sd.ServiceType == typeof(IStartupActivator) &&
-            sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator));
+            sd.ImplementationFactory != null);
     }
 
     // ── AddDistributedCacheAuthorizationCodeStore: double-registration guard ─────────────────────
@@ -688,7 +691,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddDistributedCacheRefreshTokenStore_registers_DistributedCacheStoreStartupValidator_as_IStartupActivator()
+    public void AddDistributedCacheRefreshTokenStore_registers_a_startup_activator()
     {
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
@@ -697,7 +700,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 
         services.Should().Contain(sd =>
             sd.ServiceType == typeof(IStartupActivator) &&
-            sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator));
+            sd.ImplementationFactory != null);
     }
 
     // ── AddDistributedCacheRefreshTokenStore: double-registration guard ───────────────────────────
@@ -763,32 +766,39 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void AddDistributedCacheTokenStores_registers_DistributedCacheStoreStartupValidator_exactly_once()
+    public void AddDistributedCacheTokenStores_registers_one_startup_activator_per_store()
     {
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddDistributedCacheTokenStores();
 
+        // Two, not one. Each validator carries its own store name so a failure says which
+        // registration is broken, and its own opt-out so two registrations can differ. This is
+        // why the registration is a plain AddSingleton: TryAddEnumerable deduplicates by
+        // implementation type and would keep only the first.
         services.Count(sd =>
             sd.ServiceType == typeof(IStartupActivator) &&
-            sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator))
-            .Should().Be(1, "TryAddEnumerable ensures idempotent registration across both calls");
+            sd.ImplementationFactory != null)
+            .Should().Be(2);
     }
 
     [Fact]
-    public void Calling_AddDistributedCacheAuthorizationCodeStore_and_AddDistributedCacheRefreshTokenStore_separately_registers_DistributedCacheStoreStartupValidator_exactly_once()
+    public void The_two_store_registrations_each_keep_their_own_opt_out()
     {
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddDistributedCacheAuthorizationCodeStore();
-        builder.AddDistributedCacheRefreshTokenStore();
+        builder.AddDistributedCacheRefreshTokenStore(allowMemoryCacheOutsideDevelopment: true);
 
+        // Under the old TryAddEnumerable registration the second call was dropped as a duplicate
+        // implementation type, so a host opting one store out and not the other silently got one
+        // of the two answers for both.
         services.Count(sd =>
             sd.ServiceType == typeof(IStartupActivator) &&
-            sd.ImplementationType == typeof(DistributedCacheStoreStartupValidator))
-            .Should().Be(1, "TryAddEnumerable ensures idempotent registration when called independently");
+            sd.ImplementationFactory != null)
+            .Should().Be(2);
     }
 
     // ── AddDistributedCacheTokenStores: per-interface guard independence ──────────────────────────
