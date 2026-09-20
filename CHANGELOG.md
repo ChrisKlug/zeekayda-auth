@@ -539,10 +539,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   single-use enforcement and reuse detection hold only within one process. It now follows the rule,
   and `AddDistributedCacheAuthorizationCodeStore`, `AddDistributedCacheRefreshTokenStore` and
   `AddDistributedCacheTokenStores` gain the `allowMemoryCacheOutsideDevelopment` parameter that
-  `AddDistributedCacheInteractionStore` already had. Each registration keeps its own value — they
-  previously shared one validator instance, so a host opting one store out and not the other got
-  one answer for both. The separate warning that these stores are non-atomic is unchanged and still
-  applies to a shared cache.
+  `AddDistributedCacheInteractionStore` already had. Each registration keeps its own value: the
+  three methods previously shared one validator instance registered by implementation type, which
+  would have dropped the second registration's opt-out had there been one to drop. The separate
+  warning that these stores are non-atomic is unchanged and still applies to a shared cache.
 
   `signing.dev_keys.active` logged at `Warning` in `Development`, where a development key is the
   expected choice; it is now `Information`. `issuer.insecure_allowed` ignored the environment
@@ -550,6 +550,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `Development` it is now `issuer.insecure_allowed_outside_development` at `Critical`. It does not
   fail startup: `AllowInsecureIssuer` is itself the opt-out, and a non-loopback `http` issuer
   already fails startup whatever the environment.
+
+  Internally, the three-way decision the rule describes now lives in one place rather than being
+  reimplemented by each check — which is how the distributed-cache token stores came to omit it
+  while the interaction store enforced it.
 
 - **A client is allowed only the grant types, response types and response modes the server serves**
   (#689). A client registered with a value outside the server's `GrantTypesSupported`,

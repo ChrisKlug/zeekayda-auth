@@ -210,7 +210,9 @@ internal sealed class DistributedCacheStoreVerifier : IStartupVerifier
                 "the atomicity trade-offs of the distributed-cache-backed token stores before " +
                 "relying on this in production.");
         }
-        // MemoryDistributedCache: single-node dev/test, silent.
+        // MemoryDistributedCache: nothing recorded here. The framework's own store checks
+        // gate that cache on the environment instead — it is refused outside Development
+        // unless the registration opted out. See docs/reference/token-stores.md.
 
         return ValueTask.CompletedTask;
     }

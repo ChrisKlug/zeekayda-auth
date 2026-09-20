@@ -16,10 +16,9 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// balancer an authorization code issued by one instance cannot be redeemed at another, and a
 /// refresh token rotated on one is unknown to the rest — single-use enforcement and reuse
 /// detection hold only per process. In Development, where the per-process cache is the expected
-/// choice, that is logged at <see cref="LogLevel.Information"/>; outside it startup fails unless
-/// the host opts out, and an opted-out host is reminded at <see cref="LogLevel.Critical"/> on
-/// every start. This is the same gate
-/// <see cref="DistributedCacheInteractionStoreStartupValidator"/> applies.
+/// choice, that is recorded rather than warned about. Which of the three answers the host gets is
+/// <see cref="EnvironmentGate"/>'s decision, shared with every other development-only resource;
+/// what lives here is the wording for this one.
 /// </para>
 /// <para>
 /// One instance is registered per store registration, each capturing its own <c>storeName</c> and
@@ -114,38 +113,40 @@ internal sealed class DistributedCacheStoreStartupValidator : IStartupActivator
             return ValueTask.CompletedTask;
         }
 
-        if (_environment.IsDevelopment())
+        switch (EnvironmentGate.Evaluate(_environment, _allowMemoryCacheOutsideDevelopment))
         {
-            context.AddWarning(
-                "stores.token.per_process_cache_active",
-                PerProcessCacheActiveMessageFormat,
-                LogLevel.Information,
-                _storeName);
-            return ValueTask.CompletedTask;
-        }
+            case EnvironmentGate.Verdict.ExpectedInDevelopment:
+                context.AddWarning(
+                    "stores.token.per_process_cache_active",
+                    PerProcessCacheActiveMessageFormat,
+                    LogLevel.Information,
+                    _storeName);
+                break;
 
-        if (_allowMemoryCacheOutsideDevelopment)
-        {
-            context.AddWarning(
-                "stores.token.per_process_cache_override",
-                PerProcessCacheOverrideWarningMessageFormat,
-                LogLevel.Critical,
-                _storeName);
-            return ValueTask.CompletedTask;
-        }
+            case EnvironmentGate.Verdict.AllowedByOptOut:
+                context.AddWarning(
+                    "stores.token.per_process_cache_override",
+                    PerProcessCacheOverrideWarningMessageFormat,
+                    LogLevel.Critical,
+                    _storeName);
+                break;
 
-        // Names its own store, for the reason InMemoryStoreVerifier does: the runner collapses
-        // failures identical in code and message, so a message naming no store would report one of
-        // two broken registrations and send the operator round the restart cycle for the other.
-        context.AddFailure(
-            "stores.token.per_process_cache",
-            $"The distributed-cache {_storeName} resolves IDistributedCache to MemoryDistributedCache " +
-            "outside a Development environment. Despite its name, that cache is shared with nothing: " +
-            "an authorization code issued by one instance cannot be redeemed at another, and " +
-            "single-use enforcement and reuse detection hold only within one process. Register a " +
-            "shared IDistributedCache (Redis, SQL Server, ...) or pass " +
-            "allowMemoryCacheOutsideDevelopment: true if this host is an intentional " +
-            "non-Development test host.");
+            default:
+                // Names its own store, for the reason InMemoryStoreVerifier does: the runner
+                // collapses failures identical in code and message, so a message naming no store
+                // would report one of two broken registrations and send the operator round the
+                // restart cycle for the other.
+                context.AddFailure(
+                    "stores.token.per_process_cache",
+                    $"The distributed-cache {_storeName} resolves IDistributedCache to MemoryDistributedCache " +
+                    "outside a Development environment. Despite its name, that cache is shared with nothing: " +
+                    "an authorization code issued by one instance cannot be redeemed at another, and " +
+                    "single-use enforcement and reuse detection hold only within one process. Register a " +
+                    "shared IDistributedCache (Redis, SQL Server, ...) or pass " +
+                    "allowMemoryCacheOutsideDevelopment: true if this host is an intentional " +
+                    "non-Development test host.");
+                break;
+        }
 
         return ValueTask.CompletedTask;
     }

@@ -11,10 +11,9 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <remarks>
 /// One instance is registered per in-memory store registration call, each capturing its own
 /// <c>storeName</c> and <c>allowOutsideDevelopment</c> value, so the gate is enforced
-/// independently per store. In <c>Development</c>, where an in-memory store is the expected
-/// choice, it is logged at <see cref="LogLevel.Information"/>. Outside it, startup fails unless
-/// the captured <c>allowOutsideDevelopment</c> is <see langword="true"/>, which is logged at
-/// <see cref="LogLevel.Critical"/> on every start instead. The registrations share this
+/// independently per store. Which of the three the host gets is <see cref="EnvironmentGate"/>'s
+/// decision, not this type's; what lives here is the wording an operator needs to fix an in-memory
+/// store specifically. The registrations share this
 /// implementation type but are added via plain <c>AddSingleton&lt;IStartupVerifier&gt;</c> rather
 /// than <c>TryAddEnumerable</c>, which would otherwise deduplicate them away.
 /// </remarks>
@@ -75,34 +74,35 @@ internal sealed class InMemoryStoreVerifier : IStartupVerifier
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
-        if (_environment.IsDevelopment())
+        switch (EnvironmentGate.Evaluate(_environment, _allowOutsideDevelopment))
         {
-            context.AddWarning("stores.inmemory.active", ActiveMessageFormat, LogLevel.Information, _storeName);
-            return ValueTask.CompletedTask;
-        }
+            case EnvironmentGate.Verdict.ExpectedInDevelopment:
+                context.AddWarning("stores.inmemory.active", ActiveMessageFormat, LogLevel.Information, _storeName);
+                break;
 
-        if (!_allowOutsideDevelopment)
-        {
-            // Names its own store: one instance is registered per in-memory store, all report in
-            // the same phase, and the runner collapses failures that are identical in code and
-            // message — so a message naming no store would report one of several broken
-            // registrations and send the operator round the restart cycle for the others.
-            context.AddFailure(
-                "stores.inmemory.non_development",
-                $"The in-memory {_storeName} is active outside a Development environment. " +
-                "This is a configuration error: in-memory stores lose their contents on restart " +
-                "and are invisible to other instances. " +
-                "Replace this registration with a persistent store implementation, or pass " +
-                "allowOutsideDevelopment: true if this host is an intentional " +
-                "non-Development test host.");
-            return ValueTask.CompletedTask;
-        }
+            case EnvironmentGate.Verdict.AllowedByOptOut:
+                context.AddWarning(
+                    "stores.inmemory.non_development_override",
+                    NonDevelopmentOverrideWarningMessageFormat,
+                    LogLevel.Critical,
+                    _storeName);
+                break;
 
-        context.AddWarning(
-            "stores.inmemory.non_development_override",
-            NonDevelopmentOverrideWarningMessageFormat,
-            LogLevel.Critical,
-            _storeName);
+            default:
+                // Names its own store: one instance is registered per in-memory store, all report
+                // in the same phase, and the runner collapses failures that are identical in code
+                // and message — so a message naming no store would report one of several broken
+                // registrations and send the operator round the restart cycle for the others.
+                context.AddFailure(
+                    "stores.inmemory.non_development",
+                    $"The in-memory {_storeName} is active outside a Development environment. " +
+                    "This is a configuration error: in-memory stores lose their contents on restart " +
+                    "and are invisible to other instances. " +
+                    "Replace this registration with a persistent store implementation, or pass " +
+                    "allowOutsideDevelopment: true if this host is an intentional " +
+                    "non-Development test host.");
+                break;
+        }
 
         return ValueTask.CompletedTask;
     }

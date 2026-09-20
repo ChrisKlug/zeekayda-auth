@@ -82,9 +82,14 @@ builder.Services
     .AddDistributedCacheInteractionStore();
 ```
 
-### `.AddDistributedCacheTokenStores()`
+### `.AddDistributedCacheTokenStores(bool allowMemoryCacheOutsideDevelopment = false)`
 
-Registers both distributed-cache backing stores — `DistributedCacheAuthorizationCodeBackingStore` and `DistributedCacheRefreshTokenGrantStore` — wired underneath the same `AuthorizationCodeStore` and `RefreshTokenStore` coordinators. Requires `IDistributedCache` to be registered; fails fast with `ZeeKayDaConfigurationException` if it is missing. When the resolved `IDistributedCache` implementation is anything other than `MemoryDistributedCache`, a `LogLevel.Warning` is emitted at startup.
+Registers both distributed-cache backing stores — `DistributedCacheAuthorizationCodeBackingStore` and `DistributedCacheRefreshTokenGrantStore` — wired underneath the same `AuthorizationCodeStore` and `RefreshTokenStore` coordinators. Requires `IDistributedCache` to be registered; fails fast with `ZeeKayDaConfigurationException` if it is missing.
+
+Two separate things are reported at startup:
+
+- **The cache is `MemoryDistributedCache`.** Despite its name it is shared with nothing, so an authorization code issued by one instance cannot be redeemed at another, and single-use enforcement and reuse detection hold only within one process. In `Development` this is recorded at `LogLevel.Information`. Outside `Development` it **fails startup**, unless the registration passes `allowMemoryCacheOutsideDevelopment: true` — which starts the host and logs `LogLevel.Critical` on every start instead. That parameter is on `AddDistributedCacheAuthorizationCodeStore`, `AddDistributedCacheRefreshTokenStore` and `AddDistributedCacheTokenStores`, and each registration keeps its own value.
+- **The cache is anything else.** A `LogLevel.Warning` says these stores are non-atomic. A shared cache does not clear that: multi-instance deployments remain exposed to TOCTOU double-redemption until the stores are replaced with an atomic implementation.
 
 ```csharp
 builder.Services.AddDistributedMemoryCache(); // or AddStackExchangeRedisCache(...)
@@ -93,11 +98,11 @@ builder.Services
     .AddDistributedCacheTokenStores();
 ```
 
-### `.AddDistributedCacheAuthorizationCodeStore()`
+### `.AddDistributedCacheAuthorizationCodeStore(bool allowMemoryCacheOutsideDevelopment = false)`
 
 Registers `DistributedCacheAuthorizationCodeBackingStore` as the backing store, wired underneath the `AuthorizationCodeStore` coordinator, which is registered as `IAuthorizationCodeStore`. Requires `IDistributedCache`.
 
-### `.AddDistributedCacheRefreshTokenStore()`
+### `.AddDistributedCacheRefreshTokenStore(bool allowMemoryCacheOutsideDevelopment = false)`
 
 Registers `DistributedCacheRefreshTokenGrantStore` as the backing store, wired underneath the `RefreshTokenStore` coordinator, which is registered as `IRefreshTokenStore`. Requires `IDistributedCache`.
 
