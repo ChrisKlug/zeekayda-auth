@@ -426,6 +426,45 @@ public sealed class DiscoveryDocumentProviderTests
     }
 
     [Fact]
+    public async Task GetDocument_survives_a_custom_repository_returning_null_claim_lists()
+    {
+        // ScopeDefinition declares these lists non-nullable and InMemoryScopeRepository refuses a
+        // bad claim name at construction, but a custom IScopeRepository answers to neither at
+        // runtime. Such a repository issues tokens perfectly well — ClaimSelectionPlan and
+        // ClientClaimAdditions both read a null list as empty — so the discovery endpoint must not
+        // be the one place it throws, on an unauthenticated GET.
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name, IdTokenClaims = ["sub"] },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            new NullClaimListRepository(repository));
+
+        doc.ClaimsSupported.Should().Contain("sub").And.NotContainNulls();
+    }
+
+    [Fact]
+    public async Task GetDocument_drops_a_null_or_blank_claim_name_from_ClaimsSupported()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name, IdTokenClaims = ["sub"] },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            new BlankClaimNameRepository(repository));
+
+        // Discovery 1.0 §3 defines claims_supported as an array of strings, so a JSON null or an
+        // empty name in it is malformed metadata, not a harmless extra entry.
+        doc.ClaimsSupported.Should().NotContainNulls();
+        doc.ClaimsSupported.Should().OnlyContain(name => !string.IsNullOrWhiteSpace(name));
+        doc.ClaimsSupported.Should().Contain("sub");
+    }
+
+    [Fact]
     public async Task GetDocument_lists_a_claim_two_scopes_spell_differently_once()
     {
         var repository = new InMemoryScopeRepository(
@@ -645,4 +684,27 @@ public sealed class DiscoveryDocumentProviderTests
         doc.CodeChallengeMethodsSupported.Should().ContainSingle()
             .Which.Should().Be(CodeChallengeMethod.S256);
     }
+
+    /// <summary>A custom repository whose scopes carry null claim lists — the type system permits it.</summary>
+    private sealed class NullClaimListRepository(IScopeRepository inner) : IScopeRepository
+    {
+        public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            [.. (await inner.GetScopesAsync(cancellationToken)).Select(scope => scope with
+            {
+                IdTokenClaims = null!,
+                UserInfoClaims = null!,
+                AccessTokenClaims = null!,
+            })];
+    }
+
+    /// <summary>A custom repository that slips a null and a blank name into a claim list.</summary>
+    private sealed class BlankClaimNameRepository(IScopeRepository inner) : IScopeRepository
+    {
+        public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            [.. (await inner.GetScopesAsync(cancellationToken)).Select(scope => scope with
+            {
+                IdTokenClaims = [.. scope.IdTokenClaims, null!, "   "],
+            })];
+    }
+
 }

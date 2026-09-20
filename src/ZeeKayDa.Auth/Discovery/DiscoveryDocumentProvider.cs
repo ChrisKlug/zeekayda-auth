@@ -127,11 +127,22 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
         /// <see cref="Claims.ClaimSelection"/> groups them that way: two scopes spelling a claim
         /// <c>email</c> and <c>Email</c> unlock one claim, so the document must not name two.
         /// </remarks>
+        /// <remarks>
+        /// A null list and a null or blank entry are both read as nothing, the way
+        /// <c>ClaimSelectionPlan.Wanted</c> and <see cref="Clients.ClientClaimAdditions"/> already
+        /// read them. <see cref="ScopeDefinition"/> declares these lists non-nullable and
+        /// <c>InMemoryScopeRepository</c> refuses a bad claim name at construction, but a custom
+        /// <see cref="IScopeRepository"/> answers neither to the type system at runtime nor to that
+        /// constructor. Without this, a repository that issues tokens perfectly well would make an
+        /// unauthenticated GET of the discovery document throw, or put a JSON <c>null</c> into a
+        /// member Discovery §3 defines as an array of strings.
+        /// </remarks>
         private static IReadOnlyCollection<string> ClaimsSupportedFrom(IReadOnlyCollection<ScopeDefinition> scopes) =>
             [.. IdTokenProtocolClaims.Names
                 .Concat(scopes
                     .Where(scope => scope.IsDiscoverable)
-                    .SelectMany(scope => scope.IdTokenClaims.Concat(scope.UserInfoClaims)))
+                    .SelectMany(scope => (scope.IdTokenClaims ?? []).Concat(scope.UserInfoClaims ?? [])))
+                .Where(claim => !string.IsNullOrWhiteSpace(claim))
                 .Distinct(StringComparer.OrdinalIgnoreCase)];
 
         public static InteractiveMetadata For(
