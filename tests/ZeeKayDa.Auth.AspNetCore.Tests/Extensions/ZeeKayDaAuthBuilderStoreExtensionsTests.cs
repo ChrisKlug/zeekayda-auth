@@ -784,21 +784,31 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     }
 
     [Fact]
-    public void The_two_store_registrations_each_keep_their_own_opt_out()
+    public async Task The_two_store_registrations_each_keep_their_own_opt_out()
     {
-        var services = new ServiceCollection();
+        // Counting the descriptors is not enough: two factories that both captured `true` would
+        // also be two. What matters is that the store registered WITHOUT the opt-out still fails
+        // startup on the per-process cache in Production while the one registered with it does
+        // not. Under the old TryAddEnumerable registration the second call was dropped as a
+        // duplicate implementation type, so a host got one of the two answers for both stores.
+        var services = CreateServicesWithWarningServiceDependencies("Production");
+        services.AddDistributedMemoryCache();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddDistributedCacheAuthorizationCodeStore();
         builder.AddDistributedCacheRefreshTokenStore(allowMemoryCacheOutsideDevelopment: true);
 
-        // Under the old TryAddEnumerable registration the second call was dropped as a duplicate
-        // implementation type, so a host opting one store out and not the other silently got one
-        // of the two answers for both.
-        services.Count(sd =>
-            sd.ServiceType == typeof(IStartupActivator) &&
-            sd.ImplementationFactory != null)
-            .Should().Be(2);
+        using var provider = services.BuildServiceProvider();
+        var context = new StartupVerificationContext();
+        foreach (var activator in provider.GetServices<IStartupActivator>())
+            await activator.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle()
+            .Which.Message.Should().Contain(DistributedCacheStoreStartupValidator.AuthorizationCodeStoreName);
+        context.Warnings.Should().ContainSingle()
+            .Which.Code.Should().Be("stores.token.per_process_cache_override");
+        context.Warnings.Single().Args.Should().ContainSingle()
+            .Which.Should().Be(DistributedCacheStoreStartupValidator.RefreshTokenStoreName);
     }
 
     // ── AddDistributedCacheTokenStores: per-interface guard independence ──────────────────────────
