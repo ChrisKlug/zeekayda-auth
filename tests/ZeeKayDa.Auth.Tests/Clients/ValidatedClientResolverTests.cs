@@ -65,6 +65,151 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
+    public async Task A_registration_that_cannot_be_read_logs_critical_once_however_many_lookups()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(new ThrowingRepository(), new PassingValidator(), logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // An unreadable registration never reaches the verdict cache, so suppressing by verdict
+        // instance wrote a Critical entry per request: an unauthenticated caller naming this
+        // client_id could drive the log level that pages on-call as fast as it could send.
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
+    public async Task An_unreadable_registration_reached_under_many_client_ids_logs_critical_once()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(new ThrowingRepository(), new PassingValidator(), logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("CLIENT-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("Client-1", TestContext.Current.CancellationToken);
+
+        // A store resolving several spellings of one id to one registration is the ordinary case —
+        // a case-insensitive database column. Keying suppression by the requested id would let an
+        // unauthenticated caller spend a key per spelling and buy the critical log back.
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
+    public async Task A_registration_validated_uncached_logs_critical_once_however_many_lookups()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new RejectingValidator(),
+            logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // A custom IClientCredential has no content to fingerprint, so this registration is
+        // revalidated on every lookup by design — which also gave it a fresh verdict, and so a
+        // fresh Critical entry, every time.
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
+    public async Task A_registration_that_fails_a_second_different_way_is_logged_again()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new DifferentRuleEachTimeValidator(),
+            logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // Suppression is keyed by the failure as well as the client_id. A registration breaking a
+        // second, different way is a fact the operator has not been told yet.
+        logger.Entries.Should().HaveCount(2).And.OnlyContain(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
+    public async Task A_failure_reworded_on_every_validation_logs_critical_once()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new RewordingValidator(),
+            logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // Suppression keys on the rule code, never the message. A host validator free to put a
+        // timestamp or an attempt counter in its message would otherwise mint a key and a Critical
+        // entry per request on the uncached path, and eventually clear the whole suppression set.
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
+    public async Task The_same_rules_reported_in_a_different_order_log_critical_once()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new ReorderingValidator(),
+            logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // Aggregated failures arrive in whatever order the validator reports them; the same set of
+        // broken rules is the same failure however it is ordered.
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
+    public async Task Two_clients_whose_ids_and_rule_codes_run_together_are_both_logged()
+    {
+        var logger = new CapturingLogger();
+
+        // Length prefixes, not a separator: "ab" + "c_rule" and "a" + "bc_rule" concatenate to the
+        // same string, so a key built by joining the two parts would collide and silence the
+        // second client's Critical entry — the operator would never hear about that registration.
+        var resolver = new ValidatedClientResolver(
+            new MultiClientRepository(
+                ConfidentialClient(new CopyingCredential(), "ab"),
+                ConfidentialClient(new CopyingCredential(), "a")),
+            new CodePerClientValidator(new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["ab"] = "c_rule",
+                ["a"] = "bc_rule",
+            }),
+            logger);
+
+        await resolver.FindByClientIdAsync("ab", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("a", TestContext.Current.CancellationToken);
+
+        logger.Entries.Should().HaveCount(2).And.OnlyContain(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
+    public async Task Two_rule_code_sets_that_join_identically_are_both_logged()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new JoiningCodeSetsValidator(),
+            logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+
+        // A rule code is a host-supplied string with no syntax restriction, so the set of codes
+        // cannot be identified by joining them: ["a; b", "c"] and ["a", "b; c"] join to the same
+        // text. The second registration is broken a different way and the operator must hear so.
+        logger.Entries.Should().HaveCount(2).And.OnlyContain(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
     public async Task Unknown_client_returns_null()
     {
         var resolver = Resolver(Client(), new PassingValidator());
@@ -234,9 +379,9 @@ public class ValidatedClientResolverTests
             postLogoutRedirectUris: [],
             allowedScopes: ["openid"]);
 
-    private static ClientRegistration ConfidentialClient(IClientCredential credential) =>
+    private static ClientRegistration ConfidentialClient(IClientCredential credential, string clientId = "client-1") =>
         ClientRegistration.CreateConfidential(
-            "client-1",
+            clientId,
             credential,
             redirectUris: ["https://app.example.com/callback"],
             postLogoutRedirectUris: [],
@@ -254,6 +399,14 @@ public class ValidatedClientResolverTests
             string clientId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IClientRegistration?>(
                 string.Equals(clientId, client.ClientId, StringComparison.Ordinal) ? client : null);
+    }
+
+    private sealed class MultiClientRepository(params IClientRegistration[] clients) : IClientRepository
+    {
+        public ValueTask<IClientRegistration?> FindByClientIdAsync(
+            string clientId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(
+                clients.FirstOrDefault(c => string.Equals(c.ClientId, clientId, StringComparison.Ordinal)));
     }
 
     private sealed class MutableRepository(IClientRegistration current) : IClientRepository
@@ -348,6 +501,81 @@ public class ValidatedClientResolverTests
         public void Validate(IClientRegistration client) =>
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure("test_rule", "Deliberately rejected by the test."));
+    }
+
+    /// <summary>Rejects every registration, for the rule this test named for its <c>client_id</c>.</summary>
+    private sealed class CodePerClientValidator(IReadOnlyDictionary<string, string> codesByClientId)
+        : IClientRegistrationValidator
+    {
+        public void Validate(IClientRegistration client) =>
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    codesByClientId[client.ClientId], "Deliberately rejected by the test."));
+    }
+
+    /// <summary>Rejects every registration, breaking a different rule each time.</summary>
+    private sealed class DifferentRuleEachTimeValidator : IClientRegistrationValidator
+    {
+        private int _calls;
+
+        public void Validate(IClientRegistration client)
+        {
+            var call = ++_calls;
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure($"test_rule_{call}", $"Rejected by the test, rule {call}."));
+        }
+    }
+
+    /// <summary>
+    /// Rejects every registration for the same rule, worded differently each time — a host
+    /// validator whose message carries a timestamp or an attempt counter.
+    /// </summary>
+    private sealed class RewordingValidator : IClientRegistrationValidator
+    {
+        private int _calls;
+
+        public void Validate(IClientRegistration client) =>
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure("test_rule", $"Rejected by the test, attempt {++_calls}."));
+    }
+
+    /// <summary>
+    /// Rejects every registration for two rules whose codes carry the delimiter a naive key would
+    /// join on, reporting a different set of them each time.
+    /// </summary>
+    private sealed class JoiningCodeSetsValidator : IClientRegistrationValidator
+    {
+        private bool _second;
+
+        public void Validate(IClientRegistration client)
+        {
+            _second = !_second;
+
+            throw _second
+                ? new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure("a; b", "Rules a and b were broken."),
+                    new ZeeKayDaConfigurationFailure("c", "Rule c was broken."))
+                : new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure("a", "Rule a was broken."),
+                    new ZeeKayDaConfigurationFailure("b; c", "Rules b and c were broken."));
+        }
+    }
+
+    /// <summary>Rejects every registration, reporting two rules in a different order each time.</summary>
+    private sealed class ReorderingValidator : IClientRegistrationValidator
+    {
+        private bool _flipped;
+
+        public void Validate(IClientRegistration client)
+        {
+            var first = new ZeeKayDaConfigurationFailure("test_rule_a", "Rule A was broken.");
+            var second = new ZeeKayDaConfigurationFailure("test_rule_b", "Rule B was broken.");
+            _flipped = !_flipped;
+
+            throw _flipped
+                ? new ZeeKayDaConfigurationException(first, second)
+                : new ZeeKayDaConfigurationException(second, first);
+        }
     }
 
     private sealed class CountingValidator : IClientRegistrationValidator
