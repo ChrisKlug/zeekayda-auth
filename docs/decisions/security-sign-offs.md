@@ -1780,3 +1780,25 @@ Critical. Reverses one point of the #662 entry: a client allowed to omit PKCE ne
   `A_client_permitted_to_omit_pkce_redeems_a_code_issued_with_neither_a_challenge_nor_a_nonce`.
 - **Declined (maintainer):** a startup warning on `RequirePkce = false`; only in-memory clients are
   known at startup.
+
+## 2026-09-20 — the environment rule reaches the distributed-cache token stores (#681, code frozen at `8b20697`)
+
+Scoped to `DistributedCacheStoreStartupValidator`, `InsecureIssuerWarningService`,
+`DevelopmentSigningKeyWarningService` and the new `EnvironmentGate`. Copilot code lens, Copilot
+architecture lens and the security agent, one round, no High or Critical from any of them.
+
+- A `MemoryDistributedCache`-backed token store outside `Development` fails startup unless that
+  registration opted out. Closed — `The_per_process_cache_outside_Development_fails_startup_for_a_token_store`,
+  `The_per_process_cache_outside_Development_with_the_override_warns_at_Critical_on_every_start`.
+- The opt-out is per registration, not per implementation type, so one store opting out cannot
+  silently opt out the other. Closed — `The_two_store_registrations_each_keep_their_own_opt_out`.
+- `AllowInsecureIssuer` outside `Development` logs `Critical` and deliberately does not fail: it is
+  itself the opt-out, and a non-loopback `http` issuer is already refused by options validation in
+  every environment. Closed — `An_insecure_issuer_outside_Development_logs_at_Critical_on_every_start`,
+  `An_insecure_issuer_outside_Development_does_not_fail_startup`.
+- One implementation of the Development/opt-out/rejected decision, so a later check cannot drift
+  from it as this one had. Closed — `EnvironmentGateTests`.
+- **Accepted residual (maintainer):** the cache check is a type test, so any other per-process
+  `IDistributedCache` — a decorator over `MemoryDistributedCache`, a hand-rolled double — starts
+  outside `Development` with only the non-atomic `Warning`. Proven by
+  `A_shared_cache_warns_that_the_stores_are_non_atomic_in_every_environment`.
