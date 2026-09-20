@@ -323,9 +323,10 @@ thing a pull request breaks by accident.
 What passes is not the run's raw output but `conformance/expected/config.failures.json`,
 `conformance/expected/basic.failures.json` and `conformance/expected/basic.skips.json`. Those files
 list the failures, warnings and skips the current framework is allowed to produce, each one naming
-the issue that deletes it. The suite's runner fails a run that produces anything they do not
-account for **and** a run in which an entry never occurred, so a regression is loud and a module
-that starts passing is ratcheted in by deleting its entry in the same pull request.
+either the issue that removes it or the decision-register entry that makes it permanent. The
+suite's runner fails a run that produces anything they do not account for **and** a run in which an
+entry never occurred, so a regression is loud and a module that starts passing is ratcheted in by
+deleting its entry in the same pull request.
 
 To run it locally — Docker and the .NET SDK are the only prerequisites:
 

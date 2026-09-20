@@ -112,6 +112,16 @@ cleanup() {
     fi
     compose logs --no-color server > "${RESULT_DIR}/suite-server.log" 2>&1 || true
     compose down --remove-orphans >/dev/null 2>&1 || true
+    # MongoDB's database is a bind mount at <suite>/mongo/data, written by the container's own uid
+    # as 0600 files, so it outlives the run unreadable by whoever started the script: a plain rm,
+    # `git clean` and CI's cache tar all fail on it, and in CI an unreadable tree inside the
+    # workspace also breaks hashFiles for every later cache key, failing the job after a green run.
+    # Nothing in there is wanted between runs — the suite builds its database from scratch each
+    # time — so empty it from inside a container, the only thing here with the rights to. `run`
+    # recreates the compose network, hence the second down.
+    compose run --rm --no-deps --entrypoint sh mongodb \
+        -c 'find /data/db -mindepth 1 -delete' >/dev/null 2>&1 || true
+    compose down --remove-orphans >/dev/null 2>&1 || true
     rm -rf "${LOCK_DIR}"
     echo "==> results in ${RESULT_DIR}"
     exit "${status}"
