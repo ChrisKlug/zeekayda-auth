@@ -8,7 +8,8 @@
 # requested test plan headlessly, writes the results under results/, and tears everything down.
 # Docker and the .NET SDK are the only prerequisites.
 #
-# Issue #306 produced this script; #307 turns it into a CI workflow.
+# CI's `conformance` job in .github/workflows/ci.yml runs this script with 'all' on every pull
+# request and every push to main; see conformance/README.md.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

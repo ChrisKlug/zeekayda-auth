@@ -91,17 +91,22 @@ entry with neither is a gap nobody has agreed to live with. Run with `--verbose`
 does) and the runner prints a ready-made entry for anything unexpected it hits, which is the fastest
 way to add one honestly.
 
-## Running it in CI (#307)
+## In CI
 
-**Recommendation: both plans on every PR.**
+The `conformance` job in `.github/workflows/ci.yml` runs `run-conformance.sh all` on every pull
+request and every push to `main`, and joins the `ci-complete` aggregate, so a run that trips the
+manifests blocks the merge. The results tree is uploaded as the `conformance-results` artifact
+whether the run passed or failed.
 
-Measured on a developer machine with images and the suite clone already present, both plans
-together take **2 min 11 s** wall clock end to end — suite boot to teardown. The config plan alone
-is 46 s, almost all of it fixed cost: waiting for the Java server, building and starting the
-sample, teardown. The basic plan's 35 modules add about 90 s, a third of which is one module's
-deliberate 30 s wait before replaying a code. The full breakdown is in `RESULTS.md`. Two and a bit
-minutes is cheap enough for every PR, and the login flow is exactly the kind of thing a PR breaks
-by accident; a nightly-only basic plan would find that a day late.
+**Why every PR rather than nightly.** Measured on a developer machine with the images and the
+suite clone already present, both plans together take **2 min 11 s** wall clock end to end — suite
+boot to teardown. The config plan alone is 46 s, almost all of it fixed cost: waiting for the Java
+server, building and starting the sample, teardown. The basic plan's 35 modules add about 90 s, a
+third of which is one module's deliberate 30 s wait before replaying a code. The full breakdown is
+in `RESULTS.md`. Two and a bit minutes is cheap enough for every PR, and the login flow is exactly
+the kind of thing a PR breaks by accident; a nightly-only basic plan would find that a day late.
 
-A first CI run must budget for the cold path the measurement excludes: cloning the suite and
-pulling its two images. Cache both by `SUITE_REF`.
+CI caches the suite clone by `SUITE_REF`, which the job reads out of `run-conformance.sh` rather
+than repeating. The suite's two images are pulled cold on every run — whether that pull is worth
+caching as well is a decision to take from the times this job actually reports, not one to guess
+in advance.
