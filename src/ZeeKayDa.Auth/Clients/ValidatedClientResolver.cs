@@ -49,10 +49,11 @@ namespace ZeeKayDa.Auth.Clients;
 /// answer without a cached verdict — a registration that could not be read at all, and one whose
 /// fingerprint is not content-addressable — so a verdict's own "already logged" flag left both
 /// writing a critical entry per request, which is an unauthenticated log-amplification lever
-/// aimed at the level that pages on-call. Suppression is therefore keyed by <c>client_id</c> and
-/// the violation text together: a registration that breaks a second, different way is a new fact
-/// and still logged, while a repeat of the same failure is silent. That set is bounded and
-/// cleared the same way, and a clear costs one extra log line per client rather than a PBKDF2.
+/// aimed at the level that pages on-call. Suppression is therefore keyed by the violation text
+/// together with the <c>client_id</c> <em>the store returned</em> — never the one the request
+/// asked for — so a registration that breaks a second, different way is a new fact and still
+/// logged, while a repeat of the same failure is silent. That set is bounded and cleared the same
+/// way, and a clear costs one extra log line per client rather than a PBKDF2.
 /// </para>
 /// </remarks>
 internal sealed class ValidatedClientResolver
@@ -115,7 +116,7 @@ internal sealed class ValidatedClientResolver
         // an unauthenticated log-amplification lever. The registration's own ClientId is what
         // names it where it could be read; the looked-up one is all there is where it could not.
         var loggedClientId = snapshot?.ClientId ?? clientId;
-        if (MarkLogged(loggedClientId, verdict.Violations))
+        if (MarkLogged(snapshot?.ClientId, verdict.Violations))
         {
             _logger.LogCritical(
                 "Client registration for '{ClientId}' failed validation and was served to the protocol as an unknown client. " +
@@ -129,15 +130,31 @@ internal sealed class ValidatedClientResolver
 
     /// <summary>
     /// Returns <see langword="true"/> the first time a given failure is seen for a given
-    /// <c>client_id</c>, and <see langword="false"/> for every repeat of it.
+    /// registration, and <see langword="false"/> for every repeat of it.
     /// </summary>
+    /// <param name="clientId">
+    /// The registration's own <c>ClientId</c>, or <see langword="null"/> when it could not be read
+    /// — in which case the failure alone is the key.
+    /// </param>
+    /// <param name="violations">The verdict's text.</param>
     /// <remarks>
-    /// Neither half of the key is caller-controlled: the store decides which <c>client_id</c>s
-    /// resolve to a registration at all, and the violation text is the validator's own message or
-    /// the type name of what it threw. A deployment large enough to reach the cap pays one further
-    /// critical entry per failing registration after the clear.
+    /// <para>
+    /// No part of the key is caller-controlled. The <c>client_id</c> is the one the store put in
+    /// the registration it returned, never the one the request asked for: a store that resolves
+    /// several spellings of an id to one registration — a case-insensitive database column is the
+    /// ordinary case — would otherwise let an unauthenticated caller spend a key per spelling,
+    /// reach the cap, and get the critical log back. The violation text is the validator's own
+    /// message or the type name of what it threw.
+    /// </para>
+    /// <para>
+    /// A registration that could not be read has no <c>client_id</c> to key on, so every
+    /// unreadable registration failing the same way shares one key and only the first is logged.
+    /// That is the deliberate direction to fail in: the entry names the <c>client_id</c> the
+    /// lookup used and the exception type, which is what an operator needs to find the getter that
+    /// threw, and a second registration broken the same way is almost always the same bug.
+    /// </para>
     /// </remarks>
-    private bool MarkLogged(string clientId, string? violations)
+    private bool MarkLogged(string? clientId, string? violations)
     {
         if (!_loggedFailures.TryAdd($"{clientId}\n{violations}", 0))
             return false;

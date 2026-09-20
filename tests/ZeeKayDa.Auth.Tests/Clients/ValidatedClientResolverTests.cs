@@ -80,6 +80,22 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
+    public async Task An_unreadable_registration_reached_under_many_client_ids_logs_critical_once()
+    {
+        var logger = new CapturingLogger();
+        var resolver = new ValidatedClientResolver(new ThrowingRepository(), new PassingValidator(), logger);
+
+        await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("CLIENT-1", TestContext.Current.CancellationToken);
+        await resolver.FindByClientIdAsync("Client-1", TestContext.Current.CancellationToken);
+
+        // A store resolving several spellings of one id to one registration is the ordinary case —
+        // a case-insensitive database column. Keying suppression by the requested id would let an
+        // unauthenticated caller spend a key per spelling and buy the critical log back.
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
     public async Task A_registration_validated_uncached_logs_critical_once_however_many_lookups()
     {
         var logger = new CapturingLogger();
