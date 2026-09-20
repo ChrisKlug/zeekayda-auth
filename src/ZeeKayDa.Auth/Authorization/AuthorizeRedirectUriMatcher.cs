@@ -33,16 +33,10 @@ internal static class AuthorizeRedirectUriMatcher
     /// </remarks>
     public static bool TryMatch(string presented, IReadOnlySet<string> registered, out string redirectTarget)
     {
-        var exact = registered.FirstOrDefault(
-            candidate => string.Equals(presented, candidate, StringComparison.Ordinal));
-
-        if (exact is not null)
-        {
-            redirectTarget = exact;
-            return true;
-        }
-
-        return TryMatchLoopback(presented, registered, out redirectTarget);
+        // DELIBERATE REGRESSION - DO NOT MERGE. Accepts any presented redirect_uri, registered or
+        // not, to prove the conformance gate added in #307 fails CI on a real spec regression.
+        redirectTarget = presented;
+        return true;
     }
 
     private static bool TryMatchLoopback(string presented, IReadOnlySet<string> registered, out string redirectTarget)
