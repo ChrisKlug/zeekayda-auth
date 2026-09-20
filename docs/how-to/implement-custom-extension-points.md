@@ -367,8 +367,10 @@ public sealed class DatabaseClientRepository : IClientRepository
 Custom repositories MUST call `IClientRegistrationValidator.Validate` before writing a new or
 updated client registration to the store. The validator enforces the same startup-time rules that
 apply to in-memory clients — required fields, allowed grant types, consistent redirect URI
-configuration, and so on. Skipping validation can allow malformed registrations that pass the
-write path but throw exceptions or cause unexpected behaviour at token-request time.
+configuration, and so on. Skipping validation does not let a malformed registration reach the
+protocol — the framework validates every registration it serves and refuses a failing one as an
+unknown client — but it does mean the bad row is stored, and is found on a live request, in a log
+entry the operator has to act on, rather than where it was written.
 
 > ⚠️ **Warning: `IClientSecretFactory.Create` is CPU-intensive and must not be called on a hot
 > request path.**
