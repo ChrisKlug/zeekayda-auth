@@ -49,11 +49,13 @@ namespace ZeeKayDa.Auth.Clients;
 /// answer without a cached verdict — a registration that could not be read at all, and one whose
 /// fingerprint is not content-addressable — so a verdict's own "already logged" flag left both
 /// writing a critical entry per request, which is an unauthenticated log-amplification lever
-/// aimed at the level that pages on-call. Suppression is therefore keyed by the violation text
-/// together with the <c>client_id</c> <em>the store returned</em> — never the one the request
-/// asked for — so a registration that breaks a second, different way is a new fact and still
-/// logged, while a repeat of the same failure is silent. That set is bounded and cleared the same
-/// way, and a clear costs one extra log line per client rather than a PBKDF2.
+/// aimed at the level that pages on-call. Suppression is therefore keyed by the failure's stable
+/// <em>identity</em> — <see cref="ZeeKayDaConfigurationFailure.Code"/> values, or a thrown type's
+/// name, never the free-form message — together with the <c>client_id</c> <em>the store
+/// returned</em>, never the one the request asked for. A registration that breaks a second,
+/// different way is a new fact and still logged; a repeat of the same failure is silent even when
+/// the validator words it differently each time. That set is bounded and cleared the same way, and
+/// a clear costs one extra log line per client rather than a PBKDF2.
 /// </para>
 /// </remarks>
 internal sealed class ValidatedClientResolver
@@ -68,6 +70,10 @@ internal sealed class ValidatedClientResolver
     // Bounded by the same cap: an entry is a short string, and the two sets are the same order of
     // magnitude because both are keyed by things the store resolves.
     private readonly ConcurrentDictionary<string, byte> _loggedFailures = new(StringComparer.Ordinal);
+
+    // Distinguishes an absent part of a suppression key from a present empty one: a registration
+    // that could not be read has no client_id at all, which is not the same as one spelled "".
+    private const string NullSentinel = "\u0000null";
 
     // Sized for a multi-tenant deployment: each entry is a fingerprint string plus a verdict
     // reference, so the ceiling costs on the order of a megabyte. Undersizing this is not a
@@ -116,7 +122,7 @@ internal sealed class ValidatedClientResolver
         // an unauthenticated log-amplification lever. The registration's own ClientId is what
         // names it where it could be read; the looked-up one is all there is where it could not.
         var loggedClientId = snapshot?.ClientId ?? clientId;
-        if (MarkLogged(snapshot?.ClientId, verdict.Violations))
+        if (MarkLogged(snapshot?.ClientId, verdict.SuppressionKey))
         {
             _logger.LogCritical(
                 "Client registration for '{ClientId}' failed validation and was served to the protocol as an unknown client. " +
@@ -136,15 +142,24 @@ internal sealed class ValidatedClientResolver
     /// The registration's own <c>ClientId</c>, or <see langword="null"/> when it could not be read
     /// — in which case the failure alone is the key.
     /// </param>
-    /// <param name="violations">The verdict's text.</param>
+    /// <param name="suppressionKey">The verdict's stable failure identity, never its message.</param>
     /// <remarks>
     /// <para>
-    /// No part of the key is caller-controlled. The <c>client_id</c> is the one the store put in
-    /// the registration it returned, never the one the request asked for: a store that resolves
-    /// several spellings of an id to one registration — a case-insensitive database column is the
-    /// ordinary case — would otherwise let an unauthenticated caller spend a key per spelling,
-    /// reach the cap, and get the critical log back. The violation text is the validator's own
-    /// message or the type name of what it threw.
+    /// No part of the key is caller-controlled, and neither part varies while the failure does
+    /// not. The <c>client_id</c> is the one the store put in the registration it returned, never
+    /// the one the request asked for: a store that resolves several spellings of an id to one
+    /// registration — a case-insensitive database column is the ordinary case — would otherwise
+    /// let an unauthenticated caller spend a key per spelling, reach the cap, and get the critical
+    /// log back. The failure identity is the verdict's <see cref="Verdict.SuppressionKey"/>: rule
+    /// codes or a type name, never a validator's free-form message, which a host is free to vary
+    /// per call — a message carrying a timestamp or an attempt counter would mint a key and a
+    /// critical entry per request on exactly the uncached paths this set exists to cover.
+    /// </para>
+    /// <para>
+    /// The two parts are length-prefixed rather than joined by a separator, the same reason
+    /// <see cref="ClientRegistrationFingerprint"/> does it: a <c>client_id</c> or a rule code
+    /// containing the separator could otherwise make two different client/failure pairs share one
+    /// key, and the second failure would go unlogged.
     /// </para>
     /// <para>
     /// A registration that could not be read has no <c>client_id</c> to key on, so every
@@ -154,15 +169,23 @@ internal sealed class ValidatedClientResolver
     /// threw, and a second registration broken the same way is almost always the same bug.
     /// </para>
     /// </remarks>
-    private bool MarkLogged(string? clientId, string? violations)
+    private bool MarkLogged(string? clientId, string? suppressionKey)
     {
-        if (!_loggedFailures.TryAdd($"{clientId}\n{violations}", 0))
+        if (!_loggedFailures.TryAdd(SuppressionKeyFor(clientId, suppressionKey), 0))
             return false;
 
         if (_loggedFailures.Count >= MaxCachedVerdicts)
             _loggedFailures.Clear();
 
         return true;
+    }
+
+    /// <summary>Writes each part as <c>{length}:{value}</c> so neither can spill into the other.</summary>
+    private static string SuppressionKeyFor(string? clientId, string? suppressionKey)
+    {
+        var id = clientId ?? NullSentinel;
+        var failure = suppressionKey ?? NullSentinel;
+        return $"{id.Length}:{id}{failure.Length}:{failure}";
     }
 
     /// <summary>
@@ -187,14 +210,16 @@ internal sealed class ValidatedClientResolver
             // Snapshot() handed back itself or null. The failure is the snapshot's own text, so it is
             // named; anything
             // else thrown here, a ZeeKayDaConfigurationException included, is reduced to its type.
-            return (null, new Verdict(ex.Failure.Message));
+            return (null, new Verdict(ex.Failure.Message, ex.Failure.Code));
         }
         catch (Exception ex)
         {
             // A registration is an extension point: a property getter may throw, or a set may be
             // mutated while it is being read. Either way this type's promise is to answer unknown
             // rather than let a 500 escape from every protocol endpoint.
-            return (null, new Verdict($"The registration could not be read: {ex.GetType().FullName}."));
+            return (null, new Verdict(
+                $"The registration could not be read: {ex.GetType().FullName}.",
+                $"unreadable:{ex.GetType().FullName}"));
         }
 
         return (snapshot, GetOrAddVerdict(snapshot, fingerprint));
@@ -238,7 +263,15 @@ internal sealed class ValidatedClientResolver
         }
         catch (ZeeKayDaConfigurationException ex)
         {
-            return new Verdict(string.Join("; ", ex.AggregatedFailures.Select(f => f.Message)));
+            // The messages are what the operator reads; the codes are what suppression keys on.
+            // Codes are a documented stable contract, so they identify the same failure across
+            // calls even when the validator words its message differently each time. Sorted so a
+            // validator that reports the same rules in a different order is still the same failure.
+            return new Verdict(
+                string.Join("; ", ex.AggregatedFailures.Select(f => f.Message)),
+                string.Join(
+                    "; ",
+                    ex.AggregatedFailures.Select(f => f.Code).Order(StringComparer.Ordinal)));
         }
         catch (Exception ex)
         {
@@ -248,17 +281,31 @@ internal sealed class ValidatedClientResolver
             // The exception TYPE is named, never ex.Message. A caller-supplied validator can throw
             // anything, and a Verdict's text is surfaced and logged. FullName, not Name: two vendors'
             // ValidationException would otherwise be indistinguishable to the operator reading it.
-            return new Verdict($"The registration validator threw {ex.GetType().FullName}.");
+            return new Verdict(
+                $"The registration validator threw {ex.GetType().FullName}.",
+                $"threw:{ex.GetType().FullName}");
         }
     }
 
     private sealed class Verdict
     {
-        public static readonly Verdict Valid = new(null);
+        public static readonly Verdict Valid = new(null, null);
 
-        public Verdict(string? violations) => Violations = violations;
+        public Verdict(string? violations, string? suppressionKey)
+        {
+            Violations = violations;
+            SuppressionKey = suppressionKey;
+        }
 
+        /// <summary>What the operator is told, and the only part fit to read.</summary>
         public string? Violations { get; }
+
+        /// <summary>
+        /// What the failure <em>is</em>, stable across repeats of it: rule codes or a thrown
+        /// type's name. Suppression keys on this and never on <see cref="Violations"/>, which a
+        /// host's validator may reword per call.
+        /// </summary>
+        public string? SuppressionKey { get; }
 
         public bool IsValid => Violations is null;
     }

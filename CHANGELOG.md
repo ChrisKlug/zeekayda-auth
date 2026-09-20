@@ -524,8 +524,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   request instead of once, and so did a registration carrying a custom `IClientCredential`, which
   is revalidated uncached by design. Either one let an unauthenticated caller naming that
   `client_id` drive the log level operators page on. The critical entry is now suppressed by
-  `client_id` and failure together, so a repeat of the same failure is silent while a registration
-  that breaks a second, different way is still reported.
+  `client_id` and failure together — keyed on the failure's stable identity, its rule codes or a
+  thrown type's name rather than a message a validator may reword per call — so a repeat of the
+  same failure is silent while a registration that breaks a second, different way is still
+  reported.
 
 - **A client is allowed only the grant types, response types and response modes the server serves**
   (#689). A client registered with a value outside the server's `GrantTypesSupported`,
