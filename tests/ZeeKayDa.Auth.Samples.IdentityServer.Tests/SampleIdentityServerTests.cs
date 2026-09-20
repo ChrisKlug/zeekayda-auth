@@ -28,6 +28,11 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     // environment has to address it by that name or every endpoint answers 404.
     private const string ConformanceIssuer = "https://zeekayda.localtest.me:5443";
     private const string ConformanceClientId = "conformance-client";
+    // The conformance suite's oidcc-server-client-secret-post module authenticates with the secret
+    // in the request body, and most servers let a client use one method only, so the suite config's
+    // client_secret_post block names a client of its own rather than reusing the one above.
+    private const string ConformancePostClientId = "conformance-client-post";
+    private const string ConformancePostClientSecret = "conformance-client-post-secret";
     private const string ConformanceRedirectUri = "https://localhost.emobix.co.uk:8443/test/a/zeekayda/callback";
 
     private readonly WebApplicationFactory<Program> _factory;
@@ -57,6 +62,21 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
         var document = await browser.GetFromJsonAsync<JsonElement>(path, Cancellation);
 
         document.GetProperty("issuer").GetString().Should().Be(Issuer);
+    }
+
+    [Fact]
+    public async Task Discovery_advertises_client_secret_post_in_every_environment()
+    {
+        // TokenEndpoint.AuthMethodsSupported is server-wide, so the method the conformance suite
+        // needs is advertised by the default sample too, where no client uses it. That is the
+        // accepted cost of not deriving the advertised set from the registered clients.
+        using var browser = NewBrowser();
+
+        var document = await browser.GetFromJsonAsync<JsonElement>("/.well-known/openid-configuration", Cancellation);
+
+        document.GetProperty("token_endpoint_auth_methods_supported").EnumerateArray()
+            .Select(method => method.GetString())
+            .Should().BeEquivalentTo(["client_secret_basic", "none", "client_secret_post"]);
     }
 
     [Fact]
@@ -176,6 +196,28 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
 
         response.Should().StartWith(RedirectUri + "?");
         QueryHelpers.ParseQuery(new Uri(response).Query)["error"].ToString().Should().Be("invalid_request");
+    }
+
+    [Fact]
+    public async Task The_conformance_post_client_redeems_its_code_with_the_secret_in_the_request_body()
+    {
+        // What oidcc-server-client-secret-post does: it copies the suite config's client_secret_post
+        // block over 'client' and runs the happy flow, sending client_id and client_secret as form
+        // fields instead of an Authorization header. The registration has client_secret_post as its
+        // only permitted method, so this fails unless both the server advertises the method and the
+        // sample's settings wiring applies the client's list.
+        using var factory = _factory.WithWebHostBuilder(host => host.UseEnvironment("Conformance"));
+        using var browser = NewBrowser(factory, ConformanceIssuer);
+
+        var loginPage = await AuthorizeWithoutPkceAsync(browser, ConformancePostClientId, ConformanceRedirectUri);
+        var callback = await PostFormAsync(browser, loginPage, AliceLogin());
+        callback.Should().StartWith(ConformanceRedirectUri + "?");
+        var code = QueryHelpers.ParseQuery(new Uri(callback).Query)["code"].ToString();
+
+        var tokens = await RedeemWithSecretInBodyAsync(browser, code);
+
+        PayloadOf(tokens.GetProperty("id_token").GetString()!)
+            .GetProperty("sub").GetString().Should().Be("a1ice000000000000000000000000001");
     }
 
     [Fact]
@@ -352,6 +394,28 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
 
         using var response = await client.PostAsync("/connect/token", form, Cancellation);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return await response.Content.ReadFromJsonAsync<JsonElement>(Cancellation);
+    }
+
+    /// <summary>Redeems a code with client_secret_post: the credentials are form fields, not a header.</summary>
+    private static async Task<JsonElement> RedeemWithSecretInBodyAsync(HttpClient client, string code)
+    {
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "authorization_code",
+            ["code"] = code,
+            ["redirect_uri"] = ConformanceRedirectUri,
+            ["client_id"] = ConformancePostClientId,
+            ["client_secret"] = ConformancePostClientSecret,
+        });
+
+        using var response = await client.PostAsync("/connect/token", form, Cancellation);
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            var body = await response.Content.ReadAsStringAsync(Cancellation);
+            response.StatusCode.Should().Be(HttpStatusCode.OK, because: body[..Math.Min(body.Length, 3000)]);
+        }
+
         return await response.Content.ReadFromJsonAsync<JsonElement>(Cancellation);
     }
 

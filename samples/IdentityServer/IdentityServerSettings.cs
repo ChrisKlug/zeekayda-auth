@@ -41,4 +41,14 @@ public sealed class ClientSettings
     /// framework refuses to start with it off on a public one.
     /// </summary>
     public bool RequirePkce { get; init; } = true;
+
+    /// <summary>
+    /// The token endpoint authentication methods this confidential client may use, as the
+    /// <c>token_endpoint_auth_method</c> strings of OpenID Connect Discovery 1.0 §3 — for example
+    /// <c>client_secret_post</c>. Empty, the default, leaves the framework's own default of
+    /// <c>client_secret_basic</c>; a non-empty list replaces it. Every entry must also be advertised
+    /// by the server, or startup rejects the registration. Ignored for a public client, which
+    /// authenticates with nothing.
+    /// </summary>
+    public IReadOnlyList<string> TokenEndpointAuthMethods { get; init; } = [];
 }

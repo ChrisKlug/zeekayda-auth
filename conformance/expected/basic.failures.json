@@ -1,18 +1,5 @@
 [
     {
-        "test-name": "oidcc-server-client-secret-post",
-        "variant": {
-            "server_metadata": "discovery",
-            "client_registration": "static_client",
-            "client_auth_type": "client_secret_post"
-        },
-        "configuration-filename": "*zeekayda.json",
-        "current-block": "",
-        "condition": "GetStaticClientConfiguration",
-        "expected-result": "failure",
-        "comment": "The module needs a client_secret_post block in the suite config naming a client that authenticates that way, and the sample registers none - tracked by #717. Delete this entry when #717 lands."
-    },
-    {
         "test-name": "oidcc-scope-email",
         "variant": {
             "server_metadata": "discovery",

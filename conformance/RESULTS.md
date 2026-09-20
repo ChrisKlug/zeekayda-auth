@@ -108,7 +108,12 @@ screenshot for a human certifier to look at. Nothing in a REVIEW module failed.
 
 - **B — harness and sample, #717.** `GetStaticClientConfiguration`: the module wants a
   `client_secret_post` block in the suite config naming a client that authenticates that way, and
-  the sample advertises only `client_secret_basic` and `none`.
+  the sample advertised only `client_secret_basic` and `none`. **Fixed by #717**, which advertises
+  `client_secret_post` and registers `conformance-client-post` for the block to name. The result
+  above is from the run that found it; the numbers here are rewritten the next time the suite is run
+  against the sample, not by the change that fixed the gap. Its entry in
+  `conformance/expected/basic.failures.json` is gone, so a run that still reports this failure now
+  fails the check.
 
 ### Warnings
 
