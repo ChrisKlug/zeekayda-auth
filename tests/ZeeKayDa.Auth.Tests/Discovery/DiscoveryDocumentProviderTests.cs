@@ -145,6 +145,7 @@ public sealed class DiscoveryDocumentProviderTests
         doc.ResponseTypesSupported.Should().BeNull();
         doc.ResponseModesSupported.Should().BeNull();
         doc.CodeChallengeMethodsSupported.Should().BeNull();
+        doc.ClaimsSupported.Should().BeNull();
         doc.GrantTypesSupported.Should().Equal(GrantType.ClientCredentials);
         doc.TokenEndpoint.Should().Be("https://auth.example.com/connect/token", "the token endpoint is what such a host serves");
     }
@@ -292,6 +293,212 @@ public sealed class DiscoveryDocumentProviderTests
             repository);
 
         doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name);
+    }
+
+    // ── claims_supported is derived from the scopes and the ID token's own claims ───────────────
+
+    [Fact]
+    public async Task GetDocument_advertises_the_protocol_claims_the_id_token_carries()
+    {
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+        });
+
+        // OpenID Connect Discovery 1.0 §3: the claims the server may supply. A relying party
+        // reading this list must not be told about a claim no grant produces, so it is exactly
+        // what CodeGrantTokenPayloads.IdToken writes.
+        doc.ClaimsSupported.Should().Contain(["iss", "sub", "aud", "iat", "exp", "auth_time", "at_hash", "nonce", "acr", "amr"]);
+    }
+
+    [Fact]
+    public async Task GetDocument_does_not_advertise_reserved_claims_the_id_token_never_emits()
+    {
+        var doc = await GetDocumentAsync(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+        });
+
+        // These are reserved so a claims provider cannot mint them, which is a different question
+        // from whether the server issues them. It does not, and advertising a claim that never
+        // arrives is worse for a relying party than the metadata being absent. at_hash is not in
+        // this list: the issuer does write it, so it is advertised.
+        doc.ClaimsSupported.Should().NotContain(["azp", "c_hash", "sid", "nbf", "jti"]);
+    }
+
+    [Fact]
+    public async Task GetDocument_omits_ClaimsSupported_when_no_supported_grant_issues_an_ID_token()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition
+            {
+                Name = StandardScopes.Email.Name,
+                IdTokenClaims = ["email"],
+                UserInfoClaims = ["email", "email_verified"],
+            },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions
+            {
+                Issuer = "https://auth.example.com",
+                GrantTypesSupported = [GrantType.ClientCredentials],
+            },
+            repository);
+
+        // Only the authorization code grant issues an ID token or answers the UserInfo endpoint,
+        // so a client_credentials-only host can supply none of these claims. Discovery §3 asks for
+        // claims the server MAY supply, and advertising one nothing can produce is worse than the
+        // RECOMMENDED field being absent — the same rule that omits the endpoints themselves.
+        doc.ClaimsSupported.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetDocument_advertises_the_claims_the_discoverable_scopes_unlock()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition
+            {
+                Name = StandardScopes.OpenId.Name,
+                IdTokenClaims = ["sub"],
+            },
+            new ScopeDefinition
+            {
+                Name = StandardScopes.Email.Name,
+                IdTokenClaims = ["email"],
+                UserInfoClaims = ["email", "email_verified"],
+            },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            repository);
+
+        doc.ClaimsSupported.Should().Contain(["email", "email_verified"]);
+    }
+
+    [Fact]
+    public async Task GetDocument_excludes_access_token_only_claims_from_ClaimsSupported()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition
+            {
+                Name = StandardScopes.OpenId.Name,
+                IdTokenClaims = ["sub"],
+                AccessTokenClaims = ["tenant_id"],
+            },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            repository);
+
+        // Discovery §3 is about the ID token and the UserInfo endpoint. An access-token claim is
+        // for the resource server, and a relying party cannot ask for it here.
+        doc.ClaimsSupported.Should().NotContain("tenant_id");
+    }
+
+    [Fact]
+    public async Task GetDocument_excludes_claims_of_non_discoverable_scopes_from_ClaimsSupported()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name, IdTokenClaims = ["sub"] },
+            new ScopeDefinition
+            {
+                Name = "internal.admin",
+                IsDiscoverable = false,
+                IdTokenClaims = ["internal_role"],
+                UserInfoClaims = ["internal_department"],
+            },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            repository);
+
+        // A scope hidden from discovery hides what it unlocks too, or the claim list leaks the
+        // existence of the scope that scopes_supported was asked to hide.
+        doc.ClaimsSupported.Should().NotContain(["internal_role", "internal_department"]);
+    }
+
+    [Fact]
+    public async Task GetDocument_survives_a_custom_repository_returning_null_claim_lists()
+    {
+        // ScopeDefinition declares these lists non-nullable and InMemoryScopeRepository refuses a
+        // bad claim name at construction, but a custom IScopeRepository answers to neither at
+        // runtime. Such a repository issues tokens perfectly well — ClaimSelectionPlan and
+        // ClientClaimAdditions both read a null list as empty — so the discovery endpoint must not
+        // be the one place it throws, on an unauthenticated GET.
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name, IdTokenClaims = ["sub"] },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            new NullClaimListRepository(repository));
+
+        doc.ClaimsSupported.Should().Contain("sub").And.NotContainNulls();
+    }
+
+    [Fact]
+    public async Task GetDocument_drops_a_null_or_blank_claim_name_from_ClaimsSupported()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name, IdTokenClaims = ["sub"] },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            new BlankClaimNameRepository(repository));
+
+        // Discovery 1.0 §3 defines claims_supported as an array of strings, so a JSON null or an
+        // empty name in it is malformed metadata, not a harmless extra entry.
+        doc.ClaimsSupported.Should().NotContainNulls();
+        doc.ClaimsSupported.Should().OnlyContain(name => !string.IsNullOrWhiteSpace(name));
+        doc.ClaimsSupported.Should().Contain("sub");
+    }
+
+    [Fact]
+    public async Task GetDocument_lists_a_claim_two_scopes_spell_differently_once()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name, IdTokenClaims = ["sub"] },
+            new ScopeDefinition { Name = StandardScopes.Email.Name, IdTokenClaims = ["email"] },
+            new ScopeDefinition { Name = "billing", UserInfoClaims = ["Email"] },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            repository);
+
+        // ClaimSelection groups claim names ignoring case, so these two scopes unlock one claim
+        // and the token carries one. Advertising both would name one the relying party will never
+        // see under that spelling.
+        doc.ClaimsSupported.Should().ContainSingle(name => string.Equals(name, "email", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task GetDocument_lists_a_claim_two_scopes_share_once()
+    {
+        var repository = new InMemoryScopeRepository(
+        [
+            new ScopeDefinition { Name = StandardScopes.OpenId.Name, IdTokenClaims = ["sub"] },
+            new ScopeDefinition { Name = StandardScopes.Profile.Name, IdTokenClaims = ["sub", "name"] },
+        ]);
+
+        var doc = await GetDocumentAsync(
+            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
+            repository);
+
+        // "sub" is both a protocol claim and one the scopes declare; the document is a set.
+        doc.ClaimsSupported.Should().OnlyHaveUniqueItems();
     }
 
     // ── id_token_signing_alg_values_supported is derived from the key set ────────────────────────
@@ -477,4 +684,27 @@ public sealed class DiscoveryDocumentProviderTests
         doc.CodeChallengeMethodsSupported.Should().ContainSingle()
             .Which.Should().Be(CodeChallengeMethod.S256);
     }
+
+    /// <summary>A custom repository whose scopes carry null claim lists — the type system permits it.</summary>
+    private sealed class NullClaimListRepository(IScopeRepository inner) : IScopeRepository
+    {
+        public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            [.. (await inner.GetScopesAsync(cancellationToken)).Select(scope => scope with
+            {
+                IdTokenClaims = null!,
+                UserInfoClaims = null!,
+                AccessTokenClaims = null!,
+            })];
+    }
+
+    /// <summary>A custom repository that slips a null and a blank name into a claim list.</summary>
+    private sealed class BlankClaimNameRepository(IScopeRepository inner) : IScopeRepository
+    {
+        public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            [.. (await inner.GetScopesAsync(cancellationToken)).Select(scope => scope with
+            {
+                IdTokenClaims = [.. scope.IdTokenClaims, null!, "   "],
+            })];
+    }
+
 }

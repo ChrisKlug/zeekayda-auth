@@ -119,6 +119,7 @@ public sealed class DiscoveryEndpointTests
     [InlineData("token_endpoint_auth_methods_supported")]
     [InlineData("subject_types_supported")]
     [InlineData("id_token_signing_alg_values_supported")]
+    [InlineData("claims_supported")]
     public async Task GetDiscoveryDocument_contains_expected_OIDC_discovery_field(string fieldName)
     {
         var doc = await GetDocumentAsync(EndpointHost.Default);
@@ -140,6 +141,8 @@ public sealed class DiscoveryEndpointTests
         doc.TryGetProperty("response_types_supported", out _).Should().BeFalse("a zero-element claim is omitted, not published empty");
         doc.TryGetProperty("response_modes_supported", out _).Should().BeFalse();
         doc.TryGetProperty("code_challenge_methods_supported", out _).Should().BeFalse();
+        doc.TryGetProperty("claims_supported", out _).Should().BeFalse(
+            "such a host issues no ID token and answers no UserInfo request, so it can supply none of them");
         doc.TryGetProperty("end_session_endpoint", out _).Should().BeFalse("without the code grant nobody signs in, so there is no session to end");
         doc.TryGetProperty("token_endpoint", out _).Should().BeTrue("the token endpoint is what such a host serves");
     }

@@ -198,6 +198,8 @@ ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.AuthorizationEndpoint.get ->
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.AuthorizationEndpoint.init -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.CodeChallengeMethodsSupported.get -> System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Authorization.CodeChallengeMethod>?
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.CodeChallengeMethodsSupported.init -> void
+ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.ClaimsSupported.get -> System.Collections.Generic.IReadOnlyCollection<string!>?
+ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.ClaimsSupported.init -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.Equals(ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? other) -> bool
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.GrantTypesSupported.get -> System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.GrantType>!
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.GrantTypesSupported.init -> void
