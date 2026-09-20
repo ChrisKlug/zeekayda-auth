@@ -119,8 +119,9 @@ startup snapshot used by endpoint lookups. Invalid entries cause the host to fai
 
 ## Metadata fields
 
-All of the fields below are published in the discovery document. Some are fixed values, and others
-come from `AuthorizationServerOptions`.
+The fields below are the ones the discovery document can publish. Some are fixed values, some come
+from `AuthorizationServerOptions`, and some are derived; the notes say which are omitted, and on
+what condition.
 
 | JSON field | Source | Default / notes |
 |---|---|---|
@@ -136,6 +137,7 @@ come from `AuthorizationServerOptions`.
 | `token_endpoint_auth_methods_supported` | `TokenEndpoint.AuthMethodsSupported` | Defaults to `["client_secret_basic"]`. |
 | `subject_types_supported` | Fixed value | Always `["public"]`. Pairwise subject identifiers are not currently supported. |
 | `id_token_signing_alg_values_supported` | The configured signing keys | Derived: the distinct algorithms of every published key, ascending by `SigningAlgorithm` value, optionally narrowed by `IdToken.AdvertisedSigningAlgorithms`. Required by OIDC Discovery 1.0 Section 3. |
+| `claims_supported` | `IScopeRepository` + the ID token's protocol claims | Derived: the ID-token and userinfo claims of every discoverable scope, plus `iss`, `sub`, `aud`, `iat`, `exp`, `auth_time`, `at_hash`, `nonce`, `acr` and `amr`. A scope's access-token claims are not listed. Omitted on a host whose `GrantTypesSupported` lacks `authorization_code`, which issues no ID token. |
 | `code_challenge_methods_supported` | `AuthorizationEndpoint.CodeChallengeMethodsSupported` | `["S256"]` by default, the one method the token endpoint verifies. Omitted when `null`, which startup permits only on a host that does not serve the authorization code grant. |
 
 The recommended metadata fields are described by

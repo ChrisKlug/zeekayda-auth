@@ -44,9 +44,11 @@ screenshot of, so they finish in a few seconds.
 
 | Warning | Triage |
 |---|---|
-| `OIDCCCheckDiscEndpointClaimsSupported` — *claims_supported: not found* | **Library gap**, #716. OpenID Connect Discovery 1.0 §3 lists `claims_supported` as RECOMMENDED. |
+| `OIDCCCheckDiscEndpointClaimsSupported` — *claims_supported: not found* | **Fixed by #716**, which added `claims_supported`. The result above is from the run that found it; the numbers here are rewritten the next time the suite is run against the sample, not by the change that fixed the gap. Its entry in `conformance/expected/config.failures.json` is gone, so a run that still reports this warning now fails the check. |
 
-The discovery document as served now carries `userinfo_endpoint`; the rest is as before:
+The discovery document **as recorded by that run**, before #716 added `claims_supported`. It is a
+snapshot of what was served at the time, not a current field list; the next run against the sample
+rewrites it:
 
 ```
 issuer, authorization_endpoint, token_endpoint, userinfo_endpoint, jwks_uri, end_session_endpoint,

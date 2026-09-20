@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Scopes;
 using ZeeKayDa.Auth.Tokens;
 
@@ -58,7 +59,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
         var issuerUri = new Uri(options.Issuer!);
 
         var scopes = await _scopeRepository.GetScopesAsync(cancellationToken).ConfigureAwait(false);
-        var interactive = InteractiveMetadata.For(options, issuerUri);
+        var interactive = InteractiveMetadata.For(options, issuerUri, scopes);
 
         return new OpenIdConfigurationDocument
         {
@@ -74,6 +75,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
             ScopesSupported = [.. scopes
                 .Where(scope => scope.IsDiscoverable)
                 .Select(scope => scope.Name)],
+            ClaimsSupported = interactive.ClaimsSupported,
             ResponseModesSupported = interactive.ResponseModesSupported,
             GrantTypesSupported = [.. options.GrantTypesSupported],
             TokenEndpointAuthMethodsSupported = [.. options.TokenEndpoint.AuthMethodsSupported
@@ -90,6 +92,9 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
     /// omitted on that condition, and OpenID Connect Discovery §4.2 omits a zero-element claim
     /// rather than publishing an empty array: metadata naming an endpoint that answers 404, or a
     /// response type nothing serves, is worse than metadata without.
+    /// <c>claims_supported</c> rides the same gate: an ID token is born from the authorization
+    /// code grant, and a host without it answers no UserInfo request either, so it can supply
+    /// none of those claims.
     /// </summary>
     private sealed record InteractiveMetadata
     {
@@ -108,7 +113,42 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
 
         public IReadOnlyCollection<CodeChallengeMethod>? CodeChallengeMethodsSupported { get; init; }
 
-        public static InteractiveMetadata For(AuthorizationServerOptions options, Uri issuerUri) =>
+        public IReadOnlyCollection<string>? ClaimsSupported { get; init; }
+
+        /// <summary>
+        /// The claims the server may supply: what the discoverable scopes unlock in an ID token or
+        /// at the UserInfo endpoint, plus the protocol claims an ID token carries.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="ScopeDefinition.AccessTokenClaims"/> are excluded, because Discovery §3 is
+        /// about the ID token and the UserInfo endpoint and an access token is for the resource
+        /// server. A scope hidden from discovery hides its claims too, the same filter
+        /// <c>scopes_supported</c> uses. Names are de-duplicated case-insensitively, because
+        /// <see cref="Claims.ClaimSelection"/> groups them that way: two scopes spelling a claim
+        /// <c>email</c> and <c>Email</c> unlock one claim, so the document must not name two.
+        /// </remarks>
+        /// <remarks>
+        /// A null list and a null or blank entry are both read as nothing, the way
+        /// <c>ClaimSelectionPlan.Wanted</c> and <see cref="Clients.ClientClaimAdditions"/> already
+        /// read them. <see cref="ScopeDefinition"/> declares these lists non-nullable and
+        /// <c>InMemoryScopeRepository</c> refuses a bad claim name at construction, but a custom
+        /// <see cref="IScopeRepository"/> answers neither to the type system at runtime nor to that
+        /// constructor. Without this, a repository that issues tokens perfectly well would make an
+        /// unauthenticated GET of the discovery document throw, or put a JSON <c>null</c> into a
+        /// member Discovery §3 defines as an array of strings.
+        /// </remarks>
+        private static IReadOnlyCollection<string> ClaimsSupportedFrom(IReadOnlyCollection<ScopeDefinition> scopes) =>
+            [.. IdTokenProtocolClaims.Names
+                .Concat(scopes
+                    .Where(scope => scope.IsDiscoverable)
+                    .SelectMany(scope => (scope.IdTokenClaims ?? []).Concat(scope.UserInfoClaims ?? [])))
+                .Where(claim => !string.IsNullOrWhiteSpace(claim))
+                .Distinct(StringComparer.OrdinalIgnoreCase)];
+
+        public static InteractiveMetadata For(
+            AuthorizationServerOptions options,
+            Uri issuerUri,
+            IReadOnlyCollection<ScopeDefinition> scopes) =>
             options.GrantTypesSupported.Contains(GrantType.AuthorizationCode)
                 ? new InteractiveMetadata
                 {
@@ -123,6 +163,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
                     CodeChallengeMethodsSupported = options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { } methods
                         ? [.. methods]
                         : null,
+                    ClaimsSupported = ClaimsSupportedFrom(scopes),
                 }
                 : None;
     }
