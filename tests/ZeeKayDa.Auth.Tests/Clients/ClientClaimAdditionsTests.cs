@@ -62,6 +62,19 @@ public sealed class ClientClaimAdditionsTests
     }
 
     [Fact]
+    public void A_collision_on_a_userinfo_only_claim_points_the_operator_at_the_scope_destination_lists()
+    {
+        // The standard scopes release their claims at userinfo only, so telling an operator to
+        // "grant it through the scope" would send them somewhere that never reaches the ID token.
+        var collision = ClientClaimAdditions.FindCollision(Client(idToken: ["email"]), StandardScopes.All);
+
+        var message = collision!.Value.Describe("app");
+
+        message.Should().Contain(nameof(ScopeDefinition.IdTokenClaims));
+        message.Should().Contain(nameof(ScopeDefinition.UserInfoClaims));
+    }
+
+    [Fact]
     public void An_addition_differing_only_in_case_from_a_scope_claim_is_refused()
     {
         // A consuming ClaimsPrincipal matches claim types ignoring case, so 'Email' would be read

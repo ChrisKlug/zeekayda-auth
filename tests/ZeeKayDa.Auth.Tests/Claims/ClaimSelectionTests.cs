@@ -59,6 +59,46 @@ public sealed class ClaimSelectionTests
     }
 
     [Fact]
+    public void The_plan_for_the_tokens_fetches_nothing_a_userinfo_only_scope_unlocks()
+    {
+        // The standard scopes as shipped unlock their claims at userinfo only, so without this
+        // narrowing every code exchange would ask the provider for personal data no token carries.
+        var plan = ClaimSelectionPlan
+            .For([StandardScopes.OpenId, StandardScopes.Profile, StandardScopes.Email], Client())
+            .For(ClaimsDestination.Tokens);
+
+        plan.All.Should().BeEquivalentTo(["sub"], "only openid's sub reaches a token");
+        plan.UserInfo.Should().BeEmpty("the exchange is not answering a userinfo request");
+        plan.IdToken.Should().BeEquivalentTo(["sub"]);
+    }
+
+    [Fact]
+    public void The_plan_for_the_tokens_keeps_what_the_ID_and_access_tokens_want()
+    {
+        var plan = ClaimSelectionPlan
+            .For([StandardScopes.OpenId, Profile, OrdersRead], Client(idToken: ["tenant"], accessToken: ["tenant"]))
+            .For(ClaimsDestination.Tokens);
+
+        plan.IdToken.Should().Contain(["name", "tenant"]);
+        plan.AccessToken.Should().BeEquivalentTo(["role", "tenant"]);
+        plan.All.Should().Contain(["name", "role", "tenant"]).And.NotContain("customer_number");
+    }
+
+    [Fact]
+    public void A_malformed_userinfo_only_claim_cannot_fail_a_token_exchange()
+    {
+        // A repeat of a single-valued claim aborts the destination that wants it. customer_number
+        // is unlocked at userinfo only, so an exchange must not be the request that dies on it.
+        var plan = ClaimSelectionPlan.For([StandardScopes.OpenId, OrdersRead], Client());
+
+        var act = () => ClaimSelection.Select(
+            [new("customer_number", "a"), new("customer_number", "b")],
+            plan.For(ClaimsDestination.Tokens));
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void The_plan_is_empty_for_a_scope_that_unlocks_nothing_and_a_client_that_adds_nothing()
     {
         var plan = ClaimSelectionPlan.For([new ScopeDefinition { Name = "api" }], Client());

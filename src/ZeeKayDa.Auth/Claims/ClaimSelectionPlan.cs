@@ -44,7 +44,10 @@ internal sealed record ClaimSelectionPlan(
     /// <summary>
     /// The plan narrowed to one destination, so the provider is asked for what that destination
     /// will keep and nothing else. Claim values are personal data, and a claim type only the
-    /// access token unlocks is I/O a userinfo call has no use for.
+    /// access token unlocks is I/O a userinfo call has no use for — and a claim type only userinfo
+    /// unlocks, which the standard scopes make the common case, is I/O an exchange has no use for.
+    /// Narrowing also keeps a destination the request is not for from failing it: a claim a
+    /// selection would reject aborts only the destination that wanted it.
     /// </summary>
     public ClaimSelectionPlan For(ClaimsDestination destination) => destination switch
     {
@@ -53,6 +56,11 @@ internal sealed record ClaimSelectionPlan(
             IdToken = FrozenSet<string>.Empty,
             AccessToken = FrozenSet<string>.Empty,
             All = UserInfo,
+        },
+        ClaimsDestination.Tokens => this with
+        {
+            UserInfo = FrozenSet<string>.Empty,
+            All = IdToken.Concat(AccessToken).ToFrozenSet(StringComparer.Ordinal),
         },
         _ => this,
     };
