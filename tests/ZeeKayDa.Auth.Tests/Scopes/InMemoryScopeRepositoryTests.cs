@@ -82,6 +82,19 @@ public sealed class InMemoryScopeRepositoryTests
     }
 
     [Fact]
+    public async Task GetScopes_returns_a_collection_a_caller_cannot_downcast_and_mutate()
+    {
+        // A bare array would let any caller cast the result back to ScopeDefinition[] and change
+        // what the repository serves for every later request.
+        var repository = new InMemoryScopeRepository([StandardScopes.OpenId]);
+
+        var scopes = await repository.GetScopesAsync(TestContext.Current.CancellationToken);
+
+        (scopes as ScopeDefinition[]).Should().BeNull("the backing array must not be reachable");
+        scopes.Should().BeAssignableTo<System.Collections.ObjectModel.ReadOnlyCollection<ScopeDefinition>>();
+    }
+
+    [Fact]
     public async Task GetScopes_is_unaffected_by_a_list_the_caller_edits_after_construction()
     {
         var scopes = new List<ScopeDefinition> { StandardScopes.OpenId };

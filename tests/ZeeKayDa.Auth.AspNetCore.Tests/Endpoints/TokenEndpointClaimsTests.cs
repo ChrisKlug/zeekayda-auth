@@ -744,7 +744,6 @@ public sealed class TokenEndpointClaimsTests : IDisposable
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
-    /// <summary>A scope repository whose definitions a test can change between requests.</summary>
     /// <summary>A repository registered under the wrong lifetime; its answers are never read.</summary>
     private sealed class ScopedClientRepository : IClientRepository
     {
@@ -752,6 +751,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
             ValueTask.FromResult<IClientRegistration?>(null);
     }
 
+    /// <summary>A scope repository whose definitions a test can change between requests.</summary>
     private sealed class MutableScopeRepository(IReadOnlyCollection<ScopeDefinition> scopes) : IScopeRepository
     {
         public IReadOnlyCollection<ScopeDefinition> Scopes { get; set; } = scopes;

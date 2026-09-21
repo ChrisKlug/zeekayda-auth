@@ -35,17 +35,19 @@ public sealed class InMemoryScopeRepository : IScopeRepository
     /// database-backed one fail the same way.
     /// </para>
     /// <para>
-    /// The enumerable is materialised so that a lazy sequence is not re-run on every read. The
-    /// definitions themselves are not deep-copied: <c>ValidatedScopeCatalog</c> copies each one,
-    /// claim lists included, on every read, so what the protocol sees is already insulated from a
-    /// caller that edits a list it passed in.
+    /// The enumerable is materialised so that a lazy sequence is not re-run on every read, and
+    /// wrapped read-only so the returned collection cannot be downcast to its backing array and
+    /// mutated — what this repository serves must not change under a caller that merely read it.
+    /// The definitions themselves are not deep-copied: <c>ValidatedScopeCatalog</c> copies each
+    /// one, claim lists included, on every read, so what the protocol sees is already insulated
+    /// from a caller that edits a list it passed in.
     /// </para>
     /// </remarks>
     public InMemoryScopeRepository(IEnumerable<ScopeDefinition> scopes)
     {
         ArgumentNullException.ThrowIfNull(scopes);
 
-        _scopes = [.. scopes];
+        _scopes = scopes.ToList().AsReadOnly();
     }
 
     /// <inheritdoc />

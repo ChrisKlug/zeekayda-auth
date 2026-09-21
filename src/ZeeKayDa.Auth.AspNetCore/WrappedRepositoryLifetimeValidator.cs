@@ -95,19 +95,8 @@ internal sealed class RepositoryLifetimeScanner(IServiceCollection services)
     /// repository and then a keyed singleton for some unrelated purpose pass this check while the
     /// scoped instance is the one actually held.
     /// </remarks>
-    public ServiceLifetime? EffectiveLifetimeOf(Type serviceType)
-    {
-        ServiceLifetime? lifetime = null;
-
-        foreach (var descriptor in services)
-        {
-            if (descriptor.IsKeyedService)
-                continue;
-
-            if (descriptor.ServiceType == serviceType)
-                lifetime = descriptor.Lifetime;
-        }
-
-        return lifetime;
-    }
+    public ServiceLifetime? EffectiveLifetimeOf(Type serviceType) =>
+        services
+            .LastOrDefault(descriptor => !descriptor.IsKeyedService && descriptor.ServiceType == serviceType)
+            ?.Lifetime;
 }
