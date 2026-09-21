@@ -12,10 +12,12 @@ namespace ZeeKayDa.Auth.Claims;
 /// interpret; the standard scopes are already expressed by <paramref name="ClaimTypes"/>.
 /// </param>
 /// <param name="ClaimTypes">
-/// Every claim type that selection will keep for this grant, across the ID token, the access
-/// token and userinfo, the client's own additions included. A hint for what to fetch, not a
-/// filter: a record of a type not listed here is dropped, and a listed type the provider does
-/// not return is omitted from the token.
+/// Every claim type that selection will keep for the operation in hand, the client's own
+/// additions included: at a token exchange the ID token's and access token's types, at userinfo
+/// the userinfo types. It is not the union across all three, so it is a fetch hint and never a
+/// disclosure plan — a claim absent here may still be released to the same grant by the other
+/// operation. Nor is it a filter: a record of a type not listed is dropped, and a listed type
+/// the provider does not return is omitted.
 /// </param>
 /// <param name="FamilyId">
 /// The refresh-token family of the grant, stable across every rotation of it, or

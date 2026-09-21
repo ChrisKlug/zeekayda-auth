@@ -118,7 +118,7 @@ discovery request failing.
 as OpenID Connect wire names, and may name the resource server's absolute URI. There is no
 identity-resource, API-resource or API-scope registry: two scopes with the same audience string are
 the same API. `StandardScopes` is a static template for `AddInMemoryScopes`, with the §5.4 claims in
-both the ID-token and userinfo lists; scopes come from `IScopeRepository`. Startup fails on an
+the userinfo lists only; scopes come from `IScopeRepository`. Startup fails on an
 audience that is not an absolute URI without a fragment (RFC 8707 §2, `scopes.audience.invalid`), a
 scope listing a protocol claim other than `sub` selection would never deliver
 (`scopes.claims.reserved`), a scope or claim with no name (`scopes.name.blank`,

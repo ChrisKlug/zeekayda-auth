@@ -65,9 +65,9 @@ shortest effective access-token lifetime across clients.** A miss on the family 
 key on its own. A TTL at grant or refresh-token scale defeats the point and must not be used.
 
 **Claims resolution is a subject-level concern.** `ClaimsProviderContext` carries the subject, the
-granted scopes, the claim types selection will keep (the union over every destination, a fetch hint
-and never a filter) and the family id. The client id and request metadata are withheld: the only
-client-varying step is selection, downstream, and a client can only widen what is selected.
+granted scopes, the family id, and the claim types selection keeps for the operation in hand: the token
+types at an exchange, the userinfo types at userinfo, a fetch hint and never a filter. The client id is
+withheld, because only selection varies by client and it can only widen.
 
 **The transfer type is not `System.Security.Claims.Claim`.** Not reliably serialisable, carries a
 back-reference to its identity, and its value-type tag never survives a JWT anyway.
