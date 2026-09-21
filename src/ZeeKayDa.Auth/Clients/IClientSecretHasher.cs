@@ -102,6 +102,12 @@ public interface IClientSecretHasher
     /// <paramref name="credential"/> is always a type this hasher owns.
     /// The <paramref name="clientId"/> parameter is for diagnostic message formatting only.
     /// </remarks>
+    /// <remarks>
+    /// Every failure returned here reaches the operator's log verbatim, so
+    /// <see cref="ZeeKayDaConfigurationFailure.Message"/>'s contract applies with particular force
+    /// on this method: describe what is wrong with the stored credential, and never put any part of
+    /// the credential itself — or a caught exception's message — into the text.
+    /// </remarks>
     IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
         IClientSecret credential, string clientId) => [];
 

@@ -34,6 +34,33 @@ credential, or a caller-supplied secret, and a configuration failure's `Message`
 string the framework encourages hosts to surface: neither by-key redaction nor exception wrapping can
 reach it. This binds every public failure surface, not just startup verification.
 
+**The same rule binds anyone who throws `ZeeKayDaConfigurationException`, and it is a contract, not a
+mechanism.** The type is public, so an extension point — a client or scope repository, a signing key
+source, a third-party startup check — can throw it, and the framework preserves the `Code` and
+`Message` it carries so a provider's own operator alerting keeps working. Provenance is therefore
+documented on `ZeeKayDaConfigurationFailure.Message`: the thrower vouches for that text as safe to
+print. Enforcing it by type — an internal subtype only friend assemblies can construct, as
+`ScopeContractException` does for the one request-time path — was **refused framework-wide**: it would
+make a first-class signing-key source or provider package impossible to build outside this repository,
+which is wrong for an open-source framework, and any opt-in marker is as available to a careless
+author as to a careful one. A third party who launders a vault error through a failure message is on
+the same footing as one who logs it directly: their responsibility, checked when the code arrives as a
+PR. What the framework owes is that **its own** text never leaks. For a *log call* that is enforced
+mechanically, by the analyzers and the sanitizing logger. For a *failure message* it is not enforced
+at all yet — no analyzer reads the `ZeeKayDaConfigurationFailure` constructor or `AddFailure`, which
+is why five framework sites once violated the rule above with CI green. Closing that gap is #766;
+until it lands, this rule is a contract and a review obligation, not a control.
+
+**Where the framework does claim provenance, it carries it in a type, never in the text.** The
+provider-options activator quotes the framework's own pin assertions and merely counts everybody
+else's. It learns which is which from a framework-written record, keyed by provider name *and*
+options type and cleared before the resolution it describes, because
+`OptionsValidationException.Failures` is one flat list every validator registered for the options
+type contributes to: a marker inside a string proves nothing about who wrote it, and a host
+validator opening with the framework's own prefix would have had its text quoted as the framework's.
+The prefix survives as a reading aid for a human inspecting that list, and nothing may treat it as
+provenance.
+
 **Two-layer misconfiguration detection is intentional.** Where an error has both a startup validator
 and a resolve-time fallback, the validator is the primary layer and the fallback throws if it was
 bypassed or never enabled. They are complementary, not competing designs.

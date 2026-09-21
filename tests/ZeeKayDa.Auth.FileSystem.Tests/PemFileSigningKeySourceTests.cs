@@ -649,4 +649,58 @@ public sealed class PemFileSigningKeySourceTests
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
+
+    // ── The failure message never repeats the parser's own text (#764) ───────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_names_the_parser_exception_type_rather_than_copying_its_message()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var path = tempDir.WriteTextFile("garbage.pem", "not a pem file at all");
+        var sut = BuildSource(new PemSigningFile(path));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        AssertNamesTypeWithoutCopyingMessage(exception.Which, "signing.file_signing.invalid_pem");
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_names_the_parser_exception_type_rather_than_copying_its_message()
+    {
+        // The private-key path is the sharpest case: the text the parser failed on is key material.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", "-----BEGIN PRIVATE KEY-----\nnot base64\n-----END PRIVATE KEY-----");
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+        var keySet = await sut.ReadAsync(ct);
+
+        var act = async () => await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        AssertNamesTypeWithoutCopyingMessage(exception.Which, "signing.file_signing.invalid_pem");
+    }
+
+    /// <summary>
+    /// Asserts the contract on <c>ZeeKayDaConfigurationFailure.Message</c>: it names the underlying
+    /// exception's type, never repeats that exception's own message, and leaves the original
+    /// reachable as the inner exception.
+    /// </summary>
+    private static void AssertNamesTypeWithoutCopyingMessage(
+        ZeeKayDaConfigurationException exception, string expectedCode)
+    {
+        exception.InnerException.Should().NotBeNull();
+        var cause = exception.InnerException!;
+
+        var failure = exception.AggregatedFailures.Should()
+            .ContainSingle(f => f.Code == expectedCode).Subject;
+
+        failure.Message.Should().Contain(cause.GetType().FullName);
+        failure.Message.Should().Contain("See the inner exception for the root cause.");
+        cause.Message.Should().NotBeNullOrWhiteSpace();
+        failure.Message.Should().NotContain(cause.Message);
+    }
 }

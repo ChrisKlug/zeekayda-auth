@@ -1802,3 +1802,47 @@ architecture lens and the security agent, one round, no High or Critical from an
   `IDistributedCache` — a decorator over `MemoryDistributedCache`, a hand-rolled double — starts
   outside `Development` with only the non-atomic `Warning`. Proven by
   `A_shared_cache_warns_that_the_stores_are_non_atomic_in_every_environment`.
+
+## 2026-09-21 — what a configuration failure's message may carry (#764, code frozen at `343bc3e`)
+
+Scoped to the five signing-source throw sites, the contract on `ZeeKayDaConfigurationFailure`, and
+the provider-options pin provenance. Copilot code lens, Copilot security lens and the security
+agent, one round plus fix-diff verification. No High or Critical survived review.
+
+- Five framework sites interpolated a caught parser exception's `Message` into a failure message —
+  a public string no redaction control reaches. All five now name the type. Closed —
+  `ReadAsync_names_the_parser_exception_type_rather_than_copying_its_message` and
+  `CreateSignerAsync_names_the_parser_exception_type_rather_than_copying_its_message`, on both the
+  PEM and the PFX source.
+- The provider-options activator identified its own pin assertions by a string prefix any validator
+  can forge, and quoted the remainder. Provenance now travels in a framework-written record. Closed
+  — `A_host_validator_cannot_get_its_text_quoted_by_opening_it_with_the_frameworks_own_prefix`,
+  which forges the prefix around a sentinel and fails against the previous code.
+- That record is keyed by provider name *and* options type, and cleared before the attempt it
+  describes, so it cannot attribute one type's assertions to another or survive a resolution that
+  failed earlier. Closed — `PinnedOptionDriftRecorderTests`.
+- **Declined (maintainer):** provenance by internal subtype, framework-wide. It would make a
+  first-class signing-key source or provider package impossible to build outside this repository.
+  A third party who launders foreign text through a failure message is on the same footing as one
+  who logs it directly — reviewed when the code arrives, not policed at runtime.
+- **Declined (maintainer):** splitting offending values out of failure messages into separately
+  classified fields. A signed URI typed into a non-secret field such as a scope `Audience` is not
+  recognisable by key, so a split record would still print it.
+- **Accepted residual:** a root cause still travels as `InnerException`, so a host printing the
+  whole chain without `ISanitizingLogger<T>` sees the original message. Unchanged and already
+  recorded at §1.7; `RedactedExceptionWrapper` replaces it for a host that does log through the
+  framework.
+- **Accepted residual:** a resolution of the same provider name and options type running
+  concurrently with the activator's can write a pin-drift record between its clear and its read, so
+  the startup message can misattribute or omit a pin assertion. Diagnosis only — a drift holds a
+  framework-chosen member name and the framework's own expected value, never observed text — and
+  startup fails closed on the underlying exception regardless. Reasoning recorded on
+  `PinnedOptionDriftRecorder`; no test, because the interleaving needs an options-system seam the
+  framework does not own.
+- **Known gap:** `CertificateStoreReader`'s `X509Store.Open` catch has no test. It is
+  `[ExcludeFromCodeCoverage]`, and the existing integration case injects through
+  `FakeCertificateStoreReader`, bypassing the catch — so a regression to interpolating `ex.Message`
+  there would pass the suite. A deterministic ACL-denied open needs privileges the test host does
+  not have.
+- **Open (maintainer deferred):** nothing in CI enforces the "never `ex.Message` in a failure" rule
+  — this entry's first bullet is five violations of a rule already in the register. Issue #766.

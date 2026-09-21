@@ -26,12 +26,15 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 internal sealed class HandlerOptionsStartupActivator : IStartupActivator
 {
     private readonly ProviderRegistry _registry;
+    private readonly PinnedOptionDriftRecorder _recorder;
 
-    public HandlerOptionsStartupActivator(ProviderRegistry registry)
+    public HandlerOptionsStartupActivator(ProviderRegistry registry, PinnedOptionDriftRecorder recorder)
     {
         ArgumentNullException.ThrowIfNull(registry);
+        ArgumentNullException.ThrowIfNull(recorder);
 
         _registry = registry;
+        _recorder = recorder;
     }
 
     /// <inheritdoc/>
@@ -75,11 +78,18 @@ internal sealed class HandlerOptionsStartupActivator : IStartupActivator
     /// Resolves one provider's named options, returning <see langword="null"/> when they are
     /// valid and otherwise the failures to report with the exception behind them.
     /// </summary>
-    private static (IReadOnlyList<ZeeKayDaConfigurationFailure> Failures, Exception Cause)? Resolve(
+    private (IReadOnlyList<ZeeKayDaConfigurationFailure> Failures, Exception Cause)? Resolve(
         IServiceProvider services,
         Type optionsType,
         string name)
     {
+        // Cleared first, so what the recorder holds afterwards describes this attempt. A resolution
+        // that throws before the framework's validator runs — a post-configurer that throws, or
+        // another validator that fails first — then reports no pin assertions, rather than an
+        // earlier attempt's. A concurrent resolution of the same name and options type can still
+        // interleave; PinnedOptionDriftRecorder records why that is accepted.
+        _recorder.Clear(name, optionsType);
+
         try
         {
             HandlerOptions.Resolve(services, optionsType, name);
@@ -87,7 +97,7 @@ internal sealed class HandlerOptionsStartupActivator : IStartupActivator
         }
         catch (OptionsValidationException ex)
         {
-            return ([new ZeeKayDaConfigurationFailure("provider.options_invalid", Describe(name, ex))], ex);
+            return ([new ZeeKayDaConfigurationFailure("provider.options_invalid", Describe(name, optionsType, ex))], ex);
         }
         catch (ZeeKayDaConfigurationException ex)
         {
@@ -112,17 +122,28 @@ internal sealed class HandlerOptionsStartupActivator : IStartupActivator
     /// Names the provider and repeats only the framework's own pin assertions; whatever else the
     /// provider's or the host's validators said is counted, and travels as the root cause.
     /// </summary>
-    private static string Describe(string name, OptionsValidationException ex)
+    /// <remarks>
+    /// The assertions come from <see cref="PinnedOptionDriftRecorder"/>, which only the framework's
+    /// own validator writes to — never from recognising the framework's wording inside
+    /// <see cref="OptionsValidationException.Failures"/>. That list is flat and every validator
+    /// registered for the options type contributes to it, so a marker inside a string proves
+    /// nothing about who wrote it: a provider using the same opening characters would have its text
+    /// quoted here as though the framework had written it. Only the *count* is taken from the
+    /// exception, and a count carries no text.
+    /// </remarks>
+    private string Describe(string name, Type optionsType, OptionsValidationException ex)
     {
-        var pinned = ex.Failures
-            .Where(failure => failure.StartsWith(HandlerOptionsValidator<AuthenticationSchemeOptions>.FailurePrefix, StringComparison.Ordinal))
-            .Select(failure => failure[HandlerOptionsValidator<AuthenticationSchemeOptions>.FailurePrefix.Length..])
-            .ToArray();
-        var others = ex.Failures.Count() - pinned.Length;
+        var pinned = _recorder.DriftsFor(name, optionsType);
+        var others = Math.Max(0, ex.Failures.Count() - pinned.Count);
 
         var message = $"The options for provider '{name}' are not valid.";
-        if (pinned.Length > 0)
-            message += " " + string.Join(" ", pinned);
+        if (pinned.Count > 0)
+        {
+            message += $" The options for provider '{name}' were changed after the framework " +
+                $"pinned them: {string.Join(" ", pinned.Select(drift => drift.Describe()))} The " +
+                "framework owns these members; remove the configuration that sets them.";
+        }
+
         if (others > 0)
             message += $" {others} further validation failure(s) came from the provider's or the host's own rules; see the inner exception.";
 

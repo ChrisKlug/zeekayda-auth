@@ -132,9 +132,17 @@ internal sealed class PemFileSigningKeySource : ISigningKeySource
         }
         catch (Exception ex) when (ex is CryptographicException or ArgumentException or FormatException)
         {
-            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
-                "signing.file_signing.invalid_pem",
-                $"The file at '{certificatePath}' does not contain a valid PEM-encoded certificate: {ex.Message}"));
+            // The exception TYPE is named, never ex.Message. A PEM parse error is raised over the
+            // file's own content, and a failure message is a plain public-API string that neither
+            // by-key redaction nor RedactedExceptionWrapper can reach. The root cause travels as
+            // the inner exception instead.
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.invalid_pem",
+                    $"The file at '{certificatePath}' does not contain a valid PEM-encoded " +
+                    $"certificate: {ex.GetType().FullName} was thrown. See the inner exception for " +
+                    "the root cause."),
+                ex);
         }
     }
 
@@ -169,10 +177,17 @@ internal sealed class PemFileSigningKeySource : ISigningKeySource
                 ? $"'{slot.Path}'"
                 : $"certificate '{slot.Path}' / private key '{slot.KeyPath}'";
 
-            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
-                "signing.file_signing.invalid_pem",
-                $"The file(s) at {description} do not contain a valid PEM-encoded certificate and " +
-                $"private key: {ex.Message}"));
+            // The exception TYPE is named, never ex.Message — and most sharply here, where the
+            // text being parsed is private key material. A failure message is a plain public-API
+            // string that neither by-key redaction nor RedactedExceptionWrapper can reach. The root
+            // cause travels as the inner exception instead.
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.invalid_pem",
+                    $"The file(s) at {description} do not contain a valid PEM-encoded certificate " +
+                    $"and private key: {ex.GetType().FullName} was thrown. See the inner exception " +
+                    "for the root cause."),
+                ex);
         }
     }
 }

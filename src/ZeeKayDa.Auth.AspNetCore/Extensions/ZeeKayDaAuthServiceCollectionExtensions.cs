@@ -279,6 +279,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // every other options type, and it skips itself for every name that is not a provider.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton(typeof(IValidateOptions<>), typeof(HandlerOptionsValidator<>)));
+
+        // The channel that carries the validator's findings to the startup activator with their
+        // provenance intact. Registered next to the validator because it is useless without it.
+        services.TryAddSingleton<PinnedOptionDriftRecorder>();
     }
 
     /// <summary>

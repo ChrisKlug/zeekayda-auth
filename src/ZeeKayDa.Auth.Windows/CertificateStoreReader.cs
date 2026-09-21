@@ -27,11 +27,18 @@ internal sealed class CertificateStoreReader : ICertificateStoreReader
         }
         catch (Exception ex) when (ex is CryptographicException or UnauthorizedAccessException or SecurityException)
         {
-            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
-                "signing.windows_certificate_store.store_inaccessible",
-                $"The Windows Certificate Store '{storeName}'/'{storeLocation}' could not be opened: " +
-                $"{ex.Message}. Grant the host process identity read access to this store — do not " +
-                "relax the store's ACLs to a broader principal."));
+            // The exception TYPE is named, never ex.Message. A failure message is a plain
+            // public-API string that neither by-key redaction nor RedactedExceptionWrapper can
+            // reach, so an underlying message is never promoted into one. The root cause travels
+            // as the inner exception instead.
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.windows_certificate_store.store_inaccessible",
+                    $"The Windows Certificate Store '{storeName}'/'{storeLocation}' could not be " +
+                    $"opened: {ex.GetType().FullName} was thrown. See the inner exception for the " +
+                    "root cause. Grant the host process identity read access to this store — do " +
+                    "not relax the store's ACLs to a broader principal."),
+                ex);
         }
 
         // validOnly:false — chain-trust/revocation validity is not a signing-key eligibility

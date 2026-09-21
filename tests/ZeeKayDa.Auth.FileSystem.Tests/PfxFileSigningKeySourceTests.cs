@@ -819,4 +819,56 @@ public sealed class PfxFileSigningKeySourceTests
         exception.Which.AggregatedFailures.Should().ContainSingle(
             f => f.Code == "signing.file_signing.invalid_pfx");
     }
+
+    // ── The failure message never repeats the parser's own text (#764) ───────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_names_the_parser_exception_type_rather_than_copying_its_message()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var path = tempDir.WriteBytes("current.pfx", [0x01, 0x02, 0x03, 0x04]);
+        var sut = BuildSource(new PfxFile(path, Password()));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        AssertNamesTypeWithoutCopyingMessage(exception.Which);
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_names_the_parser_exception_type_rather_than_copying_its_message()
+    {
+        // The signer path loads the bundle under the configured password, so the parser's text is
+        // raised over a password-protected read. Only the type is reported.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxFile(path, Password("not the password")));
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(path), ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        AssertNamesTypeWithoutCopyingMessage(exception.Which);
+    }
+
+    /// <summary>
+    /// Asserts the contract on <c>ZeeKayDaConfigurationFailure.Message</c>: it names the underlying
+    /// exception's type, never repeats that exception's own message, and leaves the original
+    /// reachable as the inner exception.
+    /// </summary>
+    private static void AssertNamesTypeWithoutCopyingMessage(ZeeKayDaConfigurationException exception)
+    {
+        exception.InnerException.Should().NotBeNull();
+        var cause = exception.InnerException!;
+
+        var failure = exception.AggregatedFailures.Should()
+            .ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx").Subject;
+
+        failure.Message.Should().Contain(cause.GetType().FullName);
+        failure.Message.Should().Contain("See the inner exception for the root cause.");
+        cause.Message.Should().NotBeNullOrWhiteSpace();
+        failure.Message.Should().NotContain(cause.Message);
+    }
 }
