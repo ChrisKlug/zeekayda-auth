@@ -2,8 +2,17 @@ namespace ZeeKayDa.Auth.Scopes;
 
 /// <summary>
 /// Standard OpenID Connect scope definitions, each unlocking its OpenID Connect Core §5.4 claims
-/// in both the ID token and at the userinfo endpoint.
+/// at the userinfo endpoint.
 /// </summary>
+/// <remarks>
+/// §5.4 returns these claims from the userinfo endpoint when an access token is issued, which in
+/// the code flow it always is, so none of them is in the ID token by default. A host that wants a
+/// scope's claims in the ID token as well adds them to that scope's
+/// <see cref="ScopeDefinition.IdTokenClaims"/>:
+/// <c>StandardScopes.Email with { IdTokenClaims = StandardScopes.Email.UserInfoClaims }</c>.
+/// A relying party using Microsoft's OpenID Connect handler reads them with
+/// <c>options.GetClaimsFromUserInfoEndpoint = true</c>.
+/// </remarks>
 public static class StandardScopes
 {
     private static readonly IReadOnlyCollection<string> OpenIdClaims = Array.AsReadOnly(["sub"]);
@@ -31,7 +40,6 @@ public static class StandardScopes
     {
         Name = "profile",
         IsDiscoverable = true,
-        IdTokenClaims = ProfileClaims,
         UserInfoClaims = ProfileClaims,
     };
 
@@ -42,7 +50,6 @@ public static class StandardScopes
     {
         Name = "email",
         IsDiscoverable = true,
-        IdTokenClaims = EmailClaims,
         UserInfoClaims = EmailClaims,
     };
 
@@ -53,7 +60,6 @@ public static class StandardScopes
     {
         Name = "phone",
         IsDiscoverable = true,
-        IdTokenClaims = PhoneClaims,
         UserInfoClaims = PhoneClaims,
     };
 
@@ -64,7 +70,6 @@ public static class StandardScopes
     {
         Name = "address",
         IsDiscoverable = true,
-        IdTokenClaims = AddressClaims,
         UserInfoClaims = AddressClaims,
     };
 

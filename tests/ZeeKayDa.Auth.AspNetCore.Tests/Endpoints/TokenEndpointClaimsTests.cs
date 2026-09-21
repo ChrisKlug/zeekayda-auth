@@ -52,9 +52,22 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     ];
 
     private readonly ScriptedClaimsProvider _provider = new();
+    // What these tests exercise is selection: which destination a granted scope's claim reaches.
+    // The shipped standard scopes put their claims at userinfo only (OpenID Connect Core §5.4), so
+    // they are widened here to carry them in the ID token as well, which is exactly the `with`
+    // expression a host writes. The shipped default is pinned by
+    // Standard_scopes_as_shipped_put_no_subject_claim_in_the_ID_token below.
+    private static readonly ScopeDefinition[] WidenedStandardScopes =
+    [
+        StandardScopes.OpenId,
+        .. StandardScopes.All
+            .Where(scope => scope.Name != StandardScopes.OpenId.Name)
+            .Select(scope => scope with { IdTokenClaims = scope.UserInfoClaims }),
+    ];
+
     private readonly MutableScopeRepository _scopes = new(
     [
-        .. StandardScopes.All,
+        .. WidenedStandardScopes,
         new ScopeDefinition { Name = "orders.read", Audience = OrdersAudience, AccessTokenClaims = ["role"], UserInfoClaims = ["customer_number"] },
         new ScopeDefinition { Name = "orders.write", Audience = OrdersAudience, AccessTokenClaims = ["role"] },
         new ScopeDefinition { Name = "reports.read", Audience = ReportsAudience },
@@ -86,6 +99,21 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
     // ── Selection by scope ────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Standard_scopes_as_shipped_put_no_subject_claim_in_the_ID_token()
+    {
+        // The API scopes stay: the client allows them, and a repository that no longer defines an
+        // allowed scope fails startup, which is a different test.
+        _scopes.Scopes = [.. StandardScopes.All, .. _scopes.Scopes.Where(scope => scope.Audience is not null)];
+
+        var tokens = await ExchangeAsync(scope: "openid profile email");
+
+        tokens.IdToken.TryGetProperty("name", out _).Should().BeFalse("OpenID Connect Core §5.4 returns profile claims from userinfo");
+        tokens.IdToken.TryGetProperty("email", out _).Should().BeFalse("OpenID Connect Core §5.4 returns email claims from userinfo");
+        tokens.IdToken.GetProperty("sub").GetString().Should().Be(Subject, "the ID token still identifies the subject");
+        tokens.AccessToken.GetProperty("scope").GetString().Should().Be("openid profile email", "userinfo reads the granted scopes off the access token and releases the claims there");
+    }
 
     [Fact]
     public async Task Profile_yields_name_in_the_ID_token_and_not_email()
