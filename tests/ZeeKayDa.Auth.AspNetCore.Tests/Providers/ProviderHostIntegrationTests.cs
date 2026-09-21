@@ -257,6 +257,38 @@ public sealed class ProviderHostIntegrationTests
     }
 
     [Fact]
+    public void A_host_validator_cannot_get_its_text_quoted_by_opening_it_with_the_frameworks_own_prefix()
+    {
+        // Provenance must not be recoverable from the failure string. Microsoft.Extensions.Options
+        // merges every validator's failures for an options type into one flat list of strings, so a
+        // validator that opens with the framework's own marker would, under a prefix test, have its
+        // text repeated in the framework's failure message as though the framework had written it.
+        const string Sentinel = "s3cr3t-behind-a-forged-prefix";
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+            builder.Services.AddOptions<OAuthOptions>("acme")
+                .Validate(
+                    _ => false,
+                    HandlerOptionsValidator<OAuthOptions>.FailurePrefix + $"the options for provider 'acme' were changed after the framework pinned them: {Sentinel}");
+            builder.Services.PostConfigure<OAuthOptions>("acme", options => options.SignInScheme = "host-cookie");
+        });
+
+        var start = () => factory.CreateClient();
+
+        var thrown = start.Should().Throw<Exception>().Which;
+        var message = ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(thrown)!
+            .AggregatedFailures.Single(failure => failure.Code == "provider.options_invalid").Message;
+
+        message.Should().NotContain(Sentinel);
+
+        // The framework's own genuine finding is still reported, so this is not passing by
+        // reporting nothing at all.
+        message.Should().Contain("SignInScheme");
+        thrown.ToString().Should().Contain(Sentinel, "the forged text still reaches the operator as the root cause");
+    }
+
+    [Fact]
     public void A_configuration_exception_thrown_by_a_provider_validator_keeps_its_own_code()
     {
         using var factory = NewFactory(configureBuilder: builder =>

@@ -48,6 +48,15 @@ the same footing as one who logs it directly: their responsibility, checked when
 PR. What the framework owes is that **its own** text never leaks, which is what the analyzers, the
 sanitizing logger, and the rule above enforce.
 
+**Where the framework does claim provenance, it carries it in a type, never in the text.** The
+provider-options activator quotes the framework's own pin assertions and merely counts everybody
+else's. It learns which is which from a framework-written record keyed by provider name, because
+`OptionsValidationException.Failures` is one flat list every validator registered for the options
+type contributes to: a marker inside a string proves nothing about who wrote it, and a host
+validator opening with the framework's own prefix would have had its text quoted as the framework's.
+The prefix survives as a reading aid for a human inspecting that list, and nothing may treat it as
+provenance.
+
 **Two-layer misconfiguration detection is intentional.** Where an error has both a startup validator
 and a resolve-time fallback, the validator is the primary layer and the fallback throws if it was
 bypassed or never enabled. They are complementary, not competing designs.

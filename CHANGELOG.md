@@ -21,6 +21,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `ISigningKeySource`: the thrower vouches for the message text as safe to print, because the startup
   runner preserves it verbatim and no redaction control can reach it afterwards.
 
+- **Provider pin assertions are identified by a framework-written record, not by a string prefix**
+  (#764). `HandlerOptionsStartupActivator` decided which of an `OptionsValidationException`'s
+  failures were the framework's own by testing each for the literal prefix
+  `"Pinned by ZeeKayDa.Auth: "`, then copied the rest of that string into the public failure
+  message. Every validator registered for an options type contributes to that one flat list, so a
+  host or provider validator opening with the same characters had its text quoted as though the
+  framework had written it — the exact laundering the surrounding rule exists to prevent.
+  `HandlerOptionsValidator` now records its findings as `PinnedOptionDrift` values through
+  `PinnedOptionDriftRecorder`, which only the framework writes to, and the activator composes its
+  message from those. Only the count of other validators' failures is taken from the exception, and
+  a count carries no text. The prefix remains as a reading aid for a human inspecting that list and
+  is no longer treated as provenance anywhere.
+
 ### Added
 
 - **The discovery document advertises `claims_supported`** (#716). `OpenIdConfigurationDocument`
