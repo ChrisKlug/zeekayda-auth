@@ -28,10 +28,23 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// second <see cref="Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions"/> subtype
 /// under that same name while the first is still being built. Keyed by name alone, that inner
 /// resolution would overwrite the outer one's findings, and the activator would report one options
-/// type's pin assertions as belonging to another. The clear is what makes the read attempt-scoped:
-/// anything present afterwards was written during the resolution just attempted, so a resolution
-/// that throws before this validator runs reports no pin assertions rather than a previous
-/// attempt's.
+/// type's pin assertions as belonging to another. The clear scopes the read to the attempt: a
+/// resolution that throws before this validator runs reports no pin assertions rather than a
+/// previous attempt's.
+/// </para>
+/// <para>
+/// <strong>The bound on that, stated rather than engineered away:</strong> a resolution of the same
+/// name and options type running concurrently — a host hosted service started alongside the runner
+/// under <c>HostOptions.ServicesStartConcurrently</c> — can write between the clear and the read,
+/// because <see cref="ConcurrentDictionary{TKey, TValue}"/> makes each operation atomic and nothing
+/// more. It would write the findings of the same validator against the same named options, so in
+/// practice it writes what was already there; the case where it does not is a host reconfiguring
+/// those options mid-startup. Accepted rather than serialized: the consequence is a misattributed
+/// or absent *diagnosis*, never leaked text — a recorded drift holds only a framework-chosen member
+/// name and the framework's own expected value — and startup fails closed on the underlying
+/// exception either way. Correlating each record with its resolution needs an execution-flow
+/// context threaded through <c>Microsoft.Extensions.Options</c>, which is more machinery than the
+/// accuracy of one startup message is worth.
 /// </para>
 /// </remarks>
 internal sealed class PinnedOptionDriftRecorder

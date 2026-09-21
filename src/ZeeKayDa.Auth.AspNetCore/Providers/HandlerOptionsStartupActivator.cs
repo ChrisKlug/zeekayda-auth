@@ -83,10 +83,11 @@ internal sealed class HandlerOptionsStartupActivator : IStartupActivator
         Type optionsType,
         string name)
     {
-        // Cleared first, so whatever the recorder holds afterwards was written by this attempt.
-        // A resolution that throws before the framework's validator runs — a post-configurer that
-        // throws, or another validator that fails first — then reports no pin assertions, rather
-        // than an earlier attempt's.
+        // Cleared first, so what the recorder holds afterwards describes this attempt. A resolution
+        // that throws before the framework's validator runs — a post-configurer that throws, or
+        // another validator that fails first — then reports no pin assertions, rather than an
+        // earlier attempt's. A concurrent resolution of the same name and options type can still
+        // interleave; PinnedOptionDriftRecorder records why that is accepted.
         _recorder.Clear(name, optionsType);
 
         try

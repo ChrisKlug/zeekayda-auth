@@ -21,17 +21,16 @@ internal sealed class HandlerOptionsValidator<TOptions> : IValidateOptions<TOpti
     where TOptions : AuthenticationSchemeOptions
 {
     /// <summary>
-    /// Every failure this validator produces starts with this, so the startup activator can tell
-    /// the framework's own text — safe to surface, it names only a scheme and a member — from a
-    /// provider's or host's validation text, which it never copies.
+    /// Every failure this validator produces starts with this, to orient a human reading
+    /// <see cref="OptionsValidationException.Failures"/> directly.
     /// </summary>
-    /// <summary>
-    /// Marks this validator's failures for a human reading
-    /// <see cref="OptionsValidationException.Failures"/> directly. <strong>It is not a provenance
-    /// check and nothing may treat it as one</strong> — any validator can return a string that
-    /// starts with these characters. The framework recovers its own findings from
-    /// <see cref="PinnedOptionDriftRecorder"/>, which only it can write to.
-    /// </summary>
+    /// <remarks>
+    /// <strong>It is not a provenance check and nothing may treat it as one.</strong> That list is
+    /// flat and every validator registered for the options type contributes to it, so any of them
+    /// can return a string beginning with these characters. The startup activator recovers the
+    /// framework's own findings from <see cref="PinnedOptionDriftRecorder"/>, which only the
+    /// framework writes to; it does not read this prefix, and neither does any test.
+    /// </remarks>
     public const string FailurePrefix = "Pinned by ZeeKayDa.Auth: ";
 
     private readonly ProviderRegistry _registry;

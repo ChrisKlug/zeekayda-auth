@@ -1832,5 +1832,17 @@ agent, one round plus fix-diff verification. No High or Critical survived review
   whole chain without `ISanitizingLogger<T>` sees the original message. Unchanged and already
   recorded at §1.7; `RedactedExceptionWrapper` replaces it for a host that does log through the
   framework.
+- **Accepted residual:** a resolution of the same provider name and options type running
+  concurrently with the activator's can write a pin-drift record between its clear and its read, so
+  the startup message can misattribute or omit a pin assertion. Diagnosis only — a drift holds a
+  framework-chosen member name and the framework's own expected value, never observed text — and
+  startup fails closed on the underlying exception regardless. Reasoning recorded on
+  `PinnedOptionDriftRecorder`; no test, because the interleaving needs an options-system seam the
+  framework does not own.
+- **Known gap:** `CertificateStoreReader`'s `X509Store.Open` catch has no test. It is
+  `[ExcludeFromCodeCoverage]`, and the existing integration case injects through
+  `FakeCertificateStoreReader`, bypassing the catch — so a regression to interpolating `ex.Message`
+  there would pass the suite. A deterministic ACL-denied open needs privileges the test host does
+  not have.
 - **Open (maintainer deferred):** nothing in CI enforces the "never `ex.Message` in a failure" rule
   — this entry's first bullet is five violations of a rule already in the register. Issue #766.
