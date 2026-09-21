@@ -34,6 +34,20 @@ credential, or a caller-supplied secret, and a configuration failure's `Message`
 string the framework encourages hosts to surface: neither by-key redaction nor exception wrapping can
 reach it. This binds every public failure surface, not just startup verification.
 
+**The same rule binds anyone who throws `ZeeKayDaConfigurationException`, and it is a contract, not a
+mechanism.** The type is public, so an extension point — a client or scope repository, a signing key
+source, a third-party startup check — can throw it, and the framework preserves the `Code` and
+`Message` it carries so a provider's own operator alerting keeps working. Provenance is therefore
+documented on `ZeeKayDaConfigurationFailure.Message`: the thrower vouches for that text as safe to
+print. Enforcing it by type — an internal subtype only friend assemblies can construct, as
+`ScopeContractException` does for the one request-time path — was **refused framework-wide**: it would
+make a first-class signing-key source or provider package impossible to build outside this repository,
+which is wrong for an open-source framework, and any opt-in marker is as available to a careless
+author as to a careful one. A third party who launders a vault error through a failure message is on
+the same footing as one who logs it directly: their responsibility, checked when the code arrives as a
+PR. What the framework owes is that **its own** text never leaks, which is what the analyzers, the
+sanitizing logger, and the rule above enforce.
+
 **Two-layer misconfiguration detection is intentional.** Where an error has both a startup validator
 and a resolve-time fallback, the validator is the primary layer and the fallback throws if it was
 bypassed or never enabled. They are complementary, not competing designs.

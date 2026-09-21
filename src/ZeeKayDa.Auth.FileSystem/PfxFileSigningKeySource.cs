@@ -152,9 +152,16 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
         }
         catch (Exception ex) when (ex is CryptographicException or AsnContentException or InvalidOperationException)
         {
-            // ex.Message comes from the BCL PKCS#12 parser and never echoes the supplied password.
-            throw InvalidPfx(slot.Path, $"could not be loaded: {ex.Message}. Verify the file is a " +
-                "valid PKCS#12 bundle and that the configured password is correct");
+            // The exception TYPE is named, never ex.Message: the parser's text is raised over a
+            // bundle read under a configured password, and a failure message is a plain public-API
+            // string that neither by-key redaction nor RedactedExceptionWrapper can reach. The root
+            // cause travels as the inner exception instead.
+            throw InvalidPfx(
+                slot.Path,
+                $"could not be loaded: {ex.GetType().FullName} was thrown. See the inner exception " +
+                "for the root cause. Verify the file is a valid PKCS#12 bundle and that the " +
+                "configured password is correct",
+                ex);
         }
     }
 
@@ -322,10 +329,22 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
         return null;
     }
 
-    private static ZeeKayDaConfigurationException InvalidPfx(string path, string problem) =>
-        new(new ZeeKayDaConfigurationFailure(
+    /// <summary>
+    /// Builds the shared <c>invalid_pfx</c> failure. <paramref name="cause"/> is supplied only by
+    /// the two call sites that catch a parser exception, and carries it as the inner exception
+    /// because the failure message names its type rather than repeating its text.
+    /// </summary>
+    private static ZeeKayDaConfigurationException InvalidPfx(
+        string path, string problem, Exception? cause = null)
+    {
+        var failure = new ZeeKayDaConfigurationFailure(
             "signing.file_signing.invalid_pfx",
-            $"The PFX/PKCS#12 file at '{path}' {problem}."));
+            $"The PFX/PKCS#12 file at '{path}' {problem}.");
+
+        return cause is null
+            ? new ZeeKayDaConfigurationException(failure)
+            : new ZeeKayDaConfigurationException(failure, cause);
+    }
 
     /// <summary>
     /// Loads the bundle at <paramref name="slot"/> with its private key. Used only by
@@ -352,8 +371,13 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
         }
         catch (CryptographicException ex)
         {
-            throw InvalidPfx(slot.Path, $"could not be loaded: {ex.Message}. Verify the file is a " +
-                "valid PKCS#12 bundle and that the configured password is correct");
+            // The exception TYPE is named, never ex.Message — same rule as the read path above.
+            throw InvalidPfx(
+                slot.Path,
+                $"could not be loaded: {ex.GetType().FullName} was thrown. See the inner exception " +
+                "for the root cause. Verify the file is a valid PKCS#12 bundle and that the " +
+                "configured password is correct",
+                ex);
         }
     }
 }

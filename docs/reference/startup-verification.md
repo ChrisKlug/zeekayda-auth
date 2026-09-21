@@ -106,7 +106,7 @@ Three consequences of this shape matter to you as an implementer:
 
 If `VerifyAsync` throws instead of reporting through the context, the runner distinguishes two cases:
 
-- **A thrown `ZeeKayDaConfigurationException`** is absorbed verbatim — its `AggregatedFailures` are added to the running failure list, preserving their original stable codes.
+- **A thrown `ZeeKayDaConfigurationException`** is absorbed verbatim — its `AggregatedFailures` are added to the running failure list, preserving their original stable codes. Verbatim means verbatim: the runner does not inspect, reword, or redact your failure messages, so each one reaches the operator exactly as you wrote it. That is why the warning below binds you and not only the framework.
 - **Any other exception** is recorded as a failure and the phase continues:
 
   ```csharp

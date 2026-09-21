@@ -20,6 +20,17 @@ namespace ZeeKayDa.Auth;
 /// the framework needs to use a value — for example, when <c>MapZeeKayDaAuth()</c> is called
 /// before <c>AddZeeKayDaAuth()</c>.
 /// </para>
+/// <para>
+/// <strong>This type is public, so an extension point may throw it, and the framework preserves
+/// what it carries.</strong> A <see cref="ZeeKayDaConfigurationFailure"/> thrown from an
+/// <c>IStartupVerifier</c>, an <c>IStartupActivator</c>, an <c>IClientRepository</c>, an
+/// <c>IScopeRepository</c>, or an <c>ISigningKeySource</c> keeps its <c>Code</c> and its
+/// <c>Message</c> when the startup runner aggregates it, so operator alerting keyed on a
+/// provider's own codes keeps working. That preservation rests on the contract documented on
+/// <see cref="ZeeKayDaConfigurationFailure.Message"/>: the thrower — not the framework — is what
+/// makes that text safe to print, because no redaction control can reach it afterwards. Read that
+/// contract before throwing this type from your own code.
+/// </para>
 /// </remarks>
 public class ZeeKayDaConfigurationException : ZeeKayDaException
 {
