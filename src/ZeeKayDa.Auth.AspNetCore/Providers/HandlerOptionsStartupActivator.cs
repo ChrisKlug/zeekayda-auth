@@ -83,6 +83,12 @@ internal sealed class HandlerOptionsStartupActivator : IStartupActivator
         Type optionsType,
         string name)
     {
+        // Cleared first, so whatever the recorder holds afterwards was written by this attempt.
+        // A resolution that throws before the framework's validator runs — a post-configurer that
+        // throws, or another validator that fails first — then reports no pin assertions, rather
+        // than an earlier attempt's.
+        _recorder.Clear(name, optionsType);
+
         try
         {
             HandlerOptions.Resolve(services, optionsType, name);
@@ -90,7 +96,7 @@ internal sealed class HandlerOptionsStartupActivator : IStartupActivator
         }
         catch (OptionsValidationException ex)
         {
-            return ([new ZeeKayDaConfigurationFailure("provider.options_invalid", Describe(name, ex))], ex);
+            return ([new ZeeKayDaConfigurationFailure("provider.options_invalid", Describe(name, optionsType, ex))], ex);
         }
         catch (ZeeKayDaConfigurationException ex)
         {
@@ -124,9 +130,9 @@ internal sealed class HandlerOptionsStartupActivator : IStartupActivator
     /// quoted here as though the framework had written it. Only the *count* is taken from the
     /// exception, and a count carries no text.
     /// </remarks>
-    private string Describe(string name, OptionsValidationException ex)
+    private string Describe(string name, Type optionsType, OptionsValidationException ex)
     {
-        var pinned = _recorder.DriftsFor(name);
+        var pinned = _recorder.DriftsFor(name, optionsType);
         var others = Math.Max(0, ex.Failures.Count() - pinned.Count);
 
         var message = $"The options for provider '{name}' are not valid.";

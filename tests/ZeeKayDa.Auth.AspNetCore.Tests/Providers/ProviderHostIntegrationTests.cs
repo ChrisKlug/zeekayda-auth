@@ -288,6 +288,7 @@ public sealed class ProviderHostIntegrationTests
         thrown.ToString().Should().Contain(Sentinel, "the forged text still reaches the operator as the root cause");
     }
 
+
     [Fact]
     public void A_configuration_exception_thrown_by_a_provider_validator_keeps_its_own_code()
     {

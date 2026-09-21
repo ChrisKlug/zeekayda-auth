@@ -71,7 +71,7 @@ internal sealed class HandlerOptionsValidator<TOptions> : IValidateOptions<TOpti
         // Recorded on every validating run, including the passing one: an empty record overwrites
         // a previous failure's findings, so the activator can never read a drift that has since
         // been fixed.
-        _recorder.Record(name, drifts);
+        _recorder.Record(name, typeof(TOptions), drifts);
 
         return drifts.Count == 0
             ? ValidateOptionsResult.Success
