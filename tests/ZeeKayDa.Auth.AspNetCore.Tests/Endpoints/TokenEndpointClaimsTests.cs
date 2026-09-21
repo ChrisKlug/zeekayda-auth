@@ -53,10 +53,11 @@ public sealed class TokenEndpointClaimsTests : IDisposable
 
     private readonly ScriptedClaimsProvider _provider = new();
     // What these tests exercise is selection: which destination a granted scope's claim reaches.
-    // The shipped standard scopes put their claims at userinfo only (OpenID Connect Core §5.4), so
-    // they are widened here to carry them in the ID token as well, which is exactly the `with`
-    // expression a host writes. The shipped default is pinned by
-    // Standard_scopes_as_shipped_put_no_subject_claim_in_the_ID_token below.
+    // As shipped, profile, email, phone and address release their claims at userinfo only (OpenID
+    // Connect Core §5.4), so those four are widened here to carry them in the ID token as well,
+    // which is exactly the `with` expression a host writes. openid goes in untouched: it lists sub
+    // for both destinations already. The shipped defaults are pinned by
+    // Standard_scopes_as_shipped_put_no_profile_or_email_claim_in_the_ID_token below.
     private static readonly ScopeDefinition[] WidenedStandardScopes =
     [
         StandardScopes.OpenId,
@@ -101,7 +102,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     // ── Selection by scope ────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Standard_scopes_as_shipped_put_no_subject_claim_in_the_ID_token()
+    public async Task Standard_scopes_as_shipped_put_no_profile_or_email_claim_in_the_ID_token()
     {
         // The API scopes stay: the client allows them, and a repository that no longer defines an
         // allowed scope fails startup, which is a different test.

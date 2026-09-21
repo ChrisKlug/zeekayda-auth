@@ -31,9 +31,10 @@ builder.Services
         options.Scope.Add("email");
 
         // The handler calls the server's userinfo endpoint after the code exchange and merges
-        // what it returns into the signed-in user's claims. Required, not optional: the standard
-        // scopes release their claims at userinfo (OpenID Connect Core 5.4), so the ID token
-        // carries only "sub" and without this the signed-in user would have nothing else.
+        // what it returns into the signed-in user's claims. Required, not optional: the profile,
+        // email, phone and address scopes release their claims at userinfo (OpenID Connect Core
+        // 5.4), so the ID token carries "sub" and the protocol claims but no name or email, and
+        // without this the signed-in user would have nothing to show on the profile page.
         options.GetClaimsFromUserInfoEndpoint = true;
 
         // Keep the claim types the server sent ("sub", "name") instead of .NET's long URIs.

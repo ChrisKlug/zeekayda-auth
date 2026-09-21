@@ -45,8 +45,9 @@ Three settings differ from the handler's defaults, each commented in `Program.cs
   the code in the query string.
 - `GetClaimsFromUserInfoEndpoint` is on, so the handler fetches the claims from the server's
   userinfo endpoint and merges them into the signed-in user. This one is required rather than
-  optional: the standard scopes put their claims at userinfo, where OpenID Connect Core §5.4 puts
-  them, so without it the signed-in user has only `sub`.
+  optional: the `profile` and `email` scopes release their claims at userinfo, where OpenID
+  Connect Core §5.4 puts them, so without it the signed-in user has `sub` and the ID token's
+  protocol claims but no name or email address.
 - `MapInboundClaims` is off, so the claims keep the names the server gave them (`sub`, `name`).
 
 The identity server's address and the client ID are in `appsettings.json`.

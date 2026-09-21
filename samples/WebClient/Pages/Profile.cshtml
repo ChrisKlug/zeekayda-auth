@@ -3,8 +3,9 @@
     ViewData["Title"] = "Profile";
 }
 <h1>Hello, @User.Identity?.Name</h1>
-<p>These are the claims the identity server released: <code>sub</code> from the ID token, the rest
-from the userinfo endpoint, which is where OpenID Connect Core &#167;5.4 puts them.</p>
+<p>These are the claims the identity server released: <code>sub</code> and the protocol claims from
+the ID token, the profile and email claims from the userinfo endpoint, which is where OpenID Connect
+Core &#167;5.4 puts them.</p>
 <table id="claims">
     <thead>
         <tr><th>Type</th><th>Value</th></tr>
