@@ -664,6 +664,38 @@ public sealed class DiscoveryEndpointTests
         response.Headers.CacheControl.Should().BeNull();
     }
 
+    [Fact]
+    public async Task A_repository_throwing_anything_else_answers_500_without_the_exception_text()
+    {
+        // The contract exception is not the only way this endpoint can fail. A repository that
+        // starts cleanly and later throws a database error carries that layer's message, which
+        // routinely contains a connection string, and this is the only anonymous endpoint the
+        // framework serves.
+        var repository = new ThrowingAfterStartupRepository();
+        using var host = new EndpointHost(
+            configureBuilder: builder => builder.Services.AddSingleton<IScopeRepository>(repository));
+
+        (await GetAsync(host)).Dispose();
+        repository.Fail = true;
+
+        using var response = await GetAsync(host);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        body.Should().NotContain("Password=").And.NotContain("Server=db");
+    }
+
+    /// <summary>Answers correctly until <see cref="Fail"/> is set, then throws as a store would.</summary>
+    private sealed class ThrowingAfterStartupRepository : IScopeRepository
+    {
+        public bool Fail { get; set; }
+
+        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            Fail
+                ? throw new InvalidOperationException("Login failed for Server=db;Password=hunter2")
+                : ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
+    }
+
     private sealed class MutableScopeRepository(IReadOnlyCollection<ScopeDefinition> scopes) : IScopeRepository
     {
         public IReadOnlyCollection<ScopeDefinition> Scopes { get; set; } = scopes;

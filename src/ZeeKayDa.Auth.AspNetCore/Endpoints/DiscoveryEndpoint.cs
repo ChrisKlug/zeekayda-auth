@@ -104,6 +104,25 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
 
             return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }
+        catch (Exception ex) when (ex is not OperationCanceledException || !context.RequestAborted.IsCancellationRequested)
+        {
+            // Anything the repository or a host-replaced IDiscoveryDocumentProvider threw. The
+            // type is named and the message is never read, the same rule ValidatedClientResolver
+            // applies to a caller-supplied registration that throws: a database failure's text
+            // routinely carries a connection string, and the sanitizing logger redacts by key
+            // name, so a message interpolated into a log entry passes through whole.
+            //
+            // Catching it here rather than letting the host's error handling have it is the point.
+            // This is the only anonymous endpoint the framework serves, and on
+            // WebApplication.CreateBuilder in Development that handling is a page that renders the
+            // exception to whoever asked. The operator still learns which type threw; the
+            // unauthenticated caller learns nothing.
+            logger.LogError(
+                "The discovery document could not be built: the provider threw {ExceptionType}.",
+                ex.GetType().FullName);
+
+            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+        }
 
         PublicMetadataHeaders.Apply(
             context, _options.Value.DiscoveryDocument.CacheMaxAge, _allowedOrigins);

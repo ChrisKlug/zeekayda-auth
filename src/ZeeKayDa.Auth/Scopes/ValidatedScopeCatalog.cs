@@ -271,7 +271,7 @@ internal sealed class ValidatedScopeCatalog
     /// </summary>
     private static void CheckAudiences(List<ScopeDefinition> scopes, List<ZeeKayDaConfigurationFailure> failures)
     {
-        foreach (var scope in scopes.Where(scope => scope.Audience is not null && !ScopeResolution.IsResourceIndicator(scope.Audience)))
+        foreach (var scope in scopes.Where(scope => scope.Audience is not null && !ResourceIndicator.IsValid(scope.Audience)))
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "scopes.audience.invalid",
