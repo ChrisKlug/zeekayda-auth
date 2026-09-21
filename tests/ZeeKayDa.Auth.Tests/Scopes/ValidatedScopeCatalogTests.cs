@@ -267,6 +267,36 @@ public sealed class ValidatedScopeCatalogTests
         (await CodesFrom(catalog)).Should().BeEquivalentTo(["scopes.openid_missing"]);
     }
 
+    // ── A repository's own exception is never absorbed ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetScopesAsync_does_not_absorb_a_ZeeKayDaConfigurationException_the_repository_threw()
+    {
+        // ZeeKayDaConfigurationException is public, so a repository may throw one wrapping a
+        // database failure with that layer's raw text. Catching it as a contract breach would put
+        // that text into the operator's log as though the framework had written it. Consumers
+        // catch ScopeContractException, so the repository's own must not be one.
+        var thrownByRepository = new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("host.db", "Login failed for Server=db;Password=hunter2"));
+        var catalog = new ValidatedScopeCatalog(new ThrowingRepository(thrownByRepository));
+
+        var act = async () => await catalog.GetScopesAsync(TestContext.Current.CancellationToken);
+
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.Should().BeSameAs(thrownByRepository);
+        thrown.Which.Should().NotBeOfType<ScopeContractException>();
+    }
+
+    [Fact]
+    public async Task GetScopesAsync_raises_its_own_contract_exception_when_the_repository_breaks_the_contract()
+    {
+        var catalog = Catalog(StandardScopes.Profile);
+
+        var act = async () => await catalog.GetScopesAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<ScopeContractException>();
+    }
+
     // ── Every breach at once ──────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -306,6 +336,12 @@ public sealed class ValidatedScopeCatalogTests
     {
         public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
             => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>(null!);
+    }
+
+    private sealed class ThrowingRepository(Exception exception) : IScopeRepository
+    {
+        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+            => throw exception;
     }
 
     private sealed class CapturingRepository : IScopeRepository

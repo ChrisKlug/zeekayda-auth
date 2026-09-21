@@ -279,6 +279,30 @@ public sealed class ScopePresenceStartupValidatorTests
             ["scopes.name.duplicate", "scopes.claims.reserved", "scopes.audience.invalid", "scopes.openid_missing"]);
     }
 
+    [Fact]
+    public async Task VerifyAsync_does_not_translate_a_ZeeKayDaConfigurationException_the_repository_threw()
+    {
+        // The public exception type is one a repository may throw itself, wrapping a lower layer
+        // whose message the framework must not reword into a named startup failure. It travels to
+        // the runner with its stack intact instead.
+        var thrownByRepository = new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("host.db", "Login failed for Server=db;Password=hunter2"));
+        var (sut, provider) = BuildSut(new ThrowingRepository(thrownByRepository));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
+
+        var act = async () => await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).Which.Should().BeSameAs(thrownByRepository);
+        context.Failures.Should().BeEmpty();
+    }
+
+    private sealed class ThrowingRepository(Exception exception) : IScopeRepository
+    {
+        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+            => throw exception;
+    }
+
     private sealed class NullReturningRepository : IScopeRepository
     {
         public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(

@@ -51,13 +51,15 @@ internal sealed class GrantClaimsResolver
         {
             definitions = await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (ZeeKayDaConfigurationException ex)
+        catch (ScopeContractException ex)
         {
             // The scope repository broke its contract after startup passed. Nothing can be
             // resolved without it, and a grant must not be served against half a configuration:
             // answered as the server error it is, with the broken rule named for the operator.
-            // The codes and messages, not ex.Message: they are this framework's own text, and
-            // the composed message adds a count and a preamble the operator does not need.
+            // The codes and messages, not ex.Message: the composed message adds a count and a
+            // preamble the operator does not need. Safe to log only because ScopeContractException
+            // is internal, so every failure here is this framework's own text; one the repository
+            // threw is not caught and never reaches a log line by message.
             _logger.LogError(
                 "Claims for a grant to client {ClientId} could not be resolved because the scope repository broke its contract: {Detail}",
                 client.ClientId,

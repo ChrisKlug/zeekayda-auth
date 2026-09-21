@@ -40,11 +40,13 @@ internal sealed class ScopePresenceStartupValidator : IStartupActivator
         {
             await catalog.GetScopesAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (ZeeKayDaConfigurationException ex)
+        catch (ScopeContractException ex)
         {
-            // Only this exception is translated. Anything else — a repository whose query threw —
-            // is not a contract breach the operator can read off a code, and the runner reports it
-            // with its stack intact rather than flattened into a named failure.
+            // Only the catalog's own exception is translated. Anything else — a repository whose
+            // query threw, or one throwing the public ZeeKayDaConfigurationException itself — is
+            // not a contract breach the operator can read off a code, and the runner reports it
+            // with its stack intact rather than flattened into a named failure carrying that
+            // layer's raw text.
             foreach (var failure in ex.AggregatedFailures)
                 context.AddFailure(failure.Code, failure.Message);
         }

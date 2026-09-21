@@ -63,11 +63,19 @@ internal sealed class ClientRepositoryStartupActivator : IStartupActivator
     /// addition names a claim a scope unlocks. A custom repository is covered per request only.
     /// </summary>
     /// <remarks>
-    /// Skipped when the scope repository itself breaks its contract. Both rules here ask what the
-    /// scopes are, and a broken repository has no answer worth holding a client to — every client
-    /// would be reported for allowing an undefined scope, burying the one failure that matters.
-    /// <c>ScopePresenceStartupValidator</c> reports that failure, under its own codes, and startup
-    /// stops either way.
+    /// When the scope repository breaks its contract, the breach is reported here and the client
+    /// rules are skipped. Reporting rather than returning silently is deliberate: each activator
+    /// reads the repository itself, so one that answers this read differently from
+    /// <c>ScopePresenceStartupValidator</c>'s — a remote or mutable store — would otherwise let
+    /// startup succeed on a configuration this activator saw was broken. Checks here are
+    /// order-independent and never rely on another having run. Both reporting the same breach
+    /// costs nothing: the runner collapses failures sharing a <c>(Code, Message)</c>, which is
+    /// where that rule lives.
+    /// <para>
+    /// The client rules themselves are skipped because both ask what the scopes are, and a broken
+    /// repository has no answer worth holding a client to — every client would be reported for
+    /// allowing an undefined scope, burying the failure that actually matters.
+    /// </para>
     /// </remarks>
     private static async ValueTask CheckAgainstScopesAsync(
         StartupVerificationContext context,
@@ -82,8 +90,11 @@ internal sealed class ClientRepositoryStartupActivator : IStartupActivator
                 .GetScopesAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (ZeeKayDaConfigurationException)
+        catch (ScopeContractException ex)
         {
+            foreach (var failure in ex.AggregatedFailures)
+                context.AddFailure(failure.Code, failure.Message);
+
             return;
         }
 

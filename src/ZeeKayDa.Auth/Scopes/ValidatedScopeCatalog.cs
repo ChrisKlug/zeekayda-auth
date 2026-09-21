@@ -54,10 +54,12 @@ internal sealed class ValidatedScopeCatalog
     /// The scopes the repository serves, copied and checked against the
     /// <see cref="IScopeRepository.GetScopesAsync"/> contract.
     /// </summary>
-    /// <exception cref="ZeeKayDaConfigurationException">
+    /// <exception cref="ScopeContractException">
     /// Thrown when the repository breaks that contract, carrying one
     /// <see cref="ZeeKayDaConfigurationFailure"/> per rule broken so an operator sees every
-    /// problem at once rather than one per restart.
+    /// problem at once rather than one per restart. An exception the repository itself threw is
+    /// never absorbed or reworded — see <see cref="ScopeContractException"/> for why the
+    /// distinction is load-bearing.
     /// </exception>
     public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken)
     {
@@ -68,7 +70,7 @@ internal sealed class ValidatedScopeCatalog
         // reading a list of consequences has to work out which one is the cause.
         if (served is null)
         {
-            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+            throw new ScopeContractException(new ZeeKayDaConfigurationFailure(
                 "scopes.null",
                 "IScopeRepository.GetScopesAsync returned null. It must return a collection — an " +
                 "empty one if the repository knows no scopes — because every scope rule, the " +
@@ -85,7 +87,7 @@ internal sealed class ValidatedScopeCatalog
 
         return failures.Count == 0
             ? scopes
-            : throw new ZeeKayDaConfigurationException([.. failures]);
+            : throw new ScopeContractException([.. failures]);
     }
 
     /// <summary>
