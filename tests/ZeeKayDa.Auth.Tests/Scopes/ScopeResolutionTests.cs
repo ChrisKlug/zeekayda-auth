@@ -73,35 +73,7 @@ public sealed class ScopeResolutionTests
         audience.Should().BeNull();
     }
 
-    [Theory]
-    [InlineData("orders")]
-    [InlineData("/orders")]
-    [InlineData("C:\\orders")]
-    [InlineData("https://orders.example.com/#")]
-    public void A_scope_whose_audience_is_not_a_resource_indicator_is_found(string audience)
-    {
-        // Startup checks the shape, but a repository may have changed under a live server, and
-        // the raw string is what the token would carry.
-        var scope = new ScopeDefinition { Name = "x", Audience = audience };
 
-        ScopeResolution.FirstWithMalformedAudience([StandardScopes.OpenId, scope]).Should().Be(scope);
-        ScopeResolution.IsResourceIndicator(audience).Should().BeFalse();
-    }
-
-    [Fact]
-    public void Well_formed_audiences_and_identity_scopes_have_no_malformed_audience()
-    {
-        ScopeResolution.FirstWithMalformedAudience([StandardScopes.OpenId, OrdersRead]).Should().BeNull();
-    }
-
-    [Theory]
-    [InlineData("https://orders.example.com/")]
-    [InlineData("urn:example:orders")]
-    [InlineData("https://orders.example.com/api?v=2")]
-    public void A_resource_indicator_is_an_absolute_URI_with_its_scheme_written_and_no_fragment(string audience)
-    {
-        ScopeResolution.IsResourceIndicator(audience).Should().BeTrue();
-    }
 
     [Fact]
     public void Audiences_are_compared_ordinally()

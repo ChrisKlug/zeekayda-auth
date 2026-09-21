@@ -214,6 +214,17 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.AddDataProtection();
 
         services.TryAddSingleton<ValidatedClientResolver>();
+
+        // The only path from IScopeRepository to a scope definition, so a custom repository's
+        // output is validated wherever it is read and not only at startup.
+        services.TryAddSingleton<ValidatedScopeCatalog>();
+
+        // Both wrappers above are singletons that hold the repository they are given, so a host
+        // registering one as scoped would have it captured. The scanner keeps the collection
+        // reference so the check sees registrations added after this call too.
+        services.TryAddSingleton(_ => new RepositoryLifetimeScanner(services));
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, WrappedRepositoryLifetimeValidator>());
         services.TryAddSingleton<AuthorizeRequestValidator>();
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<AuthorizeErrorTransport>();

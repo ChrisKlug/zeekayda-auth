@@ -65,13 +65,15 @@ internal sealed record ClaimSelectionPlan(
         _ => this,
     };
 
-    // A null from a custom registration is treated as empty: the registration validator refuses
-    // it, and empty withholds rather than grants, so nothing is widened by the fallback.
+    // The scope lists need no null guard: every definition reaching here came through
+    // ValidatedScopeCatalog, which refuses a repository that serves a null one. A null from a
+    // custom registration is treated as empty — the registration validator refuses it, and empty
+    // withholds rather than grants, so nothing is widened by the fallback.
     private static FrozenSet<string> Wanted(
         IEnumerable<IReadOnlyCollection<string>> unlockedByScopes,
         IReadOnlyCollection<string>? addedByClient) =>
         unlockedByScopes
-            .SelectMany(claims => claims ?? [])
+            .SelectMany(claims => claims)
             .Concat(addedByClient ?? [])
             .ToFrozenSet(StringComparer.Ordinal);
 }

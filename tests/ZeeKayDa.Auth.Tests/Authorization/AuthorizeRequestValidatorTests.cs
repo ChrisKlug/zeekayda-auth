@@ -746,7 +746,7 @@ public class AuthorizeRequestValidatorTests
             NullSanitizingLogger<ValidatedClientResolver>.Instance);
         var validator = new AuthorizeRequestValidator(
             resolver,
-            new InMemoryScopeRepository(scopes ?? StandardScopes.All),
+            new ValidatedScopeCatalog(new InMemoryScopeRepository(scopes ?? StandardScopes.All)),
             NullSanitizingLogger<AuthorizeRequestValidator>.Instance);
 
         return await validator.ValidateAsync(parameters, TestContext.Current.CancellationToken);

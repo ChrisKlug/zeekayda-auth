@@ -18,7 +18,7 @@ public sealed class DiscoveryDocumentProviderTests
         var optionsWrapper = Microsoft.Extensions.Options.Options.Create(options);
         var provider = new DiscoveryDocumentProvider(
             optionsWrapper,
-            scopeRepository ?? new InMemoryScopeRepository(StandardScopes.All),
+            new ValidatedScopeCatalog(scopeRepository ?? new InMemoryScopeRepository(StandardScopes.All)),
             new FakeSigningKeyRing(keySet ?? TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
         return await provider.GetDocumentAsync(TestContext.Current.CancellationToken);
     }
@@ -251,7 +251,7 @@ public sealed class DiscoveryDocumentProviderTests
             {
                 Name = StandardScopes.OpenId.Name,
                 IdTokenClaims = ["sub"],
-                AccessTokenClaims = ["scope"],
+                AccessTokenClaims = ["tenant"],
             },
             new ScopeDefinition
             {
@@ -281,7 +281,7 @@ public sealed class DiscoveryDocumentProviderTests
             {
                 Name = "internal.admin",
                 IsDiscoverable = false,
-                AccessTokenClaims = ["scope"],
+                AccessTokenClaims = ["tenant"],
             },
         ]);
 
@@ -331,6 +331,7 @@ public sealed class DiscoveryDocumentProviderTests
     {
         var repository = new InMemoryScopeRepository(
         [
+            StandardScopes.OpenId,
             new ScopeDefinition
             {
                 Name = StandardScopes.Email.Name,
@@ -426,42 +427,42 @@ public sealed class DiscoveryDocumentProviderTests
     }
 
     [Fact]
-    public async Task GetDocument_survives_a_custom_repository_returning_null_claim_lists()
+    public async Task GetDocument_refuses_a_custom_repository_returning_null_claim_lists()
     {
-        // ScopeDefinition declares these lists non-nullable and InMemoryScopeRepository refuses a
-        // bad claim name at construction, but a custom IScopeRepository answers to neither at
-        // runtime. Such a repository issues tokens perfectly well — ClaimSelectionPlan and
-        // ClientClaimAdditions both read a null list as empty — so the discovery endpoint must not
-        // be the one place it throws, on an unauthenticated GET.
+        // Was absorbed here, each consumer reading a null list as empty on its own.
+        // ValidatedScopeCatalog refuses the repository instead, so the operator is told which
+        // property to fix rather than being left with a document quietly missing claims.
         var repository = new InMemoryScopeRepository(
         [
             new ScopeDefinition { Name = StandardScopes.OpenId.Name, IdTokenClaims = ["sub"] },
         ]);
 
-        var doc = await GetDocumentAsync(
+        var act = async () => await GetDocumentAsync(
             new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
             new NullClaimListRepository(repository));
 
-        doc.ClaimsSupported.Should().Contain("sub").And.NotContainNulls();
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.AggregatedFailures.Should().OnlyContain(f => f.Code == "scopes.claims.blank");
     }
 
     [Fact]
-    public async Task GetDocument_drops_a_null_or_blank_claim_name_from_ClaimsSupported()
+    public async Task GetDocument_refuses_a_null_or_blank_claim_name_rather_than_dropping_it()
     {
         var repository = new InMemoryScopeRepository(
         [
             new ScopeDefinition { Name = StandardScopes.OpenId.Name, IdTokenClaims = ["sub"] },
         ]);
 
-        var doc = await GetDocumentAsync(
+        // Discovery 1.0 §3 defines claims_supported as an array of strings, so a JSON null or an
+        // empty name in it is malformed metadata. Dropping it silently published a document that
+        // did not match the configuration; the repository is refused instead.
+        var act = async () => await GetDocumentAsync(
             new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
             new BlankClaimNameRepository(repository));
 
-        // Discovery 1.0 §3 defines claims_supported as an array of strings, so a JSON null or an
-        // empty name in it is malformed metadata, not a harmless extra entry.
-        doc.ClaimsSupported.Should().NotContainNulls();
-        doc.ClaimsSupported.Should().OnlyContain(name => !string.IsNullOrWhiteSpace(name));
-        doc.ClaimsSupported.Should().Contain("sub");
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("scopes.claims.blank");
     }
 
     [Fact]
@@ -593,7 +594,7 @@ public sealed class DiscoveryDocumentProviderTests
             new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
         var provider = new DiscoveryDocumentProvider(
             options,
-            new InMemoryScopeRepository(StandardScopes.All),
+            new ValidatedScopeCatalog(new InMemoryScopeRepository(StandardScopes.All)),
             new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
 
         using var cts = new CancellationTokenSource();
@@ -611,7 +612,9 @@ public sealed class DiscoveryDocumentProviderTests
             new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
         var capturingRepository = new CapturingScopeRepository();
         var provider = new DiscoveryDocumentProvider(
-            options, capturingRepository, new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
+            options,
+            new ValidatedScopeCatalog(capturingRepository),
+            new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
 
         using var cts = new CancellationTokenSource();
 
@@ -627,7 +630,7 @@ public sealed class DiscoveryDocumentProviderTests
             new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
         var provider = new DiscoveryDocumentProvider(
             options,
-            new ThrowingScopeRepository(),
+            new ValidatedScopeCatalog(new ThrowingScopeRepository()),
             new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
 
         using var cts = new CancellationTokenSource();
@@ -645,7 +648,7 @@ public sealed class DiscoveryDocumentProviderTests
         public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
         {
             ObservedToken = cancellationToken;
-            return ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([]);
+            return ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
         }
     }
 

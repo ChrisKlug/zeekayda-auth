@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Discovery;
+using ZeeKayDa.Auth.Logging;
+using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 
@@ -63,14 +66,67 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
         }
     }
 
+    /// <remarks>
+    /// <para>
+    /// <strong>A broken scope repository answers 500 with no body.</strong> This is the only
+    /// anonymous endpoint the framework serves, and <c>ValidatedScopeCatalog</c> reports a
+    /// contract breach by naming the scope and the audience string it refused. Letting that
+    /// exception escape hands those to whatever the host's error handling does with it — on
+    /// <c>WebApplication.CreateBuilder</c> in Development, the developer exception page renders
+    /// the message to an unauthenticated caller. Every other endpoint already answers a
+    /// misconfiguration with a generic error and keeps the detail in the operator's log; this one
+    /// now does the same.
+    /// </para>
+    /// <para>
+    /// The cache and CORS headers are applied only once a document exists, so an error is never
+    /// served with the cache lifetime a valid document carries.
+    /// </para>
+    /// </remarks>
     internal async ValueTask<IResult> Handle(
         IDiscoveryDocumentProvider provider,
+        ISanitizingLogger<DiscoveryEndpoint> logger,
         HttpContext context)
     {
+        OpenIdConfigurationDocument document;
+        try
+        {
+            document = await provider.GetDocumentAsync(context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (ScopeContractException ex)
+        {
+            // The codes and messages, not ex.Message. Safe to log only because
+            // ScopeContractException is internal, so every failure is this framework's own text;
+            // one the repository threw is not caught and never reaches a log line by message.
+            logger.LogError(
+                "The discovery document could not be built: {Detail}",
+                "The scope repository broke its contract: " +
+                string.Join("; ", ex.AggregatedFailures.Select(failure => $"[{failure.Code}] {failure.Message}")));
+
+            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !context.RequestAborted.IsCancellationRequested)
+        {
+            // Anything the repository or a host-replaced IDiscoveryDocumentProvider threw. The
+            // type is named and the message is never read, the same rule ValidatedClientResolver
+            // applies to a caller-supplied registration that throws: a database failure's text
+            // routinely carries a connection string, and the sanitizing logger redacts by key
+            // name, so a message interpolated into a log entry passes through whole.
+            //
+            // Catching it here rather than letting the host's error handling have it is the point.
+            // This is the only anonymous endpoint the framework serves, and on
+            // WebApplication.CreateBuilder in Development that handling is a page that renders the
+            // exception to whoever asked. The operator still learns which type threw; the
+            // unauthenticated caller learns nothing.
+            logger.LogError(
+                "The discovery document could not be built: the provider threw {ExceptionType}.",
+                ex.GetType().FullName);
+
+            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+        }
+
         PublicMetadataHeaders.Apply(
             context, _options.Value.DiscoveryDocument.CacheMaxAge, _allowedOrigins);
 
-        var document = await provider.GetDocumentAsync(context.RequestAborted).ConfigureAwait(false);
         return Results.Json(document, ZeeKayDaJsonSerializerContext.Default.OpenIdConfigurationDocument);
     }
 }

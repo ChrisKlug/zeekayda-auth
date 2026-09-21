@@ -89,6 +89,23 @@ Anywhere the wrong thing can be made unrepresentable instead, it is. A kit, a st
 analyzer diagnostic still requires the implementer to know the tool exists, so none of them may
 substitute for a structural fix that was actually available.
 
+**A caller-supplied repository is validated by the framework, at the point it is read, by one authority.**
+`IClientRepository` and `IScopeRepository` are each reached through an internal wrapper —
+`ValidatedClientResolver`, `ValidatedScopeCatalog` — that copies what was returned and refuses the copy,
+so what was checked is what the protocol sees and a store cannot edit it in between. The wrapper is the
+only authority: a shipped in-memory implementation validates nothing of its own, because a second partial
+rule set disagrees with the first about codes, about aggregation and about which rules exist at all. They
+differ only in how they refuse, and principally: a client verdict is keyed by an attacker-supplied
+`client_id`, so a bad registration is served as an unknown client and stays enumeration-safe, while the
+scope set is global with no safe partial answer, so it throws and the request becomes `server_error`.
+
+**A wrapped repository must be registered as a singleton, and startup says so.** Both wrappers are
+singletons holding the instance they are given, so a scoped or transient repository is captured by the
+first request and shared by every later one — a `DbContext` held open for the process. Startup refuses it
+(`scopes.repository.lifetime`, `clients.repository.lifetime`) because ASP.NET Core's own scope validation
+catches this in Development only, which leaves the unwatched deployment to find it. Per-request
+dependencies are resolved inside the repository from an injected `IServiceScopeFactory`.
+
 ## Tried, didn't work
 
 - **A third-party-implementable store protocol.** The original shipped contract let a consumer

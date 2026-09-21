@@ -14,48 +14,40 @@ public sealed class InMemoryScopeRepository : IScopeRepository
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="scopes"/> is <see langword="null"/>.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Thrown when a scope name is blank, duplicated, or contains blank claim names.
-    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// <strong>The scopes are copied but not judged here.</strong> Every rule a scope must keep —
+    /// a name, no duplicate name, claim lists that exist and are named, an audience that is a
+    /// resource indicator, the presence of <c>openid</c> — belongs to
+    /// <c>ValidatedScopeCatalog</c>, which is the one path from any
+    /// <see cref="IScopeRepository"/> to a definition and holds a custom repository to exactly the
+    /// same rules. Enforcing a subset of them a second time here made this type a second
+    /// authority that disagreed with the first in three ways: it reported through
+    /// <see cref="ArgumentException"/> rather than a named
+    /// <see cref="ZeeKayDaConfigurationFailure"/> an operator can search for, it threw on the
+    /// first problem rather than reporting every one at once, and it never checked
+    /// <c>openid</c> at all.
+    /// </para>
+    /// <para>
+    /// The cost is that a mistake surfaces at startup rather than at the
+    /// <c>AddInMemoryScopes</c> call. That is the better trade: the operator gets every problem
+    /// in one pass, under the codes the documentation lists, and an in-memory host and a
+    /// database-backed one fail the same way.
+    /// </para>
+    /// <para>
+    /// The enumerable is materialised so that a lazy sequence is not re-run on every read, and
+    /// wrapped read-only so the returned collection cannot be downcast to its backing array and
+    /// mutated — what this repository serves must not change under a caller that merely read it.
+    /// The definitions themselves are not deep-copied: <c>ValidatedScopeCatalog</c> copies each
+    /// one, claim lists included, on every read, so what the protocol sees is already insulated
+    /// from a caller that edits a list it passed in.
+    /// </para>
+    /// </remarks>
     public InMemoryScopeRepository(IEnumerable<ScopeDefinition> scopes)
     {
         ArgumentNullException.ThrowIfNull(scopes);
 
-        var materializedScopes = new List<ScopeDefinition>();
-        var seenNames = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var scope in scopes)
-        {
-            ArgumentNullException.ThrowIfNull(scope);
-
-            if (string.IsNullOrWhiteSpace(scope.Name))
-            {
-                throw new ArgumentException("Scope names must not be null, empty, or whitespace.", nameof(scopes));
-            }
-
-            if (!seenNames.Add(scope.Name))
-            {
-                throw new ArgumentException(
-                    $"Duplicate scope name '{scope.Name}' is not allowed.",
-                    nameof(scopes));
-            }
-
-            RequireClaimNames(scope, scope.IdTokenClaims, "ID token");
-            RequireClaimNames(scope, scope.UserInfoClaims, "userinfo");
-            RequireClaimNames(scope, scope.AccessTokenClaims, "access token");
-
-            materializedScopes.Add(new ScopeDefinition
-            {
-                Name = scope.Name,
-                IsDiscoverable = scope.IsDiscoverable,
-                IdTokenClaims = [.. scope.IdTokenClaims],
-                UserInfoClaims = [.. scope.UserInfoClaims],
-                AccessTokenClaims = [.. scope.AccessTokenClaims],
-                Audience = scope.Audience,
-            });
-        }
-
-        _scopes = materializedScopes.AsReadOnly();
+        _scopes = scopes.ToList().AsReadOnly();
     }
 
     /// <inheritdoc />
@@ -64,15 +56,5 @@ public sealed class InMemoryScopeRepository : IScopeRepository
         cancellationToken.ThrowIfCancellationRequested();
 
         return ValueTask.FromResult(_scopes);
-    }
-
-    private static void RequireClaimNames(ScopeDefinition scope, IReadOnlyCollection<string> claims, string destination)
-    {
-        if (claims is null || claims.Any(string.IsNullOrWhiteSpace))
-        {
-            throw new ArgumentException(
-                $"Scope '{scope.Name}' contains a null, empty, or whitespace {destination} claim name.",
-                "scopes");
-        }
     }
 }

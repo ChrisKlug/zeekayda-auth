@@ -45,16 +45,20 @@ internal static class ClientClaimAdditions
     private static bool IsEmpty(IReadOnlyCollection<string>? additions) => additions is null or { Count: 0 };
 
     /// <summary>
-    /// Every claim any scope unlocks anywhere, each mapped to the first scope that unlocks it. A
-    /// custom repository's null list is read as empty rather than thrown on.
+    /// Every claim any scope unlocks anywhere, each mapped to the first scope that unlocks it.
     /// </summary>
+    /// <remarks>
+    /// No null guard on the lists: every definition reaching here came through
+    /// <c>ValidatedScopeCatalog</c>, which refuses a repository serving a null list or a blank
+    /// claim name.
+    /// </remarks>
     private static Dictionary<string, string> UnlockedByAnyScope(IEnumerable<ScopeDefinition> scopes)
     {
         var unlocked = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var scope in scopes)
         {
-            var claims = (scope.IdTokenClaims ?? []).Concat(scope.UserInfoClaims ?? []).Concat(scope.AccessTokenClaims ?? []);
-            foreach (var claim in claims.Where(claim => claim is not null))
+            var claims = scope.IdTokenClaims.Concat(scope.UserInfoClaims).Concat(scope.AccessTokenClaims);
+            foreach (var claim in claims)
                 unlocked.TryAdd(claim, scope.Name);
         }
 

@@ -47,7 +47,6 @@ internal sealed partial class AuthorizeRequestValidator
         ScopeIsPresent,
         EffectiveScopeIncludesOpenId,
         EffectiveScopesAreDefined,
-        EffectiveScopeAudienceIsAResourceIndicator,
         EffectiveScopesNameOneResource,
         ClientAdditionsNameNoScopeClaim,
         CodeChallengeIsPresentUnlessTheClientMayOmitIt,
@@ -59,20 +58,20 @@ internal sealed partial class AuthorizeRequestValidator
     ];
 
     private readonly ValidatedClientResolver _clientResolver;
-    private readonly IScopeRepository _scopeRepository;
+    private readonly ValidatedScopeCatalog _scopes;
     private readonly ISanitizingLogger<AuthorizeRequestValidator> _logger;
 
     public AuthorizeRequestValidator(
         ValidatedClientResolver clientResolver,
-        IScopeRepository scopeRepository,
+        ValidatedScopeCatalog scopes,
         ISanitizingLogger<AuthorizeRequestValidator> logger)
     {
         ArgumentNullException.ThrowIfNull(clientResolver);
-        ArgumentNullException.ThrowIfNull(scopeRepository);
+        ArgumentNullException.ThrowIfNull(scopes);
         ArgumentNullException.ThrowIfNull(logger);
 
         _clientResolver = clientResolver;
-        _scopeRepository = scopeRepository;
+        _scopes = scopes;
         _logger = logger;
     }
 
@@ -93,18 +92,48 @@ internal sealed partial class AuthorizeRequestValidator
         // The redirect target is now trusted, so from here failures are delivered to the client.
         // The scope definitions are fetched once, here, because the rule table is synchronous:
         // one repository call per request, shared by every scope rule.
-        var scopes = await _scopeRepository.GetScopesAsync(cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("The registered IScopeRepository returned null from GetScopesAsync.");
+        //
+        Problem? problem = null;
+
+        // The try covers the catalog read alone. Widening it over the rule loop below would blame
+        // the repository for a scope contract exception any rule ever threw of its own.
+        IReadOnlyCollection<ScopeDefinition> scopes = [];
+        try
+        {
+            scopes = await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (ScopeContractException ex)
+        {
+            // The scope repository broke its contract after startup passed. Every scope rule needs
+            // an answer from it, so there is nothing left to validate against: the request is
+            // refused as the server's fault, which is whose it is. The client is told only
+            // server_error; the operator gets the rule that broke, by code.
+            // The codes and messages, not ex.Message: the composed message carries a count and
+            // a preamble the operator does not need. Safe to write to the log only because
+            // ScopeContractException is internal, so every failure here is this framework's own
+            // text; a ZeeKayDaConfigurationException the repository threw is deliberately not
+            // caught, and escapes to the generic server-error path with its message unread.
+            problem = new Problem(
+                "server_error",
+                "The authorization server is misconfigured.",
+                "The scope repository broke its contract: " +
+                string.Join("; ", ex.AggregatedFailures.Select(failure => $"[{failure.Code}] {failure.Message}")));
+        }
+
+        // Built from an empty set when the catalog refused the repository, in which case a problem
+        // is already in hand and no rule below reads it.
         var context = new RequestContext(parameters, target.Client, scopes);
 
-        // An explicit loop, not LINQ: the rules have side effects (they parse values onto the
-        // context), so short-circuiting must not depend on deferred execution.
-        Problem? problem = null;
-        foreach (var rule in Phase2Rules)
+        // An explicit loop over the rules, not LINQ: they have side effects (they parse values
+        // onto the context), so short-circuiting must not depend on deferred execution.
+        if (problem is null)
         {
-            problem = rule(context);
-            if (problem is not null)
-                break;
+            foreach (var rule in Phase2Rules)
+            {
+                problem = rule(context);
+                if (problem is not null)
+                    break;
+            }
         }
 
         // A server_error is the operator's bug, not the client's, and the client is told nothing
@@ -276,21 +305,6 @@ internal sealed partial class AuthorizeRequestValidator
         ScopeResolution.TryResolveAudience(context.GrantedDefinitions, out _)
             ? null
             : new Problem(AuthorizeRequestErrors.InvalidScope, "The scope parameter names scopes for more than one resource server.");
-
-    /// <remarks>
-    /// Startup refuses a malformed audience for every repository, so this is reachable only when
-    /// a repository changed under a live server. That is the operator's fault, not a defect in
-    /// the request, so it is <c>server_error</c> with the detail logged, not <c>invalid_scope</c>.
-    /// Ordered before the one-resource rule so that two malformed audiences are still blamed on
-    /// the configuration, not on the client for naming two resources.
-    /// </remarks>
-    private static Problem? EffectiveScopeAudienceIsAResourceIndicator(RequestContext context) =>
-        ScopeResolution.FirstWithMalformedAudience(context.GrantedDefinitions) is { } scope
-            ? new Problem(
-                AuthorizeRequestErrors.ServerError,
-                "The server's scope configuration is not valid for this request.",
-                $"Scope '{scope.Name}' has an Audience of '{scope.Audience}', which is not an absolute URI without a fragment.")
-            : null;
 
     /// <remarks>
     /// The registration's claim additions are checked against the whole scope set on every

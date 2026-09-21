@@ -532,6 +532,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **`IScopeRepository` has a documented contract, and the framework enforces it on every read**
+  (#759). `GetScopesAsync` now states what an implementation must return: a non-null collection
+  with no null element, every scope named and no two names alike, every claim list non-null with
+  no unnamed claim in it, no protocol claim other than `sub`, every `Audience` an absolute URI
+  without a fragment, and the `openid` scope present. A new internal `ValidatedScopeCatalog` is
+  the only path from the repository to a definition — the authorization endpoint, the token
+  endpoint's claims resolution, the discovery document and both startup activators all read it
+  through the catalog. It copies what the repository returned before checking it, so what was
+  validated is what gets used, and reports every breach at once rather than one per restart.
+
+  Two related checks join it. Startup now fails when `IScopeRepository` or `IClientRepository` is
+  registered as anything other than a singleton (`scopes.repository.lifetime`,
+  `clients.repository.lifetime`): both are wrapped by singletons that hold the instance they are
+  given, so a scoped repository would be resolved once and then shared by every later request,
+  which ASP.NET Core's own scope validation catches in Development only. And a scope `Audience` is
+  now checked against RFC 3986 directly rather than by whether `Uri` can parse it — the parser
+  accepts and silently rewrites a raw space or a non-ASCII character, and it is the original
+  string, not the rewritten one, that becomes the access token's `aud`.
+
+  Previously only some of this was checked, only at startup, and the rest was absorbed: four
+  separate consumers read a null claim list as empty, and a repository returning `null` threw an
+  unnamed `NullReferenceException` from whichever endpoint reached it first. A repository that
+  breaks the contract after startup has passed now fails that request as `server_error`, with the
+  broken rule named in the operator's log, instead of quietly serving a half-configured grant.
+
+  **This is a behaviour change for a custom `IScopeRepository`.** One that served a null claim
+  list, a null element, or duplicate scope names was tolerated at runtime and is now refused. A
+  missing `openid` scope already failed startup and still does; what is new for that rule, and for
+  the audience and reserved-claim rules, is that they are enforced on every read rather than once.
+
+  `InMemoryScopeRepository` no longer enforces any of this in its constructor. It checked a subset
+  — a blank or duplicated name, a blank claim name — throwing `ArgumentException` at the
+  `AddInMemoryScopes` call with no code to search for, stopping at the first problem, and never
+  checking `openid` at all. The catalog is the single authority now, so an in-memory host and a
+  database-backed one fail the same way under the same codes with every problem reported at once.
+  A host passing a valid scope set is unaffected; one passing an invalid set now learns at startup
+  rather than at registration.
+
 - **The standard scopes release their claims at the userinfo endpoint only** (#734). `profile`,
   `email`, `phone` and `address` no longer list any `IdTokenClaims`; `openid` still lists `sub`.
   OpenID Connect Core §5.4 returns those claims from the userinfo endpoint when an access token is

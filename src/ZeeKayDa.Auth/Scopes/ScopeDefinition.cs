@@ -57,7 +57,8 @@ public sealed record ScopeDefinition
     /// an identity scope, whose audience is the issuer.
     /// </summary>
     /// <remarks>
-    /// Must be an absolute URI without a fragment (RFC 8707 §2), checked at startup. Two scopes
+    /// Must be an absolute URI without a fragment (RFC 8707 §2), checked on every read of the
+    /// scope repository and not only at startup. Two scopes
     /// with the same value are the same API. A request whose granted scopes name two distinct
     /// values is refused with <c>invalid_scope</c>: one grant, one API.
     /// </remarks>

@@ -24,10 +24,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Tokens;
 /// </remarks>
 internal sealed class GrantClaimsResolver
 {
-    private readonly IScopeRepository _scopes;
+    private readonly ValidatedScopeCatalog _scopes;
     private readonly ISanitizingLogger<GrantClaimsResolver> _logger;
 
-    public GrantClaimsResolver(IScopeRepository scopes, ISanitizingLogger<GrantClaimsResolver> logger)
+    public GrantClaimsResolver(ValidatedScopeCatalog scopes, ISanitizingLogger<GrantClaimsResolver> logger)
     {
         ArgumentNullException.ThrowIfNull(scopes);
         ArgumentNullException.ThrowIfNull(logger);
@@ -46,8 +46,26 @@ internal sealed class GrantClaimsResolver
 
         var (client, sub, scope, familyId, destination) = request;
         var cancellationToken = context.RequestAborted;
-        var definitions = await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("The registered IScopeRepository returned null from GetScopesAsync.");
+        IReadOnlyCollection<ScopeDefinition> definitions;
+        try
+        {
+            definitions = await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (ScopeContractException ex)
+        {
+            // The scope repository broke its contract after startup passed. Nothing can be
+            // resolved without it, and a grant must not be served against half a configuration:
+            // answered as the server error it is, with the broken rule named for the operator.
+            // The codes and messages, not ex.Message: the composed message adds a count and a
+            // preamble the operator does not need. Safe to log only because ScopeContractException
+            // is internal, so every failure here is this framework's own text; one the repository
+            // threw is not caught and never reaches a log line by message.
+            _logger.LogError(
+                "Claims for a grant to client {ClientId} could not be resolved because the scope repository broke its contract: {Detail}",
+                client.ClientId,
+                string.Join("; ", ex.AggregatedFailures.Select(failure => $"[{failure.Code}] {failure.Message}")));
+            return GrantClaimsOutcome.Failed.Instance;
+        }
 
         // Every rule below was already applied to the effective scope at the authorization
         // endpoint, and consent and refresh only narrow, so a failure here is a configuration
@@ -80,8 +98,9 @@ internal sealed class GrantClaimsResolver
 
     /// <summary>
     /// The resource server the granted scopes name, for a destination that carries one. Userinfo
-    /// does not: its response has no audience, so a scope set that names two, or one whose audience
-    /// is malformed, must not turn a request it has no bearing on into a server error.
+    /// does not: its response has no audience, so a scope set naming two must not turn a request it
+    /// has no bearing on into a server error. A malformed audience is not checked here at all —
+    /// ValidatedScopeCatalog refuses the repository before a definition reaches this method.
     /// </summary>
     private bool TryResolveAudience(
         IClientMetadata client,
@@ -97,13 +116,6 @@ internal sealed class GrantClaimsResolver
         if (!ScopeResolution.TryResolveAudience(granted, out resourceAudience))
         {
             _logger.LogError("Client {ClientId} holds a grant whose scopes name more than one resource server audience; nothing was issued.", client.ClientId);
-            return false;
-        }
-
-        if (ScopeResolution.FirstWithMalformedAudience(granted) is { } malformed)
-        {
-            _logger.LogError("Client {ClientId} holds a grant for the scope {Scope}, whose Audience is not an absolute URI without a fragment; nothing was issued.", client.ClientId, malformed.Name);
-            resourceAudience = null;
             return false;
         }
 

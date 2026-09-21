@@ -86,19 +86,9 @@ public sealed class ClientClaimAdditionsTests
     }
 
     [Fact]
-    public void A_scope_with_a_null_claim_list_from_a_custom_repository_is_read_as_empty()
-    {
-        var scope = new ScopeDefinition { Name = "custom", IdTokenClaims = null!, UserInfoClaims = null!, AccessTokenClaims = ["role"] };
-
-        var collision = ClientClaimAdditions.FindCollision(Client(idToken: ["tenant"]), [scope]);
-
-        collision.Should().BeNull();
-    }
-
-    [Fact]
     public void A_client_with_no_additions_never_collides_whatever_the_scopes_say()
     {
-        var collision = ClientClaimAdditions.FindCollision(Client(), [new ScopeDefinition { Name = "custom", IdTokenClaims = null! }]);
+        var collision = ClientClaimAdditions.FindCollision(Client(), [new ScopeDefinition { Name = "custom" }]);
 
         collision.Should().BeNull();
     }

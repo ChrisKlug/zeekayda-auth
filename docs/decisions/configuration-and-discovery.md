@@ -113,19 +113,19 @@ serving the protocol endpoints must therefore register a signing key source: wit
 nothing to derive from, and startup fails with `signing.key_ring.missing` rather than the first
 discovery request failing.
 
-**A scope definition is three claim lists and an optional audience, and nothing else.**
-`ScopeDefinition` names what the scope unlocks in the ID token, at userinfo and in the access token, as
-OpenID Connect wire names, and may name the resource server's absolute URI. There is no
-identity-resource, API-resource or API-scope registry: two scopes with the same audience string are the
-same API. `StandardScopes` is a static template for `AddInMemoryScopes`, with the §5.4 claims in the
-userinfo lists only and `openid` alone listing `sub` in both; scopes come from `IScopeRepository`.
-Startup fails on an audience that is not an absolute URI without a fragment (RFC 8707 §2,
-`scopes.audience.invalid`), a scope listing a protocol claim other than `sub` selection would never
-deliver (`scopes.claims.reserved`), a scope or claim with no name (`scopes.name.blank`,
-`scopes.claims.blank`), and a client allowing an undefined scope (`client.allowed_scopes.undefined`) —
-the last applied per request by the authorization endpoint, covering custom repositories.
-`claims_supported` is derived from the discoverable scopes' claim lists plus the ID token's own protocol
-claims, never configured, and is omitted by a host without the code grant.
+**A scope definition is three claim lists and an optional audience, and nothing else.** `ScopeDefinition`
+names what the scope unlocks in the ID token, at userinfo and in the access token, as OpenID Connect wire
+names. There is no separate resource or API-scope registry: two scopes sharing an audience are the same API.
+`StandardScopes` templates `AddInMemoryScopes`, with the §5.4 claims in the userinfo lists only and `openid`
+alone listing `sub` in both. `claims_supported` is derived from the discoverable scopes' claim lists plus
+the ID token's protocol claims, never configured.
+
+**What a custom `IScopeRepository` serves is validated wherever it is read.** `ValidatedScopeCatalog` is the
+sole path to a definition and the sole rule authority, so `InMemoryScopeRepository` validates nothing itself
+(`extension-surface.md`). It refuses under the codes `GetScopesAsync` documents, all at once;
+`ScopePresenceStartupValidator` surfaces them at startup, and a later breach fails that request as
+`server_error`. An `Audience` is checked against RFC 3986 directly, not by whether `Uri` parses it, which
+rewrites a raw space while the original reaches `aud`.
 
 **Collection keys bind by replacement, not merge.** An operator who sets one entry of an
 `IConfiguration` collection key loses the rest of that key's defaults. The validator's

@@ -37,16 +37,16 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
     private const string ConnectUserInfo = "connect/userinfo";
 
     private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly IScopeRepository _scopeRepository;
+    private readonly ValidatedScopeCatalog _scopes;
     private readonly ISigningKeyRing _keyRing;
 
     public DiscoveryDocumentProvider(
         IOptions<AuthorizationServerOptions> options,
-        IScopeRepository scopeRepository,
+        ValidatedScopeCatalog scopes,
         ISigningKeyRing keyRing)
     {
         _options = options;
-        _scopeRepository = scopeRepository;
+        _scopes = scopes;
         _keyRing = keyRing;
     }
 
@@ -58,7 +58,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
         // The issuer is validated at startup; by the time this method is called it is safe to use.
         var issuerUri = new Uri(options.Issuer!);
 
-        var scopes = await _scopeRepository.GetScopesAsync(cancellationToken).ConfigureAwait(false);
+        var scopes = await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false);
         var interactive = InteractiveMetadata.For(options, issuerUri, scopes);
 
         return new OpenIdConfigurationDocument
@@ -128,21 +128,16 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
         /// <c>email</c> and <c>Email</c> unlock one claim, so the document must not name two.
         /// </remarks>
         /// <remarks>
-        /// A null list and a null or blank entry are both read as nothing, the way
-        /// <c>ClaimSelectionPlan.Wanted</c> and <see cref="Clients.ClientClaimAdditions"/> already
-        /// read them. <see cref="ScopeDefinition"/> declares these lists non-nullable and
-        /// <c>InMemoryScopeRepository</c> refuses a bad claim name at construction, but a custom
-        /// <see cref="IScopeRepository"/> answers neither to the type system at runtime nor to that
-        /// constructor. Without this, a repository that issues tokens perfectly well would make an
-        /// unauthenticated GET of the discovery document throw, or put a JSON <c>null</c> into a
-        /// member Discovery §3 defines as an array of strings.
+        /// No null or blank guard on the claim lists: the scopes reaching here came through
+        /// <see cref="ValidatedScopeCatalog"/>, which refuses a repository serving a null list or
+        /// an unnamed claim rather than letting either reach a member Discovery §3 defines as an
+        /// array of strings.
         /// </remarks>
         private static IReadOnlyCollection<string> ClaimsSupportedFrom(IReadOnlyCollection<ScopeDefinition> scopes) =>
             [.. IdTokenProtocolClaims.Names
                 .Concat(scopes
                     .Where(scope => scope.IsDiscoverable)
-                    .SelectMany(scope => (scope.IdTokenClaims ?? []).Concat(scope.UserInfoClaims ?? [])))
-                .Where(claim => !string.IsNullOrWhiteSpace(claim))
+                    .SelectMany(scope => scope.IdTokenClaims.Concat(scope.UserInfoClaims)))
                 .Distinct(StringComparer.OrdinalIgnoreCase)];
 
         public static InteractiveMetadata For(

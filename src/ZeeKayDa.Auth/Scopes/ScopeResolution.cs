@@ -63,30 +63,4 @@ internal static class ScopeResolution
         audience = audiences.Count == 1 ? audiences[0] : null;
         return audiences.Count <= 1;
     }
-
-    /// <summary>
-    /// The first granted scope whose audience is not a resource indicator, or <see langword="null"/>.
-    /// Startup checks every definition, but a repository may have changed since, and the raw
-    /// string is what a token would carry.
-    /// </summary>
-    public static ScopeDefinition? FirstWithMalformedAudience(IEnumerable<ScopeDefinition> granted)
-    {
-        ArgumentNullException.ThrowIfNull(granted);
-
-        return granted.FirstOrDefault(scope => scope.Audience is { } audience && !IsResourceIndicator(audience));
-    }
-
-    /// <summary>
-    /// RFC 8707 §2: an absolute URI with no fragment, empty or otherwise. The scheme must be
-    /// written, since <see cref="Uri"/> reads a bare path as a file URI on some platforms and the
-    /// raw string is what a token would carry.
-    /// </summary>
-    public static bool IsResourceIndicator(string audience)
-    {
-        ArgumentNullException.ThrowIfNull(audience);
-
-        return Uri.TryCreate(audience, UriKind.Absolute, out var uri)
-            && !audience.Contains('#')
-            && audience.StartsWith(uri.Scheme + ":", StringComparison.OrdinalIgnoreCase);
-    }
 }
