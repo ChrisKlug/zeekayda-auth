@@ -17,7 +17,14 @@ public sealed class StartupVerificationContext
     /// startup once the current phase has finished running.
     /// </summary>
     /// <param name="code">A stable, versioned string identifier for this failure.</param>
-    /// <param name="message">A human-readable description of the failure.</param>
+    /// <param name="message">
+    /// A human-readable description of the failure. This becomes a
+    /// <see cref="ZeeKayDaConfigurationFailure.Message"/>, so
+    /// <strong>that member's contract binds this argument</strong>: the runner copies it verbatim
+    /// into the exception that aborts startup, and no redaction control can reach it afterwards.
+    /// Never interpolate a caught exception's <see cref="Exception.Message"/> here — name its type
+    /// and let the exception itself propagate as the root cause.
+    /// </param>
     public void AddFailure(string code, string message) => _failures.Add(new ZeeKayDaConfigurationFailure(code, message));
 
     /// <summary>

@@ -19,6 +19,16 @@ namespace ZeeKayDa.Auth;
 /// can reach, so nothing removes a secret from it after the fact.
 /// </para>
 /// <para>
+/// Startup is not the only destination. A failure from a custom
+/// <c>IClientRegistrationValidator</c> is also written to the operator's log at
+/// <see cref="Microsoft.Extensions.Logging.LogLevel.Critical"/> on the request that resolves the
+/// client, as a structured argument that by-key redaction cannot act on. And a configuration
+/// exception thrown <em>after</em> startup — a signing key ring rethrowing its source's, for
+/// instance — reaches whatever the host's exception handling does with it, which in a development
+/// environment includes rendering the composed message into the HTTP response body. Assume this
+/// text can be read by anyone who can read a log or see an error page.
+/// </para>
+/// <para>
 /// In particular, <strong>never interpolate another exception's <see cref="Exception.Message"/>
 /// into this text.</strong> An underlying message is untrusted: a storage or vault client's error
 /// may embed a connection string or a signed URI. Name the type with
