@@ -51,13 +51,32 @@ Rather than checking out and rebuilding `main` in a worktree, download the `cove
 for id in $(gh run list --repo ChrisKlug/zeekayda-auth --workflow ci.yml --branch main --event push --status success --limit 15 --json databaseId --jq '.[].databaseId'); do
   if gh api repos/ChrisKlug/zeekayda-auth/actions/runs/$id/artifacts --jq '[.artifacts[].name] | join(",")' | grep -q coverage-Linux; then
     gh run download --repo ChrisKlug/zeekayda-auth -n coverage-Linux -D ./TestResults/base "$id"
-    echo "baseline from run $id"
+    base_sha=$(gh api repos/ChrisKlug/zeekayda-auth/actions/runs/$id --jq .head_sha)
+    echo "baseline from run $id (${base_sha:0:8})"
+    git merge-base --is-ancestor "$base_sha" HEAD 2>/dev/null \
+      || echo "WARNING: baseline commit is not an ancestor of HEAD — the comparison is against a different main"
+    echo "commits on main since the baseline: $(git rev-list --count "$base_sha"..origin/main 2>/dev/null || echo '?')"
     break
   fi
 done
 ```
 
 If the loop finds nothing in 15 runs, the artifacts have aged out — raise the limit, or fall back to building `main` in a worktree.
+
+**Read the baseline SHA the loop prints, and check the commit count is 0.** The comparison is only
+meaningful against the `main` you branched from. A baseline several merges old produces a *plausible
+but wrong* verdict — regressions in files your branch never touched, which is the tell. This has cost
+a full detour once: a transient `gh run list` answer omitted the newest runs, the loop silently took a
+two-week-old artifact, and the check reported a branch-coverage regression that did not exist. If the
+count is not 0, or the ancestry warning fires, find the run for the current `origin/main` head
+directly and download that one instead:
+
+```sh
+rid=$(gh run list --repo ChrisKlug/zeekayda-auth --branch main --workflow CI --limit 1 --json databaseId --jq '.[0].databaseId')
+gh api repos/ChrisKlug/zeekayda-auth/actions/runs/$rid --jq '{head_sha, created_at}'
+```
+
+Never adjust a threshold or accept a regression to make a stale comparison pass.
 
 ### 3. Compare the results
 
