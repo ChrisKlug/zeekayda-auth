@@ -85,15 +85,25 @@ internal sealed class RepositoryLifetimeScanner(IServiceCollection services)
 {
     /// <summary>
     /// The lifetime of the registration that would win resolution for <paramref name="serviceType"/>
-    /// — the last one added — or <see langword="null"/> when it is not registered at all, which is
-    /// a different check's failure to report.
+    /// — the last unkeyed one added — or <see langword="null"/> when it is not registered at all,
+    /// which is a different check's failure to report.
     /// </summary>
+    /// <remarks>
+    /// Keyed registrations are skipped, and skipping them is the point rather than tidiness. The
+    /// wrappers resolve <paramref name="serviceType"/> unkeyed, so a keyed registration is never
+    /// what they capture; counting one would let a host that registers an unkeyed scoped
+    /// repository and then a keyed singleton for some unrelated purpose pass this check while the
+    /// scoped instance is the one actually held.
+    /// </remarks>
     public ServiceLifetime? EffectiveLifetimeOf(Type serviceType)
     {
         ServiceLifetime? lifetime = null;
 
         foreach (var descriptor in services)
         {
+            if (descriptor.IsKeyedService)
+                continue;
+
             if (descriptor.ServiceType == serviceType)
                 lifetime = descriptor.Lifetime;
         }

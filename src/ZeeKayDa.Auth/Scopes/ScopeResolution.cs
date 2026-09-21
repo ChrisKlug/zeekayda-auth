@@ -112,14 +112,28 @@ internal static class ScopeResolution
                 continue;
             }
 
-            // A percent must introduce exactly two hex digits; a bare one is not an escape.
-            if (i + 2 >= value.Length || !Uri.IsHexDigit(value[i + 1]) || !Uri.IsHexDigit(value[i + 2]))
+            if (!BeginsPercentEscape(value, i))
                 return false;
 
             i += 2;
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Whether the <c>%</c> at <paramref name="index"/> introduces exactly two hex digits. A bare
+    /// percent is not an escape, and RFC 3986 §2.1 admits no other form.
+    /// </summary>
+    private static bool BeginsPercentEscape(string value, int index)
+    {
+        if (index + 2 >= value.Length)
+            return false;
+
+        if (!Uri.IsHexDigit(value[index + 1]))
+            return false;
+
+        return Uri.IsHexDigit(value[index + 2]);
     }
 
     /// <summary>

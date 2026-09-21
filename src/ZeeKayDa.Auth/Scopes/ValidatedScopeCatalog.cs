@@ -80,7 +80,8 @@ internal sealed class ValidatedScopeCatalog
         var failures = new List<ZeeKayDaConfigurationFailure>();
         var scopes = Copy(served, failures);
 
-        CheckNames(scopes, failures);
+        CheckNamesArePresent(scopes, failures);
+        CheckNamesAreUnique(scopes, failures);
         CheckClaims(scopes, failures);
         CheckAudiences(scopes, failures);
         CheckOpenIdIsPresent(scopes, failures);
@@ -182,17 +183,8 @@ internal sealed class ValidatedScopeCatalog
             "destination leaves that list empty rather than setting it to null."));
     }
 
-    /// <summary>
-    /// Every scope is named, and no two share a name. Names are compared ordinally because that
-    /// is how a requested scope is matched (<see cref="ScopeResolution.TryResolve"/>) and how the
-    /// discovery document publishes them.
-    /// </summary>
-    /// <remarks>
-    /// Two scopes with one name resolve ambiguously — whichever the repository happens to return
-    /// first wins, and it decides the claims unlocked and the audience the access token carries.
-    /// Both are also published to <c>scopes_supported</c>, which then names the same scope twice.
-    /// </remarks>
-    private static void CheckNames(List<ScopeDefinition> scopes, List<ZeeKayDaConfigurationFailure> failures)
+    /// <summary>Every scope is named.</summary>
+    private static void CheckNamesArePresent(List<ScopeDefinition> scopes, List<ZeeKayDaConfigurationFailure> failures)
     {
         foreach (var scope in scopes.Where(scope => string.IsNullOrWhiteSpace(scope.Name)))
         {
@@ -202,18 +194,36 @@ internal sealed class ValidatedScopeCatalog
                 "requests and what the discovery document publishes in scopes_supported, which " +
                 $"OpenID Connect Discovery 1.0 §3 defines as a list of strings. Scope: '{scope.Name}'."));
         }
+    }
 
-        // Two sets rather than a GroupBy: this runs on every authorize, token, userinfo and
-        // discovery request, and what is wanted is "seen before", not the grouping itself.
-        // `reported` keeps a name appearing three times to one failure.
+    /// <summary>
+    /// No two scopes share a name. Names are compared ordinally because that is how a requested
+    /// scope is matched (<see cref="ScopeResolution.TryResolve"/>) and how the discovery document
+    /// publishes them.
+    /// </summary>
+    /// <remarks>
+    /// Two scopes with one name resolve ambiguously — whichever the repository happens to return
+    /// first wins, and it decides the claims unlocked and the audience the access token carries.
+    /// Both are also published to <c>scopes_supported</c>, which then names the same scope twice.
+    /// <para>
+    /// Two sets rather than a <c>GroupBy</c>: this runs on every authorize, token, userinfo and
+    /// discovery request, and what is wanted is "seen before", not the grouping itself.
+    /// <c>reported</c> keeps a name appearing three times to one failure. An unnamed scope is
+    /// <see cref="CheckNamesArePresent"/>'s to report, not this one's.
+    /// </para>
+    /// </remarks>
+    private static void CheckNamesAreUnique(List<ScopeDefinition> scopes, List<ZeeKayDaConfigurationFailure> failures)
+    {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var reported = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var scope in scopes)
-        {
-            if (string.IsNullOrWhiteSpace(scope.Name) || seen.Add(scope.Name) || !reported.Add(scope.Name))
-                continue;
+        var repeated = scopes
+            .Where(scope => !string.IsNullOrWhiteSpace(scope.Name))
+            .Where(scope => !seen.Add(scope.Name))
+            .Where(scope => reported.Add(scope.Name));
 
+        foreach (var scope in repeated)
+        {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "scopes.name.duplicate",
                 $"IScopeRepository returned more than one scope named '{scope.Name}'. A scope name " +

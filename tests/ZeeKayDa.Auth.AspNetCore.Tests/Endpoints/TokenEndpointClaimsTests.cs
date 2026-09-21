@@ -408,6 +408,39 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     }
 
     [Fact]
+    public async Task A_keyed_singleton_does_not_hide_an_unkeyed_scoped_scope_repository()
+    {
+        // The wrappers resolve unkeyed, so a keyed registration is never what they capture.
+        // Counting one as the effective lifetime would let this configuration start while the
+        // scoped instance is the one actually held for the life of the process.
+        using var host = new EndpointHost(configureBuilder: builder =>
+        {
+            builder.Services.AddScoped<IScopeRepository>(_ => new InMemoryScopeRepository(StandardScopes.All));
+            builder.Services.AddKeyedSingleton<IScopeRepository>("reporting", (_, _) => new InMemoryScopeRepository(StandardScopes.All));
+        });
+
+        var failure = await host.StartupFailureAsync();
+
+        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(failure)!
+            .AggregatedFailures.Should().Contain(f => f.Code == "scopes.repository.lifetime");
+    }
+
+    [Fact]
+    public async Task A_keyed_scoped_registration_alone_does_not_fail_startup()
+    {
+        // The inverse: a keyed scoped repository is not what either wrapper resolves, so reporting
+        // it would refuse a configuration that is entirely sound.
+        using var host = new EndpointHost(configureBuilder: builder =>
+            builder.Services.AddKeyedScoped<IScopeRepository>("reporting", (_, _) => new InMemoryScopeRepository(StandardScopes.All)));
+
+        // Startup runs on the first invoke and throws when a check fails, so reaching the endpoint
+        // at all is the assertion; what it answers is another test's business.
+        var act = async () => await host.InvokeAsync<AuthorizationEndpoint>(e => e.Handle, host.Get(AuthorizeUrl(App, "openid")));
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task A_client_repository_registered_as_scoped_fails_startup()
     {
         using var host = new EndpointHost(
