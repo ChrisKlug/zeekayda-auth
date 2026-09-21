@@ -115,17 +115,17 @@ discovery request failing.
 
 **A scope definition is three claim lists and an optional audience, and nothing else.** `ScopeDefinition`
 names what the scope unlocks in the ID token, at userinfo and in the access token, as OpenID Connect wire
-names. There is no separate resource or API-scope registry: two scopes with the same audience string are
-the same API. `StandardScopes` templates `AddInMemoryScopes`, with the §5.4 claims in the userinfo lists
-only and `openid` alone listing `sub` in both. `claims_supported` is derived from the discoverable scopes'
-claim lists plus the ID token's protocol claims, never configured.
+names. There is no separate resource or API-scope registry: two scopes sharing an audience are the same API.
+`StandardScopes` templates `AddInMemoryScopes`, with the §5.4 claims in the userinfo lists only and `openid`
+alone listing `sub` in both. `claims_supported` is derived from the discoverable scopes' claim lists plus
+the ID token's protocol claims, never configured.
 
-**What a custom `IScopeRepository` serves is validated wherever it is read, not only at startup.**
-`ValidatedScopeCatalog` is the sole path from the repository to a definition: it copies what was returned,
-then refuses the copy under the codes `GetScopesAsync` documents, reporting every breach at once rather
-than one per restart. `ScopePresenceStartupValidator` surfaces them at startup; a repository breaking the
-contract later fails that request as `server_error`, so no consumer carries a null guard of its own.
-`client.allowed_scopes.undefined` stays separate, applied per request.
+**What a custom `IScopeRepository` serves is validated wherever it is read.** `ValidatedScopeCatalog` is the
+sole path to a definition and the sole rule authority, so `InMemoryScopeRepository` validates nothing itself
+(`extension-surface.md`). It refuses under the codes `GetScopesAsync` documents, all at once;
+`ScopePresenceStartupValidator` surfaces them at startup, and a later breach fails that request as
+`server_error`. An `Audience` is checked against RFC 3986 directly, not by whether `Uri` parses it, which
+rewrites a raw space while the original reaches `aud`.
 
 **Collection keys bind by replacement, not merge.** An operator who sets one entry of an
 `IConfiguration` collection key loses the rest of that key's defaults. The validator's

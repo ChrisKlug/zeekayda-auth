@@ -362,6 +362,64 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     }
 
     [Fact]
+    public async Task A_duplicate_scope_name_from_AddInMemoryScopes_fails_startup_with_a_named_code()
+    {
+        // InMemoryScopeRepository used to throw ArgumentException from its own constructor, at the
+        // AddInMemoryScopes call, with no code an operator could search for. ValidatedScopeCatalog
+        // is the single authority now, so an in-memory host fails exactly as a custom one does.
+        using var host = new EndpointHost(
+            configureBuilder: builder => builder.AddInMemoryScopes(
+                [.. StandardScopes.All, new ScopeDefinition { Name = StandardScopes.Profile.Name }]));
+
+        var failure = await host.StartupFailureAsync();
+
+        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(failure)!
+            .AggregatedFailures.Should().Contain(f => f.Code == "scopes.name.duplicate");
+    }
+
+    [Fact]
+    public async Task An_in_memory_scope_set_missing_openid_fails_startup()
+    {
+        // The rule the old constructor never had.
+        using var host = new EndpointHost(
+            configureBuilder: builder => builder.AddInMemoryScopes([StandardScopes.Profile]));
+
+        var failure = await host.StartupFailureAsync();
+
+        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(failure)!
+            .AggregatedFailures.Should().Contain(f => f.Code == "scopes.openid_missing");
+    }
+
+    [Fact]
+    public async Task A_scope_repository_registered_as_scoped_fails_startup()
+    {
+        // ValidatedScopeCatalog is a singleton and holds what it is given, so a scoped repository
+        // would be resolved once and then shared by every later request — a DbContext inside it
+        // captured by the first caller. ASP.NET Core's own scope validation catches this in
+        // Development only, so the deployment that would surface it is the unwatched one.
+        using var host = new EndpointHost(
+            configureBuilder: builder => builder.Services.AddScoped<IScopeRepository>(
+                _ => new InMemoryScopeRepository(StandardScopes.All)));
+
+        var failure = await host.StartupFailureAsync();
+
+        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(failure)!
+            .AggregatedFailures.Should().Contain(f => f.Code == "scopes.repository.lifetime");
+    }
+
+    [Fact]
+    public async Task A_client_repository_registered_as_scoped_fails_startup()
+    {
+        using var host = new EndpointHost(
+            configureBuilder: builder => builder.Services.AddScoped<IClientRepository, ScopedClientRepository>());
+
+        var failure = await host.StartupFailureAsync();
+
+        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(failure)!
+            .AggregatedFailures.Should().Contain(f => f.Code == "clients.repository.lifetime");
+    }
+
+    [Fact]
     public async Task A_client_allowing_a_scope_no_repository_defines_fails_startup()
     {
         using var host = new EndpointHost(
@@ -654,6 +712,13 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     }
 
     /// <summary>A scope repository whose definitions a test can change between requests.</summary>
+    /// <summary>A repository registered under the wrong lifetime; its answers are never read.</summary>
+    private sealed class ScopedClientRepository : IClientRepository
+    {
+        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IClientRegistration?>(null);
+    }
+
     private sealed class MutableScopeRepository(IReadOnlyCollection<ScopeDefinition> scopes) : IScopeRepository
     {
         public IReadOnlyCollection<ScopeDefinition> Scopes { get; set; } = scopes;

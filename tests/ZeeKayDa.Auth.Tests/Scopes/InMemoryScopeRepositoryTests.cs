@@ -47,53 +47,49 @@ public sealed class InMemoryScopeRepositoryTests
         scopes.Single().IsDiscoverable.Should().BeFalse();
     }
 
-    [Fact]
-    public void Constructor_throws_when_scope_names_are_duplicated()
+    [Theory]
+    [MemberData(nameof(ShapesTheCatalogRefuses))]
+    public async Task The_constructor_judges_nothing_leaving_every_rule_to_the_catalog(ScopeDefinition scope)
     {
-        var act = () => new InMemoryScopeRepository(
-        [
-            new ScopeDefinition { Name = StandardScopes.OpenId.Name },
-            new ScopeDefinition { Name = StandardScopes.OpenId.Name },
-        ]);
+        // This type used to enforce a subset of the scope rules itself, throwing ArgumentException
+        // on the first problem with no code an operator could search for, and never checking
+        // openid at all. ValidatedScopeCatalog is the single authority now, and holds an in-memory
+        // host to exactly the rules a custom repository is held to.
+        var act = () => new InMemoryScopeRepository([scope]);
 
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*Duplicate scope name*");
+        act.Should().NotThrow();
+
+        var repository = new InMemoryScopeRepository([scope]);
+        (await repository.GetScopesAsync(TestContext.Current.CancellationToken)).Should().ContainSingle();
+    }
+
+    public static TheoryData<ScopeDefinition> ShapesTheCatalogRefuses() =>
+    [
+        new ScopeDefinition { Name = "  " },
+        new ScopeDefinition { Name = StandardScopes.Profile.Name, IdTokenClaims = ["name", " "] },
+        new ScopeDefinition { Name = StandardScopes.Profile.Name, AccessTokenClaims = ["role", " "] },
+        new ScopeDefinition { Name = StandardScopes.Profile.Name, UserInfoClaims = ["name", " "] },
+        new ScopeDefinition { Name = "api", Audience = "not-a-uri" },
+    ];
+
+    [Fact]
+    public void The_constructor_still_refuses_a_null_collection()
+    {
+        // Its own argument, not the repository's output: nothing downstream can report this.
+        var act = () => new InMemoryScopeRepository(null!);
+
+        act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
-    public void Constructor_throws_when_IdTokenClaim_name_is_whitespace()
+    public async Task GetScopes_is_unaffected_by_a_list_the_caller_edits_after_construction()
     {
-        var act = () => new InMemoryScopeRepository(
-        [
-            new ScopeDefinition { Name = StandardScopes.Profile.Name, IdTokenClaims = ["name", " "] },
-        ]);
+        var scopes = new List<ScopeDefinition> { StandardScopes.OpenId };
+        var repository = new InMemoryScopeRepository(scopes);
 
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*whitespace ID token claim name*");
-    }
+        scopes.Add(StandardScopes.Profile);
 
-    [Fact]
-    public void Constructor_throws_when_AccessTokenClaim_name_is_whitespace()
-    {
-        var act = () => new InMemoryScopeRepository(
-        [
-            new ScopeDefinition { Name = StandardScopes.Profile.Name, AccessTokenClaims = ["scope", " "] },
-        ]);
-
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*whitespace access token claim name*");
-    }
-
-    [Fact]
-    public void Constructor_throws_when_UserInfoClaim_name_is_whitespace()
-    {
-        var act = () => new InMemoryScopeRepository(
-        [
-            new ScopeDefinition { Name = StandardScopes.Profile.Name, UserInfoClaims = ["name", " "] },
-        ]);
-
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*whitespace userinfo claim name*");
+        (await repository.GetScopesAsync(TestContext.Current.CancellationToken)).Should().ContainSingle();
     }
 
     [Fact]

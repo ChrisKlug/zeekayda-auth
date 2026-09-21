@@ -98,8 +98,9 @@ internal sealed class GrantClaimsResolver
 
     /// <summary>
     /// The resource server the granted scopes name, for a destination that carries one. Userinfo
-    /// does not: its response has no audience, so a scope set that names two, or one whose audience
-    /// is malformed, must not turn a request it has no bearing on into a server error.
+    /// does not: its response has no audience, so a scope set naming two must not turn a request it
+    /// has no bearing on into a server error. A malformed audience is not checked here at all —
+    /// ValidatedScopeCatalog refuses the repository before a definition reaches this method.
     /// </summary>
     private bool TryResolveAudience(
         IClientMetadata client,

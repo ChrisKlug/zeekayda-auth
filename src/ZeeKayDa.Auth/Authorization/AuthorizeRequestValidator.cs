@@ -93,21 +93,14 @@ internal sealed partial class AuthorizeRequestValidator
         // The scope definitions are fetched once, here, because the rule table is synchronous:
         // one repository call per request, shared by every scope rule.
         //
-        // An explicit loop over the rules, not LINQ: they have side effects (they parse values
-        // onto the context), so short-circuiting must not depend on deferred execution.
         Problem? problem = null;
-        RequestContext? context = null;
+
+        // The try covers the catalog read alone. Widening it over the rule loop below would blame
+        // the repository for a scope contract exception any rule ever threw of its own.
+        IReadOnlyCollection<ScopeDefinition> scopes = [];
         try
         {
-            var scopes = await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false);
-            context = new RequestContext(parameters, target.Client, scopes);
-
-            foreach (var rule in Phase2Rules)
-            {
-                problem = rule(context);
-                if (problem is not null)
-                    break;
-            }
+            scopes = await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (ScopeContractException ex)
         {
@@ -127,6 +120,22 @@ internal sealed partial class AuthorizeRequestValidator
                 string.Join("; ", ex.AggregatedFailures.Select(failure => $"[{failure.Code}] {failure.Message}")));
         }
 
+        // Built from an empty set when the catalog refused the repository, in which case a problem
+        // is already in hand and no rule below reads it.
+        var context = new RequestContext(parameters, target.Client, scopes);
+
+        // An explicit loop over the rules, not LINQ: they have side effects (they parse values
+        // onto the context), so short-circuiting must not depend on deferred execution.
+        if (problem is null)
+        {
+            foreach (var rule in Phase2Rules)
+            {
+                problem = rule(context);
+                if (problem is not null)
+                    break;
+            }
+        }
+
         // A server_error is the operator's bug, not the client's, and the client is told nothing
         // specific; the operator is told exactly what to fix.
         if (problem?.OperatorDetail is { } detail)
@@ -142,11 +151,9 @@ internal sealed partial class AuthorizeRequestValidator
                 Description = problem.Description,
                 State = state,
             }
-            // Reached only when no problem was raised, which means the scopes were read and the
-            // context built; a null here would be a rule returning null after the catch ran.
             : new AuthorizeRequestValidationResult.Valid
             {
-                Request = Build(context!, target.RedirectUri, state),
+                Request = Build(context, target.RedirectUri, state),
             };
     }
 

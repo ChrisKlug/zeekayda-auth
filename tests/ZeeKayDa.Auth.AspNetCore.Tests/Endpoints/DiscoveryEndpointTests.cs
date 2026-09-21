@@ -624,4 +624,51 @@ public sealed class DiscoveryEndpointTests
         public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
             => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
     }
+
+    [Fact]
+    public async Task A_scope_repository_breaking_its_contract_answers_500_with_no_configuration_detail()
+    {
+        // The one anonymous endpoint the framework serves. ValidatedScopeCatalog names the scope
+        // and the audience string it refused, and letting that exception escape hands both to the
+        // host's error handling — on WebApplication.CreateBuilder in Development, straight onto
+        // the developer exception page for an unauthenticated caller.
+        var repository = new MutableScopeRepository([StandardScopes.OpenId]);
+        using var host = new EndpointHost(
+            configureBuilder: builder => builder.Services.AddSingleton<IScopeRepository>(repository));
+
+        // Served once first, so startup has passed and the repository breaks only afterwards.
+        (await GetAsync(host)).Dispose();
+        repository.Scopes = [StandardScopes.OpenId, new ScopeDefinition { Name = "orders.read", Audience = "orders" }];
+
+        using var response = await GetAsync(host);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        body.Should().NotContain("orders.read").And.NotContain("scopes.audience.invalid");
+    }
+
+    [Fact]
+    public async Task A_failed_discovery_response_is_not_given_the_cache_headers_of_a_valid_one()
+    {
+        // A cached 500 would outlive the misconfiguration that caused it.
+        var repository = new MutableScopeRepository([StandardScopes.OpenId]);
+        using var host = new EndpointHost(
+            configureBuilder: builder => builder.Services.AddSingleton<IScopeRepository>(repository));
+
+        (await GetAsync(host)).Dispose();
+        repository.Scopes = [StandardScopes.Profile];
+
+        using var response = await GetAsync(host);
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Headers.CacheControl.Should().BeNull();
+    }
+
+    private sealed class MutableScopeRepository(IReadOnlyCollection<ScopeDefinition> scopes) : IScopeRepository
+    {
+        public IReadOnlyCollection<ScopeDefinition> Scopes { get; set; } = scopes;
+
+        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Scopes);
+    }
 }

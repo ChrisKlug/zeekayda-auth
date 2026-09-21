@@ -118,14 +118,16 @@ internal sealed class ValidatedScopeCatalog
 
             ReportNullClaimLists(scope, failures);
 
-            copies.Add(new ScopeDefinition
+            // `with`, not a member-by-member initializer: a property later added to
+            // ScopeDefinition is then carried by the copy automatically, where a listed-out
+            // initializer would drop it silently with no compiler error to say so. Only the three
+            // collections need replacing, because only they can be edited by the repository after
+            // it has handed them back.
+            copies.Add(scope with
             {
-                Name = scope.Name,
-                IsDiscoverable = scope.IsDiscoverable,
                 IdTokenClaims = CopyClaims(scope.IdTokenClaims),
                 UserInfoClaims = CopyClaims(scope.UserInfoClaims),
                 AccessTokenClaims = CopyClaims(scope.AccessTokenClaims),
-                Audience = scope.Audience,
             });
         }
 
@@ -159,21 +161,25 @@ internal sealed class ValidatedScopeCatalog
     /// </remarks>
     private static void ReportNullClaimLists(ScopeDefinition scope, List<ZeeKayDaConfigurationFailure> failures)
     {
-        var nullLists = new[]
-        {
-            (nameof(ScopeDefinition.IdTokenClaims), scope.IdTokenClaims),
-            (nameof(ScopeDefinition.UserInfoClaims), scope.UserInfoClaims),
-            (nameof(ScopeDefinition.AccessTokenClaims), scope.AccessTokenClaims),
-        }.Where(list => list.Item2 is null);
+        ReportIfNull(scope, scope.IdTokenClaims, nameof(ScopeDefinition.IdTokenClaims), failures);
+        ReportIfNull(scope, scope.UserInfoClaims, nameof(ScopeDefinition.UserInfoClaims), failures);
+        ReportIfNull(scope, scope.AccessTokenClaims, nameof(ScopeDefinition.AccessTokenClaims), failures);
+    }
 
-        foreach (var (property, _) in nullLists)
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "scopes.claims.blank",
-                $"Scope '{scope.Name}' has a null {property} list. ScopeDefinition declares its claim " +
-                "lists as never null and defaults each to empty; a scope that unlocks no claims in a " +
-                "destination leaves that list empty rather than setting it to null."));
-        }
+    private static void ReportIfNull(
+        ScopeDefinition scope,
+        IReadOnlyCollection<string>? claims,
+        string property,
+        List<ZeeKayDaConfigurationFailure> failures)
+    {
+        if (claims is not null)
+            return;
+
+        failures.Add(new ZeeKayDaConfigurationFailure(
+            "scopes.claims.blank",
+            $"Scope '{scope.Name}' has a null {property} list. ScopeDefinition declares its claim " +
+            "lists as never null and defaults each to empty; a scope that unlocks no claims in a " +
+            "destination leaves that list empty rather than setting it to null."));
     }
 
     /// <summary>
@@ -197,19 +203,23 @@ internal sealed class ValidatedScopeCatalog
                 $"OpenID Connect Discovery 1.0 §3 defines as a list of strings. Scope: '{scope.Name}'."));
         }
 
-        var duplicates = scopes
-            .Where(scope => !string.IsNullOrWhiteSpace(scope.Name))
-            .GroupBy(scope => scope.Name, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1);
+        // Two sets rather than a GroupBy: this runs on every authorize, token, userinfo and
+        // discovery request, and what is wanted is "seen before", not the grouping itself.
+        // `reported` keeps a name appearing three times to one failure.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var reported = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var duplicate in duplicates)
+        foreach (var scope in scopes)
         {
+            if (string.IsNullOrWhiteSpace(scope.Name) || seen.Add(scope.Name) || !reported.Add(scope.Name))
+                continue;
+
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "scopes.name.duplicate",
-                $"IScopeRepository returned {duplicate.Count()} scopes named '{duplicate.Key}'. A scope " +
-                "name must identify one definition: a duplicate resolves to whichever the repository " +
-                "happened to return first, deciding the claims it unlocks and the audience its access " +
-                "token carries, and scopes_supported publishes the name twice."));
+                $"IScopeRepository returned more than one scope named '{scope.Name}'. A scope name " +
+                "must identify one definition: a duplicate resolves to whichever the repository " +
+                "happened to return first, deciding the claims it unlocks and the audience its " +
+                "access token carries, and scopes_supported publishes the name twice."));
         }
     }
 

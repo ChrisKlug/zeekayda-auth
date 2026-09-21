@@ -69,12 +69,66 @@ internal static class ScopeResolution
     /// written, since <see cref="Uri"/> reads a bare path as a file URI on some platforms and the
     /// raw string is what a token would carry.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>The characters are checked directly, because parsing is not validation here.</strong>
+    /// <see cref="Uri.TryCreate(string, UriKind, out Uri)"/> accepts and silently canonicalizes
+    /// input RFC 3986 does not allow — a raw space, a non-ASCII letter, a stray <c>%</c> — turning
+    /// <c>https://api.example.com/orders v2</c> into <c>…/orders%20v2</c>. It is the original
+    /// string, not the canonical form, that this framework carries into an access token's
+    /// <c>aud</c> claim, so accepting on the parse would let a value no conforming resource server
+    /// can match reach the token: relying parties that compare raw and relying parties that
+    /// normalize first would disagree about who was named.
+    /// </para>
+    /// <para>
+    /// Round-tripping against <see cref="Uri.AbsoluteUri"/> would not do instead: it appends a
+    /// path to an authority-only URI, so <c>https://api.example.com</c> — a valid resource
+    /// indicator — would be refused for differing from <c>https://api.example.com/</c>.
+    /// </para>
+    /// </remarks>
     public static bool IsResourceIndicator(string audience)
     {
         ArgumentNullException.ThrowIfNull(audience);
 
         return Uri.TryCreate(audience, UriKind.Absolute, out var uri)
             && !audience.Contains('#')
-            && audience.StartsWith(uri.Scheme + ":", StringComparison.OrdinalIgnoreCase);
+            && audience.StartsWith(uri.Scheme + ":", StringComparison.OrdinalIgnoreCase)
+            && IsWellFormedRfc3986(audience);
     }
+
+    /// <summary>
+    /// Whether every character is one RFC 3986 §2 permits in a URI, and every <c>%</c> begins a
+    /// valid percent-encoding. The fragment delimiter is the caller's separate check.
+    /// </summary>
+    private static bool IsWellFormedRfc3986(string value)
+    {
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (value[i] != '%')
+            {
+                if (!IsAllowedUriCharacter(value[i]))
+                    return false;
+
+                continue;
+            }
+
+            // A percent must introduce exactly two hex digits; a bare one is not an escape.
+            if (i + 2 >= value.Length || !Uri.IsHexDigit(value[i + 1]) || !Uri.IsHexDigit(value[i + 2]))
+                return false;
+
+            i += 2;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// RFC 3986 §2: unreserved, gen-delims and sub-delims. Percent is handled by the caller, which
+    /// reads it together with the two digits that must follow it.
+    /// </summary>
+    private static bool IsAllowedUriCharacter(char c) =>
+        c is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9'
+        || c is '-' or '.' or '_' or '~'
+        || c is ':' or '/' or '?' or '#' or '[' or ']' or '@'
+        || c is '!' or '$' or '&' or '\'' or '(' or ')' or '*' or '+' or ',' or ';' or '=';
 }
