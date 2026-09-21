@@ -214,6 +214,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.AddDataProtection();
 
         services.TryAddSingleton<ValidatedClientResolver>();
+
+        // The only path from IScopeRepository to a scope definition, so a custom repository's
+        // output is validated wherever it is read and not only at startup.
+        services.TryAddSingleton<ValidatedScopeCatalog>();
         services.TryAddSingleton<AuthorizeRequestValidator>();
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<AuthorizeErrorTransport>();

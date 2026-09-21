@@ -78,20 +78,11 @@ public sealed class ScopeResolutionTests
     [InlineData("/orders")]
     [InlineData("C:\\orders")]
     [InlineData("https://orders.example.com/#")]
-    public void A_scope_whose_audience_is_not_a_resource_indicator_is_found(string audience)
+    public void An_audience_that_is_not_a_resource_indicator_is_rejected(string audience)
     {
-        // Startup checks the shape, but a repository may have changed under a live server, and
-        // the raw string is what the token would carry.
-        var scope = new ScopeDefinition { Name = "x", Audience = audience };
-
-        ScopeResolution.FirstWithMalformedAudience([StandardScopes.OpenId, scope]).Should().Be(scope);
+        // ValidatedScopeCatalog refuses a repository serving one of these, so no grant ever
+        // carries it; this pins the shape rule the catalog applies.
         ScopeResolution.IsResourceIndicator(audience).Should().BeFalse();
-    }
-
-    [Fact]
-    public void Well_formed_audiences_and_identity_scopes_have_no_malformed_audience()
-    {
-        ScopeResolution.FirstWithMalformedAudience([StandardScopes.OpenId, OrdersRead]).Should().BeNull();
     }
 
     [Theory]

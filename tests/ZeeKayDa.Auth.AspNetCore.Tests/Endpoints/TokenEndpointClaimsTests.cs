@@ -307,6 +307,49 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     }
 
     [Fact]
+    public async Task A_scope_repository_breaking_its_contract_at_exchange_is_server_error()
+    {
+        // Startup passed against a repository that then began serving a scope with no name. The
+        // grant must not be issued against half a configuration; the client is told server_error
+        // and the operator's log names the rule.
+        var code = await SeedCodeAsync(App, "openid orders.read");
+        _scopes.Scopes = [.. _scopes.Scopes, new ScopeDefinition { Name = "  " }];
+
+        var response = await PostTokenAsync(code, App);
+
+        await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
+    }
+
+    [Fact]
+    public async Task A_grant_whose_scopes_gain_two_audiences_at_exchange_is_server_error()
+    {
+        // The authorization endpoint refuses two resource servers in one request, so this is only
+        // reachable when the repository changed under a live grant: one grant, one API, and the
+        // access token has one aud to carry.
+        var code = await SeedCodeAsync(App, "openid orders.read");
+        _scopes.Scopes =
+        [
+            .. _scopes.Scopes.Where(scope => scope.Name != "openid"),
+            StandardScopes.OpenId with { Audience = ReportsAudience },
+        ];
+
+        var response = await PostTokenAsync(code, App);
+
+        await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
+    }
+
+    [Fact]
+    public async Task A_scope_repository_that_drops_the_openid_scope_at_exchange_is_server_error()
+    {
+        var code = await SeedCodeAsync(App, "openid orders.read");
+        _scopes.Scopes = [.. _scopes.Scopes.Where(scope => scope.Name != "openid")];
+
+        var response = await PostTokenAsync(code, App);
+
+        await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
+    }
+
+    [Fact]
     public async Task An_audience_that_is_not_an_absolute_URI_fails_startup()
     {
         using var host = new EndpointHost(

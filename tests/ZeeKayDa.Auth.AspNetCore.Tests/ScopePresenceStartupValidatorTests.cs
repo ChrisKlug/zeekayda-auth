@@ -11,6 +11,7 @@ public sealed class ScopePresenceStartupValidatorTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(repository);
+        services.AddSingleton<ValidatedScopeCatalog>();
         var provider = services.BuildServiceProvider();
         return (new ScopePresenceStartupValidator(), provider);
     }
@@ -202,10 +203,10 @@ public sealed class ScopePresenceStartupValidatorTests
     }
 
     [Fact]
-    public async Task VerifyAsync_tolerates_a_custom_repository_returning_null_claim_lists()
+    public async Task VerifyAsync_adds_a_failure_when_a_custom_repository_returns_null_claim_lists()
     {
-        // A null list is read as no claims, the way ClaimSelectionPlan and ClientClaimAdditions
-        // already read it — the check must not turn a tolerated shape into a startup failure.
+        // Was tolerated by every consumer reading a null list as empty. The contract now says the
+        // lists are never null, so the operator is told rather than left with a silent nothing.
         var (sut, provider) = BuildSut(new CustomRepository(
         [
             StandardScopes.OpenId,
@@ -216,7 +217,73 @@ public sealed class ScopePresenceStartupValidatorTests
 
         await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
 
-        context.Failures.Should().BeEmpty();
+        context.Failures.Should().HaveCount(3).And.OnlyContain(f => f.Code == "scopes.claims.blank");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_adds_a_failure_when_a_custom_repository_returns_null()
+    {
+        var (sut, provider) = BuildSut(new NullReturningRepository());
+        using var _ = provider;
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().Contain(f => f.Code == "scopes.null");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_adds_a_failure_when_a_custom_repository_returns_a_null_element()
+    {
+        var (sut, provider) = BuildSut(new CustomRepository([StandardScopes.OpenId, null!]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle().Which.Code.Should().Be("scopes.element.null");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_adds_a_failure_when_a_custom_repository_returns_duplicate_scope_names()
+    {
+        var (sut, provider) = BuildSut(new CustomRepository(
+        [
+            StandardScopes.OpenId,
+            new ScopeDefinition { Name = "api", Audience = "https://api.example.com" },
+            new ScopeDefinition { Name = "api", Audience = "https://other.example.com" },
+        ]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle().Which.Code.Should().Be("scopes.name.duplicate");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_reports_every_broken_rule_at_once_not_only_the_first()
+    {
+        // One restart per failure is what an operator must not be made to pay.
+        var (sut, provider) = BuildSut(new CustomRepository(
+        [
+            new ScopeDefinition { Name = "api", Audience = "not-a-uri" },
+            new ScopeDefinition { Name = "api", AccessTokenClaims = ["nonce"] },
+        ]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+
+        context.Failures.Select(f => f.Code).Should().BeEquivalentTo(
+            ["scopes.name.duplicate", "scopes.claims.reserved", "scopes.audience.invalid", "scopes.openid_missing"]);
+    }
+
+    private sealed class NullReturningRepository : IScopeRepository
+    {
+        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(
+            CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>(null!);
     }
 
     // ── Reserved claim names in a scope's lists ───────────────────────────────────────────────

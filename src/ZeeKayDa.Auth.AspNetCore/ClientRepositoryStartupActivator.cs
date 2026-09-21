@@ -62,13 +62,31 @@ internal sealed class ClientRepositoryStartupActivator : IStartupActivator
     /// registrations the framework holds itself: every allowed scope is defined, and no claim
     /// addition names a claim a scope unlocks. A custom repository is covered per request only.
     /// </summary>
+    /// <remarks>
+    /// Skipped when the scope repository itself breaks its contract. Both rules here ask what the
+    /// scopes are, and a broken repository has no answer worth holding a client to — every client
+    /// would be reported for allowing an undefined scope, burying the one failure that matters.
+    /// <c>ScopePresenceStartupValidator</c> reports that failure, under its own codes, and startup
+    /// stops either way.
+    /// </remarks>
     private static async ValueTask CheckAgainstScopesAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         InMemoryClientRepository repository,
         CancellationToken cancellationToken)
     {
-        var scopes = await scopedServices.GetRequiredService<IScopeRepository>().GetScopesAsync(cancellationToken).ConfigureAwait(false);
+        IReadOnlyCollection<ScopeDefinition> scopes;
+        try
+        {
+            scopes = await scopedServices.GetRequiredService<ValidatedScopeCatalog>()
+                .GetScopesAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ZeeKayDaConfigurationException)
+        {
+            return;
+        }
+
         var defined = scopes.Select(scope => scope.Name).ToHashSet(StringComparer.Ordinal);
 
         foreach (var client in repository.Registrations)

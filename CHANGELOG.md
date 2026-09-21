@@ -532,6 +532,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **`IScopeRepository` has a documented contract, and the framework enforces it on every read**
+  (#759). `GetScopesAsync` now states what an implementation must return: a non-null collection
+  with no null element, every scope named and no two names alike, every claim list non-null with
+  no unnamed claim in it, no protocol claim other than `sub`, every `Audience` an absolute URI
+  without a fragment, and the `openid` scope present. A new internal `ValidatedScopeCatalog` is
+  the only path from the repository to a definition — the authorization endpoint, the token
+  endpoint's claims resolution, the discovery document and both startup activators all read it
+  through the catalog. It copies what the repository returned before checking it, so what was
+  validated is what gets used, and reports every breach at once rather than one per restart.
+
+  Previously only some of this was checked, only at startup, and the rest was absorbed: four
+  separate consumers read a null claim list as empty, and a repository returning `null` threw an
+  unnamed `NullReferenceException` from whichever endpoint reached it first. A repository that
+  breaks the contract after startup has passed now fails that request as `server_error`, with the
+  broken rule named in the operator's log, instead of quietly serving a half-configured grant.
+
+  **This is a behaviour change for a custom `IScopeRepository`.** One that served a null claim
+  list, duplicate scope names, or omitted `openid` was tolerated and is now refused. The shipped
+  `InMemoryScopeRepository` already refused all three in its constructor, so a host using
+  `AddInMemoryScopes` is unaffected.
+
 - **The standard scopes release their claims at the userinfo endpoint only** (#734). `profile`,
   `email`, `phone` and `address` no longer list any `IdTokenClaims`; `openid` still lists `sub`.
   OpenID Connect Core §5.4 returns those claims from the userinfo endpoint when an access token is
