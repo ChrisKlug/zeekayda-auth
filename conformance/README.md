@@ -59,6 +59,14 @@ is the issuer that came back. So:
 - The conformance clients are registered with `RequirePkce` set to `false`. The basic plan's
   modules send no `code_challenge`, and the suite has no way to make them send PKCE, so without the
   OAuth 2.1 §7.5.1.1 opt-out every module is refused at the authorization endpoint.
+- Three clients are registered, not two. `oidcc-server-client-secret-post` copies the config's
+  top-level `client_secret_post` block over `client` before it runs, so that block needs only an id
+  and a secret — it names `conformance-client-post`, which the sample registers with
+  `client_secret_post` as its only permitted token endpoint authentication method. A separate client
+  rather than a second method on `conformance-client` keeps the other modules exercising
+  `client_secret_basic` and nothing else, which is how the suite's own comment says most servers are
+  set up. `client_secret_post` is advertised server-wide in the sample, so it appears in the
+  discovery document of every environment, not only this one.
 
 The suite's scripts and its published images have to agree, so `SUITE_REF` in `run-conformance.sh`
 pins both to one release. Moving to a newer suite is a deliberate edit there, with a re-run.

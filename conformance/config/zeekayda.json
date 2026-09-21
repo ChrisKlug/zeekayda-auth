@@ -12,6 +12,10 @@
         "client_id": "conformance-client2",
         "client_secret": "conformance-client2-secret"
     },
+    "client_secret_post": {
+        "client_id": "conformance-client-post",
+        "client_secret": "conformance-client-post-secret"
+    },
     "browser": [
         {
             "comment": "Sign in as the seeded user. Every task is optional: modules that reuse an existing session (prompt=none while logged in, max_age=10000) never reach the login page, and consent is skipped because the conformance clients are registered with RequireConsent false.",

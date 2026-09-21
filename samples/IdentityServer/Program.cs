@@ -27,6 +27,14 @@ var auth = builder.Services.AddZeeKayDaAuth(options =>
     // Public clients authenticate with nothing at the token endpoint, so "none" must be advertised
     // for them to be registrable.
     options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+
+    // client_secret_basic is advertised by default. client_secret_post is added because the
+    // conformance suite's oidcc-server-client-secret-post module needs a client that authenticates
+    // that way, and this setting is server-wide: it appears in the discovery document of every
+    // environment, not only the Conformance one. The sample accepts that rather than deriving the
+    // set from the registered clients — the framework supports the method, and the sample exists to
+    // show the framework.
+    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.ClientSecretPost);
 });
 
 auth.AddInMemoryScopes(StandardScopes.All);
@@ -42,6 +50,17 @@ auth.AddInMemoryClients(clients =>
                 {
                     Configure(options, client);
                     options.RequirePkce = client.RequirePkce;
+
+                    // Replacing rather than adding: the set arrives holding the framework default,
+                    // client_secret_basic, and a client that names its methods means exactly those.
+                    if (client.TokenEndpointAuthMethods.Count > 0)
+                    {
+                        options.AllowedTokenEndpointAuthMethods.Clear();
+                        foreach (var method in client.TokenEndpointAuthMethods)
+                        {
+                            options.AllowedTokenEndpointAuthMethods.Add(method);
+                        }
+                    }
                 });
         }
         else
