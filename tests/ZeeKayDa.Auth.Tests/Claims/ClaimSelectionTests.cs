@@ -13,6 +13,12 @@ namespace ZeeKayDa.Auth.Tests.Claims;
 /// </summary>
 public sealed class ClaimSelectionTests
 {
+    // Selection is what this file is about, so the two standard scopes it borrows as fixtures are
+    // widened to carry their claims in the ID token as well. As shipped they carry them at userinfo
+    // only, which is where OpenID Connect Core §5.4 puts them and what StandardScopesTests pins.
+    private static readonly ScopeDefinition Profile = StandardScopes.Profile with { IdTokenClaims = StandardScopes.Profile.UserInfoClaims };
+    private static readonly ScopeDefinition Email = StandardScopes.Email with { IdTokenClaims = StandardScopes.Email.UserInfoClaims };
+
     private static readonly ScopeDefinition OrdersRead = new()
     {
         Name = "orders.read",
@@ -43,13 +49,53 @@ public sealed class ClaimSelectionTests
     public void The_plan_unions_each_destination_over_the_granted_scopes_and_adds_the_client_additions()
     {
         var plan = ClaimSelectionPlan.For(
-            [StandardScopes.OpenId, StandardScopes.Profile, OrdersRead],
+            [StandardScopes.OpenId, Profile, OrdersRead],
             Client(idToken: ["tenant"], accessToken: ["tenant"]));
 
         plan.IdToken.Should().Contain(["name", "given_name", "tenant"]).And.NotContain("role");
         plan.AccessToken.Should().BeEquivalentTo(["role", "tenant"]);
         plan.UserInfo.Should().Contain(["name", "customer_number"]).And.NotContain("tenant");
         plan.All.Should().Contain(["name", "role", "tenant", "customer_number"]);
+    }
+
+    [Fact]
+    public void The_plan_for_the_tokens_fetches_nothing_a_userinfo_only_scope_unlocks()
+    {
+        // The standard scopes as shipped unlock their claims at userinfo only, so without this
+        // narrowing every code exchange would ask the provider for personal data no token carries.
+        var plan = ClaimSelectionPlan
+            .For([StandardScopes.OpenId, StandardScopes.Profile, StandardScopes.Email], Client())
+            .For(ClaimsDestination.Tokens);
+
+        plan.All.Should().BeEquivalentTo(["sub"], "only openid's sub reaches a token");
+        plan.UserInfo.Should().BeEmpty("the exchange is not answering a userinfo request");
+        plan.IdToken.Should().BeEquivalentTo(["sub"]);
+    }
+
+    [Fact]
+    public void The_plan_for_the_tokens_keeps_what_the_ID_and_access_tokens_want()
+    {
+        var plan = ClaimSelectionPlan
+            .For([StandardScopes.OpenId, Profile, OrdersRead], Client(idToken: ["tenant"], accessToken: ["tenant"]))
+            .For(ClaimsDestination.Tokens);
+
+        plan.IdToken.Should().Contain(["name", "tenant"]);
+        plan.AccessToken.Should().BeEquivalentTo(["role", "tenant"]);
+        plan.All.Should().Contain(["name", "role", "tenant"]).And.NotContain("customer_number");
+    }
+
+    [Fact]
+    public void A_malformed_userinfo_only_claim_cannot_fail_a_token_exchange()
+    {
+        // A repeat of a single-valued claim aborts the destination that wants it. customer_number
+        // is unlocked at userinfo only, so an exchange must not be the request that dies on it.
+        var plan = ClaimSelectionPlan.For([StandardScopes.OpenId, OrdersRead], Client());
+
+        var act = () => ClaimSelection.Select(
+            [new("customer_number", "a"), new("customer_number", "b")],
+            plan.For(ClaimsDestination.Tokens));
+
+        act.Should().NotThrow();
     }
 
     [Fact]
@@ -67,7 +113,7 @@ public sealed class ClaimSelectionTests
     {
         var selected = Select(
             [new("name", "Chris"), new("email", "chris@example.com"), new("role", "admin")],
-            [StandardScopes.OpenId, StandardScopes.Profile, OrdersRead]);
+            [StandardScopes.OpenId, Profile, OrdersRead]);
 
         selected.IdToken.Keys.Should().BeEquivalentTo(["name"]);
         selected.AccessToken.Keys.Should().BeEquivalentTo(["role"]);
@@ -79,7 +125,7 @@ public sealed class ClaimSelectionTests
     {
         var selected = Select(
             [new("name", "Chris"), new("email", "chris@example.com"), new("email_verified", true)],
-            [StandardScopes.OpenId, StandardScopes.Profile, StandardScopes.Email]);
+            [StandardScopes.OpenId, Profile, Email]);
 
         selected.IdToken.Keys.Should().BeEquivalentTo(["name", "email", "email_verified"]);
         Json(selected.IdToken["email_verified"]).Should().Be("true");
@@ -88,7 +134,7 @@ public sealed class ClaimSelectionTests
     [Fact]
     public void A_wanted_claim_the_provider_did_not_return_is_absent_not_null()
     {
-        var selected = Select([new("name", "Chris")], [StandardScopes.Profile]);
+        var selected = Select([new("name", "Chris")], [Profile]);
 
         selected.IdToken.Should().NotContainKey("given_name");
     }
@@ -96,7 +142,7 @@ public sealed class ClaimSelectionTests
     [Fact]
     public void A_claim_no_destination_wants_is_dropped()
     {
-        var selected = Select([new("shoe_size", 43)], [StandardScopes.Profile]);
+        var selected = Select([new("shoe_size", 43)], [Profile]);
 
         selected.IdToken.Should().BeEmpty();
         selected.AccessToken.Should().BeEmpty();
@@ -119,7 +165,7 @@ public sealed class ClaimSelectionTests
     [Fact]
     public void Claim_names_are_matched_ordinally()
     {
-        var selected = Select([new("Name", "Chris")], [StandardScopes.Profile]);
+        var selected = Select([new("Name", "Chris")], [Profile]);
 
         selected.IdToken.Should().BeEmpty("a scope unlocking 'name' does not unlock 'Name'");
     }
@@ -256,7 +302,7 @@ public sealed class ClaimSelectionTests
     [InlineData("updated_at")]
     public void A_repeat_of_a_single_valued_standard_claim_aborts_issuance(string claim)
     {
-        var act = () => Select([new(claim, "a"), new(claim, "b")], [StandardScopes.Profile, StandardScopes.Email]);
+        var act = () => Select([new(claim, "a"), new(claim, "b")], [Profile, Email]);
 
         act.Should().Throw<InvalidOperationException>().WithMessage($"*'{claim}'*");
     }
@@ -303,7 +349,7 @@ public sealed class ClaimSelectionTests
     {
         // The provider is told that returning more than asked is harmless, so a claim that can
         // reach no token cannot fail issuance either.
-        var selected = Select([new("name", "Chris"), new("flag", true), new("flag", false)], [StandardScopes.Profile]);
+        var selected = Select([new("name", "Chris"), new("flag", true), new("flag", false)], [Profile]);
 
         selected.IdToken.Keys.Should().BeEquivalentTo(["name"]);
     }
@@ -323,7 +369,7 @@ public sealed class ClaimSelectionTests
     [Fact]
     public void A_default_record_in_the_pool_aborts_issuance()
     {
-        var act = () => Select([new("name", "Chris"), default], [StandardScopes.Profile]);
+        var act = () => Select([new("name", "Chris"), default], [Profile]);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*default ClaimRecord*");
     }

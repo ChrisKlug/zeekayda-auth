@@ -11,10 +11,12 @@ namespace ZeeKayDa.Auth.Scopes;
 /// listed type the provider does not return is omitted, never written empty.
 /// </para>
 /// <para>
-/// <see cref="StandardScopes"/> lists the OpenID Connect Core §5.4 claims of each standard scope
-/// in both <see cref="IdTokenClaims"/> and <see cref="UserInfoClaims"/>. A host that wants the
-/// specification's own default, profile claims from userinfo and a slim ID token, trims one
-/// list: <c>StandardScopes.Profile with { IdTokenClaims = ["name"] }</c>.
+/// <see cref="StandardScopes"/> lists the OpenID Connect Core §5.4 claims of <c>profile</c>,
+/// <c>email</c>, <c>phone</c> and <c>address</c> in <see cref="UserInfoClaims"/> only, which is
+/// where §5.4 places them when an access token is issued, as it always is in the code flow;
+/// <c>openid</c> is the exception and lists <c>sub</c> in both. A host that wants one of the four
+/// scopes' claims in the ID token as well adds them:
+/// <c>StandardScopes.Email with { IdTokenClaims = StandardScopes.Email.UserInfoClaims }</c>.
 /// </para>
 /// </remarks>
 public sealed record ScopeDefinition

@@ -82,5 +82,6 @@ internal readonly record struct ClaimAdditionCollision(string Claim, string Scop
     public string Describe(string clientId) =>
         $"Client '{clientId}' names '{Claim}' in {Property}, but the '{Scope}' scope unlocks that claim. A claim " +
         "a scope unlocks can only be granted through that scope, so the user can consent to it; remove it from the " +
-        "client's additions and grant it through the scope instead.";
+        $"client's additions. To change which tokens the '{Scope}' scope releases it in, set that scope's " +
+        "IdTokenClaims, UserInfoClaims or AccessTokenClaims.";
 }

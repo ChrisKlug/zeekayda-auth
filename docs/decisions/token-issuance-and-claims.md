@@ -65,9 +65,9 @@ shortest effective access-token lifetime across clients.** A miss on the family 
 key on its own. A TTL at grant or refresh-token scale defeats the point and must not be used.
 
 **Claims resolution is a subject-level concern.** `ClaimsProviderContext` carries the subject, the
-granted scopes, the claim types selection will keep (the union over every destination, a fetch hint
-and never a filter) and the family id. The client id and request metadata are withheld: the only
-client-varying step is selection, downstream, and a client can only widen what is selected.
+granted scopes, the family id, and the claim types selection keeps for the operation in hand: the token
+types at an exchange, the userinfo types at userinfo, a fetch hint and never a filter. The client id is
+withheld, because only selection varies by client and it can only widen.
 
 **The transfer type is not `System.Security.Claims.Claim`.** Not reliably serialisable, carries a
 back-reference to its identity, and its value-type tag never survives a JWT anyway.
@@ -97,9 +97,9 @@ at startup for the in-memory registrations, and on every authorization request a
 issuance against the scope set fetched for that request, because the registration validator's
 memoised verdict cannot see the scope repository; a collision is `server_error`, logged with detail.
 
-**The standard scopes ship their claims in both the ID token and userinfo.** OpenID Connect Core §5.4
-routes them to userinfo; §2 lets the ID token carry other claims. A host wanting the §5.4 default trims
-the ID-token list with a `with` expression; a future reading of §5.4 as "not in the ID token" is wrong.
+**The standard scopes ship their claims at userinfo only; `openid` keeps `sub`.** Core §5.4 returns them
+from userinfo when an access token is issued, as the code flow always does, and the conformance suite
+expects that; the ID token, which rides in the client's cookie, gets them only through `IdTokenClaims`.
 
 **Reserved protocol claim names are stripped from a provider's result before selection**, from one
 closed constant compared case-insensitively — `iss`, `sub`, `aud`, `exp`, `nbf`, `iat`, `jti`,
@@ -140,7 +140,7 @@ gone either way. Refusals go in `WWW-Authenticate` with no body (RFC 6750 §3).
   every token is one line here: put it on `openid`. A resource entity exists to answer "who is the
   audience"; a string on the scope answers it.
 - **One identity list for both the ID token and userinfo.** Made a userinfo-only claim inexpressible
-  and a slim ID token impossible, and the ID token rides in the client's cookie.
+  and a slim ID token impossible.
 - **No `aud` without an API scope; a switch to drop the issuer from `aud`.** RFC 9068 §2.2 makes
   `aud` required, and a toggle that makes our own userinfo reject our own tokens is a supported
   misconfiguration.

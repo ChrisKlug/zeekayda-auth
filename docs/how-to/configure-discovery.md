@@ -145,9 +145,10 @@ app.MapZeeKayDaAuth();
 If you register a custom `IScopeRepository`, include `openid` in the configured scopes so startup
 validation succeeds.
 
-Discovery still publishes only the scope names, and only for scopes where `IsDiscoverable` is
-`true`. `IdTokenClaims` and `AccessTokenClaims` are repository metadata for future authorization
-server behavior and are not emitted as custom discovery fields.
+Discovery publishes the scope names, and only for scopes where `IsDiscoverable` is `true`. A
+scope's `IdTokenClaims` and `UserInfoClaims` decide which tokens release each claim, and together
+they make up `claims_supported`; `AccessTokenClaims` is not advertised, because Discovery §3 covers
+the ID token and the UserInfo endpoint.
 
 ## 4. Override published endpoint URLs when needed
 

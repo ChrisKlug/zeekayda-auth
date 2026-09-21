@@ -530,6 +530,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   *after* `AddZeeKayDaSigningKeySource` wins outright under MS DI's last-registration-wins resolution
   and is not detectable from this method.
 
+### Changed
+
+- **The standard scopes release their claims at the userinfo endpoint only** (#734). `profile`,
+  `email`, `phone` and `address` no longer list any `IdTokenClaims`; `openid` still lists `sub`.
+  OpenID Connect Core §5.4 returns those claims from the userinfo endpoint when an access token is
+  issued, which in the authorization code flow it always is, and the conformance suite's
+  `oidcc-scope-email` and `oidcc-alternate-happy-flow` modules warned that the ID token carried
+  `email`. Core §2 permits an ID token to carry them, so this is a default rather than a
+  requirement: a host that wants a scope's claims in the ID token as well adds them back with
+  `StandardScopes.Email with { IdTokenClaims = StandardScopes.Email.UserInfoClaims }`. A relying
+  party on Microsoft's `AddOpenIdConnect` must set `GetClaimsFromUserInfoEndpoint = true` to see
+  them, which the `WebClient` sample already does. `claims_supported` in the discovery document is
+  unchanged: it is the union across both destinations.
+
 ### Fixed
 
 - **A client registration that cannot be read is logged once, not on every request** (#698). A

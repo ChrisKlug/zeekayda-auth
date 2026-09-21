@@ -81,7 +81,7 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     }
 
     [Fact]
-    public async Task Alice_signs_in_through_login_and_consent_and_receives_an_id_token_with_her_claims()
+    public async Task Alice_signs_in_through_login_and_consent_and_gets_an_id_token_plus_her_claims_from_userinfo()
     {
         using var browser = NewBrowser();
         var (verifier, challenge) = NewPkcePair();
@@ -98,10 +98,14 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
 
         var claims = PayloadOf(tokens.GetProperty("id_token").GetString()!);
         claims.GetProperty("sub").GetString().Should().Be("a1ice000000000000000000000000001");
-        claims.GetProperty("name").GetString().Should().Be("Alice Example");
         claims.GetProperty("nonce").GetString().Should().Be("sample-nonce");
         claims.GetProperty("amr").EnumerateArray().Select(method => method.GetString()).Should().Equal("pwd");
         claims.GetProperty("at_hash").GetString().Should().Be(AtHashOf(tokens.GetProperty("access_token").GetString()!));
+        claims.TryGetProperty("name", out _).Should().BeFalse("the standard scopes release their claims at userinfo, where OpenID Connect Core §5.4 puts them");
+
+        var userInfo = await UserInfoAsync(browser, tokens.GetProperty("access_token").GetString()!);
+        userInfo.GetProperty("sub").GetString().Should().Be("a1ice000000000000000000000000001");
+        userInfo.GetProperty("name").GetString().Should().Be("Alice Example");
     }
 
     [Fact]
@@ -129,9 +133,9 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
         var callback = await PostFormAsync(browser, consentPage, new() { ["action"] = "allow" });
         var tokens = await RedeemAsync(browser, CodeFrom(callback), verifier);
 
-        var claims = PayloadOf(tokens.GetProperty("id_token").GetString()!);
-        claims.GetProperty("name").GetString().Should().Be("Bob Registered");
-        claims.GetProperty("preferred_username").GetString().Should().Be("bob");
+        var userInfo = await UserInfoAsync(browser, tokens.GetProperty("access_token").GetString()!);
+        userInfo.GetProperty("name").GetString().Should().Be("Bob Registered");
+        userInfo.GetProperty("preferred_username").GetString().Should().Be("bob");
     }
 
     [Fact]
@@ -401,6 +405,20 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     {
         callback.Should().StartWith(RedirectUri);
         return QueryHelpers.ParseQuery(new Uri(callback).Query)["code"].ToString();
+    }
+
+    /// <summary>
+    /// Reads the subject's claims from the userinfo endpoint, which is where the standard scopes
+    /// release them (OpenID Connect Core §5.4) and so where the sample's own claims land.
+    /// </summary>
+    private static async Task<JsonElement> UserInfoAsync(HttpClient client, string accessToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/connect/userinfo");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        using var response = await client.SendAsync(request, Cancellation);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return await response.Content.ReadFromJsonAsync<JsonElement>(Cancellation);
     }
 
     private static async Task<JsonElement> RedeemAsync(HttpClient client, string code, string verifier)
