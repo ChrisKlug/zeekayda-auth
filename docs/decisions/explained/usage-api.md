@@ -34,14 +34,16 @@ normally a redirect back to the client. The page handler just returns, and the f
 rendering the page. A page never touches a return URL, a cookie or an authentication scheme. That is
 the point of the interaction services: it should be obvious what each page has to do.
 
-A page path left at `null` has a meaning:
+Whether a page is needed is decided before its path is ever read, so a path is only an address:
 
 - **Login:** when local sign-in is off and exactly one external provider is registered, the
-  framework goes straight to that provider.
-- **Error and signed-out:** the framework renders a minimal, unbranded page of its own.
-- **Consent:** only clients that require consent need it.
+  framework goes straight to that provider and never visits the login page.
+- **Consent:** only clients that require consent reach it.
+- **Error and signed-out:** with no path, the framework renders a minimal, unbranded page of its own.
 
-A host with one external provider and consent off needs no pages at all.
+A host with one external provider and consent off needs no pages at all. Because the login and
+consent paths are only addresses, they can default to `/login` and `/consent` (#785), which also
+gives a future UI package fixed addresses to serve.
 
 ## What it costs
 
