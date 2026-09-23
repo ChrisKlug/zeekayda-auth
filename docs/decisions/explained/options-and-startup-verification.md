@@ -93,5 +93,6 @@ file is updated to match.
 - #773: the not-for-production switches go in one options group, and `AllowInsecureIssuer` stops
   doing two jobs.
 - #774: every options collection is frozen after configuration, not two of them.
-- #775: `ThrowIfAlreadyRegistered` leaves the public builder.
+- #775: the built-in stores register through the same public method a third-party store uses, so
+  `ThrowIfAlreadyRegistered` can leave the public builder.
 - #776: the default JWT issuers are registered by the token subsystem, not the infrastructure call.
