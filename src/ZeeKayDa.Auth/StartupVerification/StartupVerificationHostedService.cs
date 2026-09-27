@@ -17,7 +17,7 @@ internal sealed class StartupVerificationHostedService(
     /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        await RunGatePhaseAsync(cancellationToken).ConfigureAwait(false);
+        await RunGatePhaseOrThrowAsync(gates, cancellationToken).ConfigureAwait(false);
 
         // The checks are resolved here, not injected: a check's constructor may log, and nothing may
         // log before the gates have passed.
@@ -34,7 +34,8 @@ internal sealed class StartupVerificationHostedService(
     /// Runs every gate, aborting on the first that fails. Gate warnings are held back until the
     /// sanitizing logger has been verified.
     /// </summary>
-    private async Task RunGatePhaseAsync(CancellationToken cancellationToken)
+    private async Task RunGatePhaseOrThrowAsync(
+        IEnumerable<IStartupVerificationGate> gates, CancellationToken cancellationToken)
     {
         var pendingWarnings = new List<(object Source, string Name, StartupVerificationWarning Warning)>();
         var sanitizingLoggerVerified = false;
