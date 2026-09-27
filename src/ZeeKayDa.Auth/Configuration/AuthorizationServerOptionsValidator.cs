@@ -39,6 +39,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         ValidateCors(options, errors);
         ValidateSecurityHeaders(options, errors);
         ValidateAuthorizationEndpoint(options, errors);
+        ValidateEndSessionEndpoint(options, errors);
         ValidateClockSkew(options, errors);
         EndpointUriValidator.Validate(options, issuerUri, errors);
 
@@ -288,6 +289,11 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.ErrorPath, "AuthorizationEndpoint.Interaction.ErrorPath", errors);
         ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.LoginPath, "AuthorizationEndpoint.Interaction.LoginPath", errors);
         ValidateInteractionPath(options.AuthorizationEndpoint.Interaction.ConsentPath, "AuthorizationEndpoint.Interaction.ConsentPath", errors);
+    }
+
+    /// <summary>Validates the <c>EndSessionEndpoint</c> options group.</summary>
+    private static void ValidateEndSessionEndpoint(AuthorizationServerOptions options, List<string> errors)
+    {
         ValidateInteractionPath(options.EndSessionEndpoint.LogoutPath, "EndSessionEndpoint.LogoutPath", errors);
         ValidateInteractionPath(options.EndSessionEndpoint.SignedOutPath, "EndSessionEndpoint.SignedOutPath", errors);
     }
