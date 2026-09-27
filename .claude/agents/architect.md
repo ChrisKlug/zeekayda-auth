@@ -75,6 +75,7 @@ When you author or review public API surface, hold XML docs to the consumer's ne
 - `<summary>`/`<remarks>` say what the member is for, how to use it, and — only if genuinely non-obvious — briefly how it works. Design-decision history belongs in the decision register or the issue thread, not in `<remarks>`
 - No comment exists purely to cite a decision-register entry, an issue/PR number, or an acceptance criterion. If a *why* is worth recording in the code, write it in plain English without the reference
 - `<exception>` elements are exempt — they are part of the contract and are never trimmed
+- **Flag crutch comments as Low.** A comment that restates the code, excuses an inconsistency, narrates history, or explains what a rename or extraction would make obvious is a finding. Name the rename or extraction; never ask for a better comment
 - Note that a doc comment that has to be long to be correct is usually the "docs are not a mitigation" smell wearing a different hat: prefer reshaping the API so less explanation is needed
 
 ## Reporting a review
