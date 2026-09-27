@@ -36,8 +36,8 @@ allowing `client_credentials` requires a real client authentication method on `T
 
 **Options hold data; the builder holds registrations.** Stores, signing keys and hashers are
 registered through `ZeeKayDaAuthBuilder`, which is a thin wrapper over `IServiceCollection` that
-extension methods hang off. Options can therefore be bound from `appsettings.json`, and a builder
-method never hides a setting.
+extension methods hang off. A builder method never hides a setting. Binding the options from
+`appsettings.json` is possible by hand but is not yet a supported, tested path (#798).
 
 **Options never go on the wire.** Discovery copies them into a separate class that matches the
 spec's document format, so the options class can be refactored without touching the spec contract.
