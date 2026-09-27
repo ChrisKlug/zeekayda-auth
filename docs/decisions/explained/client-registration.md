@@ -50,7 +50,8 @@ secret hashing, and reports every failure at once.
 
 - A new client property is added in about six places: the interface, the record, `ClientOptions`,
   the snapshot, the fingerprint, and usually the validator.
-- The resolver is 346 lines, about half of it a verdict cache.
+- The resolver is 346 lines, about half of it a verdict cache. The cache is there because validating
+  a confidential client runs a full PBKDF2 verification per secret.
 
 ## What the walkthrough changed
 
@@ -58,8 +59,9 @@ M1 issues, done before the security audit (#537). When one lands, this file is u
 
 - #780 also collapses `ClientOptions`, which copies `ClientRegistration` member by member twice.
 - #787: delete analyzer `ZEEKAYDA0003`. It dates from before the resolver validated what it serves.
-- #788: validate on every lookup and delete the fingerprint verdict cache. Validation costs
-  microseconds, next to a PBKDF2 verification thousands of times dearer.
+- #788: the cache exists because validation checks that no secret accepts an empty password, a
+  full PBKDF2 run per secret. Once the verify path refuses empty secrets itself (#790), that check,
+  and with it the fingerprint and the cache, can go.
 - #789: build `zkd_error`. `EnableZkdErrorCodes` exists per client, but nothing emits the field. It
   lets a client tell "the user cancelled" from "sign-in failed" without revealing anything the user
   does not already know.
