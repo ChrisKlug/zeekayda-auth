@@ -14,10 +14,10 @@ public sealed class Pbkdf2ClientSecretHasherOptions
     /// PBKDF2 iteration count used when creating new hashed secrets.
     /// </summary>
     /// <remarks>
-    /// Must be at least <see cref="DefaultIterations"/> (600,000). Configuring a higher value
-    /// strengthens brute-force resistance at the cost of increased CPU time per verification.
-    /// Values above 2,000,000 are clamped with a startup warning; see
-    /// <see cref="Pbkdf2ClientSecretHasher"/> for the rationale.
+    /// Must be between 600,000 and 2,000,000; startup fails otherwise. Configuring a higher value
+    /// strengthens brute-force resistance at the cost of increased CPU time per verification. Set it
+    /// with <c>services.Configure&lt;Pbkdf2ClientSecretHasherOptions&gt;(…)</c> or bind it from
+    /// configuration.
     /// </remarks>
     public int Iterations { get; set; } = DefaultIterations;
 }

@@ -148,27 +148,19 @@ app.Run();
 
 ## 6. Register client secret hashers
 
-Client secrets are hashed before storage using a pluggable `IClientSecretHasher`. Use
-`AddPbkdf2SecretsHasher()` to register the built-in PBKDF2-HMAC-SHA256 hasher in one call:
-
-```csharp
-using ZeeKayDa.Auth.AspNetCore.Extensions;
-
-var auth = builder.Services.AddZeeKayDaAuth(options =>
-{
-    options.Issuer = "https://id.example.com";
-});
-
-auth.AddPbkdf2SecretsHasher();
-```
+Client secrets are hashed before storage using a pluggable `IClientSecretHasher`.
+`AddZeeKayDaAuth` always registers the built-in PBKDF2-HMAC-SHA256 hasher; there is nothing to add.
 
 ### Configure the iteration count
 
-Pass an optional configure delegate to override the default iteration count of 600,000:
+The iteration count is an ordinary options class. Override the default of 600,000 with
+`Configure`, or bind it from configuration:
 
 ```csharp
-auth.AddPbkdf2SecretsHasher(options => options.Iterations = 1_200_000);
+builder.Services.Configure<Pbkdf2ClientSecretHasherOptions>(options => options.Iterations = 1_200_000);
 ```
+
+A value below 600,000 or above 2,000,000 fails startup.
 
 ### Multiple hashers (credential rotation)
 
@@ -177,8 +169,8 @@ default. The composite verifier dispatches each credential to the correct hasher
 controls which hasher creates new secrets:
 
 ```csharp
-auth.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);   // creates new secrets
-auth.AddSecretsHasher<BcryptClientSecretHasher>(isDefault: false);   // verifies old secrets
+auth.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);   // creates new secrets
+auth.AddClientSecretHasher<BcryptClientSecretHasher>(isDefault: false);   // verifies old secrets
 ```
 
 Startup validation fails at host startup if:

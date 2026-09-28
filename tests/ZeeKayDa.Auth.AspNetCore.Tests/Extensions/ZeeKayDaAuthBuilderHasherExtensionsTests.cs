@@ -2,7 +2,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
-using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
@@ -11,14 +10,14 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     // ── Registration ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AddSecretsHasher_registers_hasher_as_IClientSecretHasher()
+    public void AddClientSecretHasher_registers_hasher_as_IClientSecretHasher()
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions();
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        builder.AddSecretsHasher<FakeHasher>();
+        builder.AddClientSecretHasher<FakeHasher>();
 
         using var provider = services.BuildServiceProvider();
         var hashers = provider.GetServices<IClientSecretHasher>();
@@ -26,15 +25,15 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     [Fact]
-    public void AddSecretsHasher_registers_multiple_hashers_when_called_multiple_times()
+    public void AddClientSecretHasher_registers_multiple_hashers_when_called_multiple_times()
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions();
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        builder.AddSecretsHasher<FakeHasher>(isDefault: true);
-        builder.AddSecretsHasher<AnotherFakeHasher>(isDefault: false);
+        builder.AddClientSecretHasher<FakeHasher>(isDefault: true);
+        builder.AddClientSecretHasher<AnotherFakeHasher>(isDefault: false);
 
         using var provider = services.BuildServiceProvider();
         var hashers = provider.GetServices<IClientSecretHasher>().ToList();
@@ -42,14 +41,14 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     [Fact]
-    public void AddSecretsHasher_records_registration_in_options()
+    public void AddClientSecretHasher_records_registration_in_options()
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions();
         var builder = new ZeeKayDaAuthBuilder(services);
 
-        builder.AddSecretsHasher<FakeHasher>(isDefault: true);
+        builder.AddClientSecretHasher<FakeHasher>(isDefault: true);
 
         using var provider = services.BuildServiceProvider();
         var opts = provider.GetRequiredService<IOptions<ClientSecretHasherRegistrationOptions>>().Value;
@@ -58,103 +57,73 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     }
 
     [Fact]
-    public void AddSecretsHasher_throws_InvalidOperationException_if_same_type_registered_twice()
+    public void AddClientSecretHasher_throws_InvalidOperationException_if_same_type_registered_twice()
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions();
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddSecretsHasher<FakeHasher>();
+        builder.AddClientSecretHasher<FakeHasher>();
 
-        var act = () => builder.AddSecretsHasher<FakeHasher>();
+        var act = () => builder.AddClientSecretHasher<FakeHasher>();
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*FakeHasher*");
     }
 
-    // ── AddPbkdf2SecretsHasher ───────────────────────────────────────────────────────────────────
+    // ── PBKDF2 iteration count ───────────────────────────────────────────────────────────────────
 
-    [Fact]
-    public void AddPbkdf2SecretsHasher_registers_Pbkdf2ClientSecretHasher_as_IClientSecretHasher()
+    private static ServiceProvider BuildWithPbkdf2Iterations(int iterations)
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddOptions();
-        services.AddSingleton(typeof(ISanitizingLogger<>), typeof(SecretSanitizingLogger<>));
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        builder.AddPbkdf2SecretsHasher();
-
-        using var provider = services.BuildServiceProvider();
-        var hashers = provider.GetServices<IClientSecretHasher>();
-        hashers.Should().ContainSingle(h => h is Pbkdf2ClientSecretHasher);
-    }
-
-    [Fact]
-    public void AddPbkdf2SecretsHasher_uses_default_iterations_when_configure_is_not_provided()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddOptions();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        builder.AddPbkdf2SecretsHasher();
-
-        using var provider = services.BuildServiceProvider();
-        var opts = provider.GetRequiredService<IOptions<Pbkdf2ClientSecretHasherOptions>>().Value;
-        opts.Iterations.Should().Be(Pbkdf2ClientSecretHasherOptions.DefaultIterations);
-    }
-
-    [Fact]
-    public void AddPbkdf2SecretsHasher_applies_configuration_when_configure_is_provided()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddOptions();
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        builder.AddPbkdf2SecretsHasher(options => options.Iterations = 1_200_000);
-
-        using var provider = services.BuildServiceProvider();
-        var opts = provider.GetRequiredService<IOptions<Pbkdf2ClientSecretHasherOptions>>().Value;
-        opts.Iterations.Should().Be(1_200_000);
-    }
-
-    [Fact]
-    public void AddPbkdf2SecretsHasher_is_a_no_op_when_Pbkdf2ClientSecretHasher_is_already_registered()
-    {
-        // AddZeeKayDaAuth() now registers Pbkdf2ClientSecretHasher by default.
-        // A subsequent call to AddPbkdf2SecretsHasher() must return early without adding
-        // a duplicate registration or throwing.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+        services.Configure<Pbkdf2ClientSecretHasherOptions>(options => options.Iterations = iterations);
+        // Only so the options validators have nothing else to report.
+        services.AddSingleton<IClientRepository, EmptyClientRepository>();
+        return services.BuildServiceProvider();
+    }
 
-        var builder = new ZeeKayDaAuthBuilder(services);
-
-        var act = () => builder.AddPbkdf2SecretsHasher();
-
-        act.Should().NotThrow();
-        services.Count(sd =>
-            sd.ServiceType == typeof(IClientSecretHasher) &&
-            sd.ImplementationType == typeof(Pbkdf2ClientSecretHasher)).Should().Be(1);
+    private sealed class EmptyClientRepository : IClientRepository
+    {
+        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IClientRegistration?>(null);
     }
 
     [Fact]
-    public void AddPbkdf2SecretsHasher_is_a_no_op_when_already_registered_even_if_configure_is_provided()
+    public void Pbkdf2_iteration_count_configured_by_the_host_is_used_for_new_secrets()
     {
-        // When the early-return guard fires the configure delegate must NOT be applied,
-        // because the hasher is already configured from the initial registration.
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+        using var provider = BuildWithPbkdf2Iterations(1_200_000);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
-        var returned = builder.AddPbkdf2SecretsHasher(options => options.Iterations = 1_200_000);
+        var created = provider.GetRequiredService<IClientSecretFactory>().Create("a-client-secret");
 
-        returned.Should().BeSameAs(builder);
-        services.Count(sd =>
-            sd.ServiceType == typeof(IClientSecretHasher) &&
-            sd.ImplementationType == typeof(Pbkdf2ClientSecretHasher)).Should().Be(1);
+        created.Should().BeOfType<Pbkdf2ClientSecret>().Which.Iterations.Should().Be(1_200_000);
+    }
+
+    [Theory]
+    [InlineData(599_999)]
+    [InlineData(2_000_001)]
+    public void Pbkdf2_iteration_count_outside_the_allowed_range_fails_startup(int iterations)
+    {
+        using var provider = BuildWithPbkdf2Iterations(iterations);
+
+        var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
+
+        act.Should().Throw<OptionsValidationException>()
+            .Which.Message.Should().Contain("Pbkdf2ClientSecretHasherOptions.Iterations");
+    }
+
+    [Theory]
+    [InlineData(599_999)]
+    [InlineData(2_000_001)]
+    public void Pbkdf2_hasher_cannot_be_built_from_DI_with_an_iteration_count_outside_the_allowed_range(int iterations)
+    {
+        // The hasher trusts its options, so no DI path may hand it an unvalidated count: above the
+        // cap its timing decoy would verify instantly and the failure-path padding would pad nothing.
+        using var provider = BuildWithPbkdf2Iterations(iterations);
+
+        var act = () => provider.GetServices<IClientSecretHasher>().ToList();
+
+        act.Should().Throw<OptionsValidationException>();
     }
 
     // ── Fakes ─────────────────────────────────────────────────────────────────────────────────────

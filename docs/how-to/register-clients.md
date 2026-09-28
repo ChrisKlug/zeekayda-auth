@@ -23,8 +23,6 @@ var builder = services.AddZeeKayDaAuth(options =>
     options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
 });
 
-builder.AddPbkdf2SecretsHasher();   // required for confidential clients
-
 builder.AddInMemoryClients(clients =>
 {
     // A public client (SPA or native app using PKCE)
@@ -80,8 +78,6 @@ Confidential clients authenticate at the token endpoint using a shared secret. U
 for server-side web applications, background services, and APIs.
 
 ```csharp
-builder.AddPbkdf2SecretsHasher(); // must be registered before AddInMemoryClients
-
 builder.AddInMemoryClients(clients =>
     clients.AddConfidential(
         clientId: "my-server-app",
@@ -195,7 +191,7 @@ Both clients will be present in the repository.
 
 When more than one `IClientSecretHasher` is registered, the framework must know which one to use
 as the default — that is, which hasher creates new secrets and generates the timing-pad dummy
-credential at startup. The `isDefault` parameter on `AddSecretsHasher<T>()` controls this. The
+credential at startup. The `isDefault` parameter on `AddClientSecretHasher<T>()` controls this. The
 full selection matrix is:
 
 | Hashers registered | Explicit defaults (`isDefault: true`) | Outcome |
@@ -213,12 +209,12 @@ full selection matrix is:
 
 ```csharp
 // ✓ Two hashers, one explicit default — startup succeeds
-auth.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);   // creates new secrets
-auth.AddSecretsHasher<BcryptClientSecretHasher>(isDefault: false);   // verifies old secrets
+auth.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);   // creates new secrets
+auth.AddClientSecretHasher<BcryptClientSecretHasher>(isDefault: false);   // verifies old secrets
 
 // ✗ Two hashers, no explicit default — startup failure ("ambiguous default")
-auth.AddSecretsHasher<Pbkdf2ClientSecretHasher>();
-auth.AddSecretsHasher<BcryptClientSecretHasher>();
+auth.AddClientSecretHasher<Pbkdf2ClientSecretHasher>();
+auth.AddClientSecretHasher<BcryptClientSecretHasher>();
 ```
 
 For the full `isDefault` rules and startup validation behaviour, see

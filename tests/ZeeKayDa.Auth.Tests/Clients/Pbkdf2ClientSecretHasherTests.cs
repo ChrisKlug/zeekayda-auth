@@ -152,23 +152,6 @@ public sealed class Pbkdf2ClientSecretHasherTests
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning);
     }
 
-    [Fact]
-    public void Constructor_accepts_exactly_MaxIterations_without_clamping_or_warning()
-    {
-        // MaxIterations itself is inside the documented valid range: the clamp-and-warn path
-        // starts strictly above it, not at it.
-        var logger = new CapturingLogger<Pbkdf2ClientSecretHasher>();
-
-        _ = new Pbkdf2ClientSecretHasher(
-            Options.Create(new Pbkdf2ClientSecretHasherOptions
-            {
-                Iterations = Pbkdf2ClientSecretHasher.MaxIterations,
-            }),
-            logger);
-
-        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning);
-    }
-
     // ── CanHandle ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -289,52 +272,6 @@ public sealed class Pbkdf2ClientSecretHasherTests
         hasher.Verify(stored, "cafe key secret".AsSpan()).Should().BeFalse();
     }
 
-    // ── Constructor iteration validation ─────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Constructor_throws_when_iterations_are_below_minimum()
-    {
-        var options = Options.Create(
-            new Pbkdf2ClientSecretHasherOptions { Iterations = Pbkdf2ClientSecretHasher.MinIterations - 1 });
-
-        var act = () => new Pbkdf2ClientSecretHasher(options, NullSanitizingLogger<Pbkdf2ClientSecretHasher>.Instance);
-
-        act.Should().Throw<ArgumentOutOfRangeException>();
-    }
-
-    [Fact]
-    public void Constructor_succeeds_when_iterations_are_at_minimum()
-    {
-        var act = () => CreateHasher(Pbkdf2ClientSecretHasher.MinIterations);
-
-        act.Should().NotThrow();
-    }
-
-    [Fact]
-    public void Constructor_does_not_throw_but_logs_warning_when_iterations_are_above_cap()
-    {
-        var logger = new CapturingLogger<Pbkdf2ClientSecretHasher>();
-        var options = Options.Create(
-            new Pbkdf2ClientSecretHasherOptions { Iterations = Pbkdf2ClientSecretHasher.MaxIterations + 1 });
-
-        var act = () => new Pbkdf2ClientSecretHasher(options, logger);
-
-        act.Should().NotThrow();
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning);
-    }
-
-    [Fact]
-    public void Constructor_still_creates_and_verifies_successfully_when_iterations_are_above_cap()
-    {
-        var logger = new CapturingLogger<Pbkdf2ClientSecretHasher>();
-        var options = Options.Create(
-            new Pbkdf2ClientSecretHasherOptions { Iterations = Pbkdf2ClientSecretHasher.MaxIterations + 1 });
-        var hasher = new Pbkdf2ClientSecretHasher(options, logger);
-
-        var stored = hasher.Create("test-secret");
-        hasher.Verify(stored, "test-secret").Should().BeTrue();
-    }
-
     // ── GetRegistrationFailures ──────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -406,12 +343,12 @@ public sealed class Pbkdf2ClientSecretHasherTests
     [Theory]
     [InlineData(Pbkdf2ClientSecretHasher.MinIterations, Pbkdf2ClientSecretHasher.MinIterations)]
     [InlineData(1_200_000, 1_200_000)]
-    [InlineData(Pbkdf2ClientSecretHasher.MaxIterations + 1, Pbkdf2ClientSecretHasher.MaxIterations)]
+    [InlineData(Pbkdf2ClientSecretHasher.MaxIterations, Pbkdf2ClientSecretHasher.MaxIterations)]
     public void Timing_decoy_carries_the_iteration_count_real_credentials_are_created_with(
         int configured, int expected)
     {
         // A decoy above MaxIterations would make VerifyCore return before deriving, and the
-        // padding would pad nothing — so a clamped configuration must give a clamped decoy.
+        // padding would pad nothing; the options validator keeps the configured count at or below it.
         IClientSecretHasher hasher = CreateHasher(configured);
 
         var decoy = hasher.CreateTimingDecoy().Should().BeOfType<Pbkdf2ClientSecret>().Subject;

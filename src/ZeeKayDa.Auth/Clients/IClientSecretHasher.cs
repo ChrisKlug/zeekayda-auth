@@ -16,7 +16,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// To add a new hashing algorithm, define a sub-interface of <see cref="IClientSecret"/>,
 /// a sealed record implementing it — including <see cref="IClientCredential.Snapshot"/> — and a
 /// class extending <c>ClientSecretHasher&lt;TSecret&gt;</c>. Register it with
-/// <c>AddSecretsHasher&lt;T&gt;()</c>. A credential's snapshot is what gets verified, so it must be an
+/// <c>AddClientSecretHasher&lt;T&gt;()</c>. A credential's snapshot is what gets verified, so it must be an
 /// <see cref="IClientSecret"/> a registered hasher handles.
 /// </para>
 /// <para>
