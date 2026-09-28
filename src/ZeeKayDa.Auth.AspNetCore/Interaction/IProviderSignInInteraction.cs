@@ -158,6 +158,16 @@ public interface IProviderSignInInteraction
     /// sign-in is never the upstream subject verbatim, and a replacement carrying it is refused.
     /// </para>
     /// <para>
+    /// <strong>Matching an existing account on the provider's <c>email</c> is an account-takeover
+    /// risk.</strong> It is only safe when the provider asserts <c>email_verified</c> as
+    /// <see langword="true"/> and you trust that provider to have verified the address; otherwise
+    /// anyone who registers the victim's address at a looser provider signs in as the victim. Some
+    /// providers never send <c>email_verified</c>, and some ASP.NET handlers do not map it into the
+    /// principal, so its absence means unverified. Match on the provider name and its upstream
+    /// subject together wherever you can, and treat an email match as a prompt to prove ownership
+    /// of the local account, not as proof in itself.
+    /// </para>
+    /// <para>
     /// Every refusal of the sign-in itself is decided before the parked principal is taken, so
     /// a refused page can try again with the principal still parked. Two things are found later:
     /// another response completing the interaction first, and a principal parked by a second
