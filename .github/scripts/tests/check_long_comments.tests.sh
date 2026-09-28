@@ -50,6 +50,10 @@ run_case xml_docs_are_not_counted src/A.cs $'/// <summary>\n/// one\n/// two\n//
 
 run_case log_hygiene_justification_is_not_counted src/A.cs $'class A\n{\n    // one\n    // two\n    // three\n    // log-hygiene-ok: reason (#1)\n}' 0
 
+run_case bare_log_hygiene_marker_still_counts src/A.cs $'class A\n{\n    // one\n    // two\n    // log-hygiene-ok\n    // four\n}' 1
+
+run_case marker_text_in_prose_still_counts src/A.cs $'class A\n{\n    // one\n    // two mentions log-hygiene-ok: in passing (#1)\n    // three\n    // four\n}' 1
+
 run_case trailing_code_comments_are_not_counted src/A.cs $'class A\n{\n    int a; // one\n    int b; // two\n    int c; // three\n    int d; // four\n}' 0
 
 run_case tests_are_not_checked tests/A.cs $'class A\n{\n    // one\n    // two\n    // three\n    // four\n}' 0

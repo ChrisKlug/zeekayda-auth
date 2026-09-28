@@ -3,7 +3,7 @@
 #
 # Comments drift back to verbose after every cleanup, and prose rules alone have not held them.
 # This is advisory: a long comment that is genuinely a permanent *why* stays, and the author says
-# so in the PR. `///` XML docs and `log-hygiene-ok` suppression justifications are not counted.
+# so in the PR. `///` XML docs and `// log-hygiene-ok: <reason> (#N)` justifications are not counted.
 #
 # Usage: bash .github/scripts/check_long_comments.sh <base-ref>
 # Emits one GitHub `::warning` annotation per block and always exits 0.
@@ -34,7 +34,9 @@ git diff --no-color --unified=0 "$1" HEAD -- ':(glob)src/**/*.cs' | awk -v max="
     /^\+/ {
         text = substr($0, 2)
         sub(/^[ \t]+/, "", text)
-        if (text ~ /^\/\// && text !~ /^\/\/\// && text !~ /log-hygiene-ok/) {
+        # A justification counts only in the exact form check_log_hygiene.cs accepts.
+        justification = (text ~ /^\/\/[ \t]*log-hygiene-ok:[ \t]+[^ \t].*\(#[0-9]+\)[ \t]*$/)
+        if (text ~ /^\/\// && text !~ /^\/\/\// && !justification) {
             if (run == 0) start = line
             run++
         } else {
