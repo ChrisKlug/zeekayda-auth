@@ -15,7 +15,8 @@ public sealed class Pbkdf2ClientSecretHasherTests
         int iterations = Pbkdf2ClientSecretHasherOptions.DefaultIterations,
         ISanitizingLogger<Pbkdf2ClientSecretHasher>? logger = null)
         => new(
-            Options.Create(new Pbkdf2ClientSecretHasherOptions { Iterations = iterations }),
+            new FixedOptionsMonitor<Pbkdf2ClientSecretHasherOptions>(
+                new Pbkdf2ClientSecretHasherOptions { Iterations = iterations }),
             logger ?? NullSanitizingLogger<Pbkdf2ClientSecretHasher>.Instance);
 
     private sealed class CapturingLogger<T> : ISanitizingLogger<T>
@@ -140,7 +141,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     {
         var logger = new CapturingLogger<Pbkdf2ClientSecretHasher>();
         var hasher = new Pbkdf2ClientSecretHasher(
-            Options.Create(new Pbkdf2ClientSecretHasherOptions()),
+            new FixedOptionsMonitor<Pbkdf2ClientSecretHasherOptions>(new Pbkdf2ClientSecretHasherOptions()),
             logger);
         var tamperedSecret = new Pbkdf2ClientSecret(
             Pbkdf2ClientSecretHasher.MaxIterations + 1,

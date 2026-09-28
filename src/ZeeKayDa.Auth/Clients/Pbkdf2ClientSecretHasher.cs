@@ -25,15 +25,15 @@ namespace ZeeKayDa.Auth.Clients;
 /// <strong>Maximum iteration cap.</strong> At 2,000,000 iterations a single verification takes
 /// roughly one second on typical server hardware, making the token endpoint impractical under any
 /// real load. <see cref="Pbkdf2ClientSecretHasherOptionsValidator"/> fails startup for a configured
-/// count outside 600,000–2,000,000, and the options are only ever read through that validation, so
-/// this class trusts the value it is given.
+/// count outside 600,000–2,000,000, and this class reads the count from the same
+/// <see cref="IOptionsMonitor{TOptions}"/> that validation runs through, so it trusts the value.
 /// </para>
 /// </remarks>
 // IClientSecretHasher is re-listed on purpose. Inherited through ClientSecretHasher<T> alone, the
 // interface's default members stay bound to their defaults, and a public method here with the same
 // signature — GetRegistrationFailures — is silently not an implementation of them.
 internal sealed class Pbkdf2ClientSecretHasher(
-    IOptions<Pbkdf2ClientSecretHasherOptions> options,
+    IOptionsMonitor<Pbkdf2ClientSecretHasherOptions> options,
     ISanitizingLogger<Pbkdf2ClientSecretHasher> logger)
     : ClientSecretHasher<IPbkdf2ClientSecret>, IClientSecretHasher
 {
@@ -51,7 +51,9 @@ internal sealed class Pbkdf2ClientSecretHasher(
     private const int SaltLength = 16;
     private const int HashLength = 32;
 
-    private readonly int _iterations = options.Value.Iterations;
+    // The monitor, not IOptions<T>: ValidateOnStart validates through the monitor, so this reads
+    // exactly the value startup validated, even when a host registers IOptions<T> directly.
+    private readonly int _iterations = options.CurrentValue.Iterations;
 
     /// <inheritdoc/>
     protected override bool VerifyCore(IPbkdf2ClientSecret stored, ReadOnlySpan<char> presented)

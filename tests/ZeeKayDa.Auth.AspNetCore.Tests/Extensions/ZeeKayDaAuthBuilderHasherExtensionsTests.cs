@@ -126,6 +126,23 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
         act.Should().Throw<OptionsValidationException>();
     }
 
+    [Fact]
+    public void Pbkdf2_hasher_reads_the_validated_iteration_count_even_when_a_host_registers_IOptions_directly()
+    {
+        // A direct IOptions<T> registration bypasses the options factory and its validators. The
+        // hasher must not read it, or an out-of-range count would reach the timing decoy unchecked.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Options.Create(new Pbkdf2ClientSecretHasherOptions { Iterations = 2_000_001 }));
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+        using var provider = services.BuildServiceProvider();
+
+        var created = provider.GetRequiredService<IClientSecretFactory>().Create("a-client-secret");
+
+        created.Should().BeOfType<Pbkdf2ClientSecret>()
+            .Which.Iterations.Should().Be(Pbkdf2ClientSecretHasherOptions.DefaultIterations);
+    }
+
     // ── Fakes ─────────────────────────────────────────────────────────────────────────────────────
 
     private sealed class FakeSecret : IClientSecret { public IClientCredential Snapshot() => new FakeSecret(); }
