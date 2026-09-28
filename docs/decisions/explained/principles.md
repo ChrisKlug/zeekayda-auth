@@ -17,3 +17,15 @@ register entry, it moves there and this line points at it.
   for a rename, an extraction or better cohesion is a finding.
 - **Pass in what a method works on.** A method that runs a set of things takes them as a parameter,
   even when it could reach them itself, so the call site says what it runs.
+- **Options are the host's input, never rewritten.** Anything derived from them (a canonical form,
+  a default applied because nothing was set) lives where it is used, not back on the options.
+- **Options are plain data carriers.** Behaviour on them, such as validation, is an internal
+  extension method in a sibling file.
+- **Validation is top-down and returns its errors.** Each level checks itself and asks its
+  children; the parent coordinates rules that span its children, named by topic. Methods return
+  their errors rather than filling a list passed in; an accumulator is used only where a public seam
+  reports more than one kind of outcome.
+- **No service locator in a public contract.** Dependencies are declared in constructors, and the
+  framework arranges the scope.
+- **Internal classes built by DI use primary constructors, with no null checks.** Public members a
+  third party calls keep their guards. Recorded in `.claude/agents/developer.md`.
