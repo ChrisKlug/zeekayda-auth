@@ -65,7 +65,8 @@ Never guess on an ambiguous requirement and present the guess as settled. Return
 - Prefer `IOptions<T>` for configuration; never use `static` state
 - All `async` methods must propagate `CancellationToken`
 - Never swallow exceptions silently — log or rethrow with context
-- Use `ArgumentNullException.ThrowIfNull` and similar guard helpers
+- **Internal classes built by DI use primary constructors, with no null checks.** DI does not construct a class whose dependencies it cannot resolve, and non-nullable parameters make the compiler catch a `null` passed from a test
+- **Public members a third party calls validate their arguments** with `ArgumentNullException.ThrowIfNull` and similar guard helpers: nullable annotations are compile-time only
 - Prefer `ReadOnlySpan<T>` and `Memory<T>` for string/byte manipulation in hot paths
 - Prefer LINQ (`Where`, `Select`, `OfType`, …) over a `foreach` containing a filtering `if` — CodeQL flags the latter. A plain loop is fine when it's genuinely clearer or in a measured hot path
 - Seal classes by default unless they are designed for inheritance
