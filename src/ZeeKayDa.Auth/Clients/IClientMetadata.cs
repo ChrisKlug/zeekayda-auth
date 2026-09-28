@@ -33,7 +33,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// Code that reads a registration straight from an <see cref="IClientRepository"/> gets no such
 /// guarantee, because a custom repository may build a set with a case-insensitive comparer or one
 /// whose <c>Count</c> differs from what it enumerates. Such code — an
-/// <see cref="IClientRegistrationValidator"/>, which a custom repository calls on its own entity at
+/// <see cref="IClientRegistrationValidator"/>, which a custom repository may call on its own entity at
 /// write time, the repository's own code, or host code that resolves the repository itself — MUST
 /// compare with explicit <see cref="System.StringComparer.Ordinal"/> and count by enumerating. This is a security
 /// contract, not a suggestion: a case-insensitive redirect URI or authentication method allowlist
@@ -54,10 +54,8 @@ public interface IClientMetadata
     /// configuration omission into a security-relevant runtime behaviour change. Three-way
     /// consistency rule: a client is public if and only if it has no entries in
     /// <see cref="IClientRegistration.Credentials"/>, and if and only if
-    /// <see cref="AllowedTokenEndpointAuthMethods"/> is exactly <c>{ "none" }</c>. Enforced at
-    /// registration time by <see cref="IClientRegistrationValidator"/> — a custom
-    /// <see cref="IClientRepository"/> that never runs the validator enforces nothing, and MUST
-    /// uphold the rule itself at write time.
+    /// <see cref="AllowedTokenEndpointAuthMethods"/> is exactly <c>{ "none" }</c>. Enforced by
+    /// <see cref="IClientRegistrationValidator"/> on every registration the framework serves.
     /// See <see href="https://www.rfc-editor.org/rfc/rfc6749#section-2.1">RFC 6749 §2.1</see>.
     /// </remarks>
     bool IsPublic { get; }
