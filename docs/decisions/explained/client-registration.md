@@ -1,68 +1,79 @@
 # Client registration, explained
 
 Explains the registration half of `clients-and-client-authentication.md`: what a client is, how it
-is defined, checked, stored and looked up. How a client proves who it is at the token endpoint is
-explained separately.
+is defined, checked, stored and looked up. Client authentication is explained separately; principles
+that apply beyond this part are in `principles.md`.
 
 ## What a client is
 
-Two interfaces. **`IClientMetadata`** is what a client may do: redirect URIs, scopes, grant types,
-whether consent and PKCE are required, token lifetimes, claim additions. **`IClientRegistration`**
-adds its **credentials**. The split means the code that decides what to issue a client, token
-issuance above all, never receives its secrets; only client authentication does.
-
-A custom repository can make its own database entity implement the interfaces directly, so a lookup
-needs no mapping object. Optional members have default implementations only where the default is
-the safe answer: consent and PKCE default to required, and lifetimes default to the server's.
+Two interfaces. `IClientMetadata` is everything a client may do: redirect URIs, scopes, grant types,
+whether consent and PKCE are required, lifetimes, claim additions. `IClientRegistration` adds its
+**credentials**. Code that decides what to issue a client only ever gets the first, so it never sees
+secrets. A custom repository can make its own database entity implement them directly. Optional
+members default only where the default is the safe answer: consent and PKCE required, lifetimes the
+server's.
 
 ## How clients are registered
 
-- **`ClientRegistration`** is the framework's sealed record. Its defaults: code grant, PKCE
-  required, consent required, `client_secret_basic`.
+- **`ClientRegistration`** is the framework's sealed record, a plain data carrier with safe
+  defaults, plus `CreateConfidential` and `CreatePublic` for the two kinds.
 - **`AddInMemoryClients(c => …)`** offers `AddPublic`, `AddConfidential` (a plaintext secret, hashed
-  when the repository is built) and `Add(registration)`, each with a `ClientOptions` callback for
-  the rest.
-- **`IClientRepository`** has one method, `FindByClientIdAsync`. It returns `null` for an unknown
-  client and never throws, so timing and exceptions reveal nothing about which ids exist. It is
-  read-only: dynamic registration (RFC 7591) is out of scope for v1.
+  at startup) and `Add(registration)`.
+- **`IClientRepository`** has one read-only method, `FindByClientIdAsync`. It returns `null` for an
+  unknown client. Dynamic registration (RFC 7591) is out of scope for v1.
 
 ## How clients are checked
 
-**`ClientRegistrationValidator`** holds the rules:
-
-- Redirect URIs match exactly, with no wildcards: `https` anywhere, `http` on loopback only, and
-  private schemes only if they contain a dot (native apps).
-- Public ⇔ no secret ⇔ the only auth method is `none`. `IsPublic` is declared, never derived, so an
-  omission fails instead of silently changing security behaviour.
-- PKCE opt-out is allowed only where it is safe.
-- A client can only narrow the server's settings (signing algorithms, lifetimes, scopes), never
-  widen them.
+**`ClientRegistrationValidator`** holds the rules: exact redirect-URI matching; public ⇔ no secret ⇔
+the only auth method is `none` (`IsPublic` is declared, never derived); PKCE opt-out only where safe;
+a client may narrow the server's settings, never widen them. Every failure carries a stable code.
 
 **`ValidatedClientResolver`** is the only way from a `client_id` to a client. It copies what the
-repository returned into a snapshot, so a database entity cannot change after it was checked, then
-validates the copy and returns it. A failing client is treated as unknown and logged once. A custom
-repository gets the same checks as the built-in one without doing anything.
+repository returned into a snapshot, so a database entity cannot change after it was checked,
+validates the copy, and returns it. A failing client is served as unknown and logged once. A custom
+repository gets the same checks as the built-in one without doing anything. This is the pattern of
+making third-party output safe one layer below the code that uses it.
 
-**The in-memory repository** also validates everything at startup, together with duplicate ids and
-secret hashing, and reports every failure at once.
+**The in-memory repository** hashes the plaintext secrets, rejects duplicate ids, validates every
+client, and fails startup with every problem at once.
 
 ## What it costs
 
-- A new client property is added in about six places: the interface, the record, `ClientOptions`,
-  the snapshot, the fingerprint, and usually the validator.
-- The resolver is 346 lines, about half of it a verdict cache. The cache is there because validating
-  a confidential client runs a full PBKDF2 verification per secret.
+- A client property is added in about six places: the interface, the record, `ClientOptions`, the
+  snapshot, the fingerprint, and usually the validator.
+- The resolver caches validation verdicts, because validating a confidential client runs a full
+  PBKDF2 verification per secret (the check that no secret accepts an empty password).
 
-## What the walkthrough changed
+## Where it is going
 
-M1 issues, done before the security audit (#537). When one lands, this file is updated to match.
+The maintainer walked this part twice, the second time at code level. Each issue is in M1 before the
+security audit (#537) unless marked, and updates this file when it lands.
 
-- #780 also collapses `ClientOptions`, which copies `ClientRegistration` member by member twice.
-- #787: delete analyzer `ZEEKAYDA0003`. It dates from before the resolver validated what it serves.
-- #788: the cache exists because validation checks that no secret accepts an empty password, a
-  full PBKDF2 run per secret. Once the verify path refuses empty secrets itself (#790), that check,
-  and with it the fingerprint and the cache, can go.
-- #789: build `zkd_error`. `EnableZkdErrorCodes` exists per client, but nothing emits the field. It
-  lets a client tell "the user cancelled" from "sign-in failed" without revealing anything the user
-  does not already know.
-- #778 also removes the in-memory repository's "`none` advertised but no public client" warning.
+**The contract**
+
+- `IClientMetadata` becomes `IClient`, `IClientRegistration` becomes `IClientWithCredentials`, and
+  the record becomes `Client`. The resolver splits: `FindClientAsync` returns `IClient`, and only
+  client authentication gets the credentials (#809).
+- Every member except `ClientId` gets a safe default from one `ClientDefaults` source, so a custom
+  entity implements `ClientId` plus what it stores (#810). `AllowedResponseTypes` and
+  `AllowedResponseModes` stay, because more values are coming.
+- Collections follow one convention: sets for client string lists, `IReadOnlyList` for returned
+  collections (#774).
+
+**Checking and lookup**
+
+- The validator returns its failures instead of throwing, with its rules in a logical order; the
+  in-memory repository gets a named `Build` step instead of a 70-line constructor (#811, #797).
+- The verify path refuses empty secrets itself, so the expensive probe, the fingerprint and the
+  verdict cache go; the resolver refuses a malformed `client_id` before the repository sees it, and a
+  repository outage stays a server error (#788, #790).
+- Analyzer `ZEEKAYDA0003` and the repository's "MUST validate" doc paragraphs go: the resolver
+  already does it (#787).
+- `ClientOptions` collapses into one configuration shape, bindable from configuration (#780).
+- `zkd_error` gets built: the per-client flag exists, but nothing emits the field (#789).
+
+**Secrets** (First project milestone, closed by its own security review, #808)
+
+- A pasteable, self-describing hashed-secret string, accepted alongside plaintext, with a log entry
+  when plaintext is used (#806).
+- A `dotnet` tool that creates the hash with the host's own configured hasher (#807).

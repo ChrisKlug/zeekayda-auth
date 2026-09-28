@@ -29,3 +29,9 @@ register entry, it moves there and this line points at it.
   framework arranges the scope.
 - **Internal classes built by DI use primary constructors, with no null checks.** Public members a
   third party calls keep their guards. Recorded in `.claude/agents/developer.md`.
+- **The safe view gets the plain name; the privileged one is named explicitly.** `IClient` is what
+  nearly all code receives; `IClientWithCredentials` has to be asked for by name.
+- **Defaults exist only where they are the safe answer, and come from one source.** A default that
+  could let an omission weaken security is not a default; a default written in three places drifts.
+- **An expected outcome is returned, not thrown.** An invalid client, a failed check, a refused
+  request: a result. Exceptions are for what the code cannot handle.
