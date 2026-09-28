@@ -17,6 +17,19 @@ public sealed class ClientRepositoryPresenceValidatorTests
             => serviceType == typeof(IServiceProviderIsService) ? isService : null;
     }
 
+    /// <summary>A container without <see cref="IServiceProviderIsService"/>, resolving only what it is given.</summary>
+    private sealed class ResolvingOnlyProvider(Func<object?> repository) : IServiceProvider
+    {
+        public object? GetService(Type serviceType)
+            => serviceType == typeof(IClientRepository) ? repository() : null;
+    }
+
+    private sealed class StubRepository : IClientRepository
+    {
+        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IClientRegistration?>(null);
+    }
+
     private static async Task<StartupVerificationContext> VerifyAsync(IServiceProvider services)
     {
         var context = new StartupVerificationContext();
@@ -26,9 +39,27 @@ public sealed class ClientRepositoryPresenceValidatorTests
     }
 
     [Fact]
-    public async Task VerifyAsync_skips_the_check_when_IServiceProviderIsService_is_absent()
+    public async Task VerifyAsync_adds_client_repository_missing_on_a_container_without_IServiceProviderIsService()
     {
-        var context = await VerifyAsync(new FakeProvider(null));
+        var context = await VerifyAsync(new ResolvingOnlyProvider(() => null));
+
+        context.Failures.Should().ContainSingle()
+            .Which.Code.Should().Be("client.repository.missing");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_finds_a_repository_by_resolving_on_a_container_without_IServiceProviderIsService()
+    {
+        var context = await VerifyAsync(new ResolvingOnlyProvider(() => new StubRepository()));
+
+        context.Failures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task VerifyAsync_leaves_a_broken_repository_to_the_activator_on_a_container_without_IServiceProviderIsService()
+    {
+        var context = await VerifyAsync(new ResolvingOnlyProvider(
+            () => throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure("x", "broken"))));
 
         context.Failures.Should().BeEmpty();
     }
