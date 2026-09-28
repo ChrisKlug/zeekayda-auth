@@ -7,6 +7,7 @@ using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
@@ -24,6 +25,21 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         services.Should().Contain(sd =>
             sd.ServiceType == typeof(IStartupVerifier) &&
             sd.ImplementationType == typeof(ExceptionSanitizingDisabledWarningService));
+    }
+
+    [Theory]
+    [InlineData(TokenKind.AccessToken)]
+    [InlineData(TokenKind.IdToken)]
+    public void AddZeeKayDaAuth_registers_JwtTokenIssuer_for_each_TokenKind(TokenKind kind)
+    {
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+
+        services.Should().ContainSingle(sd =>
+            sd.ServiceType == typeof(ITokenIssuer) &&
+            Equals(sd.ServiceKey, kind) &&
+            sd.KeyedImplementationType == typeof(JwtTokenIssuer));
     }
 
     // ── IClientSecretFactory DI wiring (AC1–AC4, issue #135) ─────────────────────────────────────
