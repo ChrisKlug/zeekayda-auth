@@ -3,11 +3,11 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Configuration;
 
-public sealed class AuthorizationServerOptionsPostConfigurerTests
+public sealed class PostConfigureAuthorizationServerOptionsTests
 {
     private static AuthorizationServerOptions PostConfigure(AuthorizationServerOptions options)
     {
-        new AuthorizationServerOptionsPostConfigurer().PostConfigure(null, options);
+        new PostConfigureAuthorizationServerOptions().PostConfigure(null, options);
         return options;
     }
 
@@ -158,7 +158,7 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
 
-        new AuthorizationServerOptionsPostConfigurer().PostConfigure(name: null, options);
+        new PostConfigureAuthorizationServerOptions().PostConfigure(name: null, options);
 
         options.IdToken.AdvertisedSigningAlgorithms!.IsReadOnly.Should().BeTrue();
     }
@@ -169,7 +169,7 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256, SigningAlgorithm.ES256];
 
-        new AuthorizationServerOptionsPostConfigurer().PostConfigure(name: null, options);
+        new PostConfigureAuthorizationServerOptions().PostConfigure(name: null, options);
 
         options.IdToken.AdvertisedSigningAlgorithms.Should().Equal(
             SigningAlgorithm.RS256, SigningAlgorithm.ES256);
@@ -180,7 +180,7 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
 
-        new AuthorizationServerOptionsPostConfigurer().PostConfigure(name: null, options);
+        new PostConfigureAuthorizationServerOptions().PostConfigure(name: null, options);
 
         options.IdToken.AdvertisedSigningAlgorithms.Should().BeNull(
             "null is the default and means advertise the whole published key set");

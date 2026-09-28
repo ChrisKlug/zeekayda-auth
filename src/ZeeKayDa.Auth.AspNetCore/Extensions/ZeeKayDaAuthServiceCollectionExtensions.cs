@@ -61,11 +61,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             .Configure(configure)
             .ValidateOnStart();
 
-        // Canonicalizes and freezes CorsOrigins before validation runs.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IPostConfigureOptions<AuthorizationServerOptions>,
-                AuthorizationServerOptionsPostConfigurer>());
+                PostConfigureAuthorizationServerOptions>());
 
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<

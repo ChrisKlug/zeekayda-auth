@@ -26,7 +26,7 @@ tolerance, instead of each package having its own.
 **How it is checked.** It uses the standard .NET options pipeline:
 
 1. The host's lambda runs.
-2. `AuthorizationServerOptionsPostConfigurer` canonicalises `CorsOrigins` and makes two collections
+2. `PostConfigureAuthorizationServerOptions` canonicalises `CorsOrigins` and makes two collections
    read-only.
 3. `AuthorizationServerOptionsValidator` checks everything.
 4. `ValidateOnStart()` makes steps 1–3 run at startup rather than on first use.

@@ -17,7 +17,7 @@ namespace ZeeKayDa.Auth.Configuration;
 /// validator can surface clear error messages for each one. Multiple calls are naturally idempotent —
 /// already-canonical data canonicalized again is unchanged.
 /// </remarks>
-internal sealed class AuthorizationServerOptionsPostConfigurer : IPostConfigureOptions<AuthorizationServerOptions>
+internal sealed class PostConfigureAuthorizationServerOptions : IPostConfigureOptions<AuthorizationServerOptions>
 {
     /// <inheritdoc/>
     public void PostConfigure(string? name, AuthorizationServerOptions options)
