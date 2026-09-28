@@ -72,8 +72,9 @@ security audit (#537) unless marked, and updates this file when it lands.
 - `ClientOptions` collapses into one configuration shape, bindable from configuration (#780).
 - `zkd_error` gets built: the per-client flag exists, but nothing emits the field (#789).
 
-**Secrets** (First project milestone, closed by its own security review, #808)
+**Secrets** (see `client-authentication.md`)
 
-- A pasteable, self-describing hashed-secret string, accepted alongside plaintext, with a log entry
-  when plaintext is used (#806).
-- A `dotnet` tool that creates the hash with the host's own configured hasher (#807).
+- The stored secret becomes a self-describing string, and snapshots of it go (#814, M1).
+- A pasted hash and a log entry when plaintext is used (#806), and a `dotnet` tool creating the hash
+  with the host's own hasher (#807), in the First project milestone, closed by its own security
+  review (#808).
