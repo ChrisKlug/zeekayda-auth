@@ -35,3 +35,8 @@ register entry, it moves there and this line points at it.
   could let an omission weaken security is not a default; a default written in three places drifts.
 - **An expected outcome is returned, not thrown.** An invalid client, a failed check, a refused
   request: a result. Exceptions are for what the code cannot handle.
+- **Extensions by independent authors compose without knowing each other.** A store package and a
+  hasher package written by different people must work together, so what passes between them is a
+  shape both already know (a stored secret is a self-describing string, not a type per algorithm).
+- **Persistence never shapes the public API.** Stores map to the domain types; a contract is not
+  made mutable or split into interfaces so an ORM can implement it.
