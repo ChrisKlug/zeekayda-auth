@@ -198,9 +198,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeStore));
-        builder.Services.AddSingleton<IAuthorizationCodeBackingStore, InMemoryAuthorizationCodeBackingStore>();
-        builder.Services.AddSingleton<IAuthorizationCodeStore, AuthorizationCodeStore>();
+        builder.AddAuthorizationCodeStore<InMemoryAuthorizationCodeBackingStore>();
         builder.Services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
             sp.GetRequiredService<IHostEnvironment>(),
             InMemoryStoreVerifier.AuthorizationCodeStoreName,
@@ -238,9 +236,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenStore));
-        builder.Services.AddSingleton<IRefreshTokenGrantStore, InMemoryRefreshTokenGrantStore>();
-        builder.Services.AddSingleton<IRefreshTokenStore, RefreshTokenStore>();
+        builder.AddRefreshTokenGrantStore<InMemoryRefreshTokenGrantStore>();
         builder.Services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
             sp.GetRequiredService<IHostEnvironment>(),
             InMemoryStoreVerifier.RefreshTokenStoreName,
@@ -310,9 +306,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeStore));
-        builder.Services.AddSingleton<IAuthorizationCodeBackingStore, DistributedCacheAuthorizationCodeBackingStore>();
-        builder.Services.AddSingleton<IAuthorizationCodeStore, AuthorizationCodeStore>();
+        builder.AddAuthorizationCodeStore<DistributedCacheAuthorizationCodeBackingStore>();
         builder.Services.AddSingleton<IStartupActivator>(sp => new DistributedCacheStoreStartupValidator(
             sp.GetRequiredService<IHostEnvironment>(),
             DistributedCacheStoreStartupValidator.AuthorizationCodeStoreName,
@@ -346,9 +340,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenStore));
-        builder.Services.AddSingleton<IRefreshTokenGrantStore, DistributedCacheRefreshTokenGrantStore>();
-        builder.Services.AddSingleton<IRefreshTokenStore, RefreshTokenStore>();
+        builder.AddRefreshTokenGrantStore<DistributedCacheRefreshTokenGrantStore>();
         builder.Services.AddSingleton<IStartupActivator>(sp => new DistributedCacheStoreStartupValidator(
             sp.GetRequiredService<IHostEnvironment>(),
             DistributedCacheStoreStartupValidator.RefreshTokenStoreName,
