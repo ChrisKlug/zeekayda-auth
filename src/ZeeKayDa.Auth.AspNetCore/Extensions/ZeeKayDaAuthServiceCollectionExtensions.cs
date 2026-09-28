@@ -113,9 +113,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             sp.GetService<ISigningKeyRing>()));
 
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<
-                IValidateOptions<AuthorizationServerOptions>,
-                ClientRepositoryPresenceValidator>());
+            ServiceDescriptor.Singleton<IStartupVerifier, ClientRepositoryPresenceValidator>());
 
         AddStartupChecks(services);
 
