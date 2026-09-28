@@ -133,8 +133,9 @@ token-endpoint bodies and `code_verifier` values are never logged (RFC 7636 §7.
 floor, the two-secret cap, the `IsPublic` rule and the rules holding a client to what the server
 serves are enforced by `ValidatedClientResolver`, the only path from a `client_id` to a registration:
 it runs the full validator on what the repository returned and serves a failing one as an unknown
-client. `ZEEKAYDA0003` is not a second guarantee — it warns only that an out-of-assembly repository
-never references the validator, a reference and not a call.
+client. A repository therefore never validates its own output; it may still call
+`IClientRegistrationValidator` to reject a bad client when one is written, for example from an admin
+UI.
 
 **Client-facing types split on whether they need a request.** Registrations, credentials, hashers,
 the repository and the validator are core; the authenticator seam and its request context types live
