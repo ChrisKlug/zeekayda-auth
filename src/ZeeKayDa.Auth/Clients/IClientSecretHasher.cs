@@ -96,17 +96,19 @@ public interface IClientSecretHasher
     /// Returns an empty sequence when the credential is acceptable.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The default implementation returns no failures. Override to express startup constraints
     /// specific to your credential type. The framework calls this only for credentials whose
     /// hasher returns <see langword="true"/> from <see cref="CanHandle"/>, so
     /// <paramref name="credential"/> is always a type this hasher owns.
     /// The <paramref name="clientId"/> parameter is for diagnostic message formatting only.
-    /// </remarks>
-    /// <remarks>
+    /// </para>
+    /// <para>
     /// Every failure returned here reaches the operator's log verbatim, so
     /// <see cref="ZeeKayDaConfigurationFailure.Message"/>'s contract applies with particular force
     /// on this method: describe what is wrong with the stored credential, and never put any part of
     /// the credential itself — or a caught exception's message — into the text.
+    /// </para>
     /// </remarks>
     IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
         IClientSecret credential, string clientId) => [];
