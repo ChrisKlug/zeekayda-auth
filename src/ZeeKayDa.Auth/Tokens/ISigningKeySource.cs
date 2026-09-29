@@ -12,7 +12,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </para>
 /// <para>
 /// Third parties implement this interface from their own package and register it via
-/// <c>AddZeeKayDaSigningKeySource&lt;TSource&gt;()</c> — a public call with no
+/// <c>builder.AddSigningKeySource&lt;TSource&gt;()</c> — a public call with no
 /// <c>InternalsVisibleTo</c> grant required.
 /// </para>
 /// <para>

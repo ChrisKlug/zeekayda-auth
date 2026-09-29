@@ -55,7 +55,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
         if (_ring is null)
         {
             return Task.FromResult(HealthCheckResult.Unhealthy(
-                "No ISigningKeyRing is registered. Call AddZeeKayDaSigningKeySource<TSource>() to " +
+                "No ISigningKeyRing is registered. Call builder.AddSigningKeySource<TSource>() to " +
                 "register a signing key source."));
         }
 

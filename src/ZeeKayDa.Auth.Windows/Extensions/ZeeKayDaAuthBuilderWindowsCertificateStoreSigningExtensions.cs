@@ -133,7 +133,7 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
         // Registered first so a second signing key source is rejected before this method applies any
         // of its own configuration — a caller that catches the rejection must not be left with this
         // call's options callbacks applied to the surviving registration.
-        builder.Services.AddZeeKayDaSigningKeySource<WindowsCertificateStoreSigningKeySource>();
+        builder.AddSigningKeySource<WindowsCertificateStoreSigningKeySource>();
 
         // Defensive/idempotent: guarantees the core services are resolvable even when this package is
         // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().

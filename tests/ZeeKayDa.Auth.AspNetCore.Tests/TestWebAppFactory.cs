@@ -34,7 +34,7 @@ internal static class TestSigningKeyRegistration
         if (builder.Services.Any(d => d.ServiceType == typeof(ISigningKeyRing)))
             return builder;
 
-        builder.Services.AddZeeKayDaSigningKeySource<TestSigningKeySource>();
+        builder.AddSigningKeySource<TestSigningKeySource>();
         return builder;
     }
 }

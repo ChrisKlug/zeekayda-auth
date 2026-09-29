@@ -15,7 +15,7 @@ separately.
 `ISigningKeyRing` and no `ISigningKeySource` — only the check itself, its options, and a
 `TimeProvider` fallback. An application that adds only the health check still starts; the probe
 reports `Unhealthy` naming the missing registration rather than throwing. Call
-`AddZeeKayDaSigningKeySource<TSource>()` separately to give it something to report on.
+`builder.AddSigningKeySource<TSource>()` (or a provider's own method) separately to give it something to report on.
 
 **The dependency it reports on is resolved as an optional `GetService`, not `GetRequiredService`.**
 `SigningKeyExpiryHealthCheck`'s constructor takes `ISigningKeyRing?`. A health check that cannot

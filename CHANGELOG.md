@@ -610,6 +610,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   them, which the `WebClient` sample already does. `claims_supported` in the discovery document is
   unchanged: it is the union across both destinations.
 
+### Changed
+
+- **A signing-key source is registered on the builder** (#824). `builder.AddSigningKeySource<TSource>()`
+  replaces `services.AddZeeKayDaSigningKeySource<TSource>()`, and the factory overload is gone: a
+  source takes its dependencies through its constructor. A second registration still throws. The
+  resolve-time re-check against merged service collections and the refusal of a hand-registered
+  `ISigningKeyRing` are removed, and a source implementing `IAsyncDisposable` without `IDisposable`
+  is refused at registration only.
+
 ### Fixed
 
 - **A client registration that cannot be read is logged once, not on every request** (#698). A

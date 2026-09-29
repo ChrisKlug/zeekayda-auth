@@ -225,7 +225,7 @@ ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.UserInfoEndpoint.get -> stri
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.UserInfoEndpoint.init -> void
 ZeeKayDa.Auth.Extensions.ZeeKayDaAuthCoreServiceCollectionExtensions
 ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyHealthChecksBuilderExtensions
-ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderSigningKeySourceExtensions
 ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.AuthorizationCode = 0 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.ClientCredentials = 2 -> ZeeKayDa.Auth.GrantType
@@ -703,8 +703,7 @@ static ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.operator !=(ZeeKayDa.
 static ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.operator ==(ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? left, ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? right) -> bool
 static ZeeKayDa.Auth.Extensions.ZeeKayDaAuthCoreServiceCollectionExtensions.AddZeeKayDaAuthCore(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyHealthChecksBuilderExtensions.AddZeeKayDaSigningKeys(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, System.Action<ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions!>? configure = null, string! name = "zeekayda-signing-keys", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
-static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource<TSource>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource<TSource>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Func<System.IServiceProvider!, TSource!>! implementationFactory) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderSigningKeySourceExtensions.AddSigningKeySource<TSource>(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
 static ZeeKayDa.Auth.Scopes.ScopeDefinition.operator !=(ZeeKayDa.Auth.Scopes.ScopeDefinition? left, ZeeKayDa.Auth.Scopes.ScopeDefinition? right) -> bool
 static ZeeKayDa.Auth.Scopes.ScopeDefinition.operator ==(ZeeKayDa.Auth.Scopes.ScopeDefinition? left, ZeeKayDa.Auth.Scopes.ScopeDefinition? right) -> bool
 static ZeeKayDa.Auth.Scopes.StandardScopes.Address.get -> ZeeKayDa.Auth.Scopes.ScopeDefinition!

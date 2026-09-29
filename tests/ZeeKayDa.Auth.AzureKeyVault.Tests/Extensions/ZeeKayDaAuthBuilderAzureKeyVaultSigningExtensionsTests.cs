@@ -58,7 +58,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     // ── A host's own TimeProvider survives registration ──────────────────────────────────────────
     //
     // Deliberately NOT a test that "the extension registers a TimeProvider". It does contain such a
-    // line, but AddZeeKayDaSigningKeySource — called earlier in the same method — has already
+    // line, but AddSigningKeySource — called earlier in the same method — has already
     // TryAdd-registered one, so deleting the extension's own line changes nothing observable. A test
     // asserting TimeProvider resolves would pass either way and imply coverage it does not have.
     // Those two statements are equivalent mutants; they are justified in the PR, not faked closed.
@@ -219,7 +219,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     public void AddAzureKeyVaultRemoteSigning_throws_when_AddAzureKeyVaultCachedSigning_already_registered()
     {
         // Only one signing key provider is allowed. Both Key Vault providers now register through
-        // AddZeeKayDaSigningKeySource, whose own guard rejects a second source in either order —
+        // AddSigningKeySource, whose own guard rejects a second source in either order —
         // this closes the gap accepted in #548, where remote-then-cached was undetectable.
         var services = new ServiceCollection();
         var builder = new ZeeKayDaAuthBuilder(services);
