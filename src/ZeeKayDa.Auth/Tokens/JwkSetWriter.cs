@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Buffers.Text;
 using System.Text.Json;
 
 namespace ZeeKayDa.Auth.Tokens;
@@ -48,8 +49,8 @@ internal static class JwkSetWriter
             var rsa = key.PublicKey.RsaPublicParameters!.Value;
             writer.WriteString("kty", "RSA");
             WriteCommonMembers(writer, key);
-            writer.WriteString("n", JwkThumbprint.Base64UrlEncode(JwkThumbprint.TrimLeadingZeros(rsa.Modulus!)));
-            writer.WriteString("e", JwkThumbprint.Base64UrlEncode(JwkThumbprint.TrimLeadingZeros(rsa.Exponent!)));
+            writer.WriteString("n", Base64Url.EncodeToString(JwkThumbprint.TrimLeadingZeros(rsa.Modulus!)));
+            writer.WriteString("e", Base64Url.EncodeToString(JwkThumbprint.TrimLeadingZeros(rsa.Exponent!)));
         }
         else
         {
@@ -57,8 +58,8 @@ internal static class JwkSetWriter
             writer.WriteString("kty", "EC");
             WriteCommonMembers(writer, key);
             writer.WriteString("crv", JwkThumbprint.GetJwkCurveName(ec.Curve));
-            writer.WriteString("x", JwkThumbprint.Base64UrlEncode(ec.Q.X!));
-            writer.WriteString("y", JwkThumbprint.Base64UrlEncode(ec.Q.Y!));
+            writer.WriteString("x", Base64Url.EncodeToString(ec.Q.X!));
+            writer.WriteString("y", Base64Url.EncodeToString(ec.Q.Y!));
         }
 
         writer.WriteEndObject();
