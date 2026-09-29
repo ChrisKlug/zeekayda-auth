@@ -28,7 +28,13 @@ public sealed class DevelopmentSigningOptions
     /// configuration file could otherwise widen the list in production.
     /// </para>
     /// </remarks>
-    public IReadOnlyList<string> AllowedEnvironments { get; set; } = ["Development"];
+    /// <exception cref="ArgumentNullException">Thrown when set to <see langword="null"/>.</exception>
+    public IReadOnlyList<string> AllowedEnvironments
+    {
+        get;
+        // Copied, so a caller keeping the list it assigned cannot change the gate after validation.
+        set => field = [.. value ?? throw new ArgumentNullException(nameof(value))];
+    } = ["Development"];
 
     // Set by the registration from IHostEnvironment. Internal so the configure callback cannot
     // spoof the value the gate reads.

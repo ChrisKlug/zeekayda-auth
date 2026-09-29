@@ -50,4 +50,25 @@ public sealed class DevelopmentSigningOptionsTests
         options.AllowedEnvironments.Should().BeEquivalentTo(
             new[] { "Development", "IntegrationTesting", "CI" });
     }
+
+    [Fact]
+    public void AllowedEnvironments_is_a_copy_the_assigning_caller_cannot_change_afterwards()
+    {
+        var assigned = new List<string> { "Development" };
+        var options = new DevelopmentSigningOptions { AllowedEnvironments = assigned };
+
+        assigned.Add("Staging");
+
+        options.AllowedEnvironments.Should().Equal("Development");
+    }
+
+    [Fact]
+    public void AllowedEnvironments_rejects_null()
+    {
+        var options = new DevelopmentSigningOptions();
+
+        var act = () => options.AllowedEnvironments = null!;
+
+        act.Should().Throw<ArgumentNullException>();
+    }
 }
