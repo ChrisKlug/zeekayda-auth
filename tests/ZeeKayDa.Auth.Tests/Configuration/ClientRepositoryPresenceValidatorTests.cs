@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
 
@@ -7,44 +6,90 @@ namespace ZeeKayDa.Auth.Tests.Configuration;
 
 public sealed class ClientRepositoryPresenceValidatorTests
 {
-    private static AuthorizationServerOptions DefaultOptions()
-        => new() { Issuer = "https://auth.example.com" };
-
-    private sealed class FakeIsService : IServiceProviderIsService
+    private sealed class FakeIsService(bool result) : IServiceProviderIsService
     {
-        private readonly bool _result;
-        public FakeIsService(bool result) => _result = result;
-        public bool IsService(Type serviceType) => _result;
+        public bool IsService(Type serviceType) => result;
+    }
+
+    private sealed class FakeProvider(IServiceProviderIsService? isService) : IServiceProvider
+    {
+        public object? GetService(Type serviceType)
+            => serviceType == typeof(IServiceProviderIsService) ? isService : null;
+    }
+
+    /// <summary>A container without <see cref="IServiceProviderIsService"/>, resolving only what it is given.</summary>
+    private sealed class ResolvingOnlyProvider(Func<object?> repository) : IServiceProvider
+    {
+        public object? GetService(Type serviceType)
+            => serviceType == typeof(IClientRepository) ? repository() : null;
+    }
+
+    private sealed class StubRepository : IClientRepository
+    {
+        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IClientRegistration?>(null);
+    }
+
+    private static async Task<StartupVerificationContext> VerifyAsync(IServiceProvider services)
+    {
+        var context = new StartupVerificationContext();
+        await new ClientRepositoryPresenceValidator().VerifyAsync(
+            context, services, TestContext.Current.CancellationToken);
+        return context;
     }
 
     [Fact]
-    public void Validate_returns_success_when_IServiceProviderIsService_is_null()
+    public async Task VerifyAsync_adds_client_repository_missing_on_a_container_without_IServiceProviderIsService()
     {
-        var validator = new ClientRepositoryPresenceValidator(null);
+        var context = await VerifyAsync(new ResolvingOnlyProvider(() => null));
 
-        var result = validator.Validate(null, DefaultOptions());
-
-        result.Succeeded.Should().BeTrue();
+        context.Failures.Should().ContainSingle()
+            .Which.Code.Should().Be("client.repository.missing");
     }
 
     [Fact]
-    public void Validate_returns_failure_when_IClientRepository_is_not_registered()
+    public async Task VerifyAsync_finds_a_repository_by_resolving_on_a_container_without_IServiceProviderIsService()
     {
-        var validator = new ClientRepositoryPresenceValidator(new FakeIsService(false));
+        var context = await VerifyAsync(new ResolvingOnlyProvider(() => new StubRepository()));
 
-        var result = validator.Validate(null, DefaultOptions());
-
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("IClientRepository");
+        context.Failures.Should().BeEmpty();
     }
 
     [Fact]
-    public void Validate_returns_success_when_IClientRepository_is_registered()
+    public async Task VerifyAsync_leaves_a_broken_repository_to_the_activator_on_a_container_without_IServiceProviderIsService()
     {
-        var validator = new ClientRepositoryPresenceValidator(new FakeIsService(true));
+        var context = await VerifyAsync(new ResolvingOnlyProvider(
+            () => throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure("x", "broken"))));
 
-        var result = validator.Validate(null, DefaultOptions());
+        context.Failures.Should().BeEmpty();
+    }
 
-        result.Succeeded.Should().BeTrue();
+    [Fact]
+    public async Task VerifyAsync_adds_client_repository_missing_when_IClientRepository_is_not_registered()
+    {
+        var context = await VerifyAsync(new FakeProvider(new FakeIsService(false)));
+
+        context.Failures.Should().ContainSingle()
+            .Which.Code.Should().Be("client.repository.missing");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_completes_without_failures_when_IClientRepository_is_registered()
+    {
+        var context = await VerifyAsync(new FakeProvider(new FakeIsService(true)));
+
+        context.Failures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task VerifyAsync_does_not_construct_the_repository()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IClientRepository>(_ => throw new InvalidOperationException("must not be resolved"));
+        using var provider = services.BuildServiceProvider();
+
+        var context = await VerifyAsync(provider);
+
+        context.Failures.Should().BeEmpty();
     }
 }
