@@ -281,7 +281,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     }
 
     [Fact]
-    public void AddSigningKeySource_type_overload_throws_ArgumentException_when_TSource_is_abstract()
+    public void AddSigningKeySource_throws_ArgumentException_when_TSource_is_abstract()
     {
         var services = new ServiceCollection();
 
@@ -292,7 +292,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     }
 
     [Fact]
-    public void AddSigningKeySource_type_overload_throws_ArgumentException_when_TSource_implements_IAsyncDisposable_only()
+    public void AddSigningKeySource_throws_ArgumentException_when_TSource_implements_IAsyncDisposable_only()
     {
         var services = new ServiceCollection();
 
@@ -309,10 +309,14 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
         var services = ServicesWithTestKey(log);
         new ZeeKayDaAuthBuilder(services).AddSigningKeySource<OrderRecordingSigningKeySource>();
         var provider = services.BuildServiceProvider();
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
-        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
-
-        provider.Dispose();
+        try
+        {
+            await provider.GetRequiredService<ISigningKeyRing>().EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            provider.Dispose();
+        }
 
         log.Order.Should().Equal("signer", "source");
     }
@@ -324,10 +328,14 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
         var services = ServicesWithTestKey(log);
         new ZeeKayDaAuthBuilder(services).AddSigningKeySource<DualDisposableSigningKeySource>();
         var provider = services.BuildServiceProvider();
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
-        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
-
-        provider.Dispose();
+        try
+        {
+            await provider.GetRequiredService<ISigningKeyRing>().EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            provider.Dispose();
+        }
 
         log.SyncDisposed.Should().BeTrue();
         log.AsyncDisposed.Should().BeFalse();
@@ -340,10 +348,14 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
         var services = ServicesWithTestKey(log);
         new ZeeKayDaAuthBuilder(services).AddSigningKeySource<DualDisposableSigningKeySource>();
         var provider = services.BuildServiceProvider();
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
-        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
-
-        await provider.DisposeAsync();
+        try
+        {
+            await provider.GetRequiredService<ISigningKeyRing>().EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            await provider.DisposeAsync();
+        }
 
         log.AsyncDisposed.Should().BeTrue();
         log.SyncDisposed.Should().BeFalse();
@@ -364,13 +376,46 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     }
 
     [Fact]
-    public void AddSigningKeySource_is_not_rejected_by_a_keyed_ISigningKeyRing_registration()
+    public void A_clock_that_fails_to_resolve_leaves_no_source_constructed()
     {
-        // A keyed descriptor can never win GetRequiredService<ISigningKeyRing>()'s unkeyed
-        // resolution, so it is not the manual registration this guard exists to catch.
+        // Once the source exists only the ring may own it, so the clock is resolved first; a
+        // failure there must not leave a constructed source with nobody to dispose it.
+        var log = new ConstructionLog();
         var services = new ServiceCollection();
-        services.AddKeyedSingleton<ISigningKeyRing>(
-            "some-key", (_, _) => throw new NotSupportedException("must not be constructed"));
+        services.AddSingleton(log);
+        services.AddSingleton<TimeProvider>(_ => throw new InvalidOperationException("No clock."));
+        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ConstructionRecordingSigningKeySource>();
+        using var provider = services.BuildServiceProvider();
+
+        var act = () => provider.GetRequiredService<ISigningKeyRing>();
+
+        act.Should().Throw<InvalidOperationException>();
+        log.Constructed.Should().BeFalse();
+    }
+
+    private sealed class ConstructionLog
+    {
+        public bool Constructed { get; set; }
+    }
+
+    private sealed class ConstructionRecordingSigningKeySource : ISigningKeySource
+    {
+        public ConstructionRecordingSigningKeySource(ConstructionLog log) => log.Constructed = true;
+
+        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    [Fact]
+    public void AddSigningKeySource_overrides_a_manual_ISigningKeyRing_registered_before_it()
+    {
+        // The framework's ring is added with AddSingleton, so under MS DI's last-wins resolution it
+        // replaces a hand-registered ring that came first; the call does not reject it.
+        var services = new ServiceCollection();
+        services.AddSingleton<ISigningKeyRing>(new FakeSigningKeyRing());
 
         var act = () => new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
@@ -382,12 +427,8 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     [Fact]
     public void A_manual_ISigningKeyRing_registration_added_after_AddSigningKeySource_wins_and_is_not_rejected()
     {
-        // AddSigningKeySource has no hook into a manual registration made after it returns:
-        // that call goes straight to the IServiceCollection, not through this extension. The guard
-        // above only closes the ordering it can actually observe — a manual registration already
-        // present when this method runs. MS DI's ISigningKeyRing resolution is last-wins, so a
-        // manual registration added afterwards wins outright: the framework's own ring is never
-        // constructed, and nothing here detects or rejects it.
+        // MS DI resolves ISigningKeyRing last-wins, so a ring registered after AddSigningKeySource
+        // replaces the framework's; nothing detects it.
         var manualRing = new FakeSigningKeyRing();
         var services = new ServiceCollection();
         new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();

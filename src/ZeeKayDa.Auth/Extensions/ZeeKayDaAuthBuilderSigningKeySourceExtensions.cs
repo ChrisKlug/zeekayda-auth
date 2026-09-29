@@ -56,8 +56,13 @@ public static class ZeeKayDaAuthBuilderSigningKeySourceExtensions
 
         services.AddSingleton(new SigningKeySourceRegistration(typeof(TSource)));
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
-        services.AddSingleton<ISigningKeyRing>(sp => new StaticSigningKeyRing(
-            ActivatorUtilities.CreateInstance<TSource>(sp), sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton<ISigningKeyRing>(sp =>
+        {
+            // The clock first: once the source exists, only the ring may own it, so nothing that
+            // can still throw may run between creating it and handing it over.
+            var timeProvider = sp.GetRequiredService<TimeProvider>();
+            return new StaticSigningKeyRing(ActivatorUtilities.CreateInstance<TSource>(sp), timeProvider);
+        });
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupActivator, SigningKeyRingStartupVerifier>());
 

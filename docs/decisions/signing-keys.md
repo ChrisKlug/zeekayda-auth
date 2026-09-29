@@ -88,7 +88,7 @@ known-answer vectors — a cost taken over the dependency.
 
 **One signing provider per application, and nothing is registered for the source.**
 `builder.AddSigningKeySource<TSource>()`, which every provider calls first from its own registration method,
-enforces this with an internal marker: a second call always throws, whether or not `TSource` matches — a
+enforces this with an internal marker: a second call on the same collection throws, whatever `TSource` — a
 provider configures options beside its source, so a "harmless" duplicate would still apply a second callback.
 `ISigningKeySource` itself is never registered: the ring constructs the source directly (unreachable from the
 container) and owns its lifetime alongside the signer's. A source implementing `IAsyncDisposable` without
@@ -146,5 +146,5 @@ development provider stays in core.
   and it still materialises the key. Never decrypting the key bag beats it everywhere.
 - **A macOS Keychain signing provider.** Implemented and reviewed, then descoped: the file-system provider
   already covers macOS and Linux without native interop.
-- **Policing signing registration three times.** A factory overload, a resolve-time re-check against merged
-  service collections, and a refusal of a hand-registered ring: exotic integrator mistakes, one check does it.
+- **A factory overload, and two more registration checks.** The overload was a second way to build a source;
+  the resolve-time check against merged collections and the manual-ring refusal policed exotic mistakes.
