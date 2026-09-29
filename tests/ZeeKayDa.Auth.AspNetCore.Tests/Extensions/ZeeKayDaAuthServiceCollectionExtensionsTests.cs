@@ -42,6 +42,44 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
             sd.KeyedImplementationType == typeof(JwtTokenIssuer));
     }
 
+    [Fact]
+    public async Task ValidatedClientResolver_serves_public_client_with_credentials_as_unknown_regardless_of_registered_validator()
+    {
+        // The none path trusts IsPublic because the resolver enforces public <=> no credentials.
+        // A host's own IClientRegistrationValidator, however lax, must not replace that check.
+        var corrupt = ClientRegistration.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"])
+            with
+        { Credentials = [new Pbkdf2ClientSecret(600_000, new byte[16], new byte[32])] };
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IClientRegistrationValidator, AcceptEverythingValidator>();
+        services.AddSingleton<IClientRepository>(new SingleClientRepository(corrupt));
+        services.AddZeeKayDaAuth(options =>
+        {
+            options.Issuer = "https://auth.example.com";
+            options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+        });
+        using var provider = services.BuildServiceProvider();
+
+        var served = await provider.GetRequiredService<ValidatedClientResolver>()
+            .FindByClientIdAsync("public-client", TestContext.Current.CancellationToken);
+
+        served.Should().BeNull();
+        provider.GetRequiredService<IClientRegistrationValidator>().Should().BeOfType<AcceptEverythingValidator>(
+            "the host's validator stays what a repository injects to validate on write");
+    }
+
+    private sealed class AcceptEverythingValidator : IClientRegistrationValidator
+    {
+        public void Validate(IClientRegistration client) { }
+    }
+
+    private sealed class SingleClientRepository(IClientRegistration client) : IClientRepository
+    {
+        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(clientId == client.ClientId ? client : null);
+    }
+
     // ── IClientSecretFactory DI wiring (AC1–AC4, issue #135) ─────────────────────────────────────
 
     [Fact]
