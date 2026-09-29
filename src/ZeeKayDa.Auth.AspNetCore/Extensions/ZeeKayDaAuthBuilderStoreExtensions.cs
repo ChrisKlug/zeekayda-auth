@@ -131,7 +131,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
 
         builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeBackingStore));
         builder.Services.AddSingleton<IAuthorizationCodeBackingStore, T>();
-        builder.Services.AddSingleton<AuthorizationCodeStore>();
+        builder.Services.TryAddSingleton<AuthorizationCodeStore>();
 
         return builder;
     }
@@ -161,7 +161,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
 
         builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenBackingStore));
         builder.Services.AddSingleton<IRefreshTokenBackingStore, T>();
-        builder.Services.AddSingleton<RefreshTokenStore>();
+        builder.Services.TryAddSingleton<RefreshTokenStore>();
 
         return builder;
     }

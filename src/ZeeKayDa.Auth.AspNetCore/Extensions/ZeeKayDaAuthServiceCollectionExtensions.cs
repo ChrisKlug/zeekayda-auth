@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
+using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
@@ -126,6 +127,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<CompositeClientAuthenticator>();
         services.TryAddSingleton<GrantClaimsResolver>();
         services.TryAddSingleton<AuthorizationCodeGrant>();
+
+        // The framework's own token stores, always present; a host supplies only what backs them,
+        // so a backing store registered straight on the service collection works too.
+        services.TryAddSingleton<AuthorizationCodeStore>();
+        services.TryAddSingleton<RefreshTokenStore>();
         services.TryAddSingleton<TokenRequestHandler>();
         AddAuthorizationRequestServices(services);
 

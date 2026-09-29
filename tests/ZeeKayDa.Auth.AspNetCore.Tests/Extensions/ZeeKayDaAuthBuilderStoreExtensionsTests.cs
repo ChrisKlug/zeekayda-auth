@@ -577,6 +577,25 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         act.Should().NotThrow();
     }
 
+    // ── Backing stores registered directly ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Backing_stores_registered_straight_on_the_service_collection_get_the_framework_stores_over_them()
+    {
+        // The backing contracts are public, so a host can register them without the builder
+        // methods; the framework's own stores must still be there to run over them.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://test.example.com");
+        services.AddSingleton<IAuthorizationCodeBackingStore, StubAuthorizationCodeBackingStore>();
+        services.AddSingleton<IRefreshTokenBackingStore, StubRefreshTokenBackingStore>();
+
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<AuthorizationCodeStore>().Should().NotBeNull();
+        provider.GetRequiredService<RefreshTokenStore>().Should().NotBeNull();
+    }
+
     // ── No-op stub implementations ────────────────────────────────────────────────────────────────
 
     private sealed class StubAuthorizationCodeBackingStore : IAuthorizationCodeBackingStore
