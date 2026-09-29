@@ -19,7 +19,7 @@ public sealed class DevelopmentSigningOptions
     /// Outside these environments startup fails with a <see cref="ZeeKayDaConfigurationException"/>,
     /// so a development key is never silently deployed. <c>Production</c> can never be listed: it
     /// is rejected both by <see cref="AllowedDevEnvironmentsValidator"/> and by
-    /// <see cref="DevelopmentSigningKeyGate"/>. Any listed environment other than
+    /// <see cref="DevelopmentSigningKeyGate"/>. A host running in a listed environment other than
     /// <c>Development</c> logs a <see cref="Microsoft.Extensions.Logging.LogLevel.Critical"/> entry
     /// on every start.
     /// </para>

@@ -35,7 +35,9 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     [Fact]
     public void AddInMemoryDevelopmentSigning_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddInMemoryDevelopmentSigning();
+        ZeeKayDaAuthBuilder builder = null!;
+
+        var act = () => builder.AddInMemoryDevelopmentSigning();
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
@@ -43,7 +45,9 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     [Fact]
     public void AddPersistedDevelopmentSigning_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPersistedDevelopmentSigning();
+        ZeeKayDaAuthBuilder builder = null!;
+
+        var act = () => builder.AddPersistedDevelopmentSigning();
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }

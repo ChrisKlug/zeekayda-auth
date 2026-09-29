@@ -66,8 +66,8 @@ A provider never repeats these locally — duplicated validation is how two laye
 
 **Development signing keys are one line, and hard-gated on environment.** Persistence is in the method
 name, never a `null` argument. `AllowedEnvironments` is set in the registration callback and the
-framework never binds it, so `appsettings.json` alone cannot widen it; `Production` is always rejected, a non-`Development`
-entry logs `Critical` on every start, and an unknown environment fails closed.
+framework never binds it, so `appsettings.json` alone cannot widen it; `Production` is always rejected, a host
+running in an allowed non-`Development` environment logs `Critical` on every start, and an unknown one fails closed.
 Persisted keys are plain PEM with permissions set atomically at creation (`0700`/`0600` POSIX, a restrictive
 non-inherited ACL on Windows), and loading fails closed on a broader mode, a foreign-owned directory, or a
 symlink anywhere in the path — except a root-owned symlinked ancestor, which no unprivileged attacker can
