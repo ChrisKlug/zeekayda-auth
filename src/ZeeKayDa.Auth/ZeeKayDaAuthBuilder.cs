@@ -31,9 +31,8 @@ public sealed class ZeeKayDaAuthBuilder
     /// already registered in <see cref="Services"/>.
     /// </summary>
     /// <remarks>
-    /// This method is intended for provider package authors implementing
-    /// <see cref="ZeeKayDaAuthBuilder"/> extension methods. Application code should not call
-    /// it directly.
+    /// Used only inside the framework's public store registration methods, which is where a store
+    /// of any origin gets the one-store-per-interface guarantee.
     /// </remarks>
     /// <param name="serviceType">The service interface type to check for duplicate registration.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="serviceType"/> is <see langword="null"/>.</exception>
@@ -42,7 +41,7 @@ public sealed class ZeeKayDaAuthBuilder
     /// <see cref="ServiceDescriptor.ServiceType"/> equal to <paramref name="serviceType"/>
     /// already exists in <see cref="Services"/>.
     /// </exception>
-    public void ThrowIfAlreadyRegistered(Type serviceType)
+    internal void ThrowIfAlreadyRegistered(Type serviceType)
     {
         ArgumentNullException.ThrowIfNull(serviceType);
         var existing = Services.FirstOrDefault(sd => sd.ServiceType == serviceType);

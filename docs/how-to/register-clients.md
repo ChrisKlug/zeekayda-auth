@@ -23,8 +23,6 @@ var builder = services.AddZeeKayDaAuth(options =>
     options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
 });
 
-builder.AddPbkdf2SecretsHasher();   // required for confidential clients
-
 builder.AddInMemoryClients(clients =>
 {
     // A public client (SPA or native app using PKCE)
@@ -80,8 +78,6 @@ Confidential clients authenticate at the token endpoint using a shared secret. U
 for server-side web applications, background services, and APIs.
 
 ```csharp
-builder.AddPbkdf2SecretsHasher(); // must be registered before AddInMemoryClients
-
 builder.AddInMemoryClients(clients =>
     clients.AddConfidential(
         clientId: "my-server-app",
@@ -195,7 +191,7 @@ Both clients will be present in the repository.
 
 When more than one `IClientSecretHasher` is registered, the framework must know which one to use
 as the default — that is, which hasher creates new secrets and generates the timing-pad dummy
-credential at startup. The `isDefault` parameter on `AddSecretsHasher<T>()` controls this. The
+credential at startup. The `isDefault` parameter on `AddClientSecretHasher<T>()` controls this. The
 full selection matrix is:
 
 | Hashers registered | Explicit defaults (`isDefault: true`) | Outcome |
@@ -205,21 +201,14 @@ full selection matrix is:
 | 2 or more | 1 | The flagged hasher is the default |
 | 2 or more | 2 or more | **Startup failure** — multiple defaults conflict |
 
-> ⚠️ **Warning:** The "2 or more hashers, 0 defaults" case is easy to miss. If you register a
-> second hasher during a credential rotation — for example to support both PBKDF2 and bcrypt —
-> without marking one as `isDefault: true`, the host will fail to start. The error is caught by
-> startup validation, not at runtime, so the failure is immediate and visible in the startup
-> output.
+The built-in PBKDF2 hasher is always registered and is the default, so it creates every new
+secret. To keep verifying secrets hashed with another algorithm, register that hasher alongside it:
 
 ```csharp
-// ✓ Two hashers, one explicit default — startup succeeds
-auth.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);   // creates new secrets
-auth.AddSecretsHasher<BcryptClientSecretHasher>(isDefault: false);   // verifies old secrets
-
-// ✗ Two hashers, no explicit default — startup failure ("ambiguous default")
-auth.AddSecretsHasher<Pbkdf2ClientSecretHasher>();
-auth.AddSecretsHasher<BcryptClientSecretHasher>();
+auth.AddClientSecretHasher<BcryptClientSecretHasher>();   // verifies old bcrypt secrets
 ```
+
+A host cannot yet make its own hasher the default in place of PBKDF2.
 
 For the full `isDefault` rules and startup validation behaviour, see
 [Client secrets reference](../reference/client-secrets.md#isdefault-rules). To implement a

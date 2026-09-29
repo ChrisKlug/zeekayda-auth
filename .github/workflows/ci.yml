@@ -456,6 +456,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # A pull_request checkout is the merge commit; its first parent is the base, which the
+          # long-comment warning diffs against.
+          fetch-depth: 2
+
+      # Advisory, never failing: comments drift back to verbose after every cleanup, and the
+      # written rule alone has not held them.
+      - name: Warn on long added comment blocks
+        if: github.event_name == 'pull_request'
+        run: bash .github/scripts/check_long_comments.sh HEAD^1
+
+      - name: Run long-comment script smoke tests
+        run: bash .github/scripts/tests/check_long_comments.tests.sh
 
       # The decision register replaced numbered ADRs, which had grown to 4,270 lines across 14
       # documents despite a written "half a page" target. A written target didn't hold it, so the

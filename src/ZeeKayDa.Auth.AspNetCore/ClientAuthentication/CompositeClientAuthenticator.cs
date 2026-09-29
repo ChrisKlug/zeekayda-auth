@@ -163,38 +163,9 @@ internal sealed class CompositeClientAuthenticator
 
     private AuthenticatedClient AuthenticateNone(IClientRegistration? client)
     {
-        // Server must advertise "none". Routed through IsMethodAllowedByServer so there is one
-        // server-allowlist code path.
-        if (!IsMethodAllowedByServer(TokenEndpointAuthMethods.None))
-        {
-            PadNoneRejection();
-            return AuthenticatedClient.Refused;
-        }
-
-        // Client must exist.
-        if (client is null)
-        {
-            PadNoneRejection();
-            return AuthenticatedClient.Refused;
-        }
-
-        // Client must be public.
-        if (!client.IsPublic)
-        {
-            PadNoneRejection();
-            return AuthenticatedClient.Refused;
-        }
-
-        // Client must have no credentials (three-way consistency rule).
-        if (client.Credentials.Count != 0)
-        {
-            PadNoneRejection();
-            return AuthenticatedClient.Refused;
-        }
-
-        // Client's AllowedTokenEndpointAuthMethods must be exactly { "none" } (ordinal), counted by
-        // enumeration: a custom registration's set may report a Count it does not yield.
-        if (!TokenEndpointAuthMethodRules.IsExactlyNone(client.AllowedTokenEndpointAuthMethods))
+        // A public client has no credentials and allows exactly { "none" }: the resolver serves only
+        // registrations that passed the validator, which enforces that three-way rule.
+        if (!IsMethodAllowedByServer(TokenEndpointAuthMethods.None) || client is not { IsPublic: true })
         {
             PadNoneRejection();
             return AuthenticatedClient.Refused;

@@ -68,7 +68,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
                 o.Issuer = "https://test.example.com";
                 o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             })
-            .AddSecretsHasher<TestHasher>()
+            .AddClientSecretHasher<TestHasher>()
             .AddInMemoryClients(clients =>
                 clients.AddPublic("client-a",
                     ["https://app.example.com/cb"],
@@ -105,7 +105,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
                 o.Issuer = "https://test.example.com";
                 o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             })
-            .AddSecretsHasher<TestHasher>()
+            .AddClientSecretHasher<TestHasher>()
             .AddInMemoryClients(clients =>
                 clients.AddPublic("public-client",
                     ["https://app.example.com/cb"],
@@ -133,7 +133,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
         // Note: confidential client uses client_secret_basic (the default), which IS in the
         // server's default AuthMethodsSupported. No need to add None for this test.
         services.AddZeeKayDaAuth(o => o.Issuer = "https://test.example.com")
-            .AddSecretsHasher<TestHasher>()
+            .AddClientSecretHasher<TestHasher>()
             .AddInMemoryClients(clients =>
                 clients.AddConfidential(
                     "confidential-client",
@@ -171,7 +171,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
                 o.Issuer = "https://test.example.com";
                 o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             })
-            .AddSecretsHasher<TestHasher>()
+            .AddClientSecretHasher<TestHasher>()
             .AddInMemoryClients(clients => clients.Add(preBuilt));
 
         using var provider = services.BuildServiceProvider();
@@ -183,7 +183,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
         found.Should().BeSameAs(preBuilt);
     }
 
-    // ── Missing IClientRepository fails ValidateOnStart ───────────────────────────────────────────
+    // ── Missing IClientRepository fails startup ───────────────────────────────────────────────────
 
     [Fact]
     public async Task MissingClientRepository_causes_host_start_to_fail()
@@ -192,12 +192,10 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
 
         Func<Task> act = async () => await factory.CreateClient().GetAsync("/");
 
-        // The startup validator (ClientRepositoryPresenceValidator) runs as an IStartupValidator
-        // before hosted services, so its friendly OptionsValidationException surfaces first —
-        // rather than a raw DI "unable to resolve service for type 'IClientRepository'" error from
-        // the activator. The validator's message names the missing IClientRepository.
-        var thrown = await act.Should().ThrowAsync<OptionsValidationException>();
-        thrown.Which.Message.Should().Contain("IClientRepository");
+        // The presence check is a verifier, so it fails in the phase before the activators run —
+        // before ClientRepositoryStartupActivator could hit a raw DI resolution error.
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.AggregatedFailures.Should().Contain(f => f.Code == "client.repository.missing");
     }
 
     [Fact]
@@ -277,7 +275,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
                         o.Issuer = "https://test.example.com";
                         o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                     })
-                    .AddSecretsHasher<TestHasher>()
+                    .AddClientSecretHasher<TestHasher>()
                     // Register the same client_id twice — duplicate detection in the repository
                     // constructor must surface as a startup failure.
                     .AddInMemoryClients(clients =>

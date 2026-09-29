@@ -79,6 +79,13 @@ The coding standards in `.claude/agents/developer.md` apply to code you write yo
 "Rules that exist because review found them repeatedly" and the API self-check sections especially.
 Run the suite once per change, then `/check-formatting` and `/check-code-coverage` once each.
 
+**Before the review round, check every comment the diff adds.** Read `git diff main -- '*.cs'` for
+added comment lines and put each one in one of three bins: a *why* the code cannot express (keep, in
+one or two lines), a *crutch* for a name, an extraction or better cohesion (change the code and
+delete the comment), or *history* (delete it: git and the register hold it). This is the writer's
+own diff, so it is cheap here, and a written rule has not held on its own: comments were swept once,
+and the verbosity was back within weeks.
+
 Spawn `developer` (foreground — nothing else happens until its result is in; backgrounded it would
 still navigate by language server, through its own `csharp-lsp-developer` MCP server, never by text
 search) only when the work is **large, mechanical, and fully specified** — roughly 300+ lines of implementation logic with no open design questions. Fix rounds,
@@ -163,6 +170,10 @@ conformance suite.
 **A finding that states a checkable behaviour becomes a test, not prose.** If a reviewer's finding
 can be phrased as "given X, the code must Y", the fix includes a test named for it. Tests are the
 durable record of security decisions; review transcripts and register paragraphs are not.
+
+**A finding that asks "why?" is answered in code or in the reply, not with a new comment.** Rename,
+extract, or restructure so the reason is visible; or answer the reviewer directly. A comment is the
+fix only when the reason is permanent and invisible in the code, and then it is one or two lines.
 
 **Every commit reaches Stage 4 read by someone.** A fix commit too small for a reviewer round is
 small enough for you to read yourself — and you say at Stage 4 that you, not an agent, read it.

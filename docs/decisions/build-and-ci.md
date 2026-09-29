@@ -34,4 +34,10 @@ on anything they do not account for *and* on an entry that never occurred, so a 
 and a newly-passing module is ratcheted in by deleting its entry. Every entry names the issue that
 removes it or the register decision that makes it permanent.
 
+**Long added comment blocks get a CI warning, never a failure.** On a pull request, any added run
+of more than three consecutive `//` lines in `src/**/*.cs` is annotated, pointing at the comment
+rules in `.claude/agents/developer.md`. Comments drifted back to verbose after every cleanup, and the
+written rule alone did not hold them. It stays a warning because a permanent *why* can be long; the
+author says so in the PR. XML docs and `log-hygiene-ok` justifications are not counted.
+
 ## Tried, didn't work

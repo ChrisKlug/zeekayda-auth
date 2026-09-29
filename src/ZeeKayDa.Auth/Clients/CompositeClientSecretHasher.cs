@@ -160,7 +160,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
                 new ZeeKayDaConfigurationFailure(
                     "configuration.hashers.none_registered",
                     "No IClientSecretHasher implementations are registered. " +
-                    "Call AddSecretsHasher<T>() on the ZeeKayDaAuthBuilder."));
+                    "Call AddClientSecretHasher<T>() on the ZeeKayDaAuthBuilder."));
 
         if (hashers.Count == 1)
             return hashers[0];
@@ -171,7 +171,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
                 new ZeeKayDaConfigurationFailure(
                     "configuration.hashers.no_default",
                     "Multiple IClientSecretHasher implementations are registered but none is marked as " +
-                    "default. Call AddSecretsHasher<T>(isDefault: true) for exactly one hasher."));
+                    "default. Call AddClientSecretHasher<T>(isDefault: true) for exactly one hasher."));
 
         return hashers.FirstOrDefault(h => h.GetType() == defaultReg.HasherType)
             ?? throw new ZeeKayDaConfigurationException(

@@ -10,8 +10,9 @@ namespace ZeeKayDa.Auth.Clients;
 /// two-credential cap, and the <c>AllowedTokenEndpointAuthMethods</c> subset check.
 /// </para>
 /// <para>
-/// Custom <c>IClientRepository</c> implementations MUST resolve this service from DI and
-/// invoke it before persisting a new or updated client.
+/// The framework runs it on every registration a repository returns. A custom
+/// <c>IClientRepository</c> may also call it before persisting a new or updated client, so a bad
+/// registration is rejected where it is written rather than on a live request.
 /// </para>
 /// </remarks>
 public interface IClientRegistrationValidator

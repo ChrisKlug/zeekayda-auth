@@ -71,19 +71,20 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     [Theory]
     [InlineData(TokenKind.AccessToken)]
     [InlineData(TokenKind.IdToken)]
-    public void AddZeeKayDaAuthCore_registers_JwtTokenIssuer_for_each_TokenKind(TokenKind kind)
+    public void AddDefaultTokenIssuers_registers_JwtTokenIssuer_for_each_TokenKind(TokenKind kind)
     {
         var services = new ServiceCollection();
         services.AddSingleton<ISigningKeyRing>(new StubRing());
 
         services.AddZeeKayDaAuthCore();
+        services.AddDefaultTokenIssuers();
 
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredKeyedService<ITokenIssuer>(kind).Should().BeOfType<JwtTokenIssuer>();
     }
 
     [Fact]
-    public void AddZeeKayDaAuthCore_keeps_a_hosts_own_issuer_registration_for_a_kind()
+    public void AddDefaultTokenIssuers_keeps_a_hosts_own_issuer_registration_for_a_kind()
     {
         var services = new ServiceCollection();
         services.AddSingleton<ISigningKeyRing>(new StubRing());
@@ -91,11 +92,23 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
         services.AddKeyedSingleton<ITokenIssuer>(TokenKind.AccessToken, hostIssuer);
 
         services.AddZeeKayDaAuthCore();
+        services.AddDefaultTokenIssuers();
 
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredKeyedService<ITokenIssuer>(TokenKind.AccessToken).Should().BeSameAs(hostIssuer);
         provider.GetRequiredKeyedService<ITokenIssuer>(TokenKind.IdToken).Should().BeOfType<JwtTokenIssuer>(
             "overriding one kind must not affect the other");
+    }
+
+    [Fact]
+    public void AddZeeKayDaAuthCore_registers_no_token_issuer()
+    {
+        // Token issuance is the token subsystem's registration, not core infrastructure.
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaAuthCore();
+
+        services.Should().NotContain(d => d.ServiceType == typeof(ITokenIssuer));
     }
 
     // ── Issue #437: framework-owned startup self-test wiring ───────────────────────────────────────

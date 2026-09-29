@@ -72,6 +72,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
                 AuthorizationServerOptionsValidator>());
 
         services.AddZeeKayDaAuthCore();
+        services.AddDefaultTokenIssuers();
 
         services.TryAddSingleton<IScopeRepository>(new InMemoryScopeRepository(StandardScopes.All));
         services.TryAddSingleton<IDiscoveryDocumentProvider, DiscoveryDocumentProvider>();
@@ -105,16 +106,15 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
 
         // A factory rather than type activation: the ISigningKeyRing parameter is optional, and DI
         // activation cannot supply a default for a service that is not registered.
-        services.TryAddSingleton<IClientRegistrationValidator>(sp => new ClientRegistrationValidator(
+        services.TryAddSingleton(sp => new ClientRegistrationValidator(
             sp.GetRequiredService<IOptions<AuthorizationServerOptions>>(),
             sp.GetRequiredService<CompositeClientSecretHasher>(),
             sp.GetRequiredService<ISanitizingLogger<ClientRegistrationValidator>>(),
             sp.GetService<ISigningKeyRing>()));
+        services.TryAddSingleton<IClientRegistrationValidator>(sp => sp.GetRequiredService<ClientRegistrationValidator>());
 
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<
-                IValidateOptions<AuthorizationServerOptions>,
-                ClientRepositoryPresenceValidator>());
+            ServiceDescriptor.Singleton<IStartupVerifier, ClientRepositoryPresenceValidator>());
 
         AddStartupChecks(services);
 
@@ -129,7 +129,12 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         AddAuthorizationRequestServices(services);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
+        builder.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<Pbkdf2ClientSecretHasherOptions>,
+                Pbkdf2ClientSecretHasherOptionsValidator>());
+        services.AddOptions<Pbkdf2ClientSecretHasherOptions>().ValidateOnStart();
         return builder;
     }
 
@@ -212,7 +217,12 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // registers it already; this covers minimal hosts, and is idempotent everywhere else.
         services.AddDataProtection();
 
-        services.TryAddSingleton<ValidatedClientResolver>();
+        services.TryAddSingleton(sp => new ValidatedClientResolver(
+            sp.GetRequiredService<IClientRepository>(),
+            new FrameworkThenHostValidator(
+                sp.GetRequiredService<ClientRegistrationValidator>(),
+                sp.GetRequiredService<IClientRegistrationValidator>()),
+            sp.GetRequiredService<ISanitizingLogger<ValidatedClientResolver>>()));
 
         // The only path from IScopeRepository to a scope definition, so a custom repository's
         // output is validated wherever it is read and not only at startup.

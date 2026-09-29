@@ -92,25 +92,19 @@ deliberately explicit and unambiguous so it cannot slip through a configuration 
 innocuous flag. It is read from the singleton options binding and cannot be toggled at runtime, which
 is correct for a security policy switch. It emits a startup warning on every boot when enabled.
 
-**Three analyzer rules, and they belong together.** `ZEEKAYDA0001` forbids injecting `ILogger<T>`
+**Two analyzer rules, and they belong together.** `ZEEKAYDA0001` forbids injecting `ILogger<T>`
 directly in first-party code — everything goes through the sanitizing logger. `ZEEKAYDA0002` requires
 a compile-time-constant message template, including on the startup-verification warning API.
-`ZEEKAYDA0003` warns that a third-party client repository never references the registration validator;
-its category is `Extensibility`, not log hygiene, and it is a different kind of rule, not a third
-member of the same family.
 
 **The log-hygiene rules deliberately opt in to generated code.** Treating a file as generated — by
 filename, header, attribute or analyzer config — would suppress a security control with no rule ID
-anywhere in the diff. `ZEEKAYDA0003` keeps the normal "don't nag about generated code" behaviour,
-because it is a Warning-severity extensibility heuristic rather than a security control; promoting it
-would mean revisiting that.
+anywhere in the diff.
 
 **The wrapper self-exemption is restricted to types declared in core itself.** A friend assembly can
 implement the sanitizing-logger interface but cannot use that to exempt itself from the
-constant-template rule — the exemption is reserved for the wrapper defined in `ZeeKayDa.Auth`. The
-same exact-assembly-name reasoning gates `ZEEKAYDA0003`'s in-assembly exemption. Assembly matching is
-by simple name throughout; see `extension-surface.md` for why that is a correctness boundary and not
-a security one.
+constant-template rule — the exemption is reserved for the wrapper defined in `ZeeKayDa.Auth`.
+Assembly matching is by simple name throughout; see `extension-surface.md` for why that is a
+correctness boundary and not a security one.
 
 **Known gap:** `ZEEKAYDA0002` does not follow a message template through a delegate past its point of
 conversion. A template built dynamically and passed as a delegate escapes the rule.

@@ -597,7 +597,6 @@ ZeeKayDa.Auth.Tokens.TokenPayload.Equals(ZeeKayDa.Auth.Tokens.TokenPayload? othe
 ZeeKayDa.Auth.Tokens.TokenPayload.TokenPayload(System.Collections.Generic.IReadOnlyDictionary<string!, object?>! Claims) -> void
 ZeeKayDa.Auth.ZeeKayDaAuthBuilder
 ZeeKayDa.Auth.ZeeKayDaAuthBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-ZeeKayDa.Auth.ZeeKayDaAuthBuilder.ThrowIfAlreadyRegistered(System.Type! serviceType) -> void
 ZeeKayDa.Auth.ZeeKayDaAuthBuilder.ZeeKayDaAuthBuilder(Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> void
 ZeeKayDa.Auth.ZeeKayDaConfigurationException
 ZeeKayDa.Auth.ZeeKayDaConfigurationException.AggregatedFailures.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!

@@ -7,6 +7,7 @@ using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
@@ -24,6 +25,87 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         services.Should().Contain(sd =>
             sd.ServiceType == typeof(IStartupVerifier) &&
             sd.ImplementationType == typeof(ExceptionSanitizingDisabledWarningService));
+    }
+
+    [Theory]
+    [InlineData(TokenKind.AccessToken)]
+    [InlineData(TokenKind.IdToken)]
+    public void AddZeeKayDaAuth_registers_JwtTokenIssuer_for_each_TokenKind(TokenKind kind)
+    {
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+
+        services.Should().ContainSingle(sd =>
+            sd.ServiceType == typeof(ITokenIssuer) &&
+            Equals(sd.ServiceKey, kind) &&
+            sd.KeyedImplementationType == typeof(JwtTokenIssuer));
+    }
+
+    [Fact]
+    public async Task ValidatedClientResolver_serves_public_client_with_credentials_as_unknown_regardless_of_registered_validator()
+    {
+        // The none path trusts IsPublic because the resolver enforces public <=> no credentials.
+        // A host's own IClientRegistrationValidator, however lax, must not replace that check.
+        var corrupt = ClientRegistration.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"])
+            with
+        { Credentials = [new Pbkdf2ClientSecret(600_000, new byte[16], new byte[32])] };
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IClientRegistrationValidator, AcceptEverythingValidator>();
+        services.AddSingleton<IClientRepository>(new SingleClientRepository(corrupt));
+        services.AddZeeKayDaAuth(options =>
+        {
+            options.Issuer = "https://auth.example.com";
+            options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+        });
+        using var provider = services.BuildServiceProvider();
+
+        var served = await provider.GetRequiredService<ValidatedClientResolver>()
+            .FindByClientIdAsync("public-client", TestContext.Current.CancellationToken);
+
+        served.Should().BeNull();
+        provider.GetRequiredService<IClientRegistrationValidator>().Should().BeOfType<AcceptEverythingValidator>(
+            "the host's validator stays what a repository injects to validate on write");
+    }
+
+    [Fact]
+    public async Task ValidatedClientResolver_also_runs_the_hosts_own_validator_on_what_it_serves()
+    {
+        var valid = ClientRegistration.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"]);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IClientRegistrationValidator, RejectEverythingValidator>();
+        services.AddSingleton<IClientRepository>(new SingleClientRepository(valid));
+        services.AddZeeKayDaAuth(options =>
+        {
+            options.Issuer = "https://auth.example.com";
+            options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+        });
+        using var provider = services.BuildServiceProvider();
+
+        var served = await provider.GetRequiredService<ValidatedClientResolver>()
+            .FindByClientIdAsync("public-client", TestContext.Current.CancellationToken);
+
+        served.Should().BeNull("a host's stricter rule applies to what is served, on top of the framework's");
+    }
+
+    private sealed class RejectEverythingValidator : IClientRegistrationValidator
+    {
+        public void Validate(IClientRegistration client) =>
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure("host.tenant_rule", "Redirect URIs must be on the tenant domain."));
+    }
+
+    private sealed class AcceptEverythingValidator : IClientRegistrationValidator
+    {
+        public void Validate(IClientRegistration client) { }
+    }
+
+    private sealed class SingleClientRepository(IClientRegistration client) : IClientRepository
+    {
+        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(clientId == client.ClientId ? client : null);
     }
 
     // ── IClientSecretFactory DI wiring (AC1–AC4, issue #135) ─────────────────────────────────────

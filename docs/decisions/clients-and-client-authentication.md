@@ -63,10 +63,10 @@ validation as `client.credentials.not_copied`; one still sharing a buffer is the
 
 **Verification is always fixed-time and never throws.** A hasher returns `false` on internal error
 rather than propagating, so an exception cannot become a timing or behavioural oracle. The shipped
-default is PBKDF2-HMAC-SHA256 with a 600,000-iteration floor (current OWASP guidance), enforced both
-where a credential is created and where a pre-hashed one is imported — a credential migrated from
-another IdP bypasses the constructor entirely, so the import check is the only thing standing between
-a weak stored hash and production. At most two active shared secrets per client, to make rotation
+default is PBKDF2-HMAC-SHA256 with a 600,000-iteration floor (current OWASP guidance) and a
+2,000,000 cap, enforced where a credential is created (startup fails, never clamps) and where a
+pre-hashed one is imported — a credential migrated from another IdP never passes through the
+options, so the import check is all that stands between a weak stored hash and production. At most two active shared secrets per client, to make rotation
 possible; authenticators try both before failing.
 
 **Failure paths are padded to a fixed two-credential budget; the success path is not.** Padding
@@ -133,8 +133,8 @@ token-endpoint bodies and `code_verifier` values are never logged (RFC 7636 §7.
 floor, the two-secret cap, the `IsPublic` rule and the rules holding a client to what the server
 serves are enforced by `ValidatedClientResolver`, the only path from a `client_id` to a registration:
 it runs the full validator on what the repository returned and serves a failing one as an unknown
-client. `ZEEKAYDA0003` is not a second guarantee — it warns only that an out-of-assembly repository
-never references the validator, a reference and not a call.
+client. A repository never validates its own output; it may still call the validator to reject a
+bad client when one is written, for example from an admin UI.
 
 **Client-facing types split on whether they need a request.** Registrations, credentials, hashers,
 the repository and the validator are core; the authenticator seam and its request context types live

@@ -101,6 +101,7 @@ When you write or request changes to code comments and XML docs, keep them lean 
 - Never add (or ask for) a comment that just cites a decision-register entry, an issue/PR number, or an acceptance criterion. State the security-relevant *why* in plain English instead — that is what a reader needs
 - `<summary>`/`<remarks>` cover what a consumer needs to use the member safely, not the history of how the design got here
 - `<exception>` elements are exempt and are never trimmed
+- **Flag crutch comments as Low.** A comment that restates the code, excuses an inconsistency, narrates history, or explains what a rename or extraction would make obvious is a finding. Name the rename or extraction; never ask for a better comment
 - A comment is not a mitigation. If a control's correctness depends on the next developer reading a paragraph, raise it as a design finding (see the architect's "docs are not a mitigation" tiers), not as a request for a longer comment
 
 ## How You Work
