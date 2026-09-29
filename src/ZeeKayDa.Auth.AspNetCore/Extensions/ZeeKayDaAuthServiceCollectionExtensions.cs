@@ -8,7 +8,6 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
-using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
@@ -20,6 +19,7 @@ using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
 namespace Microsoft.Extensions.DependencyInjection;
