@@ -215,8 +215,8 @@ public interface IClientMetadata
     /// The advertised set is the distinct algorithms of the published signing key set, narrowed by
     /// <c>IdTokenOptions.AdvertisedSigningAlgorithms</c> when that filter is configured — the same
     /// set the discovery document publishes as <c>id_token_signing_alg_values_supported</c>. When
-    /// non-null, this set MUST be non-empty and MUST be a subset of it. This is validated at startup
-    /// for in-memory clients; custom repositories MUST enforce the subset constraint at write time.
+    /// non-null, this set MUST be non-empty and MUST be a subset of it. The framework's validator
+    /// enforces this on every registration it serves; a repository may also check it on write.
     /// </remarks>
     IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms => null;
 
