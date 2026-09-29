@@ -52,14 +52,15 @@ public static ZeeKayDaAuthBuilder AddDatabaseClients(this ZeeKayDaAuthBuilder bu
 
 ## Validating registrations
 
-**You must call `IClientRegistrationValidator.Validate` before persisting a new or updated
-client registration.** The validator enforces all redirect URI rules, the `IsPublic` consistency
-check, credential integrity checks, and auth-method subset constraints. Not calling it means a bad
-registration is stored, and is then discovered at the worst moment: the framework validates every
-registration it serves, so the client is refused as an unknown client on a live request — an error
-the operator sees in the log rather than one you saw when you wrote the row.
+**The framework validates every registration your repository returns,** so
+`FindByClientIdAsync` never has to. A registration that fails is refused as an unknown client and
+logged for the operator.
 
-Inject `IClientRegistrationValidator` from DI and call it at write time:
+**Validating on write is still worth it.** A bad registration found at read time surfaces on a live
+request, as an error the operator sees in the log, rather than when the row was written. The
+validator enforces all redirect URI rules, the `IsPublic` consistency check, credential integrity
+checks, and auth-method subset constraints. Inject `IClientRegistrationValidator` from DI and call
+it where you write:
 
 ```csharp
 public sealed class MyDatabaseClientRepository : IClientRepository
@@ -108,11 +109,6 @@ public sealed class MyDatabaseClientRepository : IClientRepository
     };
 }
 ```
-
-For read-mostly stores (replicated databases, caches) where the initial load happens outside the
-request path, call `Validate` as registrations enter the cache — not just at the DB write that
-originally created them. A registration that fails validation must not be returned from
-`FindByClientIdAsync`.
 
 ## String comparison invariants
 

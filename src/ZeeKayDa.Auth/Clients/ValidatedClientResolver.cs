@@ -13,12 +13,11 @@ namespace ZeeKayDa.Auth.Clients;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="IClientRepository"/> documents that custom stores MUST validate registrations
-/// before serving them, but nothing enforces that contract — a store fed by a typo'd or
+/// A repository does not validate what it returns; this resolver does. A store fed by a typo'd or
 /// malicious database row would otherwise hand the protocol an unvalidated redirect URI, and
-/// exact-match redirect validation is only as trustworthy as the set it matches against. This
-/// resolver makes the guarantee structural: endpoints consume this type, never the repository,
-/// and being <see langword="internal"/> a host cannot bypass it.
+/// exact-match redirect validation is only as trustworthy as the set it matches against.
+/// Endpoints consume this type, never the repository, and being <see langword="internal"/> a host
+/// cannot bypass it.
 /// </para>
 /// <para>
 /// A registration that fails validation is served to the protocol as unknown client
