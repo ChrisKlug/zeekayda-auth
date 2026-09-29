@@ -262,7 +262,7 @@ visible in the startup output.
 
 | Rule | Condition that causes failure |
 |---|---|
-| Exactly one default | 2+ registered hashers have `isDefault: true` |
+| Exactly one default | 2+ hashers are registered and zero or 2+ have `isDefault: true` |
 | Iterations within range | `Pbkdf2ClientSecretHasherOptions.Iterations` is below 600,000 or above 2,000,000 |
 
 ---
