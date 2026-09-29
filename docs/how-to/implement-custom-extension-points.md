@@ -251,26 +251,17 @@ public sealed class BcryptClientSecretHasher : ClientSecretHasher<IBcryptClientS
 > `SHA256.HashData`, `HMACSHA256.HashData`) can avoid the `ToString()` entirely. See
 > `Pbkdf2ClientSecretHasher` in the source for a complete example.
 
-### Step 4: Register with `AddSecretsHasher<T>()`
+### Step 4: Register with `AddClientSecretHasher<T>()`
 
-Register your hasher on the builder returned by `AddZeeKayDaAuth`. When only one hasher is
-registered it is automatically the default:
-
-```csharp
-auth.AddSecretsHasher<BcryptClientSecretHasher>();
-```
-
-For **credential rotation** — for example to migrate from bcrypt to PBKDF2 — register both hashers
-and mark the new one as default. The composite verifier will try the correct hasher for each stored
-credential, and `isDefault: true` controls which hasher creates new secrets:
+Register your hasher on the builder returned by `AddZeeKayDaAuth`. The composite verifier tries
+the matching hasher for each stored credential. The built-in PBKDF2 hasher is always registered and is the default, so it creates every new
+secret. To keep verifying secrets hashed with another algorithm, register that hasher alongside it:
 
 ```csharp
-auth.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);  // creates new secrets
-auth.AddSecretsHasher<BcryptClientSecretHasher>(isDefault: false);  // verifies old secrets
+auth.AddClientSecretHasher<BcryptClientSecretHasher>();   // verifies old bcrypt secrets
 ```
 
-Startup validation fails if multiple hashers are registered but zero or more than one has
-`isDefault: true`.
+A host cannot yet make its own hasher the default in place of PBKDF2.
 
 ### Security contract for `VerifyCore` implementors
 
@@ -326,7 +317,7 @@ public interface IClientRepository
 ### Using `IClientSecretFactory` to hash secrets at write time
 
 Inject `IClientSecretFactory` into your repository to hash plaintext secrets at runtime using the
-same default hasher configured via `AddSecretsHasher<T>`. `IClientSecretFactory` is registered
+same default hasher configured via `AddClientSecretHasher<T>`. `IClientSecretFactory` is registered
 automatically by `AddZeeKayDaAuth` as a singleton — no additional registration is required.
 
 ```csharp

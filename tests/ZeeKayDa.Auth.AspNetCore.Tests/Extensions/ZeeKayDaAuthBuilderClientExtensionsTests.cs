@@ -68,7 +68,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
                 o.Issuer = "https://test.example.com";
                 o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             })
-            .AddSecretsHasher<TestHasher>()
+            .AddClientSecretHasher<TestHasher>()
             .AddInMemoryClients(clients =>
                 clients.AddPublic("client-a",
                     ["https://app.example.com/cb"],
@@ -105,7 +105,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
                 o.Issuer = "https://test.example.com";
                 o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             })
-            .AddSecretsHasher<TestHasher>()
+            .AddClientSecretHasher<TestHasher>()
             .AddInMemoryClients(clients =>
                 clients.AddPublic("public-client",
                     ["https://app.example.com/cb"],
@@ -133,7 +133,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
         // Note: confidential client uses client_secret_basic (the default), which IS in the
         // server's default AuthMethodsSupported. No need to add None for this test.
         services.AddZeeKayDaAuth(o => o.Issuer = "https://test.example.com")
-            .AddSecretsHasher<TestHasher>()
+            .AddClientSecretHasher<TestHasher>()
             .AddInMemoryClients(clients =>
                 clients.AddConfidential(
                     "confidential-client",
@@ -171,7 +171,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
                 o.Issuer = "https://test.example.com";
                 o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             })
-            .AddSecretsHasher<TestHasher>()
+            .AddClientSecretHasher<TestHasher>()
             .AddInMemoryClients(clients => clients.Add(preBuilt));
 
         using var provider = services.BuildServiceProvider();
@@ -275,7 +275,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
                         o.Issuer = "https://test.example.com";
                         o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                     })
-                    .AddSecretsHasher<TestHasher>()
+                    .AddClientSecretHasher<TestHasher>()
                     // Register the same client_id twice — duplicate detection in the repository
                     // constructor must surface as a startup failure.
                     .AddInMemoryClients(clients =>
