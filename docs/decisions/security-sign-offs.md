@@ -1788,10 +1788,10 @@ Scoped to `DistributedCacheStoreStartupValidator`, `InsecureIssuerWarningService
 architecture lens and the security agent, one round, no High or Critical from any of them.
 
 - A `MemoryDistributedCache`-backed token store outside `Development` fails startup unless that
-  registration opted out. Closed — `The_per_process_cache_outside_Development_fails_startup_for_a_token_store`,
+  registration opted out. Closed — The_per_process_cache_outside_Development_fails_startup_for_a_token_store [deleted by #829 with the distributed-cache token stores],
   `The_per_process_cache_outside_Development_with_the_override_warns_at_Critical_on_every_start`.
 - The opt-out is per registration, not per implementation type, so one store opting out cannot
-  silently opt out the other. Closed — `The_two_store_registrations_each_keep_their_own_opt_out`.
+  silently opt out the other. Closed — The_two_store_registrations_each_keep_their_own_opt_out [deleted by #829 with the distributed-cache token stores].
 - `AllowInsecureIssuer` outside `Development` logs `Critical` and deliberately does not fail: it is
   itself the opt-out, and a non-loopback `http` issuer is already refused by options validation in
   every environment. Closed — `An_insecure_issuer_outside_Development_logs_at_Critical_on_every_start`,
@@ -1801,7 +1801,7 @@ architecture lens and the security agent, one round, no High or Critical from an
 - **Accepted residual (maintainer):** the cache check is a type test, so any other per-process
   `IDistributedCache` — a decorator over `MemoryDistributedCache`, a hand-rolled double — starts
   outside `Development` with only the non-atomic `Warning`. Proven by
-  `A_shared_cache_warns_that_the_stores_are_non_atomic_in_every_environment`.
+  A_shared_cache_warns_that_the_stores_are_non_atomic_in_every_environment [deleted by #829 with the distributed-cache token stores].
 
 ## 2026-09-21 — what a configuration failure's message may carry (#764, code frozen at `343bc3e`)
 
