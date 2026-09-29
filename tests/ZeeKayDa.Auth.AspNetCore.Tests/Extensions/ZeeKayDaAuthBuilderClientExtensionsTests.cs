@@ -183,7 +183,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
         found.Should().BeSameAs(preBuilt);
     }
 
-    // ── Missing IClientRepository fails ValidateOnStart ───────────────────────────────────────────
+    // ── Missing IClientRepository fails startup ───────────────────────────────────────────────────
 
     [Fact]
     public async Task MissingClientRepository_causes_host_start_to_fail()
@@ -192,12 +192,10 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
 
         Func<Task> act = async () => await factory.CreateClient().GetAsync("/");
 
-        // The startup validator (ClientRepositoryPresenceValidator) runs as an IStartupValidator
-        // before hosted services, so its friendly OptionsValidationException surfaces first —
-        // rather than a raw DI "unable to resolve service for type 'IClientRepository'" error from
-        // the activator. The validator's message names the missing IClientRepository.
-        var thrown = await act.Should().ThrowAsync<OptionsValidationException>();
-        thrown.Which.Message.Should().Contain("IClientRepository");
+        // The presence check is a verifier, so it fails in the phase before the activators run —
+        // before ClientRepositoryStartupActivator could hit a raw DI resolution error.
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.AggregatedFailures.Should().Contain(f => f.Code == "client.repository.missing");
     }
 
     [Fact]
