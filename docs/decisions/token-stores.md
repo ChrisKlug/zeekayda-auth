@@ -7,16 +7,15 @@ redemption protocol and the interaction store's registration. The refresh-token 
 ## Decisions in force
 
 **The framework owns the protocol; a third party owns only where the bytes live.**
-`IAuthorizationCodeStore` and `IRefreshTokenStore` are coordinators, not extension points: single-use
-enforcement, replay and reuse detection, handle hashing, at-rest encryption and clock-skew-tolerant
-expiry are all framework code. Each stays `public` so `ZeeKayDa.Auth.AspNetCore` can inject it
-cross-assembly, and each carries an `internal` member only friend assemblies can satisfy — publicly
-consumable, not third-party implementable, which is the asymmetry actually needed. Handing the old
-open interface to a competent .NET developer failed the "implement a new one" test: it carried at
-least three security-critical MUST clauses in prose doc comments alone.
+The framework's `AuthorizationCodeStore` and `RefreshTokenStore` are internal classes, not extension
+points: single-use enforcement, replay and reuse detection, handle hashing, at-rest encryption and
+clock-skew-tolerant expiry are all framework code, reached by `ZeeKayDa.Auth.AspNetCore` through
+`InternalsVisibleTo`. A third party implements only a backing store. Handing the old open interface
+to a competent .NET developer failed the "implement a new one" test: it carried at least three
+security-critical MUST clauses in prose doc comments alone.
 
 **Two backing contracts, deliberately not unified.** `IAuthorizationCodeBackingStore` is an opaque
-key-value primitive; `IRefreshTokenGrantStore` is a queryable row store. The two diverge on lifetime
+key-value primitive; `IRefreshTokenBackingStore` is a queryable row store. The two diverge on lifetime
 (seconds versus months), on durability pressure (a lost code fails one authorization; lost refresh
 tokens force mass re-authentication) and on addressability, so a single shared registration would
 push consumers to over- or under-provision one of them. They are registered and replaced separately.
@@ -25,9 +24,8 @@ push consumers to over- or under-provision one of them. They are registered and 
 constructor is framework-internal; the framework hashes the handle before keying anything on it,
 because the handle is itself a bearer credential and store read access — ops tooling, backups, log
 sidecars — must not expose it (RFC 6819 §5.1.4.1.3). "Hash before you key" is therefore
-unrepresentable in third-party code rather than documented. The key-space layout (hash algorithm,
-encoding, namespacing) is an implementation detail of each first-party store, differs between the
-two, and nothing downstream may depend on it.
+unrepresentable in third-party code rather than documented. Every store uses one layout,
+`zkd:{store}:{kind}:{hex(sha256(value))}`, so a key in a shared backend says what it belongs to.
 
 **Fail-closed I/O, with no discretion left to the implementer.** The framework wraps every native
 fault as `ZeeKayDaStoreException` and rethrows `OperationCanceledException` unwrapped. A read MUST
@@ -77,7 +75,7 @@ fresh 256-bit value through `StoreKeyGenerator` before every redemption and neve
 reusing an id across codes extends a per-code correlation surface into a chain nobody assessed.
 
 **No store is auto-registered, and absence fails startup.** A startup validator fails the host when
-either coordinator interface or the interaction store is unregistered, and every registration
+any of the three backing stores is unregistered, and every registration
 method throws `InvalidOperationException` on a second registration for the same interface rather
 than letting an earlier call silently win. In-memory registrations log at `Information` in `Development`; outside it
 they fail startup unless the call passed `allowOutsideDevelopment: true`, which downgrades the
@@ -90,7 +88,7 @@ complete answer, while the per-process `MemoryDistributedCache` is logged at `In
 `Critical` warning on every start.
 
 **One terminal outcome per interaction is the code store's invariant, keyed `zkd:code:i:{hex(sha256(id))}`.**
-`IAuthorizationCodeStore.TryClaimInteractionAsync` writes the claim — taken by issuance and by
+`AuthorizationCodeStore.TryClaimInteractionAsync` writes the claim — taken by issuance and by
 denial alike — through the same atomic insert-if-absent that makes a code single-use, so any backend
 on which redemption is single-use decides the consent-POST and grant-versus-deny races too, and no
 new backing member or conformance test was needed.
@@ -122,13 +120,16 @@ made unrepresentable instead, it is, and the kit is not offered as an alternativ
 - **A third-party-implementable protocol store.** The original shipped contract for both stores let a
   consumer implement the whole redemption protocol. Reversed: the correctness-bearing invariants a
   naive implementation violated while compiling outnumbered the one thing a third party actually
-  wants to vary. The coordinator plus a narrow backing primitive is the fix; making the coordinator
-  interface `internal` is not, because the ASP.NET Core adapter must still consume it.
+  wants to vary. The coordinator plus a narrow backing primitive is the fix.
 - **Two-phase redemption — `TryRedeemAsync` followed by `CompleteRedemptionAsync(token, familyId)`.**
   A crash or dropped connection between the two calls leaves a tombstone with a null `FamilyId`, so a
   later replay resolves `AlreadyRedeemed(null)`: nothing to revoke, RFC 9700 §2.1.1 violated. The
   durability gap was in the interface shape, so no backend could have fixed it — only deleting the
   second phase did.
+- **The coordinators as public interfaces sealed by a hidden member.** They were public "so
+  AspNetCore can inject them", with an `internal` member so nobody else could implement them. Core
+  already grants AspNetCore `InternalsVisibleTo`, and nothing public exposed them, so they are
+  internal classes now.
 - **An operator-configurable tombstone TTL.** Shipped, then removed. Every off-default value is
   either harmful (shorter than the code's own lifetime, silently defeating replay detection with no
   startup error) or useless (longer, holding space for a code that can no longer be redeemed).

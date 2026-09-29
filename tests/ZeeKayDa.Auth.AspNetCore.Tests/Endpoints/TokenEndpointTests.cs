@@ -56,7 +56,7 @@ public sealed class TokenEndpointTests : IDisposable
 
     private readonly FakeTimeProvider _time = new(Now);
     private readonly CapturingLoggerProvider _logs = new();
-    private readonly RecordingRefreshTokenStore _refreshTokens = new();
+    private readonly RecordingRefreshTokenBackingStore _refreshTokens = new();
     private readonly SwitchableBackingStore _backingStore = new();
     private readonly EndpointHost _host;
 
@@ -93,7 +93,8 @@ public sealed class TokenEndpointTests : IDisposable
             builder.AddInMemoryInteractionStore(allowOutsideDevelopment: true);
             builder.AddAuthorizationCodeStore<SwitchableBackingStore>();
             builder.Services.AddSingleton<IAuthorizationCodeBackingStore>(_backingStore);
-            builder.Services.AddSingleton<IRefreshTokenStore>(_refreshTokens);
+            builder.AddRefreshTokenStore<RecordingRefreshTokenBackingStore>();
+            builder.Services.AddSingleton<IRefreshTokenBackingStore>(_refreshTokens);
         });
 
     /// <summary>A first-party public client: no consent, so sign-in ends the flow with a code.</summary>
@@ -157,7 +158,7 @@ public sealed class TokenEndpointTests : IDisposable
             ExpiresAt = Now + CodeLifetime,
         };
 
-        await host.Resolve<IAuthorizationCodeStore>().StoreAsync(code, entry, Cancellation);
+        await host.Resolve<AuthorizationCodeStore>().StoreAsync(code, entry, Cancellation);
         return code;
     }
 
@@ -1092,8 +1093,11 @@ public sealed class TokenEndpointTests : IDisposable
             throw new InvalidOperationException("The signing key ring is unavailable.");
     }
 
-    /// <summary>A refresh-token store that records which families were revoked; nothing else is reached in this flow.</summary>
-    private sealed class RecordingRefreshTokenStore : IRefreshTokenStore
+    /// <summary>
+    /// A backing store under the real refresh-token store that records which families were
+    /// revoked; nothing else is reached in this flow.
+    /// </summary>
+    private sealed class RecordingRefreshTokenBackingStore : IRefreshTokenBackingStore
     {
         private readonly List<string> _revoked = [];
 
@@ -1106,27 +1110,32 @@ public sealed class TokenEndpointTests : IDisposable
             get { lock (_revoked) return [.. _revoked]; }
         }
 
-        public Task StoreAsync(string tokenHandle, RefreshTokenEntry entry, CancellationToken cancellationToken) =>
+        // The revocation writes its family marker through here before revoking the rows.
+        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken) =>
+            ValueTask.FromResult<RefreshTokenGrant?>(null);
+
+        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken) =>
             throw new NotSupportedException("The code grant issues no refresh token yet.");
 
-        public ValueTask<RefreshTokenEntry?> FindAsync(string tokenHandle, CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public ValueTask<RefreshTokenConsumptionResult> TryConsumeAsync(string tokenHandle, string clientId, CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public Task RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
+        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
         {
             RevocationWasCancellable = cancellationToken.CanBeCanceled;
 
             if (FailRevocation)
-                throw new ZeeKayDaStoreException("The grant store is unreachable.");
+                throw new IOException("The grant store is unreachable.");
 
             lock (_revoked) _revoked.Add(familyId);
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         }
 
-        void IRefreshTokenStore.SealAsFrameworkOwnedProtocol() { }
+        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(false);
     }
 
     /// <summary>An in-memory backing store that can be made to fail every operation, as an unreachable cache would.</summary>

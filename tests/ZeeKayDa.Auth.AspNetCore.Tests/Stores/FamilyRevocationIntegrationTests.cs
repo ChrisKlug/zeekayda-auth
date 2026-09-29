@@ -35,8 +35,8 @@ public sealed class FamilyRevocationIntegrationTests
     {
         await using var provider = BuildServiceProvider();
 
-        var codeStore = provider.GetRequiredService<IAuthorizationCodeStore>();
-        var tokenStore = provider.GetRequiredService<IRefreshTokenStore>();
+        var codeStore = provider.GetRequiredService<AuthorizationCodeStore>();
+        var tokenStore = provider.GetRequiredService<RefreshTokenStore>();
 
         var code = Guid.NewGuid().ToString("N");
         var clientId = "test-client";
@@ -112,7 +112,7 @@ public sealed class FamilyRevocationIntegrationTests
     {
         await using var provider = BuildServiceProvider();
 
-        var tokenStore = provider.GetRequiredService<IRefreshTokenStore>();
+        var tokenStore = provider.GetRequiredService<RefreshTokenStore>();
 
         var clientId = "test-client";
         var familyId = Guid.NewGuid().ToString("N");

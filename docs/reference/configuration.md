@@ -663,6 +663,6 @@ They are visible in the startup output and host logs.
 - [Configure ZeeKayDa.Auth](../how-to/configure-zeekayda-auth.md) — step-by-step setup guide
 - [Configure discovery](../how-to/configure-discovery.md) — how to tune the discovery document
 - [Configure token stores](../how-to/configure-token-stores.md) — step-by-step token store setup
-- [Token stores](token-stores.md) — reference for `IAuthorizationCodeStore`, `IRefreshTokenStore`, lifetime options, and `ZeeKayDaStoreException`
+- [Token stores](token-stores.md) — reference for the authorization-code and refresh-token stores, their backing-store extension points, lifetime options, and `ZeeKayDaStoreException`
 - [Discovery endpoint](discovery-endpoint.md) — full contract for the discovery endpoint
 - [UserInfo endpoint](userinfo-endpoint.md) — full contract for the userinfo endpoint

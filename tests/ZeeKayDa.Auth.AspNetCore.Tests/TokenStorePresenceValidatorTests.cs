@@ -30,7 +30,7 @@ public sealed class TokenStorePresenceValidatorTests
     }
 
     [Fact]
-    public async Task VerifyAsync_adds_a_failure_when_IAuthorizationCodeStore_is_missing()
+    public async Task VerifyAsync_adds_a_failure_when_the_code_store_is_missing()
     {
         var services = new ServiceCollection();
         CreateBuilder(services)
@@ -45,11 +45,11 @@ public sealed class TokenStorePresenceValidatorTests
         context.Failures.Should().ContainSingle()
             .Which.Code.Should().Be("stores.authorization_code_store.missing");
 
-        context.Failures.Single().Message.Should().Contain("IAuthorizationCodeStore");
+        context.Failures.Single().Message.Should().Contain("authorization code store");
     }
 
     [Fact]
-    public async Task VerifyAsync_adds_a_failure_when_IRefreshTokenStore_is_missing()
+    public async Task VerifyAsync_adds_a_failure_when_the_refresh_token_store_is_missing()
     {
         var services = new ServiceCollection();
         CreateBuilder(services)
@@ -64,7 +64,7 @@ public sealed class TokenStorePresenceValidatorTests
         context.Failures.Should().ContainSingle()
             .Which.Code.Should().Be("stores.refresh_token_store.missing");
 
-        context.Failures.Single().Message.Should().Contain("IRefreshTokenStore");
+        context.Failures.Single().Message.Should().Contain("refresh token store");
     }
 
     [Fact]

@@ -7,7 +7,7 @@ nav_order: 6
 
 *Added in Unreleased.*
 
-ZeeKayDa.Auth requires an `IAuthorizationCodeStore`, an `IRefreshTokenStore` and an interaction store to be registered before the application starts. None is registered automatically; you must opt in using the builder methods on `ZeeKayDaAuthBuilder`. The two token stores are covered first; the interaction store, which holds authorization requests while the user signs in, has its own section [below](#the-interaction-store).
+ZeeKayDa.Auth requires an authorization code store, a refresh token store and an interaction store to be registered before the application starts. None is registered automatically; you must opt in using the builder methods on `ZeeKayDaAuthBuilder`. The two token stores are covered first; the interaction store, which holds authorization requests while the user signs in, has its own section [below](#the-interaction-store).
 
 For the full API reference, see [Token stores](../reference/token-stores.md).
 
@@ -65,7 +65,7 @@ At startup in `Development`, ZeeKayDa.Auth logs a `LogLevel.Information` message
 
 ## Option 2 — Custom stores (production)
 
-Implement the two backing stores, `IAuthorizationCodeBackingStore` and `IRefreshTokenGrantStore`, then register them using the typed builder methods. The framework's own stores run on top of them and keep the protocol (single use, replay detection, hashing and encryption):
+Implement the two backing stores, `IAuthorizationCodeBackingStore` and `IRefreshTokenBackingStore`, then register them using the typed builder methods. The framework's own stores run on top of them and keep the protocol (single use, replay detection, hashing and encryption):
 
 ```csharp
 builder.Services
@@ -74,7 +74,7 @@ builder.Services
         options.Issuer = "https://id.example.com";
     })
     .AddAuthorizationCodeStore<MyAtomicAuthorizationCodeStore>()
-    .AddRefreshTokenGrantStore<MyAtomicRefreshTokenStore>();
+    .AddRefreshTokenStore<MyAtomicRefreshTokenStore>();
 ```
 
 Your implementations receive their dependencies via constructor injection like any other singleton service.
@@ -97,7 +97,7 @@ builder.Services.AddStackExchangeRedisCache(o => o.Configuration = "...");
 builder.Services
     .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
     .AddAuthorizationCodeStore<MyAtomicAuthorizationCodeStore>()
-    .AddRefreshTokenGrantStore<MyAtomicRefreshTokenStore>()
+    .AddRefreshTokenStore<MyAtomicRefreshTokenStore>()
     .AddDistributedCacheInteractionStore();
 ```
 
@@ -118,7 +118,7 @@ builder.Services
         options.Issuer = "https://id.example.com";
     })
     .AddInMemoryAuthorizationCodeStore()  // dev/test; logs at startup
-    .AddRefreshTokenGrantStore<MyPersistentRefreshTokenStore>();
+    .AddRefreshTokenStore<MyPersistentRefreshTokenStore>();
 ```
 
 > ⚠️ **Warning:** `.AddInMemoryAuthorizationCodeStore()` still logs its startup message and is still subject to the `Development`-environment check. This pattern is useful during development while building a persistent refresh token store; it is not a production configuration.

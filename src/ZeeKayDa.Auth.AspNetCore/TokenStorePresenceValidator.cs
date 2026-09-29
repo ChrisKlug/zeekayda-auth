@@ -5,8 +5,8 @@ namespace ZeeKayDa.Auth.AspNetCore;
 
 /// <summary>
 /// Verifies at application startup that every store the framework needs has been registered in
-/// the dependency injection container: <see cref="IAuthorizationCodeStore"/>,
-/// <see cref="IRefreshTokenStore"/>, and the interaction store behind the authorize flow.
+/// the dependency injection container: <see cref="IAuthorizationCodeBackingStore"/>,
+/// <see cref="IRefreshTokenBackingStore"/>, and the interaction store behind the authorize flow.
 /// </summary>
 /// <remarks>
 /// Uses <see cref="IServiceProviderIsService"/> to inspect the DI container without resolving the
@@ -29,17 +29,17 @@ internal sealed class TokenStorePresenceValidator : IStartupVerifier
         if (isService is null)
             return ValueTask.CompletedTask;
 
-        if (!isService.IsService(typeof(IAuthorizationCodeStore)))
+        if (!isService.IsService(typeof(IAuthorizationCodeBackingStore)))
             context.AddFailure(
                 "stores.authorization_code_store.missing",
-                "No IAuthorizationCodeStore has been registered. " +
+                "No authorization code store has been registered. " +
                 "Call builder.AddInMemoryAuthorizationCodeStore() or builder.AddAuthorizationCodeStore<T>().");
 
-        if (!isService.IsService(typeof(IRefreshTokenStore)))
+        if (!isService.IsService(typeof(IRefreshTokenBackingStore)))
             context.AddFailure(
                 "stores.refresh_token_store.missing",
-                "No IRefreshTokenStore has been registered. " +
-                "Call builder.AddInMemoryRefreshTokenStore() or builder.AddRefreshTokenGrantStore<T>().");
+                "No refresh token store has been registered. " +
+                "Call builder.AddInMemoryRefreshTokenStore() or builder.AddRefreshTokenStore<T>().");
 
         if (!isService.IsService(typeof(IInteractionBackingStore)))
             context.AddFailure(

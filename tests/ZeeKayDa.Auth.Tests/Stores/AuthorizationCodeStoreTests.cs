@@ -594,7 +594,7 @@ public sealed class AuthorizationCodeStoreTests
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>The claim is an internal interface member, so it is reached through the interface, as the framework reaches it.</summary>
-    private static ValueTask<bool> ClaimAsync(IAuthorizationCodeStore store, string interactionId, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+    private static ValueTask<bool> ClaimAsync(AuthorizationCodeStore store, string interactionId, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
         store.TryClaimInteractionAsync(interactionId, expiresAt, cancellationToken);
 
     private sealed class RecordingBackingStore : IAuthorizationCodeBackingStore

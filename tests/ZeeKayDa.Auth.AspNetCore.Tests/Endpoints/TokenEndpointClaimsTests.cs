@@ -647,7 +647,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
             ExpiresAt = now.AddSeconds(60),
         };
 
-        await host.Resolve<IAuthorizationCodeStore>().StoreAsync(code, entry, Cancellation);
+        await host.Resolve<AuthorizationCodeStore>().StoreAsync(code, entry, Cancellation);
         return code;
     }
 
