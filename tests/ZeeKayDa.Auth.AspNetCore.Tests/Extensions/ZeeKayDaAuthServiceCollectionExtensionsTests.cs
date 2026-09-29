@@ -69,6 +69,34 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
             "the host's validator stays what a repository injects to validate on write");
     }
 
+    [Fact]
+    public async Task ValidatedClientResolver_also_runs_the_hosts_own_validator_on_what_it_serves()
+    {
+        var valid = ClientRegistration.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"]);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IClientRegistrationValidator, RejectEverythingValidator>();
+        services.AddSingleton<IClientRepository>(new SingleClientRepository(valid));
+        services.AddZeeKayDaAuth(options =>
+        {
+            options.Issuer = "https://auth.example.com";
+            options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+        });
+        using var provider = services.BuildServiceProvider();
+
+        var served = await provider.GetRequiredService<ValidatedClientResolver>()
+            .FindByClientIdAsync("public-client", TestContext.Current.CancellationToken);
+
+        served.Should().BeNull("a host's stricter rule applies to what is served, on top of the framework's");
+    }
+
+    private sealed class RejectEverythingValidator : IClientRegistrationValidator
+    {
+        public void Validate(IClientRegistration client) =>
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure("host.tenant_rule", "Redirect URIs must be on the tenant domain."));
+    }
+
     private sealed class AcceptEverythingValidator : IClientRegistrationValidator
     {
         public void Validate(IClientRegistration client) { }

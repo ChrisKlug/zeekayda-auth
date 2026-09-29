@@ -213,11 +213,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // registers it already; this covers minimal hosts, and is idempotent everywhere else.
         services.AddDataProtection();
 
-        // Always the framework's own validator, never a host's IClientRegistrationValidator: the
-        // none path relies on what it enforces (public <=> no credentials <=> methods { none }).
         services.TryAddSingleton(sp => new ValidatedClientResolver(
             sp.GetRequiredService<IClientRepository>(),
-            sp.GetRequiredService<ClientRegistrationValidator>(),
+            new FrameworkThenHostValidator(
+                sp.GetRequiredService<ClientRegistrationValidator>(),
+                sp.GetRequiredService<IClientRegistrationValidator>()),
             sp.GetRequiredService<ISanitizingLogger<ValidatedClientResolver>>()));
 
         // The only path from IScopeRepository to a scope definition, so a custom repository's
