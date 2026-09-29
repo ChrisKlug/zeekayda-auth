@@ -64,10 +64,9 @@ validation as `client.credentials.not_copied`; one still sharing a buffer is the
 **Verification is always fixed-time and never throws.** A hasher returns `false` on internal error
 rather than propagating, so an exception cannot become a timing or behavioural oracle. The shipped
 default is PBKDF2-HMAC-SHA256 with a 600,000-iteration floor (current OWASP guidance) and a
-2,000,000 cap, enforced both where a credential is created (an options validator fails startup,
-never clamps) and where a pre-hashed one is imported — a credential migrated from another IdP never
-passes through the options, so the import check is the only thing standing between a weak stored
-hash and production. At most two active shared secrets per client, to make rotation
+2,000,000 cap, enforced where a credential is created (startup fails, never clamps) and where a
+pre-hashed one is imported — a credential migrated from another IdP never passes through the
+options, so the import check is all that stands between a weak stored hash and production. At most two active shared secrets per client, to make rotation
 possible; authenticators try both before failing.
 
 **Failure paths are padded to a fixed two-credential budget; the success path is not.** Padding
