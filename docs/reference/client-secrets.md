@@ -262,9 +262,8 @@ visible in the startup output.
 
 | Rule | Condition that causes failure |
 |---|---|
-| At least one hasher required | `AddClientSecretHasher<T>()` was never called |
-| Exactly one default when multiple hashers registered | 2+ hashers registered and zero or 2+ have `isDefault: true` |
-| Iterations meet the minimum | `Pbkdf2ClientSecretHasherOptions.Iterations` is below 600,000 |
+| Exactly one default | 2+ registered hashers have `isDefault: true` |
+| Iterations within range | `Pbkdf2ClientSecretHasherOptions.Iterations` is below 600,000 or above 2,000,000 |
 
 ---
 

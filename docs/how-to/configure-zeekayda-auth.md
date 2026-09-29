@@ -164,19 +164,17 @@ A value below 600,000 or above 2,000,000 fails startup.
 
 ### Multiple hashers (credential rotation)
 
-When migrating from one algorithm to another, register both hashers and mark the new one as
-default. The composite verifier dispatches each credential to the correct hasher; `isDefault: true`
-controls which hasher creates new secrets:
+The composite verifier dispatches each stored credential to the hasher that handles it. The built-in PBKDF2 hasher is always registered and is the default, so it creates every new
+secret. To keep verifying secrets hashed with another algorithm, register that hasher alongside it:
 
 ```csharp
-auth.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);   // creates new secrets
-auth.AddClientSecretHasher<BcryptClientSecretHasher>(isDefault: false);   // verifies old secrets
+auth.AddClientSecretHasher<BcryptClientSecretHasher>();   // verifies old bcrypt secrets
 ```
 
-Startup validation fails at host startup if:
+A host cannot yet make its own hasher the default in place of PBKDF2.
 
-- No hashers are registered
-- Multiple hashers are registered but zero or more than one has `isDefault: true`
+Startup validation fails if more than one registered hasher has `isDefault: true`, or if the
+PBKDF2 iteration count is below 600,000 or above 2,000,000.
 
 For the full `Pbkdf2ClientSecretHasherOptions` property reference, see
 [Client secrets reference](../reference/client-secrets.md). To implement a custom hasher, see

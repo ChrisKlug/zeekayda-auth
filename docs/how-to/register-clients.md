@@ -201,21 +201,14 @@ full selection matrix is:
 | 2 or more | 1 | The flagged hasher is the default |
 | 2 or more | 2 or more | **Startup failure** — multiple defaults conflict |
 
-> ⚠️ **Warning:** The "2 or more hashers, 0 defaults" case is easy to miss. If you register a
-> second hasher during a credential rotation — for example to support both PBKDF2 and bcrypt —
-> without marking one as `isDefault: true`, the host will fail to start. The error is caught by
-> startup validation, not at runtime, so the failure is immediate and visible in the startup
-> output.
+The built-in PBKDF2 hasher is always registered and is the default, so it creates every new
+secret. To keep verifying secrets hashed with another algorithm, register that hasher alongside it:
 
 ```csharp
-// ✓ Two hashers, one explicit default — startup succeeds
-auth.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);   // creates new secrets
-auth.AddClientSecretHasher<BcryptClientSecretHasher>(isDefault: false);   // verifies old secrets
-
-// ✗ Two hashers, no explicit default — startup failure ("ambiguous default")
-auth.AddClientSecretHasher<Pbkdf2ClientSecretHasher>();
-auth.AddClientSecretHasher<BcryptClientSecretHasher>();
+auth.AddClientSecretHasher<BcryptClientSecretHasher>();   // verifies old bcrypt secrets
 ```
+
+A host cannot yet make its own hasher the default in place of PBKDF2.
 
 For the full `isDefault` rules and startup validation behaviour, see
 [Client secrets reference](../reference/client-secrets.md#isdefault-rules). To implement a
