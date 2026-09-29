@@ -53,7 +53,22 @@ internal sealed class Pbkdf2ClientSecretHasher(
 
     // The monitor, not IOptions<T>: ValidateOnStart validates through the monitor, so this reads
     // exactly the value startup validated, even when a host registers IOptions<T> directly.
-    private readonly int _iterations = options.CurrentValue.Iterations;
+    private readonly int _iterations = RequireWithinBounds(options.CurrentValue.Iterations);
+
+    /// <summary>
+    /// The last line behind <see cref="Pbkdf2ClientSecretHasherOptionsValidator"/>, for a host that
+    /// hands the hasher options the validator never saw. Out of range, the timing decoy would cost
+    /// nothing to verify and the failure-path padding would pad nothing.
+    /// </summary>
+    private static int RequireWithinBounds(int iterations) =>
+        iterations is >= MinIterations and <= MaxIterations
+            ? iterations
+            : throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                "configuration.pbkdf2.iterations_out_of_range",
+                $"The PBKDF2 hasher received {iterations:N0} iterations, outside " +
+                $"{MinIterations:N0}–{MaxIterations:N0}, without them passing options validation. " +
+                "Configure the count with ConfigurePbkdf2ClientSecretHasher or " +
+                "Configure<Pbkdf2ClientSecretHasherOptions>, not by registering the options object directly."));
 
     /// <inheritdoc/>
     protected override bool VerifyCore(IPbkdf2ClientSecret stored, ReadOnlySpan<char> presented)

@@ -16,15 +16,11 @@ see [Implement a custom extension point](../how-to/implement-custom-extension-po
 
 Configuration options for `Pbkdf2ClientSecretHasher`, the built-in PBKDF2-HMAC-SHA256 hasher.
 
-Configure via `IOptions<Pbkdf2ClientSecretHasherOptions>` at service registration time:
+`AddZeeKayDaAuth` always registers the hasher. Configure it on the builder, or bind
+`Pbkdf2ClientSecretHasherOptions` from configuration:
 
 ```csharp
-builder.Services.Configure<Pbkdf2ClientSecretHasherOptions>(options =>
-{
-    options.Iterations = 1_200_000;
-});
-
-auth.AddClientSecretHasher<Pbkdf2ClientSecretHasher>();
+auth.ConfigurePbkdf2ClientSecretHasher(options => options.Iterations = 1_200_000);
 ```
 
 ### `Iterations`

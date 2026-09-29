@@ -153,6 +153,30 @@ public sealed class Pbkdf2ClientSecretHasherTests
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning);
     }
 
+    // ── Constructor guard ────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(Pbkdf2ClientSecretHasher.MinIterations - 1)]
+    [InlineData(Pbkdf2ClientSecretHasher.MaxIterations + 1)]
+    public void Constructor_refuses_an_iteration_count_that_skipped_options_validation(int iterations)
+    {
+        var act = () => CreateHasher(iterations);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.pbkdf2.iterations_out_of_range");
+    }
+
+    [Theory]
+    [InlineData(Pbkdf2ClientSecretHasher.MinIterations)]
+    [InlineData(Pbkdf2ClientSecretHasher.MaxIterations)]
+    public void Constructor_accepts_the_bounds_themselves(int iterations)
+    {
+        var act = () => CreateHasher(iterations);
+
+        act.Should().NotThrow();
+    }
+
     // ── CanHandle ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

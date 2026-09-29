@@ -153,11 +153,11 @@ Client secrets are hashed before storage using a pluggable `IClientSecretHasher`
 
 ### Configure the iteration count
 
-The iteration count is an ordinary options class. Override the default of 600,000 with
-`Configure`, or bind it from configuration:
+Override the default iteration count of 600,000 on the builder, or bind
+`Pbkdf2ClientSecretHasherOptions` from configuration:
 
 ```csharp
-builder.Services.Configure<Pbkdf2ClientSecretHasherOptions>(options => options.Iterations = 1_200_000);
+auth.ConfigurePbkdf2ClientSecretHasher(options => options.Iterations = 1_200_000);
 ```
 
 A value below 600,000 or above 2,000,000 fails startup.

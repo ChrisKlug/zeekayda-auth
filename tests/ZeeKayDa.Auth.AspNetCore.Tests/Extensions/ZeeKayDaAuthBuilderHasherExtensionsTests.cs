@@ -76,8 +76,8 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
-        services.Configure<Pbkdf2ClientSecretHasherOptions>(options => options.Iterations = iterations);
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com")
+            .ConfigurePbkdf2ClientSecretHasher(options => options.Iterations = iterations);
         // Only so the options validators have nothing else to report.
         services.AddSingleton<IClientRepository, EmptyClientRepository>();
         return services.BuildServiceProvider();
@@ -124,6 +124,45 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
         var act = () => provider.GetServices<IClientSecretHasher>().ToList();
 
         act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Fact]
+    public void Pbkdf2_iteration_count_set_with_Configure_is_used_for_new_secrets()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+        services.Configure<Pbkdf2ClientSecretHasherOptions>(options => options.Iterations = 1_200_000);
+        using var provider = services.BuildServiceProvider();
+
+        var created = provider.GetRequiredService<IClientSecretFactory>().Create("a-client-secret");
+
+        created.Should().BeOfType<Pbkdf2ClientSecret>().Which.Iterations.Should().Be(1_200_000);
+    }
+
+    [Fact]
+    public void Pbkdf2_hasher_refuses_an_out_of_range_count_from_a_host_registered_options_monitor()
+    {
+        // A host-registered IOptionsMonitor<T> bypasses the validator; the hasher's own guard stops it.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IOptionsMonitor<Pbkdf2ClientSecretHasherOptions>>(
+            new FixedMonitor(new Pbkdf2ClientSecretHasherOptions { Iterations = 2_000_001 }));
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+        using var provider = services.BuildServiceProvider();
+
+        var act = () => provider.GetServices<IClientSecretHasher>().ToList();
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.pbkdf2.iterations_out_of_range");
+    }
+
+    private sealed class FixedMonitor(Pbkdf2ClientSecretHasherOptions value) : IOptionsMonitor<Pbkdf2ClientSecretHasherOptions>
+    {
+        public Pbkdf2ClientSecretHasherOptions CurrentValue => value;
+        public Pbkdf2ClientSecretHasherOptions Get(string? name) => value;
+        public IDisposable? OnChange(Action<Pbkdf2ClientSecretHasherOptions, string?> listener) => null;
     }
 
     [Fact]
