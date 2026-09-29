@@ -33,15 +33,13 @@ internal sealed class TokenStorePresenceValidator : IStartupVerifier
             context.AddFailure(
                 "stores.authorization_code_store.missing",
                 "No IAuthorizationCodeStore has been registered. " +
-                "Call builder.AddInMemoryAuthorizationCodeStore(), builder.AddAuthorizationCodeStore<T>(), " +
-                "or builder.AddDistributedCacheAuthorizationCodeStore().");
+                "Call builder.AddInMemoryAuthorizationCodeStore() or builder.AddAuthorizationCodeStore<T>().");
 
         if (!isService.IsService(typeof(IRefreshTokenStore)))
             context.AddFailure(
                 "stores.refresh_token_store.missing",
                 "No IRefreshTokenStore has been registered. " +
-                "Call builder.AddInMemoryRefreshTokenStore(), builder.AddRefreshTokenGrantStore<T>(), " +
-                "or builder.AddDistributedCacheRefreshTokenStore().");
+                "Call builder.AddInMemoryRefreshTokenStore() or builder.AddRefreshTokenGrantStore<T>().");
 
         if (!isService.IsService(typeof(IInteractionBackingStore)))
             context.AddFailure(

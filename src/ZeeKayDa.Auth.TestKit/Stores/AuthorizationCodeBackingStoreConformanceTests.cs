@@ -21,13 +21,6 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
     protected abstract IAuthorizationCodeBackingStore CreateStore();
 
     /// <summary>
-    /// Override to <see langword="false"/> only for a non-atomic dev/test backend (e.g. the
-    /// first-party <c>DistributedCacheAuthorizationCodeBackingStore</c>). Production backends
-    /// MUST support atomic insert-if-absent.
-    /// </summary>
-    protected virtual bool SupportsAtomicInsert => true;
-
-    /// <summary>
     /// Override to provide a store whose underlying transport always throws
     /// <paramref name="fault"/>, proving fault propagation is not swallowed. Return
     /// <see langword="null"/> if the backend has no injectable failure point — the
@@ -40,9 +33,6 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
     [Fact]
     public async Task TryInsertAsync_exactly_one_of_many_concurrent_inserts_to_the_same_key_succeeds()
     {
-        if (!SupportsAtomicInsert)
-            return;
-
         var store = CreateStore();
         var key = NewKey();
         const int concurrency = 50;

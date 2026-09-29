@@ -2,9 +2,7 @@
 abstract ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.CreateStore() -> ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore!
 abstract ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.CreateStore() -> ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore!
 virtual ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.CreateFaultInjectedStore(System.Exception! fault) -> ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore?
-virtual ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.SupportsAtomicInsert.get -> bool
 virtual ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.CreateFaultInjectedStore(System.Exception! fault) -> ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore?
-virtual ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.SupportsAtomicConsume.get -> bool
 virtual ZeeKayDa.Auth.TestKit.Stores.RefreshTokenGrantStoreConformanceTests.SupportsMidRevokeInsertCompleteness.get -> bool
 ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests
 ZeeKayDa.Auth.TestKit.Stores.AuthorizationCodeBackingStoreConformanceTests.AuthorizationCodeBackingStoreConformanceTests() -> void
