@@ -10,9 +10,9 @@ one structured row: non-secret queryable columns on the outside, one Data-Protec
 backend stores verbatim and never interprets. Revocation by family (RFC 9700 §4.13) and by subject
 are predicates over live rows — `UPDATE … WHERE family_id = @f` — which no opaque blob can express.
 This is the model Duende IdentityServer and OpenIddict use. Going queryable *removed* machinery: the
-per-family metadata record, the enumeration-free revocation marker and the problem of sizing its TTL
-from a bare `familyId`, the four-namespace key layout, the second write per store, and one of the two
-decryption catch sites all disappeared with the `WHERE` they were working around.
+four-namespace key layout, the second write per store, and one of the two decryption catch sites
+disappeared with the `WHERE` they were working around. One per-family record stays — the record of a
+revoked family, below — because a family can be revoked before it has a row to mark.
 
 **The queryable columns are honest cleartext, including the subject.** None of them is a bearer
 credential — the handle only ever reaches the store as a hash — so a persistence breach discloses
