@@ -7,7 +7,7 @@ nav_order: 6
 
 *Added in Unreleased.*
 
-ZeeKayDa.Auth requires an authorization code store, a refresh token store and an interaction store to be registered before the application starts. None is registered automatically; you must opt in using the builder methods on `ZeeKayDaAuthBuilder`. The two token stores are covered first; the interaction store, which holds authorization requests while the user signs in, has its own section [below](#the-interaction-store).
+ZeeKayDa.Auth requires an authorization code store, a refresh token store and an interaction store to be registered before the application starts. `AddZeeKayDaAuth` registers the framework side of both token stores itself; what you choose is where each of the three stores keeps its data, using the builder methods on `ZeeKayDaAuthBuilder`. The two token stores are covered first; the interaction store, which holds authorization requests while the user signs in, has its own section [below](#the-interaction-store).
 
 For the full API reference, see [Token stores](../reference/token-stores.md).
 

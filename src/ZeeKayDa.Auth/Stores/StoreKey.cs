@@ -32,8 +32,7 @@ public readonly struct StoreKey : IEquatable<StoreKey>
     /// <exception cref="InvalidOperationException">
     /// Thrown for <see langword="default"/>(<see cref="StoreKey"/>), which no framework path produces.
     /// </exception>
-    public override string ToString() => _value ?? throw new InvalidOperationException(
-        $"{nameof(StoreKey)} was default-initialized; only the framework creates store keys.");
+    public override string ToString() => Value;
 
     /// <inheritdoc/>
     public bool Equals(StoreKey other) => string.Equals(_value, other._value, StringComparison.Ordinal);
@@ -42,7 +41,13 @@ public readonly struct StoreKey : IEquatable<StoreKey>
     public override bool Equals(object? obj) => obj is StoreKey other && Equals(other);
 
     /// <inheritdoc/>
-    public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(_value);
+    /// <exception cref="InvalidOperationException">
+    /// Thrown for <see langword="default"/>(<see cref="StoreKey"/>), as <see cref="ToString"/> is.
+    /// </exception>
+    public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Value);
+
+    private string Value => _value ?? throw new InvalidOperationException(
+        $"{nameof(StoreKey)} was default-initialized; only the framework creates store keys.");
 
     /// <summary>Equality operator; see <see cref="Equals(StoreKey)"/>.</summary>
     public static bool operator ==(StoreKey left, StoreKey right) => left.Equals(right);

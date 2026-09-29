@@ -74,10 +74,12 @@ fresh 256-bit value through `StoreKeyGenerator` before every redemption and neve
 `Guid.NewGuid()` is not a CSPRNG and is not used. The cleartext-`FamilyId` sign-off is predicated on one code mapping to one family, so
 reusing an id across codes extends a per-code correlation surface into a chain nobody assessed.
 
-**No store is auto-registered, and absence fails startup.** A startup validator fails the host when
+**The framework stores are always registered; no backing store is, and absence fails startup.**
+`AddZeeKayDaAuth` registers both token-store coordinators. A startup validator fails the host when
 any of the three backing stores is unregistered, and every registration
 method throws `InvalidOperationException` on a second registration for the same interface rather
-than letting an earlier call silently win. In-memory registrations log at `Information` in `Development`; outside it
+than letting an earlier call silently win; a registration made straight on the service collection is
+not policed. In-memory registrations log at `Information` in `Development`; outside it
 they fail startup unless the call passed `allowOutsideDevelopment: true`, which downgrades the
 failure to a `Critical` warning on every startup. That flag is a parameter on the one registration
 method that needs it, never a bindable option — it is meaningless without the call it qualifies.

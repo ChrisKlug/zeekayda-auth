@@ -108,4 +108,12 @@ public sealed class StoreKeyTests
 
         act.Should().Throw<InvalidOperationException>();
     }
+
+    [Fact]
+    public void GetHashCode_of_a_default_StoreKey_throws_the_same_exception_as_ToString()
+    {
+        var act = () => default(StoreKey).GetHashCode();
+
+        act.Should().Throw<InvalidOperationException>();
+    }
 }

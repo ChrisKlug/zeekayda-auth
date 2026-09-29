@@ -13,7 +13,7 @@ ZeeKayDa.Auth requires three stores to be registered before the application star
 - The refresh token store — persists long-lived refresh tokens, enforces rotation and reuse detection per [RFC 9700 §4.13](https://www.rfc-editor.org/rfc/rfc9700#section-4.13), and supports family-level revocation.
 - The interaction store — holds each in-flight authorization request between `/connect/authorize` and the response to the client, one entry per request, so any number can be in flight in one browser. It has no public interface: register the per-process implementation or the one over your `IDistributedCache`.
 
-None is registered automatically by `AddZeeKayDaAuth`. You must choose an implementation for each using the builder methods below, or register a custom type for the token stores. If any store is missing at startup, the application fails with `ZeeKayDaConfigurationException` naming what is missing.
+`AddZeeKayDaAuth` registers the framework side of both token stores — single-use redemption, rotation and reuse detection — but none of the three storage implementations. You must choose one for each using the builder methods below, or register a custom backing store for the token stores. If any store is missing at startup, the application fails with `ZeeKayDaConfigurationException` naming what is missing.
 
 For step-by-step registration instructions, see [Configure token stores](../how-to/configure-token-stores.md).
 
