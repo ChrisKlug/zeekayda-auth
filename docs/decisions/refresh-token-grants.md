@@ -98,9 +98,8 @@ only "remember to" is two indexes — whose absence is a pure performance regres
 answer. Cosmos is correctness-safe with a partition-key choice that affects only cost. A backend
 without `WHERE` must hand-maintain family and subject index sets as a non-transactional dual write
 that drifts on a partial-write crash, leaving a live grant revocation will never see — silent, and
-invisible to single-token happy-path tests. The shipped distributed-cache grant store does exactly
-that and is development and test only; the framework-owned adapter that would own index maintenance
-correctly, once, is unbuilt.
+invisible to single-token happy-path tests. No grant store over such a backend ships; the
+framework-owned adapter that would own index maintenance correctly, once, is unbuilt.
 
 ## Tried, didn't work
 
