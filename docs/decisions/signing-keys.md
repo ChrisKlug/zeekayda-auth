@@ -65,8 +65,8 @@ and derived `kid`s all run before any private material is loaded, throwing `ZeeK
 A provider never repeats these locally — duplicated validation is how two layers drift.
 
 **Development signing keys are one line, and hard-gated on environment.** Persistence is in the method
-name, never a `null` argument. `AllowedEnvironments` is set only in the registration callback, never
-bound, so `appsettings.json` cannot widen it; `Production` is always rejected, a non-`Development`
+name, never a `null` argument. `AllowedEnvironments` is set in the registration callback and the
+framework never binds it, so `appsettings.json` alone cannot widen it; `Production` is always rejected, a non-`Development`
 entry logs `Critical` on every start, and an unknown environment fails closed.
 Persisted keys are plain PEM with permissions set atomically at creation (`0700`/`0600` POSIX, a restrictive
 non-inherited ACL on Windows), and loading fails closed on a broader mode, a foreign-owned directory, or a

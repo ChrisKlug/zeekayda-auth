@@ -29,14 +29,15 @@ public sealed class AllowedDevEnvironmentsValidatorTests
     }
 
     [Fact]
-    public void Validate_succeeds_for_empty_allowed_list()
+    public void Validate_fails_for_an_empty_allowed_list()
     {
         var options = new DevelopmentSigningOptions
         {
             AllowedEnvironments = [],
         };
         var result = Sut.Validate(null, options);
-        result.Succeeded.Should().BeTrue();
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("at least one environment");
     }
 
     // ── Production entries are rejected ──────────────────────────────────────────────────────────

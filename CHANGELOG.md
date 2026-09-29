@@ -565,6 +565,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Development signing is renamed to match the other providers, with one options type** (#825).
+  `AddInMemoryDevelopmentJwtSigningKeys()` is now `AddInMemoryDevelopmentSigning()`, and
+  `AddPersistedDevelopmentJwtSigningKeys()` is now `AddPersistedDevelopmentSigning()`. Both
+  callbacks take `DevelopmentSigningOptions` (was `DevelopmentSigningKeyOptions`), whose only public
+  member is `AllowedEnvironments` (was `AllowedDevelopmentJwtSigningKeysEnvironments`).
+  `InMemoryDevelopmentSigningKeyOptions` is gone. The persist directory is set only through
+  `AddPersistedDevelopmentSigning`'s parameter.
+
 - **`IScopeRepository` has a documented contract, and the framework enforces it on every read**
   (#759). `GetScopesAsync` now states what an implementation must return: a non-null collection
   with no null element, every scope named and no two names alike, every claim list non-null with
@@ -614,16 +622,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   party on Microsoft's `AddOpenIdConnect` must set `GetClaimsFromUserInfoEndpoint = true` to see
   them, which the `WebClient` sample already does. `claims_supported` in the discovery document is
   unchanged: it is the union across both destinations.
-
-### Changed
-
-- **Development signing is renamed to match the other providers, with one options type** (#825).
-  `AddInMemoryDevelopmentJwtSigningKeys()` is now `AddInMemoryDevelopmentSigning()`, and
-  `AddPersistedDevelopmentJwtSigningKeys()` is now `AddPersistedDevelopmentSigning()`. Both
-  callbacks take `DevelopmentSigningOptions` (was `DevelopmentSigningKeyOptions`), whose only public
-  member is `AllowedEnvironments` (was `AllowedDevelopmentJwtSigningKeysEnvironments`).
-  `InMemoryDevelopmentSigningKeyOptions` is gone. The persist directory is set only through
-  `AddPersistedDevelopmentSigning`'s parameter.
 
 ### Fixed
 

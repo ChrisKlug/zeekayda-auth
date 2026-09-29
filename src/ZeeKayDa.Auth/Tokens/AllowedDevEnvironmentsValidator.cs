@@ -16,6 +16,13 @@ internal sealed class AllowedDevEnvironmentsValidator : IValidateOptions<Develop
         var list = options.AllowedEnvironments;
         var errors = new List<string>();
 
+        if (list.Count == 0)
+        {
+            errors.Add(
+                "DevelopmentSigningOptions.AllowedEnvironments must name at least one environment. " +
+                "An empty list refuses every environment, Development included.");
+        }
+
         foreach (var entry in list)
         {
             if (string.IsNullOrWhiteSpace(entry))

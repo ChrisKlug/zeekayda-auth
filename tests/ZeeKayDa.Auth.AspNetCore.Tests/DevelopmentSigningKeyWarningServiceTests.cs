@@ -112,6 +112,19 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     }
 
     [Fact]
+    public async Task VerifyAsync_throws_with_unknown_environment_code_when_the_host_environment_name_is_null()
+    {
+        var sut = BuildSut(environmentName: null!);
+        var context = new StartupVerificationContext();
+
+        var ex = await sut.Awaiting(s => s.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken).AsTask())
+            .Should().ThrowAsync<ZeeKayDaConfigurationException>();
+
+        ex.Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be(DevelopmentSigningKeyGate.UnknownEnvironmentFailureCode);
+    }
+
+    [Fact]
     public async Task VerifyAsync_throws_with_production_environment_code_when_environment_is_Production()
     {
         var sut = BuildSut(Environments.Production);
