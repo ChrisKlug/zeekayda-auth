@@ -355,7 +355,7 @@ public sealed class DatabaseClientRepository : IClientRepository
 
 ### Validate before persisting
 
-Custom repositories MUST call `IClientRegistrationValidator.Validate` before writing a new or
+A custom repository should call `IClientRegistrationValidator.Validate` before writing a new or
 updated client registration to the store. The validator enforces the same startup-time rules that
 apply to in-memory clients — required fields, allowed grant types, consistent redirect URI
 configuration, and so on. Skipping validation does not let a malformed registration reach the
