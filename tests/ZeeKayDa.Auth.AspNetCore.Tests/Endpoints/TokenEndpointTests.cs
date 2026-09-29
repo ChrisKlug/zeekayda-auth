@@ -91,9 +91,7 @@ public sealed class TokenEndpointTests : IDisposable
             // The interaction store is required by startup for a host serving the code grant, even
             // though these tests never drive an interaction: a code arrives here already seeded.
             builder.AddInMemoryInteractionStore(allowOutsideDevelopment: true);
-            builder.AddAuthorizationCodeStore<SwitchableBackingStore>();
             builder.Services.AddSingleton<IAuthorizationCodeBackingStore>(_backingStore);
-            builder.AddRefreshTokenStore<RecordingRefreshTokenBackingStore>();
             builder.Services.AddSingleton<IRefreshTokenBackingStore>(_refreshTokens);
         });
 
