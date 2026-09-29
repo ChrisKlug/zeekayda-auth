@@ -1846,3 +1846,20 @@ agent, one round plus fix-diff verification. No High or Critical survived review
   not have.
 - **Open (maintainer deferred):** nothing in CI enforces the "never `ex.Message` in a failure" rule
   — this entry's first bullet is five violations of a rule already in the register. Issue #766.
+
+## 2026-09-30 — development signing fails closed on an unknown environment (#825, code frozen at `cf6a682`)
+
+Reverses §1.8's accepted residual. Copilot code and security lenses and the security agent, one
+round plus fix-diff verification; no High or Critical survived review.
+
+- A source with a null environment name used to be ungated. It now refuses with
+  `signing.dev_keys.unknown_environment`, in the source and in the startup verifier alike. Closed —
+  `ReadAsync_refuses_when_the_environment_is_unknown`,
+  `VerifyAsync_throws_with_unknown_environment_code_when_the_host_environment_name_is_null`.
+- §1.8's proof that the configure callback cannot reach `PersistToDirectory` was renamed with the
+  API; both registration methods now take one type whose only public member is `AllowedEnvironments`
+  — `The_configure_callback_can_set_only_AllowedEnvironments`.
+- The list is copied on assignment, cannot be edited through a cast, and must name at least one
+  environment — `AllowedEnvironments_is_a_copy_the_assigning_caller_cannot_change_afterwards`,
+  `AllowedEnvironments_cannot_be_changed_through_a_cast_to_a_mutable_type`,
+  `Validate_fails_for_an_empty_allowed_list`.
