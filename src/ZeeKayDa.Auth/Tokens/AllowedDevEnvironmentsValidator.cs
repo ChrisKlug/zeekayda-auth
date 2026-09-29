@@ -3,17 +3,17 @@ using Microsoft.Extensions.Options;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Validates that <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>
+/// Validates that <see cref="DevelopmentSigningOptions.AllowedEnvironments"/>
 /// does not contain <c>"Production"</c> or null/empty entries.
-/// Registered only when <c>AddInMemoryDevelopmentJwtSigningKeys()</c> or
-/// <c>AddPersistedDevelopmentJwtSigningKeys()</c> is called.
+/// Registered only when <c>AddInMemoryDevelopmentSigning()</c> or
+/// <c>AddPersistedDevelopmentSigning()</c> is called.
 /// </summary>
-internal sealed class AllowedDevEnvironmentsValidator : IValidateOptions<DevelopmentSigningKeyOptions>
+internal sealed class AllowedDevEnvironmentsValidator : IValidateOptions<DevelopmentSigningOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, DevelopmentSigningKeyOptions options)
+    public ValidateOptionsResult Validate(string? name, DevelopmentSigningOptions options)
     {
-        var list = options.AllowedDevelopmentJwtSigningKeysEnvironments;
+        var list = options.AllowedEnvironments;
         var errors = new List<string>();
 
         foreach (var entry in list)
@@ -21,7 +21,7 @@ internal sealed class AllowedDevEnvironmentsValidator : IValidateOptions<Develop
             if (string.IsNullOrWhiteSpace(entry))
             {
                 errors.Add(
-                    "DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments " +
+                    "DevelopmentSigningOptions.AllowedEnvironments " +
                     "must not contain null or empty entries.");
                 continue;
             }
@@ -29,7 +29,7 @@ internal sealed class AllowedDevEnvironmentsValidator : IValidateOptions<Develop
             if (string.Equals(entry, "Production", StringComparison.OrdinalIgnoreCase))
             {
                 errors.Add(
-                    "DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments " +
+                    "DevelopmentSigningOptions.AllowedEnvironments " +
                     "must not contain 'Production'. Development signing keys are never permitted in " +
                     "Production regardless of this list. Listing 'Production' here is a misconfiguration.");
             }

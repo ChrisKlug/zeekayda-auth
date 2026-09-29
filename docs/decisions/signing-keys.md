@@ -64,10 +64,10 @@ pairing, RSA modulus size (2048-bit minimum), NIST-curve-only EC keys, and rejec
 and derived `kid`s all run before any private material is loaded, throwing `ZeeKayDaConfigurationException`.
 A provider never repeats these locally — duplicated validation is how two layers drift.
 
-**Development signing keys are one line, and hard-gated on environment.** The persistence choice lives in
-the method name rather than a `null` argument. The allowed-environment list is reachable only through the
-registration callback, never bindable configuration, so a committed `appsettings.json` cannot widen it;
-`Production` is rejected unconditionally, and any non-`Development` entry logs `Critical` on every startup.
+**Development signing keys are one line, and hard-gated on environment.** Persistence is in the method
+name, never a `null` argument. `AllowedEnvironments` is set only in the registration callback, never
+bound, so `appsettings.json` cannot widen it; `Production` is always rejected, a non-`Development`
+entry logs `Critical` on every start, and an unknown environment fails closed.
 Persisted keys are plain PEM with permissions set atomically at creation (`0700`/`0600` POSIX, a restrictive
 non-inherited ACL on Windows), and loading fails closed on a broader mode, a foreign-owned directory, or a
 symlink anywhere in the path — except a root-owned symlinked ancestor, which no unprivileged attacker can

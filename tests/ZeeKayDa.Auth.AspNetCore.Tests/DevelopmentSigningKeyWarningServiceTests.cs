@@ -27,9 +27,9 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
         string environmentName,
         IReadOnlyList<string>? allowedEnvironments = null)
     {
-        var devOptions = new DevelopmentSigningKeyOptions();
+        var devOptions = new DevelopmentSigningOptions();
         if (allowedEnvironments is not null)
-            devOptions.AllowedDevelopmentJwtSigningKeysEnvironments = allowedEnvironments;
+            devOptions.AllowedEnvironments = allowedEnvironments;
 
         return new DevelopmentSigningKeyWarningService(
             new FakeHostEnvironment(environmentName),
@@ -43,7 +43,7 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     {
         var act = () => new DevelopmentSigningKeyWarningService(
             null!,
-            Options.Create(new DevelopmentSigningKeyOptions()));
+            Options.Create(new DevelopmentSigningOptions()));
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("environment");
     }
@@ -103,7 +103,7 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     [Fact]
     public async Task VerifyAsync_throws_ZeeKayDaConfigurationException_in_Production_environment()
     {
-        // Production is always rejected, regardless of AllowedDevelopmentJwtSigningKeysEnvironments.
+        // Production is always rejected, regardless of AllowedEnvironments.
         var sut = BuildSut(Environments.Production);
         var context = new StartupVerificationContext();
 
@@ -127,7 +127,7 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
     [Fact]
     public async Task VerifyAsync_throws_in_Production_even_when_Production_is_in_allowed_list()
     {
-        // The escape hatch must not apply to Production. AllowedDevelopmentJwtSigningKeysEnvironments
+        // The escape hatch must not apply to Production. AllowedEnvironments
         // cannot override the Production guard.
         var sut = BuildSut(Environments.Production,
             allowedEnvironments: ["Development", Environments.Production]);

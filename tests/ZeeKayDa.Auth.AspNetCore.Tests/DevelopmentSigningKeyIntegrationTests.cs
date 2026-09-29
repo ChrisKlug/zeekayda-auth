@@ -52,10 +52,10 @@ public sealed class DevelopmentSigningKeyIntegrationTests
                     // Integration test hosts run as "Production" by default; allow in-memory stores.
                     .AddInMemoryStores(allowOutsideDevelopment: true)
                     .AddTestClaimsProvider()
-                    .AddInMemoryDevelopmentJwtSigningKeys(o =>
+                    .AddInMemoryDevelopmentSigning(o =>
                     {
                         if (allowedEnvironments is not null)
-                            o.AllowedDevelopmentJwtSigningKeysEnvironments = allowedEnvironments;
+                            o.AllowedEnvironments = allowedEnvironments;
                     });
             });
 
