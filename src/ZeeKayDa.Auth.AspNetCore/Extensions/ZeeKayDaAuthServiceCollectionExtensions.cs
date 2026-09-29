@@ -129,7 +129,12 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         AddAuthorizationRequestServices(services);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddSecretsHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
+        builder.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<Pbkdf2ClientSecretHasherOptions>,
+                Pbkdf2ClientSecretHasherOptionsValidator>());
+        services.AddOptions<Pbkdf2ClientSecretHasherOptions>().ValidateOnStart();
         return builder;
     }
 

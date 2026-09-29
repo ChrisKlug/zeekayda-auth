@@ -13,37 +13,6 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ZeeKayDaAuthBuilderHasherExtensions
 {
     /// <summary>
-    /// Registers the built-in PBKDF2-HMAC-SHA256 hasher as the sole client secret hasher.
-    /// Equivalent to calling <see cref="AddSecretsHasher{THasher}"/> with
-    /// <see cref="Pbkdf2ClientSecretHasher"/> as the type parameter.
-    /// </summary>
-    /// <param name="builder">The ZeeKayDa.Auth builder.</param>
-    /// <param name="configure">
-    /// Optional delegate to configure <see cref="Pbkdf2ClientSecretHasherOptions"/>. When
-    /// <see langword="null"/>, the default iteration count of 600,000 is used.
-    /// </param>
-    /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
-    /// </exception>
-    public static ZeeKayDaAuthBuilder AddPbkdf2SecretsHasher(
-        this ZeeKayDaAuthBuilder builder,
-        Action<Pbkdf2ClientSecretHasherOptions>? configure = null)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-
-        if (builder.Services.Any(sd =>
-                sd.ServiceType == typeof(IClientSecretHasher) &&
-                sd.ImplementationType == typeof(Pbkdf2ClientSecretHasher)))
-            return builder;
-
-        if (configure is not null)
-            builder.Services.Configure(configure);
-
-        return builder.AddSecretsHasher<Pbkdf2ClientSecretHasher>();
-    }
-
-    /// <summary>
     /// Registers a client secret hasher with ZeeKayDa.Auth.
     /// </summary>
     /// <typeparam name="THasher">
@@ -61,7 +30,7 @@ public static class ZeeKayDaAuthBuilderHasherExtensions
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddSecretsHasher<THasher>(
+    public static ZeeKayDaAuthBuilder AddClientSecretHasher<THasher>(
         this ZeeKayDaAuthBuilder builder,
         bool isDefault = false)
         where THasher : class, IClientSecretHasher
@@ -89,6 +58,31 @@ public static class ZeeKayDaAuthBuilderHasherExtensions
         builder.Services.AddOptions<ClientSecretHasherRegistrationOptions>()
             .ValidateOnStart();
 
+        return builder;
+    }
+
+    /// <summary>
+    /// Configures the built-in PBKDF2-HMAC-SHA256 client secret hasher, which
+    /// <c>AddZeeKayDaAuth</c> always registers.
+    /// </summary>
+    /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <param name="configure">Sets <see cref="Pbkdf2ClientSecretHasherOptions"/>.</param>
+    /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
+    /// <remarks>
+    /// The iteration count must be between 600,000 and 2,000,000; startup fails otherwise. The
+    /// options can equally be bound from configuration.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="builder"/> or <paramref name="configure"/> is <see langword="null"/>.
+    /// </exception>
+    public static ZeeKayDaAuthBuilder ConfigurePbkdf2ClientSecretHasher(
+        this ZeeKayDaAuthBuilder builder,
+        Action<Pbkdf2ClientSecretHasherOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        builder.Services.Configure(configure);
         return builder;
     }
 }

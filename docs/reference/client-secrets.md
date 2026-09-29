@@ -16,15 +16,11 @@ see [Implement a custom extension point](../how-to/implement-custom-extension-po
 
 Configuration options for `Pbkdf2ClientSecretHasher`, the built-in PBKDF2-HMAC-SHA256 hasher.
 
-Configure via `IOptions<Pbkdf2ClientSecretHasherOptions>` at service registration time:
+`AddZeeKayDaAuth` always registers the hasher. Configure it on the builder, or bind
+`Pbkdf2ClientSecretHasherOptions` from configuration:
 
 ```csharp
-builder.Services.Configure<Pbkdf2ClientSecretHasherOptions>(options =>
-{
-    options.Iterations = 1_200_000;
-});
-
-auth.AddSecretsHasher<Pbkdf2ClientSecretHasher>();
+auth.ConfigurePbkdf2ClientSecretHasher(options => options.Iterations = 1_200_000);
 ```
 
 ### `Iterations`
@@ -46,14 +42,10 @@ created secrets — existing secrets continue to verify correctly at their origi
 > the timing of real verifications against old credentials. For this reason, iteration count
 > increases should be paired with a credential rotation step.
 
-The minimum accepted value is **600,000**. This matches the OWASP recommendation for
-PBKDF2-HMAC-SHA256 as of 2025. Configuring a lower value causes the host to fail at startup with
-an `ArgumentOutOfRangeException`.
-
-Values above **2,000,000** are clamped to 2,000,000 and a `LogWarning` is emitted at startup.
-At this level a single verification takes roughly one second on typical server hardware, making
-the token endpoint impractical under any real load. The clamp lets the server start safely
-while signalling that reconfiguration is needed.
+The accepted range is **600,000 to 2,000,000**; a value outside it fails startup with an
+`OptionsValidationException`. The minimum matches the OWASP recommendation for PBKDF2-HMAC-SHA256
+as of 2025. At the maximum a single verification takes roughly one second on typical server
+hardware, making the token endpoint impractical under any real load.
 
 ```csharp
 // ✓ Valid: at the minimum
@@ -62,10 +54,10 @@ options.Iterations = 600_000;
 // ✓ Valid: stronger than the default
 options.Iterations = 1_200_000;
 
-// ✗ Invalid: below the minimum — causes ArgumentOutOfRangeException at startup
+// ✗ Invalid: below the minimum — fails startup
 options.Iterations = 100_000;
 
-// ⚠ Clamped: above the maximum cap — emits LogWarning, clamped to 2,000,000
+// ✗ Invalid: above the maximum — fails startup
 options.Iterations = 20_000_000;
 ```
 
@@ -108,7 +100,7 @@ fallback string allocation.
 
 `IClientSecretFactory` is the injectable seam for hashing new client secrets at runtime. It
 delegates to the configured default `IClientSecretHasher` — whichever hasher was marked as
-default via `AddSecretsHasher<T>(isDefault: true)` — so you never need to hard-code an
+default via `AddClientSecretHasher<T>(isDefault: true)` — so you never need to hard-code an
 algorithm in your repository or admin layer.
 
 ```csharp
@@ -119,7 +111,7 @@ public interface IClientSecretFactory
 ```
 
 `IClientSecretFactory` is registered automatically by `AddZeeKayDaAuth` as a singleton via
-`TryAddSingleton`. You do not need to call `AddSecretsHasher` before injecting it —
+`TryAddSingleton`. You do not need to call `AddClientSecretHasher` before injecting it —
 registration order does not matter as long as both calls occur before the host is built.
 
 ### Who should use this interface
@@ -235,12 +227,12 @@ verifies the same presented secret.
 
 ---
 
-## `AddSecretsHasher<THasher>` builder extension
+## `AddClientSecretHasher<THasher>` builder extension
 
 Registers a client secret hasher with the ZeeKayDa.Auth DI container.
 
 ```csharp
-public static ZeeKayDaAuthBuilder AddSecretsHasher<THasher>(
+public static ZeeKayDaAuthBuilder AddClientSecretHasher<THasher>(
     this ZeeKayDaAuthBuilder builder,
     bool isDefault = false)
     where THasher : class, IClientSecretHasher
@@ -270,9 +262,8 @@ visible in the startup output.
 
 | Rule | Condition that causes failure |
 |---|---|
-| At least one hasher required | `AddSecretsHasher<T>()` was never called |
-| Exactly one default when multiple hashers registered | 2+ hashers registered and zero or 2+ have `isDefault: true` |
-| Iterations meet the minimum | `Pbkdf2ClientSecretHasherOptions.Iterations` is below 600,000 |
+| Exactly one default | 2+ hashers are registered and zero or 2+ have `isDefault: true` |
+| Iterations within range | `Pbkdf2ClientSecretHasherOptions.Iterations` is below 600,000 or above 2,000,000 |
 
 ---
 
