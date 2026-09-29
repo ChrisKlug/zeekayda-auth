@@ -84,9 +84,9 @@ unknown; one options type with `AllowedEnvironments`; names that match the other
 native ancestor-ownership walk is dropped for development keys and its interop moves to the
 FileSystem provider, which protects production keys with it.
 
-**TestKit.** The builder and the ring become internal once provider authors get a TestKit helper
-proving a source produces keys the framework accepts; the TestKit itself is reviewed with the
-extension surface.
+**Provider tests.** The builder and the ring become internal; our own provider test projects reach
+them through `InternalsVisibleTo`. A TestKit helper for third-party provider authors waits until
+after M1.
 
 ## What was rejected
 

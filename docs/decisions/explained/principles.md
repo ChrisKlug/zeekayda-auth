@@ -49,5 +49,10 @@ register entry, it moves there and this line points at it.
   goes, even if it gave a nicer error message.
 - **Protection is proportional to what it protects.** Measure it against what the key or data is
   worth and what peer frameworks do; stricter than needed is a cost, not a free extra.
-- **Public only so our own tests can reach it is not a reason.** Provider authors get a TestKit
-  helper; the type stays internal.
+- **Public only so our own tests can reach it is not a reason.** Our test projects use
+  `InternalsVisibleTo`; the type stays internal.
+- **An interface is a seam someone else implements.** A single internal implementation is a class,
+  unless it stands in front of an external system that tests cannot reach otherwise; tests fake the
+  seam one layer down.
+- **Third-party tooling waits for the milestone that needs it.** Hardening our own code comes first;
+  polishing what only outside authors use is moving sideways until they exist.
