@@ -1572,25 +1572,25 @@ Critical. Five Lows fixed in the same PR, code-lens-verified; the rest recorded 
 
 - A family with no rows is revoked and its first row is dead on arrival, at consume and at
   introspection, across both stores. Closed —
-  `RevokeFamilyAsync_on_zero_row_family_inserts_a_sentinel_that_IsFamilyRevokedAsync_reports`,
+  `A_family_revoked_with_no_rows_reads_as_revoked` [renamed by #828 from RevokeFamilyAsync_on_zero_row_family_inserts_a_sentinel_that_IsFamilyRevokedAsync_reports],
   `TryConsumeAsync_returns_Revoked_for_grant_inserted_after_zero_row_family_was_revoked`,
   `Code_replay_triggers_family_revocation_spanning_both_stores`,
   `A_replayed_code_revokes_the_family_its_first_exchange_started`.
 - The sentinel outlives any row born within the skew tolerance of the revoke: family lifetime from
   revoke time plus the skew tolerance, saturating when unbounded. Closed —
-  `The_sentinel_row_expires_with_the_family_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime`,
-  `The_sentinel_row_never_expires_when_the_family_lifetime_is_unbounded`.
+  `The_family_is_remembered_for_its_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime` [renamed by #828 from The_sentinel_row_expires_with_the_family_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime],
+  `The_family_is_remembered_forever_when_the_family_lifetime_is_unbounded` [renamed by #828 from The_sentinel_row_never_expires_when_the_family_lifetime_is_unbounded].
 - One row per family under a deterministic key and a per-family reserved subject; never redeemable.
-  Closed — `RevokeFamilyAsync_called_twice_on_the_same_family_only_ever_inserts_the_sentinel_once`,
-  `Sentinels_of_two_families_carry_distinct_reserved_subjects`,
+  Closed — `RevokeFamilyAsync_never_writes_a_row_to_the_backing_store` [replaced by #828, which removed the sentinel, RevokeFamilyAsync_called_twice_on_the_same_family_only_ever_inserts_the_sentinel_once],
+  Sentinels_of_two_families_carry_distinct_reserved_subjects [deleted by #828 with the sentinel],
   `TryMarkConsumedAsync_returns_false_for_a_Revoked_grant_and_does_not_change_its_status`.
 - The sentinel is written before the bulk mark, the confirming read is fail-closed, and a fault still
   refuses the replay with nothing in the logs. Closed —
-  `A_bulk_revoke_fault_still_leaves_the_family_revoked_because_the_sentinel_is_written_first`,
-  `RevokeFamilyAsync_rethrows_when_the_sentinel_insert_fails_and_no_row_is_actually_persisted`,
-  `RevokeFamilyAsync_rethrows_when_the_sentinel_row_was_written_but_the_gate_does_not_read_the_family_as_revoked`,
-  `RevokeFamilyAsync_propagates_a_fault_from_the_gate_read_rather_than_treating_the_insert_as_benign`,
-  `RevokeFamilyAsync_propagates_a_fault_from_the_confirming_read_rather_than_treating_the_insert_as_benign`,
+  A_bulk_revoke_fault_still_leaves_the_family_revoked_because_the_sentinel_is_written_first [deleted by #828: the backing contract now requires the record to be written before, or with, the marking; no test],
+  RevokeFamilyAsync_rethrows_when_the_sentinel_insert_fails_and_no_row_is_actually_persisted [deleted by #828 with the sentinel],
+  RevokeFamilyAsync_rethrows_when_the_sentinel_row_was_written_but_the_gate_does_not_read_the_family_as_revoked [deleted by #828 with the sentinel],
+  RevokeFamilyAsync_propagates_a_fault_from_the_gate_read_rather_than_treating_the_insert_as_benign [deleted by #828 with the sentinel],
+  RevokeFamilyAsync_propagates_a_fault_from_the_confirming_read_rather_than_treating_the_insert_as_benign [deleted by #828 with the sentinel],
   `A_replay_whose_family_revocation_fails_is_still_refused_and_the_failure_is_logged`.
 - Residuals, accepted: a row born later than the skew tolerance on an evicting backend at the end of
   the family's absolute life outlives the sentinel; a confirming read that itself faults drops the

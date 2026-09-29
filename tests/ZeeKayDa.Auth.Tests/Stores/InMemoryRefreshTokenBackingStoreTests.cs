@@ -158,7 +158,7 @@ public sealed class InMemoryRefreshTokenBackingStoreTests
         await store.InsertAsync(g2, CancellationToken.None);
         await store.InsertAsync(g3, CancellationToken.None);
 
-        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
 
         (await store.FindByHandleAsync(g1.HandleHash, CancellationToken.None))!.Status.Should().Be(RefreshGrantStatus.Revoked);
         (await store.FindByHandleAsync(g2.HandleHash, CancellationToken.None))!.Status.Should().Be(RefreshGrantStatus.Revoked);
@@ -176,7 +176,7 @@ public sealed class InMemoryRefreshTokenBackingStoreTests
         await store.InsertAsync(grant, CancellationToken.None);
         await store.TryMarkConsumedAsync(grant.HandleHash, CancellationToken.None);
 
-        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
 
         var result = await store.FindByHandleAsync(grant.HandleHash, CancellationToken.None);
         result!.Status.Should().Be(RefreshGrantStatus.Revoked,
@@ -188,7 +188,7 @@ public sealed class InMemoryRefreshTokenBackingStoreTests
     {
         var store = new InMemoryRefreshTokenBackingStore();
 
-        var act = async () => await store.RevokeFamilyAsync("completely-unknown-family", CancellationToken.None);
+        var act = async () => await store.RevokeFamilyAsync("completely-unknown-family", FarFuture, CancellationToken.None);
 
         await act.Should().NotThrowAsync();
     }
@@ -200,8 +200,8 @@ public sealed class InMemoryRefreshTokenBackingStoreTests
         const string familyId = "idempotent-family";
         await store.InsertAsync(BuildGrant(familyId: familyId), CancellationToken.None);
 
-        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
-        var act = async () => await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
+        var act = async () => await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
 
         await act.Should().NotThrowAsync();
     }
@@ -240,13 +240,13 @@ public sealed class InMemoryRefreshTokenBackingStoreTests
     // ── IsFamilyRevokedAsync (issue #386) ────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task IsFamilyRevokedAsync_returns_true_when_a_grant_in_the_family_is_Revoked()
+    public async Task IsFamilyRevokedAsync_returns_true_once_the_family_is_revoked()
     {
         var store = new InMemoryRefreshTokenBackingStore();
         const string familyId = "family-revoked";
         var grant = BuildGrant(familyId: familyId);
         await store.InsertAsync(grant, CancellationToken.None);
-        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
 
         var result = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
 
@@ -261,7 +261,7 @@ public sealed class InMemoryRefreshTokenBackingStoreTests
         const string familyId = "family-post-revoke-insert";
         var rt0 = BuildGrant(familyId: familyId);
         await store.InsertAsync(rt0, CancellationToken.None);
-        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
 
         var rt1 = BuildGrant(familyId: familyId);
         await store.InsertAsync(rt1, CancellationToken.None);
@@ -296,16 +296,29 @@ public sealed class InMemoryRefreshTokenBackingStoreTests
     }
 
     [Fact]
-    public async Task IsFamilyRevokedAsync_ignores_Revoked_grants_in_a_different_family()
+    public async Task IsFamilyRevokedAsync_ignores_the_revocation_of_a_different_family()
     {
         var store = new InMemoryRefreshTokenBackingStore();
-        await store.InsertAsync(BuildGrant(familyId: "other-family", status: RefreshGrantStatus.Revoked), CancellationToken.None);
+        await store.RevokeFamilyAsync("other-family", FarFuture, CancellationToken.None);
         const string familyId = "family-not-revoked";
         await store.InsertAsync(BuildGrant(familyId: familyId), CancellationToken.None);
 
         var result = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
 
         result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsFamilyRevokedAsync_answers_from_the_revocation_record_not_from_revoked_rows()
+    {
+        var store = new InMemoryRefreshTokenBackingStore();
+        const string familyId = "family-rows-revoked-by-subject";
+        await store.InsertAsync(BuildGrant(familyId: familyId, subject: "user-gone"), CancellationToken.None);
+        await store.RevokeBySubjectAsync("user-gone", CancellationToken.None);
+
+        var result = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
+
+        result.Should().BeFalse(because: "only RevokeFamilyAsync records a family as revoked");
     }
 
     [Fact]
@@ -335,7 +348,7 @@ public sealed class InMemoryRefreshTokenBackingStoreTests
     {
         var store = new InMemoryRefreshTokenBackingStore();
 
-        var act = async () => await store.RevokeFamilyAsync(null!, CancellationToken.None);
+        var act = async () => await store.RevokeFamilyAsync(null!, FarFuture, CancellationToken.None);
 
         await act.Should().ThrowAsync<ArgumentNullException>();
     }

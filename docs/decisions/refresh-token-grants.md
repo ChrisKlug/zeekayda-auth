@@ -57,22 +57,16 @@ passes the gate microseconds before a concurrent revoke commits mints one succes
 at its own next consume — inherent to any detect-and-revoke design, and it self-heals in one
 rotation.
 
-**Revoking a family always writes a revocation sentinel.** A family can hold zero rows at the moment
-it is revoked — an authorization code replayed before its first refresh token has committed — and a
-bulk update then matches nothing and leaves no trace for the gate to find. So the coordinator
-unconditionally inserts one durable revoked row for the family, keyed deterministically on the family
-id, with a reserved per-family subject, a reserved client value and an empty payload, so it can never
-be redeemed and a subject index never gathers every family's sentinel under one key. The key is
-deterministic so repeated revokes converge on one row instead of growing unboundedly. Its expiry is
-the family's absolute lifetime from revoke time plus the clock-skew tolerance, so a first row born a
-moment after the revoke never outlives it, and it **must not** be bounded by the much shorter
-authorization-code lifetime, or the sentinel is cleaned up while a genuine successor is still live
-and the family silently un-revokes. The insert is insert-if-absent for that one
-reserved key: because every native fault is flattened into one exception type, exception shape alone
-cannot distinguish a benign self-collision from a transport failure, so on any failure the
-coordinator re-reads the sentinel and asks the gate whether the family now reads as revoked, and
-propagates the original exception unless both confirm — row presence alone would pass off a backend
-whose index write failed. All of this lives in the coordinator — no backend and no interface member changed.
+**Revoking a family is a record in the backing store, not a row.** A family can hold zero rows at the
+moment it is revoked — an authorization code replayed before its first refresh token has committed —
+so marking rows alone leaves no trace for the gate to find. `RevokeFamilyAsync` therefore records the
+family as revoked and then marks its existing rows, and `IsFamilyRevokedAsync` answers from that
+record. The coordinator passes `rememberUntil`: the family's absolute lifetime from revoke time plus
+the clock-skew tolerance, so a first row born a moment after the revoke never outlives it. It
+**must not** be bounded by the much shorter authorization-code lifetime, or the record is dropped while
+a genuine successor is still live and the family silently un-revokes. The store may forget the record
+after `rememberUntil`, which bounds its growth; a repeat revoke never shortens it. A backing store
+never holds a row that is not a grant.
 
 **Consumption does not self-revoke on reuse detection.** It reports the reuse and its family id, and
 the caller revokes. Queryability makes self-revoke technically free now, and it is still refused for
@@ -112,6 +106,9 @@ framework-owned adapter that would own index maintenance correctly, once, is unb
   two-pepper scheme only defers the same failure at real cost. Both reference implementations store
   the subject as a plain column and hash only the handle. Anyone proposing to hash or pepper the
   subject should stop here.
+- **A revocation sentinel row.** Revoking a family inserted a fake revoked grant with reserved values,
+  so every backing store held rows that were not grants, and a repeat revoke needed a
+  read-back to tell its own duplicate from a fault. A record of the revoked family replaced it.
 - **Redis as a first-class, hand-rolled target.** The earlier key-value model sanctioned any KV store,
   Redis included. Reversed with the queryable model: every Redis trap — missing index, non-atomic
   dual write, cross-slot cluster atomicity, partial-write drift — compiles, passes a happy-path test,

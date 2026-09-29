@@ -17,14 +17,6 @@ public interface IRefreshTokenBackingStore
     /// <summary>
     /// Insert a new grant. The handle is 256-bit random, so a primary-key collision is a
     /// genuine duplicate/bug — let the unique-constraint violation propagate (the coordinator wraps it).
-    /// The one exception is the family revocation sentinel, whose key is deterministic in the
-    /// family id: a repeated revoke collides on purpose, and the coordinator confirms that collision
-    /// by reading the row back, so propagate it exactly the same way.
-    /// A grant may arrive born <see cref="RefreshGrantStatus.Revoked"/> with an empty
-    /// <see cref="RefreshTokenGrant.ProtectedPayload"/>: that is the family revocation sentinel, and
-    /// it MUST be stored verbatim. A backend that normalises the status to
-    /// <see cref="RefreshGrantStatus.Active"/> or requires a non-empty payload breaks revocation of a
-    /// family that has no rows yet.
     /// </summary>
     /// <param name="grant">The grant to insert.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
@@ -61,16 +53,27 @@ public interface IRefreshTokenBackingStore
     ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Set <see cref="RefreshGrantStatus.Revoked"/> for EVERY grant whose <see cref="RefreshTokenGrant.FamilyId"/>
-    /// equals <paramref name="familyId"/> AND that already exists at the moment this call evaluates
-    /// its predicate. Idempotent. Correctness bar is COMPLETENESS over EXISTING rows — every grant
-    /// already in the family, including one inserted concurrently with (but not strictly after) this
-    /// call, MUST end up revoked (RFC 9700 §4.13). Mark, do not delete: a still-live token in the
-    /// family must remain findable and read as revoked.
+    /// Record that the family <paramref name="familyId"/> is revoked, then set
+    /// <see cref="RefreshGrantStatus.Revoked"/> for EVERY grant in it that already exists at the
+    /// moment this call evaluates its predicate. Idempotent. Correctness bar is COMPLETENESS over
+    /// EXISTING rows — every grant already in the family, including one inserted concurrently with
+    /// (but not strictly after) this call, MUST end up revoked (RFC 9700 §4.13). Mark, do not
+    /// delete: a still-live token in the family must remain findable and read as revoked.
     /// </summary>
     /// <param name="familyId">The family identifier to revoke.</param>
+    /// <param name="rememberUntil">
+    /// How long the record must be kept: <see cref="IsFamilyRevokedAsync"/> MUST answer
+    /// <see langword="true"/> for this family until then, and MAY forget it afterwards, when no
+    /// grant of the family can still be live. A repeat call never shortens it.
+    /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken);
+    /// <remarks>
+    /// The record is not a grant: never write it as a row that <see cref="FindByHandleAsync"/> or a
+    /// subject query can return. Write it before, or atomically with, the marking, so a fault while
+    /// marking still leaves the family revoked. The family may have no rows yet — an authorization
+    /// code replayed before its first refresh token is stored revokes an empty family.
+    /// </remarks>
+    ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken);
 
     /// <summary>
     /// Set <see cref="RefreshGrantStatus.Revoked"/> for EVERY grant whose <see cref="RefreshTokenGrant.Subject"/>
@@ -86,11 +89,11 @@ public interface IRefreshTokenBackingStore
     ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Return <see langword="true"/> iff ANY grant whose <see cref="RefreshTokenGrant.FamilyId"/>
-    /// equals <paramref name="familyId"/> currently reads <see cref="RefreshGrantStatus.Revoked"/>.
-    /// Read-only, no side effects. The coordinator calls this before
-    /// honouring a grant's own <see cref="RefreshGrantStatus.Active"/> status, so a successor
-    /// inserted after <see cref="RevokeFamilyAsync"/> is caught at consume time.
+    /// Return <see langword="true"/> iff <see cref="RevokeFamilyAsync"/> has recorded
+    /// <paramref name="familyId"/> as revoked and the record is still kept. Read-only, no side
+    /// effects. The coordinator calls this before honouring a grant's own
+    /// <see cref="RefreshGrantStatus.Active"/> status, so a successor inserted after
+    /// <see cref="RevokeFamilyAsync"/> is caught at consume time.
     /// </summary>
     /// <param name="familyId">The family identifier to check.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
@@ -99,7 +102,7 @@ public interface IRefreshTokenBackingStore
     /// just-committed revoke fails open. MUST throw on fault; you MUST NOT catch-and-return
     /// <see langword="false"/> (a fault masked as <see langword="false"/> reads as "not revoked" and
     /// defeats the gate). Same fail-closed tier as <see cref="FindByHandleAsync"/>.
-    /// SQL: <c>SELECT EXISTS(SELECT 1 FROM grants WHERE family_id=@f AND status=Revoked)</c>.
+    /// SQL: <c>SELECT EXISTS(SELECT 1 FROM revoked_families WHERE family_id=@f)</c>.
     /// </remarks>
     ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken);
 }

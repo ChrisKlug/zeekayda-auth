@@ -149,10 +149,10 @@ internal sealed class AuthorizationCodeStore
             return new AuthorizationCodeRedemptionResult.ClientMismatch();
 
         var tombstoneExpiresAt = entry.ExpiresAt + _clockSkewTolerance;
-        var envelopeBytes = ProtectTombstone(familyId);
+        var tombstoneBytes = SerializeTombstone(familyId);
 
         var wonRace = await Guarded(
-            () => _backingStore.TryInsertAsync(tombstoneKey, envelopeBytes, tombstoneExpiresAt, cancellationToken),
+            () => _backingStore.TryInsertAsync(tombstoneKey, tombstoneBytes, tombstoneExpiresAt, cancellationToken),
             "write the authorization code redemption tombstone").ConfigureAwait(false);
 
         if (!wonRace)
@@ -175,12 +175,12 @@ internal sealed class AuthorizationCodeStore
         if (tombstoneBytes is null)
             return new AuthorizationCodeRedemptionResult.NotFound();
 
-        AuthorizationCodeTombstoneEnvelope envelope;
+        AuthorizationCodeTombstone tombstone;
         try
         {
-            envelope = JsonSerializer.Deserialize(
+            tombstone = JsonSerializer.Deserialize(
                 tombstoneBytes.Value.Span,
-                StoreJsonSerializerContext.Default.AuthorizationCodeTombstoneEnvelope)!;
+                StoreJsonSerializerContext.Default.AuthorizationCodeTombstone)!;
         }
         catch (JsonException ex)
         {
@@ -188,19 +188,7 @@ internal sealed class AuthorizationCodeStore
                 "Failed to parse the authorization code redemption tombstone.", ex);
         }
 
-        // FamilyId is plaintext and recoverable independently of ProtectedSecret. Attempting the
-        // unprotect here (and discarding the result either way) pins the two-catch-site asymmetry:
-        // a rotated Data Protection key must not degrade this outcome to NotFound.
-        try
-        {
-            _protector.Unprotect(envelope.ProtectedSecret);
-        }
-        catch (Exception ex) when (ex is CryptographicException or ArgumentNullException)
-        {
-            // Deliberately ignored — see remarks above.
-        }
-
-        return new AuthorizationCodeRedemptionResult.AlreadyRedeemed { FamilyId = envelope.FamilyId };
+        return new AuthorizationCodeRedemptionResult.AlreadyRedeemed { FamilyId = tombstone.FamilyId };
     }
 
     private byte[] ProtectEntry(AuthorizationCodeEntry entry)
@@ -222,19 +210,10 @@ internal sealed class AuthorizationCodeStore
         return JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.AuthorizationCodeEntry)!;
     }
 
-    private byte[] ProtectTombstone(string familyId)
-    {
-        try
-        {
-            var protectedSecret = _protector.Protect([]);
-            var envelope = new AuthorizationCodeTombstoneEnvelope { FamilyId = familyId, ProtectedSecret = protectedSecret };
-            return JsonSerializer.SerializeToUtf8Bytes(envelope, StoreJsonSerializerContext.Default.AuthorizationCodeTombstoneEnvelope);
-        }
-        catch (Exception ex) when (ex is not ZeeKayDaStoreException)
-        {
-            throw new ZeeKayDaStoreException("Failed to protect the authorization code redemption tombstone.", ex);
-        }
-    }
+    private static byte[] SerializeTombstone(string familyId) =>
+        JsonSerializer.SerializeToUtf8Bytes(
+            new AuthorizationCodeTombstone { FamilyId = familyId },
+            StoreJsonSerializerContext.Default.AuthorizationCodeTombstone);
 
     private static StoreKey BuildEntryKey(string code) => StoreKey.Hash("code", "e", code);
 
