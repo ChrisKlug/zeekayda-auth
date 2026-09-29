@@ -71,4 +71,18 @@ public sealed class DevelopmentSigningOptionsTests
 
         act.Should().Throw<ArgumentNullException>();
     }
+
+    [Fact]
+    public void AllowedEnvironments_cannot_be_changed_through_a_cast_to_a_mutable_type()
+    {
+        var options = new DevelopmentSigningOptions { AllowedEnvironments = new List<string> { "Development" } };
+
+        options.AllowedEnvironments.Should().NotBeAssignableTo<string[]>()
+            .And.NotBeAssignableTo<List<string>>();
+        var asList = (IList<string>)options.AllowedEnvironments;
+        var act = () => asList[0] = "Production";
+
+        act.Should().Throw<NotSupportedException>();
+        options.AllowedEnvironments.Should().Equal("Development");
+    }
 }
