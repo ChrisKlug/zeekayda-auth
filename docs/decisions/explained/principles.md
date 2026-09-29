@@ -40,3 +40,14 @@ register entry, it moves there and this line points at it.
   shape both already know (a stored secret is a self-describing string, not a type per algorithm).
 - **Persistence never shapes the public API.** Stores map to the domain types; a contract is not
   made mutable or split into interfaces so an ORM can implement it.
+- **An extension reports facts; the framework owns the policy.** A signing source lists its keys
+  and their dates; which key signs, and when, is decided once in core for every provider, so an
+  author never has to understand the policy to write one.
+- **Find the one rule that covers every case before adding a special case.** A first deployment, a
+  rotation and an emergency are one signing rule, not a rule plus an exemption plus an escape hatch.
+- **One proof per invariant.** When a stronger check already proves something, the weaker copy
+  goes, even if it gave a nicer error message.
+- **Protection is proportional to what it protects.** Measure it against what the key or data is
+  worth and what peer frameworks do; stricter than needed is a cost, not a free extra.
+- **Public only so our own tests can reach it is not a reason.** Provider authors get a TestKit
+  helper; the type stays internal.
