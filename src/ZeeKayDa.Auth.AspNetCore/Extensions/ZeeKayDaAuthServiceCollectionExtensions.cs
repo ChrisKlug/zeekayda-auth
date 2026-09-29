@@ -73,6 +73,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
                 AuthorizationServerOptionsValidator>());
 
         services.AddZeeKayDaAuthCore();
+        services.AddDefaultTokenIssuers();
 
         services.TryAddSingleton<IScopeRepository>(new InMemoryScopeRepository(StandardScopes.All));
         services.TryAddSingleton<IDiscoveryDocumentProvider, DiscoveryDocumentProvider>();
