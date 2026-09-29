@@ -960,27 +960,34 @@ construction-time resources they acquire. Neither the premise nor the residual n
 
 - **The same-type repeat is no longer legal anywhere.** Every second registration throws, whichever
   overload either call used and whether or not the type matches — proven by
-  `AddZeeKayDaSigningKeySource_called_twice_with_the_same_source_throws_InvalidOperationException`.
+  `AddSigningKeySource_called_twice_with_the_same_source_throws_InvalidOperationException`
+  [renamed by #824 from AddZeeKayDaSigningKeySource_called_twice_with_the_same_source_throws_InvalidOperationException].
 - **A composed same-type set no longer resolves.** `ValidateRegistrationSet` throws
   `signing.source_registration_mismatch` on more than one marker — proven by
-  `Resolving_ISigningKeyRing_throws_when_composed_from_two_libraries_that_registered_the_same_source`.
+  Resolving_ISigningKeyRing_throws_when_composed_from_two_libraries_that_registered_the_same_source
+  [reversed by #824: the resolve-time check against merged collections was removed and a second
+  registration is caught only on the same collection; not security-reviewed].
   The host now fails startup rather than silently initializing the last-wins ring.
 - **Nothing is constructed before that failure**, so there are no N−1 uninitialised sources to open —
-  proven by `Resolving_ISigningKeyRing_for_a_failing_composed_registration_never_constructs_or_invokes_any_source`.
-  The **residual is closed**, not merely narrowed.
+  proven by Resolving_ISigningKeyRing_for_a_failing_composed_registration_never_constructs_or_invokes_any_source
+  [deleted by #824 with that check].
+  The **residual is closed**, not merely narrowed [reopened by #824: merged collections resolve
+  last-wins again, and enumerating them constructs every source].
 
 **Two facts from that paragraph survive and are NOT deleted.** (a) Composition still produces N
 `ISigningKeyRing` descriptors — `TryAddSingleton` still deduplicates only within one collection —
 but every one of them now throws on resolve, so the count is inert rather than a working last-wins
-selection. (b) A manual `ISigningKeyRing` registered *after* `AddZeeKayDaSigningKeySource` has run is
+selection. [no longer true after #824, which removed the throw]. (b) A manual `ISigningKeyRing` registered *after* `AddZeeKayDaSigningKeySource` has run is
 still neither observed nor rejected, and still wins last-wins resolution — proven by
-`A_manual_ISigningKeyRing_registration_added_after_AddZeeKayDaSigningKeySource_wins_and_is_not_rejected`.
+`A_manual_ISigningKeyRing_registration_added_after_AddSigningKeySource_wins_and_is_not_rejected`
+[renamed by #824 from A_manual_ISigningKeyRing_registration_added_after_AddZeeKayDaSigningKeySource_wins_and_is_not_rejected].
 That residual stands unchanged, as does the `CHANGELOG.md`/`signing-keys.md` correction made for it.
 
 The enumerating path the original residual was written about is covered directly: three composed
 same-type collections still yield three `ISigningKeyRing` descriptors, and
 `GetServices<ISigningKeyRing>()` throws having constructed zero sources — proven by
-`Enumerating_ISigningKeyRing_across_composed_registrations_throws_and_constructs_no_source`.
+Enumerating_ISigningKeyRing_across_composed_registrations_throws_and_constructs_no_source
+[deleted by #824 with that check].
 
 ### 6.3 The #511 entry's advertised-vs-producible residual is closed by #515
 
