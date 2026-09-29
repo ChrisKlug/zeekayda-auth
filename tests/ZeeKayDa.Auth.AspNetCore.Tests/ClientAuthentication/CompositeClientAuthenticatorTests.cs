@@ -249,6 +249,40 @@ public sealed class CompositeClientAuthenticatorTests
         return (composite, hasher);
     }
 
+    /// <summary>
+    /// A composite whose resolver runs the real registration validator. The <c>none</c> path trusts
+    /// <see cref="IClientMetadata.IsPublic"/> because the resolver guarantees public ⇔ no credentials
+    /// ⇔ methods exactly <c>{ "none" }</c>; these tests prove that guarantee end to end.
+    /// </summary>
+    private static (CompositeClientAuthenticator Composite, CapturingLogger<ValidatedClientResolver> ResolverLogger)
+        CreateValidatingComposite(IClientRegistration client, FakeHasher hasher)
+    {
+        var compositeHasher = new CompositeClientSecretHasher(
+            [hasher],
+            Options.Create(new ClientSecretHasherRegistrationOptions()));
+        var serverOptions = CreateServerOptions(
+            TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None);
+        serverOptions.Value.Issuer = "https://auth.example.com";
+        var resolverLogger = new CapturingLogger<ValidatedClientResolver>();
+        var resolver = new ValidatedClientResolver(
+            new FakeClientRepository(client),
+            new ClientRegistrationValidator(
+                serverOptions,
+                compositeHasher,
+                NullSanitizingLogger<ClientRegistrationValidator>(),
+                keyRing: null),
+            resolverLogger);
+        var composite = new CompositeClientAuthenticator(
+            [new ClientSecretAuthenticator(compositeHasher)],
+            resolver,
+            serverOptions,
+            compositeHasher,
+            NullSanitizingLogger<CompositeClientAuthenticator>());
+        return (composite, resolverLogger);
+    }
+
+    private const string TrinityViolation = "inconsistent public/confidential configuration";
+
     private static IOptions<AuthorizationServerOptions> CreateServerOptions(
         params string[] allowedMethods)
     {
@@ -446,10 +480,7 @@ public sealed class CompositeClientAuthenticatorTests
                 [TokenEndpointAuthMethods.None, TokenEndpointAuthMethods.ClientSecretBasic],
                 reportedCount: 1),
         };
-        var (composite, _) = CreateCompositeWithHasher(
-            miscountingClient,
-            hasher,
-            allowedMethods: [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None]);
+        var (composite, resolverLogger) = CreateValidatingComposite(miscountingClient, hasher);
 
         var httpContext = new DefaultHttpContext(); // no auth material
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -461,6 +492,7 @@ public sealed class CompositeClientAuthenticatorTests
 
         result.Authenticated.Should().BeFalse();
         hasher.CallCount.Should().Be(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
+        resolverLogger.Entries.Should().ContainSingle(e => e.Message.Contains(TrinityViolation));
     }
 
     [Fact]
@@ -1089,9 +1121,6 @@ public sealed class CompositeClientAuthenticatorTests
     public async Task AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_corrupt_public_client_with_credentials()
     {
         var hasher = new FakeHasher();
-        var compositeHasher = new CompositeClientSecretHasher(
-            [hasher],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
 
         var corruptClient = new MinimalClient
         {
@@ -1102,19 +1131,17 @@ public sealed class CompositeClientAuthenticatorTests
                 new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.None },
         };
 
-        var composite = new CompositeClientAuthenticator(
-            [new ClientSecretAuthenticator(compositeHasher)],
-            Resolver(corruptClient),
-            CreateServerOptions(TokenEndpointAuthMethods.None),
-            compositeHasher,
-            NullSanitizingLogger<CompositeClientAuthenticator>());
+        var (composite, resolverLogger) = CreateValidatingComposite(corruptClient, hasher);
 
         var httpContext = new DefaultHttpContext();
 
         var result = await composite.AuthenticateAsync("corrupt-client", httpContext, TestContext.Current.CancellationToken);
 
         result.Authenticated.Should().BeFalse();
-        hasher.CallCount.Should().Be(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
+        // The validator's empty-secret probe also calls the hasher, with an empty value; count only
+        // derivations, which is what the padding performs.
+        hasher.DerivationCount.Should().Be(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
+        resolverLogger.Entries.Should().ContainSingle(e => e.Message.Contains(TrinityViolation));
     }
 
     // ── Security: none fallback guard — corrupt client with extra auth methods pads timing ────────
@@ -1123,9 +1150,6 @@ public sealed class CompositeClientAuthenticatorTests
     public async Task AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_corrupt_public_client_with_extra_auth_methods()
     {
         var hasher = new FakeHasher();
-        var compositeHasher = new CompositeClientSecretHasher(
-            [hasher],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
 
         var corruptClient = new MinimalClient
         {
@@ -1140,12 +1164,7 @@ public sealed class CompositeClientAuthenticatorTests
                 },
         };
 
-        var composite = new CompositeClientAuthenticator(
-            [new ClientSecretAuthenticator(compositeHasher)],
-            Resolver(corruptClient),
-            CreateServerOptions(TokenEndpointAuthMethods.None),
-            compositeHasher,
-            NullSanitizingLogger<CompositeClientAuthenticator>());
+        var (composite, resolverLogger) = CreateValidatingComposite(corruptClient, hasher);
 
         var httpContext = new DefaultHttpContext();
 
@@ -1153,5 +1172,6 @@ public sealed class CompositeClientAuthenticatorTests
 
         result.Authenticated.Should().BeFalse();
         hasher.CallCount.Should().Be(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
+        resolverLogger.Entries.Should().ContainSingle(e => e.Message.Contains(TrinityViolation));
     }
 }
