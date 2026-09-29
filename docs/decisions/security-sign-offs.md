@@ -409,7 +409,8 @@ commit `0ea8ab8` (issue #512) — one review round plus two fix-diff verificatio
    included — `ReadAsync_enforces_the_gate_even_when_the_key_set_is_already_memoized`,
    `ReadAsync_throws_in_Production_regardless_of_AllowedEnvironments`. Neither the gate nor
    `PersistToDirectory` is reachable from a public configure callback —
-   `AddInMemoryDevelopmentJwtSigningKeys_configure_parameter_type_has_no_PersistToDirectory`.
+   AddInMemoryDevelopmentJwtSigningKeys_configure_parameter_type_has_no_PersistToDirectory
+   [renamed by #825; see the 2026-09-30 entry below].
 2. **The port changed no policy.** ≥3072-bit RSA and the fail-closed file checks survive it —
    `ReadAsync_generates_a_key_of_at_least_3072_bits`, `Directory_with_too_permissive_mode_fails_closed`,
    `Key_file_with_too_permissive_permissions_fails_closed`, `Key_file_reached_through_a_symlink_fails_closed`.
@@ -420,7 +421,8 @@ commit `0ea8ab8` (issue #512) — one review round plus two fix-diff verificatio
    configuration behind — `A_rejected_second_registration_leaves_the_first_one_unconfigured_by_it`.
 
 **Residuals, accepted.** No host means no gate: a directly-constructed source with a null
-`EnvironmentName` is ungated — `ReadAsync_skips_the_gate_when_EnvironmentName_is_null`. `Dispose`
+`EnvironmentName` is ungated — ReadAsync_skips_the_gate_when_EnvironmentName_is_null [reversed by the 2026-09-30 entry for #825
+below: a null environment now refuses]. `Dispose`
 racing an in-flight read strands the RSA until finalization; `_readGate` is deliberately never
 disposed so that race can neither throw from `Release` nor hang a queued reader — no test.
 
