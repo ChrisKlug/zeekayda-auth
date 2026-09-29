@@ -43,10 +43,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         return builder.AddInteractionStore<InMemoryInteractionBackingStore>(services =>
-            services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
-                sp.GetRequiredService<IHostEnvironment>(),
-                InMemoryStoreVerifier.InteractionStoreName,
-                allowOutsideDevelopment)));
+            AddInMemoryStoreVerifier(services, InMemoryStoreVerifier.InteractionStoreName, allowOutsideDevelopment));
     }
 
     /// <summary>
@@ -199,10 +196,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.AddAuthorizationCodeStore<InMemoryAuthorizationCodeBackingStore>();
-        builder.Services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
-            sp.GetRequiredService<IHostEnvironment>(),
-            InMemoryStoreVerifier.AuthorizationCodeStoreName,
-            allowOutsideDevelopment));
+        AddInMemoryStoreVerifier(builder.Services, InMemoryStoreVerifier.AuthorizationCodeStoreName, allowOutsideDevelopment);
 
         return builder;
     }
@@ -237,10 +231,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.AddRefreshTokenGrantStore<InMemoryRefreshTokenGrantStore>();
-        builder.Services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
-            sp.GetRequiredService<IHostEnvironment>(),
-            InMemoryStoreVerifier.RefreshTokenStoreName,
-            allowOutsideDevelopment));
+        AddInMemoryStoreVerifier(builder.Services, InMemoryStoreVerifier.RefreshTokenStoreName, allowOutsideDevelopment);
 
         return builder;
     }
@@ -307,10 +298,8 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.AddAuthorizationCodeStore<DistributedCacheAuthorizationCodeBackingStore>();
-        builder.Services.AddSingleton<IStartupActivator>(sp => new DistributedCacheStoreStartupValidator(
-            sp.GetRequiredService<IHostEnvironment>(),
-            DistributedCacheStoreStartupValidator.AuthorizationCodeStoreName,
-            allowMemoryCacheOutsideDevelopment));
+        AddDistributedCacheStoreValidator(
+            builder.Services, DistributedCacheStoreStartupValidator.AuthorizationCodeStoreName, allowMemoryCacheOutsideDevelopment);
 
         return builder;
     }
@@ -341,10 +330,8 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         builder.AddRefreshTokenGrantStore<DistributedCacheRefreshTokenGrantStore>();
-        builder.Services.AddSingleton<IStartupActivator>(sp => new DistributedCacheStoreStartupValidator(
-            sp.GetRequiredService<IHostEnvironment>(),
-            DistributedCacheStoreStartupValidator.RefreshTokenStoreName,
-            allowMemoryCacheOutsideDevelopment));
+        AddDistributedCacheStoreValidator(
+            builder.Services, DistributedCacheStoreStartupValidator.RefreshTokenStoreName, allowMemoryCacheOutsideDevelopment);
 
         return builder;
     }
@@ -379,4 +366,14 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
 
         return builder;
     }
+
+    private static void AddInMemoryStoreVerifier(
+        IServiceCollection services, string storeName, bool allowOutsideDevelopment) =>
+        services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
+            sp.GetRequiredService<IHostEnvironment>(), storeName, allowOutsideDevelopment));
+
+    private static void AddDistributedCacheStoreValidator(
+        IServiceCollection services, string storeName, bool allowMemoryCacheOutsideDevelopment) =>
+        services.AddSingleton<IStartupActivator>(sp => new DistributedCacheStoreStartupValidator(
+            sp.GetRequiredService<IHostEnvironment>(), storeName, allowMemoryCacheOutsideDevelopment));
 }
