@@ -49,6 +49,18 @@ internal sealed class CorsOrigin
         Canonical = structuralProblem is null ? BuildCanonicalForm() : null;
     }
 
+    /// <summary>
+    /// The canonical form of an entry startup validation has already accepted.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="origin"/> has no canonical form, which only an unvalidated entry can lack.
+    /// </exception>
+    public static string Canonicalize(string? origin) =>
+        // The flag feeds only the scheme rules, which canonicalization ignores.
+        new CorsOrigin(origin, allowInsecureIssuer: true).Canonical
+            ?? throw new InvalidOperationException(
+                $"CORS origin '{origin}' has no canonical form; startup validation did not run.");
+
     private string? FirstProblem(Func<CorsOrigin, string?>[] rules)
         => rules
             .Select(rule => rule(this))

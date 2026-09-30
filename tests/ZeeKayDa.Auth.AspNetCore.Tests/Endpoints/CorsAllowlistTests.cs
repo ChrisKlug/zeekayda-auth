@@ -18,6 +18,7 @@ public sealed class CorsAllowlistTests
     [InlineData("HTTPS://APP.EXAMPLE.COM", "https://app.example.com")]
     [InlineData("https://app.example.com/", "https://app.example.com")]
     [InlineData("https://app.example.com:8443", "https://app.example.com:8443")]
+    [InlineData("https://app.example.com:443", "https://app.example.com")]
     [InlineData("http://[::1]:5001", "http://[::1]:5001")]
     public void A_configured_origin_matches_in_its_canonical_form(string configured, string canonical)
     {
@@ -51,6 +52,25 @@ public sealed class CorsAllowlistTests
         var allowlist = Allowlist("https://app.example.com");
 
         allowlist.TryMatch("https://evil.example.com", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Two_spellings_of_one_origin_match_the_same_listed_origin()
+    {
+        var allowlist = Allowlist("https://app.example.com", "HTTPS://APP.EXAMPLE.COM/");
+
+        allowlist.TryMatch("https://app.example.com", out var matched).Should().BeTrue();
+        matched.Should().Be("https://app.example.com");
+    }
+
+    [Fact]
+    public void An_entry_with_no_canonical_form_is_refused_not_dropped()
+    {
+        // Startup validation refuses this entry first; an allowlist built without it must not
+        // shrink to empty, which would allow every origin.
+        var act = () => Allowlist("not-a-uri");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*not-a-uri*");
     }
 
     [Fact]

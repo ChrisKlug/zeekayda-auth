@@ -15,9 +15,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 internal sealed class CorsAllowlist(IOptions<AuthorizationServerOptions> options)
 {
     private readonly HashSet<string> _origins = new(
-        options.Value.CorsOrigins
-            .Select(origin => new CorsOrigin(origin, options.Value.AllowInsecureIssuer).Canonical)
-            .OfType<string>(),
+        options.Value.CorsOrigins.Select(CorsOrigin.Canonicalize),
         StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Whether no origin is listed, which allows every origin.</summary>
