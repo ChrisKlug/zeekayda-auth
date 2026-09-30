@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Configuration;
 
 namespace ZeeKayDa.Auth.Tokens;
 
@@ -9,13 +8,15 @@ namespace ZeeKayDa.Auth.Tokens;
 /// Registered only when <c>AddInMemoryDevelopmentSigning()</c> or
 /// <c>AddPersistedDevelopmentSigning()</c> is called.
 /// </summary>
-internal sealed class AllowedDevEnvironmentsValidator : IValidateOptions<DevelopmentSigningOptions>
+internal sealed class AllowedDevEnvironmentsValidator : ZeeKayDaOptionsValidator<DevelopmentSigningOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, DevelopmentSigningOptions options)
+    protected override void Validate(
+        string? name,
+        DevelopmentSigningOptions options,
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         var list = options.AllowedEnvironments;
-        var failures = new List<ZeeKayDaConfigurationFailure>();
 
         if (list.Count == 0)
         {
@@ -45,7 +46,5 @@ internal sealed class AllowedDevEnvironmentsValidator : IValidateOptions<Develop
                     "Production regardless of this list. Listing 'Production' here is a misconfiguration."));
             }
         }
-
-        return failures.ThrowIfAny();
     }
 }

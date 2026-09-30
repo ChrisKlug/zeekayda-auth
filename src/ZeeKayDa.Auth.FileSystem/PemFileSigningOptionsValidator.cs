@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem;
@@ -10,13 +9,14 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// <remarks>
 /// Registered via <c>AddPemFileSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
 /// </remarks>
-internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileSigningOptions>
+internal sealed class PemFileSigningOptionsValidator : ZeeKayDaOptionsValidator<PemFileSigningOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, PemFileSigningOptions options)
+    protected override void Validate(
+        string? name,
+        PemFileSigningOptions options,
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
-        var failures = new List<ZeeKayDaConfigurationFailure>();
-
         if (options.Current is null)
         {
             failures.Add(new(
@@ -38,9 +38,8 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
                 $"{nameof(SigningAlgorithm)} member."));
         }
 
-        failures.AddRange(DuplicatePathFailures(options));
-
-        return failures.ThrowIfAny();
+        foreach (var failure in DuplicatePathFailures(options))
+            failures.Add(failure);
     }
 
     // Previous and Next are PemCertificateFile, which has no KeyPath to check — only Current can
@@ -48,7 +47,7 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
     // error to report here. A configured slot whose Path is null is reported like any other unusable
     // path rather than skipped: the record's Path is non-nullable, so reaching here with null means a
     // caller suppressed that, and silence would turn it into a confusing failure further in.
-    private static void AppendPathError(string slotName, bool slotConfigured, string? path, List<ZeeKayDaConfigurationFailure> failures)
+    private static void AppendPathError(string slotName, bool slotConfigured, string? path, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         if (slotConfigured && string.IsNullOrWhiteSpace(path))
             failures.Add(new(
@@ -56,7 +55,7 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
                 $"PemFileSigningOptions.{slotName}.Path must be set to a non-empty file path."));
     }
 
-    private static void AppendCurrentKeyPathError(PemSigningFile? current, List<ZeeKayDaConfigurationFailure> failures)
+    private static void AppendCurrentKeyPathError(PemSigningFile? current, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         if (current?.KeyPath is { } keyPath && string.IsNullOrWhiteSpace(keyPath))
         {

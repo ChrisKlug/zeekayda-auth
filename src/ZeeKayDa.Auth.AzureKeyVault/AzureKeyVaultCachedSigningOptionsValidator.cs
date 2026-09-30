@@ -9,13 +9,14 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// <remarks>
 /// Registered via <c>AddAzureKeyVaultCachedSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
 /// </remarks>
-internal sealed class AzureKeyVaultCachedSigningOptionsValidator : IValidateOptions<AzureKeyVaultCachedSigningOptions>
+internal sealed class AzureKeyVaultCachedSigningOptionsValidator : ZeeKayDaOptionsValidator<AzureKeyVaultCachedSigningOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, AzureKeyVaultCachedSigningOptions options)
+    protected override void Validate(
+        string? name,
+        AzureKeyVaultCachedSigningOptions options,
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
-        var failures = new List<ZeeKayDaConfigurationFailure>();
-
         if (options.CertificateIdentifier.VaultUri is null)
         {
             failures.Add(new(
@@ -54,10 +55,5 @@ internal sealed class AzureKeyVaultCachedSigningOptionsValidator : IValidateOpti
                 $"AzureKeyVaultCachedSigningOptions.PreActivationDelay ({options.PreActivationDelay}) must be " +
                 "zero or greater. Use TimeSpan.Zero to let a newly created certificate version sign immediately."));
         }
-
-        // This package has no friend access to the core, so the core's ThrowIfAny is out of reach.
-        return failures.Count == 0
-            ? ValidateOptionsResult.Success
-            : throw new ZeeKayDaConfigurationException([.. failures]);
     }
 }

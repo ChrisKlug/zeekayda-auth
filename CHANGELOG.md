@@ -44,8 +44,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **`AddZeeKayDaOptions<T>()` and `.ValidateWithZeeKayDa()` register options that ZeeKayDa.Auth
   validates together** (#796). They replace `ValidateOnStart()` for the framework's own options and
   are public so a third-party package, a signing source for example, gets the same behaviour: its
-  failures arrive in the one `ZeeKayDaConfigurationException` with everyone else's. A validator that
-  throws that exception keeps its codes; one that returns `ValidateOptionsResult.Fail` is reported as
+  failures arrive in the one `ZeeKayDaConfigurationException` with everyone else's. A validator
+  derived from the new `ZeeKayDaOptionsValidator<TOptions>` adds its coded failures to a collection
+  and the base throws them; one that returns `ValidateOptionsResult.Fail` is reported as
   `configuration.options_invalid`, with its messages in the inner exception.
 
 - **The discovery document advertises `claims_supported`** (#716). `OpenIdConfigurationDocument`

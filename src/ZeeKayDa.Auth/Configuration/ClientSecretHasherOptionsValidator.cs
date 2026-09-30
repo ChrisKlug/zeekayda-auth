@@ -7,31 +7,32 @@ namespace ZeeKayDa.Auth.Configuration;
 /// hasher misconfiguration before the host accepts requests.
 /// </summary>
 internal sealed class ClientSecretHasherOptionsValidator
-    : IValidateOptions<ClientSecretHasherRegistrationOptions>
+    : ZeeKayDaOptionsValidator<ClientSecretHasherRegistrationOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, ClientSecretHasherRegistrationOptions options)
+    protected override void Validate(
+        string? name,
+        ClientSecretHasherRegistrationOptions options,
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         // The validator is only registered by AddClientSecretHasher<T>(), which always adds an entry
         // before the options are ever validated. The 0-hashers case is therefore unreachable here;
         // CompositeClientSecretHasher.ResolveDefault is the runtime guard for that path.
         if (options.Registrations.Count == 1)
-            return ValidateOptionsResult.Success;
+            return;
 
         var defaultCount = options.Registrations.Count(r => r.IsDefault);
 
         if (defaultCount == 0)
-            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+            failures.Add(new(
                 "configuration.hashers.no_default",
                 "Multiple IClientSecretHasher implementations are registered but none is marked as default. " +
                 "Call AddClientSecretHasher<T>(isDefault: true) for exactly one hasher."));
 
         if (defaultCount > 1)
-            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+            failures.Add(new(
                 "configuration.hashers.multiple_defaults",
                 $"{defaultCount} IClientSecretHasher implementations are marked as default. " +
                 "Exactly one hasher must have isDefault: true."));
-
-        return ValidateOptionsResult.Success;
     }
 }

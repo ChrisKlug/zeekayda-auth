@@ -17,11 +17,10 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// a host that never maps the endpoints.
 /// </para>
 /// <para>
-/// For its failures to carry codes, a validator throws <see cref="ZeeKayDaConfigurationException"/>
-/// from <see cref="IValidateOptions{TOptions}.Validate"/> with every failure it found. A validator
-/// that returns <see cref="ValidateOptionsResult.Fail(string)"/> instead still takes part: it is
-/// reported as one <c>configuration.options_invalid</c> failure naming the options type, with its
-/// messages in the inner exception.
+/// For its failures to carry codes, a validator derives from
+/// <see cref="ZeeKayDaOptionsValidator{TOptions}"/>. Any other <see cref="IValidateOptions{TOptions}"/>
+/// still takes part, reported as one <c>configuration.options_invalid</c> failure naming the options
+/// type, with its messages in the inner exception.
 /// </para>
 /// </remarks>
 public static class ZeeKayDaOptionsServiceCollectionExtensions

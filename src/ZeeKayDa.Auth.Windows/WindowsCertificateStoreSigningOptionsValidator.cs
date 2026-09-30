@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Windows;
@@ -12,13 +11,14 @@ namespace ZeeKayDa.Auth.Windows;
 /// There is no empty-thumbprint check here: <see cref="CertificateLookup.ByThumbprint"/> rejects a
 /// thumbprint with no hex digits at construction, so a configured slot always holds a usable one.
 /// </remarks>
-internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidateOptions<WindowsCertificateStoreSigningOptions>
+internal sealed class WindowsCertificateStoreSigningOptionsValidator : ZeeKayDaOptionsValidator<WindowsCertificateStoreSigningOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, WindowsCertificateStoreSigningOptions options)
+    protected override void Validate(
+        string? name,
+        WindowsCertificateStoreSigningOptions options,
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
-        var failures = new List<ZeeKayDaConfigurationFailure>();
-
         if (options.Current is null)
         {
             failures.Add(new(
@@ -35,9 +35,8 @@ internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidate
                 $"value '{options.Algorithm}' is not a defined {nameof(SigningAlgorithm)} member."));
         }
 
-        failures.AddRange(FindDuplicateSlots(options));
-
-        return failures.ThrowIfAny();
+        foreach (var failure in FindDuplicateSlots(options))
+            failures.Add(failure);
     }
 
     /// <summary>

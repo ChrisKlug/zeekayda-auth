@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem;
@@ -10,13 +9,14 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// <remarks>
 /// Registered via <c>AddPfxFileSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
 /// </remarks>
-internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileSigningOptions>
+internal sealed class PfxFileSigningOptionsValidator : ZeeKayDaOptionsValidator<PfxFileSigningOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, PfxFileSigningOptions options)
+    protected override void Validate(
+        string? name,
+        PfxFileSigningOptions options,
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
-        var failures = new List<ZeeKayDaConfigurationFailure>();
-
         if (options.Current is null)
         {
             failures.Add(new(
@@ -37,12 +37,11 @@ internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileS
                 $"{nameof(SigningAlgorithm)} member."));
         }
 
-        failures.AddRange(DuplicatePathFailures(options));
-
-        return failures.ThrowIfAny();
+        foreach (var failure in DuplicatePathFailures(options))
+            failures.Add(failure);
     }
 
-    private static void AppendSlotErrors(string slotName, PfxFile? slot, List<ZeeKayDaConfigurationFailure> failures)
+    private static void AppendSlotErrors(string slotName, PfxFile? slot, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         if (slot is null)
             return;

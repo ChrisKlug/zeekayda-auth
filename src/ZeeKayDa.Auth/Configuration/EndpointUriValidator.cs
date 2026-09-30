@@ -15,7 +15,7 @@ internal static class EndpointUriValidator
     /// </summary>
     private readonly record struct EndpointOverride(string PropertyName, string CodePrefix, string? Value, bool RejectQuery);
 
-    internal static void Validate(AuthorizationServerOptions options, Uri issuerUri, List<ZeeKayDaConfigurationFailure> failures)
+    internal static void Validate(AuthorizationServerOptions options, Uri issuerUri, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         EndpointOverride[] endpoints =
         [
@@ -28,9 +28,12 @@ internal static class EndpointUriValidator
             new("UserInfoEndpoint.Uri", "configuration.user_info_endpoint.uri", options.UserInfoEndpoint.Uri, RejectQuery: true),
         ];
 
-        failures.AddRange(endpoints
+        var broken = endpoints
             .Select(endpoint => ValidateEndpoint(options, issuerUri, endpoint))
-            .OfType<ZeeKayDaConfigurationFailure>());
+            .OfType<ZeeKayDaConfigurationFailure>();
+
+        foreach (var failure in broken)
+            failures.Add(failure);
     }
 
     /// <summary>The endpoint's first broken rule, or <see langword="null"/> when it broke none.</summary>

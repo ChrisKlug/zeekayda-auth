@@ -10,7 +10,7 @@ internal static class IssuerValidator
     /// The issuer must be a non-empty absolute URI before anything else is asked of it; either
     /// failure is reported alone, since every later rule reads the parsed URI.
     /// </summary>
-    internal static bool TryParse(AuthorizationServerOptions options, List<ZeeKayDaConfigurationFailure> failures, out Uri issuerUri)
+    internal static bool TryParse(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures, out Uri issuerUri)
     {
         if (string.IsNullOrWhiteSpace(options.Issuer))
         {
@@ -35,14 +35,14 @@ internal static class IssuerValidator
     }
 
     /// <summary>Validates the shape, scheme and canonical form of the parsed issuer.</summary>
-    internal static void Validate(AuthorizationServerOptions options, Uri uri, List<ZeeKayDaConfigurationFailure> failures)
+    internal static void Validate(AuthorizationServerOptions options, Uri uri, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         ValidateComponents(options.Issuer!, uri, failures);
         ValidateScheme(options, uri, failures);
         ValidateCanonicalForm(options.Issuer!, uri, failures);
     }
 
-    private static void ValidateComponents(string issuer, Uri uri, List<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateComponents(string issuer, Uri uri, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         // RFC 8414 §2 and OIDC Discovery 1.0 §4.1 prohibit query strings in the issuer.
         if (uri.Query.Length > 0)
@@ -84,7 +84,7 @@ internal static class IssuerValidator
         }
     }
 
-    private static void ValidateScheme(AuthorizationServerOptions options, Uri uri, List<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateScheme(AuthorizationServerOptions options, Uri uri, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         // The OIDC specification requires the issuer to be an HTTPS URI in production.
         // AllowInsecureIssuer permits only HTTP loopback issuers for local development.
@@ -106,7 +106,7 @@ internal static class IssuerValidator
         }
     }
 
-    private static void ValidateCanonicalForm(string issuer, Uri uri, List<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateCanonicalForm(string issuer, Uri uri, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         var canonicalIssuer = BuildCanonicalIssuer(uri);
         var normalizedInputIssuer = NormalizeRootIssuer(issuer, uri);

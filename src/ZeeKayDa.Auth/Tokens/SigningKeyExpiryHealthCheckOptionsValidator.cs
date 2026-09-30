@@ -8,20 +8,21 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <remarks>
 /// Registered via <c>AddZeeKayDaSigningKeys()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
 /// </remarks>
-internal sealed class SigningKeyExpiryHealthCheckOptionsValidator : IValidateOptions<SigningKeyExpiryHealthCheckOptions>
+internal sealed class SigningKeyExpiryHealthCheckOptionsValidator : ZeeKayDaOptionsValidator<SigningKeyExpiryHealthCheckOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, SigningKeyExpiryHealthCheckOptions options)
+    protected override void Validate(
+        string? name,
+        SigningKeyExpiryHealthCheckOptions options,
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         if (options.DegradedThreshold <= TimeSpan.Zero)
         {
-            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+            failures.Add(new(
                 "configuration.signing_key_expiry_health_check.degraded_threshold.not_positive",
                 $"SigningKeyExpiryHealthCheckOptions.DegradedThreshold ({options.DegradedThreshold}) " +
                 "must be greater than zero. A zero or negative threshold silently disables the only " +
                 "expiry watch a static signing key ring has."));
         }
-
-        return ValidateOptionsResult.Success;
     }
 }

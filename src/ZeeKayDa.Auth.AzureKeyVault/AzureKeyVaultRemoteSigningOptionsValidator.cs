@@ -9,13 +9,14 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// <remarks>
 /// Registered via <c>AddAzureKeyVaultRemoteSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
 /// </remarks>
-internal sealed class AzureKeyVaultRemoteSigningOptionsValidator : IValidateOptions<AzureKeyVaultRemoteSigningOptions>
+internal sealed class AzureKeyVaultRemoteSigningOptionsValidator : ZeeKayDaOptionsValidator<AzureKeyVaultRemoteSigningOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, AzureKeyVaultRemoteSigningOptions options)
+    protected override void Validate(
+        string? name,
+        AzureKeyVaultRemoteSigningOptions options,
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
-        var failures = new List<ZeeKayDaConfigurationFailure>();
-
         if (options.KeyIdentifier.VaultUri is null)
         {
             failures.Add(new(
@@ -54,10 +55,5 @@ internal sealed class AzureKeyVaultRemoteSigningOptionsValidator : IValidateOpti
                 $"AzureKeyVaultRemoteSigningOptions.PreActivationDelay ({options.PreActivationDelay}) must be " +
                 "zero or greater. Use TimeSpan.Zero to let a newly created key version sign immediately."));
         }
-
-        // This package has no friend access to the core, so the core's ThrowIfAny is out of reach.
-        return failures.Count == 0
-            ? ValidateOptionsResult.Success
-            : throw new ZeeKayDaConfigurationException([.. failures]);
     }
 }

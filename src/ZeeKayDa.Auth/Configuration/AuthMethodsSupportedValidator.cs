@@ -26,7 +26,7 @@ internal static class AuthMethodsSupportedValidator
         "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
         "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).";
 
-    internal static void Validate(AuthorizationServerOptions options, List<ZeeKayDaConfigurationFailure> failures)
+    internal static void Validate(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         var methods = options.TokenEndpoint.AuthMethodsSupported;
 
@@ -40,7 +40,8 @@ internal static class AuthMethodsSupportedValidator
             return;
         }
 
-        failures.AddRange(methods.Select(ValidateEntry).OfType<ZeeKayDaConfigurationFailure>());
+        foreach (var failure in methods.Select(ValidateEntry).OfType<ZeeKayDaConfigurationFailure>())
+            failures.Add(failure);
 
         if (AdvertisesClientCredentialsWithOnlyNone(options))
             failures.Add(new(

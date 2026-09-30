@@ -27,17 +27,17 @@ and operator alerting switch on. The composed exception message lists every fail
 message so a startup crash is actionable from `ToString()` alone — which means every failure message
 is part of a public string, and the rule below binds all of them.
 
-**Options validation fails in the same shape, all at once.** A framework `IValidateOptions<T>` throws
-`ZeeKayDaConfigurationException` from `Validate` with every failure it found, never
-`ValidateOptionsResult.Fail`; the options factory lets it through unchanged. A code is
+**Options validation fails in the same shape, all at once.** Every framework options validator
+derives from the public `ZeeKayDaOptionsValidator<T>`, which throws `ZeeKayDaConfigurationException`
+with every failure it added, never `ValidateOptionsResult.Fail`; the options factory lets it through. A code is
 `configuration.` + the option's path in snake_case + the problem, `AuthorizationServerOptions` being
 the root (`configuration.issuer.not_https`); a runtime guard for the same mistake uses the same code.
 Options are registered with the public `AddZeeKayDaOptions<T>()` or `.ValidateWithZeeKayDa()`, not
 `ValidateOnStart()`, which stops at the first throw. `MapZeeKayDaAuth()` and a startup gate read
 every registered type and throw one exception with all their failures. The registration is public
-so a third-party package gets the same without friend access; its validator that returns `Fail`
-becomes one `configuration.options_invalid` failure naming the type, its text only in the inner
-exception. The check reads each type as its consumers do and, when that fails, runs every validator
+so a third-party package gets the same without friend access, and derives its validator from the
+same base; one that returns `Fail` instead becomes one `configuration.options_invalid` failure naming
+the type, its text only in the inner exception. The check reads each type as its consumers do and, when that fails, runs every validator
 on its own, so one that throws never hides the next, a host's own included.
 
 **Never copy `ex.Message`; name the exception type instead.** When the framework turns an arbitrary

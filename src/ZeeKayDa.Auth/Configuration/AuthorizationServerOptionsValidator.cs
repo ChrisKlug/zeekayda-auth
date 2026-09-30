@@ -16,17 +16,18 @@ namespace ZeeKayDa.Auth.Configuration;
 /// the endpoint URI overrides and the token endpoint's auth methods each have their own
 /// validator; this class calls them in order and keeps the single-group checks.
 /// </remarks>
-internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<AuthorizationServerOptions>
+internal sealed class AuthorizationServerOptionsValidator : ZeeKayDaOptionsValidator<AuthorizationServerOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, AuthorizationServerOptions options)
+    protected override void Validate(
+        string? name,
+        AuthorizationServerOptions options,
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
-        var failures = new List<ZeeKayDaConfigurationFailure>();
-
         // Nothing below can be checked against an issuer that does not parse, so those two
         // failures end validation on their own.
         if (!IssuerValidator.TryParse(options, failures, out var issuerUri))
-            return failures.ThrowIfAny();
+            return;
 
         IssuerValidator.Validate(options, issuerUri, failures);
         ValidateResponse(options, failures);
@@ -40,12 +41,10 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         ValidateAuthorizationEndpoint(options, failures);
         ValidateClockSkew(options, failures);
         EndpointUriValidator.Validate(options, issuerUri, failures);
-
-        return failures.ThrowIfAny();
     }
 
     /// <summary>Validates the <c>Response</c> options group.</summary>
-    private static void ValidateResponse(AuthorizationServerOptions options, List<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateResponse(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         if (options.Response.TypesSupported is null)
         {
@@ -69,7 +68,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     }
 
     /// <summary>Validates the root-level <c>GrantTypesSupported</c>.</summary>
-    private static void ValidateGrantTypes(AuthorizationServerOptions options, List<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateGrantTypes(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         if (options.GrantTypesSupported is null)
         {
@@ -97,7 +96,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     /// what an operator means. A filter that excludes the signing key's own algorithm is caught
     /// at startup by <c>SigningKeyRingStartupVerifier</c>, the first point at which the key set exists.
     /// </summary>
-    private static void ValidateIdToken(AuthorizationServerOptions options, List<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateIdToken(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         if (options.IdToken.AdvertisedSigningAlgorithms is { Count: 0 })
         {
@@ -110,7 +109,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     }
 
     /// <summary>Validates the cache lifetimes of the <c>DiscoveryDocument</c> and <c>JwksEndpoint</c> groups.</summary>
-    private static void ValidateCaching(AuthorizationServerOptions options, List<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateCaching(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         if (options.DiscoveryDocument.CacheMaxAge < TimeSpan.Zero)
         {
@@ -132,21 +131,25 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     /// (<c>scheme://host[:port]</c>) with no path other than "/", query, fragment, userinfo,
     /// wildcards or CRLF. Invalid entries fail startup.
     /// </summary>
-    private static void ValidateCors(AuthorizationServerOptions options, List<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateCors(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
-        failures.AddRange(options.CorsOrigins
+        var problems = options.CorsOrigins
             .Select(origin => new CorsOrigin(origin, options.AllowInsecureIssuer).ErrorMessage)
-            .OfType<string>()
-            .Select(problem => new ZeeKayDaConfigurationFailure(
+            .OfType<string>();
+
+        foreach (var problem in problems)
+        {
+            failures.Add(new(
                 "configuration.cors_origins.invalid",
-                $"AuthorizationServerOptions.CorsOrigins: {problem}")));
+                $"AuthorizationServerOptions.CorsOrigins: {problem}"));
+        }
     }
 
     /// <summary>
     /// Validates the <c>SecurityHeaders</c> enum values at startup so an out-of-range cast produces
     /// a startup failure consistent with all other misconfiguration, rather than a 500 at request time.
     /// </summary>
-    private static void ValidateSecurityHeaders(AuthorizationServerOptions options, List<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateSecurityHeaders(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         if (!Enum.IsDefined(options.SecurityHeaders.ReferrerPolicy))
         {
@@ -166,7 +169,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     }
 
     /// <summary>Validates the root-level <c>ClockSkewTolerance</c>, on its own and against the code lifetime.</summary>
-    private static void ValidateClockSkew(AuthorizationServerOptions options, List<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateClockSkew(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         // A negative ClockSkewTolerance silently rejects tokens before their stated
         // expiry, producing false rejections with no surfaced error.
@@ -204,7 +207,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     /// <summary>Validates the token lifetimes of the <c>TokenEndpoint</c> options group.</summary>
     private static void ValidateTokenEndpointLifetimes(
         AuthorizationServerOptions options,
-        List<ZeeKayDaConfigurationFailure> failures)
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         // A zero or negative refresh token lifetime is nonsensical and must be rejected at startup.
         if (options.TokenEndpoint.RefreshTokenLifetime <= TimeSpan.Zero)
@@ -263,7 +266,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
     /// <summary>Validates the <c>AuthorizationEndpoint</c> options group.</summary>
     private static void ValidateAuthorizationEndpoint(
         AuthorizationServerOptions options,
-        List<ZeeKayDaConfigurationFailure> failures)
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         if (options.AuthorizationEndpoint.CodeChallengeMethodsSupported is { Count: 0 })
         {
@@ -356,7 +359,7 @@ internal sealed class AuthorizationServerOptionsValidator : IValidateOptions<Aut
         string? path,
         string optionPath,
         string code,
-        List<ZeeKayDaConfigurationFailure> failures)
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         if (path is null || InteractionPath.IsSafe(path))
             return;
