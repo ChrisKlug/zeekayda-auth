@@ -35,15 +35,6 @@ public sealed class KeyVaultSignerTests
     // type and name proves nothing. That has happened here before.
 
     [Fact]
-    public void Constructor_rejects_null_options()
-    {
-        // Cast required: null is ambiguous between this constructor and the internal factory seam.
-        var act = () => new KeyVaultSigner((IOptions<AzureKeyVaultRemoteSigningOptions>)null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
-    }
-
-    [Fact]
     public void Constructor_rejects_options_carrying_no_credential()
     {
         // The credential is captured by the client factory rather than used immediately, so without

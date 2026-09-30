@@ -19,24 +19,12 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// <strong>exactly once</strong> per read call and every check runs against that single open
 /// handle rather than the path string, closing the TOCTOU window between validation and read.
 /// </remarks>
-internal sealed class FileSigningKeyReader
+internal sealed class FileSigningKeyReader(ISanitizingLogger<FileSigningKeyReader> logger)
 {
     // Broader than 0600 (owner read/write only) is a hard failure.
     private const UnixFileMode DisallowedUnixModeBits =
         UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
         | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
-
-    private readonly ISanitizingLogger<FileSigningKeyReader> _logger;
-
-    /// <summary>
-    /// Initialises a new reader.
-    /// </summary>
-    /// <param name="logger">Used only for the best-effort, non-fatal environment warnings.</param>
-    public FileSigningKeyReader(ISanitizingLogger<FileSigningKeyReader> logger)
-    {
-        ArgumentNullException.ThrowIfNull(logger);
-        _logger = logger;
-    }
 
     /// <summary>
     /// Opens, validates, and reads <paramref name="path"/> as PEM text, for use with
@@ -278,7 +266,7 @@ internal sealed class FileSigningKeyReader
         {
             // Best-effort: a failure to determine the volume type or parent-directory permissions
             // must never abort loading a key that otherwise passed the hard-fail checks above.
-            _logger.LogDebug(ex, "ZeeKayDa.Auth: could not evaluate the environment safety heuristics for signing key file '{Path}'.", path);
+            logger.LogDebug(ex, "ZeeKayDa.Auth: could not evaluate the environment safety heuristics for signing key file '{Path}'.", path);
         }
     }
 
@@ -296,7 +284,7 @@ internal sealed class FileSigningKeyReader
 
         if (root.StartsWith(@"\\", StringComparison.Ordinal) || new DriveInfo(root).DriveType == DriveType.Network)
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "ZeeKayDa.Auth: signing key file '{Path}' appears to be on a network volume. Storing " +
                 "signing key material on a network filesystem widens its exposure beyond the local " +
                 "host; prefer local storage where possible.",
@@ -319,7 +307,7 @@ internal sealed class FileSigningKeyReader
             var mode = File.GetUnixFileMode(parent);
             if ((mode & UnixFileMode.OtherWrite) != 0)
             {
-                _logger.LogWarning(
+                logger.LogWarning(
                     "ZeeKayDa.Auth: the parent directory '{Directory}' of signing key file '{Path}' is " +
                     "world-writable. Another local user could replace or redirect files in this " +
                     "directory. Restrict the directory's permissions.",
@@ -344,7 +332,7 @@ internal sealed class FileSigningKeyReader
 
         if (hasBroadWritableRule)
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "ZeeKayDa.Auth: the parent directory '{Directory}' of signing key file '{Path}' " +
                 "grants write access to a broad principal ('Everyone', 'Users', or 'Authenticated " +
                 "Users'). Another local user could replace or redirect files in this directory. " +

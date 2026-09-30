@@ -25,7 +25,6 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
 
     public KeyVaultKeyReader(IOptions<AzureKeyVaultRemoteSigningOptions> options)
     {
-        ArgumentNullException.ThrowIfNull(options);
         var value = options.Value;
         var credential = value.Credential;
         ArgumentNullException.ThrowIfNull(credential);

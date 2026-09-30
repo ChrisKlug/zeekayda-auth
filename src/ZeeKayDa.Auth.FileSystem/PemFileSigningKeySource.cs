@@ -28,10 +28,11 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// still name the offending file.
 /// </para>
 /// </remarks>
-internal sealed class PemFileSigningKeySource : ISigningKeySource
+internal sealed class PemFileSigningKeySource(
+    IOptions<PemFileSigningOptions> options,
+    FileSigningKeyReader reader) : ISigningKeySource
 {
-    private readonly IOptions<PemFileSigningOptions> _options;
-    private readonly FileSigningKeyReader _reader;
+    private readonly IOptions<PemFileSigningOptions> _options = options;
 
     // Serialises reads so the slots are parsed exactly once even if two callers read concurrently —
     // "only the ring calls this" is not something this type can enforce. Deliberately not disposed:
@@ -44,15 +45,6 @@ internal sealed class PemFileSigningKeySource : ISigningKeySource
     // succeeded, no later one can observe a file replaced after startup. Read-once is therefore a
     // property of this source, not only of the ring.
     private SourceKeySet? _keySet;
-
-    public PemFileSigningKeySource(IOptions<PemFileSigningOptions> options, FileSigningKeyReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(reader);
-
-        _options = options;
-        _reader = reader;
-    }
 
     /// <inheritdoc/>
     public async ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
@@ -124,7 +116,7 @@ internal sealed class PemFileSigningKeySource : ISigningKeySource
     private async ValueTask<X509Certificate2> LoadPublicCertificateAsync(
         string certificatePath, CancellationToken cancellationToken)
     {
-        var certPem = await _reader.ReadPemTextAsync(certificatePath, cancellationToken).ConfigureAwait(false);
+        var certPem = await reader.ReadPemTextAsync(certificatePath, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -159,13 +151,13 @@ internal sealed class PemFileSigningKeySource : ISigningKeySource
         // Reads through FileSigningKeyReader.ReadPemTextAsync and calls X509Certificate2.CreateFromPem
         // rather than X509Certificate2.CreateFromPemFile, which performs its own unvalidated file I/O
         // and would bypass FileSigningKeyReader's permission/symlink validation.
-        var certPem = await _reader.ReadPemTextAsync(slot.Path, cancellationToken).ConfigureAwait(false);
+        var certPem = await reader.ReadPemTextAsync(slot.Path, cancellationToken).ConfigureAwait(false);
 
         // With no separate key path, the combined file carries both PEM blocks, so the same text is
         // passed for both the certificate and the key source.
         var keyPem = slot.KeyPath is null
             ? certPem
-            : await _reader.ReadPemTextAsync(slot.KeyPath, cancellationToken).ConfigureAwait(false);
+            : await reader.ReadPemTextAsync(slot.KeyPath, cancellationToken).ConfigureAwait(false);
 
         try
         {

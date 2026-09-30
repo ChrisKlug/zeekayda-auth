@@ -14,14 +14,6 @@ namespace ZeeKayDa.Auth.FileSystem.Tests;
 public sealed class FileSigningKeyReaderTests
 {
     [Fact]
-    public void Constructor_throws_ArgumentNullException_when_logger_is_null()
-    {
-        var act = () => new FileSigningKeyReader(null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
-    }
-
-    [Fact]
     public async Task ReadPemTextAsync_releases_the_open_handle_when_validation_rejects_the_file()
     {
         var ct = TestContext.Current.CancellationToken;

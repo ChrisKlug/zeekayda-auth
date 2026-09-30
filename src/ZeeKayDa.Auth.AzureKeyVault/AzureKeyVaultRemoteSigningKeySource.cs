@@ -47,12 +47,14 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// check.
 /// </para>
 /// </remarks>
-internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
+internal sealed class AzureKeyVaultRemoteSigningKeySource(
+    IOptions<AzureKeyVaultRemoteSigningOptions> options,
+    IKeyVaultKeyReader keyReader,
+    IKeyVaultSigner signer,
+    TimeProvider timeProvider) : ISigningKeySource
 {
-    private readonly IOptions<AzureKeyVaultRemoteSigningOptions> _options;
-    private readonly IKeyVaultKeyReader _keyReader;
-    private readonly IKeyVaultSigner _signer;
-    private readonly TimeProvider _timeProvider;
+    private readonly IOptions<AzureKeyVaultRemoteSigningOptions> _options = options;
+    private readonly IKeyVaultSigner _signer = signer;
 
     // Serialises reads so the vault is read exactly once even if two callers read concurrently —
     // "only the ring calls this" is not something this type can enforce. Deliberately not disposed:
@@ -70,23 +72,6 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
     // happens-before edge otherwise connects the two.
     private volatile SigningVersion? _signingVersion;
 
-    public AzureKeyVaultRemoteSigningKeySource(
-        IOptions<AzureKeyVaultRemoteSigningOptions> options,
-        IKeyVaultKeyReader keyReader,
-        IKeyVaultSigner signer,
-        TimeProvider timeProvider)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(keyReader);
-        ArgumentNullException.ThrowIfNull(signer);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-
-        _options = options;
-        _keyReader = keyReader;
-        _signer = signer;
-        _timeProvider = timeProvider;
-    }
-
     /// <inheritdoc/>
     public async ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
     {
@@ -99,7 +84,7 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
             var options = _options.Value;
 
             var allVersions = new List<KeyVaultKeyVersionInfo>();
-            await foreach (var version in _keyReader.GetKeyVersionsAsync(cancellationToken).ConfigureAwait(false))
+            await foreach (var version in keyReader.GetKeyVersionsAsync(cancellationToken).ConfigureAwait(false))
                 allVersions.Add(version);
 
             if (allVersions.Count == 0)
@@ -115,7 +100,7 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
                 allVersions,
                 options.PreviousVersionsToPublish,
                 options.PreActivationDelay,
-                _timeProvider.GetUtcNow(),
+                timeProvider.GetUtcNow(),
                 KeyVaultVersionSelector.SelectionContext.ForKey(
                     options.KeyIdentifier.Name, options.KeyIdentifier.VaultUri));
 
@@ -170,7 +155,7 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
     private async ValueTask<SourceKey> ToSourceKeyAsync(
         KeyVaultKeyVersionInfo version, AzureKeyVaultRemoteSigningOptions options, CancellationToken cancellationToken)
     {
-        var (rawPublicKey, keyType) = await _keyReader
+        var (rawPublicKey, keyType) = await keyReader
             .GetKeyMaterialAsync(version.Version, cancellationToken).ConfigureAwait(false);
 
         using var publicKey = rawPublicKey;

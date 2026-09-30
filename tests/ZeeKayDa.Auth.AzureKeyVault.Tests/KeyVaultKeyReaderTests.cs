@@ -88,14 +88,6 @@ public sealed class KeyVaultKeyReaderTests
     private static readonly Uri KeyIdentifierUri = new("https://fake-vault.vault.azure.net/keys/fake-key");
 
     [Fact]
-    public void Constructor_rejects_null_options()
-    {
-        var act = () => new KeyVaultKeyReader(null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
-    }
-
-    [Fact]
     public void Constructor_rejects_options_carrying_no_credential()
     {
         // Credential is nullable on the options type, so the reader cannot rely on the validator

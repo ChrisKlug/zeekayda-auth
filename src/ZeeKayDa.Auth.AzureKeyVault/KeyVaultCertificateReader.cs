@@ -45,7 +45,6 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
 
     public KeyVaultCertificateReader(IOptions<AzureKeyVaultCachedSigningOptions> options)
     {
-        ArgumentNullException.ThrowIfNull(options);
         var value = options.Value;
         var credential = value.Credential;
         ArgumentNullException.ThrowIfNull(credential);

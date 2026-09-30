@@ -48,11 +48,12 @@ namespace ZeeKayDa.Auth.Windows;
 /// pairing check.
 /// </para>
 /// </remarks>
-internal sealed class WindowsCertificateStoreSigningKeySource : ISigningKeySource
+internal sealed class WindowsCertificateStoreSigningKeySource(
+    IOptions<WindowsCertificateStoreSigningOptions> options,
+    ICertificateStoreReader storeReader,
+    ICertificateKeyExtractor keyExtractor) : ISigningKeySource
 {
-    private readonly IOptions<WindowsCertificateStoreSigningOptions> _options;
-    private readonly ICertificateStoreReader _storeReader;
-    private readonly ICertificateKeyExtractor _keyExtractor;
+    private readonly IOptions<WindowsCertificateStoreSigningOptions> _options = options;
 
     // Guards the memoized read so the slots are read exactly once even if two callers read
     // concurrently — "only the ring calls this" is not something this type can enforce. A plain
@@ -64,20 +65,6 @@ internal sealed class WindowsCertificateStoreSigningKeySource : ISigningKeySourc
     // certificate removed or replaced after startup — read-once is a property of this source, not
     // only of the ring.
     private SourceKeySet? _keySet;
-
-    public WindowsCertificateStoreSigningKeySource(
-        IOptions<WindowsCertificateStoreSigningOptions> options,
-        ICertificateStoreReader storeReader,
-        ICertificateKeyExtractor keyExtractor)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(storeReader);
-        ArgumentNullException.ThrowIfNull(keyExtractor);
-
-        _options = options;
-        _storeReader = storeReader;
-        _keyExtractor = keyExtractor;
-    }
 
     /// <inheritdoc/>
     public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
@@ -124,10 +111,10 @@ internal sealed class WindowsCertificateStoreSigningKeySource : ISigningKeySourc
                 "Current ever signs.");
         }
 
-        using var certificate = _storeReader.GetCertificate(current.NormalizedThumbprint, options.StoreLocation, options.StoreName);
+        using var certificate = storeReader.GetCertificate(current.NormalizedThumbprint, options.StoreLocation, options.StoreName);
 
         // Private/public key pairing is verified by the ring's per-handoff self-test, not here.
-        var (privateKey, _) = _keyExtractor.ExtractPrivateKey(certificate, current.NormalizedThumbprint);
+        var (privateKey, _) = keyExtractor.ExtractPrivateKey(certificate, current.NormalizedThumbprint);
 
         return new ValueTask<ISigner>(new LocalSigner(options.Algorithm, privateKey));
     }
@@ -142,9 +129,9 @@ internal sealed class WindowsCertificateStoreSigningKeySource : ISigningKeySourc
         if (lookup is null)
             return null;
 
-        using var certificate = _storeReader.GetCertificate(lookup.NormalizedThumbprint, options.StoreLocation, options.StoreName);
+        using var certificate = storeReader.GetCertificate(lookup.NormalizedThumbprint, options.StoreLocation, options.StoreName);
 
-        var (rawPublicKey, keyType) = _keyExtractor.ExtractPublicKey(certificate, lookup.NormalizedThumbprint);
+        var (rawPublicKey, keyType) = keyExtractor.ExtractPublicKey(certificate, lookup.NormalizedThumbprint);
         using var publicKey = rawPublicKey;
 
         // X509Certificate2 reports both ends of the validity window as local-kind DateTime, so the

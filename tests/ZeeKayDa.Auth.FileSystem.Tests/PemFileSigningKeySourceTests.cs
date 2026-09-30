@@ -82,25 +82,6 @@ public sealed class PemFileSigningKeySourceTests
         -----END CERTIFICATE-----
         """;
 
-    // ── Construction ─────────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_options_is_null()
-    {
-        var act = () => new PemFileSigningKeySource(
-            null!, new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance));
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_reader_is_null()
-    {
-        var act = () => new PemFileSigningKeySource(Options.Create(new PemFileSigningOptions()), null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("reader");
-    }
-
     // ── Unsupported key types ────────────────────────────────────────────────────────────────────
 
     [Fact]

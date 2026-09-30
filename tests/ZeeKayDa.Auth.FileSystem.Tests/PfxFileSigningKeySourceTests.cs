@@ -50,25 +50,6 @@ public sealed class PfxFileSigningKeySourceTests
     private static X509Certificate2 CreateRsaCertificate() =>
         TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
 
-    // ── Construction ─────────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_options_is_null()
-    {
-        var act = () => new PfxFileSigningKeySource(
-            null!, new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance));
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_reader_is_null()
-    {
-        var act = () => new PfxFileSigningKeySource(Options.Create(new PfxFileSigningOptions()), null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("reader");
-    }
-
     // ── Happy path ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]
