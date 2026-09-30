@@ -18,32 +18,21 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// process lifetime, and a ring that swaps its set at runtime is picked up on the next request
 /// simply because the reference differs.
 /// </remarks>
-internal sealed class JwksEndpoint : IZeeKayDaEndpoint
+internal sealed class JwksEndpoint(IOptions<AuthorizationServerOptions> options, CorsAllowlist allowedOrigins) : IZeeKayDaEndpoint
 {
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly HashSet<string> _allowedOrigins;
 
     private volatile CachedResponse? _cached;
 
     /// <summary>The serialized body, and the key set instance it was derived from.</summary>
     private sealed record CachedResponse(SigningKeySet KeySet, byte[] Body);
 
-    public JwksEndpoint(IOptions<AuthorizationServerOptions> options)
-    {
-        _options = options;
-        // Config values are already validated and canonicalized to lowercase by startup validation.
-        _allowedOrigins = new HashSet<string>(
-            options.Value.CorsOrigins,
-            StringComparer.OrdinalIgnoreCase);
-    }
-
     /// <inheritdoc/>
     public void Map(IEndpointRouteBuilder endpoints)
     {
-        var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
+        var issuerUri = EndpointRouteHelper.GetIssuerUri(options);
         var endpointUri = EndpointRouteHelper.GetPublishedEndpointUri(
             issuerUri,
-            _options.Value.JwksEndpoint.Uri,
+            options.Value.JwksEndpoint.Uri,
             "connect/jwks");
 
         // AllowAnonymous so a host-wide authorization fallback policy cannot turn the JWKS into a
@@ -62,7 +51,7 @@ internal sealed class JwksEndpoint : IZeeKayDaEndpoint
     internal IResult Handle([FromServices] ISigningKeyRing ring, HttpContext context)
     {
         PublicMetadataHeaders.Apply(
-            context, _options.Value.JwksEndpoint.CacheMaxAge, _allowedOrigins);
+            context, options.Value.JwksEndpoint.CacheMaxAge, allowedOrigins);
 
         // The ring is initialized at startup or the host never started, so Current cannot throw
         // here; the reference check makes concurrent requests race only towards writing the same

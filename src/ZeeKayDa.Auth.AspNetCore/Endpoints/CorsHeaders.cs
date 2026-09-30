@@ -23,12 +23,10 @@ internal static class CorsHeaders
     /// the request's <c>Origin</c> matches an entry, that entry — never the raw header value.
     /// </summary>
     /// <param name="context">The request being answered.</param>
-    /// <param name="allowedOrigins">
-    /// The startup-validated, canonicalized allowlist, in a case-insensitive set.
-    /// </param>
-    public static void ApplyOrigin(HttpContext context, HashSet<string> allowedOrigins)
+    /// <param name="allowedOrigins">The canonical allowlist.</param>
+    public static void ApplyOrigin(HttpContext context, CorsAllowlist allowedOrigins)
     {
-        if (allowedOrigins.Count == 0)
+        if (allowedOrigins.IsEmpty)
         {
             context.Response.Headers.AccessControlAllowOrigin = "*";
             return;
@@ -40,7 +38,7 @@ internal static class CorsHeaders
 
         var requestOrigin = context.Request.Headers.Origin.ToString();
         if (!string.IsNullOrEmpty(requestOrigin) &&
-            allowedOrigins.TryGetValue(requestOrigin, out var allowedOrigin))
+            allowedOrigins.TryMatch(requestOrigin, out var allowedOrigin))
         {
             // Emit the matching allowlist entry, NEVER the raw incoming header value.
             context.Response.Headers.AccessControlAllowOrigin = allowedOrigin;
@@ -53,11 +51,11 @@ internal static class CorsHeaders
     /// before it will send the real request.
     /// </summary>
     /// <param name="context">The preflight request being answered.</param>
-    /// <param name="allowedOrigins">The startup-validated, canonicalized allowlist.</param>
+    /// <param name="allowedOrigins">The canonical allowlist.</param>
     /// <param name="methods">The <c>Access-Control-Allow-Methods</c> value.</param>
     /// <param name="headers">The <c>Access-Control-Allow-Headers</c> value.</param>
     public static void ApplyPreflight(
-        HttpContext context, HashSet<string> allowedOrigins, string methods, string headers)
+        HttpContext context, CorsAllowlist allowedOrigins, string methods, string headers)
     {
         ApplyOrigin(context, allowedOrigins);
 

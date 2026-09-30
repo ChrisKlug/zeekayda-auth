@@ -106,8 +106,8 @@ When the list is non-empty:
 
 Allowlist entries are validated at startup. Each entry must be an absolute origin
 (`scheme://host[:port]`) with no path, query, fragment, user information, wildcards, or the
-literal string `null`. Entries are canonicalized, deduplicated, and frozen into an immutable
-startup snapshot used by endpoint lookups. Invalid entries cause the host to fail fast at startup.
+literal string `null`. The option is frozen as configured; endpoint lookups use a canonical,
+de-duplicated form derived from it once at startup. Invalid entries cause the host to fail fast at startup.
 
 `https://` origins are accepted by default. `http://` origins are rejected unless
 `AllowInsecureIssuer = true`; when enabled, HTTP origins must still use loopback hosts.
