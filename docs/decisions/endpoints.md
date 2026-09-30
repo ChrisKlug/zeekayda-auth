@@ -66,8 +66,8 @@ path-based issuers would have been simpler but silently breaks a spec-permitted 
 pattern, and path-based issuers are what RFC 9207 mix-up resistance relies on in those deployments.
 
 **Map-time and startup-time issuer errors are the same error.** `MapZeeKayDaAuth()` eagerly reads
-`IOptions<AuthorizationServerOptions>.Value`, so a bad issuer surfaces the validator's
-`OptionsValidationException` at map time exactly as `ValidateOnStart()` surfaces it.
+`IOptions<AuthorizationServerOptions>.Value`, so a bad issuer surfaces the validator's coded
+`ZeeKayDaConfigurationException` at map time exactly as `ValidateOnStart()` surfaces it.
 
 **The issuer is immutable after startup.** Endpoints resolve `IOptions<T>`, never
 `IOptionsSnapshot`/`IOptionsMonitor`. Changing an issuer at runtime invalidates every outstanding

@@ -615,44 +615,65 @@ only when all relying parties are co-hosted on the same origin or site as the au
 `AuthorizationServerOptionsValidator` validates `AuthorizationServerOptions` at host startup via
 `ValidateOnStart()`. The host will not start if any rule below is violated.
 
-| Rule | Condition that causes failure |
+A violation throws `ZeeKayDaConfigurationException`, the same exception every other startup check
+throws. Its `AggregatedFailures` holds one `ZeeKayDaConfigurationFailure` per violated rule, and each
+failure's `Code` is stable public contract, so operator alerting can key on it. The same exception
+comes from `MapZeeKayDaAuth()`, which reads the options before the host starts. It is visible in
+the startup output and host logs.
+
+| Code | Condition that causes failure |
 |---|---|
-| `Issuer` is required | `Issuer` is `null`, empty, or whitespace |
-| `Issuer` must be absolute | `Issuer` is not an absolute URI |
-| `Issuer` must not have a query string | `Issuer` contains a `?` component |
-| `Issuer` must not have a fragment | `Issuer` contains a `#` component |
-| `Issuer` must use HTTPS | `Issuer` uses HTTP and `AllowInsecureIssuer` is `false` |
-| HTTP issuer must be loopback | `Issuer` uses HTTP with a non-loopback host |
-| `Issuer` must not have user information | `Issuer` contains `user:password@host` userinfo |
-| `Issuer` must be canonical | `Issuer` uses uppercase scheme or host, or explicitly specifies a default port (`:443` for HTTPS, `:80` for HTTP loopback) |
-| Endpoint overrides must be absolute HTTPS URIs | an override is relative, uses an unsupported scheme, or uses HTTP without `AllowInsecureIssuer` |
-| HTTP endpoint overrides must be loopback | an override uses HTTP with a non-loopback host |
-| Endpoint overrides must share issuer authority | an override host/port differs from `Issuer` |
-| Endpoint overrides must not have user information | an override contains `user:password@host` userinfo |
-| Endpoint fragments are rejected | `AuthorizationEndpoint.Uri`, `TokenEndpoint.Uri`, `JwksEndpoint.Uri`, `EndSessionEndpoint.Uri`, or `UserInfoEndpoint.Uri` contains `#` |
-| Some endpoint overrides must not have a query string | `JwksEndpoint.Uri`, `EndSessionEndpoint.Uri`, or `UserInfoEndpoint.Uri` contains `?` |
-| `Response.TypesSupported` is required | `Response.TypesSupported` is `null` or empty |
-| `Response.ModesSupported` is required | `Response.ModesSupported` is `null` |
-| `GrantTypesSupported` is required | `GrantTypesSupported` is `null` |
-| `TokenEndpoint.AuthMethodsSupported` is required | `TokenEndpoint.AuthMethodsSupported` is `null` or empty |
-| `client_credentials` requires non-`none` token auth method | `GrantTypesSupported` includes `ClientCredentials` and every `TokenEndpoint.AuthMethodsSupported` value is `None` |
-| `IdToken.AdvertisedSigningAlgorithms` must not be empty | `IdToken.AdvertisedSigningAlgorithms` is a non-null empty collection |
-| `IScopeRepository` must include `openid` | the configured scope repository does not include a scope named `openid` |
-| Cache max-age must not be negative | `DiscoveryDocument.CacheMaxAge` or `JwksEndpoint.CacheMaxAge` is negative |
-| `AuthorizationEndpoint.CodeChallengeMethodsSupported` must not be empty | `AuthorizationEndpoint.CodeChallengeMethodsSupported` is a non-null empty collection |
-| The code grant requires `S256` | `GrantTypesSupported` contains `AuthorizationCode` and `AuthorizationEndpoint.CodeChallengeMethodsSupported` is `null` or lacks `CodeChallengeMethod.S256` |
-| Token lifetimes must be positive | `TokenEndpoint.AccessTokenLifetime` or `TokenEndpoint.IdTokenLifetime` is zero or negative |
-| `AuthorizationEndpoint.MaxRequestContextBytes` must be greater than zero | `AuthorizationEndpoint.MaxRequestContextBytes` is zero or negative |
-| CORS origins must use HTTPS by default | a `CorsOrigins` entry uses HTTP while `AllowInsecureIssuer` is `false` |
-| HTTP CORS origins must be loopback when allowed | a `CorsOrigins` entry uses HTTP with a non-loopback host |
-| `SecurityHeaders.ReferrerPolicy` must be a defined enum value | `SecurityHeaders.ReferrerPolicy` is set via an out-of-range cast |
-| `SecurityHeaders.CrossOriginResourcePolicy` must be a defined enum value | `SecurityHeaders.CrossOriginResourcePolicy` is set via an out-of-range cast |
+| `configuration.issuer.missing` | `Issuer` is `null`, empty, or whitespace |
+| `configuration.issuer.invalid` | `Issuer` is not an absolute URI |
+| `configuration.issuer.query` | `Issuer` contains a `?` component |
+| `configuration.issuer.fragment` | `Issuer` contains a `#` component |
+| `configuration.issuer.userinfo` | `Issuer` contains `user:password@host` userinfo |
+| `configuration.issuer.trailing_slash` | `Issuer` ends with `/` |
+| `configuration.issuer.not_https` | `Issuer` uses a scheme other than HTTPS, and is not HTTP with `AllowInsecureIssuer` set |
+| `configuration.issuer.http_non_loopback` | `Issuer` uses HTTP with a non-loopback host |
+| `configuration.issuer.not_canonical` | `Issuer` uses uppercase scheme or host, or explicitly specifies a default port (`:443` for HTTPS, `:80` for HTTP loopback) |
+| `configuration.<endpoint>.uri.invalid` | an endpoint override is not an absolute URI |
+| `configuration.<endpoint>.uri.userinfo` | an endpoint override contains `user:password@host` userinfo |
+| `configuration.<endpoint>.uri.not_https` | an endpoint override uses a scheme other than HTTPS, and is not HTTP with `AllowInsecureIssuer` set |
+| `configuration.<endpoint>.uri.http_non_loopback` | an endpoint override uses HTTP with a non-loopback host |
+| `configuration.<endpoint>.uri.authority_mismatch` | an endpoint override's host or port differs from `Issuer` |
+| `configuration.<endpoint>.uri.query` | `JwksEndpoint.Uri`, `EndSessionEndpoint.Uri`, or `UserInfoEndpoint.Uri` contains `?` |
+| `configuration.<endpoint>.uri.fragment` | an endpoint override contains `#` |
+| `configuration.response.types_supported.null` | `Response.TypesSupported` is `null` |
+| `configuration.response.types_supported.empty` | `Response.TypesSupported` is empty |
+| `configuration.response.modes_supported.null` | `Response.ModesSupported` is `null` |
+| `configuration.grant_types_supported.null` | `GrantTypesSupported` is `null` |
+| `configuration.grant_types_supported.undefined_value` | `GrantTypesSupported` contains an out-of-range `GrantType` cast |
+| `configuration.token_endpoint.auth_methods_supported.empty` | `TokenEndpoint.AuthMethodsSupported` is `null` or empty |
+| `configuration.token_endpoint.auth_methods_supported.invalid_entry` | a `TokenEndpoint.AuthMethodsSupported` entry is blank, has surrounding whitespace, or contains a control character |
+| `configuration.token_endpoint.auth_methods_supported.only_none_with_client_credentials` | `GrantTypesSupported` includes `ClientCredentials` and every `TokenEndpoint.AuthMethodsSupported` value is `None` |
+| `configuration.token_endpoint.access_token_lifetime.not_positive` | `TokenEndpoint.AccessTokenLifetime` is zero or negative |
+| `configuration.token_endpoint.id_token_lifetime.not_positive` | `TokenEndpoint.IdTokenLifetime` is zero or negative |
+| `configuration.token_endpoint.refresh_token_lifetime.not_positive` | `TokenEndpoint.RefreshTokenLifetime` is zero or negative |
+| `configuration.token_endpoint.refresh_token_lifetime.shorter_than_code_lifetime` | `TokenEndpoint.RefreshTokenLifetime` is shorter than `AuthorizationEndpoint.AuthorizationCodeLifetime` |
+| `configuration.token_endpoint.absolute_family_lifetime.not_positive` | `TokenEndpoint.AbsoluteFamilyLifetime` is zero or negative |
+| `configuration.id_token.advertised_signing_algorithms.empty` | `IdToken.AdvertisedSigningAlgorithms` is a non-null empty collection |
+| `configuration.discovery_document.cache_max_age.negative` | `DiscoveryDocument.CacheMaxAge` is negative |
+| `configuration.jwks_endpoint.cache_max_age.negative` | `JwksEndpoint.CacheMaxAge` is negative |
+| `configuration.cors_origins.invalid` | a `CorsOrigins` entry is not a bare `scheme://host[:port]` origin, uses HTTP while `AllowInsecureIssuer` is `false`, or uses HTTP with a non-loopback host |
+| `configuration.security_headers.referrer_policy.undefined_value` | `SecurityHeaders.ReferrerPolicy` is set via an out-of-range cast |
+| `configuration.security_headers.cross_origin_resource_policy.undefined_value` | `SecurityHeaders.CrossOriginResourcePolicy` is set via an out-of-range cast |
+| `configuration.authorization_endpoint.code_challenge_methods_supported.empty` | `AuthorizationEndpoint.CodeChallengeMethodsSupported` is a non-null empty collection |
+| `configuration.authorization_endpoint.code_challenge_methods_supported.s256_missing` | `GrantTypesSupported` contains `AuthorizationCode` and `AuthorizationEndpoint.CodeChallengeMethodsSupported` is `null` or lacks `CodeChallengeMethod.S256` |
+| `configuration.authorization_endpoint.authorization_code_lifetime.not_positive` | `AuthorizationEndpoint.AuthorizationCodeLifetime` is zero or negative |
+| `configuration.authorization_endpoint.authorization_code_lifetime.too_long` | `AuthorizationEndpoint.AuthorizationCodeLifetime` exceeds 600 seconds |
+| `configuration.authorization_endpoint.max_request_context_bytes.not_positive` | `AuthorizationEndpoint.MaxRequestContextBytes` is zero or negative |
+| `configuration.authorization_endpoint.interaction.<error_path\|login_path\|consent_path>.unsafe` | the interaction path is not a same-origin absolute path |
+| `configuration.end_session_endpoint.<logout_path\|signed_out_path>.unsafe` | the end-session path is not a same-origin absolute path |
+| `configuration.clock_skew_tolerance.negative` | `ClockSkewTolerance` is negative |
+| `configuration.clock_skew_tolerance.too_large` | `ClockSkewTolerance` is at least half of `AuthorizationEndpoint.AuthorizationCodeLifetime` |
+| `scopes.openid_missing` | the configured scope repository does not include a scope named `openid` (checked by a startup verifier, not the options validator) |
+
+`<endpoint>` is `authorization_endpoint`, `token_endpoint`, `jwks_endpoint`, `end_session_endpoint`,
+or `user_info_endpoint`.
 
 For the exact failure text of the `client_credentials` + `none`-only token auth combination, see
 [`TokenEndpoint.AuthMethodsSupported`](#tokenendpointauthmethodssupported) above.
-
-Validation errors are reported as `OptionsValidationException` and prevent the host from starting.
-They are visible in the startup output and host logs.
 
 > Note: Startup validation checks `AuthorizationServerOptions` and verifies that
 > `IScopeRepository` includes `openid`. Scope repositories still enforce their own validation rules

@@ -80,7 +80,7 @@ check can read, mutate, or clear another's.
 **Every invocation gets its own `AsyncServiceScope`, supplied by the runner.** "Constructor-inject
 only genuine singletons; resolve anything scoped from `scopedServices`" is the shape of the interface
 rather than a remark on two classes. It also keeps a `GetRequiredService` failure inside
-`VerifyAsync`, after `ValidateOnStart()`'s friendlier options messages have had their chance to win.
+`VerifyAsync`, after `ValidateOnStart()`'s coded options failures have had their chance to win.
 
 **Execution order is DI registration order and is not expressible in the contract.** `Name` is log
 attribution only. There is no `Priority`, no `Order`, and no ordering attribute — a security refusal,

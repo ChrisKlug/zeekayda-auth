@@ -538,6 +538,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Options-validation failures throw `ZeeKayDaConfigurationException` with a stable code for each
+  failure** (#796). The framework's options validators, for `AuthorizationServerOptions`, the client
+  secret hashers, the development, file, Azure Key Vault and Windows certificate-store signing
+  sources and the signing-key expiry health check, used to fail with an `OptionsValidationException`
+  of plain strings, so an operator could alert on a missing signing key but not on a bad issuer. They
+  now throw the same exception as every other startup check, at host start and from
+  `MapZeeKayDaAuth()` alike. A code is `configuration.` + the option's path in snake_case + the
+  problem, e.g. `configuration.issuer.not_https`; the full list for `AuthorizationServerOptions` is
+  in the configuration reference. Validation now stops at the first options type that fails, so
+  failures in another options type surface on the next start. Provider handler options are unchanged:
+  they still report `provider.options_invalid`.
+
 - **`AuthorizationServerOptions.CorsOrigins` keeps the host's entries exactly as configured**
   (#799). It is still frozen read-only after configuration, but no longer rewritten into lowercase,
   de-duplicated form. The canonical allowlist the endpoints match `Origin` against is derived

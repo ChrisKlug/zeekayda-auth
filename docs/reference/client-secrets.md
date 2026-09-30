@@ -42,8 +42,8 @@ created secrets — existing secrets continue to verify correctly at their origi
 > the timing of real verifications against old credentials. For this reason, iteration count
 > increases should be paired with a credential rotation step.
 
-The accepted range is **600,000 to 2,000,000**; a value outside it fails startup with an
-`OptionsValidationException`. The minimum matches the OWASP recommendation for PBKDF2-HMAC-SHA256
+The accepted range is **600,000 to 2,000,000**; a value outside it fails startup with a
+`ZeeKayDaConfigurationException` carrying the code `configuration.pbkdf2.iterations_out_of_range`. The minimum matches the OWASP recommendation for PBKDF2-HMAC-SHA256
 as of 2025. At the maximum a single verification takes roughly one second on typical server
 hardware, making the token endpoint impractical under any real load.
 
@@ -253,8 +253,9 @@ public static ZeeKayDaAuthBuilder AddClientSecretHasher<THasher>(
 | 2 or more | Exactly one must have `isDefault: true`; zero or multiple defaults cause a startup failure |
 
 Startup validation is enforced by `IValidateOptions<ClientSecretHasherRegistrationOptions>` via
-`ValidateOnStart()`. A misconfigured hasher registration prevents the host from starting and is
-visible in the startup output.
+`ValidateOnStart()`. A misconfigured hasher registration prevents the host from starting with a
+`ZeeKayDaConfigurationException`: `configuration.hashers.no_default` when none is marked default,
+`configuration.hashers.multiple_defaults` when more than one is.
 
 ---
 
