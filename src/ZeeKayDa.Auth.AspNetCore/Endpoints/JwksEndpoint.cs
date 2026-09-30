@@ -21,20 +21,20 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 internal sealed class JwksEndpoint : IZeeKayDaEndpoint
 {
     private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly HashSet<string> _allowedOrigins;
+    private readonly CorsAllowlist _allowedOrigins;
 
     private volatile CachedResponse? _cached;
 
     /// <summary>The serialized body, and the key set instance it was derived from.</summary>
     private sealed record CachedResponse(SigningKeySet KeySet, byte[] Body);
 
-    public JwksEndpoint(IOptions<AuthorizationServerOptions> options)
+    public JwksEndpoint(IOptions<AuthorizationServerOptions> options, CorsAllowlist allowedOrigins)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(allowedOrigins);
+
         _options = options;
-        // Config values are already validated and canonicalized to lowercase by startup validation.
-        _allowedOrigins = new HashSet<string>(
-            options.Value.CorsOrigins,
-            StringComparer.OrdinalIgnoreCase);
+        _allowedOrigins = allowedOrigins;
     }
 
     /// <inheritdoc/>

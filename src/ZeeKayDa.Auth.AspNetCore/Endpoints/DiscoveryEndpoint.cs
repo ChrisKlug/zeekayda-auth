@@ -28,15 +28,15 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
     private const string OAuthWellKnownName = "oauth-authorization-server";
 
     private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly HashSet<string> _allowedOrigins;
+    private readonly CorsAllowlist _allowedOrigins;
 
-    public DiscoveryEndpoint(IOptions<AuthorizationServerOptions> options)
+    public DiscoveryEndpoint(IOptions<AuthorizationServerOptions> options, CorsAllowlist allowedOrigins)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(allowedOrigins);
+
         _options = options;
-        // Config values are already validated and canonicalized to lowercase by startup validation.
-        _allowedOrigins = new HashSet<string>(
-            options.Value.CorsOrigins,
-            StringComparer.OrdinalIgnoreCase);
+        _allowedOrigins = allowedOrigins;
     }
 
     /// <inheritdoc/>

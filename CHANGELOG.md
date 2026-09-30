@@ -560,6 +560,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **`AuthorizationServerOptions.CorsOrigins` keeps the host's entries exactly as configured**
+  (#799). It is still frozen read-only after configuration, but no longer rewritten into lowercase,
+  de-duplicated form. The canonical allowlist the endpoints match `Origin` against is derived
+  internally, once, from the validated entries. CORS behaviour is unchanged.
+
 - **The framework's token stores are internal; every third-party store contract ends in
   `BackingStore`** (#827). `IAuthorizationCodeStore` and `IRefreshTokenStore` are gone: nobody
   outside the framework could implement them, and nothing public exposed them. The entry and result

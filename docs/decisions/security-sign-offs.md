@@ -1118,10 +1118,10 @@ or authorization endpoints, which carry no `AllowAnonymous` and still 401 under 
   `GetJwks_served_key_verifies_the_signature_of_a_token_this_server_issued`.
 - CORS emits the allowlist entry, never the request `Origin`, canonicalized to the punycode form a
   browser sends. Closed — proven by
-  `PostConfigure_canonicalizes_an_internationalized_host_to_its_punycode_form`.
+  `An_internationalized_host_matches_the_punycode_form_a_browser_sends` [moved by #799 from PostConfigure_canonicalizes_an_internationalized_host_to_its_punycode_form].
 - IPv6 CORS origins keep their brackets and an IDN-invalid host fails startup with a named error
   rather than an escaped exception. Closed — proven by
-  `PostConfigure_preserves_the_brackets_of_an_ipv6_origin` and
+  `A_configured_origin_matches_in_its_canonical_form` [moved by #799 from PostConfigure_preserves_the_brackets_of_an_ipv6_origin] and
   `Validate_fails_with_named_list_for_an_origin_whose_host_is_not_a_valid_idn`.
 - Residual: revocation latency is bounded only by `JwksEndpoint.CacheMaxAge`, unwarned however long
   it is set (#562).
