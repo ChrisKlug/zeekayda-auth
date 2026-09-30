@@ -1,5 +1,6 @@
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Claims;
+using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Security;
@@ -20,6 +21,10 @@ namespace ZeeKayDa.Auth;
 /// </remarks>
 public sealed class AuthorizationServerOptions
 {
+    private ICollection<GrantType> _grantTypesSupported = [GrantType.AuthorizationCode];
+    private ICollection<string> _corsOrigins = [];
+    private bool _frozen;
+
     /// <summary>
     /// Gets or sets the issuer identifier for this authorization server.
     /// </summary>
@@ -41,13 +46,15 @@ public sealed class AuthorizationServerOptions
     public bool AllowInsecureIssuer { get; set; }
 
     /// <summary>
-    /// Gets or sets the clock-skew grace window applied to token expiry checks in multi-node
-    /// store implementations.
+    /// Gets or sets the server-wide clock-skew grace window applied to token and authorization code
+    /// validity checks.
     /// </summary>
     /// <remarks>
-    /// In load-balanced deployments, node clocks can drift. Multi-node store implementations apply
-    /// this value as a grace window on <c>ExpiresAt</c> liveness checks:
-    /// <c>entry.ExpiresAt + ClockSkewTolerance &gt; now</c>. Must be greater than or equal to
+    /// Clocks drift between the nodes of a deployment and between the server and its callers, so
+    /// one tolerance covers every such check: the authorization code and refresh token stores
+    /// apply it to their expiry checks (<c>entry.ExpiresAt + ClockSkewTolerance &gt; now</c>), and
+    /// access token validation applies it to the <c>exp</c> and <c>nbf</c> claims. There is no
+    /// per-component setting. Must be greater than or equal to
     /// <see cref="TimeSpan.Zero"/>, and must be less than half of
     /// <c>AuthorizationEndpoint.AuthorizationCodeLifetime</c> — otherwise it would effectively
     /// nullify the code expiry guarantee. Both are enforced at startup by
@@ -62,10 +69,14 @@ public sealed class AuthorizationServerOptions
     /// <remarks>
     /// This is a server-wide setting with no per-endpoint variant in the OIDC Discovery specification.
     /// </remarks>
-    public ICollection<GrantType> GrantTypesSupported { get; set; } = [GrantType.AuthorizationCode];
+    public ICollection<GrantType> GrantTypesSupported
+    {
+        get => _grantTypesSupported;
+        set => _grantTypesSupported = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.GrantTypesSupported");
+    }
 
     /// <summary>
-    /// Gets the list of browser origins allowed to read the responses of the endpoints a script
+    /// Gets or sets the browser origins allowed to read the responses of the endpoints a script
     /// may call: discovery, JWKS and userinfo. When empty (the default), each of them emits
     /// <c>Access-Control-Allow-Origin: *</c>. When non-empty, each performs an exact canonical
     /// match against the request <c>Origin</c> header and emits the matching allowlist entry in
@@ -88,7 +99,11 @@ public sealed class AuthorizationServerOptions
     /// <see langword="true"/> to permit HTTP loopback origins for local development only.
     /// </para>
     /// </remarks>
-    public IList<string> CorsOrigins { get; internal set; } = [];
+    public ICollection<string> CorsOrigins
+    {
+        get => _corsOrigins;
+        set => _corsOrigins = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.CorsOrigins");
+    }
 
     /// <summary>
     /// Gets the discovery document configuration options.
@@ -141,4 +156,19 @@ public sealed class AuthorizationServerOptions
     /// emits log entries and are not advertised in the OIDC Discovery document.
     /// </summary>
     public LoggingOptions Logging { get; } = new();
+
+    /// <summary>Makes every collection read-only and refuses any later replacement.</summary>
+    internal void Freeze()
+    {
+        if (_frozen)
+            return;
+
+        GrantTypesSupported = FrozenOptions.Copy(GrantTypesSupported);
+        CorsOrigins = FrozenOptions.Copy(CorsOrigins);
+        AuthorizationEndpoint.Freeze();
+        TokenEndpoint.Freeze();
+        IdToken.Freeze();
+        Response.Freeze();
+        _frozen = true;
+    }
 }

@@ -79,10 +79,10 @@ public sealed class ClientRepositoryStartupActivatorTests
 
     private sealed class CustomClientRepository : IClientRepository
     {
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(
+        public Task<IClientRegistration?> FindByClientIdAsync(
             string clientId,
             CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<IClientRegistration?>(null);
+            => Task.FromResult<IClientRegistration?>(null);
     }
 
     // ── Asking the signing key ring for the key set (#499) ───────────────────────────────────────
@@ -148,18 +148,18 @@ public sealed class ClientRepositoryStartupActivatorTests
 
         public SigningKeySet Current => throw new NotSupportedException();
 
-        public ValueTask<SigningOutcome> SignAsync<TState>(
+        public Task<SigningOutcome> SignAsync<TState>(
             TState state,
             Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
+        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
         {
             EnsureInitializedCallCount++;
 
             return failure is null
-                ? ValueTask.CompletedTask
+                ? Task.CompletedTask
                 : throw new ZeeKayDaConfigurationException(failure);
         }
 

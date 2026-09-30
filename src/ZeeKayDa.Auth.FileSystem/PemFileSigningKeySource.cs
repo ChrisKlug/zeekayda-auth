@@ -47,7 +47,7 @@ internal sealed class PemFileSigningKeySource(
     private SourceKeySet? _keySet;
 
     /// <inheritdoc/>
-    public async ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
     {
         await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -72,7 +72,7 @@ internal sealed class PemFileSigningKeySource(
     }
 
     /// <inheritdoc/>
-    public async ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+    public async Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
     {
         var options = _options.Value;
         var current = options.Current;

@@ -14,7 +14,7 @@ internal sealed class AbsoluteFamilyLifetimeUnboundedWarningService(
     public string Name => "AbsoluteFamilyLifetimeUnbounded";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -29,6 +29,6 @@ internal sealed class AbsoluteFamilyLifetimeUnboundedWarningService(
                 "refresh-token grant store over time. Ensure this is an intentional choice.");
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }

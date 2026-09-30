@@ -36,7 +36,7 @@ internal sealed class DevelopmentSigningKeyWarningService(
     public string Name => "DevelopmentSigningKey";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -65,6 +65,6 @@ internal sealed class DevelopmentSigningKeyWarningService(
             context.AddWarning("signing.dev_keys.active", WarningMessage, LogLevel.Information);
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }

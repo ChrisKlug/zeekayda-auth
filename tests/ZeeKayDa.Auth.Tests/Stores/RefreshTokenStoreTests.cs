@@ -1042,22 +1042,22 @@ public sealed class RefreshTokenStoreTests
 
     private sealed class ThrowingGrantStore : IRefreshTokenBackingStore
     {
-        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+        public Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated grant store failure.");
 
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+        public Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated grant store failure.");
 
-        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+        public Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated grant store failure.");
 
-        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+        public Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated grant store failure.");
 
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+        public Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated grant store failure.");
 
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+        public Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated grant store failure.");
     }
 
@@ -1072,25 +1072,25 @@ public sealed class RefreshTokenStoreTests
 
         public RaceLosingGrantStore(IRefreshTokenBackingStore inner) => _inner = inner;
 
-        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+        public Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
             => _inner.InsertAsync(grant, cancellationToken);
 
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+        public Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => _inner.FindByHandleAsync(handleHash, cancellationToken);
 
-        public async ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+        public async Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
         {
             await _inner.TryMarkConsumedAsync(handleHash, cancellationToken).ConfigureAwait(false);
             return false;
         }
 
-        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+        public Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
             => _inner.RevokeFamilyAsync(familyId, rememberUntil, cancellationToken);
 
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+        public Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
 
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+        public Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
             => _inner.IsFamilyRevokedAsync(familyId, cancellationToken);
     }
 
@@ -1110,26 +1110,26 @@ public sealed class RefreshTokenStoreTests
             _familyId = familyId;
         }
 
-        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+        public Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
             => _inner.InsertAsync(grant, cancellationToken);
 
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+        public Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => _inner.FindByHandleAsync(handleHash, cancellationToken);
 
-        public async ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+        public async Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
         {
             await _inner.TryMarkConsumedAsync(handleHash, cancellationToken).ConfigureAwait(false);
             await _inner.RevokeFamilyAsync(_familyId, DateTimeOffset.MaxValue, cancellationToken).ConfigureAwait(false);
             return false;
         }
 
-        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+        public Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
             => _inner.RevokeFamilyAsync(familyId, rememberUntil, cancellationToken);
 
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+        public Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
 
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+        public Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
             => _inner.IsFamilyRevokedAsync(familyId, cancellationToken);
     }
 
@@ -1139,22 +1139,22 @@ public sealed class RefreshTokenStoreTests
 
         public CancellationThrowingOnMarkConsumedGrantStore(IRefreshTokenBackingStore inner) => _inner = inner;
 
-        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+        public Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
             => _inner.InsertAsync(grant, cancellationToken);
 
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+        public Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => _inner.FindByHandleAsync(handleHash, cancellationToken);
 
-        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+        public Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => throw new OperationCanceledException();
 
-        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+        public Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
             => _inner.RevokeFamilyAsync(familyId, rememberUntil, cancellationToken);
 
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+        public Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
 
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+        public Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
             => _inner.IsFamilyRevokedAsync(familyId, cancellationToken);
     }
 
@@ -1176,23 +1176,23 @@ public sealed class RefreshTokenStoreTests
             _revokedFamilyId = revokedFamilyId;
         }
 
-        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+        public Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
             => _inner.InsertAsync(grant, cancellationToken);
 
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+        public Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => _inner.FindByHandleAsync(handleHash, cancellationToken);
 
-        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+        public Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => _inner.TryMarkConsumedAsync(handleHash, cancellationToken);
 
-        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+        public Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
             => _inner.RevokeFamilyAsync(familyId, rememberUntil, cancellationToken);
 
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+        public Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
 
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
-            => ValueTask.FromResult(string.Equals(familyId, _revokedFamilyId, StringComparison.Ordinal));
+        public Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => Task.FromResult(string.Equals(familyId, _revokedFamilyId, StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -1212,28 +1212,28 @@ public sealed class RefreshTokenStoreTests
 
         public DateTimeOffset? LastRememberUntil { get; private set; }
 
-        public async ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+        public async Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
         {
             await _inner.InsertAsync(grant, cancellationToken).ConfigureAwait(false);
             Interlocked.Increment(ref _successfulInsertCount);
         }
 
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+        public Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => _inner.FindByHandleAsync(handleHash, cancellationToken);
 
-        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+        public Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => _inner.TryMarkConsumedAsync(handleHash, cancellationToken);
 
-        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+        public Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
         {
             LastRememberUntil = rememberUntil;
             return _inner.RevokeFamilyAsync(familyId, rememberUntil, cancellationToken);
         }
 
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+        public Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
 
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+        public Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
             => _inner.IsFamilyRevokedAsync(familyId, cancellationToken);
     }
 

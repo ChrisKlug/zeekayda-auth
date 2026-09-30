@@ -43,7 +43,7 @@ public interface IClientAuthenticator
     /// </summary>
     /// <param name="context">The authentication context for this request, including the resolved client.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
-    ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+    Task<ClientAuthenticationResult> AuthenticateAsync(
         ClientAuthenticationContext context,
         CancellationToken cancellationToken);
 }

@@ -21,20 +21,31 @@ internal sealed record ValidatedOptions<TOptions>(string Name) : IValidatedOptio
         {
             _ = services.GetRequiredService<IOptionsMonitor<TOptions>>().Get(Name);
         }
-        catch (Exception ex) when (ex is ZeeKayDaConfigurationException or OptionsValidationException)
+        catch (Exception ex) when (OptionsFailures.ValidationFailure(ex) is { } failure)
         {
             if (!RecordEachValidator(services, failures))
-                failures.Record(ex);
+                failures.Record(failure);
         }
     }
 
-    /// <summary>Runs every validator on its own; whether any of them failed.</summary>
+    /// <summary>
+    /// Runs every validator on its own; whether any of them failed. False as well when the options
+    /// cannot even be built, so the caller reports the first read's failure.
+    /// </summary>
     private bool RecordEachValidator(IServiceProvider services, OptionsFailures failures)
     {
-        var options = new OptionsFactory<TOptions>(
-            services.GetServices<IConfigureOptions<TOptions>>(),
-            services.GetServices<IPostConfigureOptions<TOptions>>(),
-            []).Create(Name);
+        TOptions options;
+        try
+        {
+            options = new OptionsFactory<TOptions>(
+                services.GetServices<IConfigureOptions<TOptions>>(),
+                services.GetServices<IPostConfigureOptions<TOptions>>(),
+                []).Create(Name);
+        }
+        catch (Exception ex) when (OptionsFailures.ValidationFailure(ex) is not null)
+        {
+            return false;
+        }
 
         var anyFailed = false;
         foreach (var validator in services.GetServices<IValidateOptions<TOptions>>())

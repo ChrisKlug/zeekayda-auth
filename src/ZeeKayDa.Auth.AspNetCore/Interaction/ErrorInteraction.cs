@@ -11,7 +11,7 @@ internal sealed class ErrorInteraction(
     AuthorizeErrorTransport transport) : IErrorInteraction
 {
     /// <inheritdoc/>
-    public ValueTask<AuthorizationErrorDetails?> GetErrorAsync(CancellationToken cancellationToken = default)
+    public Task<AuthorizationErrorDetails?> GetErrorAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -20,6 +20,6 @@ internal sealed class ErrorInteraction(
                 "IErrorInteraction requires an active HTTP request. Resolve it from request services " +
                 "inside the error page, not from a background service.");
 
-        return ValueTask.FromResult(transport.TryRead(context));
+        return Task.FromResult(transport.TryRead(context));
     }
 }

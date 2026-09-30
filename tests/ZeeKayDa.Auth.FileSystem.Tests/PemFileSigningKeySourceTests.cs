@@ -94,7 +94,7 @@ public sealed class PemFileSigningKeySourceTests
         var path = tempDir.WriteTextFile("dsa.pem", DsaCertificatePem);
         var sut = BuildSource(new PemSigningFile(path));
 
-        var act = () => sut.ReadAsync(ct).AsTask();
+        var act = () => sut.ReadAsync(ct);
 
         var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>(
             "a key type the signing pipeline cannot sign with must be rejected at read time, not when the first token is issued");

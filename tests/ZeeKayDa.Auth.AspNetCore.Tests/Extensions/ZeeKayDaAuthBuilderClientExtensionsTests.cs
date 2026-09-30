@@ -226,9 +226,9 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
 
     private sealed class CustomClientRepository : IClientRepository
     {
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(
+        public Task<IClientRegistration?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<IClientRegistration?>(null);
+            => Task.FromResult<IClientRegistration?>(null);
     }
 
     // ── Web application factory for missing-repository test ───────────────────────────────────────

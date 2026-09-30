@@ -715,11 +715,11 @@ public sealed class TokenEndpointClaimsTests : IDisposable
             get { lock (_calls) return [.. _calls]; }
         }
 
-        public ValueTask<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default)
+        public Task<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default)
         {
             lock (_calls) _calls.Add(context);
 
-            return ValueTask.FromResult(Script is { } script ? script(context) : Resolved(DefaultPool));
+            return Task.FromResult(Script is { } script ? script(context) : Resolved(DefaultPool));
         }
     }
 
@@ -728,7 +728,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     {
         public UnconstructibleClaimsProvider() => throw new InvalidOperationException("Could not open connection string Server=db;Password=hunter2");
 
-        public ValueTask<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
+        public Task<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
 
@@ -747,8 +747,8 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     /// <summary>A repository registered under the wrong lifetime; its answers are never read.</summary>
     private sealed class ScopedClientRepository : IClientRepository
     {
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IClientRegistration?>(null);
+        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientRegistration?>(null);
     }
 
     /// <summary>A scope repository whose definitions a test can change between requests.</summary>
@@ -756,8 +756,8 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     {
         public IReadOnlyCollection<ScopeDefinition> Scopes { get; set; } = scopes;
 
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Scopes);
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Scopes);
     }
 
     /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>

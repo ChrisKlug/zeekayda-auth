@@ -34,7 +34,7 @@ internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
     public string Name => "SigningKeyRingPresence";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -51,7 +51,7 @@ internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
                 "builder.AddAzureKeyVaultCachedSigning(), builder.AddWindowsCertificateStoreSigning()), " +
                 "or builder.AddSigningKeySource<TSource>() for a custom ISigningKeySource.");
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 
     /// <summary>

@@ -395,17 +395,17 @@ public class ValidatedClientResolverTests
 
     private sealed class SingleClientRepository(IClientRegistration client) : IClientRepository
     {
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(
+        public Task<IClientRegistration?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IClientRegistration?>(
+            Task.FromResult<IClientRegistration?>(
                 string.Equals(clientId, client.ClientId, StringComparison.Ordinal) ? client : null);
     }
 
     private sealed class MultiClientRepository(params IClientRegistration[] clients) : IClientRepository
     {
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(
+        public Task<IClientRegistration?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(
+            Task.FromResult(
                 clients.FirstOrDefault(c => string.Equals(c.ClientId, clientId, StringComparison.Ordinal)));
     }
 
@@ -413,16 +413,16 @@ public class ValidatedClientResolverTests
     {
         public IClientRegistration Current { get; set; } = current;
 
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(
+        public Task<IClientRegistration?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IClientRegistration?>(Current);
+            Task.FromResult<IClientRegistration?>(Current);
     }
 
     private sealed class ThrowingRepository : IClientRepository
     {
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(
+        public Task<IClientRegistration?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IClientRegistration?>(new ThrowingRegistration());
+            Task.FromResult<IClientRegistration?>(new ThrowingRegistration());
     }
 
     private sealed class ThrowingRegistration : IClientRegistration
@@ -452,9 +452,9 @@ public class ValidatedClientResolverTests
 
     private sealed class FreshInstanceRepository : IClientRepository
     {
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(
+        public Task<IClientRegistration?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IClientRegistration?>(Client());
+            Task.FromResult<IClientRegistration?>(Client());
     }
 
     /// <summary>

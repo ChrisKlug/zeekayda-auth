@@ -510,8 +510,8 @@ public sealed class UserInfoEndpointTests : IDisposable
     {
         public IReadOnlyCollection<ScopeDefinition> Scopes { get; set; } = scopes;
 
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Scopes);
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Scopes);
     }
 
     /// <summary>Answers from <see cref="Script"/> when set, otherwise the default pool; records every context it is handed.</summary>
@@ -531,11 +531,11 @@ public sealed class UserInfoEndpointTests : IDisposable
             lock (_calls) _calls.Clear();
         }
 
-        public ValueTask<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default)
+        public Task<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default)
         {
             lock (_calls) _calls.Add(context);
 
-            return ValueTask.FromResult(Script is { } script ? script(context) : Resolved(DefaultPool));
+            return Task.FromResult(Script is { } script ? script(context) : Resolved(DefaultPool));
         }
     }
 }

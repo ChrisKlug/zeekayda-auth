@@ -60,26 +60,26 @@ public sealed class StartupVerificationHostedServiceTests
     {
         public string Name => name;
 
-        public ValueTask VerifyAsync(StartupVerificationContext context, IServiceProvider scopedServices, CancellationToken cancellationToken)
+        public Task VerifyAsync(StartupVerificationContext context, IServiceProvider scopedServices, CancellationToken cancellationToken)
         {
             act(context);
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         }
     }
 
-    private sealed class DelegatingVerifier(string name, Func<StartupVerificationContext, ValueTask> act) : IStartupVerifier
+    private sealed class DelegatingVerifier(string name, Func<StartupVerificationContext, Task> act) : IStartupVerifier
     {
         public string Name => name;
 
-        public ValueTask VerifyAsync(StartupVerificationContext context, IServiceProvider scopedServices, CancellationToken cancellationToken)
+        public Task VerifyAsync(StartupVerificationContext context, IServiceProvider scopedServices, CancellationToken cancellationToken)
             => act(context);
     }
 
-    private sealed class DelegatingActivator(string name, Func<StartupVerificationContext, ValueTask> act) : IStartupActivator
+    private sealed class DelegatingActivator(string name, Func<StartupVerificationContext, Task> act) : IStartupActivator
     {
         public string Name => name;
 
-        public ValueTask VerifyAsync(StartupVerificationContext context, IServiceProvider scopedServices, CancellationToken cancellationToken)
+        public Task VerifyAsync(StartupVerificationContext context, IServiceProvider scopedServices, CancellationToken cancellationToken)
             => act(context);
     }
 
@@ -107,7 +107,7 @@ public sealed class StartupVerificationHostedServiceTests
         var verifier = new DelegatingVerifier("RedactionProbe", context =>
         {
             context.AddWarning("x.code", "value {client_secret}", "s3cr3t-value");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         using var provider = BuildProviderWithSanitizingLogging(
             out var sink, services => services.AddSingleton<IStartupVerifier>(verifier));
@@ -138,12 +138,12 @@ public sealed class StartupVerificationHostedServiceTests
         var badVerifier = new DelegatingVerifier("BadWarningVerifier", context =>
         {
             context.AddWarning("bad.warning", "value {missing}");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         var goodVerifier = new DelegatingVerifier("GoodVerifier", context =>
         {
             context.AddFailure("real.failure", "a genuine configuration problem");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         using var provider = BuildProviderWithSanitizingLogging(
             out _,
@@ -211,7 +211,7 @@ public sealed class StartupVerificationHostedServiceTests
         services.AddSingleton<IStartupVerifier>(_ =>
         {
             order.Add("verifier-constructed");
-            return new DelegatingVerifier("V", _ => ValueTask.CompletedTask);
+            return new DelegatingVerifier("V", _ => Task.CompletedTask);
         });
 
         using var provider = services.BuildServiceProvider();
@@ -258,13 +258,13 @@ public sealed class StartupVerificationHostedServiceTests
         {
             verifier1Ran = true;
             context.AddFailure("v1.fail", "first failure");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         var verifier2 = new DelegatingVerifier("V2", context =>
         {
             verifier2Ran = true;
             context.AddFailure("v2.fail", "second failure");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
 
         var services = new ServiceCollection();
@@ -413,12 +413,12 @@ public sealed class StartupVerificationHostedServiceTests
         var verifier = new DelegatingVerifier("Cheap", context =>
         {
             context.AddFailure("config.broken", "Simulated cheap failure.");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         var activator = new DelegatingActivator("Expensive", _ =>
         {
             activatorRan = true;
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         using var provider = BuildProviderWithSanitizingLogging(out _, services =>
         {
@@ -438,11 +438,11 @@ public sealed class StartupVerificationHostedServiceTests
     public async Task StartAsync_runs_activators_when_every_verifier_passed()
     {
         var activatorRan = false;
-        var verifier = new DelegatingVerifier("Cheap", _ => ValueTask.CompletedTask);
+        var verifier = new DelegatingVerifier("Cheap", _ => Task.CompletedTask);
         var activator = new DelegatingActivator("Expensive", _ =>
         {
             activatorRan = true;
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         using var provider = BuildProviderWithSanitizingLogging(out _, services =>
         {
@@ -462,12 +462,12 @@ public sealed class StartupVerificationHostedServiceTests
         var first = new DelegatingActivator("First", context =>
         {
             context.AddFailure("first.failed", "First.");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         var second = new DelegatingActivator("Second", context =>
         {
             context.AddFailure("second.failed", "Second.");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         using var provider = BuildProviderWithSanitizingLogging(out _, services =>
         {
@@ -493,13 +493,13 @@ public sealed class StartupVerificationHostedServiceTests
         {
             context.AddFailure("genuine.one", "One.");
             context.AddFailure("genuine.two", "Two.");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         var throwing = new DelegatingVerifier("Throwing", _ => throw new InvalidOperationException("boom"));
         var later = new DelegatingVerifier("Later", context =>
         {
             context.AddFailure("genuine.three", "Three.");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         using var provider = BuildProviderWithSanitizingLogging(out _, services =>
         {
@@ -524,7 +524,7 @@ public sealed class StartupVerificationHostedServiceTests
         var failing = new DelegatingVerifier("Failing", context =>
         {
             context.AddFailure("genuine.one", "One.");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         using var provider = BuildProviderWithSanitizingLogging(out _, services =>
         {
@@ -614,7 +614,7 @@ public sealed class StartupVerificationHostedServiceTests
     {
         // AddSingleton<IStartupCheck, X>() compiles and reads as correct, but MS.DI does not resolve
         // a derived registration for a base service type, so the runner would never enumerate it.
-        var check = new DelegatingVerifier("Misregistered", _ => ValueTask.CompletedTask);
+        var check = new DelegatingVerifier("Misregistered", _ => Task.CompletedTask);
         using var provider = BuildProviderWithSanitizingLogging(
             out _, services => services.AddSingleton<IStartupCheck>(check));
         var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
@@ -630,7 +630,7 @@ public sealed class StartupVerificationHostedServiceTests
     [Fact]
     public async Task StartAsync_runs_normally_when_no_check_is_registered_as_IStartupCheck()
     {
-        var verifier = new DelegatingVerifier("Fine", _ => ValueTask.CompletedTask);
+        var verifier = new DelegatingVerifier("Fine", _ => Task.CompletedTask);
         using var provider = BuildProviderWithSanitizingLogging(
             out _, services => services.AddSingleton<IStartupVerifier>(verifier));
         var sut = new StartupVerificationHostedService([], provider, provider.GetRequiredService<IServiceScopeFactory>());
@@ -648,12 +648,12 @@ public sealed class StartupVerificationHostedServiceTests
         var first = new DelegatingActivator("First", context =>
         {
             context.AddFailure("signing.source_unavailable", "The source refused.");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         var second = new DelegatingActivator("Second", context =>
         {
             context.AddFailure("signing.source_unavailable", "The source refused.");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         using var provider = BuildProviderWithSanitizingLogging(out _, services =>
         {
@@ -675,12 +675,12 @@ public sealed class StartupVerificationHostedServiceTests
         var first = new DelegatingVerifier("First", context =>
         {
             context.AddFailure("client.invalid", "Client 'a' is invalid.");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         var second = new DelegatingVerifier("Second", context =>
         {
             context.AddFailure("client.invalid", "Client 'b' is invalid.");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         });
         using var provider = BuildProviderWithSanitizingLogging(out _, services =>
         {

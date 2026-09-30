@@ -54,7 +54,7 @@ public sealed class ZeeKayDaAuthBuilderClaimsExtensionsTests
 
     private sealed class OtherClaimsProvider : IClaimsProvider
     {
-        public ValueTask<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<ClaimsResolutionResult>(new ClaimsResolutionResult.SubjectInvalid());
+        public Task<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
+            Task.FromResult<ClaimsResolutionResult>(new ClaimsResolutionResult.SubjectInvalid());
     }
 }

@@ -16,7 +16,7 @@ service, or managed via an admin API, implement `IClientRepository` directly.
 ```csharp
 public interface IClientRepository
 {
-    ValueTask<IClientRegistration?> FindByClientIdAsync(
+    Task<IClientRegistration?> FindByClientIdAsync(
         string clientId,
         CancellationToken cancellationToken = default);
 }
@@ -85,7 +85,7 @@ public sealed class MyDatabaseClientRepository : IClientRepository
         // persist ...
     }
 
-    public async ValueTask<IClientRegistration?> FindByClientIdAsync(
+    public async Task<IClientRegistration?> FindByClientIdAsync(
         string clientId,
         CancellationToken cancellationToken = default)
     {

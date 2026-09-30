@@ -12,7 +12,7 @@ internal sealed class InMemoryInteractionBackingStore(TimeProvider timeProvider)
     private readonly ConcurrentDictionary<StoreKey, Entry> _entries = new();
 
     /// <inheritdoc/>
-    public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+    public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -22,25 +22,25 @@ internal sealed class InMemoryInteractionBackingStore(TimeProvider timeProvider)
         RemoveExpired();
 
         _entries[key] = new Entry(value.ToArray(), expiresAt);
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+    public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return ValueTask.FromResult(
+        return Task.FromResult(
             _entries.TryGetValue(key, out var entry) && !IsExpired(entry) ? (ReadOnlyMemory<byte>?)entry.Value : null);
     }
 
     /// <inheritdoc/>
-    public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+    public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         _entries.TryRemove(key, out _);
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 
     /// <summary>How many entries are held, expired or not. Observable only so the sweep can be tested.</summary>

@@ -69,7 +69,7 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
     private volatile SigningVersion? _signingVersion;
 
     /// <inheritdoc/>
-    public async ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
     {
         await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -127,7 +127,7 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
     /// the key the read published for that version, and hands it to a <see cref="LocalSigner"/>
     /// that owns and disposes it.
     /// </remarks>
-    public async ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+    public async Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
     {
         var signingVersion = _signingVersion;
 

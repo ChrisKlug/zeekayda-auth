@@ -14,7 +14,7 @@ internal static class StoreGuard
     /// <summary>Runs <paramref name="operation"/>, converting native faults to <see cref="ZeeKayDaStoreException"/>.</summary>
     /// <param name="operation">The backend call to run.</param>
     /// <param name="action">A short description of the action, used in the wrapped exception's message.</param>
-    public static async ValueTask<T> Guarded<T>(Func<ValueTask<T>> operation, string action)
+    public static async Task<T> Guarded<T>(Func<Task<T>> operation, string action)
     {
         try
         {
@@ -33,7 +33,7 @@ internal static class StoreGuard
     /// <summary>Runs <paramref name="operation"/>, converting native faults to <see cref="ZeeKayDaStoreException"/>.</summary>
     /// <param name="operation">The backend call to run.</param>
     /// <param name="action">A short description of the action, used in the wrapped exception's message.</param>
-    public static async ValueTask Guarded(Func<ValueTask> operation, string action)
+    public static async Task Guarded(Func<Task> operation, string action)
     {
         try
         {

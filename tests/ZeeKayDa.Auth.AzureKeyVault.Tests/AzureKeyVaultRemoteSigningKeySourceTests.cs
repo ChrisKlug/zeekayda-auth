@@ -528,7 +528,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         var sut = BuildSource(reader, new FakeTimeProvider(T0));
         var keySet = await sut.ReadAsync(ct);
 
-        var act = () => sut.CreateSignerAsync(keySet.SigningKey.Id, new CancellationToken(canceled: true)).AsTask();
+        var act = () => sut.CreateSignerAsync(keySet.SigningKey.Id, new CancellationToken(canceled: true));
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -620,8 +620,8 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddRsaVersion("v1", createdOn: T0);
         var sut = BuildSource(reader, new FakeTimeProvider(T0));
 
-        var first = sut.ReadAsync(ct).AsTask();
-        var second = sut.ReadAsync(ct).AsTask();
+        var first = sut.ReadAsync(ct);
+        var second = sut.ReadAsync(ct);
         var results = await Task.WhenAll(first, second);
 
         results[1].Should().BeSameAs(results[0],

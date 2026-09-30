@@ -60,7 +60,7 @@ public sealed class JwksEndpointTests
         private readonly RSA _current = RSA.Create(2048);
         private readonly ECDsa _next = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
             var previous = layout.IncludePrevious
                 ? new SourceKey(
@@ -82,16 +82,16 @@ public sealed class JwksEndpointTests
                     ExpiresAt: null)
                 : null;
 
-            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous, current, next));
+            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous, current, next));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             id.Value.Should().Be("current-key", because: "only the Current slot's key ever signs");
 
             // A fresh private key instance: the ring owns and disposes what it is handed.
             var privateKey = RSA.Create(_current.ExportParameters(includePrivateParameters: true));
-            return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, privateKey));
+            return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, privateKey));
         }
 
         public void Dispose()
@@ -405,7 +405,7 @@ public sealed class JwksEndpointTests
                 });
         }
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
             var publicKey = _rsa is not null
                 ? PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false))
@@ -413,16 +413,16 @@ public sealed class JwksEndpointTests
             var current = new SourceKey(
                 new SourceKeyId("current-key"), _algorithm, publicKey, ExpiresAt: null);
 
-            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             // A fresh private key instance: the ring owns and disposes what it is handed.
             AsymmetricAlgorithm privateKey = _rsa is not null
                 ? RSA.Create(_rsa.ExportParameters(includePrivateParameters: true))
                 : ECDsa.Create(_ecdsa!.ExportParameters(includePrivateParameters: true));
-            return new ValueTask<ISigner>(new LocalSigner(_algorithm, privateKey));
+            return Task.FromResult<ISigner>(new LocalSigner(_algorithm, privateKey));
         }
 
         public void Dispose()

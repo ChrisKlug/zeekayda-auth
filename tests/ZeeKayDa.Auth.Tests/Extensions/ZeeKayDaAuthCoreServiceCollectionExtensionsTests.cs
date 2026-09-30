@@ -51,21 +51,21 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     {
         public SigningKeySet Current => throw new InvalidOperationException("not initialized");
 
-        public ValueTask<SigningOutcome> SignAsync<TState>(
+        public Task<SigningOutcome> SignAsync<TState>(
             TState state,
             Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
             CancellationToken cancellationToken = default) => throw new InvalidOperationException("not initialized");
 
-        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => null;
     }
 
     private sealed class StubIssuer : ITokenIssuer
     {
-        public ValueTask<IssuedToken> IssueAsync(
+        public Task<IssuedToken> IssueAsync(
             TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default)
-            => new(new IssuedToken("stub", context is IdTokenIssuanceContext ? TokenKind.IdToken : TokenKind.AccessToken));
+            => Task.FromResult<IssuedToken>(new IssuedToken("stub", context is IdTokenIssuanceContext ? TokenKind.IdToken : TokenKind.AccessToken));
     }
 
     [Theory]

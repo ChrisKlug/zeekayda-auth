@@ -405,8 +405,8 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
         reader.AddRsaVersion("v1", createdOn: T0);
         var sut = BuildSource(reader, new FakeTimeProvider(T0));
 
-        var first = sut.ReadAsync(ct).AsTask();
-        var second = sut.ReadAsync(ct).AsTask();
+        var first = sut.ReadAsync(ct);
+        var second = sut.ReadAsync(ct);
         var results = await Task.WhenAll(first, second);
 
         results[1].Should().BeSameAs(results[0]);

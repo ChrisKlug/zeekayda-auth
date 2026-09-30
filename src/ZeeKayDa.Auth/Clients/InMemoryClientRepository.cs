@@ -157,7 +157,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
     internal IEnumerable<IClientRegistration> Registrations => _clients.Values;
 
     /// <inheritdoc/>
-    public ValueTask<IClientRegistration?> FindByClientIdAsync(
+    public Task<IClientRegistration?> FindByClientIdAsync(
         string clientId,
         CancellationToken cancellationToken = default)
     {
@@ -165,9 +165,9 @@ internal sealed class InMemoryClientRepository : IClientRepository
         // IClientRepository contract requires returning null for an unknown or malformed
         // client_id — never throwing.
         if (clientId is null)
-            return ValueTask.FromResult<IClientRegistration?>(null);
+            return Task.FromResult<IClientRegistration?>(null);
 
         _clients.TryGetValue(clientId, out var reg);
-        return ValueTask.FromResult(reg);
+        return Task.FromResult(reg);
     }
 }

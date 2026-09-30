@@ -39,13 +39,13 @@ public sealed class IdTokenHintValidatorTests
     {
         public SigningKeySet Current => current;
 
-        public ValueTask<SigningOutcome> SignAsync<TState>(
+        public Task<SigningOutcome> SignAsync<TState>(
             TState state,
             Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
+        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
             => throw new NotSupportedException();
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => current;
@@ -53,15 +53,15 @@ public sealed class IdTokenHintValidatorTests
 
     private sealed class RsaSource(RSA rsa) : ISigningKeySource
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
-            => new(SourceKeySet.Create(previous: null, RsaSourceKey("current", rsa), next: null));
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, RsaSourceKey("current", rsa), next: null));
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             // A copy, because LocalSigner takes ownership and the key is shared across tests.
             var copy = RSA.Create();
             copy.ImportParameters(rsa.ExportParameters(includePrivateParameters: true));
-            return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, copy));
+            return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, copy));
         }
     }
 

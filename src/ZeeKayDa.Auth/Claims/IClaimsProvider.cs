@@ -40,7 +40,7 @@ public interface IClaimsProvider
     /// tokens. An exception is treated as an infrastructure failure: nothing is issued and the
     /// client is answered <c>server_error</c>.
     /// </returns>
-    ValueTask<ClaimsResolutionResult> GetClaimsAsync(
+    Task<ClaimsResolutionResult> GetClaimsAsync(
         ClaimsProviderContext context,
         CancellationToken cancellationToken = default);
 }

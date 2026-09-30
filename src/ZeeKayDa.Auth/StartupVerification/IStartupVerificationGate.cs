@@ -26,7 +26,7 @@ internal interface IStartupVerificationGate
     /// invocation.
     /// </param>
     /// <param name="cancellationToken">A token that is signalled if the host is shutting down while startup verification is running.</param>
-    ValueTask VerifyAsync(
+    Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken);

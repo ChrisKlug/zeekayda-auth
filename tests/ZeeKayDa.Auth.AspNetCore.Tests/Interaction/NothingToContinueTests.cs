@@ -447,8 +447,8 @@ public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHost
     {
         public IClientRegistration? Current { get; set; } = initial;
 
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            new(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
+        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientRegistration?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
     }
 }
 

@@ -38,23 +38,23 @@ public sealed class JwtTokenIssuerTests
 
     private sealed class WorkingSource(RSA rsa) : ISigningKeySource
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
             var current = new SourceKey(
                 new SourceKeyId("current"),
                 SigningAlgorithm.RS256,
                 PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)),
                 ExpiresAt: null);
-            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             // A copy, because LocalSigner takes ownership and the test still needs the original
             // for signature verification.
             var copy = RSA.Create();
             copy.ImportParameters(rsa.ExportParameters(includePrivateParameters: true));
-            return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, copy));
+            return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, copy));
         }
     }
 
@@ -79,7 +79,7 @@ public sealed class JwtTokenIssuerTests
                 "The issuer read ISigningKeyRing.Current — the key must only be observed inside " +
                 "the SignAsync callback, where it is the key that produces the signature.");
 
-        public ValueTask<SigningOutcome> SignAsync<TState>(
+        public Task<SigningOutcome> SignAsync<TState>(
             TState state,
             Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
             CancellationToken cancellationToken = default)
@@ -88,10 +88,10 @@ public sealed class JwtTokenIssuerTests
             var input = buildSigningInput(new SigningContext(_keySet.SigningKey), state);
             CallbackInvocationCount++;
             SignatureCount++;
-            return new ValueTask<SigningOutcome>(new SigningOutcome(input, new byte[] { 1, 2, 3 }, _keySet.SigningKey));
+            return Task.FromResult<SigningOutcome>(new SigningOutcome(input, new byte[] { 1, 2, 3 }, _keySet.SigningKey));
         }
 
-        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => _keySet;
     }
@@ -102,9 +102,9 @@ public sealed class JwtTokenIssuerTests
     /// </summary>
     private sealed class OpaqueTokenIssuer : ITokenIssuer
     {
-        public ValueTask<IssuedToken> IssueAsync(
+        public Task<IssuedToken> IssueAsync(
             TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default)
-            => new(new IssuedToken("opaque-handle-42", context is IdTokenIssuanceContext ? TokenKind.IdToken : TokenKind.AccessToken));
+            => Task.FromResult<IssuedToken>(new IssuedToken("opaque-handle-42", context is IdTokenIssuanceContext ? TokenKind.IdToken : TokenKind.AccessToken));
     }
 
     /// <summary>A client that restricted the algorithms its ID tokens may be signed with.</summary>
@@ -126,20 +126,20 @@ public sealed class JwtTokenIssuerTests
     /// <summary>A source over one EC key, for the algorithms whose hash is not SHA-256.</summary>
     private sealed class EcSource(ECDsa ecdsa, SigningAlgorithm algorithm) : ISigningKeySource
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
             var current = new SourceKey(
                 new SourceKeyId("current"),
                 algorithm,
                 PublicKeyParameters.FromEc(ecdsa.ExportParameters(includePrivateParameters: false)),
                 ExpiresAt: null);
-            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             var copy = ECDsa.Create(ecdsa.ExportParameters(includePrivateParameters: true));
-            return new ValueTask<ISigner>(new LocalSigner(algorithm, copy));
+            return Task.FromResult<ISigner>(new LocalSigner(algorithm, copy));
         }
     }
 
@@ -335,7 +335,7 @@ public sealed class JwtTokenIssuerTests
 
         var act = () => issuer.IssueAsync(
             new AccessTokenIssuanceContext(Client), null!,
-            TestContext.Current.CancellationToken).AsTask();
+            TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
@@ -422,7 +422,7 @@ public sealed class JwtTokenIssuerTests
         var act = () => issuer.IssueAsync(
             new IdTokenIssuanceContext(Client, new IssuedToken("access", TokenKind.AccessToken)),
             new TokenPayload(new Dictionary<string, object?> { ["at_hash"] = "forged" }),
-            TestContext.Current.CancellationToken).AsTask();
+            TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*at_hash*");
         ring.SignAsyncCallCount.Should().Be(0);
@@ -456,7 +456,7 @@ public sealed class JwtTokenIssuerTests
         var act = () => issuer.IssueAsync(
             new IdTokenIssuanceContext(Client, new IssuedToken("héader.payload.sig", TokenKind.AccessToken)),
             new TokenPayload(new Dictionary<string, object?>()),
-            TestContext.Current.CancellationToken).AsTask();
+            TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*ASCII*");
         ring.SignAsyncCallCount.Should().Be(0);
@@ -490,7 +490,7 @@ public sealed class JwtTokenIssuerTests
         var act = () => issuer.IssueAsync(
             new IdTokenIssuanceContext(client, new IssuedToken("access", TokenKind.AccessToken)),
             new TokenPayload(new Dictionary<string, object?>()),
-            TestContext.Current.CancellationToken).AsTask();
+            TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*RS256*");
         ring.SignatureCount.Should().Be(0, "the refusal is decided from the resolved key, before the signer runs");

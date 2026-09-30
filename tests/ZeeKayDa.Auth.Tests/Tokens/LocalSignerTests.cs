@@ -94,7 +94,7 @@ public sealed class LocalSignerTests
         sut.Dispose();
         var ct = TestContext.Current.CancellationToken;
 
-        var act = () => sut.SignAsync(new byte[] { 1 }, ct).AsTask();
+        var act = () => sut.SignAsync(new byte[] { 1 }, ct);
 
         await act.Should().ThrowAsync<ObjectDisposedException>();
     }

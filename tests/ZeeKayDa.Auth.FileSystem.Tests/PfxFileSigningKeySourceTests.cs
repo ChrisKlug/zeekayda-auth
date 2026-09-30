@@ -25,8 +25,8 @@ public sealed class PfxFileSigningKeySourceTests
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
     private const string CorrectPassword = "correct horse battery staple";
 
-    private static Func<CancellationToken, ValueTask<string>> Password(string password = CorrectPassword) =>
-        _ => ValueTask.FromResult(password);
+    private static Func<CancellationToken, Task<string>> Password(string password = CorrectPassword) =>
+        _ => Task.FromResult(password);
 
     private static PfxFileSigningKeySource BuildSource(
         PfxFile? current,

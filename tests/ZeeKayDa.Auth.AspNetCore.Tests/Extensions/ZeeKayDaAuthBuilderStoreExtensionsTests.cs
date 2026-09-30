@@ -600,67 +600,67 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 
     private sealed class StubAuthorizationCodeBackingStore : IAuthorizationCodeBackingStore
     {
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
-            => ValueTask.FromResult(true);
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+            => Task.FromResult(true);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
-            => ValueTask.FromResult<ReadOnlyMemory<byte>?>(null);
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+            => Task.FromResult<ReadOnlyMemory<byte>?>(null);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
-            => ValueTask.CompletedTask;
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 
     private sealed class AnotherStubAuthorizationCodeBackingStore : IAuthorizationCodeBackingStore
     {
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
-            => ValueTask.FromResult(true);
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+            => Task.FromResult(true);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
-            => ValueTask.FromResult<ReadOnlyMemory<byte>?>(null);
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+            => Task.FromResult<ReadOnlyMemory<byte>?>(null);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
-            => ValueTask.CompletedTask;
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 
     private sealed class StubRefreshTokenBackingStore : IRefreshTokenBackingStore
     {
-        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
-            => ValueTask.CompletedTask;
+        public Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+            => Task.CompletedTask;
 
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => ValueTask.FromResult<RefreshTokenGrant?>(null);
+        public Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => Task.FromResult<RefreshTokenGrant?>(null);
 
-        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => ValueTask.FromResult(false);
+        public Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => Task.FromResult(false);
 
-        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
-            => ValueTask.CompletedTask;
+        public Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+            => Task.CompletedTask;
 
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
-            => ValueTask.CompletedTask;
+        public Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+            => Task.CompletedTask;
 
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
-            => ValueTask.FromResult(false);
+        public Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => Task.FromResult(false);
     }
 
     private sealed class AnotherStubRefreshTokenBackingStore : IRefreshTokenBackingStore
     {
-        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
-            => ValueTask.CompletedTask;
+        public Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+            => Task.CompletedTask;
 
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => ValueTask.FromResult<RefreshTokenGrant?>(null);
+        public Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => Task.FromResult<RefreshTokenGrant?>(null);
 
-        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => ValueTask.FromResult(false);
+        public Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+            => Task.FromResult(false);
 
-        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
-            => ValueTask.CompletedTask;
+        public Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+            => Task.CompletedTask;
 
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
-            => ValueTask.CompletedTask;
+        public Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+            => Task.CompletedTask;
 
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
-            => ValueTask.FromResult(false);
+        public Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+            => Task.FromResult(false);
     }
 }

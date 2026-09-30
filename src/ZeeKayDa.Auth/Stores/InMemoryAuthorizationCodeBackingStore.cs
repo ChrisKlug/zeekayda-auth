@@ -31,27 +31,27 @@ internal sealed class InMemoryAuthorizationCodeBackingStore : IAuthorizationCode
     private readonly ConcurrentDictionary<StoreKey, byte[]> _entries = new();
 
     /// <inheritdoc/>
-    public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+    public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return ValueTask.FromResult(_entries.TryAdd(key, value.ToArray()));
+        return Task.FromResult(_entries.TryAdd(key, value.ToArray()));
     }
 
     /// <inheritdoc/>
-    public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+    public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return ValueTask.FromResult(_entries.TryGetValue(key, out var value) ? (ReadOnlyMemory<byte>?)value : null);
+        return Task.FromResult(_entries.TryGetValue(key, out var value) ? (ReadOnlyMemory<byte>?)value : null);
     }
 
     /// <inheritdoc/>
-    public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+    public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         _entries.TryRemove(key, out _);
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }

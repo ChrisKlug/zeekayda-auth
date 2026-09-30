@@ -37,7 +37,7 @@ internal sealed class SigningKeyRingStartupVerifier : IStartupActivator
     /// <see cref="ZeeKayDaConfigurationException.AggregatedFailures"/> had already been added to
     /// <paramref name="context"/>.
     /// </remarks>
-    public async ValueTask VerifyAsync(
+    public async Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)

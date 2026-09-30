@@ -8,8 +8,8 @@ namespace ZeeKayDa.Auth.FileSystem.Tests;
 /// </summary>
 public sealed class PfxFileSigningOptionsValidatorTests
 {
-    private static Func<CancellationToken, ValueTask<string>> Password() =>
-        _ => ValueTask.FromResult("a password");
+    private static Func<CancellationToken, Task<string>> Password() =>
+        _ => Task.FromResult("a password");
 
     private static PfxFileSigningOptions ValidOptions() => new()
     {
@@ -60,8 +60,8 @@ public sealed class PfxFileSigningOptionsValidatorTests
     public void Succeeds_when_all_three_slots_are_configured_with_their_own_password_sources()
     {
         var options = ValidOptions();
-        options.Previous = new PfxFile("/etc/zeekayda/previous.pfx", _ => ValueTask.FromResult("previous"));
-        options.Next = new PfxFile("/etc/zeekayda/next.pfx", _ => ValueTask.FromResult("next"));
+        options.Previous = new PfxFile("/etc/zeekayda/previous.pfx", _ => Task.FromResult("previous"));
+        options.Next = new PfxFile("/etc/zeekayda/next.pfx", _ => Task.FromResult("next"));
 
         Validate(options).Should().BeEmpty();
     }

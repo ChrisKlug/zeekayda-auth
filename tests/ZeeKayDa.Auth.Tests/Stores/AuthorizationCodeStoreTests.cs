@@ -235,9 +235,9 @@ public sealed class AuthorizationCodeStoreTests
     /// <summary>Hands back one protected entry for every key, so a test can plant bytes the store would never write.</summary>
     private sealed class PlantedEntryBackingStore(byte[] entry) : IAuthorizationCodeBackingStore
     {
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) => ValueTask.FromResult(true);
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) => ValueTask.FromResult<ReadOnlyMemory<byte>?>(entry);
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) => Task.FromResult(true);
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) => Task.FromResult<ReadOnlyMemory<byte>?>(entry);
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     [Fact]
@@ -539,16 +539,16 @@ public sealed class AuthorizationCodeStoreTests
     {
         public ReadOnlyMemory<byte> Tombstone { get; private set; }
 
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
         {
             if (key.ToString().Contains(":t:", StringComparison.Ordinal))
                 Tombstone = value;
             return inner.TryInsertAsync(key, value, expiresAt, cancellationToken);
         }
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) => inner.GetAsync(key, cancellationToken);
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) => inner.GetAsync(key, cancellationToken);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) => inner.RemoveAsync(key, cancellationToken);
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) => inner.RemoveAsync(key, cancellationToken);
     }
 
     private sealed class RecordingBackingStore : IAuthorizationCodeBackingStore
@@ -557,54 +557,54 @@ public sealed class AuthorizationCodeStoreTests
 
         public DateTimeOffset LastExpiresAt { get; private set; }
 
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
         {
             LastKey = key;
             LastExpiresAt = expiresAt;
-            return ValueTask.FromResult(true);
+            return Task.FromResult(true);
         }
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
-            => ValueTask.FromResult<ReadOnlyMemory<byte>?>(null);
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+            => Task.FromResult<ReadOnlyMemory<byte>?>(null);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
-            => ValueTask.CompletedTask;
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 
     private sealed class ThrowingBackingStore : IAuthorizationCodeBackingStore
     {
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated backing store failure.");
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated backing store failure.");
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated backing store failure.");
     }
 
     private sealed class CancellationThrowingBackingStore : IAuthorizationCodeBackingStore
     {
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
             => throw new OperationCanceledException();
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
             => throw new OperationCanceledException();
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
             => throw new OperationCanceledException();
     }
 
     private sealed class AlwaysCollidingBackingStore : IAuthorizationCodeBackingStore
     {
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
-            => ValueTask.FromResult(false);
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+            => Task.FromResult(false);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
-            => ValueTask.FromResult<ReadOnlyMemory<byte>?>(null);
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+            => Task.FromResult<ReadOnlyMemory<byte>?>(null);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
-            => ValueTask.CompletedTask;
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 
     /// <summary>
@@ -618,16 +618,16 @@ public sealed class AuthorizationCodeStoreTests
 
         public RaceLosingBackingStore(IAuthorizationCodeBackingStore inner) => _inner = inner;
 
-        public async ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+        public async Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
         {
             await _inner.TryInsertAsync(key, value, expiresAt, cancellationToken).ConfigureAwait(false);
             return false;
         }
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
             => _inner.GetAsync(key, cancellationToken);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
             => _inner.RemoveAsync(key, cancellationToken);
     }
 
@@ -635,30 +635,30 @@ public sealed class AuthorizationCodeStoreTests
     {
         private readonly byte[] _tombstone = tombstone ?? [0x00, 0x01, 0x02];
 
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
-            => ValueTask.FromResult(true);
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+            => Task.FromResult(true);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
         {
             var isTombstone = key.ToString().Contains(":t:", StringComparison.Ordinal);
-            return ValueTask.FromResult(isTombstone ? (ReadOnlyMemory<byte>?)_tombstone : null);
+            return Task.FromResult(isTombstone ? (ReadOnlyMemory<byte>?)_tombstone : null);
         }
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
-            => ValueTask.CompletedTask;
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 
     private sealed class ThrowingOnRemoveBackingStore : IAuthorizationCodeBackingStore
     {
         private readonly IAuthorizationCodeBackingStore _inner = new InMemoryAuthorizationCodeBackingStore();
 
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
             => _inner.TryInsertAsync(key, value, expiresAt, cancellationToken);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
             => _inner.GetAsync(key, cancellationToken);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated backing store Remove failure.");
     }
 
@@ -666,13 +666,13 @@ public sealed class AuthorizationCodeStoreTests
     {
         private readonly IAuthorizationCodeBackingStore _inner = new InMemoryAuthorizationCodeBackingStore();
 
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
             => _inner.TryInsertAsync(key, value, expiresAt, cancellationToken);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
             => _inner.GetAsync(key, cancellationToken);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
             => throw new OperationCanceledException();
     }
 

@@ -48,13 +48,13 @@ internal sealed class InsecureIssuerWarningService(
     public string Name => "InsecureIssuer";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
         if (!options.Value.AllowInsecureIssuer)
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
 
         if (environment.IsDevelopment())
         {
@@ -73,6 +73,6 @@ internal sealed class InsecureIssuerWarningService(
                 options.Value.Issuer);
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }

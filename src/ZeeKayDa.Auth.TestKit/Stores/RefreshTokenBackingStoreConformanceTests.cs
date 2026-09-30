@@ -97,7 +97,7 @@ public abstract class RefreshTokenBackingStoreConformanceTests
         await insertStarted.WaitAsync();
         revokeMayProceed.Release();
         // Give the insert a genuine chance to race with the revoke rather than always losing.
-        await Task.WhenAll(insertTask, store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None).AsTask());
+        await Task.WhenAll(insertTask, store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None));
 
         foreach (var grant in preExisting.Append(midRevokeGrant))
         {
@@ -188,7 +188,7 @@ public abstract class RefreshTokenBackingStoreConformanceTests
 
         await insertStarted.WaitAsync();
         revokeMayProceed.Release();
-        await Task.WhenAll(insertTask, store.RevokeBySubjectAsync(subject, CancellationToken.None).AsTask());
+        await Task.WhenAll(insertTask, store.RevokeBySubjectAsync(subject, CancellationToken.None));
 
         foreach (var grant in preExisting.Append(midRevokeGrant))
         {
@@ -281,7 +281,7 @@ public abstract class RefreshTokenBackingStoreConformanceTests
             return;
 
         var thrown = await Assert.ThrowsAnyAsync<Exception>(
-            () => store.FindByHandleAsync(NewKey(), CancellationToken.None).AsTask());
+            () => store.FindByHandleAsync(NewKey(), CancellationToken.None));
         AssertPropagatedFault(fault, thrown);
     }
 
@@ -294,7 +294,7 @@ public abstract class RefreshTokenBackingStoreConformanceTests
             return;
 
         var thrown = await Assert.ThrowsAnyAsync<Exception>(
-            () => store.InsertAsync(NewGrant(familyId: "fam-fault"), CancellationToken.None).AsTask());
+            () => store.InsertAsync(NewGrant(familyId: "fam-fault"), CancellationToken.None));
         AssertPropagatedFault(fault, thrown);
     }
 
@@ -312,7 +312,7 @@ public abstract class RefreshTokenBackingStoreConformanceTests
             return;
 
         var thrown = await Assert.ThrowsAnyAsync<Exception>(
-            () => store.TryMarkConsumedAsync(NewKey(), CancellationToken.None).AsTask());
+            () => store.TryMarkConsumedAsync(NewKey(), CancellationToken.None));
         AssertPropagatedFault(fault, thrown);
     }
 
@@ -353,7 +353,7 @@ public abstract class RefreshTokenBackingStoreConformanceTests
             return;
 
         var thrown = await Assert.ThrowsAnyAsync<Exception>(
-            () => store.IsFamilyRevokedAsync("fam-fault", CancellationToken.None).AsTask());
+            () => store.IsFamilyRevokedAsync("fam-fault", CancellationToken.None));
         AssertPropagatedFault(fault, thrown);
     }
 
@@ -371,7 +371,7 @@ public abstract class RefreshTokenBackingStoreConformanceTests
             return;
 
         var thrown = await Assert.ThrowsAnyAsync<Exception>(
-            () => store.RevokeFamilyAsync("fam-fault", FarFuture, CancellationToken.None).AsTask());
+            () => store.RevokeFamilyAsync("fam-fault", FarFuture, CancellationToken.None));
         AssertPropagatedFault(fault, thrown);
     }
 
@@ -384,7 +384,7 @@ public abstract class RefreshTokenBackingStoreConformanceTests
             return;
 
         var thrown = await Assert.ThrowsAnyAsync<Exception>(
-            () => store.RevokeBySubjectAsync("subject-fault", CancellationToken.None).AsTask());
+            () => store.RevokeBySubjectAsync("subject-fault", CancellationToken.None));
         AssertPropagatedFault(fault, thrown);
     }
 

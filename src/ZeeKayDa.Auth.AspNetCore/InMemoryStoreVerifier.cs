@@ -55,7 +55,7 @@ internal sealed class InMemoryStoreVerifier(
     public string Name => $"InMemoryStore({storeName})";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -90,6 +90,6 @@ internal sealed class InMemoryStoreVerifier(
                 break;
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }

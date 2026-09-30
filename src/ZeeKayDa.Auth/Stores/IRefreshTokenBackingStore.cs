@@ -20,7 +20,7 @@ public interface IRefreshTokenBackingStore
     /// </summary>
     /// <param name="grant">The grant to insert.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken);
+    Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken);
 
     /// <summary>
     /// Return the grant for <paramref name="handleHash"/>, or <see langword="null"/> ONLY if
@@ -31,7 +31,7 @@ public interface IRefreshTokenBackingStore
     /// </summary>
     /// <param name="handleHash">The already-hashed token handle.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken);
+    Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken);
 
     /// <summary>
     /// THE atomic invariant. Transition the grant at <paramref name="handleHash"/> from
@@ -50,7 +50,7 @@ public interface IRefreshTokenBackingStore
     /// script / <c>WATCH-MULTI-EXEC</c> on the key. If this is NOT atomic, single-use enforcement
     /// is lost (two consumers both transition it).
     /// </remarks>
-    ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken);
+    Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken);
 
     /// <summary>
     /// Record that the family <paramref name="familyId"/> is revoked, then set
@@ -74,7 +74,7 @@ public interface IRefreshTokenBackingStore
     /// would take the record with it. The family may have no rows yet — an authorization
     /// code replayed before its first refresh token is stored revokes an empty family.
     /// </remarks>
-    ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken);
+    Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken);
 
     /// <summary>
     /// Set <see cref="RefreshGrantStatus.Revoked"/> for EVERY grant whose <see cref="RefreshTokenGrant.Subject"/>
@@ -87,7 +87,7 @@ public interface IRefreshTokenBackingStore
     /// </summary>
     /// <param name="subject">The subject identifier to revoke all grants for.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken);
+    Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken);
 
     /// <summary>
     /// Return <see langword="true"/> iff <see cref="RevokeFamilyAsync"/> has recorded
@@ -105,5 +105,5 @@ public interface IRefreshTokenBackingStore
     /// defeats the gate). Same fail-closed tier as <see cref="FindByHandleAsync"/>.
     /// SQL: <c>SELECT EXISTS(SELECT 1 FROM revoked_families WHERE family_id=@f)</c>.
     /// </remarks>
-    ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken);
+    Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken);
 }

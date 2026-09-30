@@ -67,7 +67,7 @@ public sealed class JwtTokenIssuer : ITokenIssuer
     /// System.Text.Json does not support. See <see cref="TokenPayload"/> for what claim values
     /// may be.
     /// </exception>
-    public async ValueTask<IssuedToken> IssueAsync(
+    public async Task<IssuedToken> IssueAsync(
         TokenIssuanceContext context,
         TokenPayload payload,
         CancellationToken cancellationToken = default)

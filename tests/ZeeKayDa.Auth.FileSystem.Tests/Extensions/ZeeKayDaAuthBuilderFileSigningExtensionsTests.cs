@@ -39,7 +39,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
             await hostedService.StartAsync(CancellationToken.None);
     }
 
-    private static Func<CancellationToken, ValueTask<string>> AnyPassword() => _ => ValueTask.FromResult("password");
+    private static Func<CancellationToken, Task<string>> AnyPassword() => _ => Task.FromResult("password");
 
     // ── AddPemFileSigning: argument validation ───────────────────────────────────────────────────
 

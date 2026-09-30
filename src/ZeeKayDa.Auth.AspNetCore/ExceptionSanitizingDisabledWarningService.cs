@@ -21,7 +21,7 @@ internal sealed class ExceptionSanitizingDisabledWarningService(
     public string Name => "ExceptionSanitizingDisabled";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -31,6 +31,6 @@ internal sealed class ExceptionSanitizingDisabledWarningService(
             context.AddWarning("logging.exception_sanitizing_disabled", WarningMessage);
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }

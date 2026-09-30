@@ -47,7 +47,7 @@ internal sealed class InMemoryRefreshTokenBackingStore : IRefreshTokenBackingSto
     private readonly ReaderWriterLockSlim _revokeLock = new(LockRecursionPolicy.NoRecursion);
 
     /// <inheritdoc/>
-    public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
+    public Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(grant);
         cancellationToken.ThrowIfCancellationRequested();
@@ -64,31 +64,31 @@ internal sealed class InMemoryRefreshTokenBackingStore : IRefreshTokenBackingSto
             _revokeLock.ExitReadLock();
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
+    public Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return ValueTask.FromResult(_grants.TryGetValue(handleHash, out var grant) ? grant : null);
+        return Task.FromResult(_grants.TryGetValue(handleHash, out var grant) ? grant : null);
     }
 
     /// <inheritdoc/>
-    public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
+    public Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_grants.TryGetValue(handleHash, out var current) || current.Status != RefreshGrantStatus.Active)
-            return ValueTask.FromResult(false);
+            return Task.FromResult(false);
 
         var updated = current with { Status = RefreshGrantStatus.Consumed };
-        return ValueTask.FromResult(_grants.TryUpdate(handleHash, updated, current));
+        return Task.FromResult(_grants.TryUpdate(handleHash, updated, current));
     }
 
     /// <inheritdoc/>
-    public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+    public Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(familyId);
         cancellationToken.ThrowIfCancellationRequested();
@@ -96,27 +96,27 @@ internal sealed class InMemoryRefreshTokenBackingStore : IRefreshTokenBackingSto
         _revokedFamilies.TryAdd(familyId, 0);
         RevokeWhere(grant => string.Equals(grant.FamilyId, familyId, StringComparison.Ordinal));
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
+    public Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(subject);
         cancellationToken.ThrowIfCancellationRequested();
 
         RevokeWhere(grant => string.Equals(grant.Subject, subject, StringComparison.Ordinal));
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
+    public Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(familyId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return ValueTask.FromResult(_revokedFamilies.ContainsKey(familyId));
+        return Task.FromResult(_revokedFamilies.ContainsKey(familyId));
     }
 
     private void RevokeWhere(Func<RefreshTokenGrant, bool> predicate)

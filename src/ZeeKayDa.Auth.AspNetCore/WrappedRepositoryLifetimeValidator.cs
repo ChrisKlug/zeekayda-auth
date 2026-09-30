@@ -39,7 +39,7 @@ internal sealed class WrappedRepositoryLifetimeValidator(RepositoryLifetimeScann
     public string Name => "WrappedRepositoryLifetime";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -47,7 +47,7 @@ internal sealed class WrappedRepositoryLifetimeValidator(RepositoryLifetimeScann
         Check<IScopeRepository>(context, "scopes.repository.lifetime", "ValidatedScopeCatalog");
         Check<IClientRepository>(context, "clients.repository.lifetime", "ValidatedClientResolver");
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 
     private void Check<TRepository>(StartupVerificationContext context, string code, string wrapper)

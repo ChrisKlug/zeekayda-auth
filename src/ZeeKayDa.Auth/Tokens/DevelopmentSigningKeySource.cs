@@ -45,7 +45,7 @@ internal sealed class DevelopmentSigningKeySource(
     private SourceKeySet? _keySet;
 
     /// <inheritdoc/>
-    public async ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
     {
         // Enforced on every read, ahead of the memoized set, so a gate that would reject this host
         // rejects it however often the source is read.
@@ -99,7 +99,7 @@ internal sealed class DevelopmentSigningKeySource(
     }
 
     /// <inheritdoc/>
-    public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+    public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
     {
         if (id != DevKeyId)
         {
@@ -115,7 +115,7 @@ internal sealed class DevelopmentSigningKeySource(
                 $"called at most once, immediately after {nameof(ReadAsync)} generated or loaded the " +
                 "single dev key.");
 
-        return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, rsa));
+        return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, rsa));
     }
 
     /// <summary>

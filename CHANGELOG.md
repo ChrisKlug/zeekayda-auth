@@ -546,6 +546,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Every public async member returns `Task` or `Task<T>`; none returns `ValueTask`** (#784). The
+  public API mixed the two with no rule. A `ValueTask` must be awaited exactly once and never stored,
+  which is easy to get wrong when implementing or calling an interface, so the public surface now uses
+  `Task` throughout. The changed members are `IClientRepository.FindByClientIdAsync`,
+  `IScopeRepository.GetScopesAsync`, `IDiscoveryDocumentProvider.GetDocumentAsync`,
+  `IClaimsProvider.GetClaimsAsync`, `IStartupCheck.VerifyAsync` (and so every `IStartupVerifier` and
+  `IStartupActivator`), every member of `IAuthorizationCodeBackingStore` and
+  `IRefreshTokenBackingStore`, `ISigner.SignAsync`, `ISigningKeySource.ReadAsync` and
+  `CreateSignerAsync`, `ISigningKeyRing.SignAsync`, `ITokenIssuer.IssueAsync`,
+  `IClientAuthenticator.AuthenticateAsync`, `IErrorInteraction.GetErrorAsync`, and the PFX password
+  source (`PfxFile.PasswordSource` and the `passwordSource` parameter of `AddPfxFileSigning`), which is
+  now `Func<CancellationToken, Task<string>>`. The shipped implementations change with them. An
+  implementation that completes synchronously returns `Task.FromResult(value)` or
+  `Task.CompletedTask`. Behaviour is unchanged.
+
+- **Every collection on `AuthorizationServerOptions` is frozen read-only after configuration**
+  (#774). Only `CorsOrigins` and `IdToken.AdvertisedSigningAlgorithms` used to be, so code holding
+  `IOptions<AuthorizationServerOptions>` could still add to or clear `GrantTypesSupported`,
+  `TokenEndpoint.AuthMethodsSupported`, `AuthorizationEndpoint.CodeChallengeMethodsSupported`,
+  `Response.TypesSupported` or `Response.ModesSupported` after startup validation had approved them.
+  Each is now replaced by a read-only copy of the configured values, in the configured order, before
+  validation runs; a `null` collection stays `null`. From then on a setter refuses to replace a
+  collection, with `configuration.options_frozen`, so a `PostConfigure` registered after
+  `AddZeeKayDaAuth` fails startup instead of slipping past validation. `CorsOrigins` changes from `IList<string>` with
+  an internal setter to `ICollection<string>` with a public one, the same shape as every other
+  collection, so a host can assign it as well as add to it. The `ClockSkewTolerance` documentation
+  now says what the code already did: it is one server-wide tolerance, used by access token
+  validation as well as the token stores.
+
 - **Options-validation failures throw `ZeeKayDaConfigurationException` with a stable code for each
   failure** (#796). The framework's options validators, for `AuthorizationServerOptions`, the client
   secret hashers, the development, file, Azure Key Vault and Windows certificate-store signing
