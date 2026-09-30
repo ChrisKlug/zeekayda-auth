@@ -55,7 +55,7 @@ internal sealed class KeyVaultSigner : IKeyVaultSigner
     }
 
     /// <inheritdoc/>
-    public async ValueTask<ReadOnlyMemory<byte>> SignAsync(
+    public async Task<ReadOnlyMemory<byte>> SignAsync(
         Uri keyVersionUri, string keyLabel, SigningAlgorithm algorithm, byte[] signingInput, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(keyVersionUri);

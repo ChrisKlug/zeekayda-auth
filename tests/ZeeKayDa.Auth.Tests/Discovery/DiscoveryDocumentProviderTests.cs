@@ -27,13 +27,13 @@ public sealed class DiscoveryDocumentProviderTests
     {
         public SigningKeySet Current => current;
 
-        public ValueTask<SigningOutcome> SignAsync<TState>(
+        public Task<SigningOutcome> SignAsync<TState>(
             TState state,
             Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
+        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
             => throw new NotSupportedException();
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => current;
@@ -645,19 +645,19 @@ public sealed class DiscoveryDocumentProviderTests
     {
         public CancellationToken ObservedToken { get; private set; }
 
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
         {
             ObservedToken = cancellationToken;
-            return ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
+            return Task.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
         }
     }
 
     private sealed class ThrowingScopeRepository : IScopeRepository
     {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([]);
+            return Task.FromResult<IReadOnlyCollection<ScopeDefinition>>([]);
         }
     }
 
@@ -691,7 +691,7 @@ public sealed class DiscoveryDocumentProviderTests
     /// <summary>A custom repository whose scopes carry null claim lists — the type system permits it.</summary>
     private sealed class NullClaimListRepository(IScopeRepository inner) : IScopeRepository
     {
-        public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+        public async Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
             [.. (await inner.GetScopesAsync(cancellationToken)).Select(scope => scope with
             {
                 IdTokenClaims = null!,
@@ -703,7 +703,7 @@ public sealed class DiscoveryDocumentProviderTests
     /// <summary>A custom repository that slips a null and a blank name into a claim list.</summary>
     private sealed class BlankClaimNameRepository(IScopeRepository inner) : IScopeRepository
     {
-        public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+        public async Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
             [.. (await inner.GetScopesAsync(cancellationToken)).Select(scope => scope with
             {
                 IdTokenClaims = [.. scope.IdTokenClaims, null!, "   "],

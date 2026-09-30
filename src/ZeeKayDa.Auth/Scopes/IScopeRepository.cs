@@ -61,5 +61,5 @@ public interface IScopeRepository
     /// that are stable for the duration of a call.
     /// </para>
     /// </remarks>
-    ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default);
 }

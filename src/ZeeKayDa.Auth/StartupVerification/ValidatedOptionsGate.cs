@@ -11,12 +11,12 @@ internal sealed class ValidatedOptionsGate : IStartupVerificationGate
 {
     public string Name => "ValidatedOptions";
 
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
         ValidatedOptionsCheck.ThrowIfAnyInvalid(scopedServices);
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }

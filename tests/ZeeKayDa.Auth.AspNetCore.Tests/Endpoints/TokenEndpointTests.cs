@@ -983,10 +983,10 @@ public sealed class TokenEndpointTests : IDisposable
 
         public void ResetToFirst() => Interlocked.Exchange(ref _reads, 0);
 
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
         {
             var registration = Interlocked.Increment(ref _reads) == 1 ? first : other;
-            return new(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
+            return Task.FromResult<IClientRegistration?>(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
         }
     }
 
@@ -1012,10 +1012,10 @@ public sealed class TokenEndpointTests : IDisposable
 
         public SigningKeySet Current => _active.Current;
 
-        public ValueTask<SigningOutcome> SignAsync<TState>(TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput, CancellationToken cancellationToken = default) =>
+        public Task<SigningOutcome> SignAsync<TState>(TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput, CancellationToken cancellationToken = default) =>
             _active.SignAsync(state, buildSigningInput, cancellationToken);
 
-        async ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
+        async Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
         {
             await ((ISigningKeyRing)_rsa).EnsureInitializedAsync(cancellationToken);
             await ((ISigningKeyRing)_ec).EnsureInitializedAsync(cancellationToken);
@@ -1030,17 +1030,17 @@ public sealed class TokenEndpointTests : IDisposable
         private readonly RSA? _rsa = algorithm == SigningAlgorithm.RS256 ? RSA.Create(2048) : null;
         private readonly ECDsa? _ecdsa = algorithm == SigningAlgorithm.ES256 ? ECDsa.Create(ECCurve.NamedCurves.nistP256) : null;
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
             var publicKey = _rsa is not null
                 ? PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false))
                 : PublicKeyParameters.FromEc(_ecdsa!.ExportParameters(includePrivateParameters: false));
             var current = new SourceKey(new SourceKeyId(algorithm.ToString().ToLowerInvariant()), algorithm, publicKey, ExpiresAt: null);
-            return new(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
-            new(_rsa is not null
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<ISigner>(_rsa is not null
                 ? new LocalSigner(algorithm, RSA.Create(_rsa.ExportParameters(includePrivateParameters: true)))
                 : new LocalSigner(algorithm, ECDsa.Create(_ecdsa!.ExportParameters(includePrivateParameters: true))));
     }
@@ -1052,10 +1052,10 @@ public sealed class TokenEndpointTests : IDisposable
 
         public int IssuedCount => Volatile.Read(ref _issued);
 
-        public ValueTask<IssuedToken> IssueAsync(TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default)
+        public Task<IssuedToken> IssueAsync(TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _issued);
-            return new(new IssuedToken("opaque-" + StoreKeyGenerator.Generate(), TokenKind.AccessToken));
+            return Task.FromResult<IssuedToken>(new IssuedToken("opaque-" + StoreKeyGenerator.Generate(), TokenKind.AccessToken));
         }
     }
 
@@ -1065,17 +1065,17 @@ public sealed class TokenEndpointTests : IDisposable
         private readonly RSA _rsa = RSA.Create(2048);
         private readonly ECDsa _ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
             var current = new SourceKey(new SourceKeyId("rsa-current"), SigningAlgorithm.RS256,
                 PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)), ExpiresAt: null);
             var next = new SourceKey(new SourceKeyId("ec-next"), SigningAlgorithm.ES256,
                 PublicKeyParameters.FromEc(_ecdsa.ExportParameters(includePrivateParameters: false)), ExpiresAt: null);
-            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next));
+            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
-            new(id.Value == "ec-next"
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<ISigner>(id.Value == "ec-next"
                 ? new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(_ecdsa.ExportParameters(includePrivateParameters: true)))
                 : new LocalSigner(SigningAlgorithm.RS256, RSA.Create(_rsa.ExportParameters(includePrivateParameters: true))));
 
@@ -1089,7 +1089,7 @@ public sealed class TokenEndpointTests : IDisposable
     /// <summary>An issuer standing in for a signing key ring that cannot sign.</summary>
     private sealed class FailingTokenIssuer : ITokenIssuer
     {
-        public ValueTask<IssuedToken> IssueAsync(TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default) =>
+        public Task<IssuedToken> IssueAsync(TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("The signing key ring is unavailable.");
     }
 
@@ -1111,16 +1111,16 @@ public sealed class TokenEndpointTests : IDisposable
         }
 
         // The revocation writes its family marker through here before revoking the rows.
-        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken) =>
-            ValueTask.CompletedTask;
+        public Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
 
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken) =>
-            ValueTask.FromResult<RefreshTokenGrant?>(null);
+        public Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken) =>
+            Task.FromResult<RefreshTokenGrant?>(null);
 
-        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken) =>
+        public Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken) =>
             throw new NotSupportedException("The code grant issues no refresh token yet.");
 
-        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+        public Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
         {
             RevocationWasCancellable = cancellationToken.CanBeCanceled;
 
@@ -1128,14 +1128,14 @@ public sealed class TokenEndpointTests : IDisposable
                 throw new IOException("The grant store is unreachable.");
 
             lock (_revoked) _revoked.Add(familyId);
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         }
 
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken) =>
+        public Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken) =>
-            ValueTask.FromResult(false);
+        public Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken) =>
+            Task.FromResult(false);
     }
 
     /// <summary>An in-memory backing store that can be made to fail every operation, as an unreachable cache would.</summary>
@@ -1145,13 +1145,13 @@ public sealed class TokenEndpointTests : IDisposable
 
         public bool Fail { get; set; }
 
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             Fail ? throw new IOException("The cache is unreachable.") : _inner.TryInsertAsync(key, value, expiresAt, cancellationToken);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
             Fail ? throw new IOException("The cache is unreachable.") : _inner.GetAsync(key, cancellationToken);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             Fail ? throw new IOException("The cache is unreachable.") : _inner.RemoveAsync(key, cancellationToken);
     }
 

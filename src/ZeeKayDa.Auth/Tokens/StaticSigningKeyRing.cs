@@ -81,7 +81,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     /// <exception cref="ObjectDisposedException">
     /// Thrown when this instance has already been disposed.
     /// </exception>
-    public async ValueTask<SigningOutcome> SignAsync<TState>(
+    public async Task<SigningOutcome> SignAsync<TState>(
         TState state,
         Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
         CancellationToken cancellationToken = default)
@@ -176,11 +176,11 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
         }
     }
 
-    ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
+    Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
     {
         // Already done: no allocation, no await, no second read.
         if (Volatile.Read(ref _binding) is not null)
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
 
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var inFlight = Interlocked.CompareExchange(ref _initialization, started.Task, null);
@@ -188,13 +188,13 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
         // Someone else owns this initialization: await theirs rather than starting a second one.
         // They observe the same outcome, including the same failure.
         if (inFlight is not null)
-            return new ValueTask(inFlight);
+            return inFlight;
 
         // Every caller, this one included, awaits started.Task. The run task is deliberately not
         // awaited or returned: on failure both would fault, only one would be observed, and the
         // other would reach TaskScheduler.UnobservedTaskException.
         _ = RunInitializationAsync(started, cancellationToken);
-        return new ValueTask(started.Task);
+        return started.Task;
     }
 
     /// <summary>

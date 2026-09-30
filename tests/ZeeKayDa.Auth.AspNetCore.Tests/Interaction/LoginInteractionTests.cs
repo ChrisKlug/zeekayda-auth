@@ -219,10 +219,10 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
     {
         private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
 
-        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             _inner.SetAsync(key, value, expiresAt, cancellationToken);
 
-        public async ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+        public async Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
         {
             if (key.ToString().StartsWith("zkd:interaction:c:", StringComparison.Ordinal))
                 await beforeContextRead();
@@ -230,7 +230,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
             return await _inner.GetAsync(key, cancellationToken);
         }
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             _inner.RemoveAsync(key, cancellationToken);
     }
 

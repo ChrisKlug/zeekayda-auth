@@ -41,7 +41,7 @@ internal sealed class HandlerOptionsStartupActivator : IStartupActivator
     public string Name => "ProviderOptions";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -71,7 +71,7 @@ internal sealed class HandlerOptionsStartupActivator : IStartupActivator
         if (failures.Count > 0)
             throw new ZeeKayDaConfigurationException(failures, causes.Count == 1 ? causes[0] : new AggregateException(causes));
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 
     /// <summary>

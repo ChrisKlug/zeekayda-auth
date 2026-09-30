@@ -607,8 +607,8 @@ public sealed class DiscoveryEndpointTests
 
     private sealed class CustomScopeRepositoryWithoutOpenId : IScopeRepository
     {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
     }
 
     [Fact]
@@ -676,17 +676,17 @@ public sealed class DiscoveryEndpointTests
     {
         public bool Fail { get; set; }
 
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
             Fail
                 ? throw new InvalidOperationException("Login failed for Server=db;Password=hunter2")
-                : ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
+                : Task.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
     }
 
     private sealed class MutableScopeRepository(IReadOnlyCollection<ScopeDefinition> scopes) : IScopeRepository
     {
         public IReadOnlyCollection<ScopeDefinition> Scopes { get; set; } = scopes;
 
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Scopes);
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Scopes);
     }
 }

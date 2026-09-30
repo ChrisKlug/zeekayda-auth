@@ -27,7 +27,7 @@ internal sealed class FakeKeyVaultSigner : IKeyVaultSigner, IDisposable
     /// </summary>
     public int DisposeCallCount { get; private set; }
 
-    public ValueTask<ReadOnlyMemory<byte>> SignAsync(
+    public Task<ReadOnlyMemory<byte>> SignAsync(
         Uri keyVersionUri, string keyLabel, SigningAlgorithm algorithm, byte[] signingInput, CancellationToken cancellationToken)
     {
         Calls.Add((keyVersionUri, keyLabel, algorithm, signingInput));
@@ -36,7 +36,7 @@ internal sealed class FakeKeyVaultSigner : IKeyVaultSigner, IDisposable
             throw ThrowException;
 
         var result = SignFunc?.Invoke(keyVersionUri, keyLabel, algorithm, signingInput) ?? new byte[] { 1, 2, 3, 4 };
-        return ValueTask.FromResult(result);
+        return Task.FromResult(result);
     }
 
     public void Dispose() => DisposeCallCount++;

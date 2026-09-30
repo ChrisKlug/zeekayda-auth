@@ -46,7 +46,7 @@ internal sealed class ProviderSchemeCollisionValidator : IStartupActivator
     public string Name => "ProviderSchemeCollisions";
 
     /// <inheritdoc/>
-    public async ValueTask VerifyAsync(
+    public async Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)

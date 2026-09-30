@@ -20,12 +20,12 @@ The repository and discovery interfaces are **fully asynchronous and cancellatio
 ```csharp
 public interface IScopeRepository
 {
-    ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default);
 }
 
 public interface IDiscoveryDocumentProvider
 {
-    ValueTask<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default);
+    Task<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default);
 }
 ```
 
@@ -33,7 +33,7 @@ public interface IDiscoveryDocumentProvider
 
 Both extension points sit on a hot request path: every call to the OpenID Connect discovery endpoint (and, in due course, every token request) reaches them. Real-world implementations are almost always I/O-bound — a database query, an HTTP call, a distributed cache lookup. Forcing those implementations to block a thread-pool thread is the well-known sync-over-async foot-gun: under load it causes thread-pool starvation, and it makes it impossible to honour request cancellation cleanly.
 
-`ValueTask<T>` is used (rather than `Task<T>`) because in-memory implementations complete synchronously and the per-call allocation savings matter on these hot paths. If your implementation is asynchronous, just `return` the awaited result as you would with `Task<T>` and the compiler-generated state machine handles the rest.
+Every asynchronous extension point returns `Task` or `Task<T>`, never `ValueTask`: a `Task` can be awaited more than once and stored without surprises. An implementation that completes synchronously returns `Task.FromResult(value)` or `Task.CompletedTask`.
 
 ## 1. Implement a custom scope repository
 
@@ -47,7 +47,7 @@ public sealed class DatabaseScopeRepository : IScopeRepository
     public DatabaseScopeRepository(IDbContextFactory<ScopeDbContext> factory)
         => _factory = factory;
 
-    public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(
+    public async Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(
         CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
@@ -93,7 +93,7 @@ public sealed class TenantAwareDiscoveryDocumentProvider : IDiscoveryDocumentPro
         _metadataClient = metadataClient;
     }
 
-    public async ValueTask<OpenIdConfigurationDocument> GetDocumentAsync(
+    public async Task<OpenIdConfigurationDocument> GetDocumentAsync(
         CancellationToken cancellationToken = default)
     {
         var metadata = await _metadataClient.FetchAsync(_tenant.Id, cancellationToken);
@@ -127,10 +127,10 @@ The framework passes `HttpContext.RequestAborted` to your implementation. You sh
 The in-tree `InMemoryScopeRepository` demonstrates the minimum pattern for synchronous in-memory implementations:
 
 ```csharp
-public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
 {
     cancellationToken.ThrowIfCancellationRequested();
-    return ValueTask.FromResult(_scopes);
+    return Task.FromResult(_scopes);
 }
 ```
 
@@ -140,8 +140,8 @@ If you only have a synchronous data source today and are tempted to wrap it like
 
 ```csharp
 // ❌ Don't do this.
-public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
-    => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>(LoadFromHttpClientSync());
+public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+    => Task.FromResult<IReadOnlyCollection<ScopeDefinition>>(LoadFromHttpClientSync());
 
 private IReadOnlyCollection<ScopeDefinition> LoadFromHttpClientSync()
     => _httpClient.GetAsync("/scopes").Result.Content.ReadFromJsonAsync<ScopeDto[]>().Result;
@@ -149,7 +149,7 @@ private IReadOnlyCollection<ScopeDefinition> LoadFromHttpClientSync()
 
 `.Result` and `.GetAwaiter().GetResult()` block a thread-pool thread for the duration of the I/O. Under load, every concurrent discovery request consumes a thread until the I/O completes, and the thread pool runs out — the symptom is rising request latency and eventually deadlocks under `SynchronizationContext`-bearing hosts.
 
-If your data source has only a synchronous API, the right answer is to put a real cache (`IMemoryCache`, `HybridCache`, `IDistributedCache`) in front of it and refresh the cache from a background `IHostedService` — then your `GetScopesAsync` returns a synchronous `ValueTask.FromResult(_cached)` and you have not introduced sync-over-async on the hot path.
+If your data source has only a synchronous API, the right answer is to put a real cache (`IMemoryCache`, `HybridCache`, `IDistributedCache`) in front of it and refresh the cache from a background `IHostedService` — then your `GetScopesAsync` returns `Task.FromResult(_cached)` and you have not introduced sync-over-async on the hot path.
 
 ## 4. Implement a custom client secret hasher
 
@@ -302,7 +302,7 @@ external configuration service. The interface has a single read method:
 ```csharp
 public interface IClientRepository
 {
-    ValueTask<IClientRegistration?> FindByClientIdAsync(
+    Task<IClientRegistration?> FindByClientIdAsync(
         string clientId, CancellationToken cancellationToken = default);
 }
 ```
@@ -337,7 +337,7 @@ public sealed class DatabaseClientRepository : IClientRepository
         _validator = validator;
     }
 
-    public async ValueTask<IClientRegistration?> FindByClientIdAsync(
+    public async Task<IClientRegistration?> FindByClientIdAsync(
         string clientId, CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
@@ -412,7 +412,7 @@ public interface IClientAuthenticator
 
     bool CanHandle(TokenRequestContext context, out string? method);
 
-    ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+    Task<ClientAuthenticationResult> AuthenticateAsync(
         ClientAuthenticationContext context,
         CancellationToken cancellationToken);
 }
@@ -465,7 +465,7 @@ do not call a database or validate a signature here.
 checks have passed. The client is guaranteed to exist in the repository.
 
 ```csharp
-    public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+    public Task<ClientAuthenticationResult> AuthenticateAsync(
         ClientAuthenticationContext context,
         CancellationToken cancellationToken)
     {
@@ -474,7 +474,7 @@ checks have passed. The client is guaranteed to exist in the repository.
         // Validate the JWT assertion against the client's registered public key.
         var valid = ValidateAssertion(assertion, context.Client, context.ClientId);
 
-        return ValueTask.FromResult(
+        return Task.FromResult(
             valid ? ClientAuthenticationResult.Valid() : ClientAuthenticationResult.NotValid());
     }
 ```
@@ -540,7 +540,7 @@ The interface has one member:
 ```csharp
 public interface ITokenIssuer
 {
-    ValueTask<IssuedToken> IssueAsync(
+    Task<IssuedToken> IssueAsync(
         TokenIssuanceContext context,
         TokenPayload payload,
         CancellationToken cancellationToken = default);

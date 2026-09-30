@@ -754,9 +754,9 @@ public class AuthorizeRequestValidatorTests
 
     private sealed class SingleClientRepository(IClientRegistration client) : IClientRepository
     {
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(
+        public Task<IClientRegistration?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IClientRegistration?>(
+            Task.FromResult<IClientRegistration?>(
                 string.Equals(clientId, client.ClientId, StringComparison.Ordinal) ? client : null);
     }
 

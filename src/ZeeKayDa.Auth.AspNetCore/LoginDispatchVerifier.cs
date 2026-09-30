@@ -38,7 +38,7 @@ internal sealed class LoginDispatchVerifier : IStartupVerifier
     public string Name => "LoginDispatch";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -47,7 +47,7 @@ internal sealed class LoginDispatchVerifier : IStartupVerifier
 
         var options = _options.Value;
         if (!options.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
 
         switch (LoginDispatch.Decide(options.AuthorizationEndpoint.Interaction, _providers.Count))
         {
@@ -72,6 +72,6 @@ internal sealed class LoginDispatchVerifier : IStartupVerifier
                 break;
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }

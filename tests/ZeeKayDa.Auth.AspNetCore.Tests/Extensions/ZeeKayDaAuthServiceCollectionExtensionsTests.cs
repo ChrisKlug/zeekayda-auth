@@ -104,8 +104,8 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 
     private sealed class SingleClientRepository(IClientRegistration client) : IClientRepository
     {
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(clientId == client.ClientId ? client : null);
+        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+            => Task.FromResult(clientId == client.ClientId ? client : null);
     }
 
     // ── IClientSecretFactory DI wiring (AC1–AC4, issue #135) ─────────────────────────────────────

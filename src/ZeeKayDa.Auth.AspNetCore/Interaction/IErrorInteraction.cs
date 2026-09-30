@@ -21,5 +21,5 @@ public interface IErrorInteraction
     /// error message.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    ValueTask<AuthorizationErrorDetails?> GetErrorAsync(CancellationToken cancellationToken = default);
+    Task<AuthorizationErrorDetails?> GetErrorAsync(CancellationToken cancellationToken = default);
 }

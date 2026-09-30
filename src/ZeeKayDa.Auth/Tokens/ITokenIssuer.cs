@@ -41,7 +41,7 @@ public interface ITokenIssuer
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The issued token, in the exact form handed to the client.</returns>
-    ValueTask<IssuedToken> IssueAsync(
+    Task<IssuedToken> IssueAsync(
         TokenIssuanceContext context,
         TokenPayload payload,
         CancellationToken cancellationToken = default);

@@ -245,12 +245,12 @@ public readonly struct StoreKey : IEquatable<StoreKey>
 ```csharp
 public interface IAuthorizationCodeBackingStore
 {
-    ValueTask<bool> TryInsertAsync(
+    Task<bool> TryInsertAsync(
         StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken);
 
-    ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken);
+    Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken);
 
-    ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken);
+    Task RemoveAsync(StoreKey key, CancellationToken cancellationToken);
 }
 ```
 
@@ -267,17 +267,17 @@ public interface IAuthorizationCodeBackingStore
 ```csharp
 public interface IRefreshTokenBackingStore
 {
-    ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken);
+    Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken);
 
-    ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken);
+    Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken);
 
-    ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken);
+    Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken);
 
-    ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken);
+    Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken);
 
-    ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken);
+    Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken);
 
-    ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken);
+    Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken);
 }
 ```
 

@@ -212,7 +212,7 @@ public sealed class FileSigningIntegrationTests
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPfxFileSigning(path, SigningAlgorithm.RS256, _ => ValueTask.FromResult(CorrectPassword));
+        builder.AddPfxFileSigning(path, SigningAlgorithm.RS256, _ => Task.FromResult(CorrectPassword));
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
@@ -244,9 +244,9 @@ public sealed class FileSigningIntegrationTests
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddPfxFileSigning(SigningAlgorithm.RS256, options =>
         {
-            options.Previous = new PfxFile(previousPath, _ => ValueTask.FromResult("previous-password"));
-            options.Current = new PfxFile(currentPath, _ => ValueTask.FromResult(CorrectPassword));
-            options.Next = new PfxFile(nextPath, _ => ValueTask.FromResult("next-password"));
+            options.Previous = new PfxFile(previousPath, _ => Task.FromResult("previous-password"));
+            options.Current = new PfxFile(currentPath, _ => Task.FromResult(CorrectPassword));
+            options.Next = new PfxFile(nextPath, _ => Task.FromResult("next-password"));
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -271,8 +271,8 @@ public sealed class FileSigningIntegrationTests
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddPfxFileSigning(SigningAlgorithm.RS256, options =>
         {
-            options.Current = new PfxFile(currentPath, _ => ValueTask.FromResult(CorrectPassword));
-            options.Next = new PfxFile(nextPath, _ => ValueTask.FromResult(CorrectPassword));
+            options.Current = new PfxFile(currentPath, _ => Task.FromResult(CorrectPassword));
+            options.Next = new PfxFile(nextPath, _ => Task.FromResult(CorrectPassword));
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -337,7 +337,7 @@ public sealed class FileSigningIntegrationTests
         var (services, _) = BuildServices(T0);
 
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddPfxFileSigning(path, SigningAlgorithm.RS256, _ => ValueTask.FromResult("wrong-password"));
+        builder.AddPfxFileSigning(path, SigningAlgorithm.RS256, _ => Task.FromResult("wrong-password"));
 
         await using var provider = services.BuildServiceProvider();
 

@@ -15,5 +15,5 @@ public interface IDiscoveryDocumentProvider
     /// A populated <see cref="OpenIdConfigurationDocument"/> ready for serialisation and
     /// publication at the discovery endpoint.
     /// </returns>
-    ValueTask<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default);
+    Task<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default);
 }

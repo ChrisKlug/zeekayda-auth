@@ -873,7 +873,7 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
         /// <summary>The registration as it is now; <see langword="null"/> once removed.</summary>
         public IClientRegistration? Current { get; set; } = initial;
 
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            new(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
+        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientRegistration?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
     }
 }

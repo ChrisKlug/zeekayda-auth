@@ -152,7 +152,7 @@ ZeeKayDa.Auth.Clients.IClientRegistration.Credentials.get -> System.Collections.
 ZeeKayDa.Auth.Clients.IClientRegistrationValidator
 ZeeKayDa.Auth.Clients.IClientRegistrationValidator.Validate(ZeeKayDa.Auth.Clients.IClientRegistration! client) -> void
 ZeeKayDa.Auth.Clients.IClientRepository
-ZeeKayDa.Auth.Clients.IClientRepository.FindByClientIdAsync(string! clientId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Clients.IClientRegistration?>
+ZeeKayDa.Auth.Clients.IClientRepository.FindByClientIdAsync(string! clientId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Clients.IClientRegistration?>!
 ZeeKayDa.Auth.Clients.IClientSecret
 ZeeKayDa.Auth.Clients.IClientSecretFactory
 ZeeKayDa.Auth.Clients.IClientSecretFactory.Create(string! plaintext) -> ZeeKayDa.Auth.Clients.IClientSecret!
@@ -186,7 +186,7 @@ ZeeKayDa.Auth.Discovery.DiscoveryOptions.CacheMaxAge.get -> System.TimeSpan
 ZeeKayDa.Auth.Discovery.DiscoveryOptions.CacheMaxAge.set -> void
 ZeeKayDa.Auth.Discovery.DiscoveryOptions.DiscoveryOptions() -> void
 ZeeKayDa.Auth.Discovery.IDiscoveryDocumentProvider
-ZeeKayDa.Auth.Discovery.IDiscoveryDocumentProvider.GetDocumentAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument!>
+ZeeKayDa.Auth.Discovery.IDiscoveryDocumentProvider.GetDocumentAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument!>!
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CacheMaxAge.get -> System.TimeSpan
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CacheMaxAge.set -> void
@@ -234,7 +234,7 @@ ZeeKayDa.Auth.GrantType.RefreshToken = 1 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.IStartupActivator
 ZeeKayDa.Auth.IStartupCheck
 ZeeKayDa.Auth.IStartupCheck.Name.get -> string!
-ZeeKayDa.Auth.IStartupCheck.VerifyAsync(ZeeKayDa.Auth.StartupVerificationContext! context, System.IServiceProvider! scopedServices, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
+ZeeKayDa.Auth.IStartupCheck.VerifyAsync(ZeeKayDa.Auth.StartupVerificationContext! context, System.IServiceProvider! scopedServices, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.IStartupVerifier
 ZeeKayDa.Auth.Logging.ISanitizingLogger<T>
 ZeeKayDa.Auth.Logging.LoggingOptions
@@ -242,9 +242,9 @@ ZeeKayDa.Auth.Logging.LoggingOptions.DisableExceptionSanitizing.get -> bool
 ZeeKayDa.Auth.Logging.LoggingOptions.DisableExceptionSanitizing.set -> void
 ZeeKayDa.Auth.Logging.LoggingOptions.LoggingOptions() -> void
 ZeeKayDa.Auth.Scopes.IScopeRepository
-ZeeKayDa.Auth.Scopes.IScopeRepository.GetScopesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Scopes.ScopeDefinition!>!>
+ZeeKayDa.Auth.Scopes.IScopeRepository.GetScopesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Scopes.ScopeDefinition!>!>!
 ZeeKayDa.Auth.Scopes.InMemoryScopeRepository
-ZeeKayDa.Auth.Scopes.InMemoryScopeRepository.GetScopesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Scopes.ScopeDefinition!>!>
+ZeeKayDa.Auth.Scopes.InMemoryScopeRepository.GetScopesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Scopes.ScopeDefinition!>!>!
 ZeeKayDa.Auth.Scopes.InMemoryScopeRepository.InMemoryScopeRepository(System.Collections.Generic.IEnumerable<ZeeKayDa.Auth.Scopes.ScopeDefinition!>! scopes) -> void
 ZeeKayDa.Auth.Scopes.ScopeDefinition
 ZeeKayDa.Auth.Scopes.ScopeDefinition.<Clone>$() -> ZeeKayDa.Auth.Scopes.ScopeDefinition!
@@ -297,16 +297,16 @@ ZeeKayDa.Auth.StartupVerificationWarning.MessageTemplate.get -> string!
 ZeeKayDa.Auth.StartupVerificationWarning.MessageTemplate.init -> void
 ZeeKayDa.Auth.StartupVerificationWarning.StartupVerificationWarning(string! Code, string! MessageTemplate, Microsoft.Extensions.Logging.LogLevel Level, System.Collections.Generic.IReadOnlyList<object?>! Args) -> void
 ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore
-ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.GetAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>?>
-ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.RemoveAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
-ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.TryInsertAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.ReadOnlyMemory<byte> value, System.DateTimeOffset expiresAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.GetAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.ReadOnlyMemory<byte>?>!
+ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.RemoveAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.TryInsertAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.ReadOnlyMemory<byte> value, System.DateTimeOffset expiresAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
 ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore
-ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.FindByHandleAsync(ZeeKayDa.Auth.Stores.StoreKey handleHash, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Stores.RefreshTokenGrant?>
-ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.InsertAsync(ZeeKayDa.Auth.Stores.RefreshTokenGrant! grant, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
-ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.IsFamilyRevokedAsync(string! familyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
-ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.RevokeBySubjectAsync(string! subject, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
-ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.RevokeFamilyAsync(string! familyId, System.DateTimeOffset rememberUntil, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
-ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.TryMarkConsumedAsync(ZeeKayDa.Auth.Stores.StoreKey handleHash, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.FindByHandleAsync(ZeeKayDa.Auth.Stores.StoreKey handleHash, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Stores.RefreshTokenGrant?>!
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.InsertAsync(ZeeKayDa.Auth.Stores.RefreshTokenGrant! grant, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.IsFamilyRevokedAsync(string! familyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.RevokeBySubjectAsync(string! subject, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.RevokeFamilyAsync(string! familyId, System.DateTimeOffset rememberUntil, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.TryMarkConsumedAsync(ZeeKayDa.Auth.Stores.StoreKey handleHash, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
 ZeeKayDa.Auth.Stores.RefreshGrantStatus
 ZeeKayDa.Auth.Stores.RefreshGrantStatus.Active = 0 -> ZeeKayDa.Auth.Stores.RefreshGrantStatus
 ZeeKayDa.Auth.Stores.RefreshGrantStatus.Consumed = 1 -> ZeeKayDa.Auth.Stores.RefreshGrantStatus
@@ -342,15 +342,15 @@ ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions.AllowedEnvironments.set -> void
 ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions.DevelopmentSigningOptions() -> void
 ZeeKayDa.Auth.Tokens.ISigner
 ZeeKayDa.Auth.Tokens.ISigner.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
-ZeeKayDa.Auth.Tokens.ISigner.SignAsync(System.ReadOnlyMemory<byte> signingInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>>
+ZeeKayDa.Auth.Tokens.ISigner.SignAsync(System.ReadOnlyMemory<byte> signingInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.ReadOnlyMemory<byte>>!
 ZeeKayDa.Auth.Tokens.ISigningKeyRing
 ZeeKayDa.Auth.Tokens.ISigningKeyRing.Current.get -> ZeeKayDa.Auth.Tokens.SigningKeySet!
-ZeeKayDa.Auth.Tokens.ISigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SigningOutcome>
+ZeeKayDa.Auth.Tokens.ISigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.SigningOutcome>!
 ZeeKayDa.Auth.Tokens.ISigningKeySource
-ZeeKayDa.Auth.Tokens.ISigningKeySource.CreateSignerAsync(ZeeKayDa.Auth.Tokens.SourceKeyId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.ISigner!>
-ZeeKayDa.Auth.Tokens.ISigningKeySource.ReadAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SourceKeySet!>
+ZeeKayDa.Auth.Tokens.ISigningKeySource.CreateSignerAsync(ZeeKayDa.Auth.Tokens.SourceKeyId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.ISigner!>!
+ZeeKayDa.Auth.Tokens.ISigningKeySource.ReadAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.SourceKeySet!>!
 ZeeKayDa.Auth.Tokens.ITokenIssuer
-ZeeKayDa.Auth.Tokens.ITokenIssuer.IssueAsync(ZeeKayDa.Auth.Tokens.TokenIssuanceContext! context, ZeeKayDa.Auth.Tokens.TokenPayload! payload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.IssuedToken!>
+ZeeKayDa.Auth.Tokens.ITokenIssuer.IssueAsync(ZeeKayDa.Auth.Tokens.TokenIssuanceContext! context, ZeeKayDa.Auth.Tokens.TokenPayload! payload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.IssuedToken!>!
 ZeeKayDa.Auth.Tokens.IdTokenIssuanceContext
 ZeeKayDa.Auth.Tokens.IdTokenIssuanceContext.AccessToken.get -> ZeeKayDa.Auth.Tokens.IssuedToken!
 ZeeKayDa.Auth.Tokens.IdTokenIssuanceContext.IdTokenIssuanceContext(ZeeKayDa.Auth.Clients.IClientMetadata! client, ZeeKayDa.Auth.Tokens.IssuedToken! accessToken) -> void
@@ -369,13 +369,13 @@ ZeeKayDa.Auth.Tokens.IssuedToken.Value.get -> string!
 ZeeKayDa.Auth.Tokens.IssuedToken.Value.init -> void
 ZeeKayDa.Auth.Tokens.JwkThumbprint
 ZeeKayDa.Auth.Tokens.JwtTokenIssuer
-ZeeKayDa.Auth.Tokens.JwtTokenIssuer.IssueAsync(ZeeKayDa.Auth.Tokens.TokenIssuanceContext! context, ZeeKayDa.Auth.Tokens.TokenPayload! payload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.IssuedToken!>
+ZeeKayDa.Auth.Tokens.JwtTokenIssuer.IssueAsync(ZeeKayDa.Auth.Tokens.TokenIssuanceContext! context, ZeeKayDa.Auth.Tokens.TokenPayload! payload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.IssuedToken!>!
 ZeeKayDa.Auth.Tokens.JwtTokenIssuer.JwtTokenIssuer(ZeeKayDa.Auth.Tokens.ISigningKeyRing! keyRing) -> void
 ZeeKayDa.Auth.Tokens.LocalSigner
 ZeeKayDa.Auth.Tokens.LocalSigner.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.Tokens.LocalSigner.Dispose() -> void
 ZeeKayDa.Auth.Tokens.LocalSigner.LocalSigner(ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.AsymmetricAlgorithm! privateKey) -> void
-ZeeKayDa.Auth.Tokens.LocalSigner.SignAsync(System.ReadOnlyMemory<byte> signingInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>>
+ZeeKayDa.Auth.Tokens.LocalSigner.SignAsync(System.ReadOnlyMemory<byte> signingInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.ReadOnlyMemory<byte>>!
 ZeeKayDa.Auth.Tokens.PublicKeyParameters
 ZeeKayDa.Auth.Tokens.PublicKeyParameters.<Clone>$() -> ZeeKayDa.Auth.Tokens.PublicKeyParameters!
 ZeeKayDa.Auth.Tokens.PublicKeyParameters.EcPublicParameters.get -> System.Security.Cryptography.ECParameters?
@@ -469,7 +469,7 @@ ZeeKayDa.Auth.Tokens.SourceKeySet.SigningKey.get -> ZeeKayDa.Auth.Tokens.SourceK
 ZeeKayDa.Auth.Tokens.SourceKeySet.SourceKeySet(ZeeKayDa.Auth.Tokens.SourceKey! signingKey, params ZeeKayDa.Auth.Tokens.SourceKey![]! alsoPublished) -> void
 ZeeKayDa.Auth.Tokens.StaticSigningKeyRing
 ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.Current.get -> ZeeKayDa.Auth.Tokens.SigningKeySet!
-ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SigningOutcome>
+ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.SigningOutcome>!
 ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.StaticSigningKeyRing(ZeeKayDa.Auth.Tokens.ISigningKeySource! source, System.TimeProvider! timeProvider) -> void
 ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions
@@ -686,7 +686,7 @@ ZeeKayDa.Auth.Claims.ClaimsResolutionResult.Resolved.Resolved() -> void
 ZeeKayDa.Auth.Claims.ClaimsResolutionResult.SubjectInvalid
 ZeeKayDa.Auth.Claims.ClaimsResolutionResult.SubjectInvalid.SubjectInvalid() -> void
 ZeeKayDa.Auth.Claims.IClaimsProvider
-ZeeKayDa.Auth.Claims.IClaimsProvider.GetClaimsAsync(ZeeKayDa.Auth.Claims.ClaimsProviderContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Claims.ClaimsResolutionResult!>
+ZeeKayDa.Auth.Claims.IClaimsProvider.GetClaimsAsync(ZeeKayDa.Auth.Claims.ClaimsProviderContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Claims.ClaimsResolutionResult!>!
 ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalAccessTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalAccessTokenClaims.init -> void
 ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalIdTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!

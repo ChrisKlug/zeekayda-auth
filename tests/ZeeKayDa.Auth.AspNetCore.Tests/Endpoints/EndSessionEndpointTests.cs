@@ -507,17 +507,17 @@ public sealed class EndSessionEndpointTests
     {
         private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
 
-        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             refuseWrites && IsLogout(key)
                 ? throw new InvalidOperationException("The store is unavailable.")
                 : _inner.SetAsync(key, value, expiresAt, cancellationToken);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
             refuseReads && IsLogout(key)
                 ? throw new InvalidOperationException("The store is unavailable.")
                 : _inner.GetAsync(key, cancellationToken);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             _inner.RemoveAsync(key, cancellationToken);
 
         private static bool IsLogout(StoreKey key) => key.ToString().StartsWith("zkd:interaction:l:", StringComparison.Ordinal);

@@ -47,7 +47,7 @@ public interface ISigningKeyRing
     /// <exception cref="InvalidOperationException">
     /// Thrown when the ring has not yet completed startup initialization.
     /// </exception>
-    ValueTask<SigningOutcome> SignAsync<TState>(
+    Task<SigningOutcome> SignAsync<TState>(
         TState state,
         Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
         CancellationToken cancellationToken = default);
@@ -64,7 +64,7 @@ public interface ISigningKeyRing
     /// stays failed: it runs at startup, where a failure aborts the host.
     /// </remarks>
     /// <param name="cancellationToken">A token that is signalled if the host is shutting down.</param>
-    internal ValueTask EnsureInitializedAsync(CancellationToken cancellationToken);
+    internal Task EnsureInitializedAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Gets the currently active key set, or <see langword="null"/> when the ring has not yet

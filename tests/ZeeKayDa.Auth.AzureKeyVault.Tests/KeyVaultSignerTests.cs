@@ -67,7 +67,7 @@ public sealed class KeyVaultSignerTests
         var signer = BuildSigner(new CryptographyClient(new JsonWebKey(rsa, includePrivateParameters: true)));
 
         var act = () => signer.SignAsync(
-            null!, "v1", SigningAlgorithm.RS256, SigningInput, TestContext.Current.CancellationToken).AsTask();
+            null!, "v1", SigningAlgorithm.RS256, SigningInput, TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("keyVersionUri");
     }
@@ -81,7 +81,7 @@ public sealed class KeyVaultSignerTests
         var signer = BuildSigner(new CryptographyClient(new JsonWebKey(rsa, includePrivateParameters: true)));
 
         var act = () => signer.SignAsync(
-            KeyVersionUri, keyLabel!, SigningAlgorithm.RS256, SigningInput, TestContext.Current.CancellationToken).AsTask();
+            KeyVersionUri, keyLabel!, SigningAlgorithm.RS256, SigningInput, TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ArgumentException>().WithParameterName("keyLabel");
     }
@@ -93,7 +93,7 @@ public sealed class KeyVaultSignerTests
         var signer = BuildSigner(new CryptographyClient(new JsonWebKey(rsa, includePrivateParameters: true)));
 
         var act = () => signer.SignAsync(
-            KeyVersionUri, "v1", SigningAlgorithm.RS256, null!, TestContext.Current.CancellationToken).AsTask();
+            KeyVersionUri, "v1", SigningAlgorithm.RS256, null!, TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("signingInput");
     }
@@ -145,7 +145,7 @@ public sealed class KeyVaultSignerTests
 
         var act = () => signer.SignAsync(
             KeyVersionUri, "v1", (SigningAlgorithm)999, SigningInput,
-            TestContext.Current.CancellationToken).AsTask();
+            TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<NotSupportedException>();
     }
@@ -179,7 +179,7 @@ public sealed class KeyVaultSignerTests
 
         var act = () => signer.SignAsync(
             KeyVersionUri, "v1", SigningAlgorithm.RS256, SigningInput,
-            TestContext.Current.CancellationToken).AsTask();
+            TestContext.Current.CancellationToken);
 
         (await act.Should().ThrowAsync<AzureKeyVaultSigningException>())
             .Which.Message.Should().Contain("'v1'").And.Contain("(HTTP 429)").And.Contain("Retry after 30",
@@ -194,7 +194,7 @@ public sealed class KeyVaultSignerTests
 
         var act = () => signer.SignAsync(
             KeyVersionUri, "v1", SigningAlgorithm.RS256, SigningInput,
-            TestContext.Current.CancellationToken).AsTask();
+            TestContext.Current.CancellationToken);
 
         (await act.Should().ThrowAsync<AzureKeyVaultSigningException>())
             .Which.Message.Should().Contain("No Retry-After header");
@@ -208,7 +208,7 @@ public sealed class KeyVaultSignerTests
 
         var act = () => signer.SignAsync(
             KeyVersionUri, "v1", SigningAlgorithm.RS256, SigningInput,
-            TestContext.Current.CancellationToken).AsTask();
+            TestContext.Current.CancellationToken);
 
         (await act.Should().ThrowAsync<AzureKeyVaultSigningException>())
             .Which.Message.Should().Contain("'v1'").And.Contain("HTTP 500").And.Contain("ErrorCode: InternalServerError");
@@ -223,7 +223,7 @@ public sealed class KeyVaultSignerTests
 
         var act = () => signer.SignAsync(
             KeyVersionUri, "v1", SigningAlgorithm.RS256, SigningInput,
-            TestContext.Current.CancellationToken).AsTask();
+            TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -238,7 +238,7 @@ public sealed class KeyVaultSignerTests
 
         var act = () => signer.SignAsync(
             KeyVersionUri, "v1", SigningAlgorithm.RS256, SigningInput,
-            TestContext.Current.CancellationToken).AsTask();
+            TestContext.Current.CancellationToken);
 
         (await act.Should().ThrowAsync<AzureKeyVaultSigningException>())
             .Which.Message.Should().Contain("No Retry-After header");
@@ -252,7 +252,7 @@ public sealed class KeyVaultSignerTests
 
         var act = () => signer.SignAsync(
             KeyVersionUri, "v1", SigningAlgorithm.RS256, SigningInput,
-            TestContext.Current.CancellationToken).AsTask();
+            TestContext.Current.CancellationToken);
 
         (await act.Should().ThrowAsync<AzureKeyVaultSigningException>())
             .Which.Message.Should().NotContain("ErrorCode",

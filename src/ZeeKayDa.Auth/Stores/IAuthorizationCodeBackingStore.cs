@@ -41,7 +41,7 @@ public interface IAuthorizationCodeBackingStore
     /// loses single-use enforcement — never use a read-then-write.
     /// </para>
     /// </remarks>
-    ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken);
+    Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken);
 
     /// <summary>
     /// Returns the stored bytes, or <see langword="null"/> if the key is confirmed absent.
@@ -59,10 +59,10 @@ public interface IAuthorizationCodeBackingStore
     /// redeemed," silently re-opening a replay window. Throwing on fault is a contractual
     /// obligation, not a nicety.
     /// </remarks>
-    ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken);
+    Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken);
 
     /// <summary>Removes the value at <paramref name="key"/> if present. Idempotent.</summary>
     /// <param name="key">The already-hashed store key.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken);
+    Task RemoveAsync(StoreKey key, CancellationToken cancellationToken);
 }

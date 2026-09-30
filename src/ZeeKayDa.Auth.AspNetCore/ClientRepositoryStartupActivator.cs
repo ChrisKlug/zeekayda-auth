@@ -23,7 +23,7 @@ internal sealed class ClientRepositoryStartupActivator : IStartupActivator
     public string Name => "ClientRepositoryActivation";
 
     /// <inheritdoc/>
-    public async ValueTask VerifyAsync(
+    public async Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)

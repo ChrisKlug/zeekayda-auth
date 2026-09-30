@@ -58,8 +58,8 @@ internal static class TestClaimsProviderRegistration
 /// <summary>An <see cref="IClaimsProvider"/> that knows every subject and has nothing to say about any of them.</summary>
 internal sealed class NoClaimsProvider : IClaimsProvider
 {
-    public ValueTask<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
-        ValueTask.FromResult<ClaimsResolutionResult>(new ClaimsResolutionResult.Resolved { Claims = [] });
+    public Task<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
+        Task.FromResult<ClaimsResolutionResult>(new ClaimsResolutionResult.Resolved { Claims = [] });
 }
 
 /// <summary>
@@ -81,7 +81,7 @@ internal sealed class TestSigningKeySource : ISigningKeySource, IDisposable
 
     private readonly RSA _rsa = RSA.Create(SharedKey.Value);
 
-    public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
     {
         var key = new SourceKey(
             KeyId,
@@ -89,14 +89,14 @@ internal sealed class TestSigningKeySource : ISigningKeySource, IDisposable
             PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)),
             ExpiresAt: null);
 
-        return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, key, next: null));
+        return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, key, next: null));
     }
 
-    public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+    public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
     {
         // A fresh private key instance per signer: the ring owns and disposes what it is handed.
         var privateKey = RSA.Create(_rsa.ExportParameters(includePrivateParameters: true));
-        return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, privateKey));
+        return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, privateKey));
     }
 
     public void Dispose() => _rsa.Dispose();

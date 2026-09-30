@@ -30,7 +30,7 @@ internal interface IInteractionBackingStore
     /// writes a value already past it; an implementation may store or refuse one.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken);
+    Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken);
 
     /// <summary>
     /// Returns the stored bytes, or <see langword="null"/> when the key is confirmed absent. A
@@ -39,10 +39,10 @@ internal interface IInteractionBackingStore
     /// </summary>
     /// <param name="key">The framework-derived key.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken);
+    Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken);
 
     /// <summary>Removes the value at <paramref name="key"/> if present. Idempotent.</summary>
     /// <param name="key">The framework-derived key.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken);
+    Task RemoveAsync(StoreKey key, CancellationToken cancellationToken);
 }

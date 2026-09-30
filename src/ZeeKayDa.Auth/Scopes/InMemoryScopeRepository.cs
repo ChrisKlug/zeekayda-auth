@@ -51,10 +51,10 @@ public sealed class InMemoryScopeRepository : IScopeRepository
     }
 
     /// <inheritdoc />
-    public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return ValueTask.FromResult(_scopes);
+        return Task.FromResult(_scopes);
     }
 }

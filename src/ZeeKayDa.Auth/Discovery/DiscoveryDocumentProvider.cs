@@ -51,7 +51,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
     }
 
     /// <inheritdoc/>
-    public async ValueTask<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default)
+    public async Task<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default)
     {
         var options = _options.Value;
 

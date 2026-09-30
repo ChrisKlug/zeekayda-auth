@@ -15,10 +15,10 @@ public sealed class SigningKeyRingPresenceValidatorTests
 {
     private sealed class StubSigningKeySource : ISigningKeySource
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
 
@@ -27,10 +27,10 @@ public sealed class SigningKeyRingPresenceValidatorTests
         public UnconstructableSigningKeySource() => throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("test.source.broken", "The source cannot be built."));
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
 

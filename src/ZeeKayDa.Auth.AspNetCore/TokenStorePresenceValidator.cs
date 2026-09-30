@@ -20,14 +20,14 @@ internal sealed class TokenStorePresenceValidator : IStartupVerifier
     public string Name => "TokenStorePresence";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
         var isService = scopedServices.GetService<IServiceProviderIsService>();
         if (isService is null)
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
 
         if (!isService.IsService(typeof(IAuthorizationCodeBackingStore)))
             context.AddFailure(
@@ -47,6 +47,6 @@ internal sealed class TokenStorePresenceValidator : IStartupVerifier
                 "No interaction store has been registered. " +
                 "Call builder.AddInMemoryInteractionStore() or builder.AddDistributedCacheInteractionStore().");
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }
