@@ -35,6 +35,13 @@ builder.Services.AddZeeKayDaAuth(options =>
 fast rather than at request time. It returns
 a `ZeeKayDaAuthBuilder` for registering optional features.
 
+Collections are filled or assigned while the options are configured. Once configuration completes,
+before validation runs, each collection is replaced by a read-only copy of the configured values in
+the configured order, so nothing can change them after validation has approved them. Assigning a
+collection after that point throws `ZeeKayDaConfigurationException` with the code
+`configuration.options_frozen`, so a `PostConfigure<AuthorizationServerOptions>` registered after
+`AddZeeKayDaAuth` fails startup rather than replacing a validated value.
+
 ## Properties
 
 ### `Issuer`
@@ -514,7 +521,7 @@ The JWKS endpoint has its own, independently configured equivalent:
 
 | Attribute | Value |
 |---|---|
-| Type | `IList<string>` |
+| Type | `ICollection<string>` |
 | Default | `[]` (empty) |
 | Required | No |
 
@@ -659,6 +666,8 @@ startup output and host logs.
 | `configuration.id_token.advertised_signing_algorithms.empty` | `IdToken.AdvertisedSigningAlgorithms` is a non-null empty collection |
 | `configuration.discovery_document.cache_max_age.negative` | `DiscoveryDocument.CacheMaxAge` is negative |
 | `configuration.jwks_endpoint.cache_max_age.negative` | `JwksEndpoint.CacheMaxAge` is negative |
+| `configuration.cors_origins.null` | `CorsOrigins` is `null` |
+| `configuration.options_frozen` | a collection was replaced after configuration finished, e.g. by a `PostConfigure<AuthorizationServerOptions>` registered after `AddZeeKayDaAuth` |
 | `configuration.cors_origins.invalid` | a `CorsOrigins` entry is not a bare `scheme://host[:port]` origin, uses HTTP while `AllowInsecureIssuer` is `false`, or uses HTTP with a non-loopback host |
 | `configuration.security_headers.referrer_policy.undefined_value` | `SecurityHeaders.ReferrerPolicy` is set via an out-of-range cast |
 | `configuration.security_headers.cross_origin_resource_policy.undefined_value` | `SecurityHeaders.CrossOriginResourcePolicy` is set via an out-of-range cast |

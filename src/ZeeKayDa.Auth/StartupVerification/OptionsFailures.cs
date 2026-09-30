@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Configuration;
 
@@ -21,12 +22,23 @@ internal sealed class OptionsFailures
 
             RecordUncoded(new OptionsValidationException(name, typeof(TOptions), result.Failures));
         }
-        catch (Exception ex) when (ex is ZeeKayDaConfigurationException or OptionsValidationException)
+        catch (Exception ex) when (ValidationFailure(ex) is { } failure)
         {
-            Record(ex);
+            Record(failure);
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// The validation failure an exception carries, or <see langword="null"/> for any other
+    /// exception: the exception itself, or the one a reflection call wrapped, as when the
+    /// configuration binder sets a frozen collection.
+    /// </summary>
+    public static Exception? ValidationFailure(Exception ex)
+    {
+        var candidate = ex is TargetInvocationException { InnerException: { } inner } ? inner : ex;
+        return candidate is ZeeKayDaConfigurationException or OptionsValidationException ? candidate : null;
     }
 
     /// <summary>Records a validation exception: a coded one keeps its codes, any other is uncoded.</summary>

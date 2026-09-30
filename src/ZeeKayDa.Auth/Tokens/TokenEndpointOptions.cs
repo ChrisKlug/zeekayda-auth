@@ -1,3 +1,5 @@
+using ZeeKayDa.Auth.Configuration;
+
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
@@ -5,6 +7,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 public sealed class TokenEndpointOptions
 {
+    private ICollection<string> _authMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic];
+    private bool _frozen;
+
     /// <summary>
     /// Gets or sets an explicit override for the <c>token_endpoint</c> URI published in the
     /// discovery document. When <see langword="null"/>, the value is derived from the issuer.
@@ -35,8 +40,11 @@ public sealed class TokenEndpointOptions
     /// strings alongside those constants.
     /// </para>
     /// </remarks>
-    public ICollection<string> AuthMethodsSupported { get; set; } =
-        [TokenEndpointAuthMethods.ClientSecretBasic];
+    public ICollection<string> AuthMethodsSupported
+    {
+        get => _authMethodsSupported;
+        set => _authMethodsSupported = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported");
+    }
 
     /// <summary>
     /// Gets or sets the lifetime of issued refresh tokens.
@@ -136,5 +144,15 @@ public sealed class TokenEndpointOptions
     public DateTimeOffset ComputeFamilyAbsoluteExpiry(DateTimeOffset now)
     {
         return TokenLifetimes.ExpiresAt(now, AbsoluteFamilyLifetime);
+    }
+
+    /// <summary>Makes every collection read-only and refuses any later replacement.</summary>
+    internal void Freeze()
+    {
+        if (_frozen)
+            return;
+
+        AuthMethodsSupported = FrozenOptions.Copy(AuthMethodsSupported);
+        _frozen = true;
     }
 }
