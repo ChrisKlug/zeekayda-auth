@@ -78,6 +78,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         ValidateAllowedScopes(client, failures);
         ClaimAdditionValidator.Validate(client, failures);
         ClientFlowValidator.Validate(client, _options.Value, failures);
+        WarnOfRefreshWithoutIssuer(client);
         ValidateAllowedPromptValues(client, failures);
 
         if (failures.Count > 0)
@@ -253,6 +254,23 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
                 "so a token issued to it would outlive the grant family that produced it.",
                 client.ClientId,
                 propertyName);
+        }
+    }
+
+    /// <summary>
+    /// A refresh token is issued only by the code grant (RFC 6749 §4.4.3: client_credentials SHOULD
+    /// NOT issue one), so refresh_token alone is usually a mistake. It only warns: a client whose code
+    /// grant was withdrawn may still be draining refresh tokens it was issued before.
+    /// </summary>
+    private void WarnOfRefreshWithoutIssuer(IClientRegistration client)
+    {
+        if (client.AllowedGrantTypes.Any(grantType => grantType == GrantType.RefreshToken)
+            && !client.AllowedGrantTypes.Any(grantType => grantType == GrantType.AuthorizationCode))
+        {
+            _logger.LogWarning(
+                "Client '{ClientId}' allows the refresh_token grant but not authorization_code, the only grant " +
+                "that issues a refresh token, so it can use only refresh tokens issued before.",
+                client.ClientId);
         }
     }
 

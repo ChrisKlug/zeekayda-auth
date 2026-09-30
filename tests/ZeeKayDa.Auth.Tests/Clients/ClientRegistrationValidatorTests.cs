@@ -1524,36 +1524,40 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void A_client_allowed_refresh_token_without_a_grant_that_issues_one_fails_startup()
+    public void A_client_allowed_refresh_token_without_a_grant_that_issues_one_warns_but_starts()
     {
         var options = BuildDefaultServerOptions();
         options.GrantTypesSupported.Add(GrantType.RefreshToken);
-        var validator = MakeValidator(serverOptions: options);
+        var logger = new CapturingLogger();
+        var validator = MakeValidator(logger: logger, serverOptions: options);
         var client = MakeValidPublicClient() with
         {
             AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken },
+            AllowedResponseTypes = new HashSet<ResponseType>(),
+            AllowedResponseModes = new HashSet<ResponseMode>(),
         };
 
         var act = () => validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.grant_types.refresh_without_issuer");
+        act.Should().NotThrow("a client whose code grant was withdrawn may still be draining refresh tokens");
+        logger.Warnings.Should().ContainSingle(w => w.Contains("refresh_token", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void A_client_allowed_refresh_token_with_the_code_grant_passes_the_refresh_check()
+    public void A_client_allowed_refresh_token_with_the_code_grant_does_not_warn()
     {
         var options = BuildDefaultServerOptions();
         options.GrantTypesSupported.Add(GrantType.RefreshToken);
-        var validator = MakeValidator(serverOptions: options);
+        var logger = new CapturingLogger();
+        var validator = MakeValidator(logger: logger, serverOptions: options);
         var client = MakeValidPublicClient() with
         {
             AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode, GrantType.RefreshToken },
         };
 
-        var act = () => validator.Validate(client);
+        validator.Validate(client);
 
-        act.Should().NotThrow();
+        logger.Warnings.Should().BeEmpty();
     }
 
     [Fact]

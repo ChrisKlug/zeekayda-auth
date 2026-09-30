@@ -563,7 +563,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   called `Clear()` first. Now a client that names values gets exactly those. Left empty, grant types
   default to `authorization_code` and auth methods to `client_secret_basic`, and response types and
   modes default to `code` and `query` only when the client may use `authorization_code`, so a
-  `client_credentials`-only client no longer carries them.
+  `client_credentials`-only client no longer carries them. A client allowed `refresh_token` without
+  `authorization_code`, the only grant that issues one, now logs a warning at validation: usually a
+  mistake, but a client whose code grant was withdrawn may still be draining refresh tokens.
 
 - **The framework's token stores are internal; every third-party store contract ends in
   `BackingStore`** (#827). `IAuthorizationCodeStore` and `IRefreshTokenStore` are gone: nobody
