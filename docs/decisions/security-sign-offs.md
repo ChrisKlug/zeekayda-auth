@@ -1144,17 +1144,18 @@ the provider's environment gate and key handling are unchanged and were not re-r
   symlinked ancestor. Closed — proven by
   `ReadKeyFileAsync_rejects_a_key_file_that_grants_any_group_or_other_access`,
   `ReadKeyFileAsync_rejects_a_key_path_that_is_itself_a_symlink` and
-  `ReadKeyFileAsync_rejects_a_key_file_reached_through_a_non_root_owned_symlinked_ancestor`.
+  ReadKeyFileAsync_rejects_a_key_file_reached_through_a_non_root_owned_symlinked_ancestor [reversed by #826: a symlinked ancestor is now accepted for the development key, pinned by `ReadKeyFileAsync_accepts_a_key_file_reached_through_a_symlinked_ancestor`].
 - The ancestor walk stops at a root-owned entry, so an OS-managed symlink no longer false-positives
   while an attacker-plantable one still fails. Closed — proven by
-  `ReadKeyFileAsync_accepts_a_key_file_under_a_root_owned_symlinked_ancestor` and
-  `ReadKeyFileAsync_accepts_a_key_file_under_the_OS_temp_directory_on_Unix`.
+  ReadKeyFileAsync_accepts_a_key_file_under_a_root_owned_symlinked_ancestor [deleted by #826: the development key no longer walks ancestor directories] and
+  ReadKeyFileAsync_accepts_a_key_file_under_the_OS_temp_directory_on_Unix [deleted by #826: the development key no longer walks ancestor directories].
 - That trust anchor reads the link entry's own owner, so pointing a symlink at a root-owned target
   does not launder it. Closed — proven by
-  `ReadKeyFileAsync_rejects_a_non_root_owned_symlink_that_points_at_a_root_owned_directory`, added
+  ReadKeyFileAsync_rejects_a_non_root_owned_symlink_that_points_at_a_root_owned_directory [deleted by #826: the development key no longer walks ancestor directories], added
   because mutating `lstat` back to `stat` left the whole suite green.
 - Residual: the Windows ancestor walk's throwing branch is unexercised — the symlink tests skip
-  where creating a link needs elevation.
+  where creating a link needs elevation. [Moot since #826: the development key no longer walks
+  ancestor directories on any platform.]
 
 ## 2026-08-28 — the signing key directory chain walk (#586, commit `5a25ded`)
 
@@ -1163,21 +1164,21 @@ shared interop as `stat`/`lstat` is now historical, since `stat` was removed wit
 
 - Ownership is read with `lstat` and a symlinked component is refused outright, so the walk accepts
   only what the read path will also accept. Closed — proven by
-  `EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_to_a_root_owned_directory` and
-  `EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_the_current_user_owns`.
+  EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_to_a_root_owned_directory [deleted by #826: the development key no longer walks ancestor directories] and
+  EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_the_current_user_owns [deleted by #826: the development key no longer walks ancestor directories].
 - A component writable by group or other is refused, sticky exempt, and that rule is judged before
   the root-owned trust break — ownership never prevented rename. Closed — proven by
-  `JudgeComponent_rejects_a_writable_directory_even_when_root_owns_it`,
-  `JudgeComponent_exempts_a_sticky_writable_directory` and
-  `JudgeComponent_still_checks_ownership_of_a_sticky_writable_directory`.
+  JudgeComponent_rejects_a_writable_directory_even_when_root_owns_it [deleted by #826: the development key no longer walks ancestor directories],
+  JudgeComponent_exempts_a_sticky_writable_directory [deleted by #826: the development key no longer walks ancestor directories] and
+  JudgeComponent_still_checks_ownership_of_a_sticky_writable_directory [deleted by #826: the development key no longer walks ancestor directories].
 - The branches needing a second user or root to stage are asserted as a pure function rather than
-  reasoned about. Closed — proven by `JudgeComponent_rejects_a_directory_owned_by_another_non_root_user`
-  and `JudgeComponent_rejects_a_directory_whose_ownership_could_not_be_read`.
+  reasoned about. Closed — proven by JudgeComponent_rejects_a_directory_owned_by_another_non_root_user [deleted by #826: the development key no longer walks ancestor directories]
+  and JudgeComponent_rejects_a_directory_whose_ownership_could_not_be_read [deleted by #826: the development key no longer walks ancestor directories].
 - Every component the provider creates is owner-only, closing a self-inflicted start-once-then-never
   bug under umask 002. Closed — proven by `EnsureDirectorySafe_restricts_every_component_it_creates_to_the_owner`.
 - An entry that exists but is not a directory is refused rather than skipped — the walk's only
-  fail-open step. Closed — proven by `EnsureDirectorySafe_rejects_a_component_that_is_a_dangling_symlink`
-  and `EnsureDirectorySafe_rejects_a_leaf_that_exists_but_is_not_a_directory`.
+  fail-open step. Closed — proven by EnsureDirectorySafe_rejects_a_component_that_is_a_dangling_symlink [deleted by #826: the development key no longer walks ancestor directories]
+  and EnsureDirectorySafe_rejects_a_leaf_that_exists_but_is_not_a_directory [deleted by #826: the development key no longer walks ancestor directories].
 - Residual: an attacker-owned *intermediate* link in a multi-hop chain is not detected by the walk
   itself; the read path rejects it, and `FileMode.CreateNew` plus atomic 0600 bound this to redirect
   and denial of service, never disclosure.
@@ -1878,7 +1879,6 @@ one round plus fix-diff verification; no High or Critical survived review.
 - **Accepted residual (maintainer):** nothing tests that a store keeps the record until
   `rememberUntil`, or commits it before marking rows; both are contract text, as the kit has no clock
   or mid-revoke fault seam.
-
 ## 2026-09-30 — development signing fails closed on an unknown environment (#825, code frozen at `cf6a682`)
 
 Reverses §1.8's accepted residual. Copilot code and security lenses and the security agent, one
@@ -1895,3 +1895,24 @@ round plus fix-diff verification; no High or Critical survived review.
   environment — `AllowedEnvironments_is_a_copy_the_assigning_caller_cannot_change_afterwards`,
   `AllowedEnvironments_cannot_be_changed_through_a_cast_to_a_mutable_type`,
   `Validate_fails_for_an_empty_allowed_list`.
+
+## 2026-09-30 — the development key drops the ancestor walk, and core drops native interop (#826, code frozen at `13064ee`)
+
+Reverses the #541 and #586 entries' ancestor-walk proofs for the development key. Copilot code and
+security lenses and the security agent, one round plus fix-diff verification; no High or Critical.
+
+- What the development key keeps, on .NET's own APIs. Closed —
+  `WriteKeyFileAsync_creates_the_key_file_readable_only_by_the_owner_on_Unix`,
+  `EnsureDirectorySafe_restricts_every_component_it_creates_to_the_owner`,
+  `EnsureDirectorySafe_rejects_an_existing_directory_that_grants_any_group_or_other_access`,
+  `ReadKeyFileAsync_rejects_a_key_file_that_grants_any_group_or_other_access`,
+  `ReadKeyFileAsync_rejects_a_key_path_that_is_itself_a_symlink`.
+- The production file provider's ancestor checks are unchanged by the interop move. Closed —
+  `ReadPemTextAsync_still_throws_for_a_file_under_a_non_root_owned_symlinked_ancestor_on_Unix`,
+  `ReadPemTextAsync_still_throws_when_a_non_root_owned_symlink_points_at_a_root_owned_directory_on_Unix`.
+- **Accepted trade (maintainer):** ancestors are not checked for a development key, which only
+  protects it on a shared multi-user machine; the environment gate keeps it out of production.
+  Pinned by `ReadKeyFileAsync_accepts_a_key_file_reached_through_a_symlinked_ancestor`,
+  `EnsureDirectorySafe_accepts_a_directory_under_a_group_writable_ancestor`.
+- **Accepted residual:** the symlink check on read re-reads the path, so a link swapped in after
+  open can pass; the BCL has no O_NOFOLLOW. No test: the window needs a race the host cannot stage.

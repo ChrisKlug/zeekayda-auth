@@ -69,18 +69,18 @@ name, never a `null` argument. `AllowedEnvironments` is set in the registration 
 framework never binds it, so `appsettings.json` alone cannot widen it; `Production` is always rejected, a host
 running in an allowed non-`Development` environment logs `Critical` on every start, and an unknown one fails closed.
 Persisted keys are plain PEM with permissions set atomically at creation (`0700`/`0600` POSIX, a restrictive
-non-inherited ACL on Windows), and loading fails closed on a broader mode, a foreign-owned directory, or a
-symlink anywhere in the path — except a root-owned symlinked ancestor, which no unprivileged attacker can
-plant and which macOS ships as `/tmp`, `/var`, and `/etc`.
+non-inherited ACL on Windows), using only .NET's own file APIs, and loading fails closed on a broader mode
+or a symlinked key file. Ancestor directories are not walked for foreign owners or symlinks: that only
+matters on a shared machine, and the environment gate is what keeps a development key out of production.
 
 **Extension contracts are public in core; ZeeKayDa's own crypto and redaction stay internal.**
 `InternalsVisibleTo` can only name first-party assemblies at build time, so it structurally cannot serve a
 third-party provider package. Making `ISanitizingLogger<T>` nameable creates a host-shadowing risk, closed
 by a hard-failing startup gate that runs first and rejects an unexpected open-generic implementation or any
-closed-generic override. The two narrow grants that do exist — `ZeeKayDa.Auth.FileSystem` for POSIX
-`stat`/`lstat` interop, `ZeeKayDa.Auth.Windows` for process-identity diagnostics — are reviewed exceptions
-for assemblies shipping in lockstep with core, not a pattern: forking security-critical, ABI-fragile interop
-would risk a second, independently-drifting copy of code that already needed a security fix.
+closed-generic override. The two narrow grants that do exist — `ZeeKayDa.Auth.FileSystem` and `ZeeKayDa.Auth.Windows`, both for
+the process-identity helper their access-denied messages share — are reviewed exceptions for assemblies
+shipping in lockstep with core, not a pattern. Core has no native interop: the `lstat` owner check lives in
+`ZeeKayDa.Auth.FileSystem`, the one package that protects production keys with it.
 
 **No Microsoft.IdentityModel types on the public surface.** They would bake a large, fast-moving third-party
 surface into the SemVer contract. The JWK mapping is hand-rolled over BCL types, held to RFC 7517/7518
