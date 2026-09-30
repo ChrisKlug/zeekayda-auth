@@ -583,6 +583,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `InMemoryDevelopmentSigningKeyOptions` is gone. The persist directory is set only through
   `AddPersistedDevelopmentSigning`'s parameter.
 
+- **The framework's token stores are internal; every third-party store contract ends in
+  `BackingStore`** (#827). `IAuthorizationCodeStore` and `IRefreshTokenStore` are gone: nobody
+  outside the framework could implement them, and nothing public exposed them. The entry and result
+  types only they used (`AuthorizationCodeEntry`, `RefreshTokenEntry`,
+  `AuthorizationCodeRedemptionResult`, `RefreshTokenConsumptionResult`) are internal too. A host implements
+  `IAuthorizationCodeBackingStore`, `IRefreshTokenBackingStore` (was `IRefreshTokenGrantStore`) or
+  the interaction store's backing contract. `AddRefreshTokenGrantStore<T>()` is now
+  `AddRefreshTokenStore<T>()`. All three stores key their records as
+  `zkd:{store}:{kind}:{hex(sha256(value))}`; refresh-token keys change from bare base64url to
+  `zkd:refresh:h:…`.
+
+- **`IRefreshTokenBackingStore.RevokeFamilyAsync` takes `rememberUntil` and records the revoked
+  family; `IsFamilyRevokedAsync` answers from that record** (#828). The framework no longer inserts a
+  fake revoked grant (the "revocation sentinel") to mark a family that has no rows yet, so a backing
+  store never holds a row that is not a grant. An implementation needs a small second record: the
+  revoked family id, kept at least until `rememberUntil` and never shortened by a repeat call. The
+  authorization-code tombstone now holds only the family id, with no Data Protection.
+
 - **`IScopeRepository` has a documented contract, and the framework enforces it on every read**
   (#759). `GetScopesAsync` now states what an implementation must return: a non-null collection
   with no null element, every scope named and no two names alike, every claim list non-null with
@@ -632,6 +650,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   party on Microsoft's `AddOpenIdConnect` must set `GetClaimsFromUserInfoEndpoint = true` to see
   them, which the `WebClient` sample already does. `claims_supported` in the discovery document is
   unchanged: it is the union across both destinations.
+
+### Removed
+
+- **The distributed-cache token stores** (#829). `AddDistributedCacheAuthorizationCodeStore`,
+  `AddDistributedCacheRefreshTokenStore` and `AddDistributedCacheTokenStores` are gone.
+  `IDistributedCache` has no atomic check-and-set, so on a shared cache they could redeem a code
+  twice or miss refresh-token reuse. Use `AddInMemoryStores()` in development, and a backing store
+  with a native atomic operation in production. The distributed-cache interaction store is
+  unchanged. The TestKit's `SupportsAtomicInsert` and `SupportsAtomicConsume` switches went with
+  them: the atomicity tests can no longer be turned off.
 
 ### Fixed
 

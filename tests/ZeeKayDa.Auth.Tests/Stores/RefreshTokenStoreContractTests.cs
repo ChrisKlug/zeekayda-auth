@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.Tests.Stores;
 /// <summary>
 /// Verifies the type shape of <see cref="RefreshTokenEntry"/>, <see cref="RefreshTokenGrant"/>,
 /// <see cref="RefreshGrantStatus"/>, <see cref="RefreshTokenConsumptionResult"/>, and
-/// <see cref="IRefreshTokenStore"/>'s method signatures.
+/// <see cref="RefreshTokenStore"/>'s method signatures.
 /// </summary>
 public sealed class RefreshTokenStoreContractTests
 {
@@ -241,12 +241,12 @@ public sealed class RefreshTokenStoreContractTests
         ((int)RefreshGrantStatus.Active).Should().Be(0, "Active must be the enum default value");
     }
 
-    // ── IRefreshTokenGrantStore — method signatures ───────────────────────────────────────────────
+    // ── IRefreshTokenBackingStore — method signatures ───────────────────────────────────────────────
 
     [Fact]
-    public void IRefreshTokenGrantStore_has_exactly_six_methods()
+    public void IRefreshTokenBackingStore_has_exactly_six_methods()
     {
-        var methods = typeof(IRefreshTokenGrantStore).GetMethods(BindingFlags.Public | BindingFlags.Instance);
+        var methods = typeof(IRefreshTokenBackingStore).GetMethods(BindingFlags.Public | BindingFlags.Instance);
 
         methods.Should().HaveCount(6,
             "InsertAsync, FindByHandleAsync, TryMarkConsumedAsync, RevokeFamilyAsync, RevokeBySubjectAsync, " +

@@ -92,4 +92,28 @@ public sealed class StoreKeyTests
 
         (a != b).Should().BeTrue();
     }
+
+    [Fact]
+    public void Hash_formats_the_store_the_kind_and_the_lowercase_hex_SHA256_of_the_value()
+    {
+        var key = StoreKey.Hash("code", "e", "abc");
+
+        key.ToString().Should().Be("zkd:code:e:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    [Fact]
+    public void ToString_of_a_default_StoreKey_throws_instead_of_returning_null()
+    {
+        var act = () => default(StoreKey).ToString();
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void GetHashCode_of_a_default_StoreKey_throws_the_same_exception_as_ToString()
+    {
+        var act = () => default(StoreKey).GetHashCode();
+
+        act.Should().Throw<InvalidOperationException>();
+    }
 }

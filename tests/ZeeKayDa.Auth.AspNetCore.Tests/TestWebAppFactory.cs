@@ -191,7 +191,7 @@ public sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactory>
             // a ThrowIfAlreadyRegistered exception when the caller brings its own stores.
             // Integration test hosts run as "Production" by default; allow in-memory stores so
             // the startup guard does not block test startup.
-            if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IAuthorizationCodeStore)))
+            if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IAuthorizationCodeBackingStore)))
                 authBuilder.AddInMemoryStores(allowOutsideDevelopment: true);
 
             authBuilder.AddTestSigningKeys();

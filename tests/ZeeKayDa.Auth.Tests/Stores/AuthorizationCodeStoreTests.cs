@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -8,7 +9,7 @@ namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
 /// Tests for the <c>AuthorizationCodeStore</c> framework coordinator. Covers
-/// the full check-and-consume state machine, the two-catch-site decrypt asymmetry (§7), the
+/// the full check-and-consume state machine, an undecryptable entry versus a keyless tombstone (§7), the
 /// fail-closed <c>Guarded(...)</c> wrapper (§8), and cancellation semantics.
 /// </summary>
 public sealed class AuthorizationCodeStoreTests
@@ -240,7 +241,7 @@ public sealed class AuthorizationCodeStoreTests
         outcomes.Count(o => o is AuthorizationCodeRedemptionResult.NotFound).Should().Be(0);
     }
 
-    // ── §7 two-catch-site decrypt asymmetry (pinned independently) ──────────────────────────────
+    // ── §7 an undecryptable entry is NotFound; the tombstone needs no key ──────────────────────────────
 
     [Fact]
     public async Task TryRedeemAsync_returns_NotFound_when_entry_cannot_be_unprotected()
@@ -290,17 +291,13 @@ public sealed class AuthorizationCodeStoreTests
     }
 
     [Fact]
-    public async Task TryRedeemAsync_returns_AlreadyRedeemed_when_tombstone_ProtectedSecret_cannot_be_unprotected()
+    public async Task TryRedeemAsync_returns_AlreadyRedeemed_from_a_tombstone_that_holds_only_the_family_id()
     {
-        // Simulates DP key rotation on the tombstone's ProtectedSecret: store1 redeems (writing
-        // the tombstone under dp1), store2 replays with dp2. FamilyId is plaintext in the
-        // envelope, so it must still be recovered even though ProtectedSecret fails to unprotect.
-        var backingStore = new InMemoryAuthorizationCodeBackingStore();
-        var dp1 = new EphemeralDataProtectionProvider();
-        var dp2 = new EphemeralDataProtectionProvider();
-        var store1 = CreateStore(backingStore: backingStore, dp: dp1);
-        var store2 = CreateStore(backingStore: backingStore, dp: dp2);
-        const string code = "tombstone-secret-unreadable-code";
+        // The replaying store has a different Data Protection key: the tombstone must need none.
+        var backingStore = new TombstoneCapturingBackingStore(new InMemoryAuthorizationCodeBackingStore());
+        var store1 = CreateStore(backingStore: backingStore, dp: new EphemeralDataProtectionProvider());
+        var store2 = CreateStore(backingStore: backingStore, dp: new EphemeralDataProtectionProvider());
+        const string code = "tombstone-family-only-code";
 
         await store1.StoreAsync(code, BuildEntry(), CancellationToken.None);
         var first = await store1.TryRedeemAsync(code, "client-a", "family-original", CancellationToken.None);
@@ -308,10 +305,9 @@ public sealed class AuthorizationCodeStoreTests
 
         var replay = await store2.TryRedeemAsync(code, "client-a", "family-replay", CancellationToken.None);
 
+        Encoding.UTF8.GetString(backingStore.Tombstone.Span).Should().Be("""{"familyId":"family-original"}""");
         replay.Should().BeOfType<AuthorizationCodeRedemptionResult.AlreadyRedeemed>()
-            .Which.FamilyId.Should().Be("family-original",
-                because: "§7: FamilyId is plaintext and must be recoverable even when " +
-                          "ProtectedSecret cannot be unprotected — not the old empty-string sentinel");
+            .Which.FamilyId.Should().Be("family-original");
     }
 
     // ── §8 fail-closed: backing-store faults wrap as ZeeKayDaStoreException ─────────────────────
@@ -377,7 +373,19 @@ public sealed class AuthorizationCodeStoreTests
         var act = async () => await store.TryRedeemAsync("no-entry-code", "client-a", "family-1", CancellationToken.None);
 
         await act.Should().ThrowAsync<ZeeKayDaStoreException>(
-            because: "a corrupted tombstone envelope is a genuine data-integrity fault, not a DP-rotation outcome");
+            because: "a corrupted tombstone is a genuine data-integrity fault");
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("""{"familyId":null}""")]
+    public async Task TryRedeemAsync_throws_ZeeKayDaStoreException_for_a_tombstone_without_a_family_id(string tombstone)
+    {
+        var store = CreateStore(backingStore: new CorruptTombstoneBackingStore(Encoding.UTF8.GetBytes(tombstone)));
+
+        var act = async () => await store.TryRedeemAsync("no-entry-code", "client-a", "family-1", CancellationToken.None);
+
+        await act.Should().ThrowAsync<ZeeKayDaStoreException>();
     }
 
     [Fact]
@@ -387,22 +395,6 @@ public sealed class AuthorizationCodeStoreTests
         var store = CreateStore(dp: faultingDp);
 
         var act = async () => await store.StoreAsync("code", BuildEntry(), CancellationToken.None);
-
-        await act.Should().ThrowAsync<ZeeKayDaStoreException>();
-    }
-
-    [Fact]
-    public async Task TryRedeemAsync_wraps_tombstone_Protect_failure_in_ZeeKayDaStoreException()
-    {
-        var workingDp = new EphemeralDataProtectionProvider();
-        var backingStore = new InMemoryAuthorizationCodeBackingStore();
-        var seedStore = CreateStore(backingStore: backingStore, dp: workingDp);
-        const string code = "protect-failure-code";
-        await seedStore.StoreAsync(code, BuildEntry(), CancellationToken.None);
-
-        var store = CreateStore(backingStore: backingStore, dp: new ProtectFailingDataProtectionProvider(workingDp));
-
-        var act = async () => await store.TryRedeemAsync(code, "client-a", "family-1", CancellationToken.None);
 
         await act.Should().ThrowAsync<ZeeKayDaStoreException>();
     }
@@ -483,7 +475,7 @@ public sealed class AuthorizationCodeStoreTests
     {
         var store = CreateStore();
 
-        var reserved = await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        var reserved = await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
         reserved.Should().BeTrue();
     }
@@ -494,9 +486,9 @@ public sealed class AuthorizationCodeStoreTests
         // Two consent POSTs racing before the first response lands: whichever reserves second
         // issues nothing.
         var store = CreateStore();
-        await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
-        var second = await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        var second = await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
         second.Should().BeFalse();
     }
@@ -505,9 +497,9 @@ public sealed class AuthorizationCodeStoreTests
     public async Task TryClaimInteractionAsync_for_another_interaction_is_independent()
     {
         var store = CreateStore();
-        await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
-        var other = await ClaimAsync(store, "interaction-2", FarFuture, CancellationToken.None);
+        var other = await store.TryClaimInteractionAsync("interaction-2", FarFuture, CancellationToken.None);
 
         other.Should().BeTrue();
     }
@@ -523,7 +515,7 @@ public sealed class AuthorizationCodeStoreTests
             .Select(_ => Task.Run(async () =>
             {
                 await gate.WaitAsync();
-                return await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+                return await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
             }))
             .ToArray();
 
@@ -544,7 +536,7 @@ public sealed class AuthorizationCodeStoreTests
         var store = CreateStore(backingStore: backing, serverOptions: options);
         var expiresAt = new DateTimeOffset(2026, 9, 6, 12, 30, 0, TimeSpan.Zero);
 
-        await ClaimAsync(store, "interaction-1", expiresAt, CancellationToken.None);
+        await store.TryClaimInteractionAsync("interaction-1", expiresAt, CancellationToken.None);
 
         backing.LastExpiresAt.Should().Be(expiresAt.AddSeconds(5));
     }
@@ -555,7 +547,7 @@ public sealed class AuthorizationCodeStoreTests
         var backing = new RecordingBackingStore();
         var store = CreateStore(backingStore: backing);
 
-        await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
         backing.LastKey.ToString().Should().StartWith("zkd:code:i:").And.NotContain("interaction-1");
     }
@@ -565,7 +557,7 @@ public sealed class AuthorizationCodeStoreTests
     {
         var store = CreateStore(backingStore: new ThrowingBackingStore());
 
-        var act = async () => await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        var act = async () => await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
         var assertion = await act.Should().ThrowAsync<ZeeKayDaStoreException>();
         assertion.Which.InnerException.Should().BeOfType<InvalidOperationException>();
@@ -576,7 +568,7 @@ public sealed class AuthorizationCodeStoreTests
     {
         var store = CreateStore(backingStore: new CancellationThrowingBackingStore());
 
-        var act = async () => await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        var act = async () => await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -586,16 +578,28 @@ public sealed class AuthorizationCodeStoreTests
     {
         var store = CreateStore();
 
-        var act = async () => await ClaimAsync(store, string.Empty, FarFuture, CancellationToken.None);
+        var act = async () => await store.TryClaimInteractionAsync(string.Empty, FarFuture, CancellationToken.None);
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>The claim is an internal interface member, so it is reached through the interface, as the framework reaches it.</summary>
-    private static ValueTask<bool> ClaimAsync(IAuthorizationCodeStore store, string interactionId, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
-        store.TryClaimInteractionAsync(interactionId, expiresAt, cancellationToken);
+    private sealed class TombstoneCapturingBackingStore(IAuthorizationCodeBackingStore inner) : IAuthorizationCodeBackingStore
+    {
+        public ReadOnlyMemory<byte> Tombstone { get; private set; }
+
+        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+        {
+            if (key.ToString().Contains(":t:", StringComparison.Ordinal))
+                Tombstone = value;
+            return inner.TryInsertAsync(key, value, expiresAt, cancellationToken);
+        }
+
+        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) => inner.GetAsync(key, cancellationToken);
+
+        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) => inner.RemoveAsync(key, cancellationToken);
+    }
 
     private sealed class RecordingBackingStore : IAuthorizationCodeBackingStore
     {
@@ -677,15 +681,17 @@ public sealed class AuthorizationCodeStoreTests
             => _inner.RemoveAsync(key, cancellationToken);
     }
 
-    private sealed class CorruptTombstoneBackingStore : IAuthorizationCodeBackingStore
+    private sealed class CorruptTombstoneBackingStore(byte[]? tombstone = null) : IAuthorizationCodeBackingStore
     {
+        private readonly byte[] _tombstone = tombstone ?? [0x00, 0x01, 0x02];
+
         public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
             => ValueTask.FromResult(true);
 
         public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
         {
             var isTombstone = key.ToString().Contains(":t:", StringComparison.Ordinal);
-            return ValueTask.FromResult(isTombstone ? (ReadOnlyMemory<byte>?)new byte[] { 0x00, 0x01, 0x02 } : null);
+            return ValueTask.FromResult(isTombstone ? (ReadOnlyMemory<byte>?)_tombstone : null);
         }
 
         public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)

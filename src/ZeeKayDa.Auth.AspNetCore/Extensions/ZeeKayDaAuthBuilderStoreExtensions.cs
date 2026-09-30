@@ -121,7 +121,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IAuthorizationCodeStore"/> has already been registered.
+    /// Thrown when an <see cref="IAuthorizationCodeBackingStore"/> has already been registered.
     /// Only one store registration per interface is allowed.
     /// </exception>
     public static ZeeKayDaAuthBuilder AddAuthorizationCodeStore<T>(this ZeeKayDaAuthBuilder builder)
@@ -129,20 +129,20 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeStore));
+        builder.ThrowIfAlreadyRegistered(typeof(IAuthorizationCodeBackingStore));
         builder.Services.AddSingleton<IAuthorizationCodeBackingStore, T>();
-        builder.Services.AddSingleton<IAuthorizationCodeStore, AuthorizationCodeStore>();
+        builder.Services.TryAddSingleton<AuthorizationCodeStore>();
 
         return builder;
     }
 
     /// <summary>
-    /// Registers <typeparamref name="T"/> as the singleton <see cref="IRefreshTokenGrantStore"/>
+    /// Registers <typeparamref name="T"/> as the singleton <see cref="IRefreshTokenBackingStore"/>
     /// implementation, wired underneath the framework's sealed coordinator. This is the
     /// recommended registration path for production use.
     /// </summary>
     /// <typeparam name="T">
-    /// The concrete type implementing <see cref="IRefreshTokenGrantStore"/>. Must have a
+    /// The concrete type implementing <see cref="IRefreshTokenBackingStore"/>. Must have a
     /// publicly accessible constructor so the DI container can instantiate it.
     /// </typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
@@ -151,17 +151,17 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IRefreshTokenStore"/> has already been registered.
+    /// Thrown when an <see cref="IRefreshTokenBackingStore"/> has already been registered.
     /// Only one store registration per interface is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddRefreshTokenGrantStore<T>(this ZeeKayDaAuthBuilder builder)
-        where T : class, IRefreshTokenGrantStore
+    public static ZeeKayDaAuthBuilder AddRefreshTokenStore<T>(this ZeeKayDaAuthBuilder builder)
+        where T : class, IRefreshTokenBackingStore
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenStore));
-        builder.Services.AddSingleton<IRefreshTokenGrantStore, T>();
-        builder.Services.AddSingleton<IRefreshTokenStore, RefreshTokenStore>();
+        builder.ThrowIfAlreadyRegistered(typeof(IRefreshTokenBackingStore));
+        builder.Services.AddSingleton<IRefreshTokenBackingStore, T>();
+        builder.Services.TryAddSingleton<RefreshTokenStore>();
 
         return builder;
     }
@@ -186,7 +186,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IAuthorizationCodeStore"/> has already been registered.
+    /// Thrown when an <see cref="IAuthorizationCodeBackingStore"/> has already been registered.
     /// Only one store registration per interface is allowed.
     /// </exception>
     public static ZeeKayDaAuthBuilder AddInMemoryAuthorizationCodeStore(
@@ -221,7 +221,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IRefreshTokenStore"/> has already been registered.
+    /// Thrown when an <see cref="IRefreshTokenBackingStore"/> has already been registered.
     /// Only one store registration per interface is allowed.
     /// </exception>
     public static ZeeKayDaAuthBuilder AddInMemoryRefreshTokenStore(
@@ -230,7 +230,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.AddRefreshTokenGrantStore<InMemoryRefreshTokenGrantStore>();
+        builder.AddRefreshTokenStore<InMemoryRefreshTokenBackingStore>();
         AddInMemoryStoreVerifier(builder.Services, InMemoryStoreVerifier.RefreshTokenStoreName, allowOutsideDevelopment);
 
         return builder;
@@ -255,7 +255,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IAuthorizationCodeStore"/>, an <see cref="IRefreshTokenStore"/>
+    /// Thrown when an <see cref="IAuthorizationCodeBackingStore"/>, an <see cref="IRefreshTokenBackingStore"/>
     /// or an interaction store has already been registered. Only one store registration per
     /// interface is allowed.
     /// </exception>
@@ -272,108 +272,8 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         return builder;
     }
 
-    /// <summary>
-    /// Registers a non-atomic <see cref="IDistributedCache"/>-backed default suitable for dev/test only.
-    /// Multi-instance production deployments MUST replace these stores with an atomic implementation.
-    /// </summary>
-    /// <param name="builder">The ZeeKayDa.Auth builder.</param>
-    /// <param name="allowMemoryCacheOutsideDevelopment">
-    /// Permits the per-process <see cref="MemoryDistributedCache"/> to back this store outside a
-    /// Development environment. Startup fails without it; with it, the configuration is logged at
-    /// <c>Critical</c> on every start. Intended for an integration test host, not
-    /// for production.
-    /// </param>
-    /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IAuthorizationCodeStore"/> has already been registered.
-    /// Only one store registration per interface is allowed.
-    /// </exception>
-    public static ZeeKayDaAuthBuilder AddDistributedCacheAuthorizationCodeStore(
-        this ZeeKayDaAuthBuilder builder,
-        bool allowMemoryCacheOutsideDevelopment = false)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-
-        builder.AddAuthorizationCodeStore<DistributedCacheAuthorizationCodeBackingStore>();
-        AddDistributedCacheStoreValidator(
-            builder.Services, DistributedCacheStoreStartupValidator.AuthorizationCodeStoreName, allowMemoryCacheOutsideDevelopment);
-
-        return builder;
-    }
-
-    /// <summary>
-    /// Registers a non-atomic <see cref="IDistributedCache"/>-backed default suitable for dev/test only.
-    /// Multi-instance production deployments MUST replace these stores with an atomic implementation.
-    /// </summary>
-    /// <param name="builder">The ZeeKayDa.Auth builder.</param>
-    /// <param name="allowMemoryCacheOutsideDevelopment">
-    /// Permits the per-process <see cref="MemoryDistributedCache"/> to back this store outside a
-    /// Development environment. Startup fails without it; with it, the configuration is logged at
-    /// <c>Critical</c> on every start. Intended for an integration test host, not
-    /// for production.
-    /// </param>
-    /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IRefreshTokenStore"/> has already been registered.
-    /// Only one store registration per interface is allowed.
-    /// </exception>
-    public static ZeeKayDaAuthBuilder AddDistributedCacheRefreshTokenStore(
-        this ZeeKayDaAuthBuilder builder,
-        bool allowMemoryCacheOutsideDevelopment = false)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-
-        builder.AddRefreshTokenGrantStore<DistributedCacheRefreshTokenGrantStore>();
-        AddDistributedCacheStoreValidator(
-            builder.Services, DistributedCacheStoreStartupValidator.RefreshTokenStoreName, allowMemoryCacheOutsideDevelopment);
-
-        return builder;
-    }
-
-    /// <summary>
-    /// Registers a non-atomic <see cref="IDistributedCache"/>-backed default suitable for dev/test only.
-    /// Multi-instance production deployments MUST replace these stores with an atomic implementation.
-    /// </summary>
-    /// <param name="builder">The ZeeKayDa.Auth builder.</param>
-    /// <param name="allowMemoryCacheOutsideDevelopment">
-    /// Permits the per-process <see cref="MemoryDistributedCache"/> to back this store outside a
-    /// Development environment. Startup fails without it; with it, the configuration is logged at
-    /// <c>Critical</c> on every start. Intended for an integration test host, not
-    /// for production.
-    /// </param>
-    /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when an <see cref="IAuthorizationCodeStore"/> or <see cref="IRefreshTokenStore"/>
-    /// has already been registered. Only one store registration per interface is allowed.
-    /// </exception>
-    public static ZeeKayDaAuthBuilder AddDistributedCacheTokenStores(
-        this ZeeKayDaAuthBuilder builder,
-        bool allowMemoryCacheOutsideDevelopment = false)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-
-        builder.AddDistributedCacheAuthorizationCodeStore(allowMemoryCacheOutsideDevelopment);
-        builder.AddDistributedCacheRefreshTokenStore(allowMemoryCacheOutsideDevelopment);
-
-        return builder;
-    }
-
     private static void AddInMemoryStoreVerifier(
         IServiceCollection services, string storeName, bool allowOutsideDevelopment) =>
         services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
             sp.GetRequiredService<IHostEnvironment>(), storeName, allowOutsideDevelopment));
-
-    private static void AddDistributedCacheStoreValidator(
-        IServiceCollection services, string storeName, bool allowMemoryCacheOutsideDevelopment) =>
-        services.AddSingleton<IStartupActivator>(sp => new DistributedCacheStoreStartupValidator(
-            sp.GetRequiredService<IHostEnvironment>(), storeName, allowMemoryCacheOutsideDevelopment));
 }

@@ -1,6 +1,6 @@
 ---
 title: "Token stores"
-description: "Reference for IAuthorizationCodeStore, IRefreshTokenStore, the IAuthorizationCodeBackingStore and IRefreshTokenGrantStore extension points, lifetime options, built-in implementations, and ZeeKayDaStoreException."
+description: "Reference for the authorization-code and refresh-token stores, the IAuthorizationCodeBackingStore and IRefreshTokenBackingStore extension points, lifetime options, built-in implementations, and ZeeKayDaStoreException."
 parent: "Reference"
 nav_order: 5
 ---
@@ -9,11 +9,11 @@ nav_order: 5
 
 ZeeKayDa.Auth requires three stores to be registered before the application starts:
 
-- `IAuthorizationCodeStore` — persists short-lived authorization codes, enforces single-use redemption per [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1), and guarantees at most one code per authorization request.
-- `IRefreshTokenStore` — persists long-lived refresh tokens, enforces rotation and reuse detection per [RFC 9700 §4.13](https://www.rfc-editor.org/rfc/rfc9700#section-4.13), and supports family-level revocation.
+- The authorization code store — persists short-lived authorization codes, enforces single-use redemption per [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1), and guarantees at most one code per authorization request.
+- The refresh token store — persists long-lived refresh tokens, enforces rotation and reuse detection per [RFC 9700 §4.13](https://www.rfc-editor.org/rfc/rfc9700#section-4.13), and supports family-level revocation.
 - The interaction store — holds each in-flight authorization request between `/connect/authorize` and the response to the client, one entry per request, so any number can be in flight in one browser. It has no public interface: register the per-process implementation or the one over your `IDistributedCache`.
 
-None is registered automatically by `AddZeeKayDaAuth`. You must choose an implementation for each using the builder methods below, or register a custom type for the token stores. If any store is missing at startup, the application fails with `ZeeKayDaConfigurationException` naming what is missing.
+`AddZeeKayDaAuth` registers the framework side of both token stores — single-use redemption, rotation and reuse detection — but none of the three storage implementations. You must choose one for each using the builder methods below, or register a custom backing store for the token stores. If any store is missing at startup, the application fails with `ZeeKayDaConfigurationException` naming what is missing.
 
 For step-by-step registration instructions, see [Configure token stores](../how-to/configure-token-stores.md).
 
@@ -21,16 +21,13 @@ For step-by-step registration instructions, see [Configure token stores](../how-
 
 ## Choosing the right store
 
-| Scenario | `IAuthorizationCodeStore` | `IRefreshTokenStore` |
+| Scenario | Authorization code store | Refresh token store |
 |---|---|---|
 | Local development | `.AddInMemoryAuthorizationCodeStore()` | `.AddInMemoryRefreshTokenStore()` |
 | Integration tests | `.AddInMemoryAuthorizationCodeStore()` | `.AddInMemoryRefreshTokenStore()` |
-| Production (any instance count) where the concurrent-redemption race and eviction risk are explicitly accepted | `.AddDistributedCacheAuthorizationCodeStore()` — the TOCTOU race applies on any deployment (see [Distributed-cache stores](#distributed-cache-backed-stores)); ensure cache is configured with `noeviction` | `.AddDistributedCacheRefreshTokenStore()` — same trade-offs apply |
-| Production where replay attacks are in the threat model, or any deployment with an evicting cache under memory pressure | Custom atomic store (Redis + Lua, SQL with optimistic concurrency) | Custom atomic store (same backends) |
+| Production | Custom atomic store (Redis + Lua, SQL with optimistic concurrency) | Custom atomic store (same backends) |
 
 > ⚠️ **Warning:** Both in-memory stores are development and testing only. They lose all tokens on restart and silently disable single-use enforcement and reuse detection across multiple instances. Outside a `Development` environment the framework refuses to start with in-memory stores unless `allowOutsideDevelopment: true` is passed to the registration call.
-
-The distributed-cache stores have two concrete limitations that determine whether they are appropriate for a given production deployment — see [Distributed-cache stores](#distributed-cache-backed-stores) for the full trade-off analysis.
 
 ---
 
@@ -40,7 +37,7 @@ All store registration goes through the `ZeeKayDaAuthBuilder` returned by `AddZe
 
 ### `.AddInMemoryStores(bool allowOutsideDevelopment = false)`
 
-Registers all three in-memory stores — `InMemoryAuthorizationCodeBackingStore` and `InMemoryRefreshTokenGrantStore` wired underneath the framework's sealed `AuthorizationCodeStore` and `RefreshTokenStore` coordinators, and the per-process interaction store. In a `Development` environment, logs one `LogLevel.Information` message per store at startup. Outside a `Development` environment, startup fails with `ZeeKayDaConfigurationException` unless `allowOutsideDevelopment` is `true`. The value is passed through to `.AddInMemoryAuthorizationCodeStore()`, `.AddInMemoryRefreshTokenStore()` and `.AddInMemoryInteractionStore()`, each of which gates on it independently.
+Registers all three in-memory stores — `InMemoryAuthorizationCodeBackingStore` and `InMemoryRefreshTokenBackingStore` wired underneath the framework's sealed `AuthorizationCodeStore` and `RefreshTokenStore` coordinators, and the per-process interaction store. In a `Development` environment, logs one `LogLevel.Information` message per store at startup. Outside a `Development` environment, startup fails with `ZeeKayDaConfigurationException` unless `allowOutsideDevelopment` is `true`. The value is passed through to `.AddInMemoryAuthorizationCodeStore()`, `.AddInMemoryRefreshTokenStore()` and `.AddInMemoryInteractionStore()`, each of which gates on it independently.
 
 ```csharp
 builder.Services
@@ -50,18 +47,18 @@ builder.Services
 
 ### `.AddInMemoryAuthorizationCodeStore(bool allowOutsideDevelopment = false)`
 
-Registers `InMemoryAuthorizationCodeBackingStore` as the backing store, wired underneath the framework's sealed `AuthorizationCodeStore` coordinator, which is registered as `IAuthorizationCodeStore`. Logs the same startup message as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
+Registers `InMemoryAuthorizationCodeBackingStore` as the backing store, wired underneath the framework's own `AuthorizationCodeStore`. Logs the same startup message as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
 
 ```csharp
 builder.Services
     .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
     .AddInMemoryAuthorizationCodeStore()
-    .AddRefreshTokenGrantStore<MyPersistentRefreshTokenGrantStore>();
+    .AddRefreshTokenStore<MyPersistentRefreshTokenBackingStore>();
 ```
 
 ### `.AddInMemoryRefreshTokenStore(bool allowOutsideDevelopment = false)`
 
-Registers `InMemoryRefreshTokenGrantStore` as the backing store, wired underneath the framework's sealed `RefreshTokenStore` coordinator, which is registered as `IRefreshTokenStore`. Logs the same startup message as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
+Registers `InMemoryRefreshTokenBackingStore` as the backing store, wired underneath the framework's own `RefreshTokenStore`. Logs the same startup message as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
 
 ### `.AddInMemoryInteractionStore(bool allowOutsideDevelopment = false)`
 
@@ -69,7 +66,7 @@ Registers the per-process interaction store. An authorization request started on
 
 ### `.AddDistributedCacheInteractionStore(bool allowMemoryCacheOutsideDevelopment = false)`
 
-Registers the interaction store over the host's `IDistributedCache`. Requires an `IDistributedCache`; startup fails without one. The interaction store needs only set, get and remove, so a shared cache — Redis, SQL Server, any `IDistributedCache` implementation — is a complete production answer: the one race in the flow, two responses completing one request, is decided by `IAuthorizationCodeStore.TryClaimInteractionAsync`, not here.
+Registers the interaction store over the host's `IDistributedCache`. Requires an `IDistributedCache`; startup fails without one. The interaction store needs only set, get and remove, so a shared cache — Redis, SQL Server, any `IDistributedCache` implementation — is a complete production answer: the one race in the flow, two responses completing one request, is decided by the authorization code store's interaction claim, not here.
 
 The exception is the per-process `MemoryDistributedCache` from `AddDistributedMemoryCache()`, which is shared with nothing. Outside a `Development` environment startup fails when the store resolves that cache, unless `allowMemoryCacheOutsideDevelopment` is `true`, which downgrades the failure to a `LogLevel.Critical` warning on every start.
 
@@ -78,50 +75,26 @@ builder.Services.AddStackExchangeRedisCache(o => o.Configuration = "...");
 builder.Services
     .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
     .AddAuthorizationCodeStore<MyRedisAuthorizationCodeBackingStore>()
-    .AddRefreshTokenGrantStore<MyRedisRefreshTokenGrantStore>()
+    .AddRefreshTokenStore<MyRedisRefreshTokenBackingStore>()
     .AddDistributedCacheInteractionStore();
 ```
 
-### `.AddDistributedCacheTokenStores(bool allowMemoryCacheOutsideDevelopment = false)`
-
-Registers both distributed-cache backing stores — `DistributedCacheAuthorizationCodeBackingStore` and `DistributedCacheRefreshTokenGrantStore` — wired underneath the same `AuthorizationCodeStore` and `RefreshTokenStore` coordinators. Requires `IDistributedCache` to be registered; fails fast with `ZeeKayDaConfigurationException` if it is missing.
-
-Two separate things are reported at startup:
-
-- **The cache is `MemoryDistributedCache`.** Despite its name it is shared with nothing, so an authorization code issued by one instance cannot be redeemed at another, and single-use enforcement and reuse detection hold only within one process. In `Development` this is recorded at `LogLevel.Information`. Outside `Development` it **fails startup**, unless the registration passes `allowMemoryCacheOutsideDevelopment: true` — which starts the host and logs `LogLevel.Critical` on every start instead. That parameter is on `AddDistributedCacheAuthorizationCodeStore`, `AddDistributedCacheRefreshTokenStore` and `AddDistributedCacheTokenStores`, and each registration keeps its own value.
-- **The cache is anything else.** A `LogLevel.Warning` says these stores are non-atomic. A shared cache does not clear that: multi-instance deployments remain exposed to TOCTOU double-redemption until the stores are replaced with an atomic implementation.
-
-```csharp
-builder.Services.AddDistributedMemoryCache(); // or AddStackExchangeRedisCache(...)
-builder.Services
-    .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
-    .AddDistributedCacheTokenStores();
-```
-
-### `.AddDistributedCacheAuthorizationCodeStore(bool allowMemoryCacheOutsideDevelopment = false)`
-
-Registers `DistributedCacheAuthorizationCodeBackingStore` as the backing store, wired underneath the `AuthorizationCodeStore` coordinator, which is registered as `IAuthorizationCodeStore`. Requires `IDistributedCache`.
-
-### `.AddDistributedCacheRefreshTokenStore(bool allowMemoryCacheOutsideDevelopment = false)`
-
-Registers `DistributedCacheRefreshTokenGrantStore` as the backing store, wired underneath the `RefreshTokenStore` coordinator, which is registered as `IRefreshTokenStore`. Requires `IDistributedCache`.
-
 ### `.AddAuthorizationCodeStore<T>()`
 
-Registers a custom `T : class, IAuthorizationCodeBackingStore` as the singleton backing store, wired underneath the framework's sealed `IAuthorizationCodeStore` coordinator. This is the recommended registration path for production custom stores. You implement `IAuthorizationCodeBackingStore`, not `IAuthorizationCodeStore` directly — see [The backing store contracts](#the-backing-store-contracts) below.
+Registers a custom `T : class, IAuthorizationCodeBackingStore` as the singleton backing store, wired underneath the framework's own `AuthorizationCodeStore`. This is the registration path for production custom stores — see [The backing store contracts](#the-backing-store-contracts) below.
 
 ```csharp
 builder.Services
     .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
     .AddAuthorizationCodeStore<MyRedisAuthorizationCodeBackingStore>()
-    .AddRefreshTokenGrantStore<MyRedisRefreshTokenGrantStore>();
+    .AddRefreshTokenStore<MyRedisRefreshTokenBackingStore>();
 ```
 
 `T` must be a concrete reference type with a publicly accessible constructor so the DI container can instantiate it.
 
-### `.AddRefreshTokenGrantStore<T>()`
+### `.AddRefreshTokenStore<T>()`
 
-Registers a custom `T : class, IRefreshTokenGrantStore` as the singleton backing store, wired underneath the framework's sealed `IRefreshTokenStore` coordinator. You implement `IRefreshTokenGrantStore`, not `IRefreshTokenStore` directly — see [The backing store contracts](#the-backing-store-contracts) below.
+Registers a custom `T : class, IRefreshTokenBackingStore` as the singleton backing store, wired underneath the framework's own `RefreshTokenStore` — see [The backing store contracts](#the-backing-store-contracts) below.
 
 ---
 
@@ -180,13 +153,13 @@ The default is intentionally small. Values approaching half of `AuthorizationCod
 
 ## In-memory stores
 
-`InMemoryAuthorizationCodeBackingStore` and `InMemoryRefreshTokenGrantStore` are the backing stores wired underneath the `AuthorizationCodeStore` and `RefreshTokenStore` coordinators when you register in-memory stores. Both are backed by a plain `ConcurrentDictionary<StoreKey, ...>` — there is no `IMemoryCache` and no `SemaphoreSlim` locking involved. Each provides its one required atomicity guarantee natively: `InMemoryAuthorizationCodeBackingStore.TryInsertAsync` uses `ConcurrentDictionary.TryAdd`, and `InMemoryRefreshTokenGrantStore.TryMarkConsumedAsync` uses `ConcurrentDictionary.TryUpdate` as its compare-and-set. `InMemoryRefreshTokenGrantStore` additionally holds a `ReaderWriterLockSlim` around family/subject revocation scans so that a grant inserted concurrently with a revoke call is never missed.
+`InMemoryAuthorizationCodeBackingStore` and `InMemoryRefreshTokenBackingStore` are the backing stores wired underneath the `AuthorizationCodeStore` and `RefreshTokenStore` coordinators when you register in-memory stores. Both are backed by a plain `ConcurrentDictionary<StoreKey, ...>` — there is no `IMemoryCache` and no `SemaphoreSlim` locking involved. Each provides its one required atomicity guarantee natively: `InMemoryAuthorizationCodeBackingStore.TryInsertAsync` uses `ConcurrentDictionary.TryAdd`, and `InMemoryRefreshTokenBackingStore.TryMarkConsumedAsync` uses `ConcurrentDictionary.TryUpdate` as its compare-and-set. `InMemoryRefreshTokenBackingStore` additionally holds a `ReaderWriterLockSlim` around family/subject revocation scans so that a grant inserted concurrently with a revoke call is never missed.
 
 **Limitations:**
 
 - **Single-instance is a deployment invariant, not a recommendation.** Running multiple instances with in-memory stores silently disables single-use enforcement ([RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1)) and reuse detection ([RFC 9700 §4.14.2](https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2)). Codes and tokens issued by instance A are invisible to instance B.
 - **All tokens are lost on process restart.** Authorization code loss is operationally acceptable (60-second lifetime); refresh token loss forces every active user to re-authenticate.
-- **Entries are never evicted while the process runs.** Neither backing store removes expired data on a timer or on read. An authorization code's entry is removed only when it is successfully redeemed; a redemption tombstone, once written, is never removed at all. Refresh token grants (including consumed, revoked, and family-revocation sentinel rows) are likewise never removed. On a long-running process this means the in-memory dictionaries grow monotonically with the number of codes and tokens ever issued — acceptable for development and short-lived test hosts, but a memory-growth characteristic to be aware of before using these stores for anything longer-running.
+- **Entries are never evicted while the process runs.** Neither backing store removes expired data on a timer or on read. An authorization code's entry is removed only when it is successfully redeemed; a redemption tombstone, once written, is never removed at all. Refresh token grants (including consumed and revoked ones) and the records of revoked families are likewise never removed. On a long-running process this means the in-memory dictionaries grow monotonically with the number of codes and tokens ever issued — acceptable for development and short-lived test hosts, but a memory-growth characteristic to be aware of before using these stores for anything longer-running.
 - **Development and testing only.** In-memory stores are never an acceptable production choice. Outside a `Development` host environment the framework refuses to start unless the registration call's `allowOutsideDevelopment` parameter is set to `true` (intended only for integration test hosts that intentionally run under a non-`Development` environment name). Each of `.AddInMemoryStores()`, `.AddInMemoryAuthorizationCodeStore()`, and `.AddInMemoryRefreshTokenStore()` gates on its own `allowOutsideDevelopment` value independently.
 
 **Startup message text (logged at `LogLevel.Information` in `Development`, once per store, naming it):**
@@ -200,74 +173,13 @@ instance. This configuration is intended for development and testing only and mu
 be used in production.
 ```
 
-**Data Protection.** Authorization code entries are serialised to JSON and encrypted using `IDataProtectionProvider` (purposes: `ZeeKayDa.Auth:AuthorizationCodeStore` and `ZeeKayDa.Auth:RefreshTokenStore`). Refresh token grants are only partially encrypted: `FamilyId`, `Subject`, `ClientId`, the expiry timestamps, and — critically — the `Status` column (`Active`/`Consumed`/`Revoked`) are stored as cleartext columns on the grant row; only the `ProtectedPayload` field (the serialized `RefreshTokenEntry`) is Data-Protection-encrypted. This is deliberate: family revocation is decided by reading the cleartext `Status` column, so a Data Protection failure can never cause a revoked family to silently appear unrevoked — there is no encrypted revocation state to fail to decrypt.
-
----
-
-## Distributed-cache-backed stores
-
-`DistributedCacheAuthorizationCodeBackingStore` and `DistributedCacheRefreshTokenGrantStore` are the backing stores wired underneath the `AuthorizationCodeStore` and `RefreshTokenStore` coordinators when you register distributed-cache stores; both are backed by `IDistributedCache`. They require `IDistributedCache` to be registered before `AddDistributedCacheTokenStores()` is called; missing registration is a startup failure.
-
-**Supported development setup:**
-
-```csharp
-builder.Services.AddDistributedMemoryCache();
-builder.Services
-    .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
-    .AddDistributedCacheTokenStores();
-```
-
-> ⚠️ **Warning:** `AddDistributedMemoryCache()` adds an in-process `MemoryDistributedCache`. Do not use `AddDistributedMemoryCache()` with the distributed-cache stores in production; it provides no persistence and no atomicity beyond what the in-memory stores already offer, with additional overhead.
-
-**Atomicity trade-offs.** The distributed-cache stores use `IDistributedCache`, which does not provide an atomic check-and-set primitive. This creates two concrete gaps that operators must evaluate before choosing these stores for production:
-
-**1. TOCTOU on single-use code redemption.** `TryRedeemAsync` performs a read-then-write using two separate `IDistributedCache` calls. Because ASP.NET Core / Kestrel serves concurrent requests across the thread pool, two concurrent requests for the same authorization code can both read "not yet redeemed" before either writes the tombstone, allowing double-redemption. The window spans two round-trips to the cache backend. This race exists on any deployment — single or multi-instance — whenever the application processes concurrent requests.
-
-*This matters when:* an adversary or buggy client can race concurrent redemption requests. The risk may be acceptable for low-traffic internal applications where simultaneous authorization code redemption is implausible, but it cannot be eliminated by reducing instance count alone.
-
-**2. Tombstone and revocation marker eviction.** `IDistributedCache` can evict entries under memory pressure before their configured TTL expires. If a tombstone (for a replayed authorization code) or a family revocation marker is evicted early, the protection it provides disappears — a replayed code appears fresh, or a revoked family token appears valid.
-
-*This matters when:* your cache backend has a memory limit and can evict data. Redis configured with `maxmemory-policy allkeys-lru` is the common case where this risk applies.
-
-Every entry the distributed-cache stores write carries an absolute expiry, making each entry "volatile" in Redis terminology. Under `volatile-ttl`, Redis evicts volatile keys with the nearest TTL first when memory is full — which means tombstones and revocation markers are candidates for eviction, not protected from it. Only `noeviction` actually prevents eviction of these entries: instead of silently discarding data, Redis refuses writes and the stores surface the failure as `ZeeKayDaStoreException` (fail-closed). A Redis instance configured with `noeviction` eliminates this risk.
-
-**When the distributed-cache stores are acceptable for production:**
-
-- Any deployment where the TOCTOU concurrent-redemption race is within the accepted threat model (for example, an internal tool with trusted clients and no adversarial replay risk) AND the cache backend is configured to never evict entries under memory pressure.
-- Any deployment where both limitations above are within the accepted threat model.
-
-**When they are not appropriate:**
-
-- Any deployment where replay attacks are in the threat model and concurrent token requests are possible — which is true of any non-trivial deployment regardless of instance count.
-- Any deployment backed by a cache with an evicting `maxmemory-policy` and no margin to guarantee all tombstones and revocation markers are retained for their full TTL.
-
-> ⚠️ **Warning:** If both limitations above apply to your deployment, use a custom atomic store (Redis + Lua, SQL with optimistic concurrency, or equivalent) instead. The distributed-cache stores do not provide the atomicity guarantees required by [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1) and [RFC 9700 §4.14.2](https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2) under those conditions.
-
-**Real distributed backend warning.** When the registered `IDistributedCache` implementation is anything other than `MemoryDistributedCache` (for example, Redis or SQL Server), ZeeKayDa.Auth emits a `LogLevel.Warning` at startup noting that the distributed-cache stores are running against a real shared backend. Review the two trade-offs above before accepting this warning in production.
-
-**Data Protection.** Authorization code entries are encrypted using `IDataProtectionProvider` (same purpose strings as the in-memory stores). Refresh token grants carry the same partial-encryption shape described in [In-memory stores](#in-memory-stores): `FamilyId`, `Subject`, `ClientId`, expiry timestamps, and `Status` are cleartext columns on the cached record; only `ProtectedPayload` is encrypted. Raw token handles are never used as cache keys — every key is derived by hashing the handle first, so cache read access does not expose live bearer credentials.
-
-**Key format:**
-
-Authorization code keys and refresh token grant keys use different encodings of the same underlying hash, because they are built by two different coordinators:
-
-| Entry type | Cache key |
-|---|---|
-| Authorization code entry (unredeemed) | `zkd:code:e:{hex}` where `hex` is the lowercase-hex SHA-256 hash of the code handle |
-| Authorization code tombstone (redeemed) | `zkd:code:t:{hex}` where `hex` is the lowercase-hex SHA-256 hash of the code handle |
-| Refresh token grant (active, consumed, or revoked — one row, `Status` changes in place) | `zkd:rtg:{b64}` where `b64` is the Base64Url-encoded SHA-256 hash of the token handle |
-| Refresh token family revocation index | `zkd:rtg:family:{familyId}` — keyed on the **cleartext** family ID, not a hash |
-| Refresh token subject revocation index | `zkd:rtg:subject:{subject}` — keyed on the **cleartext** subject, not a hash |
-
-There is no separate "tombstone" or "revoked" key for refresh tokens: a grant's lifecycle (`Active` → `Consumed` or `Revoked`) is tracked by updating the `Status` column on its one grant row, in place, at the same `zkd:rtg:{b64}` key it was inserted under. The family and subject index entries exist only so `RevokeFamilyAsync` and `RevokeBySubjectAsync` can locate every grant to update, since `IDistributedCache` has no native query-by-column; they list the handle hashes belonging to that family or subject and self-expire at the family's absolute expiry.
-
-These key shapes are implementation details of the built-in stores, not part of the `IAuthorizationCodeStore` or `IRefreshTokenStore` interface contracts. Custom stores may use any key layout.
+**Data Protection.** Authorization code entries are serialised to JSON and encrypted using `IDataProtectionProvider` (purposes: `ZeeKayDa.Auth:AuthorizationCodeStore` and `ZeeKayDa.Auth:RefreshTokenStore`). Refresh token grants are only partially encrypted: `FamilyId`, `Subject`, `ClientId`, the expiry timestamps, and — critically — the `Status` column (`Active`/`Consumed`/`Revoked`) are stored as cleartext columns on the grant row; only the `ProtectedPayload` field (the serialized `RefreshTokenEntry`) is Data-Protection-encrypted. This is deliberate: revocation is decided from cleartext only — a grant's own `Status` column, and the backing store's separate record of revoked families, which also covers a family revoked before it had any grant and a successor stored after the revoke — so a Data Protection failure can never cause a revoked family to silently appear unrevoked. There is no encrypted revocation state to fail to decrypt.
 
 ---
 
 ## `ZeeKayDaStoreException`
 
-`ZeeKayDaStoreException` is thrown by `IAuthorizationCodeStore` and `IRefreshTokenStore` implementations when an underlying transport fails — a cache unavailability, database timeout, or network error. It derives from `ZeeKayDaException`.
+`ZeeKayDaStoreException` is thrown by the framework's authorization-code and refresh-token stores when an underlying transport fails — a cache unavailability, database timeout, or network error. It derives from `ZeeKayDaException`.
 
 ```csharp
 public class ZeeKayDaStoreException : ZeeKayDaException
@@ -297,10 +209,10 @@ public class ZeeKayDaStoreException : ZeeKayDaException
 
 ## Implementing a custom store
 
-A production custom store does not implement `IAuthorizationCodeStore` or `IRefreshTokenStore` directly. Those two interfaces are sealed **coordinators**: the framework owns the redemption protocol — single-use enforcement, replay/reuse detection, at-rest encryption, clock-skew-tolerant expiry — and only delegates the question of *where the bytes live* to a backing store you write. The two backing-store contracts are:
+A production custom store implements a backing store only. The framework's own stores own the redemption protocol — single-use enforcement, replay/reuse detection, at-rest encryption, clock-skew-tolerant expiry — and only delegates the question of *where the bytes live* to a backing store you write. The two backing-store contracts are:
 
-- `IAuthorizationCodeBackingStore` — sits underneath `IAuthorizationCodeStore`. It has no knowledge of OAuth, tombstones, encryption, or expiry semantics; it stores opaque, already-encrypted bytes under already-hashed keys.
-- `IRefreshTokenGrantStore` — sits underneath `IRefreshTokenStore`. It has no hashing, no encryption, and no single-use state machine beyond one atomic invariant; it stores rows and runs equality queries over their non-secret columns.
+- `IAuthorizationCodeBackingStore` — sits underneath the framework's authorization code store. It has no knowledge of OAuth, tombstones, encryption, or expiry semantics; it stores opaque, already-encrypted bytes under already-hashed keys.
+- `IRefreshTokenBackingStore` — sits underneath the framework's refresh token store. It has no hashing, no encryption, and no single-use state machine beyond one atomic invariant; it stores rows and runs equality queries over their non-secret columns.
 
 Register a custom implementation of either with the typed builder methods, exactly as for the built-in stores:
 
@@ -308,10 +220,10 @@ Register a custom implementation of either with the typed builder methods, exact
 builder.Services
     .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
     .AddAuthorizationCodeStore<MyAtomicCodeBackingStore>()
-    .AddRefreshTokenGrantStore<MyAtomicRefreshTokenGrantStore>();
+    .AddRefreshTokenStore<MyAtomicRefreshTokenBackingStore>();
 ```
 
-> 💡 **Tip:** The two stores are independently replaceable. You can mix an in-memory authorization code store (acceptable during development) with a custom persistent refresh-token grant store by calling `.AddInMemoryAuthorizationCodeStore()` and `.AddRefreshTokenGrantStore<T>()` on the same builder chain.
+> 💡 **Tip:** The two stores are independently replaceable. You can mix an in-memory authorization code store (acceptable during development) with a custom persistent refresh-token grant store by calling `.AddInMemoryAuthorizationCodeStore()` and `.AddRefreshTokenStore<T>()` on the same builder chain.
 
 ### `StoreKey`
 
@@ -350,10 +262,10 @@ public interface IAuthorizationCodeBackingStore
 
 > ⚠️ **Warning:** `TryInsertAsync` is the one hard atomicity invariant on this interface. If your backend cannot express insert-if-absent as a single operation, do not implement this interface against it directly — use a backend that can, or a first-party adapter.
 
-#### `IRefreshTokenGrantStore`
+#### `IRefreshTokenBackingStore`
 
 ```csharp
-public interface IRefreshTokenGrantStore
+public interface IRefreshTokenBackingStore
 {
     ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken);
 
@@ -361,7 +273,7 @@ public interface IRefreshTokenGrantStore
 
     ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken);
 
-    ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken);
+    ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken);
 
     ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken);
 
@@ -373,18 +285,18 @@ The interface is deliberately limited to exactly these six methods — there is 
 
 | Member | Contract |
 |---|---|
-| `InsertAsync` | Inserts a new grant. `HandleHash` is derived from a 256-bit random handle, so a primary-key collision is a genuine duplicate or bug — let a unique-constraint violation propagate; the coordinator wraps it. Must also accept a grant that is `Revoked` from birth, with no prior row for its family — the coordinator relies on this to revoke a family that has no live grants yet. |
+| `InsertAsync` | Inserts a new grant. `HandleHash` is derived from a 256-bit random handle, so a primary-key collision is a genuine duplicate or bug — let a unique-constraint violation propagate; the coordinator wraps it. |
 | `FindByHandleAsync` | Read-only. **MUST return `null` only for a confirmed-absent handle.** Same fail-closed contract as `IAuthorizationCodeBackingStore.GetAsync` — on any transport/backend fault the implementation **MUST let the exception propagate**, never catch it and return `null`. A fault masked as `null` reads as "no such token" and silently defeats reuse detection. |
 | `TryMarkConsumedAsync` | **The one hard atomicity invariant on this interface.** Transitions the grant from `Active` to `Consumed` as a single atomic operation and returns whether *this call* performed the transition: `true` iff the row was `Active` and is now `Consumed` because of this call; `false` if the row was already non-`Active` or is absent. SQL: `UPDATE ... SET status=Consumed WHERE handle=@h AND status=Active`, check `rowsAffected==1`. Cosmos: conditional replace with `IfMatch=etag`. Redis: a Lua script or `WATCH`/`MULTI`/`EXEC`. Without atomicity, two concurrent consumers can both transition the same grant, breaking single-use enforcement. |
-| `RevokeFamilyAsync` | Sets every grant whose `FamilyId` equals `familyId`, and that already exists at the moment the call evaluates its predicate, to `Revoked`. **Idempotent.** The correctness bar is completeness over existing rows, per [RFC 9700 §4.13](https://www.rfc-editor.org/rfc/rfc9700#section-4.13): every grant already in the family — including one inserted concurrently with, but not strictly after, this call — must end up `Revoked`. Mark, do not delete: a still-live token in a revoked family must remain findable and read as `Revoked`. |
+| `RevokeFamilyAsync` | Records that `familyId` is revoked, then sets every grant whose `FamilyId` equals `familyId`, and that already exists at the moment the call evaluates its predicate, to `Revoked`. **Idempotent.** The correctness bar is completeness over existing rows, per [RFC 9700 §4.13](https://www.rfc-editor.org/rfc/rfc9700#section-4.13): every grant already in the family — including one inserted concurrently with, but not strictly after, this call — must end up `Revoked`. Mark, do not delete: a still-live token in a revoked family must remain findable and read as `Revoked`. The record is **not a grant**: keep it in its own table, container or key space, never as a row `FindByHandleAsync` can return. Commit it before marking any row, not in the same transaction: a fault while marking then still leaves the family revoked, where a rolled-back transaction would take the record with it. Keep it at least until `rememberUntil` — the family's absolute lifetime plus clock skew, after which no grant of the family can be live — and never shorten it on a repeat call. The family may have no grants yet: an authorization code replayed before its first refresh token is stored revokes an empty family. SQL: `INSERT INTO revoked_families (family_id, remember_until) ... ON CONFLICT DO UPDATE SET remember_until = GREATEST(...)`, then `UPDATE grants SET status=Revoked WHERE family_id=@f`. |
 | `RevokeBySubjectAsync` | Same completeness bar as `RevokeFamilyAsync`, keyed on `Subject`. Present so a future subject-level logout-all is possible; no coordinator method calls it yet. `subject` arrives as cleartext (a plain equality predicate, not a hashed key) — this control must never fail to match, which is why the subject is not peppered or keyed. |
-| `IsFamilyRevokedAsync` | Read-only, no side effects. Returns `true` iff any grant in `familyId` currently reads `Revoked`. **MUST be a strongly-consistent / primary read** — a stale-replica read that misses a just-committed revoke fails open. **MUST throw on fault**; a fault masked as `false` reads as "not revoked" and defeats the gate. The coordinator calls this before honouring a grant's own `Active` status, so a successor inserted after `RevokeFamilyAsync` is still caught at consume time. |
+| `IsFamilyRevokedAsync` | Read-only, no side effects. Returns `true` iff `RevokeFamilyAsync` has recorded `familyId` as revoked and the record is still kept — whether or not the family has any grants. **MUST be a strongly-consistent / primary read** — a stale-replica read that misses a just-committed revoke fails open. **MUST throw on fault**; a fault masked as `false` reads as "not revoked" and defeats the gate. The coordinator calls this before honouring a grant's own `Active` status, so a successor inserted after `RevokeFamilyAsync` is still caught at consume time. |
 
 > ⚠️ **Warning:** Three obligations here are security-critical and invisible to the compiler: `TryMarkConsumedAsync`'s atomicity, the fail-closed (throw, don't swallow) behaviour of every read path, and revocation completeness including grants inserted mid-revoke. A naive implementation compiles and passes a happy-path smoke test while violating all three. Run the [conformance kit](#conformance-kit) against your implementation before deploying it.
 
 ### `RefreshTokenGrant`
 
-The persisted row shape `IRefreshTokenGrantStore` operates on. The framework constructs and consumes these; a backend only stores, retrieves, and runs equality queries over them.
+The persisted row shape `IRefreshTokenBackingStore` operates on. The framework constructs and consumes these; a backend only stores, retrieves, and runs equality queries over them.
 
 ```csharp
 public sealed record RefreshTokenGrant
@@ -422,7 +334,7 @@ public enum RefreshGrantStatus
 
 ### Backend suitability
 
-Which backends can implement `IRefreshTokenGrantStore` correctly without extra machinery:
+Which backends can implement `IRefreshTokenBackingStore` correctly without extra machinery:
 
 | Backend | Insert | Find-by-handle | CAS consume | Revoke by family / subject | Verdict |
 |---|---|---|---|---|---|
@@ -430,16 +342,17 @@ Which backends can implement `IRefreshTokenGrantStore` correctly without extra m
 | Cosmos DB | `CreateItemAsync` | point read | conditional replace with `IfMatch=etag` | query + patch | **Native, correctness-safe.** Partition-key choice affects cost, not correctness — a suboptimal key is slow, never wrong. |
 | Redis | grant key **plus hand-maintained family/subject index sets** | `GET` on the grant key | Lua script or `WATCH`/`MULTI`/`EXEC` | `SMEMBERS` then update each member — **only as complete as the index** | **Not first-class.** Redis has no `WHERE family_id = X`; a Redis-backed implementation must maintain its own secondary indexes as a non-transactional dual write, which can drift on a partial-write crash and silently reopen the reuse window `RevokeFamilyAsync` exists to close. Prefer a natively queryable backend for production. |
 
-The same shape of trade-off applies to `IAuthorizationCodeBackingStore`: relational SQL and Cosmos DB support the atomic insert-if-absent primitive natively; a KV store without an atomic compare-and-set (a plain `IDistributedCache`, for instance) cannot guarantee it, which is why the first-party distributed-cache stores are documented as dev/test-only (see [Distributed-cache-backed stores](#distributed-cache-backed-stores)).
+The same shape of trade-off applies to `IAuthorizationCodeBackingStore`: relational SQL and Cosmos DB support the atomic insert-if-absent primitive natively; a KV store without an atomic compare-and-set (a plain `IDistributedCache`, for instance) cannot guarantee it, which is why no token store is offered over `IDistributedCache`.
 
 ### Conformance kit
 
-`ZeeKayDa.Auth.TestKit` ships ready-to-derive xUnit fixtures for both backing-store contracts: `AuthorizationCodeBackingStoreConformanceTests` and `RefreshTokenGrantStoreConformanceTests`. Running the matching fixture against your implementation is a **MUST** before deploying it — it exercises the invariants the compiler cannot check:
+`ZeeKayDa.Auth.TestKit` ships ready-to-derive xUnit fixtures for both backing-store contracts: `AuthorizationCodeBackingStoreConformanceTests` and `RefreshTokenBackingStoreConformanceTests`. Running the matching fixture against your implementation is a **MUST** before deploying it — it exercises the invariants the compiler cannot check:
 
 - **Atomicity** — a 50-way concurrent race against the same key/handle, asserting exactly one caller wins `TryInsertAsync` or `TryMarkConsumedAsync`.
 - **Revocation completeness** — insert grants across a family (or subject), call `RevokeFamilyAsync` (or `RevokeBySubjectAsync`), and assert every grant reads `Revoked`, including one inserted concurrently with the revoke call — the race a drifting secondary index loses.
 - **Post-revoke insert completeness** — revoke a family, then insert a new grant into it strictly after the revoke returns, and assert `IsFamilyRevokedAsync` still reports the family revoked.
-- **Born-`Revoked` acceptance** — `InsertAsync` must accept a grant that is `Revoked` from birth, with no prior row for its family, and `IsFamilyRevokedAsync` must then report that family revoked.
+- **Empty-family revocation** — revoking a family that has no grants yet must make `IsFamilyRevokedAsync` report it revoked, and a family never revoked must not read as revoked.
+- **`rememberUntil` never shrinks** — a repeat `RevokeFamilyAsync` carrying an earlier `rememberUntil` must not shorten the record.
 - **Fail-closed / throws-not-swallows** — fault injection proving a transport failure surfaces (raw or wrapped in `ZeeKayDaStoreException`), never as a swallowed `null` or `false`.
 - **Round-trip correctness** — a stored value or grant reads back unchanged.
 
@@ -449,15 +362,14 @@ Reference `ZeeKayDa.Auth.TestKit` from your own test project and derive the abst
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.TestKit.Stores;
 
-public sealed class MyRefreshTokenGrantStoreConformanceTests : RefreshTokenGrantStoreConformanceTests
+public sealed class MyRefreshTokenBackingStoreConformanceTests : RefreshTokenBackingStoreConformanceTests
 {
-    protected override IRefreshTokenGrantStore CreateStore() => new MyRefreshTokenGrantStore(/* ... */);
+    protected override IRefreshTokenBackingStore CreateStore() => new MyRefreshTokenBackingStore(/* ... */);
 }
 ```
 
-Two protected properties let a genuinely non-atomic dev/test backend opt out of the tests it cannot pass, rather than skew the kit's default expectations for everyone else:
+The atomicity tests cannot be switched off. One protected property lets a dev/test backend opt out of a test it cannot pass:
 
-- `SupportsAtomicInsert` / `SupportsAtomicConsume` — override to `false` only for a non-atomic dev/test backend. Production backends must support the atomic primitive.
 - `SupportsMidRevokeInsertCompleteness` — override to `false` only for a non-transactional secondary-index backend whose revocation cannot be proven complete against a grant inserted concurrently with the revoke call. Production backends must support this.
 
 Override `CreateFaultInjectedStore(Exception fault)` to return a store whose transport always throws `fault`, so the fail-closed tests can verify the fault propagates rather than being swallowed. Return `null` (the default) if your backend has no injectable failure point; the fault-injection tests are then skipped for that fixture.

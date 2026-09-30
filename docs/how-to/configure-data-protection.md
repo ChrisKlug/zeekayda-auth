@@ -378,7 +378,8 @@ symptoms depending on which path fails.
 
 If the default token stores cannot decrypt a stored entry, the `CryptographicException`
 thrown by `IDataProtector.Unprotect` is **caught and silently discarded**. The store
-returns `NotFound` (or `AlreadyRedeemed` for an unreadable authorization code tombstone).
+returns `NotFound`. (An authorization code tombstone carries no ciphertext, so a replay still
+resolves `AlreadyRedeemed` after a key rotation.)
 No exception is thrown to the caller, and **no log entry is written**.
 
 A `NotFound` result causes the token endpoint to return `error=invalid_grant` to the

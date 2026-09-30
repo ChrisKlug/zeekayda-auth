@@ -119,7 +119,7 @@ internal sealed class AuthorizationCodeIssuer
         // AuthorizationFlow resolves the client resolver that way: this singleton is built when
         // the endpoints are mapped, before startup verification has said whether a store is
         // registered at all.
-        var store = context.RequestServices.GetRequiredService<IAuthorizationCodeStore>();
+        var store = context.RequestServices.GetRequiredService<AuthorizationCodeStore>();
 
         string code;
         try
