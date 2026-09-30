@@ -22,7 +22,6 @@ internal static class DefaultTestClient
 
         return clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"], client =>
         {
-            client.AllowedGrantTypes.Clear();
             client.AllowedGrantTypes.UnionWith(served.GrantTypesSupported);
         });
     }

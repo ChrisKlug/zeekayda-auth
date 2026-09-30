@@ -556,6 +556,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `InMemoryDevelopmentSigningKeyOptions` is gone. The persist directory is set only through
   `AddPersistedDevelopmentSigning`'s parameter.
 
+- **A client's defaulted collections start empty, and the default applies only if the callback adds
+  nothing** (#779). In the `AddPublic`/`AddConfidential` callback, `AllowedGrantTypes`,
+  `AllowedResponseTypes`, `AllowedResponseModes` and `AllowedTokenEndpointAuthMethods` used to arrive
+  holding their defaults, so a client that added its own values also kept the default unless it
+  called `Clear()` first. Now a client that names values gets exactly those. Left empty, grant types
+  default to `authorization_code` and auth methods to `client_secret_basic`, and response types and
+  modes default to `code` and `query` only when the client may use `authorization_code`, so a
+  `client_credentials`-only client no longer carries them.
+
 - **The framework's token stores are internal; every third-party store contract ends in
   `BackingStore`** (#827). `IAuthorizationCodeStore` and `IRefreshTokenStore` are gone: nobody
   outside the framework could implement them, and nothing public exposed them. The entry and result

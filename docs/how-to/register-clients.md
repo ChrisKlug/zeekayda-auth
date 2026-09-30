@@ -112,6 +112,18 @@ A public client's callback receives `PublicClientOptions`. A confidential client
 `ConfidentialClientOptions`, which adds `RequirePkce` and
 `AllowedTokenEndpointAuthMethods` — settings a public client cannot have.
 
+The collections that have a default — grant types, response types, response modes and a
+confidential client's token endpoint authentication methods — start empty in the callback. Add
+the values you want and the client gets exactly those; add none and it gets the default:
+`authorization_code`, `client_secret_basic`, and the `code` response type and `query` response mode
+when the client may use `authorization_code`. A `client_credentials`-only client gets no response
+types or modes:
+
+```csharp
+options.AllowedGrantTypes.Add(GrantType.ClientCredentials);
+options.AllowedTokenEndpointAuthMethods.Add(TokenEndpointAuthMethods.ClientSecretPost); // only client_secret_post
+```
+
 > Turn `RequireConsent` off only for your own first-party applications. The consent page is what
 > lets a user notice an authorization request they never started.
 

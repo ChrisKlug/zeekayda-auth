@@ -13,22 +13,23 @@ public sealed class ConfidentialClientOptions : ClientOptions
         : base(defaults)
     {
         RequirePkce = defaults.RequirePkce;
-        AllowedTokenEndpointAuthMethods = new HashSet<string>(
-            defaults.AllowedTokenEndpointAuthMethods, StringComparer.Ordinal);
+        AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal);
     }
 
     internal override ClientRegistration ApplyTo(ClientRegistration registration) => base.ApplyTo(registration) with
     {
         RequirePkce = RequirePkce,
-        AllowedTokenEndpointAuthMethods = new HashSet<string>(AllowedTokenEndpointAuthMethods, StringComparer.Ordinal),
+        AllowedTokenEndpointAuthMethods = new HashSet<string>(
+            AllowedTokenEndpointAuthMethods.Count > 0 ? AllowedTokenEndpointAuthMethods : registration.AllowedTokenEndpointAuthMethods,
+            StringComparer.Ordinal),
     };
 
     /// <inheritdoc cref="IClientMetadata.RequirePkce"/>
     public bool RequirePkce { get; set; }
 
     /// <summary>
-    /// Token endpoint authentication methods this client is permitted to use. Contains
-    /// <see cref="TokenEndpointAuthMethods.ClientSecretBasic"/> by default.
+    /// Token endpoint authentication methods this client is permitted to use. Starts empty; left
+    /// empty, the client gets <see cref="TokenEndpointAuthMethods.ClientSecretBasic"/>.
     /// </summary>
     /// <remarks>
     /// Every entry must also be listed in the server's <c>TokenEndpointOptions.AuthMethodsSupported</c>,

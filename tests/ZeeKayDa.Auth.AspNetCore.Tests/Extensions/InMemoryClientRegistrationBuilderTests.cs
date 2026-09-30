@@ -68,7 +68,6 @@ public sealed class InMemoryClientRegistrationBuilderTests
         {
             ChangeEverySharedSetting(options);
             options.RequirePkce = false;
-            options.AllowedTokenEndpointAuthMethods.Clear();
             options.AllowedTokenEndpointAuthMethods.Add(TokenEndpointAuthMethods.ClientSecretPost);
             configured = options;
         });
@@ -110,11 +109,77 @@ public sealed class InMemoryClientRegistrationBuilderTests
         seen!.RequireConsent.Should().BeTrue();
         seen.SkipLogoutConfirmation.Should().BeFalse();
         seen.RequirePkce.Should().BeTrue();
-        seen.AllowedGrantTypes.Should().Equal(GrantType.AuthorizationCode);
-        seen.AllowedTokenEndpointAuthMethods.Should().Equal(TokenEndpointAuthMethods.ClientSecretBasic);
         seen.AllowedSigningAlgorithms.Should().BeEmpty();
         seen.DisplayName.Should().BeNull();
         seen.InitiateLoginUri.Should().BeNull();
+    }
+
+    [Fact]
+    public void A_confidential_client_configured_with_client_secret_post_alone_allows_only_client_secret_post()
+    {
+        _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes,
+            options => options.AllowedTokenEndpointAuthMethods.Add(TokenEndpointAuthMethods.ClientSecretPost));
+
+        SinglePending().Registration.AllowedTokenEndpointAuthMethods.Should().Equal(TokenEndpointAuthMethods.ClientSecretPost);
+    }
+
+    [Fact]
+    public void A_confidential_client_configured_with_no_auth_method_gets_client_secret_basic()
+    {
+        _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes, options => options.RequireConsent = false);
+
+        SinglePending().Registration.AllowedTokenEndpointAuthMethods.Should().Equal(TokenEndpointAuthMethods.ClientSecretBasic);
+    }
+
+    [Fact]
+    public void Every_defaulted_collection_starts_empty_in_the_callback()
+    {
+        ConfidentialClientOptions? seen = null;
+
+        _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes, options => seen = options);
+
+        seen!.AllowedTokenEndpointAuthMethods.Should().BeEmpty();
+        seen.AllowedGrantTypes.Should().BeEmpty();
+        seen.AllowedResponseTypes.Should().BeEmpty();
+        seen.AllowedResponseModes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_client_that_names_no_grant_type_gets_the_code_grant_with_its_response_type_and_mode()
+    {
+        _builder.AddPublic("spa", RedirectUris, [], Scopes, options => options.RequireConsent = false);
+
+        var registration = SinglePublic();
+        registration.AllowedGrantTypes.Should().Equal(GrantType.AuthorizationCode);
+        registration.AllowedResponseTypes.Should().Equal(ResponseType.Code);
+        registration.AllowedResponseModes.Should().Equal(ResponseMode.Query);
+    }
+
+    [Fact]
+    public void A_client_credentials_only_client_gets_no_response_types_or_modes()
+    {
+        _builder.AddConfidential("service", "very-secret", [], [], Scopes,
+            options => options.AllowedGrantTypes.Add(GrantType.ClientCredentials));
+
+        var registration = SinglePending().Registration;
+        registration.AllowedGrantTypes.Should().Equal(GrantType.ClientCredentials);
+        registration.AllowedResponseTypes.Should().BeEmpty();
+        registration.AllowedResponseModes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Response_types_and_modes_the_callback_names_are_kept_whatever_the_grant_types()
+    {
+        _builder.AddConfidential("service", "very-secret", [], [], Scopes, options =>
+        {
+            options.AllowedGrantTypes.Add(GrantType.ClientCredentials);
+            options.AllowedResponseTypes.Add(ResponseType.Code);
+            options.AllowedResponseModes.Add(ResponseMode.Query);
+        });
+
+        var registration = SinglePending().Registration;
+        registration.AllowedResponseTypes.Should().Equal(ResponseType.Code);
+        registration.AllowedResponseModes.Should().Equal(ResponseMode.Query);
     }
 
     [Fact]
@@ -197,9 +262,10 @@ public sealed class InMemoryClientRegistrationBuilderTests
         options.RequireConsent = false;
         options.SkipLogoutConfirmation = true;
         options.EnableZkdErrorCodes = true;
+        options.AllowedGrantTypes.Add(GrantType.AuthorizationCode);
         options.AllowedGrantTypes.Add(GrantType.RefreshToken);
-        options.AllowedResponseTypes.Clear();
-        options.AllowedResponseModes.Remove(ResponseMode.Query);
+        options.AllowedResponseTypes.Add(ResponseType.Code);
+        options.AllowedResponseModes.Add(ResponseMode.Query);
         options.AllowedPromptValues.Add(PromptValue.Login);
         options.AllowedSigningAlgorithms.Add(SigningAlgorithm.ES256);
         options.AccessTokenLifetime = TimeSpan.FromMinutes(5);

@@ -51,15 +51,9 @@ auth.AddInMemoryClients(clients =>
                     Configure(options, client);
                     options.RequirePkce = client.RequirePkce;
 
-                    // Replacing rather than adding: the set arrives holding the framework default,
-                    // client_secret_basic, and a client that names its methods means exactly those.
-                    if (client.TokenEndpointAuthMethods.Count > 0)
+                    foreach (var method in client.TokenEndpointAuthMethods)
                     {
-                        options.AllowedTokenEndpointAuthMethods.Clear();
-                        foreach (var method in client.TokenEndpointAuthMethods)
-                        {
-                            options.AllowedTokenEndpointAuthMethods.Add(method);
-                        }
+                        options.AllowedTokenEndpointAuthMethods.Add(method);
                     }
                 });
         }
