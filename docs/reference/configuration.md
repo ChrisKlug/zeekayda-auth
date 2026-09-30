@@ -35,6 +35,10 @@ builder.Services.AddZeeKayDaAuth(options =>
 fast rather than at request time. It returns
 a `ZeeKayDaAuthBuilder` for registering optional features.
 
+Collections are filled or assigned while the options are configured. Once configuration completes,
+before validation runs, each collection is replaced by a read-only copy of the configured values in
+the configured order, so nothing can change them after validation has approved them.
+
 ## Properties
 
 ### `Issuer`
@@ -514,7 +518,7 @@ The JWKS endpoint has its own, independently configured equivalent:
 
 | Attribute | Value |
 |---|---|
-| Type | `IList<string>` |
+| Type | `ICollection<string>` |
 | Default | `[]` (empty) |
 | Required | No |
 

@@ -546,6 +546,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Every collection on `AuthorizationServerOptions` is frozen read-only after configuration**
+  (#774). Only `CorsOrigins` and `IdToken.AdvertisedSigningAlgorithms` used to be, so code holding
+  `IOptions<AuthorizationServerOptions>` could still add to or clear `GrantTypesSupported`,
+  `TokenEndpoint.AuthMethodsSupported`, `AuthorizationEndpoint.CodeChallengeMethodsSupported`,
+  `Response.TypesSupported` or `Response.ModesSupported` after startup validation had approved them.
+  Each is now replaced by a read-only copy of the configured values, in the configured order, before
+  validation runs; a `null` collection stays `null`. `CorsOrigins` changes from `IList<string>` with
+  an internal setter to `ICollection<string>` with a public one, the same shape as every other
+  collection, so a host can assign it as well as add to it. The `ClockSkewTolerance` documentation
+  now says what the code already did: it is one server-wide tolerance, used by access token
+  validation as well as the token stores.
+
 - **Options-validation failures throw `ZeeKayDaConfigurationException` with a stable code for each
   failure** (#796). The framework's options validators, for `AuthorizationServerOptions`, the client
   secret hashers, the development, file, Azure Key Vault and Windows certificate-store signing
