@@ -25,9 +25,9 @@ public sealed class KeyVaultSignerTests
 
     // ── Argument guards ──────────────────────────────────────────────────────────────────────────
     //
-    // Every test below builds the signer through the internal client-factory seam, so the public
-    // constructor's guards and SignAsync's three parameter guards were unexercised — each could be
-    // deleted with the suite green.
+    // Every test below builds the signer through the internal client-factory seam, so the
+    // constructor's credential guard and SignAsync's three parameter guards were unexercised — each
+    // could be deleted with the suite green.
     //
     // Each was checked by deleting the guard it names and confirming the test fails, rather than by
     // trusting a mutation report. A guard test can easily pass whether or not the guard exists: if
