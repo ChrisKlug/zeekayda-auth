@@ -1154,7 +1154,8 @@ the provider's environment gate and key handling are unchanged and were not re-r
   ReadKeyFileAsync_rejects_a_non_root_owned_symlink_that_points_at_a_root_owned_directory [deleted by #826: the development key no longer walks ancestor directories], added
   because mutating `lstat` back to `stat` left the whole suite green.
 - Residual: the Windows ancestor walk's throwing branch is unexercised — the symlink tests skip
-  where creating a link needs elevation.
+  where creating a link needs elevation. [Moot since #826: the development key no longer walks
+  ancestor directories on any platform.]
 
 ## 2026-08-28 — the signing key directory chain walk (#586, commit `5a25ded`)
 

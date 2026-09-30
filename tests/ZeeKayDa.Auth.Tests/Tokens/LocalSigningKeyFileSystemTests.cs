@@ -24,7 +24,7 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
         "-----BEGIN PRIVATE KEY-----\nc2lnbmluZy1rZXktbWF0ZXJpYWw=\n-----END PRIVATE KEY-----\n";
 
     private const string RequiresUnixReason =
-        "POSIX file-mode bits and lstat-based ownership are the Unix permission model.";
+        "POSIX file-mode bits are the Unix permission model.";
 
     private const string RequiresWindowsReason =
         "non-inherited ACL enforcement is the Windows permission model.";
@@ -96,6 +96,23 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .WithMessage("*directory_too_permissive*");
+    }
+
+    [Fact]
+    public void EnsureDirectorySafe_accepts_a_directory_under_a_group_writable_ancestor()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
+
+        // Deliberate: ancestors are not checked for a development key, which only works in
+        // Development. The production file provider still refuses this shape.
+        var ancestor = Path.Join(_tempDirectory, "shared");
+        Directory.CreateDirectory(ancestor);
+        SetUnixMode(ancestor, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+            | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute);
+
+        var act = () => _sut.EnsureDirectorySafe(Path.Join(ancestor, "signing-keys"));
+
+        act.Should().NotThrow();
     }
 
     [Fact]

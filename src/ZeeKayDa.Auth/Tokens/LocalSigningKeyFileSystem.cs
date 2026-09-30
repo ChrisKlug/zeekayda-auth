@@ -8,12 +8,13 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// Stores the persisted development signing key with .NET's own file APIs: owner-only on creation,
-/// and refused on read if anyone else can reach it or it is a symlink.
+/// and refused on read if it is a symlink or, on Unix, if its mode lets anyone else reach it.
 /// </summary>
 /// <remarks>
 /// The key only works in <c>Development</c>, so this protects a local key on a developer machine.
 /// It does not walk ancestor directories for foreign owners or symlinks; the production file
-/// provider in <c>ZeeKayDa.Auth.FileSystem</c> does.
+/// provider in <c>ZeeKayDa.Auth.FileSystem</c> does. On Windows the ACL is set at creation and not
+/// re-checked on read.
 /// </remarks>
 internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSystem
 {
@@ -42,7 +43,9 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// <inheritdoc/>
     public async ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
     {
-        // Validated and read through one handle, so the file checked is the file read.
+        // The mode is checked on the open handle, so the file checked is the file read. The symlink
+        // check re-reads the path, which leaves a window a swapped link could pass: the BCL has no
+        // O_NOFOLLOW to close it.
         using var stream = File.Open(keyPath, FileMode.Open, FileAccess.Read, FileShare.Read);
 
         if (new FileInfo(stream.Name).LinkTarget is not null)
@@ -79,11 +82,10 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     {
         var fullPath = Path.GetFullPath(directory);
 
+        // Checked after creating too: a directory someone else made between the existence check
+        // and mkdir is left as they made it, and must pass the same rule as one that already existed.
         if (!Directory.Exists(fullPath))
-        {
             CreateDirectoryChainOwnerOnlyUnix(fullPath);
-            return;
-        }
 
         if ((File.GetUnixFileMode(fullPath) & GroupOrOtherBits) != 0)
         {
