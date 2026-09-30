@@ -38,6 +38,7 @@ public sealed class TokenEndpointTests : IDisposable
     private const string ConfidentialSecret = "very-secret";
     private const string OtherClient = "other-client";
     private const string NoCodeGrantClient = "no-code-grant-client";
+    private const string NoCodeGrantSecret = "no-code-grant-secret";
     private const string PkceOptionalClient = "pkce-optional-client";
     private const string PkceOptionalSecret = "also-very-secret";
     private const string Nonce = "n-0S6_WzA2Mj";
@@ -101,8 +102,9 @@ public sealed class TokenEndpointTests : IDisposable
             with
         { RequireConsent = false };
 
+    /// <summary>A confidential client allowed only client_credentials, the grant RFC 6749 §4.4 keeps to confidential clients.</summary>
     private static ClientRegistration NoCodeGrantRegistration() =>
-        ClientRegistration.CreatePublic(NoCodeGrantClient, [RegisteredRedirect], [], ["openid"])
+        ClientRegistration.CreateConfidential(NoCodeGrantClient, Pbkdf2(NoCodeGrantSecret), [RegisteredRedirect], [], ["openid"])
             with
         { AllowedGrantTypes = new HashSet<GrantType> { GrantType.ClientCredentials } };
 
@@ -824,7 +826,8 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_client_not_allowed_the_code_grant_is_refused_with_unauthorized_client()
     {
-        var response = await PostTokenAsync(TokenForm(StoreKeyGenerator.Generate(), NoCodeGrantClient));
+        var response = await PostTokenAsync(
+            TokenForm(StoreKeyGenerator.Generate(), NoCodeGrantClient), basic: (NoCodeGrantClient, NoCodeGrantSecret));
 
         await ShouldBeErrorAsync(response, "unauthorized_client");
     }

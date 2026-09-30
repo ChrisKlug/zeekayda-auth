@@ -1601,7 +1601,7 @@ public sealed class ClientRegistrationValidatorTests
         var options = BuildDefaultServerOptions();
         options.GrantTypesSupported.Add(GrantType.ClientCredentials);
         var validator = MakeValidator(serverOptions: options);
-        var client = MakeValidPublicClient() with
+        var client = MakeValidConfidentialClient() with
         {
             AllowedGrantTypes = new HashSet<GrantType> { GrantType.ClientCredentials },
             AllowedResponseTypes = new HashSet<ResponseType>(),
