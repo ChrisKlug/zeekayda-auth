@@ -32,7 +32,13 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// decrypted context, a registered provider — never from request input.
 /// </para>
 /// </remarks>
-internal sealed class InteractionOutcomes
+internal sealed class InteractionOutcomes(
+    AuthorizationFlow flow,
+    AuthorizationResponses responses,
+    ProviderHandlerActivator activator,
+    AuthorizationCodeIssuer issuer,
+    IOptions<AuthorizationServerOptions> options,
+    ISanitizingLogger<InteractionOutcomes> logger)
 {
     /// <summary>What the client is told when the interaction store refused to hold its request.</summary>
     internal const string CouldNotStoreRequest = "The authorization server could not store the authorization request.";
@@ -48,46 +54,16 @@ internal sealed class InteractionOutcomes
     /// </summary>
     internal const string DeniedAfterProvider = "The sign-in at the external identity provider was not accepted.";
 
-    private readonly AuthorizationFlow _flow;
-    private readonly AuthorizationResponses _responses;
-    private readonly ProviderHandlerActivator _activator;
-    private readonly AuthorizationCodeIssuer _issuer;
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly ISanitizingLogger<InteractionOutcomes> _logger;
-
-    public InteractionOutcomes(
-        AuthorizationFlow flow,
-        AuthorizationResponses responses,
-        ProviderHandlerActivator activator,
-        AuthorizationCodeIssuer issuer,
-        IOptions<AuthorizationServerOptions> options,
-        ISanitizingLogger<InteractionOutcomes> logger)
-    {
-        ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(responses);
-        ArgumentNullException.ThrowIfNull(activator);
-        ArgumentNullException.ThrowIfNull(issuer);
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _flow = flow;
-        _responses = responses;
-        _activator = activator;
-        _issuer = issuer;
-        _options = options;
-        _logger = logger;
-    }
-
     /// <summary>An error that must not reach the client: the host's error page, or the framework's minimal one.</summary>
     public IResult LocalError(HttpContext context, string error, string description) =>
-        _responses.Local(context, error, description);
+        responses.Local(context, error, description);
 
     /// <summary>
     /// An error at a redirect URI authenticated in phase 1, for a request whose interaction
     /// context was never written or is cleared by the caller.
     /// </summary>
     public IResult ClientError(string redirectUri, string error, string description, string? state) =>
-        _responses.ErrorAtClient(redirectUri, error, description, state);
+        responses.ErrorAtClient(redirectUri, error, description, state);
 
     /// <summary>
     /// An error at the client's registered redirect URI, read out of the stored context. The
@@ -98,8 +74,8 @@ internal sealed class InteractionOutcomes
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
 
-        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-        return _responses.ErrorAtClient(requestContext.RedirectUri, error, description, requestContext.State);
+        await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+        return responses.ErrorAtClient(requestContext.RedirectUri, error, description, requestContext.State);
     }
 
     /// <summary>
@@ -121,17 +97,17 @@ internal sealed class InteractionOutcomes
         // A denial competes for the interaction's one terminal outcome exactly as issuance does:
         // a grant and a deny that both resolved the request alive must not end as a code and an
         // access_denied both delivered to the client.
-        await _flow.ClaimCompletionAsync(context, requestContext).ConfigureAwait(false);
+        await flow.ClaimCompletionAsync(context, requestContext).ConfigureAwait(false);
 
         // Discarded before the response is written, so a denied request cannot be resumed by a
         // later sign-in picking the context back up — nor by a parked principal bound to it. The
         // principal goes first, while the binding that addresses it is still in hand.
         await DiscardPendingAsync(context, requestContext.Id).ConfigureAwait(false);
-        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+        await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
 
         await WriteAsync(
                 context,
-                _responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.AccessDenied, description, requestContext.State))
+                responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.AccessDenied, description, requestContext.State))
             .ConfigureAwait(false);
     }
 
@@ -146,11 +122,11 @@ internal sealed class InteractionOutcomes
     {
         try
         {
-            await _flow.ConsumePendingAsync(context, interactionId).ConfigureAwait(false);
+            await flow.ConsumePendingAsync(context, interactionId).ConfigureAwait(false);
         }
         catch (ZeeKayDaStoreException ex)
         {
-            _logger.LogError(ex, "Discarding the external principal parked for a denied interaction failed; the entry is left to expire.");
+            logger.LogError(ex, "Discarding the external principal parked for a denied interaction failed; the entry is left to expire.");
         }
     }
 
@@ -174,7 +150,7 @@ internal sealed class InteractionOutcomes
         // cached sign-in response is a stolen one.
         context.Response.Headers.CacheControl = "no-store";
 
-        var state = await _flow.PromoteAsync(context, signIn.Principal, signIn.AuthenticationMethods).ConfigureAwait(false);
+        var state = await flow.PromoteAsync(context, signIn.Principal, signIn.AuthenticationMethods).ConfigureAwait(false);
 
         var authenticated = requestContext with
         {
@@ -193,7 +169,7 @@ internal sealed class InteractionOutcomes
         IResult result;
         try
         {
-            await _flow.UpdateAsync(context, authenticated).ConfigureAwait(false);
+            await flow.UpdateAsync(context, authenticated).ConfigureAwait(false);
             result = await ContinueAsync(context, authenticated).ConfigureAwait(false);
         }
         catch (ZeeKayDaStoreException ex)
@@ -201,7 +177,7 @@ internal sealed class InteractionOutcomes
             // The session is established either way — what cannot continue is this authorization
             // request. The client learns the server failed; the operator learns which store
             // operation did, through the sanitizing logger.
-            _logger.LogError(ex, "Storing the authenticated authorization request for client {ClientId} failed.", requestContext.ClientId);
+            logger.LogError(ex, "Storing the authenticated authorization request for client {ClientId} failed.", requestContext.ClientId);
 
             result = await ClientErrorAsync(context, requestContext, AuthorizeRequestErrors.ServerError, CouldNotStoreRequest).ConfigureAwait(false);
         }
@@ -228,18 +204,18 @@ internal sealed class InteractionOutcomes
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
 
-        var client = await _flow.ResolveClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false);
+        var client = await flow.ResolveClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false);
         if (client is null)
         {
             // The redirect URI was authenticated against a registration that no longer answers,
             // so nothing is sent there.
-            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-            return _responses.Local(context, AuthorizeRequestErrors.InvalidRequest, AuthorizationCodeIssuer.ClientNoLongerAnswers);
+            await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+            return responses.Local(context, AuthorizeRequestErrors.InvalidRequest, AuthorizationCodeIssuer.ClientNoLongerAnswers);
         }
 
         var asked = requestContext.Prompts.Contains(PromptValue.Consent);
         if (!client.RequireConsent && !asked)
-            return await _issuer.IssueAsync(context, requestContext, client).ConfigureAwait(false);
+            return await issuer.IssueAsync(context, requestContext, client).ConfigureAwait(false);
 
         if (requestContext.Prompts.Contains(PromptValue.None))
         {
@@ -250,7 +226,7 @@ internal sealed class InteractionOutcomes
                 "The request specified prompt=none but the user's consent is required.").ConfigureAwait(false);
         }
 
-        if (_options.Value.AuthorizationEndpoint.Interaction.ConsentPath is not { } consentPath)
+        if (options.Value.AuthorizationEndpoint.Interaction.ConsentPath is not { } consentPath)
         {
             if (!client.RequireConsent)
             {
@@ -265,7 +241,7 @@ internal sealed class InteractionOutcomes
 
             // A configuration gap, reported where a developer is looking — the client's error
             // page and the server log — since the redirect target is authenticated by now.
-            _logger.LogError(
+            logger.LogError(
                 "Client {ClientId} requires consent but AuthorizationEndpoint.Interaction.ConsentPath is not " +
                 "configured. Configure the consent page, or set RequireConsent to false on the registration.",
                 client.ClientId);
@@ -300,8 +276,8 @@ internal sealed class InteractionOutcomes
 
         context.Response.Headers.CacheControl = "no-store";
 
-        var consented = _flow.RecordConsent(requestContext, grantedScopes);
-        var result = await _issuer.IssueAsync(context, consented, client).ConfigureAwait(false);
+        var consented = flow.RecordConsent(requestContext, grantedScopes);
+        var result = await issuer.IssueAsync(context, consented, client).ConfigureAwait(false);
 
         await WriteAsync(context, result).ConfigureAwait(false);
     }
@@ -322,7 +298,7 @@ internal sealed class InteractionOutcomes
 
         context.Response.Headers.CacheControl = "no-store";
 
-        var resume = ResumeEndpoint.RouteFor(EndpointRouteHelper.GetIssuerUri(_options));
+        var resume = ResumeEndpoint.RouteFor(EndpointRouteHelper.GetIssuerUri(options));
         var properties = new AuthenticationProperties
         {
             RedirectUri = InteractionHandoff.BuildRedirectUrl(resume, requestContext.Id),
@@ -330,7 +306,7 @@ internal sealed class InteractionOutcomes
         properties.Items[ExternalTicket.InteractionIdItem] = requestContext.Id;
         properties.Items[ExternalTicket.ChallengedProviderItem] = registration.Name;
 
-        var handler = await _activator.ActivateAsync(context, registration).ConfigureAwait(false);
+        var handler = await activator.ActivateAsync(context, registration).ConfigureAwait(false);
         await handler.ChallengeAsync(properties).ConfigureAwait(false);
         await CommitAsync(context).ConfigureAwait(false);
     }
@@ -353,7 +329,7 @@ internal sealed class InteractionOutcomes
 
         context.Response.Headers.CacheControl = "no-store";
 
-        await _flow.ParkPendingAsync(context, new PendingTicket(principal, registration.Name), requestContext).ConfigureAwait(false);
+        await flow.ParkPendingAsync(context, new PendingTicket(principal, registration.Name), requestContext).ConfigureAwait(false);
         await WriteAsync(context, Results.Redirect(InteractionHandoff.BuildRedirectUrl(path.Value!, requestContext.Id)))
             .ConfigureAwait(false);
     }

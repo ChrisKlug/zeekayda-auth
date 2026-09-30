@@ -13,30 +13,18 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// identifier, and <see cref="ErrorInteraction"/> re-joins the two server-side. Error text never
 /// enters a URL, where it would leak into proxy logs and browser history.
 /// </summary>
-internal sealed class AuthorizeErrorTransport
+internal sealed class AuthorizeErrorTransport(
+    IDataProtectionProvider dataProtectionProvider,
+    IOptions<AuthorizationServerOptions> serverOptions,
+    TimeProvider timeProvider)
 {
     internal const string CookieName = "zkd.error";
     internal const string QueryParameterName = "error_id";
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:AuthorizeErrorTransport";
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(2);
 
-    private readonly IDataProtector _protector;
-    private readonly TimeProvider _timeProvider;
-    private readonly string? _errorPath;
-
-    public AuthorizeErrorTransport(
-        IDataProtectionProvider dataProtectionProvider,
-        IOptions<AuthorizationServerOptions> serverOptions,
-        TimeProvider timeProvider)
-    {
-        ArgumentNullException.ThrowIfNull(dataProtectionProvider);
-        ArgumentNullException.ThrowIfNull(serverOptions);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-
-        _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
-        _timeProvider = timeProvider;
-        _errorPath = serverOptions.Value.AuthorizationEndpoint.Interaction.ErrorPath;
-    }
+    private readonly IDataProtector _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
+    private readonly string? _errorPath = serverOptions.Value.AuthorizationEndpoint.Interaction.ErrorPath;
 
     /// <summary>
     /// Attaches the transport cookie for the given error to the response and returns the opaque
@@ -55,7 +43,7 @@ internal sealed class AuthorizeErrorTransport
             writer.WriteString("kind", kind.ToString());
             writer.WriteString("error", error);
             writer.WriteString("description", description);
-            writer.WriteString("expiresAt", _timeProvider.GetUtcNow() + Lifetime);
+            writer.WriteString("expiresAt", timeProvider.GetUtcNow() + Lifetime);
             writer.WriteEndObject();
         }
 
@@ -136,7 +124,7 @@ internal sealed class AuthorizeErrorTransport
             return null;
         }
 
-        if (_timeProvider.GetUtcNow() >= expiresAt ||
+        if (timeProvider.GetUtcNow() >= expiresAt ||
             !CryptographicOperations.FixedTimeEquals(
                 System.Text.Encoding.UTF8.GetBytes(id),
                 System.Text.Encoding.UTF8.GetBytes(requestedId)))

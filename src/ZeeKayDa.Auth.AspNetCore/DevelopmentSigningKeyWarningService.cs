@@ -15,7 +15,9 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// startup fails so that an accidental development-key configuration is never silently deployed
 /// to a non-permitted host.
 /// </remarks>
-internal sealed class DevelopmentSigningKeyWarningService : IStartupVerifier
+internal sealed class DevelopmentSigningKeyWarningService(
+    IHostEnvironment environment,
+    IOptions<DevelopmentSigningOptions> devOptions) : IStartupVerifier
 {
     internal const string WarningMessage =
         "ZeeKayDa.Auth: development signing keys are active. The signing key is ephemeral or " +
@@ -30,20 +32,6 @@ internal sealed class DevelopmentSigningKeyWarningService : IStartupVerifier
         "AddInMemoryDevelopmentSigning()/AddPersistedDevelopmentSigning() with a " +
         "production key provider immediately.";
 
-    private readonly IHostEnvironment _environment;
-    private readonly IOptions<DevelopmentSigningOptions> _devOptions;
-
-    public DevelopmentSigningKeyWarningService(
-        IHostEnvironment environment,
-        IOptions<DevelopmentSigningOptions> devOptions)
-    {
-        ArgumentNullException.ThrowIfNull(environment);
-        ArgumentNullException.ThrowIfNull(devOptions);
-
-        _environment = environment;
-        _devOptions = devOptions;
-    }
-
     /// <inheritdoc/>
     public string Name => "DevelopmentSigningKey";
 
@@ -53,13 +41,13 @@ internal sealed class DevelopmentSigningKeyWarningService : IStartupVerifier
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
-        var currentEnvironment = _environment.EnvironmentName;
+        var currentEnvironment = environment.EnvironmentName;
 
         // Production is always a hard fail; non-allowed environments also throw. The runner
         // absorbs a thrown ZeeKayDaConfigurationException, preserving its Code verbatim.
         DevelopmentSigningKeyGate.Enforce(
             currentEnvironment,
-            _devOptions.Value.AllowedEnvironments);
+            devOptions.Value.AllowedEnvironments);
 
         var isDevelopment = string.Equals(currentEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
         if (!isDevelopment)

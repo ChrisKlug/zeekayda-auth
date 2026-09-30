@@ -32,12 +32,6 @@ internal sealed class InMemoryClientRepository : IClientRepository
         IOptions<AuthorizationServerOptions> serverOptions,
         ISanitizingLogger<InMemoryClientRepository> logger)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(hasher);
-        ArgumentNullException.ThrowIfNull(validator);
-        ArgumentNullException.ThrowIfNull(serverOptions);
-        ArgumentNullException.ThrowIfNull(logger);
-
         var opts = options.Value;
         var allRegistrations = new List<IClientRegistration>(opts.PreBuilt.Count + opts.Pending.Count);
 

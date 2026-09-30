@@ -12,39 +12,29 @@ namespace ZeeKayDa.Auth.Stores;
 /// despite its name is shared with nothing: an authorization request started on one instance
 /// cannot be completed by another. Startup verification refuses it outside Development.
 /// </remarks>
-internal sealed class DistributedCacheInteractionBackingStore : IInteractionBackingStore
+internal sealed class DistributedCacheInteractionBackingStore(
+    IDistributedCache cache,
+    TimeProvider timeProvider) : IInteractionBackingStore
 {
-    private readonly IDistributedCache _cache;
-    private readonly TimeProvider _timeProvider;
-
-    public DistributedCacheInteractionBackingStore(IDistributedCache cache, TimeProvider timeProvider)
-    {
-        ArgumentNullException.ThrowIfNull(cache);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-
-        _cache = cache;
-        _timeProvider = timeProvider;
-    }
-
     /// <inheritdoc/>
     public async Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
     {
-        var ttl = expiresAt - _timeProvider.GetUtcNow();
+        var ttl = expiresAt - timeProvider.GetUtcNow();
         if (ttl <= TimeSpan.Zero)
             throw new ZeeKayDaStoreException("Cannot store a value that is already past its expiry.");
 
         var options = new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = ttl };
-        await _cache.SetAsync(key.ToString(), value.ToArray(), options, cancellationToken).ConfigureAwait(false);
+        await cache.SetAsync(key.ToString(), value.ToArray(), options, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
     {
-        var bytes = await _cache.GetAsync(key.ToString(), cancellationToken).ConfigureAwait(false);
+        var bytes = await cache.GetAsync(key.ToString(), cancellationToken).ConfigureAwait(false);
         return bytes is null ? null : (ReadOnlyMemory<byte>?)bytes;
     }
 
     /// <inheritdoc/>
     public async Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
-        => await _cache.RemoveAsync(key.ToString(), cancellationToken).ConfigureAwait(false);
+        => await cache.RemoveAsync(key.ToString(), cancellationToken).ConfigureAwait(false);
 }

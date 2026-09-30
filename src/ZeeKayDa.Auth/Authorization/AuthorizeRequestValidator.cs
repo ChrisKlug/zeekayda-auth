@@ -25,7 +25,10 @@ namespace ZeeKayDa.Auth.Authorization;
 /// values an earlier rule parsed into the <see cref="RequestContext"/>.
 /// </para>
 /// </remarks>
-internal sealed partial class AuthorizeRequestValidator
+internal sealed partial class AuthorizeRequestValidator(
+    ValidatedClientResolver clientResolver,
+    ValidatedScopeCatalog scopes,
+    ISanitizingLogger<AuthorizeRequestValidator> logger)
 {
     private const string LocalErrorDescription =
         "The client_id or redirect_uri of this request is missing, unknown, or not registered.";
@@ -57,23 +60,7 @@ internal sealed partial class AuthorizeRequestValidator
         MaxAgeIsWellFormed,
     ];
 
-    private readonly ValidatedClientResolver _clientResolver;
-    private readonly ValidatedScopeCatalog _scopes;
-    private readonly ISanitizingLogger<AuthorizeRequestValidator> _logger;
-
-    public AuthorizeRequestValidator(
-        ValidatedClientResolver clientResolver,
-        ValidatedScopeCatalog scopes,
-        ISanitizingLogger<AuthorizeRequestValidator> logger)
-    {
-        ArgumentNullException.ThrowIfNull(clientResolver);
-        ArgumentNullException.ThrowIfNull(scopes);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _clientResolver = clientResolver;
-        _scopes = scopes;
-        _logger = logger;
-    }
+    private readonly ValidatedScopeCatalog _scopes = scopes;
 
     /// <summary>
     /// Validates the request parameters in <paramref name="parameters"/> — a multi-map so that
@@ -139,7 +126,7 @@ internal sealed partial class AuthorizeRequestValidator
         // A server_error is the operator's bug, not the client's, and the client is told nothing
         // specific; the operator is told exactly what to fix.
         if (problem?.OperatorDetail is { } detail)
-            _logger.LogError("Client {ClientId} could not be served an authorization request: {Detail}", target.Client.ClientId, detail);
+            logger.LogError("Client {ClientId} could not be served an authorization request: {Detail}", target.Client.ClientId, detail);
 
         TryGetSingle(parameters, "state", out var state);
 
@@ -171,7 +158,7 @@ internal sealed partial class AuthorizeRequestValidator
         if (!TryGetSingle(parameters, "client_id", out var clientId) || string.IsNullOrEmpty(clientId))
             return null;
 
-        var client = await _clientResolver.FindByClientIdAsync(clientId, cancellationToken).ConfigureAwait(false);
+        var client = await clientResolver.FindByClientIdAsync(clientId, cancellationToken).ConfigureAwait(false);
         if (client is null)
             return null;
 

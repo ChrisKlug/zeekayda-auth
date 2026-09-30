@@ -34,29 +34,14 @@ internal readonly record struct NumericDate(bool Present, DateTimeOffset? Value)
 /// trusting <c>iss</c> alone. What the token then authorizes — which scopes a given endpoint
 /// requires — is the endpoint's question, not this type's.
 /// </remarks>
-internal sealed class AccessTokenValidator
+internal sealed class AccessTokenValidator(
+    ISigningKeyRing keyRing,
+    IOptions<AuthorizationServerOptions> options,
+    TimeProvider time)
 {
     // RFC 9068 §2.1 fixes the typ as "at+jwt"; the media-type form is the same registration, and
     // a host that replaced ITokenIssuer may write it.
     private static readonly string[] AccessTokenTypes = ["at+jwt", "application/at+jwt"];
-
-    private readonly ISigningKeyRing _keyRing;
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly TimeProvider _time;
-
-    public AccessTokenValidator(
-        ISigningKeyRing keyRing,
-        IOptions<AuthorizationServerOptions> options,
-        TimeProvider time)
-    {
-        ArgumentNullException.ThrowIfNull(keyRing);
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(time);
-
-        _keyRing = keyRing;
-        _options = options;
-        _time = time;
-    }
 
     /// <summary>
     /// Returns what <paramref name="accessToken"/> names when it is a live access token of this
@@ -69,12 +54,12 @@ internal sealed class AccessTokenValidator
     /// </exception>
     public ValidatedAccessToken? Validate(string? accessToken)
     {
-        using var payload = SignedTokenReader.Verify(accessToken, AccessTokenTypes, _keyRing.Current.Published);
+        using var payload = SignedTokenReader.Verify(accessToken, AccessTokenTypes, keyRing.Current.Published);
         if (payload is null)
             return null;
 
         var root = payload.RootElement;
-        var issuer = _options.Value.Issuer;
+        var issuer = options.Value.Issuer;
 
         if (!string.Equals(SignedTokenReader.ReadString(root, "iss"), issuer, StringComparison.Ordinal))
             return null;
@@ -133,8 +118,8 @@ internal sealed class AccessTokenValidator
         if (notBefore.IsUnreadable)
             return false;
 
-        var now = _time.GetUtcNow();
-        var skew = _options.Value.ClockSkewTolerance;
+        var now = time.GetUtcNow();
+        var skew = options.Value.ClockSkewTolerance;
 
         return now - skew <= expiresAt
             && (notBefore.Value is not { } validFrom || now + skew >= validFrom);

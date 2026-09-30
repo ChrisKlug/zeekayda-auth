@@ -39,17 +39,8 @@ namespace ZeeKayDa.Auth.Scopes;
 /// named startup failures, so a misconfigured host does not reach a request at all.
 /// </para>
 /// </remarks>
-internal sealed class ValidatedScopeCatalog
+internal sealed class ValidatedScopeCatalog(IScopeRepository repository)
 {
-    private readonly IScopeRepository _repository;
-
-    public ValidatedScopeCatalog(IScopeRepository repository)
-    {
-        ArgumentNullException.ThrowIfNull(repository);
-
-        _repository = repository;
-    }
-
     /// <summary>
     /// The scopes the repository serves, copied and checked against the
     /// <see cref="IScopeRepository.GetScopesAsync"/> contract.
@@ -63,7 +54,7 @@ internal sealed class ValidatedScopeCatalog
     /// </exception>
     public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken)
     {
-        var served = await _repository.GetScopesAsync(cancellationToken).ConfigureAwait(false);
+        var served = await repository.GetScopesAsync(cancellationToken).ConfigureAwait(false);
 
         // A null collection is reported alone. Every check below would fire against the empty
         // list that stands in for it — "the openid scope is missing" above all — and an operator

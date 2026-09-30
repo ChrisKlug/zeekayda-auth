@@ -109,25 +109,6 @@ public sealed class DevelopmentSigningKeySourceTests
             => throw new InvalidOperationException("The file system must not be touched in ephemeral mode.");
     }
 
-    // ── Constructor validation ───────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Constructor_throws_when_options_is_null()
-    {
-        var act = () => new DevelopmentSigningKeySource(null!, new InMemorySigningKeyFileSystem());
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
-    }
-
-    [Fact]
-    public void Constructor_throws_when_fileSystem_is_null()
-    {
-        var act = () => new DevelopmentSigningKeySource(
-            Options.Create(new DevelopmentSigningOptions()), null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("fileSystem");
-    }
-
     // ── Ephemeral key generation ─────────────────────────────────────────────────────────────────
 
     [Fact]

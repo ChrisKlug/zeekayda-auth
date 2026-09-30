@@ -7,17 +7,9 @@ namespace ZeeKayDa.Auth.Stores;
 /// development and testing. An authorization request started on one instance cannot be
 /// completed by another, so a multi-instance host must use a shared backend instead.
 /// </summary>
-internal sealed class InMemoryInteractionBackingStore : IInteractionBackingStore
+internal sealed class InMemoryInteractionBackingStore(TimeProvider timeProvider) : IInteractionBackingStore
 {
     private readonly ConcurrentDictionary<StoreKey, Entry> _entries = new();
-    private readonly TimeProvider _timeProvider;
-
-    public InMemoryInteractionBackingStore(TimeProvider timeProvider)
-    {
-        ArgumentNullException.ThrowIfNull(timeProvider);
-
-        _timeProvider = timeProvider;
-    }
 
     /// <inheritdoc/>
     public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
@@ -60,7 +52,7 @@ internal sealed class InMemoryInteractionBackingStore : IInteractionBackingStore
             _entries.TryRemove(expired.Key, out _);
     }
 
-    private bool IsExpired(Entry entry) => _timeProvider.GetUtcNow() >= entry.ExpiresAt;
+    private bool IsExpired(Entry entry) => timeProvider.GetUtcNow() >= entry.ExpiresAt;
 
     private sealed record Entry(byte[] Value, DateTimeOffset ExpiresAt);
 }

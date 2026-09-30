@@ -54,7 +54,12 @@ internal sealed record PendingTicket(ClaimsPrincipal Principal, string Provider)
 /// interaction is, and a principal read twice by the same browser signs the same person in.
 /// </para>
 /// </remarks>
-internal sealed class PendingPrincipalStore
+internal sealed class PendingPrincipalStore(
+    IInteractionBackingStore store,
+    InteractionBindingCookie binding,
+    IDataProtectionProvider dataProtectionProvider,
+    TimeProvider timeProvider,
+    ISanitizingLogger<PendingPrincipalStore> logger)
 {
     /// <summary>
     /// How long a host page has to finish with a parked principal. Not sliding, and never past
@@ -64,31 +69,7 @@ internal sealed class PendingPrincipalStore
 
     private const string DataProtectionPurpose = "ZeeKayDa.Auth:PendingPrincipal";
 
-    private readonly IInteractionBackingStore _store;
-    private readonly InteractionBindingCookie _binding;
-    private readonly IDataProtector _protector;
-    private readonly TimeProvider _timeProvider;
-    private readonly ISanitizingLogger<PendingPrincipalStore> _logger;
-
-    public PendingPrincipalStore(
-        IInteractionBackingStore store,
-        InteractionBindingCookie binding,
-        IDataProtectionProvider dataProtectionProvider,
-        TimeProvider timeProvider,
-        ISanitizingLogger<PendingPrincipalStore> logger)
-    {
-        ArgumentNullException.ThrowIfNull(store);
-        ArgumentNullException.ThrowIfNull(binding);
-        ArgumentNullException.ThrowIfNull(dataProtectionProvider);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _store = store;
-        _binding = binding;
-        _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
-        _timeProvider = timeProvider;
-        _logger = logger;
-    }
+    private readonly IDataProtector _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
 
     /// <summary>
     /// Parks <paramref name="ticket"/> — the principal and the provider that returned it — for
@@ -112,12 +93,12 @@ internal sealed class PendingPrincipalStore
         ArgumentNullException.ThrowIfNull(requestContext);
         ArgumentException.ThrowIfNullOrEmpty(ticket.Provider);
 
-        var secret = _binding.Read(context, requestContext.Id)
+        var secret = binding.Read(context, requestContext.Id)
             ?? throw new InvalidOperationException(
                 "A principal cannot be parked from a request that carries no binding for its interaction. " +
                 "Read the context first; a parked principal is only ever for an interaction this browser holds.");
 
-        var now = _timeProvider.GetUtcNow();
+        var now = timeProvider.GetUtcNow();
         var expiresAt = Earliest(now + Lifetime, requestContext.ExpiresAt);
 
         var properties = new AuthenticationProperties { IsPersistent = false, ExpiresUtc = expiresAt };
@@ -128,7 +109,7 @@ internal sealed class PendingPrincipalStore
         var protectedValue = ProtectorFor(requestContext.Id, secret).Protect(TicketSerializer.Default.Serialize(stored));
 
         await Guarded(
-            () => _store.SetAsync(InteractionStoreKeys.PendingPrincipal(requestContext.Id, secret), protectedValue, expiresAt, cancellationToken),
+            () => store.SetAsync(InteractionStoreKeys.PendingPrincipal(requestContext.Id, secret), protectedValue, expiresAt, cancellationToken),
             "park the external principal").ConfigureAwait(false);
     }
 
@@ -148,7 +129,7 @@ internal sealed class PendingPrincipalStore
         // waiting gets the cancellation it asked for, not an absence it might act on.
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_binding.Read(context, interactionId) is not { } secret)
+        if (binding.Read(context, interactionId) is not { } secret)
             return null;
 
         return await ReadAsync(interactionId, secret, cancellationToken).ConfigureAwait(false);
@@ -169,7 +150,7 @@ internal sealed class PendingPrincipalStore
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_binding.Read(context, interactionId) is not { } secret)
+        if (binding.Read(context, interactionId) is not { } secret)
             return null;
 
         var pending = await ReadAsync(interactionId, secret, cancellationToken).ConfigureAwait(false);
@@ -179,12 +160,12 @@ internal sealed class PendingPrincipalStore
         try
         {
             await Guarded(
-                () => _store.RemoveAsync(InteractionStoreKeys.PendingPrincipal(interactionId, secret), cancellationToken),
+                () => store.RemoveAsync(InteractionStoreKeys.PendingPrincipal(interactionId, secret), cancellationToken),
                 "remove the parked external principal").ConfigureAwait(false);
         }
         catch (ZeeKayDaStoreException ex)
         {
-            _logger.LogError(ex, "Removing a consumed external principal from the store failed; the entry is left to expire.");
+            logger.LogError(ex, "Removing a consumed external principal from the store failed; the entry is left to expire.");
         }
 
         return pending;
@@ -193,7 +174,7 @@ internal sealed class PendingPrincipalStore
     private async ValueTask<PendingTicket?> ReadAsync(string interactionId, string secret, CancellationToken cancellationToken)
     {
         var stored = await Guarded(
-            () => _store.GetAsync(InteractionStoreKeys.PendingPrincipal(interactionId, secret), cancellationToken),
+            () => store.GetAsync(InteractionStoreKeys.PendingPrincipal(interactionId, secret), cancellationToken),
             "read the parked external principal").ConfigureAwait(false);
 
         if (stored is null)
@@ -258,7 +239,7 @@ internal sealed class PendingPrincipalStore
         && InteractionHandoff.IdentifiersMatch(bound, interactionId);
 
     private bool IsExpired(AuthenticationTicket ticket) =>
-        ticket.Properties.ExpiresUtc is not { } expiresAt || _timeProvider.GetUtcNow() >= expiresAt;
+        ticket.Properties.ExpiresUtc is not { } expiresAt || timeProvider.GetUtcNow() >= expiresAt;
 
     private static string? ProviderOf(AuthenticationTicket ticket) =>
         ticket.Properties.Items.TryGetValue(PendingTicketItems.Provider, out var provider) && !string.IsNullOrEmpty(provider)

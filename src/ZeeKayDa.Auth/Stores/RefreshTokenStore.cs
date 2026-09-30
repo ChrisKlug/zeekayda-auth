@@ -24,43 +24,18 @@ namespace ZeeKayDa.Auth.Stores;
 /// mode degrades to <see cref="RefreshTokenConsumptionResult.NotFound"/> — fail-closed, since the
 /// token is already dead and no successor is issued.
 /// </remarks>
-internal sealed class RefreshTokenStore
+internal sealed class RefreshTokenStore(
+    IRefreshTokenBackingStore grantStore,
+    IDataProtectionProvider dataProtectionProvider,
+    IOptions<AuthorizationServerOptions> serverOptions,
+    TimeProvider timeProvider)
 {
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:RefreshTokenStore";
 
-    private readonly IRefreshTokenBackingStore _grantStore;
-    private readonly IDataProtector _protector;
-    private readonly TimeProvider _timeProvider;
-    private readonly TimeSpan _refreshTokenLifetime;
-    private readonly TimeSpan _clockSkewTolerance;
-    private readonly TokenEndpointOptions _tokenEndpointOptions;
-
-    /// <summary>Initialises a new <see cref="RefreshTokenStore"/>.</summary>
-    /// <param name="grantStore">The queryable persistence extension point.</param>
-    /// <param name="dataProtectionProvider">Provider used to create the payload protector.</param>
-    /// <param name="serverOptions">
-    /// Server options providing <see cref="AuthorizationServerOptions.ClockSkewTolerance"/> and
-    /// <c>TokenEndpoint.RefreshTokenLifetime</c>.
-    /// </param>
-    /// <param name="timeProvider">Time provider used for all UTC timestamp reads.</param>
-    public RefreshTokenStore(
-        IRefreshTokenBackingStore grantStore,
-        IDataProtectionProvider dataProtectionProvider,
-        IOptions<AuthorizationServerOptions> serverOptions,
-        TimeProvider timeProvider)
-    {
-        ArgumentNullException.ThrowIfNull(grantStore);
-        ArgumentNullException.ThrowIfNull(dataProtectionProvider);
-        ArgumentNullException.ThrowIfNull(serverOptions);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-
-        _grantStore = grantStore;
-        _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
-        _timeProvider = timeProvider;
-        _tokenEndpointOptions = serverOptions.Value.TokenEndpoint;
-        _refreshTokenLifetime = _tokenEndpointOptions.RefreshTokenLifetime;
-        _clockSkewTolerance = serverOptions.Value.ClockSkewTolerance;
-    }
+    private readonly IDataProtector _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
+    private readonly TokenEndpointOptions _tokenEndpointOptions = serverOptions.Value.TokenEndpoint;
+    private readonly TimeSpan _refreshTokenLifetime = serverOptions.Value.TokenEndpoint.RefreshTokenLifetime;
+    private readonly TimeSpan _clockSkewTolerance = serverOptions.Value.ClockSkewTolerance;
 
     /// <summary>Stores a refresh token's grant under the hash of its handle.</summary>
     /// <exception cref="ZeeKayDaStoreException">Thrown when the backing store fails.</exception>
@@ -71,7 +46,7 @@ internal sealed class RefreshTokenStore
         cancellationToken.ThrowIfCancellationRequested();
 
         var key = BuildHandleKey(tokenHandle);
-        var now = _timeProvider.GetUtcNow();
+        var now = timeProvider.GetUtcNow();
 
         // The whole family shares one absolute ceiling, applied here to the encrypted entry too, so
         // a caller reading Consumed.Entry.ExpiresAt never sees a value larger than what the
@@ -93,7 +68,7 @@ internal sealed class RefreshTokenStore
         };
 
         await Guarded(
-            () => _grantStore.InsertAsync(grant, cancellationToken),
+            () => grantStore.InsertAsync(grant, cancellationToken),
             "store the refresh token grant").ConfigureAwait(false);
     }
 
@@ -106,7 +81,7 @@ internal sealed class RefreshTokenStore
         var key = BuildHandleKey(tokenHandle);
 
         var grant = await Guarded(
-            () => _grantStore.FindByHandleAsync(key, cancellationToken),
+            () => grantStore.FindByHandleAsync(key, cancellationToken),
             "read the refresh token grant").ConfigureAwait(false);
 
         if (grant is null || grant.Status != RefreshGrantStatus.Active)
@@ -115,11 +90,11 @@ internal sealed class RefreshTokenStore
         // A successor inserted after RevokeFamilyAsync still reads Active on its own row, so
         // introspection must not report it as a live grant either.
         if (await Guarded(
-                () => _grantStore.IsFamilyRevokedAsync(grant.FamilyId, cancellationToken),
+                () => grantStore.IsFamilyRevokedAsync(grant.FamilyId, cancellationToken),
                 "check whether the refresh token family is revoked").ConfigureAwait(false))
             return null;
 
-        if (_timeProvider.GetUtcNow() >= TokenLifetimes.ExpiresAt(grant.ExpiresAt, _clockSkewTolerance))
+        if (timeProvider.GetUtcNow() >= TokenLifetimes.ExpiresAt(grant.ExpiresAt, _clockSkewTolerance))
             return null;
 
         try
@@ -149,7 +124,7 @@ internal sealed class RefreshTokenStore
         var key = BuildHandleKey(tokenHandle);
 
         var grant = await Guarded(
-            () => _grantStore.FindByHandleAsync(key, cancellationToken),
+            () => grantStore.FindByHandleAsync(key, cancellationToken),
             "read the refresh token grant").ConfigureAwait(false);
 
         if (grant is null)
@@ -165,11 +140,11 @@ internal sealed class RefreshTokenStore
         // The family may have been revoked after this grant was inserted, so its own
         // still-Active status is not the last word — re-check the family.
         if (await Guarded(
-                () => _grantStore.IsFamilyRevokedAsync(grant.FamilyId, cancellationToken),
+                () => grantStore.IsFamilyRevokedAsync(grant.FamilyId, cancellationToken),
                 "check whether the refresh token family is revoked").ConfigureAwait(false))
             return new RefreshTokenConsumptionResult.Revoked { FamilyId = grant.FamilyId };
 
-        if (_timeProvider.GetUtcNow() >= TokenLifetimes.ExpiresAt(grant.ExpiresAt, _clockSkewTolerance))
+        if (timeProvider.GetUtcNow() >= TokenLifetimes.ExpiresAt(grant.ExpiresAt, _clockSkewTolerance))
             return new RefreshTokenConsumptionResult.NotFound();
 
         if (!string.Equals(grant.ClientId, clientId, StringComparison.Ordinal))
@@ -177,7 +152,7 @@ internal sealed class RefreshTokenStore
 
         // The ONE correctness-critical atomic op in the whole design.
         var won = await Guarded(
-            () => _grantStore.TryMarkConsumedAsync(key, cancellationToken),
+            () => grantStore.TryMarkConsumedAsync(key, cancellationToken),
             "mark the refresh token grant consumed").ConfigureAwait(false);
 
         if (!won)
@@ -206,11 +181,11 @@ internal sealed class RefreshTokenStore
         // Clocked at revoke time, so a first row born a moment later lives that moment longer than an
         // unpadded record would be kept. The skew tolerance covers it, saturating like every other expiry.
         var rememberUntil = TokenLifetimes.ExpiresAt(
-            _tokenEndpointOptions.ComputeFamilyAbsoluteExpiry(_timeProvider.GetUtcNow()),
+            _tokenEndpointOptions.ComputeFamilyAbsoluteExpiry(timeProvider.GetUtcNow()),
             _clockSkewTolerance);
 
         await Guarded(
-            () => _grantStore.RevokeFamilyAsync(familyId, rememberUntil, cancellationToken),
+            () => grantStore.RevokeFamilyAsync(familyId, rememberUntil, cancellationToken),
             "revoke the refresh token family").ConfigureAwait(false);
     }
 
@@ -219,7 +194,7 @@ internal sealed class RefreshTokenStore
     {
         // Lost the race: re-read (cleartext only) to report the correct terminal state.
         var reread = await Guarded(
-            () => _grantStore.FindByHandleAsync(key, cancellationToken),
+            () => grantStore.FindByHandleAsync(key, cancellationToken),
             "re-read the refresh token grant after a lost consume race").ConfigureAwait(false);
 
         return reread?.Status == RefreshGrantStatus.Revoked

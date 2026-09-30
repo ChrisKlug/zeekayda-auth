@@ -11,27 +11,12 @@ namespace ZeeKayDa.Auth.AspNetCore.Tokens;
 /// serves the grant, authenticate the client, check it may use the grant, then hand the grant
 /// its request. Every refusal before the grant costs no store I/O.
 /// </summary>
-internal sealed class TokenRequestHandler
+internal sealed class TokenRequestHandler(
+    IOptions<AuthorizationServerOptions> options,
+    CompositeClientAuthenticator authenticator,
+    AuthorizationCodeGrant grant)
 {
     private const string FormUrlEncoded = "application/x-www-form-urlencoded";
-
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly CompositeClientAuthenticator _authenticator;
-    private readonly AuthorizationCodeGrant _grant;
-
-    public TokenRequestHandler(
-        IOptions<AuthorizationServerOptions> options,
-        CompositeClientAuthenticator authenticator,
-        AuthorizationCodeGrant grant)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(authenticator);
-        ArgumentNullException.ThrowIfNull(grant);
-
-        _options = options;
-        _authenticator = authenticator;
-        _grant = grant;
-    }
 
     public async Task<IResult> HandleAsync(HttpContext context)
     {
@@ -61,14 +46,14 @@ internal sealed class TokenRequestHandler
 
         // The registration the credential was checked against is the one every later decision
         // reads; a second lookup could return one nobody authenticated.
-        var authentication = await _authenticator.AuthenticateAsync(clientId, context, context.RequestAborted).ConfigureAwait(false);
+        var authentication = await authenticator.AuthenticateAsync(clientId, context, context.RequestAborted).ConfigureAwait(false);
         if (authentication.Client is not { } client)
             return TokenResponses.InvalidClient(context);
 
         if (!client.AllowedGrantTypes.Contains(GrantType.AuthorizationCode))
             return TokenResponses.Error(new TokenError(TokenRequestErrors.UnauthorizedClient, "The client is not authorized to use the authorization_code grant type."));
 
-        return await _grant.ExchangeAsync(context, request, client).ConfigureAwait(false);
+        return await grant.ExchangeAsync(context, request, client).ConfigureAwait(false);
     }
 
     private static bool IsFormUrlEncoded(HttpRequest request) =>
@@ -92,7 +77,7 @@ internal sealed class TokenRequestHandler
     }
 
     private bool ServesCodeGrant() =>
-        _options.Value.GrantTypesSupported.Contains(GrantType.AuthorizationCode);
+        options.Value.GrantTypesSupported.Contains(GrantType.AuthorizationCode);
 
     private static string? IdentifyClient(TokenRequest request, IHeaderDictionary headers)
     {

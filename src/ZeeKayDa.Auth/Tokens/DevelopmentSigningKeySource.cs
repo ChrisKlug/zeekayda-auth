@@ -16,7 +16,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>DevelopmentSigningKeyWarningService</c> is not running, and it refuses when the environment
 /// is unknown.
 /// </remarks>
-internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposable
+internal sealed class DevelopmentSigningKeySource(
+    IOptions<DevelopmentSigningOptions> options,
+    IDevelopmentSigningKeyFileSystem fileSystem) : ISigningKeySource, IDisposable
 {
     // Minimum RSA key size per NIST SP 800-57 Part 1 Rev. 5 §5.6.1 Table 2.
     private const int MinimumRsaKeySize = 3072;
@@ -27,9 +29,6 @@ internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposab
     // Stable source-internal identifier for the single dev key. Never the JWKS/JWS kid — the ring
     // derives that from the public key material.
     private static readonly SourceKeyId DevKeyId = new("development");
-
-    private readonly IOptions<DevelopmentSigningOptions> _options;
-    private readonly IDevelopmentSigningKeyFileSystem _fileSystem;
 
     // Serialises reads so the key is generated or loaded exactly once even if two callers read
     // concurrently — "only the ring calls this" is not something this type can enforce. Deliberately
@@ -45,25 +44,14 @@ internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposab
     // fresh key per read would invalidate every token already issued under the previous one.
     private SourceKeySet? _keySet;
 
-    public DevelopmentSigningKeySource(
-        IOptions<DevelopmentSigningOptions> options,
-        IDevelopmentSigningKeyFileSystem fileSystem)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(fileSystem);
-
-        _options = options;
-        _fileSystem = fileSystem;
-    }
-
     /// <inheritdoc/>
     public async Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
     {
         // Enforced on every read, ahead of the memoized set, so a gate that would reject this host
         // rejects it however often the source is read.
         DevelopmentSigningKeyGate.Enforce(
-            _options.Value.EnvironmentName,
-            _options.Value.AllowedEnvironments);
+            options.Value.EnvironmentName,
+            options.Value.AllowedEnvironments);
 
         await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -72,7 +60,7 @@ internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposab
                 return _keySet;
 
             // RSA.Create is CPU-bound with no async variant, so key generation cannot be cancelled.
-            var persistDir = _options.Value.PersistToDirectory;
+            var persistDir = options.Value.PersistToDirectory;
             var rsa = persistDir is not null
                 ? await LoadOrGeneratePersistedKeyAsync(persistDir, cancellationToken).ConfigureAwait(false)
                 : GenerateEphemeralKey();
@@ -143,11 +131,11 @@ internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposab
 
     private async ValueTask<RSA> LoadOrGeneratePersistedKeyAsync(string directory, CancellationToken cancellationToken)
     {
-        _fileSystem.EnsureDirectorySafe(directory);
+        fileSystem.EnsureDirectorySafe(directory);
 
         var keyPath = Path.Join(directory, KeyFileName);
 
-        if (_fileSystem.FileExists(keyPath))
+        if (fileSystem.FileExists(keyPath))
             return await LoadKeyFromFileAsync(keyPath, cancellationToken).ConfigureAwait(false);
 
         var rsa = RSA.Create(MinimumRsaKeySize);
@@ -160,7 +148,7 @@ internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposab
             {
                 if (!rsa.TryExportRSAPrivateKeyPem(pemBuffer, out var written))
                     throw new InvalidOperationException("Failed to export RSA private key as PEM.");
-                await _fileSystem.WriteKeyFileAsync(keyPath, pemBuffer.AsMemory(0, written), cancellationToken)
+                await fileSystem.WriteKeyFileAsync(keyPath, pemBuffer.AsMemory(0, written), cancellationToken)
                     .ConfigureAwait(false);
             }
             finally
@@ -180,7 +168,7 @@ internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposab
 
     private async ValueTask<RSA> LoadKeyFromFileAsync(string keyPath, CancellationToken cancellationToken)
     {
-        using var keyFile = await _fileSystem.ReadKeyFileAsync(keyPath, cancellationToken).ConfigureAwait(false);
+        using var keyFile = await fileSystem.ReadKeyFileAsync(keyPath, cancellationToken).ConfigureAwait(false);
         var rsa = RSA.Create();
         try
         {

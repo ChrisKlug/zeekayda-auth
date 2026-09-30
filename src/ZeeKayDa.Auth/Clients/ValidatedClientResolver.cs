@@ -59,11 +59,11 @@ namespace ZeeKayDa.Auth.Clients;
 /// a clear costs one extra log line per client rather than a PBKDF2.
 /// </para>
 /// </remarks>
-internal sealed class ValidatedClientResolver
+internal sealed class ValidatedClientResolver(
+    IClientRepository repository,
+    IClientRegistrationValidator validator,
+    ISanitizingLogger<ValidatedClientResolver> logger)
 {
-    private readonly IClientRepository _repository;
-    private readonly IClientRegistrationValidator _validator;
-    private readonly ISanitizingLogger<ValidatedClientResolver> _logger;
     private readonly ConcurrentDictionary<string, Lazy<Verdict>> _verdicts = new(StringComparer.Ordinal);
 
     // Failures already written to the critical log, so a repeat of one is not written again. Held
@@ -82,20 +82,6 @@ internal sealed class ValidatedClientResolver
     // re-arming the denial-of-service this cache exists to prevent.
     private const int MaxCachedVerdicts = 16_384;
 
-    public ValidatedClientResolver(
-        IClientRepository repository,
-        IClientRegistrationValidator validator,
-        ISanitizingLogger<ValidatedClientResolver> logger)
-    {
-        ArgumentNullException.ThrowIfNull(repository);
-        ArgumentNullException.ThrowIfNull(validator);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _repository = repository;
-        _validator = validator;
-        _logger = logger;
-    }
-
     /// <summary>
     /// Returns an immutable snapshot of the validated registration for <paramref name="clientId"/>,
     /// or <see langword="null"/> when the client is unknown <em>or</em> its registration fails
@@ -111,7 +97,7 @@ internal sealed class ValidatedClientResolver
     {
         ArgumentNullException.ThrowIfNull(clientId);
 
-        var client = await _repository.FindByClientIdAsync(clientId, cancellationToken).ConfigureAwait(false);
+        var client = await repository.FindByClientIdAsync(clientId, cancellationToken).ConfigureAwait(false);
         if (client is null)
             return null;
 
@@ -125,7 +111,7 @@ internal sealed class ValidatedClientResolver
         var loggedClientId = snapshot?.ClientId ?? clientId;
         if (MarkLogged(snapshot?.ClientId, verdict.SuppressionKey))
         {
-            _logger.LogCritical(
+            logger.LogCritical(
                 "Client registration for '{ClientId}' failed validation and was served to the protocol as an unknown client. " +
                 "Fix the registration in the client store. Violations: {Violations}",
                 loggedClientId,
@@ -279,7 +265,7 @@ internal sealed class ValidatedClientResolver
         {
             // Logged so the cliff is visible: after a clear, every client revalidates once, and a
             // deployment hitting this repeatedly is paying PBKDF2 far more often than it should.
-            _logger.LogWarning(
+            logger.LogWarning(
                 "The client validation cache reached its {Cap}-entry limit and was cleared. " +
                 "Every registration will be revalidated once, which is CPU-intensive.",
                 MaxCachedVerdicts);
@@ -293,7 +279,7 @@ internal sealed class ValidatedClientResolver
     {
         try
         {
-            _validator.Validate(client);
+            validator.Validate(client);
             return Verdict.Valid;
         }
         catch (ZeeKayDaConfigurationException ex)

@@ -37,10 +37,11 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// still name the offending bundle.
 /// </para>
 /// </remarks>
-internal sealed class PfxFileSigningKeySource : ISigningKeySource
+internal sealed class PfxFileSigningKeySource(
+    IOptions<PfxFileSigningOptions> options,
+    FileSigningKeyReader reader) : ISigningKeySource
 {
-    private readonly IOptions<PfxFileSigningOptions> _options;
-    private readonly FileSigningKeyReader _reader;
+    private readonly IOptions<PfxFileSigningOptions> _options = options;
 
     // Serialises reads so the slots are parsed exactly once even if two callers read concurrently —
     // "only the ring calls this" is not something this type can enforce. Deliberately not disposed:
@@ -53,15 +54,6 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
     // succeeded, no later one can observe a bundle replaced after startup. Read-once is therefore a
     // property of this source, not only of the ring.
     private SourceKeySet? _keySet;
-
-    public PfxFileSigningKeySource(IOptions<PfxFileSigningOptions> options, FileSigningKeyReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(reader);
-
-        _options = options;
-        _reader = reader;
-    }
 
     /// <inheritdoc/>
     public async Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
@@ -136,7 +128,7 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
     private async ValueTask<X509Certificate2> LoadPublicCertificateAsync(
         PfxFile slot, CancellationToken cancellationToken)
     {
-        var bytes = await _reader.ReadAllBytesAsync(slot.Path, cancellationToken).ConfigureAwait(false);
+        var bytes = await reader.ReadAllBytesAsync(slot.Path, cancellationToken).ConfigureAwait(false);
         var password = await slot.PasswordSource(cancellationToken).ConfigureAwait(false);
 
         try
@@ -362,7 +354,7 @@ internal sealed class PfxFileSigningKeySource : ISigningKeySource
     private async ValueTask<X509Certificate2> LoadSigningCertificateAsync(
         PfxFile slot, CancellationToken cancellationToken)
     {
-        var bytes = await _reader.ReadAllBytesAsync(slot.Path, cancellationToken).ConfigureAwait(false);
+        var bytes = await reader.ReadAllBytesAsync(slot.Path, cancellationToken).ConfigureAwait(false);
         var password = await slot.PasswordSource(cancellationToken).ConfigureAwait(false);
 
         try

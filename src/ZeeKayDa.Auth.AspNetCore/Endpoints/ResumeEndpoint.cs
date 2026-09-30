@@ -26,43 +26,19 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// again. A refusal renders the local error page and leaves the interaction untouched: a stray or
 /// replayed request here can neither complete nor cancel a live authorization request.
 /// </remarks>
-internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
+internal sealed class ResumeEndpoint(
+    IOptions<AuthorizationServerOptions> options,
+    IOptions<ProviderOptions> providerOptions,
+    ProviderRegistry providers,
+    AuthorizationFlow flow,
+    InteractionOutcomes outcomes,
+    ISanitizingLogger<ResumeEndpoint> logger) : IZeeKayDaEndpoint
 {
     private const string NothingToResume =
         "There is no external sign-in to resume. Return to the application and try again.";
 
     private const string DidNotComplete =
         "Sign-in through the external identity provider did not complete. Return to the application and try again.";
-
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly IOptions<ProviderOptions> _providerOptions;
-    private readonly ProviderRegistry _providers;
-    private readonly AuthorizationFlow _flow;
-    private readonly InteractionOutcomes _outcomes;
-    private readonly ISanitizingLogger<ResumeEndpoint> _logger;
-
-    public ResumeEndpoint(
-        IOptions<AuthorizationServerOptions> options,
-        IOptions<ProviderOptions> providerOptions,
-        ProviderRegistry providers,
-        AuthorizationFlow flow,
-        InteractionOutcomes outcomes,
-        ISanitizingLogger<ResumeEndpoint> logger)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(providerOptions);
-        ArgumentNullException.ThrowIfNull(providers);
-        ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(outcomes);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _options = options;
-        _providerOptions = providerOptions;
-        _providers = providers;
-        _flow = flow;
-        _outcomes = outcomes;
-        _logger = logger;
-    }
 
     /// <summary>The route under the issuer path, derived as every other endpoint's route is.</summary>
     public static string RouteFor(Uri issuerUri)
@@ -77,10 +53,10 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
     {
         // Nothing redirects here unless a provider was challenged, so a host without providers
         // serves no such route.
-        if (_providers.Count == 0)
+        if (providers.Count == 0)
             return;
 
-        var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
+        var issuerUri = EndpointRouteHelper.GetIssuerUri(options);
 
         // Typed as Delegate so the result-writing overload is chosen: a method taking only the
         // context also converts to RequestDelegate, whose overload discards the returned result.
@@ -97,7 +73,7 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         context.Response.Headers.CacheControl = "no-store";
 
         if (await ResolveTicketAsync(context).ConfigureAwait(false) is not { } resolved)
-            return _outcomes.LocalError(context, AuthorizeRequestErrors.InvalidRequest, NothingToResume);
+            return outcomes.LocalError(context, AuthorizeRequestErrors.InvalidRequest, NothingToResume);
 
         var (registration, requestContext, principal) = resolved;
 
@@ -107,16 +83,16 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         var signIn = new ProviderSignInContext(
             ReservedClaims.Snapshot(principal),
             registration.Descriptor,
-            await _flow.DescribeClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false),
+            await flow.DescribeClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false),
             requestContext.Scopes.ToImmutableArray(),
             context.RequestAborted,
-            path => _outcomes.ParkAsync(context, requestContext, registration, principal, path),
-            () => _outcomes.DenyAsync(context, requestContext, InteractionOutcomes.DeniedAfterProvider));
+            path => outcomes.ParkAsync(context, requestContext, registration, principal, path),
+            () => outcomes.DenyAsync(context, requestContext, InteractionOutcomes.DeniedAfterProvider));
 
         ClaimsPrincipal promoted;
         try
         {
-            if (_providerOptions.Value.OnProviderSignIn is { } onProviderSignIn)
+            if (providerOptions.Value.OnProviderSignIn is { } onProviderSignIn)
             {
                 await onProviderSignIn(signIn).ConfigureAwait(false);
                 if (signIn.Completed)
@@ -137,8 +113,8 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         // A principal parked for this interaction by an earlier return is superseded by this one.
         // The framework states nothing about how the user proved who they are at the provider —
         // it was told nothing — so no amr is reported for an auto-promoted external sign-in.
-        await _flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
-        await _outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], registration.Name))
+        await flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
+        await outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], registration.Name))
             .ConfigureAwait(false);
 
         return Results.Empty;
@@ -156,7 +132,7 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         if (interactionId is null || ticket is null || !IsBoundTo(ticket, interactionId))
             return null;
 
-        var requestContext = await _flow.ReadAsync(context, interactionId).ConfigureAwait(false);
+        var requestContext = await flow.ReadAsync(context, interactionId).ConfigureAwait(false);
         if (requestContext is null)
             return null;
 
@@ -205,7 +181,7 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
             return null;
         }
 
-        return _providers.Find(providerName);
+        return providers.Find(providerName);
     }
 
     private IResult Fail(HttpContext context, ProviderRegistration registration, Exception exception)
@@ -216,7 +192,7 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
         switch (exception)
         {
             case ZeeKayDaInteractionException interaction:
-                _logger.LogError(
+                logger.LogError(
                     interaction,
                     "Signing in through provider {Provider} was refused at promotion.",
                     registration.Name);
@@ -225,21 +201,21 @@ internal sealed class ResumeEndpoint : IZeeKayDaEndpoint
             case ZeeKayDaStoreException store:
                 // The park write inside the host's RedirectToAsync: an outage, not a handler
                 // failure, and the operator should see it as one.
-                _logger.LogError(
+                logger.LogError(
                     store,
                     "Signing in through provider {Provider} failed because the interaction store could not be written.",
                     registration.Name);
                 break;
 
             default:
-                _logger.LogError(
+                logger.LogError(
                     "The sign-in handler for provider {Provider} failed with {ExceptionType}.",
                     registration.Name,
                     exception.GetType().FullName);
                 break;
         }
 
-        return _outcomes.LocalError(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
+        return outcomes.LocalError(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
     }
 
     private static string? Item(IDictionary<string, string?> items, string key) =>

@@ -28,20 +28,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// those options runs the host's own configuration code.
 /// </para>
 /// </remarks>
-internal sealed class ProviderSchemeCollisionValidator : IStartupActivator
+internal sealed class ProviderSchemeCollisionValidator(
+    ProviderRegistry registry,
+    IOptions<AuthorizationServerOptions> options) : IStartupActivator
 {
-    private readonly ProviderRegistry _registry;
-    private readonly IOptions<AuthorizationServerOptions> _options;
-
-    public ProviderSchemeCollisionValidator(ProviderRegistry registry, IOptions<AuthorizationServerOptions> options)
-    {
-        ArgumentNullException.ThrowIfNull(registry);
-        ArgumentNullException.ThrowIfNull(options);
-
-        _registry = registry;
-        _options = options;
-    }
-
     /// <inheritdoc/>
     public string Name => "ProviderSchemeCollisions";
 
@@ -54,7 +44,7 @@ internal sealed class ProviderSchemeCollisionValidator : IStartupActivator
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(scopedServices);
 
-        if (_registry.Count == 0)
+        if (registry.Count == 0)
             return;
 
         var schemeProvider = scopedServices.GetService<IAuthenticationSchemeProvider>();
@@ -68,7 +58,7 @@ internal sealed class ProviderSchemeCollisionValidator : IStartupActivator
         var byName = hostSchemes
             .Select(scheme => scheme.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var registration in _registry.Registrations.Where(registration => byName.Contains(registration.Name)))
+        foreach (var registration in registry.Registrations.Where(registration => byName.Contains(registration.Name)))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -82,7 +72,7 @@ internal sealed class ProviderSchemeCollisionValidator : IStartupActivator
 
         // A scheme that collides by name is pinned to the provider's route as well; reporting it
         // twice would say nothing new.
-        var providerNames = _registry.Registrations
+        var providerNames = registry.Registrations
             .Select(registration => registration.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var scheme in hostSchemes.Where(scheme => !providerNames.Contains(scheme.Name)))
@@ -118,9 +108,9 @@ internal sealed class ProviderSchemeCollisionValidator : IStartupActivator
             return;
         }
 
-        var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
+        var issuerUri = EndpointRouteHelper.GetIssuerUri(options);
 
-        foreach (var registration in _registry.Registrations
+        foreach (var registration in registry.Registrations
             .Where(registration => ProviderCallbackRoute.For(issuerUri, registration.Name) == callbackPath))
         {
             context.AddFailure(

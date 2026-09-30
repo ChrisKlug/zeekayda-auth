@@ -29,7 +29,12 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// the question with <c>SkipLogoutConfirmation</c>. Everything else is confirmed first (§2).
 /// </para>
 /// </remarks>
-internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
+internal sealed class EndSessionEndpoint(
+    IOptions<AuthorizationServerOptions> options,
+    SsoSession session,
+    LogoutRequestStore requests,
+    EndSessionResponses responses,
+    ISanitizingLogger<EndSessionEndpoint> logger) : IZeeKayDaEndpoint
 {
     /// <summary>
     /// The longest <c>state</c> echoed to a client — far above what a relying party sends. A
@@ -41,31 +46,7 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
     private const string DefaultPath = "connect/endsession";
     private const string ConfirmSuffix = "/confirm";
 
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly SsoSession _session;
-    private readonly LogoutRequestStore _requests;
-    private readonly EndSessionResponses _responses;
-    private readonly ISanitizingLogger<EndSessionEndpoint> _logger;
-
-    public EndSessionEndpoint(
-        IOptions<AuthorizationServerOptions> options,
-        SsoSession session,
-        LogoutRequestStore requests,
-        EndSessionResponses responses,
-        ISanitizingLogger<EndSessionEndpoint> logger)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(requests);
-        ArgumentNullException.ThrowIfNull(responses);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _options = options;
-        _session = session;
-        _requests = requests;
-        _responses = responses;
-        _logger = logger;
-    }
+    private readonly SsoSession _session = session;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -74,7 +55,7 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
     /// </remarks>
     public void Map(IEndpointRouteBuilder endpoints)
     {
-        if (!_options.Value.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
+        if (!options.Value.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
             return;
 
         var endpointUri = PublishedUri();
@@ -86,7 +67,7 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
             .RequireIssuerHost(endpointUri)
             .AllowAnonymous();
 
-        if (_options.Value.EndSessionEndpoint.LogoutPath is not null)
+        if (options.Value.EndSessionEndpoint.LogoutPath is not null)
             return;
 
         Delegate confirm = ConfirmAsync;
@@ -105,7 +86,7 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
 
         var session = await _session.ReadAsync(context).ConfigureAwait(false);
         if (session is null || MayEndWithoutAsking(client, hint, session))
-            return await _responses.SignOutAsync(context, redirect).ConfigureAwait(false);
+            return await responses.SignOutAsync(context, redirect).ConfigureAwait(false);
 
         return await AskAsync(context, new PendingSignOut(client?.ClientId, redirect, session.SessionId, session.Subject))
             .ConfigureAwait(false);
@@ -127,7 +108,7 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
 
         var hint = hints.Validate(idTokenHint, requestedClientId);
         if (hint is null && idTokenHint is not null)
-            _logger.LogDebug("An id_token_hint that is not an ID token this server issued was ignored.");
+            logger.LogDebug("An id_token_hint that is not an ID token this server issued was ignored.");
 
         var clientId = hint?.ClientId ?? requestedClientId;
         var client = clientId is null
@@ -159,16 +140,16 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
         LogoutRequestContext request;
         try
         {
-            request = await _requests.CreateAsync(context, pending, context.RequestAborted).ConfigureAwait(false);
+            request = await requests.CreateAsync(context, pending, context.RequestAborted).ConfigureAwait(false);
         }
         catch (ZeeKayDaStoreException ex)
         {
             // Fail closed: a user who could not be asked is not signed out.
-            _logger.LogError(ex, "Storing a sign-out request for the user to confirm failed.");
+            logger.LogError(ex, "Storing a sign-out request for the user to confirm failed.");
             return EndSessionResponses.Unavailable();
         }
 
-        var confirmation = _options.Value.EndSessionEndpoint.LogoutPath ?? ConfirmPath(PublishedUri());
+        var confirmation = options.Value.EndSessionEndpoint.LogoutPath ?? ConfirmPath(PublishedUri());
         return Results.Redirect(InteractionHandoff.BuildRedirectUrl(confirmation, request.Id));
     }
 
@@ -195,7 +176,7 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
         }
         catch (ZeeKayDaStoreException ex)
         {
-            _logger.LogError(ex, "Reading a sign-out request the user was asked to confirm failed.");
+            logger.LogError(ex, "Reading a sign-out request the user was asked to confirm failed.");
             return EndSessionResponses.Unavailable();
         }
     }
@@ -239,8 +220,8 @@ internal sealed class EndSessionEndpoint : IZeeKayDaEndpoint
             : null;
 
     private Uri PublishedUri() => EndpointRouteHelper.GetPublishedEndpointUri(
-        EndpointRouteHelper.GetIssuerUri(_options),
-        _options.Value.EndSessionEndpoint.Uri,
+        EndpointRouteHelper.GetIssuerUri(options),
+        options.Value.EndSessionEndpoint.Uri,
         DefaultPath);
 
     private static string ConfirmPath(Uri endpointUri) => endpointUri.AbsolutePath.TrimEnd('/') + ConfirmSuffix;

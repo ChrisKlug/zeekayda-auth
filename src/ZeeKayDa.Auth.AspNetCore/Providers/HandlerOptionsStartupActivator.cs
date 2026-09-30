@@ -23,20 +23,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// message, so those travel as the root cause behind the failure, never inside it.
 /// </para>
 /// </remarks>
-internal sealed class HandlerOptionsStartupActivator : IStartupActivator
+internal sealed class HandlerOptionsStartupActivator(
+    ProviderRegistry registry,
+    PinnedOptionDriftRecorder recorder) : IStartupActivator
 {
-    private readonly ProviderRegistry _registry;
-    private readonly PinnedOptionDriftRecorder _recorder;
-
-    public HandlerOptionsStartupActivator(ProviderRegistry registry, PinnedOptionDriftRecorder recorder)
-    {
-        ArgumentNullException.ThrowIfNull(registry);
-        ArgumentNullException.ThrowIfNull(recorder);
-
-        _registry = registry;
-        _recorder = recorder;
-    }
-
     /// <inheritdoc/>
     public string Name => "ProviderOptions";
 
@@ -52,7 +42,7 @@ internal sealed class HandlerOptionsStartupActivator : IStartupActivator
         var failures = new List<ZeeKayDaConfigurationFailure>();
         var causes = new List<Exception>();
 
-        foreach (var registration in _registry.Registrations)
+        foreach (var registration in registry.Registrations)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -88,7 +78,7 @@ internal sealed class HandlerOptionsStartupActivator : IStartupActivator
         // another validator that fails first — then reports no pin assertions, rather than an
         // earlier attempt's. A concurrent resolution of the same name and options type can still
         // interleave; PinnedOptionDriftRecorder records why that is accepted.
-        _recorder.Clear(name, optionsType);
+        recorder.Clear(name, optionsType);
 
         try
         {
@@ -133,7 +123,7 @@ internal sealed class HandlerOptionsStartupActivator : IStartupActivator
     /// </remarks>
     private string Describe(string name, Type optionsType, OptionsValidationException ex)
     {
-        var pinned = _recorder.DriftsFor(name, optionsType);
+        var pinned = recorder.DriftsFor(name, optionsType);
         var others = Math.Max(0, ex.Failures.Count() - pinned.Count);
 
         var message = $"The options for provider '{name}' are not valid.";

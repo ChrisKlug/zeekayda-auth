@@ -15,23 +15,15 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// Mapped unconditionally: discovery publishes <c>token_endpoint</c> unconditionally too, because
 /// RFC 8414 §2 requires it, so the metadata and the route always agree.
 /// </remarks>
-internal sealed class TokenEndpoint : IZeeKayDaEndpoint
+internal sealed class TokenEndpoint(IOptions<AuthorizationServerOptions> options) : IZeeKayDaEndpoint
 {
-    private readonly IOptions<AuthorizationServerOptions> _options;
-
-    public TokenEndpoint(IOptions<AuthorizationServerOptions> options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        _options = options;
-    }
-
     /// <inheritdoc/>
     public void Map(IEndpointRouteBuilder endpoints)
     {
-        var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
+        var issuerUri = EndpointRouteHelper.GetIssuerUri(options);
         var endpointUri = EndpointRouteHelper.GetPublishedEndpointUri(
             issuerUri,
-            _options.Value.TokenEndpoint.Uri,
+            options.Value.TokenEndpoint.Uri,
             "connect/token");
 
         endpoints.MapPost(

@@ -26,20 +26,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// carries <c>iss</c>, unconditionally, as mix-up attack mitigation (RFC 9207, RFC 9700 §4.4).
 /// </para>
 /// </remarks>
-internal sealed class AuthorizationResponses
+internal sealed class AuthorizationResponses(
+    IOptions<AuthorizationServerOptions> options,
+    AuthorizeErrorTransport errorTransport)
 {
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly AuthorizeErrorTransport _errorTransport;
-
-    public AuthorizationResponses(IOptions<AuthorizationServerOptions> options, AuthorizeErrorTransport errorTransport)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(errorTransport);
-
-        _options = options;
-        _errorTransport = errorTransport;
-    }
-
     /// <summary>A rejected request's error, rendered at the user, never redirected to the client.</summary>
     public IResult Local(HttpContext context, string error, string description) =>
         Local(context, AuthorizationErrorKind.RequestRejected, error, description);
@@ -49,10 +39,10 @@ internal sealed class AuthorizationResponses
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var errorPath = _options.Value.AuthorizationEndpoint.Interaction.ErrorPath;
+        var errorPath = options.Value.AuthorizationEndpoint.Interaction.ErrorPath;
         if (errorPath is not null)
         {
-            var id = _errorTransport.CreateAndAttach(context, kind, error, description);
+            var id = errorTransport.CreateAndAttach(context, kind, error, description);
             return Results.Redirect(QueryHelpers.AddQueryString(
                 errorPath, AuthorizeErrorTransport.QueryParameterName, id));
         }
@@ -113,7 +103,7 @@ internal sealed class AuthorizationResponses
         if (state is not null)
             query["state"] = state;
 
-        query["iss"] = _options.Value.Issuer!;
+        query["iss"] = options.Value.Issuer!;
 
         return new UnloggedRedirect(QueryHelpers.AddQueryString(redirectUri, query));
     }

@@ -45,11 +45,12 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// is the pairing check.
 /// </para>
 /// </remarks>
-internal sealed class AzureKeyVaultCachedSigningKeySource : ISigningKeySource
+internal sealed class AzureKeyVaultCachedSigningKeySource(
+    IOptions<AzureKeyVaultCachedSigningOptions> options,
+    IKeyVaultCertificateReader certificateReader,
+    TimeProvider timeProvider) : ISigningKeySource
 {
-    private readonly IOptions<AzureKeyVaultCachedSigningOptions> _options;
-    private readonly IKeyVaultCertificateReader _certificateReader;
-    private readonly TimeProvider _timeProvider;
+    private readonly IOptions<AzureKeyVaultCachedSigningOptions> _options = options;
 
     // Serialises reads so the vault is read exactly once even if two callers read concurrently —
     // "only the ring calls this" is not something this type can enforce. Deliberately not disposed:
@@ -67,20 +68,6 @@ internal sealed class AzureKeyVaultCachedSigningKeySource : ISigningKeySource
     // edge otherwise connects the two.
     private volatile SigningVersion? _signingVersion;
 
-    public AzureKeyVaultCachedSigningKeySource(
-        IOptions<AzureKeyVaultCachedSigningOptions> options,
-        IKeyVaultCertificateReader certificateReader,
-        TimeProvider timeProvider)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(certificateReader);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-
-        _options = options;
-        _certificateReader = certificateReader;
-        _timeProvider = timeProvider;
-    }
-
     /// <inheritdoc/>
     public async Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
     {
@@ -93,7 +80,7 @@ internal sealed class AzureKeyVaultCachedSigningKeySource : ISigningKeySource
             var options = _options.Value;
 
             var allVersions = new List<KeyVaultCertificateVersionInfo>();
-            await foreach (var version in _certificateReader.GetCertificateVersionsAsync(cancellationToken).ConfigureAwait(false))
+            await foreach (var version in certificateReader.GetCertificateVersionsAsync(cancellationToken).ConfigureAwait(false))
                 allVersions.Add(version);
 
             if (allVersions.Count == 0)
@@ -110,7 +97,7 @@ internal sealed class AzureKeyVaultCachedSigningKeySource : ISigningKeySource
                 allVersions,
                 options.PreviousVersionsToPublish,
                 options.PreActivationDelay,
-                _timeProvider.GetUtcNow(),
+                timeProvider.GetUtcNow(),
                 KeyVaultVersionSelector.SelectionContext.ForCertificate(
                     options.CertificateIdentifier.Name, options.CertificateIdentifier.VaultUri));
 
@@ -157,7 +144,7 @@ internal sealed class AzureKeyVaultCachedSigningKeySource : ISigningKeySource
                 "and only it ever signs — or has its private key downloaded at all.");
         }
 
-        var (privateKey, keyType) = await _certificateReader
+        var (privateKey, keyType) = await certificateReader
             .GetPrivateKeyMaterialAsync(signingVersion.Version, cancellationToken).ConfigureAwait(false);
 
         try
@@ -181,7 +168,7 @@ internal sealed class AzureKeyVaultCachedSigningKeySource : ISigningKeySource
     private async ValueTask<SourceKey> ToSourceKeyAsync(
         KeyVaultCertificateVersionInfo version, AzureKeyVaultCachedSigningOptions options, CancellationToken cancellationToken)
     {
-        var (rawPublicKey, keyType) = await _certificateReader
+        var (rawPublicKey, keyType) = await certificateReader
             .GetPublicKeyMaterialAsync(version.Version, cancellationToken).ConfigureAwait(false);
 
         using var publicKey = rawPublicKey;

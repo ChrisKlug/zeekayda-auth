@@ -36,28 +36,6 @@ public sealed class DevelopmentSigningKeyWarningServiceTests
             Options.Create(devOptions));
     }
 
-    // ── Constructor: argument validation ─────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_environment_is_null()
-    {
-        var act = () => new DevelopmentSigningKeyWarningService(
-            null!,
-            Options.Create(new DevelopmentSigningOptions()));
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("environment");
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_when_options_is_null()
-    {
-        var act = () => new DevelopmentSigningKeyWarningService(
-            new FakeHostEnvironment(Environments.Development),
-            null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("devOptions");
-    }
-
     // ── VerifyAsync: Development environment — recorded, not warned about ────────────────────────
 
     [Fact]

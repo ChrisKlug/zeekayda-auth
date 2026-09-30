@@ -37,7 +37,6 @@ internal sealed class KeyVaultSigner : IKeyVaultSigner
 
     public KeyVaultSigner(IOptions<AzureKeyVaultRemoteSigningOptions> options)
     {
-        ArgumentNullException.ThrowIfNull(options);
         var credential = options.Value.Credential;
         ArgumentNullException.ThrowIfNull(credential);
 

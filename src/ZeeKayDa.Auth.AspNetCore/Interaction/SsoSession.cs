@@ -57,7 +57,7 @@ internal sealed record SsoSessionState
 /// denylist.
 /// </para>
 /// </remarks>
-internal sealed class SsoSession
+internal sealed class SsoSession(TimeProvider timeProvider)
 {
     /// <summary>
     /// The claim the subject is read from, in order. <c>sub</c> is what a host that thinks in
@@ -65,15 +65,6 @@ internal sealed class SsoSession
     /// Identity writes.
     /// </summary>
     private static readonly string[] SubjectClaimTypes = ["sub", ClaimTypes.NameIdentifier];
-
-    private readonly TimeProvider _timeProvider;
-
-    public SsoSession(TimeProvider timeProvider)
-    {
-        ArgumentNullException.ThrowIfNull(timeProvider);
-
-        _timeProvider = timeProvider;
-    }
 
     /// <summary>
     /// Reads the established session, or <see langword="null"/> when there is none, when the
@@ -129,7 +120,7 @@ internal sealed class SsoSession
             ? current.SessionId
             : StoreKeyGenerator.Generate();
 
-        var authTime = _timeProvider.GetUtcNow();
+        var authTime = timeProvider.GetUtcNow();
         var state = new SsoSessionState
         {
             SessionId = sessionId,

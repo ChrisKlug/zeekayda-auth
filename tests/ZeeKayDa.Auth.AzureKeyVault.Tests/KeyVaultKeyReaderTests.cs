@@ -82,18 +82,10 @@ public sealed class KeyVaultKeyReaderTests
     // ── The public constructor, the one DI actually calls ────────────────────────────────────────
     //
     // Every other test here builds the reader through the internal test seam, which left the
-    // production constructor unexercised: both of its argument guards could be deleted and the
-    // suite stayed green.
+    // production constructor unexercised: its credential guard could be deleted and the suite
+    // stayed green.
 
     private static readonly Uri KeyIdentifierUri = new("https://fake-vault.vault.azure.net/keys/fake-key");
-
-    [Fact]
-    public void Constructor_rejects_null_options()
-    {
-        var act = () => new KeyVaultKeyReader(null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
-    }
 
     [Fact]
     public void Constructor_rejects_options_carrying_no_credential()

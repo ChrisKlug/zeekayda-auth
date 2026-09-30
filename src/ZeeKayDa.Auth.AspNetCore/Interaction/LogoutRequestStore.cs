@@ -54,7 +54,12 @@ internal sealed record PendingSignOut(string? ClientId, PostLogoutRedirect? Redi
 /// so a cross-site form post does not carry it, and a sign-out confirmed from anywhere but the
 /// page the framework sent the user to finds nothing to confirm.
 /// </remarks>
-internal sealed class LogoutRequestStore
+internal sealed class LogoutRequestStore(
+    IInteractionBackingStore store,
+    InteractionBindingCookie binding,
+    IDataProtectionProvider dataProtectionProvider,
+    TimeProvider timeProvider,
+    ISanitizingLogger<LogoutRequestStore> logger)
 {
     /// <summary>How long the user has to confirm. Not sliding.</summary>
     internal static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(10);
@@ -64,31 +69,7 @@ internal sealed class LogoutRequestStore
     private const byte Version = 3;
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:LogoutRequestContext";
 
-    private readonly IInteractionBackingStore _store;
-    private readonly InteractionBindingCookie _binding;
-    private readonly IDataProtector _protector;
-    private readonly TimeProvider _timeProvider;
-    private readonly ISanitizingLogger<LogoutRequestStore> _logger;
-
-    public LogoutRequestStore(
-        IInteractionBackingStore store,
-        InteractionBindingCookie binding,
-        IDataProtectionProvider dataProtectionProvider,
-        TimeProvider timeProvider,
-        ISanitizingLogger<LogoutRequestStore> logger)
-    {
-        ArgumentNullException.ThrowIfNull(store);
-        ArgumentNullException.ThrowIfNull(binding);
-        ArgumentNullException.ThrowIfNull(dataProtectionProvider);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _store = store;
-        _binding = binding;
-        _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
-        _timeProvider = timeProvider;
-        _logger = logger;
-    }
+    private readonly IDataProtector _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
 
     /// <summary>
     /// Stores a sign-out for the user to confirm and binds it to this browser with a new binding
@@ -111,7 +92,7 @@ internal sealed class LogoutRequestStore
             State = pending.Redirect?.State,
             SsoSessionId = pending.SsoSessionId,
             Subject = pending.Subject,
-            ExpiresAt = _timeProvider.GetUtcNow() + Lifetime,
+            ExpiresAt = timeProvider.GetUtcNow() + Lifetime,
         };
 
         // The entry first, the cookie second: a write the store refused leaves the browser with
@@ -120,9 +101,9 @@ internal sealed class LogoutRequestStore
         var protectedValue = ProtectorFor(request.Id, secret).Protect(Encode(request));
 
         await Guarded(
-            () => _store.SetAsync(KeyFor(request.Id, secret), protectedValue, request.ExpiresAt, cancellationToken),
+            () => store.SetAsync(KeyFor(request.Id, secret), protectedValue, request.ExpiresAt, cancellationToken),
             "store the sign-out request").ConfigureAwait(false);
-        _binding.Issue(context, new(request.Id, request.ExpiresAt, secret, ClientId: null));
+        binding.Issue(context, new(request.Id, request.ExpiresAt, secret, ClientId: null));
 
         return request;
     }
@@ -138,11 +119,11 @@ internal sealed class LogoutRequestStore
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
-        if (_binding.Read(context, interactionId) is not { } secret)
+        if (binding.Read(context, interactionId) is not { } secret)
             return null;
 
         var stored = await Guarded(
-            () => _store.GetAsync(KeyFor(interactionId, secret), cancellationToken),
+            () => store.GetAsync(KeyFor(interactionId, secret), cancellationToken),
             "read the sign-out request").ConfigureAwait(false);
 
         if (stored is null)
@@ -163,7 +144,7 @@ internal sealed class LogoutRequestStore
         // store's TTL nor the cookie's MaxAge is enforced by anything this framework controls.
         return request is not null
             && InteractionHandoff.IdentifiersMatch(request.Id, interactionId)
-            && _timeProvider.GetUtcNow() < request.ExpiresAt
+            && timeProvider.GetUtcNow() < request.ExpiresAt
             ? request
             : null;
     }
@@ -178,8 +159,8 @@ internal sealed class LogoutRequestStore
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
-        var secret = _binding.Read(context, interactionId);
-        _binding.Retire(context, interactionId);
+        var secret = binding.Read(context, interactionId);
+        binding.Retire(context, interactionId);
 
         if (secret is null)
             return;
@@ -187,12 +168,12 @@ internal sealed class LogoutRequestStore
         try
         {
             await Guarded(
-                () => _store.RemoveAsync(KeyFor(interactionId, secret), cancellationToken),
+                () => store.RemoveAsync(KeyFor(interactionId, secret), cancellationToken),
                 "remove the sign-out request").ConfigureAwait(false);
         }
         catch (ZeeKayDaStoreException ex)
         {
-            _logger.LogError(ex, "Removing a completed sign-out request from the store failed; the entry is left to expire.");
+            logger.LogError(ex, "Removing a completed sign-out request from the store failed; the entry is left to expire.");
         }
     }
 

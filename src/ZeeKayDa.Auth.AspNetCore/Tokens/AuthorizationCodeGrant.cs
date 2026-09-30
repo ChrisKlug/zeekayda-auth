@@ -22,29 +22,13 @@ namespace ZeeKayDa.Auth.AspNetCore.Tokens;
 /// attacker exactly one guess, and the legitimate client's own exchange then surfaces the theft
 /// as a replay.
 /// </remarks>
-internal sealed class AuthorizationCodeGrant
+internal sealed class AuthorizationCodeGrant(
+    IOptions<AuthorizationServerOptions> options,
+    TimeProvider time,
+    GrantClaimsResolver claims,
+    ISanitizingLogger<AuthorizationCodeGrant> logger)
 {
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly TimeProvider _time;
-    private readonly GrantClaimsResolver _claims;
-    private readonly ISanitizingLogger<AuthorizationCodeGrant> _logger;
-
-    public AuthorizationCodeGrant(
-        IOptions<AuthorizationServerOptions> options,
-        TimeProvider time,
-        GrantClaimsResolver claims,
-        ISanitizingLogger<AuthorizationCodeGrant> logger)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(time);
-        ArgumentNullException.ThrowIfNull(claims);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _options = options;
-        _time = time;
-        _claims = claims;
-        _logger = logger;
-    }
+    private readonly GrantClaimsResolver _claims = claims;
 
     /// <summary>Exchanges the request's code for tokens on behalf of <paramref name="client"/>, which has been authenticated.</summary>
     public async Task<IResult> ExchangeAsync(HttpContext context, TokenRequest request, IClientMetadata client)
@@ -76,7 +60,7 @@ internal sealed class AuthorizationCodeGrant
         }
         catch (ZeeKayDaStoreException ex)
         {
-            _logger.LogError(ex, "Redeeming an authorization code for client {ClientId} failed.", client.ClientId);
+            logger.LogError(ex, "Redeeming an authorization code for client {ClientId} failed.", client.ClientId);
             return TokenResponses.ServerError();
         }
 
@@ -101,7 +85,7 @@ internal sealed class AuthorizationCodeGrant
     {
         if (!string.Equals(request.RedirectUri, entry.RedirectUri, StringComparison.Ordinal))
         {
-            _logger.LogWarning("Client {ClientId} presented a redirect_uri that differs from the one its authorization code was issued to.", client.ClientId);
+            logger.LogWarning("Client {ClientId} presented a redirect_uri that differs from the one its authorization code was issued to.", client.ClientId);
             return InvalidGrant();
         }
 
@@ -109,13 +93,13 @@ internal sealed class AuthorizationCodeGrant
         // buys nothing; the error code is the spec's for a malformed exchange (OAuth 2.1 §3.2.4).
         if (entry.Pkce is null && request.CodeVerifier is not null)
         {
-            _logger.LogWarning("Client {ClientId} presented a code_verifier for an authorization code issued without a code_challenge.", client.ClientId);
+            logger.LogWarning("Client {ClientId} presented a code_verifier for an authorization code issued without a code_challenge.", client.ClientId);
             return TokenResponses.Error(TokenError.InvalidRequest("The code_verifier parameter was sent, but the authorization request carried no code_challenge."));
         }
 
         if (!VerifierProvesTheChallengeTheCodeWasIssuedWith(request, entry))
         {
-            _logger.LogWarning("Client {ClientId} presented a code_verifier that does not match its authorization code's challenge.", client.ClientId);
+            logger.LogWarning("Client {ClientId} presented a code_verifier that does not match its authorization code's challenge.", client.ClientId);
             return InvalidGrant();
         }
 
@@ -127,7 +111,7 @@ internal sealed class AuthorizationCodeGrant
         // across both issuances, which is a requirement on that ring, not on this grant.
         if (!ClientAcceptsCurrentSigningKey(context, client))
         {
-            _logger.LogError("Client {ClientId} does not allow ID tokens signed with the current signing key's algorithm; nothing was issued.", client.ClientId);
+            logger.LogError("Client {ClientId} does not allow ID tokens signed with the current signing key's algorithm; nothing was issued.", client.ClientId);
             return TokenResponses.ServerError();
         }
 
@@ -147,9 +131,9 @@ internal sealed class AuthorizationCodeGrant
 
     private async Task<IResult> IssueTokensAsync(HttpContext context, IClientMetadata client, AuthorizationCodeEntry entry, GrantClaimsOutcome.Issue issue)
     {
-        var now = _time.GetUtcNow();
-        var lifetimes = _options.Value.TokenEndpoint;
-        var payloads = new CodeGrantTokenPayloads(_options.Value.Issuer!, client, entry, now, issue.Claims, issue.ResourceAudience);
+        var now = time.GetUtcNow();
+        var lifetimes = options.Value.TokenEndpoint;
+        var payloads = new CodeGrantTokenPayloads(options.Value.Issuer!, client, entry, now, issue.Claims, issue.ResourceAudience);
         var accessTokenPayload = payloads.AccessToken(
             TokenLifetimes.Effective(client.AccessTokenLifetime, lifetimes.AccessTokenLifetime),
             jti: StoreKeyGenerator.Generate());
@@ -174,7 +158,7 @@ internal sealed class AuthorizationCodeGrant
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Any failure to sign is the server's, and nothing half-issued reaches the client.
-            _logger.LogError(ex, "Issuing tokens for client {ClientId} failed.", client.ClientId);
+            logger.LogError(ex, "Issuing tokens for client {ClientId} failed.", client.ClientId);
             return TokenResponses.ServerError();
         }
 
@@ -194,7 +178,7 @@ internal sealed class AuthorizationCodeGrant
     /// </summary>
     private async Task<IResult> RefuseReplayAsync(HttpContext context, IClientMetadata client, string familyId)
     {
-        _logger.LogWarning("Client {ClientId} presented an authorization code that was already redeemed; revoking the family it started.", client.ClientId);
+        logger.LogWarning("Client {ClientId} presented an authorization code that was already redeemed; revoking the family it started.", client.ClientId);
 
         if (familyId.Length > 0)
         {
@@ -205,7 +189,7 @@ internal sealed class AuthorizationCodeGrant
             }
             catch (ZeeKayDaStoreException ex)
             {
-                _logger.LogError(ex, "Revoking the refresh token family of a replayed authorization code for client {ClientId} failed.", client.ClientId);
+                logger.LogError(ex, "Revoking the refresh token family of a replayed authorization code for client {ClientId} failed.", client.ClientId);
             }
         }
 
@@ -214,7 +198,7 @@ internal sealed class AuthorizationCodeGrant
 
     private IResult RefuseMismatchedClient(IClientMetadata client)
     {
-        _logger.LogWarning("Client {ClientId} presented an authorization code issued to a different client.", client.ClientId);
+        logger.LogWarning("Client {ClientId} presented an authorization code issued to a different client.", client.ClientId);
         return InvalidGrant();
     }
 

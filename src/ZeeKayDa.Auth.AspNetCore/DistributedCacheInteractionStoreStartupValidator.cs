@@ -19,7 +19,9 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// on every start. In Development, where the per-process cache is the expected choice, it is
 /// logged at <see cref="LogLevel.Information"/>, as the in-memory interaction store is.
 /// </remarks>
-internal sealed class DistributedCacheInteractionStoreStartupValidator : IStartupActivator
+internal sealed class DistributedCacheInteractionStoreStartupValidator(
+    IHostEnvironment environment,
+    bool allowMemoryCacheOutsideDevelopment) : IStartupActivator
 {
     internal const string MissingCacheMessage =
         "IDistributedCache is not registered. Call services.AddDistributedMemoryCache() " +
@@ -37,17 +39,6 @@ internal sealed class DistributedCacheInteractionStoreStartupValidator : IStartu
         "MemoryDistributedCache outside a Development environment. allowMemoryCacheOutsideDevelopment " +
         "has been set to true — ensure this is intentional (e.g. an integration test host). An " +
         "authorization request started on one instance cannot be completed by another.";
-
-    private readonly IHostEnvironment _environment;
-    private readonly bool _allowMemoryCacheOutsideDevelopment;
-
-    public DistributedCacheInteractionStoreStartupValidator(IHostEnvironment environment, bool allowMemoryCacheOutsideDevelopment)
-    {
-        ArgumentNullException.ThrowIfNull(environment);
-
-        _environment = environment;
-        _allowMemoryCacheOutsideDevelopment = allowMemoryCacheOutsideDevelopment;
-    }
 
     /// <inheritdoc/>
     public string Name => "DistributedCacheInteractionStore";
@@ -69,7 +60,7 @@ internal sealed class DistributedCacheInteractionStoreStartupValidator : IStartu
         if (cache is not MemoryDistributedCache)
             return Task.CompletedTask;
 
-        switch (EnvironmentGate.Evaluate(_environment, _allowMemoryCacheOutsideDevelopment))
+        switch (EnvironmentGate.Evaluate(environment, allowMemoryCacheOutsideDevelopment))
         {
             case EnvironmentGate.Verdict.ExpectedInDevelopment:
                 context.AddWarning(

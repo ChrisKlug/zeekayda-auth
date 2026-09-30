@@ -27,7 +27,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// promise — it fails any provider options whose final values differ from these.
 /// </para>
 /// </remarks>
-internal sealed class HandlerOptionsPin<TOptions> : IPostConfigureOptions<TOptions>
+internal sealed class HandlerOptionsPin<TOptions>(
+    ProviderRegistry registry,
+    IOptions<AuthorizationServerOptions> options) : IPostConfigureOptions<TOptions>
     where TOptions : AuthenticationSchemeOptions
 {
     /// <summary>
@@ -37,24 +39,14 @@ internal sealed class HandlerOptionsPin<TOptions> : IPostConfigureOptions<TOptio
     private static readonly Func<AccessDeniedContext, Task> DefaultOnAccessDenied =
         new RemoteAuthenticationEvents().OnAccessDenied;
 
-    private readonly ProviderRegistry _registry;
-    private readonly IOptions<AuthorizationServerOptions> _options;
-
-    public HandlerOptionsPin(ProviderRegistry registry, IOptions<AuthorizationServerOptions> options)
-    {
-        ArgumentNullException.ThrowIfNull(registry);
-        ArgumentNullException.ThrowIfNull(options);
-
-        _registry = registry;
-        _options = options;
-    }
+    private readonly IOptions<AuthorizationServerOptions> _options = options;
 
     /// <inheritdoc/>
     public void PostConfigure(string? name, TOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        if (name is null || !_registry.Contains(name))
+        if (name is null || !registry.Contains(name))
             return;
 
         // A forward would divert the challenge or the sign-in around the framework's own

@@ -17,16 +17,8 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// the server options construct part of the service graph. An authenticator that fails to
 /// construct is not caught here: the runner reports it as a startup failure naming the exception.
 /// </remarks>
-internal sealed class AuthenticatorCoverageValidator : IStartupActivator
+internal sealed class AuthenticatorCoverageValidator(IOptions<AuthorizationServerOptions> options) : IStartupActivator
 {
-    private readonly IOptions<AuthorizationServerOptions> _options;
-
-    public AuthenticatorCoverageValidator(IOptions<AuthorizationServerOptions> options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        _options = options;
-    }
-
     /// <inheritdoc/>
     public string Name => "AuthenticatorCoverage";
 
@@ -52,7 +44,7 @@ internal sealed class AuthenticatorCoverageValidator : IStartupActivator
         }
 
         // Every server-advertised method (except none) must have a covering authenticator.
-        var uncoveredMethods = _options.Value.TokenEndpoint.AuthMethodsSupported
+        var uncoveredMethods = options.Value.TokenEndpoint.AuthMethodsSupported
             .Distinct(StringComparer.Ordinal)
             .Where(methodString => !string.Equals(methodString, TokenEndpointAuthMethods.None, StringComparison.Ordinal)
                 && !declared.ContainsKey(methodString));

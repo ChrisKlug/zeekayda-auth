@@ -33,7 +33,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// <c>Cookie</c> header past what proxies accept.
 /// </para>
 /// </remarks>
-internal sealed class InteractionBindingCookie
+internal sealed class InteractionBindingCookie(
+    TimeProvider timeProvider,
+    IDataProtectionProvider dataProtectionProvider)
 {
     /// <summary>The prefix every binding cookie's name starts with; the interaction identifier follows it.</summary>
     internal const string NamePrefix = ZeeKayDaCookies.Interaction + ".";
@@ -61,17 +63,7 @@ internal sealed class InteractionBindingCookie
     private const char HintSeparator = '|';
     private const string HintPurpose = "ZeeKayDa.Auth:InteractionClientHint";
 
-    private readonly TimeProvider _timeProvider;
-    private readonly IDataProtector _hintProtector;
-
-    public InteractionBindingCookie(TimeProvider timeProvider, IDataProtectionProvider dataProtectionProvider)
-    {
-        ArgumentNullException.ThrowIfNull(timeProvider);
-        ArgumentNullException.ThrowIfNull(dataProtectionProvider);
-
-        _timeProvider = timeProvider;
-        _hintProtector = dataProtectionProvider.CreateProtector(HintPurpose);
-    }
+    private readonly IDataProtector _hintProtector = dataProtectionProvider.CreateProtector(HintPurpose);
 
     /// <summary>A fresh binding secret: 256 bits from the CSPRNG, Base64Url-encoded.</summary>
     public static string NewSecret() => StoreKeyGenerator.Generate();
@@ -90,7 +82,7 @@ internal sealed class InteractionBindingCookie
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
         ArgumentException.ThrowIfNullOrEmpty(secret);
 
-        var now = _timeProvider.GetUtcNow();
+        var now = timeProvider.GetUtcNow();
         EvictOldest(context);
 
         // Only a binding that names a client has anything to keep once its interaction is over.
@@ -146,7 +138,7 @@ internal sealed class InteractionBindingCookie
 
         // The expiry travels inside the protected payload and is judged on the framework's clock,
         // as the interaction's own is: the cookie's max-age is the browser's to honour, not ours.
-        return TryParseHint(payload, out var expiresAt, out var clientId) && _timeProvider.GetUtcNow() < expiresAt
+        return TryParseHint(payload, out var expiresAt, out var clientId) && timeProvider.GetUtcNow() < expiresAt
             ? clientId
             : null;
     }

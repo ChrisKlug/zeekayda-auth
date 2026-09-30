@@ -22,20 +22,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Tokens;
 /// claim value reaches a log line from this type; a provider's exception is logged through the
 /// sanitizing logger, which redacts its message and keeps its type and stack.
 /// </remarks>
-internal sealed class GrantClaimsResolver
+internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, ISanitizingLogger<GrantClaimsResolver> logger)
 {
-    private readonly ValidatedScopeCatalog _scopes;
-    private readonly ISanitizingLogger<GrantClaimsResolver> _logger;
-
-    public GrantClaimsResolver(ValidatedScopeCatalog scopes, ISanitizingLogger<GrantClaimsResolver> logger)
-    {
-        ArgumentNullException.ThrowIfNull(scopes);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _scopes = scopes;
-        _logger = logger;
-    }
-
     /// <summary>Resolves the subject claims a destination carries, or says why it could not.</summary>
     /// <param name="context">The request, whose services supply the provider.</param>
     /// <param name="request">The subject, the client, the granted scopes and what they are wanted for.</param>
@@ -49,7 +37,7 @@ internal sealed class GrantClaimsResolver
         IReadOnlyCollection<ScopeDefinition> definitions;
         try
         {
-            definitions = await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false);
+            definitions = await scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (ScopeContractException ex)
         {
@@ -60,7 +48,7 @@ internal sealed class GrantClaimsResolver
             // preamble the operator does not need. Safe to log only because ScopeContractException
             // is internal, so every failure here is this framework's own text; one the repository
             // threw is not caught and never reaches a log line by message.
-            _logger.LogError(
+            logger.LogError(
                 "Claims for a grant to client {ClientId} could not be resolved because the scope repository broke its contract: {Detail}",
                 client.ClientId,
                 string.Join("; ", ex.AggregatedFailures.Select(failure => $"[{failure.Code}] {failure.Message}")));
@@ -72,7 +60,7 @@ internal sealed class GrantClaimsResolver
         // that changed under a live grant: the server's fault, and answered as such.
         if (!ScopeResolution.TryResolve(definitions, scope, out var granted, out var undefined))
         {
-            _logger.LogError("Client {ClientId} holds a grant for the scope {Scope}, which IScopeRepository no longer defines; no claims were resolved.", client.ClientId, undefined);
+            logger.LogError("Client {ClientId} holds a grant for the scope {Scope}, which IScopeRepository no longer defines; no claims were resolved.", client.ClientId, undefined);
             return GrantClaimsOutcome.Failed.Instance;
         }
 
@@ -81,7 +69,7 @@ internal sealed class GrantClaimsResolver
 
         if (ClientClaimAdditions.FindCollision(client, definitions) is { } collision)
         {
-            _logger.LogError("Client {ClientId} could not be served claims: {Detail}", client.ClientId, collision.Describe(client.ClientId));
+            logger.LogError("Client {ClientId} could not be served claims: {Detail}", client.ClientId, collision.Describe(client.ClientId));
             return GrantClaimsOutcome.Failed.Instance;
         }
 
@@ -115,7 +103,7 @@ internal sealed class GrantClaimsResolver
 
         if (!ScopeResolution.TryResolveAudience(granted, out resourceAudience))
         {
-            _logger.LogError("Client {ClientId} holds a grant whose scopes name more than one resource server audience; nothing was issued.", client.ClientId);
+            logger.LogError("Client {ClientId} holds a grant whose scopes name more than one resource server audience; nothing was issued.", client.ClientId);
             return false;
         }
 
@@ -143,12 +131,12 @@ internal sealed class GrantClaimsResolver
         }
         catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
         {
-            _logger.LogError(ex, "The claims provider failed while resolving claims for a grant to client {ClientId}; nothing was issued.", client.ClientId);
+            logger.LogError(ex, "The claims provider failed while resolving claims for a grant to client {ClientId}; nothing was issued.", client.ClientId);
             return null;
         }
 
         if (result is null)
-            _logger.LogError("The claims provider returned null for a grant to client {ClientId}; nothing was issued.", client.ClientId);
+            logger.LogError("The claims provider returned null for a grant to client {ClientId}; nothing was issued.", client.ClientId);
 
         return result;
     }
@@ -173,7 +161,7 @@ internal sealed class GrantClaimsResolver
         }
         catch (Exception ex) when (IsProviderFailure(ex, cancellationToken))
         {
-            _logger.LogError(ex, "The claims provider's result for a grant to client {ClientId} could not be read; nothing was issued.", client.ClientId);
+            logger.LogError(ex, "The claims provider's result for a grant to client {ClientId} could not be read; nothing was issued.", client.ClientId);
             return GrantClaimsOutcome.Failed.Instance;
         }
 
@@ -185,14 +173,14 @@ internal sealed class GrantClaimsResolver
         {
             // Selection's own failure over an array it owns: the message names the claim type
             // and never the value, so it is safe to surface to the operator.
-            _logger.LogError("The claims provider's result for a grant to client {ClientId} could not be used: {Reason}", client.ClientId, ex.Message);
+            logger.LogError("The claims provider's result for a grant to client {ClientId} could not be used: {Reason}", client.ClientId, ex.Message);
             return GrantClaimsOutcome.Failed.Instance;
         }
     }
 
     private GrantClaimsOutcome SubjectInvalid(IClientMetadata client)
     {
-        _logger.LogWarning("The claims provider reported the subject of a grant to client {ClientId} invalid; nothing was issued.", client.ClientId);
+        logger.LogWarning("The claims provider reported the subject of a grant to client {ClientId} invalid; nothing was issued.", client.ClientId);
         return GrantClaimsOutcome.SubjectInvalid.Instance;
     }
 }
