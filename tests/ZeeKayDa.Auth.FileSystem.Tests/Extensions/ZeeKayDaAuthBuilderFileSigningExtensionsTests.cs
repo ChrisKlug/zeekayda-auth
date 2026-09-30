@@ -385,7 +385,9 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
         await using var provider = builder.Services.BuildServiceProvider();
         var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
 
-        act.Should().Throw<OptionsValidationException>().WithMessage("*Current must be set*");
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Where(e => e.AggregatedFailures.Any(f => f.Code == "configuration.pem_file_signing.current.missing"))
+            .WithMessage("*Current must be set*");
     }
 
     [Fact]
@@ -397,7 +399,9 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
         await using var provider = builder.Services.BuildServiceProvider();
         var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
 
-        act.Should().Throw<OptionsValidationException>().WithMessage("*Current must be set*");
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Where(e => e.AggregatedFailures.Any(f => f.Code == "configuration.pfx_file_signing.current.missing"))
+            .WithMessage("*Current must be set*");
     }
 
     // ── AddPemFileSigning: the three-slot overload ───────────────────────────────────────────────

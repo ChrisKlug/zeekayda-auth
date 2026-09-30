@@ -1,12 +1,21 @@
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Configuration;
 
 namespace ZeeKayDa.Auth.Tests.Configuration;
 
 public sealed class ClientSecretHasherOptionsValidatorTests
 {
-    private static ValidateOptionsResult Validate(ClientSecretHasherRegistrationOptions options)
-        => new ClientSecretHasherOptionsValidator().Validate(null, options);
+    private static IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(ClientSecretHasherRegistrationOptions options)
+    {
+        try
+        {
+            new ClientSecretHasherOptionsValidator().Validate(null, options);
+            return [];
+        }
+        catch (ZeeKayDaConfigurationException exception)
+        {
+            return exception.AggregatedFailures;
+        }
+    }
 
     private static ClientSecretHasherRegistrationOptions BuildOptions(
         params (Type Type, bool IsDefault)[] registrations)
@@ -22,17 +31,17 @@ public sealed class ClientSecretHasherOptionsValidatorTests
     [Fact]
     public void Validate_succeeds_when_one_hasher_is_registered_and_not_marked_default()
     {
-        var result = Validate(BuildOptions((typeof(HasherA), false)));
+        var failures = Validate(BuildOptions((typeof(HasherA), false)));
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_succeeds_when_one_hasher_is_registered_and_marked_default()
     {
-        var result = Validate(BuildOptions((typeof(HasherA), true)));
+        var failures = Validate(BuildOptions((typeof(HasherA), true)));
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     // ── Multiple hashers ──────────────────────────────────────────────────────────────────────────
@@ -40,44 +49,44 @@ public sealed class ClientSecretHasherOptionsValidatorTests
     [Fact]
     public void Validate_succeeds_when_multiple_hashers_and_exactly_one_is_default()
     {
-        var result = Validate(BuildOptions(
+        var failures = Validate(BuildOptions(
             (typeof(HasherA), true),
             (typeof(HasherB), false)));
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_fails_when_multiple_hashers_and_none_is_default()
     {
-        var result = Validate(BuildOptions(
+        var failures = Validate(BuildOptions(
             (typeof(HasherA), false),
             (typeof(HasherB), false)));
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("isDefault: true");
+        failures.Should().ContainSingle(f => f.Code == "configuration.hashers.no_default")
+            .Which.Message.Should().Contain("isDefault: true");
     }
 
     [Fact]
     public void Validate_fails_when_multiple_hashers_and_two_are_default()
     {
-        var result = Validate(BuildOptions(
+        var failures = Validate(BuildOptions(
             (typeof(HasherA), true),
             (typeof(HasherB), true)));
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("2");
+        failures.Should().ContainSingle(f => f.Code == "configuration.hashers.multiple_defaults")
+            .Which.Message.Should().Contain("2");
     }
 
     [Fact]
     public void Validate_fails_when_three_hashers_and_two_are_default()
     {
-        var result = Validate(BuildOptions(
+        var failures = Validate(BuildOptions(
             (typeof(HasherA), true),
             (typeof(HasherB), false),
             (typeof(HasherC), true)));
 
-        result.Failed.Should().BeTrue();
+        failures.Should().ContainSingle(f => f.Code == "configuration.hashers.multiple_defaults");
     }
 
     // ── Placeholder types for registration entries ────────────────────────────────────────────────

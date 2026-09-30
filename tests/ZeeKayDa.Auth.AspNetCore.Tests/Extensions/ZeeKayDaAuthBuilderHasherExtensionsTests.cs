@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
 
@@ -108,8 +109,9 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
 
         var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
 
-        act.Should().Throw<OptionsValidationException>()
-            .Which.Message.Should().Contain("Pbkdf2ClientSecretHasherOptions.Iterations");
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.pbkdf2.iterations_out_of_range"
+                && f.Message.Contains("Pbkdf2ClientSecretHasherOptions.Iterations"));
     }
 
     [Theory]
@@ -123,7 +125,8 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
 
         var act = () => provider.GetServices<IClientSecretHasher>().ToList();
 
-        act.Should().Throw<OptionsValidationException>();
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.pbkdf2.iterations_out_of_range");
     }
 
     [Fact]

@@ -13,36 +13,46 @@ public sealed class AuthorizationServerOptionsValidatorTests
         "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
         "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).";
 
-    private static ValidateOptionsResult Validate(AuthorizationServerOptions options)
-        => new AuthorizationServerOptionsValidator().Validate(null, options);
+    private static IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(AuthorizationServerOptions options)
+    {
+        try
+        {
+            new AuthorizationServerOptionsValidator().Validate(null, options);
+            return [];
+        }
+        catch (ZeeKayDaConfigurationException exception)
+        {
+            return exception.AggregatedFailures;
+        }
+    }
 
     // ── Issuer presence ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Validate_fails_when_Issuer_is_null()
     {
-        var result = Validate(new AuthorizationServerOptions { Issuer = null });
+        var failures = Validate(new AuthorizationServerOptions { Issuer = null });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Issuer");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.missing")
+            .Which.Message.Should().Contain("Issuer");
     }
 
     [Fact]
     public void Validate_fails_when_Issuer_is_empty()
     {
-        var result = Validate(new AuthorizationServerOptions { Issuer = "" });
+        var failures = Validate(new AuthorizationServerOptions { Issuer = "" });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Issuer");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.missing")
+            .Which.Message.Should().Contain("Issuer");
     }
 
     [Fact]
     public void Validate_fails_when_Issuer_is_whitespace()
     {
-        var result = Validate(new AuthorizationServerOptions { Issuer = "   " });
+        var failures = Validate(new AuthorizationServerOptions { Issuer = "   " });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Issuer");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.missing")
+            .Which.Message.Should().Contain("Issuer");
     }
 
     // ── URI validity ─────────────────────────────────────────────────────────────────────────────
@@ -51,18 +61,18 @@ public sealed class AuthorizationServerOptionsValidatorTests
     public void Validate_fails_for_relative_URI_Issuer()
     {
         // A path-only string has no scheme — Uri.TryCreate returns false for UriKind.Absolute.
-        var result = Validate(new AuthorizationServerOptions { Issuer = "relative/path" });
+        var failures = Validate(new AuthorizationServerOptions { Issuer = "relative/path" });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("not a valid absolute URI");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.invalid")
+            .Which.Message.Should().Contain("not a valid absolute URI");
     }
 
     [Fact]
     public void Validate_fails_for_plain_string_Issuer()
     {
-        var result = Validate(new AuthorizationServerOptions { Issuer = "not-a-uri-at-all" });
+        var failures = Validate(new AuthorizationServerOptions { Issuer = "not-a-uri-at-all" });
 
-        result.Failed.Should().BeTrue();
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.invalid");
     }
 
     // ── Query component ───────────────────────────────────────────────────────────────────────────
@@ -70,25 +80,25 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_fails_when_Issuer_has_query_string()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com?tenant=1",
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("query");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.query")
+            .Which.Message.Should().Contain("query");
     }
 
     [Fact]
     public void Validate_fails_when_Issuer_has_path_and_query_string()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com/tenant1?param=value",
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("query");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.query")
+            .Which.Message.Should().Contain("query");
     }
 
     // ── Fragment component ────────────────────────────────────────────────────────────────────────
@@ -96,25 +106,25 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_fails_when_Issuer_has_fragment()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com#section",
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("fragment");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.fragment")
+            .Which.Message.Should().Contain("fragment");
     }
 
     [Fact]
     public void Validate_fails_when_Issuer_has_user_info()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://user:pass@auth.example.com",
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("user information");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.userinfo")
+            .Which.Message.Should().Contain("user information");
     }
 
     // ── HTTPS requirement ─────────────────────────────────────────────────────────────────────────
@@ -122,39 +132,39 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_fails_for_HTTP_Issuer_without_AllowInsecureIssuer_flag()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "http://auth.example.com",
             AllowInsecureIssuer = false,
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("scheme");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.not_https")
+            .Which.Message.Should().Contain("scheme");
     }
 
     [Fact]
     public void Validate_succeeds_for_HTTP_Issuer_with_AllowInsecureIssuer_flag()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "http://localhost:5000",
             AllowInsecureIssuer = true,
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_fails_for_HTTP_non_loopback_Issuer_with_AllowInsecureIssuer_flag()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "http://auth.example.com",
             AllowInsecureIssuer = true,
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("loopback");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.http_non_loopback")
+            .Which.Message.Should().Contain("loopback");
     }
 
     [Theory]
@@ -163,22 +173,22 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("http://localhost:5000/tenant1/", true)]
     public void Validate_fails_when_Issuer_has_trailing_slash_on_path(string issuer, bool allowInsecure = false)
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = issuer,
             AllowInsecureIssuer = allowInsecure,
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("trailing slash");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.trailing_slash")
+            .Which.Message.Should().Contain("trailing slash");
     }
 
     [Fact]
     public void Validate_succeeds_for_HTTPS_root_Issuer_with_no_path()
     {
         // https://auth.example.com has AbsolutePath "/" — must not be treated as trailing slash
-        var result = Validate(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
-        result.Succeeded.Should().BeTrue();
+        var failures = Validate(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -187,12 +197,12 @@ public sealed class AuthorizationServerOptionsValidatorTests
         // The document publishes the issuer verbatim, but RFC 8414 §3.1 strips the terminating
         // "/" when building the metadata URL — so a client configured with "https://auth.example.com"
         // would reject a document whose issuer is "https://auth.example.com/" (§3.3).
-        var result = Validate(new AuthorizationServerOptions { Issuer = "https://auth.example.com/" });
+        var failures = Validate(new AuthorizationServerOptions { Issuer = "https://auth.example.com/" });
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainSingle(
+        failures.Should().ContainSingle(
             because: "the trailing-slash rule reports it; the canonical-form rule must not report the same slash again")
-            .Which.Should().Contain("trailing slash");
+            .Which.Should().Match<ZeeKayDaConfigurationFailure>(
+                f => f.Code == "configuration.issuer.trailing_slash" && f.Message.Contains("trailing slash"));
     }
 
     [Fact]
@@ -200,61 +210,57 @@ public sealed class AuthorizationServerOptionsValidatorTests
     {
         // Port 8443 ≠ 443, so isDefaultPort = false and the port is preserved in the canonical
         // form, making the input identical to the canonical — no "not canonical" failure.
-        var result = Validate(new AuthorizationServerOptions { Issuer = "https://auth.example.com:8443" });
-        result.Succeeded.Should().BeTrue();
+        var failures = Validate(new AuthorizationServerOptions { Issuer = "https://auth.example.com:8443" });
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_fails_with_canonical_suggestion_when_Issuer_host_is_uppercase()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://AUTH.example.com",
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("is not canonical");
-        result.FailureMessage.Should().Contain("https://auth.example.com");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.not_canonical")
+            .Which.Message.Should().Contain("is not canonical").And.Contain("https://auth.example.com");
     }
 
     [Fact]
     public void Validate_fails_with_canonical_suggestion_when_Issuer_scheme_is_uppercase()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "HTTPS://auth.example.com",
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("is not canonical");
-        result.FailureMessage.Should().Contain("https://auth.example.com");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.not_canonical")
+            .Which.Message.Should().Contain("is not canonical").And.Contain("https://auth.example.com");
     }
 
     [Fact]
     public void Validate_fails_with_canonical_suggestion_when_Issuer_has_explicit_default_HTTPS_port()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com:443",
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("is not canonical");
-        result.FailureMessage.Should().Contain("https://auth.example.com");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.not_canonical")
+            .Which.Message.Should().Contain("is not canonical").And.Contain("https://auth.example.com");
     }
 
     [Fact]
     public void Validate_fails_with_canonical_suggestion_when_Issuer_has_explicit_default_HTTP_port_for_loopback()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "http://localhost:80",
             AllowInsecureIssuer = true,
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("is not canonical");
-        result.FailureMessage.Should().Contain("http://localhost");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.not_canonical")
+            .Which.Message.Should().Contain("is not canonical").And.Contain("http://localhost");
     }
 
     [Theory]
@@ -263,318 +269,312 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("custom://localhost")]
     public void Validate_fails_for_non_HTTP_or_HTTPS_scheme_Issuer_even_with_AllowInsecureIssuer_flag(string issuer)
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = issuer,
             AllowInsecureIssuer = true,
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("scheme");
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.not_https")
+            .Which.Message.Should().Contain("scheme");
     }
 
     [Fact]
     public void Validate_fails_when_ResponseTypesSupported_is_null()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             Response = { TypesSupported = null! },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Response.TypesSupported");
+        failures.Should().ContainSingle(f => f.Code == "configuration.response.types_supported.null")
+            .Which.Message.Should().Contain("Response.TypesSupported");
     }
 
     [Fact]
     public void Validate_fails_when_ResponseTypesSupported_is_empty()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             Response = { TypesSupported = [] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Response.TypesSupported");
+        failures.Should().ContainSingle(f => f.Code == "configuration.response.types_supported.empty")
+            .Which.Message.Should().Contain("Response.TypesSupported");
     }
 
     [Fact]
     public void Validate_fails_when_ResponseModesSupported_is_null()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             Response = { ModesSupported = null! },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Response.ModesSupported");
+        failures.Should().ContainSingle(f => f.Code == "configuration.response.modes_supported.null")
+            .Which.Message.Should().Contain("Response.ModesSupported");
     }
 
     [Fact]
     public void Validate_fails_when_GrantTypesSupported_is_null()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = null!,
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain(nameof(AuthorizationServerOptions.GrantTypesSupported));
+        failures.Should().ContainSingle(f => f.Code == "configuration.grant_types_supported.null")
+            .Which.Message.Should().Contain(nameof(AuthorizationServerOptions.GrantTypesSupported));
     }
 
     [Fact]
     public void Validate_fails_when_GrantTypesSupported_contains_out_of_range_value()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [(GrantType)9999],
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("GrantTypesSupported");
-        result.FailureMessage.Should().Contain(nameof(GrantType));
+        failures.Should().ContainSingle(f => f.Code == "configuration.grant_types_supported.undefined_value")
+            .Which.Message.Should().Contain("GrantTypesSupported").And.Contain(nameof(GrantType));
     }
 
     [Fact]
     public void Validate_fails_when_TokenEndpointAuthMethodsSupported_is_null()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { AuthMethodsSupported = null! },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
-        result.FailureMessage.Should().Contain("null or empty");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.empty")
+            .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported").And.Contain("null or empty");
     }
 
     [Fact]
     public void Validate_fails_when_TokenEndpointAuthMethodsSupported_is_empty()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { AuthMethodsSupported = [] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
-        result.FailureMessage.Should().Contain("null or empty");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.empty")
+            .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported").And.Contain("null or empty");
     }
 
     [Fact]
     public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_empty_string()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { AuthMethodsSupported = [""] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.invalid_entry")
+            .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported");
     }
 
     [Fact]
     public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_whitespace_only_string()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { AuthMethodsSupported = ["   "] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.invalid_entry")
+            .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported");
     }
 
     [Fact]
     public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_leading_whitespace()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { AuthMethodsSupported = [" client_secret_basic"] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.invalid_entry")
+            .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported");
     }
 
     [Fact]
     public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_control_character()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { AuthMethodsSupported = ["client\x00secret"] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("TokenEndpoint.AuthMethodsSupported");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.invalid_entry")
+            .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported");
     }
 
     [Fact]
     public void Validate_succeeds_when_TokenEndpointAuthMethodsSupported_contains_custom_method_string()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { AuthMethodsSupported = ["tls_client_auth"] },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_succeeds_when_None_is_only_auth_method_and_no_client_credentials_grant()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.AuthorizationCode],
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_fails_when_ClientCredentials_grant_and_only_None_auth_method()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.ClientCredentials],
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.only_none_with_client_credentials")
+            .Which.Message.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
     }
 
     [Fact]
     public void Validate_fails_when_ClientCredentials_and_AuthorizationCode_grants_and_only_None_auth_method()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.ClientCredentials],
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.only_none_with_client_credentials")
+            .Which.Message.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
     }
 
     [Fact]
     public void Validate_succeeds_when_ClientCredentials_grant_and_non_None_auth_method()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.ClientCredentials],
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic] },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_succeeds_when_ClientCredentials_grant_and_None_plus_other_auth_methods()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.ClientCredentials],
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None, TokenEndpointAuthMethods.ClientSecretBasic] },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_succeeds_when_None_auth_method_and_no_AuthorizationCode_grant()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.RefreshToken],
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_succeeds_when_None_auth_method_and_AuthorizationCode_grant()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.AuthorizationCode],
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_succeeds_when_None_auth_method_and_multiple_grants_including_AuthorizationCode()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
             TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_succeeds_when_AdvertisedSigningAlgorithms_is_null()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             IdToken = { AdvertisedSigningAlgorithms = null },
         });
 
-        result.Succeeded.Should().BeTrue(
-            "null is the default and advertises every algorithm in the published key set");
+        failures.Should().BeEmpty("null is the default and advertises every algorithm in the published key set");
     }
 
     [Fact]
     public void Validate_fails_when_AdvertisedSigningAlgorithms_is_empty()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             IdToken = { AdvertisedSigningAlgorithms = [] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("IdToken.AdvertisedSigningAlgorithms");
-        result.FailureMessage.Should().Contain("set it to null");
+        failures.Should().ContainSingle(f => f.Code == "configuration.id_token.advertised_signing_algorithms.empty")
+            .Which.Message.Should().Contain("IdToken.AdvertisedSigningAlgorithms").And.Contain("set it to null");
     }
 
     [Fact]
     public void Validate_succeeds_when_AdvertisedSigningAlgorithms_names_an_algorithm()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             IdToken = { AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256] },
         });
 
-        result.Succeeded.Should().BeTrue(
-            "reconciling the filter with the key set needs a key set, so it happens at startup");
+        failures.Should().BeEmpty("reconciling the filter with the key set needs a key set, so it happens at startup");
     }
 
     // ── AuthorizationEndpoint.CodeChallengeMethodsSupported ───────────────────────────────────────
@@ -589,41 +589,41 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_succeeds_when_CodeChallengeMethodsSupported_is_null_on_a_host_without_the_code_grant()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.ClientCredentials],
             AuthorizationEndpoint = { CodeChallengeMethodsSupported = null },
         });
 
-        result.Succeeded.Should().BeTrue("nothing on such a host relies on PKCE");
+        failures.Should().BeEmpty("nothing on such a host relies on PKCE");
     }
 
     [Fact]
     public void Validate_fails_when_the_code_grant_is_served_without_S256()
     {
         // The audit's gate: the grant may not be advertised with the enforcement path missing.
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             GrantTypesSupported = [GrantType.AuthorizationCode],
             AuthorizationEndpoint = { CodeChallengeMethodsSupported = null },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("CodeChallengeMethodsSupported must contain CodeChallengeMethod.S256");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.code_challenge_methods_supported.s256_missing")
+            .Which.Message.Should().Contain("CodeChallengeMethodsSupported must contain CodeChallengeMethod.S256");
     }
 
     [Fact]
     public void Validate_succeeds_when_CodeChallengeMethodsSupported_contains_S256()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { CodeChallengeMethodsSupported = [CodeChallengeMethod.S256] },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     // ── TokenEndpoint.AccessTokenLifetime / IdTokenLifetime ──────────────────────────────────────
@@ -644,14 +644,14 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData(-1)]
     public void Validate_fails_when_AccessTokenLifetime_is_not_positive(int seconds)
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { AccessTokenLifetime = TimeSpan.FromSeconds(seconds) },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("TokenEndpoint.AccessTokenLifetime must be greater than zero");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.access_token_lifetime.not_positive")
+            .Which.Message.Should().Contain("TokenEndpoint.AccessTokenLifetime must be greater than zero");
     }
 
     [Theory]
@@ -659,39 +659,39 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData(-1)]
     public void Validate_fails_when_IdTokenLifetime_is_not_positive(int seconds)
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { IdTokenLifetime = TimeSpan.FromSeconds(seconds) },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("TokenEndpoint.IdTokenLifetime must be greater than zero");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.id_token_lifetime.not_positive")
+            .Which.Message.Should().Contain("TokenEndpoint.IdTokenLifetime must be greater than zero");
     }
 
     [Fact]
     public void Validate_places_no_upper_bound_on_token_lifetimes()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { AccessTokenLifetime = TimeSpan.FromDays(365), IdTokenLifetime = TimeSpan.FromDays(365) },
         });
 
-        result.Succeeded.Should().BeTrue("a lifetime past the family ceiling warns at startup rather than failing it");
+        failures.Should().BeEmpty("a lifetime past the family ceiling warns at startup rather than failing it");
     }
 
     [Fact]
     public void Validate_fails_when_CodeChallengeMethodsSupported_is_empty()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { CodeChallengeMethodsSupported = [] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("AuthorizationEndpoint.CodeChallengeMethodsSupported");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.code_challenge_methods_supported.empty")
+            .Which.Message.Should().Contain("AuthorizationEndpoint.CodeChallengeMethodsSupported");
     }
 
     // ── Happy paths ───────────────────────────────────────────────────────────────────────────────
@@ -699,77 +699,77 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_succeeds_for_valid_HTTPS_Issuer()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_succeeds_for_valid_HTTPS_Issuer_with_path()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com/tenant1",
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     // ── Endpoint URI overrides ────────────────────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("AuthorizationEndpoint.Uri", "not-a-uri")]
-    [InlineData("TokenEndpoint.Uri", "not-a-uri")]
-    [InlineData("JwksEndpoint.Uri", "not-a-uri")]
-    [InlineData("EndSessionEndpoint.Uri", "not-a-uri")]
-    public void Validate_fails_when_endpoint_override_is_not_an_absolute_URI(string propertyPath, string value)
+    [InlineData("AuthorizationEndpoint.Uri", "not-a-uri", "configuration.authorization_endpoint.uri.invalid")]
+    [InlineData("TokenEndpoint.Uri", "not-a-uri", "configuration.token_endpoint.uri.invalid")]
+    [InlineData("JwksEndpoint.Uri", "not-a-uri", "configuration.jwks_endpoint.uri.invalid")]
+    [InlineData("EndSessionEndpoint.Uri", "not-a-uri", "configuration.end_session_endpoint.uri.invalid")]
+    public void Validate_fails_when_endpoint_override_is_not_an_absolute_URI(string propertyPath, string value, string expectedCode)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Uri");
+        failures.Should().ContainSingle(f => f.Code == expectedCode)
+            .Which.Message.Should().Contain("Uri");
     }
 
     [Theory]
-    [InlineData("AuthorizationEndpoint.Uri", "not-a-uri")]
-    [InlineData("TokenEndpoint.Uri", "not-a-uri")]
-    [InlineData("JwksEndpoint.Uri", "not-a-uri")]
-    [InlineData("AuthorizationEndpoint.Uri", "https://evil.example.com/connect/authorize")]
-    [InlineData("TokenEndpoint.Uri", "https://evil.example.com/connect/token")]
-    [InlineData("JwksEndpoint.Uri", "https://evil.example.com/connect/jwks")]
-    [InlineData("EndSessionEndpoint.Uri", "not-a-uri")]
-    [InlineData("EndSessionEndpoint.Uri", "https://evil.example.com/connect/endsession")]
-    public void Validate_failure_message_names_the_endpoint_override_it_is_about(string propertyPath, string value)
+    [InlineData("AuthorizationEndpoint.Uri", "not-a-uri", "configuration.authorization_endpoint.uri.invalid")]
+    [InlineData("TokenEndpoint.Uri", "not-a-uri", "configuration.token_endpoint.uri.invalid")]
+    [InlineData("JwksEndpoint.Uri", "not-a-uri", "configuration.jwks_endpoint.uri.invalid")]
+    [InlineData("AuthorizationEndpoint.Uri", "https://evil.example.com/connect/authorize", "configuration.authorization_endpoint.uri.authority_mismatch")]
+    [InlineData("TokenEndpoint.Uri", "https://evil.example.com/connect/token", "configuration.token_endpoint.uri.authority_mismatch")]
+    [InlineData("JwksEndpoint.Uri", "https://evil.example.com/connect/jwks", "configuration.jwks_endpoint.uri.authority_mismatch")]
+    [InlineData("EndSessionEndpoint.Uri", "not-a-uri", "configuration.end_session_endpoint.uri.invalid")]
+    [InlineData("EndSessionEndpoint.Uri", "https://evil.example.com/connect/endsession", "configuration.end_session_endpoint.uri.authority_mismatch")]
+    public void Validate_failure_message_names_the_endpoint_override_it_is_about(string propertyPath, string value, string expectedCode)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain($"AuthorizationServerOptions.{propertyPath} '{value}'");
+        failures.Should().ContainSingle(f => f.Code == expectedCode)
+            .Which.Message.Should().Contain($"AuthorizationServerOptions.{propertyPath} '{value}'");
     }
 
     [Theory]
-    [InlineData("AuthorizationEndpoint.Uri", "http://auth.example.com/connect/authorize")]
-    [InlineData("TokenEndpoint.Uri", "http://auth.example.com/connect/token")]
-    [InlineData("JwksEndpoint.Uri", "http://auth.example.com/connect/jwks")]
-    [InlineData("EndSessionEndpoint.Uri", "http://auth.example.com/connect/endsession")]
-    public void Validate_fails_for_HTTP_endpoint_override_without_AllowInsecureIssuer_flag(string propertyPath, string value)
+    [InlineData("AuthorizationEndpoint.Uri", "http://auth.example.com/connect/authorize", "configuration.authorization_endpoint.uri.not_https")]
+    [InlineData("TokenEndpoint.Uri", "http://auth.example.com/connect/token", "configuration.token_endpoint.uri.not_https")]
+    [InlineData("JwksEndpoint.Uri", "http://auth.example.com/connect/jwks", "configuration.jwks_endpoint.uri.not_https")]
+    [InlineData("EndSessionEndpoint.Uri", "http://auth.example.com/connect/endsession", "configuration.end_session_endpoint.uri.not_https")]
+    public void Validate_fails_for_HTTP_endpoint_override_without_AllowInsecureIssuer_flag(string propertyPath, string value, string expectedCode)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("HTTPS");
+        failures.Should().ContainSingle(f => f.Code == expectedCode)
+            .Which.Message.Should().Contain("HTTPS");
     }
 
     [Theory]
@@ -782,25 +782,25 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Theory]
-    [InlineData("AuthorizationEndpoint.Uri", "https://evil.example.com/connect/authorize")]
-    [InlineData("TokenEndpoint.Uri", "https://evil.example.com/connect/token")]
-    [InlineData("JwksEndpoint.Uri", "https://evil.example.com/connect/jwks")]
-    [InlineData("EndSessionEndpoint.Uri", "https://evil.example.com/connect/endsession")]
-    public void Validate_fails_when_endpoint_override_has_different_authority(string propertyPath, string value)
+    [InlineData("AuthorizationEndpoint.Uri", "https://evil.example.com/connect/authorize", "configuration.authorization_endpoint.uri.authority_mismatch")]
+    [InlineData("TokenEndpoint.Uri", "https://evil.example.com/connect/token", "configuration.token_endpoint.uri.authority_mismatch")]
+    [InlineData("JwksEndpoint.Uri", "https://evil.example.com/connect/jwks", "configuration.jwks_endpoint.uri.authority_mismatch")]
+    [InlineData("EndSessionEndpoint.Uri", "https://evil.example.com/connect/endsession", "configuration.end_session_endpoint.uri.authority_mismatch")]
+    public void Validate_fails_when_endpoint_override_has_different_authority(string propertyPath, string value, string expectedCode)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("same authority");
+        failures.Should().ContainSingle(f => f.Code == expectedCode)
+            .Which.Message.Should().Contain("same authority");
     }
 
     [Theory]
@@ -812,9 +812,9 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Theory]
@@ -826,46 +826,46 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Theory]
-    [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com:8443/connect/authorize")]
-    [InlineData("TokenEndpoint.Uri", "https://auth.example.com:8443/connect/token")]
-    [InlineData("JwksEndpoint.Uri", "https://auth.example.com:8443/connect/jwks")]
-    public void Validate_fails_when_endpoint_override_has_different_port(string propertyPath, string value)
+    [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com:8443/connect/authorize", "configuration.authorization_endpoint.uri.authority_mismatch")]
+    [InlineData("TokenEndpoint.Uri", "https://auth.example.com:8443/connect/token", "configuration.token_endpoint.uri.authority_mismatch")]
+    [InlineData("JwksEndpoint.Uri", "https://auth.example.com:8443/connect/jwks", "configuration.jwks_endpoint.uri.authority_mismatch")]
+    public void Validate_fails_when_endpoint_override_has_different_port(string propertyPath, string value, string expectedCode)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("same authority");
+        failures.Should().ContainSingle(f => f.Code == expectedCode)
+            .Which.Message.Should().Contain("same authority");
     }
 
     [Theory]
-    [InlineData("AuthorizationEndpoint.Uri", "https://user:pass@auth.example.com/connect/authorize")]
-    [InlineData("TokenEndpoint.Uri", "https://user:pass@auth.example.com/connect/token")]
-    [InlineData("JwksEndpoint.Uri", "https://user:pass@auth.example.com/connect/jwks")]
-    public void Validate_fails_when_endpoint_override_has_user_info(string propertyPath, string value)
+    [InlineData("AuthorizationEndpoint.Uri", "https://user:pass@auth.example.com/connect/authorize", "configuration.authorization_endpoint.uri.userinfo")]
+    [InlineData("TokenEndpoint.Uri", "https://user:pass@auth.example.com/connect/token", "configuration.token_endpoint.uri.userinfo")]
+    [InlineData("JwksEndpoint.Uri", "https://user:pass@auth.example.com/connect/jwks", "configuration.jwks_endpoint.uri.userinfo")]
+    public void Validate_fails_when_endpoint_override_has_user_info(string propertyPath, string value, string expectedCode)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("user information");
+        failures.Should().ContainSingle(f => f.Code == expectedCode)
+            .Which.Message.Should().Contain("user information");
     }
 
     [Theory]
-    [InlineData("AuthorizationEndpoint.Uri", "http://auth.example.com/connect/authorize")]
-    [InlineData("TokenEndpoint.Uri", "http://auth.example.com/connect/token")]
-    [InlineData("JwksEndpoint.Uri", "http://auth.example.com/connect/jwks")]
-    public void Validate_fails_for_HTTP_non_loopback_endpoint_override_with_AllowInsecureIssuer_flag(string propertyPath, string value)
+    [InlineData("AuthorizationEndpoint.Uri", "http://auth.example.com/connect/authorize", "configuration.authorization_endpoint.uri.http_non_loopback")]
+    [InlineData("TokenEndpoint.Uri", "http://auth.example.com/connect/token", "configuration.token_endpoint.uri.http_non_loopback")]
+    [InlineData("JwksEndpoint.Uri", "http://auth.example.com/connect/jwks", "configuration.jwks_endpoint.uri.http_non_loopback")]
+    public void Validate_fails_for_HTTP_non_loopback_endpoint_override_with_AllowInsecureIssuer_flag(string propertyPath, string value, string expectedCode)
     {
         var options = new AuthorizationServerOptions
         {
@@ -874,23 +874,23 @@ public sealed class AuthorizationServerOptionsValidatorTests
         };
         SetGroupProperty(options, propertyPath, value);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("loopback");
+        failures.Should().ContainSingle(f => f.Code == expectedCode)
+            .Which.Message.Should().Contain("loopback");
     }
 
     [Theory]
-    [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com/connect/authorize#fragment")]
-    [InlineData("TokenEndpoint.Uri", "https://auth.example.com/connect/token#fragment")]
-    public void Validate_fails_when_endpoint_override_has_fragment(string propertyPath, string value)
+    [InlineData("AuthorizationEndpoint.Uri", "https://auth.example.com/connect/authorize#fragment", "configuration.authorization_endpoint.uri.fragment")]
+    [InlineData("TokenEndpoint.Uri", "https://auth.example.com/connect/token#fragment", "configuration.token_endpoint.uri.fragment")]
+    public void Validate_fails_when_endpoint_override_has_fragment(string propertyPath, string value, string expectedCode)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
+        failures.Should().ContainSingle(f => f.Code == expectedCode);
     }
 
     [Theory]
@@ -903,23 +903,23 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Theory]
-    [InlineData("https://auth.example.com/connect/jwks?foo=bar")]
-    [InlineData("https://auth.example.com/connect/jwks#fragment")]
-    public void Validate_fails_when_JWKS_URI_override_has_query_or_fragment(string value)
+    [InlineData("https://auth.example.com/connect/jwks?foo=bar", "configuration.jwks_endpoint.uri.query")]
+    [InlineData("https://auth.example.com/connect/jwks#fragment", "configuration.jwks_endpoint.uri.fragment")]
+    public void Validate_fails_when_JWKS_URI_override_has_query_or_fragment(string value, string expectedCode)
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             JwksEndpoint = { Uri = value },
         });
 
-        result.Failed.Should().BeTrue();
+        failures.Should().ContainSingle(f => f.Code == expectedCode);
     }
 
     // ── Cache-Control max-age ─────────────────────────────────────────────────────────────────────
@@ -927,27 +927,27 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_fails_for_negative_discovery_cache_max_age()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             DiscoveryDocument = { CacheMaxAge = TimeSpan.FromSeconds(-1) },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("DiscoveryDocument.CacheMaxAge");
+        failures.Should().ContainSingle(f => f.Code == "configuration.discovery_document.cache_max_age.negative")
+            .Which.Message.Should().Contain("DiscoveryDocument.CacheMaxAge");
     }
 
     [Fact]
     public void Validate_fails_for_negative_jwks_cache_max_age()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             JwksEndpoint = { CacheMaxAge = TimeSpan.FromSeconds(-1) },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("JwksEndpoint.CacheMaxAge");
+        failures.Should().ContainSingle(f => f.Code == "configuration.jwks_endpoint.cache_max_age.negative")
+            .Which.Message.Should().Contain("JwksEndpoint.CacheMaxAge");
     }
 
     // ── CorsOrigins — one allowlist for every endpoint that answers a script ─────────────────────
@@ -958,12 +958,12 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.CorsOrigins.Add("https://*.example.com");
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("wildcard");
-        result.FailureMessage.Should().Contain("AuthorizationServerOptions.CorsOrigins",
-            because: "the failure must name the option the operator has to fix");
+        failures.Should().ContainSingle(f => f.Code == "configuration.cors_origins.invalid")
+            .Which.Message.Should().Contain("wildcard").And.Contain(
+                "AuthorizationServerOptions.CorsOrigins",
+                because: "the failure must name the option the operator has to fix");
     }
 
     [Fact]
@@ -972,11 +972,10 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.CorsOrigins.Add("https://℀.example");
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("AuthorizationServerOptions.CorsOrigins");
-        result.FailureMessage.Should().Contain("valid host name");
+        failures.Should().ContainSingle(f => f.Code == "configuration.cors_origins.invalid")
+            .Which.Message.Should().Contain("AuthorizationServerOptions.CorsOrigins").And.Contain("valid host name");
     }
 
     [Fact]
@@ -989,9 +988,9 @@ public sealed class AuthorizationServerOptionsValidatorTests
         };
         options.CorsOrigins.Add("http://[::1]:5001");
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     // ── CorsOrigins — scheme validation ──────────────────────────────────────────────────────────
@@ -1002,9 +1001,9 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.CorsOrigins.Add("https://app.example.com");
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -1013,10 +1012,10 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.CorsOrigins.Add("http://app.example.com");
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("http://app.example.com");
+        failures.Should().ContainSingle(f => f.Code == "configuration.cors_origins.invalid")
+            .Which.Message.Should().Contain("http://app.example.com");
     }
 
     [Fact]
@@ -1025,10 +1024,10 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.CorsOrigins.Add("ftp://files.example.com");
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("ftp://files.example.com");
+        failures.Should().ContainSingle(f => f.Code == "configuration.cors_origins.invalid")
+            .Which.Message.Should().Contain("ftp://files.example.com");
     }
 
     [Fact]
@@ -1041,9 +1040,9 @@ public sealed class AuthorizationServerOptionsValidatorTests
         };
         options.CorsOrigins.Add("http://localhost:3000");
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -1056,10 +1055,10 @@ public sealed class AuthorizationServerOptionsValidatorTests
         };
         options.CorsOrigins.Add("http://app.example.com");
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("loopback");
+        failures.Should().ContainSingle(f => f.Code == "configuration.cors_origins.invalid")
+            .Which.Message.Should().Contain("loopback");
     }
 
     [Theory]
@@ -1078,10 +1077,10 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.CorsOrigins.Add(origin!);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain(expectedMessageFragment);
+        failures.Should().ContainSingle(f => f.Code == "configuration.cors_origins.invalid")
+            .Which.Message.Should().Contain(expectedMessageFragment);
     }
 
     // ── SecurityHeaders — enum validation ────────────────────────────────────────────────────────
@@ -1095,10 +1094,10 @@ public sealed class AuthorizationServerOptionsValidatorTests
             SecurityHeaders = { ReferrerPolicy = (ReferrerPolicy)9999 },
         };
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("ReferrerPolicy");
+        failures.Should().ContainSingle(f => f.Code == "configuration.security_headers.referrer_policy.undefined_value")
+            .Which.Message.Should().Contain("ReferrerPolicy");
     }
 
     [Fact]
@@ -1110,10 +1109,10 @@ public sealed class AuthorizationServerOptionsValidatorTests
             SecurityHeaders = { CrossOriginResourcePolicy = (CrossOriginResourcePolicy)9999 },
         };
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("CrossOriginResourcePolicy");
+        failures.Should().ContainSingle(f => f.Code == "configuration.security_headers.cross_origin_resource_policy.undefined_value")
+            .Which.Message.Should().Contain("CrossOriginResourcePolicy");
     }
 
     // ── Multi-error accumulation ──────────────────────────────────────────────────────────────────
@@ -1123,16 +1122,18 @@ public sealed class AuthorizationServerOptionsValidatorTests
     {
         // https://user:pass@AUTH.example.com/path/?q=1#frag triggers:
         //   query, fragment, user-info, and canonicalization (uppercase host).
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://user:pass@AUTH.example.com/path/?q=1#frag",
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("query");
-        result.FailureMessage.Should().Contain("fragment");
-        result.FailureMessage.Should().Contain("user information");
-        result.FailureMessage.Should().Contain("is not canonical");
+        failures.Select(f => f.Code).Should().Contain(
+        [
+            "configuration.issuer.query",
+            "configuration.issuer.fragment",
+            "configuration.issuer.userinfo",
+            "configuration.issuer.not_canonical",
+        ]);
     }
 
     [Fact]
@@ -1140,19 +1141,14 @@ public sealed class AuthorizationServerOptionsValidatorTests
     {
         // Three distinct invalid entries: whitespace-only, padded, control character.
         // The validator must accumulate one error per entry rather than stopping at the first.
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { AuthMethodsSupported = ["   ", " padded ", "ctrl\x00char"] },
         });
 
-        result.Failed.Should().BeTrue();
-
-        // Three errors must be present in the combined failure message.
-        var message = result.FailureMessage!;
-        var count = CountOccurrences(message, "TokenEndpoint.AuthMethodsSupported");
-        count.Should().BeGreaterThanOrEqualTo(3,
-            "each of the three invalid entries must produce a separate error message");
+        failures.Where(f => f.Code == "configuration.token_endpoint.auth_methods_supported.invalid_entry")
+            .Should().HaveCount(3, "each of the three invalid entries must produce a separate error");
     }
 
     [Fact]
@@ -1160,15 +1156,17 @@ public sealed class AuthorizationServerOptionsValidatorTests
     {
         // Bad issuer (trailing slash on path) combined with an empty advertised-algorithm filter.
         // Both errors must appear in a single result, proving cross-group accumulation.
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com/tenant1/",
             IdToken = { AdvertisedSigningAlgorithms = [] },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("trailing slash");
-        result.FailureMessage.Should().Contain("IdToken.AdvertisedSigningAlgorithms");
+        failures.Select(f => f.Code).Should().Contain(
+        [
+            "configuration.issuer.trailing_slash",
+            "configuration.id_token.advertised_signing_algorithms.empty",
+        ]);
     }
 
     // ── ValidateEndpointUri — user-info branch ────────────────────────────────────────────────────
@@ -1176,14 +1174,14 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_ValidateEndpointUri_returns_error_when_AuthorizationEndpoint_has_user_info()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { Uri = "https://user:pass@auth.example.com/connect/authorize" },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("user information");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.uri.userinfo")
+            .Which.Message.Should().Contain("user information");
     }
 
     // ── ValidateEndpointUri — HTTP scheme branch (no AllowInsecureIssuer) ────────────────────────
@@ -1191,15 +1189,15 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_ValidateEndpointUri_returns_error_when_AuthorizationEndpoint_uses_HTTP_without_AllowInsecureIssuer()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AllowInsecureIssuer = false,
             AuthorizationEndpoint = { Uri = "http://auth.example.com/connect/authorize" },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("HTTPS");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.uri.not_https")
+            .Which.Message.Should().Contain("HTTPS");
     }
 
     // ── ValidateEndpointUri — HTTP non-loopback with AllowInsecureIssuer ─────────────────────────
@@ -1207,15 +1205,15 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_ValidateEndpointUri_returns_error_when_AuthorizationEndpoint_uses_HTTP_non_loopback_with_AllowInsecureIssuer()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AllowInsecureIssuer = true,
             AuthorizationEndpoint = { Uri = "http://auth.example.com/connect/authorize" },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("loopback");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.uri.http_non_loopback")
+            .Which.Message.Should().Contain("loopback");
     }
 
     // ── AuthorizationCodeLifetime defaults and validation ────────────────────────────────────────
@@ -1233,66 +1231,65 @@ public sealed class AuthorizationServerOptionsValidatorTests
     {
         // ClockSkewTolerance must be set below half of the (very short) 1-second code lifetime
         // to avoid triggering the cross-field clock-skew guard while testing the lifetime bound.
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(1) },
             ClockSkewTolerance = TimeSpan.Zero,
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_succeeds_when_AuthorizationCodeLifetime_is_exactly_600_seconds()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(600) },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_fails_when_AuthorizationCodeLifetime_exceeds_600_seconds()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(601) },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("600 seconds");
-        result.FailureMessage.Should().Contain("RFC 9700 §2.1.1");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.authorization_code_lifetime.too_long")
+            .Which.Message.Should().Contain("600 seconds").And.Contain("RFC 9700 §2.1.1");
     }
 
     [Fact]
     public void Validate_fails_when_AuthorizationCodeLifetime_is_zero()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.Zero },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("greater than zero");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.authorization_code_lifetime.not_positive")
+            .Which.Message.Should().Contain("greater than zero");
     }
 
     [Fact]
     public void Validate_fails_when_AuthorizationCodeLifetime_is_negative()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = -TimeSpan.FromSeconds(1) },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("greater than zero");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.authorization_code_lifetime.not_positive")
+            .Which.Message.Should().Contain("greater than zero");
     }
 
     // ── MaxRequestContextBytes ────────────────────────────────────────────────────────────────────
@@ -1308,14 +1305,14 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData(-1)]
     public void Validate_fails_when_MaxRequestContextBytes_is_not_positive(int bytes)
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { MaxRequestContextBytes = bytes },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("MaxRequestContextBytes must be greater than zero");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.max_request_context_bytes.not_positive")
+            .Which.Message.Should().Contain("MaxRequestContextBytes must be greater than zero");
     }
 
     // ── RefreshTokenLifetime defaults and validation ──────────────────────────────────────────────
@@ -1331,39 +1328,39 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_succeeds_when_RefreshTokenLifetime_is_positive()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromDays(1) },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_fails_when_RefreshTokenLifetime_is_zero()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { RefreshTokenLifetime = TimeSpan.Zero },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("greater than zero");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.refresh_token_lifetime.not_positive")
+            .Which.Message.Should().Contain("greater than zero");
     }
 
     [Fact]
     public void Validate_fails_when_RefreshTokenLifetime_is_negative()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             TokenEndpoint = { RefreshTokenLifetime = -TimeSpan.FromDays(1) },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("greater than zero");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.refresh_token_lifetime.not_positive")
+            .Which.Message.Should().Contain("greater than zero");
     }
 
     // ── Cross-field: RefreshTokenLifetime >= AuthorizationCodeLifetime ────────────────────────────
@@ -1371,41 +1368,41 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_fails_when_RefreshTokenLifetime_is_less_than_AuthorizationCodeLifetime()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(120) },
             TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromSeconds(60) },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("RefreshTokenLifetime must be greater than or equal to");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.refresh_token_lifetime.shorter_than_code_lifetime")
+            .Which.Message.Should().Contain("RefreshTokenLifetime must be greater than or equal to");
     }
 
     [Fact]
     public void Validate_succeeds_when_RefreshTokenLifetime_equals_AuthorizationCodeLifetime()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(60) },
             TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromSeconds(60) },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_succeeds_when_RefreshTokenLifetime_is_greater_than_AuthorizationCodeLifetime()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(60) },
             TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromDays(1) },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -1413,15 +1410,15 @@ public sealed class AuthorizationServerOptionsValidatorTests
     {
         // RefreshTokenLifetime = zero triggers the per-field zero check; the cross-field guard
         // must NOT fire because its condition requires both values to be positive.
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(60) },
             TokenEndpoint = { RefreshTokenLifetime = TimeSpan.Zero },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("greater than zero");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.refresh_token_lifetime.not_positive")
+            .Which.Message.Should().Contain("greater than zero");
     }
 
     [Fact]
@@ -1429,15 +1426,15 @@ public sealed class AuthorizationServerOptionsValidatorTests
     {
         // AuthorizationCodeLifetime = zero triggers the per-field zero check; the cross-field guard
         // must NOT fire because its condition requires both values to be positive.
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.Zero },
             TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromDays(1) },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("AuthorizationCodeLifetime must be greater than zero");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.authorization_code_lifetime.not_positive")
+            .Which.Message.Should().Contain("AuthorizationCodeLifetime must be greater than zero");
     }
 
     // ── ClockSkewTolerance — non-negative constraint ─────────────────────────────────────────────
@@ -1445,28 +1442,27 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_fails_when_ClockSkewTolerance_is_negative()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             ClockSkewTolerance = TimeSpan.FromSeconds(-1),
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("ClockSkewTolerance");
-        result.FailureMessage.Should().Contain("greater than or equal to zero");
+        failures.Should().ContainSingle(f => f.Code == "configuration.clock_skew_tolerance.negative")
+            .Which.Message.Should().Contain("ClockSkewTolerance").And.Contain("greater than or equal to zero");
     }
 
     [Fact]
     public void Validate_succeeds_when_ClockSkewTolerance_is_zero()
     {
         // Zero is a valid strict-mode setting — no skew tolerance at all.
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             ClockSkewTolerance = TimeSpan.Zero,
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     // ── ClockSkewTolerance — cross-field: must be < AuthorizationCodeLifetime / 2 ───────────────
@@ -1476,16 +1472,15 @@ public sealed class AuthorizationServerOptionsValidatorTests
     {
         // The boundary is >=, so exactly half the code lifetime must fail.
         var codeLifetime = TimeSpan.FromSeconds(60);
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = codeLifetime },
             ClockSkewTolerance = codeLifetime / 2,
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("ClockSkewTolerance");
-        result.FailureMessage.Should().Contain("half of AuthorizationCodeLifetime");
+        failures.Should().ContainSingle(f => f.Code == "configuration.clock_skew_tolerance.too_large")
+            .Which.Message.Should().Contain("ClockSkewTolerance").And.Contain("half of AuthorizationCodeLifetime");
     }
 
     [Fact]
@@ -1493,14 +1488,14 @@ public sealed class AuthorizationServerOptionsValidatorTests
     {
         // One tick below the boundary must pass.
         var codeLifetime = TimeSpan.FromSeconds(60);
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { AuthorizationCodeLifetime = codeLifetime },
             ClockSkewTolerance = codeLifetime / 2 - TimeSpan.FromTicks(1),
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     // ── Simultaneous authorization + token endpoint errors ───────────────────────────────────────
@@ -1508,9 +1503,9 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_accumulates_authorization_endpoint_and_token_endpoint_errors_simultaneously()
     {
-        // Both endpoints carry user-info so both ValidateEndpointUri calls return non-null,
-        // proving both aeError and teError are accumulated in the same result.
-        var result = Validate(new AuthorizationServerOptions
+        // Both endpoints carry user-info so both produce their own failure, proving both are
+        // accumulated in the same result rather than the second short-circuiting the first.
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { Uri = "https://user:pass@auth.example.com/connect/authorize" },
@@ -1521,23 +1516,11 @@ public sealed class AuthorizationServerOptionsValidatorTests
             },
         });
 
-        result.Failed.Should().BeTrue();
-
-        // Both endpoint URI values must appear in the combined failure message.
-        result.FailureMessage.Should().Contain("https://user:pass@auth.example.com/connect/authorize");
-        result.FailureMessage.Should().Contain("https://user:pass@auth.example.com/connect/token");
-    }
-
-    private static int CountOccurrences(string source, string substring)
-    {
-        var count = 0;
-        var index = 0;
-        while ((index = source.IndexOf(substring, index, StringComparison.Ordinal)) >= 0)
-        {
-            count++;
-            index += substring.Length;
-        }
-        return count;
+        failures.Select(f => f.Code).Should().Contain(
+        [
+            "configuration.authorization_endpoint.uri.userinfo",
+            "configuration.token_endpoint.uri.userinfo",
+        ]);
     }
 
     private static void SetGroupProperty(AuthorizationServerOptions options, string propertyPath, string value)
@@ -1555,26 +1538,26 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("/auth-error#frag")]                  // fragment not allowed
     public void Validate_rejects_malformed_interaction_ErrorPath(string errorPath)
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { Interaction = { ErrorPath = errorPath } },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Interaction.ErrorPath");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.interaction.error_path.unsafe")
+            .Which.Message.Should().Contain("Interaction.ErrorPath");
     }
 
     [Fact]
     public void Validate_accepts_an_absolute_path_ErrorPath()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { Interaction = { ErrorPath = "/auth-error" } },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Theory]
@@ -1585,14 +1568,14 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("/account/login#frag")]               // fragment not allowed
     public void Validate_rejects_malformed_interaction_LoginPath(string loginPath)
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { Interaction = { LoginPath = loginPath } },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Interaction.LoginPath");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.interaction.login_path.unsafe")
+            .Which.Message.Should().Contain("Interaction.LoginPath");
     }
 
     [Theory]
@@ -1603,38 +1586,38 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("/account/consent#frag")]
     public void Validate_rejects_malformed_interaction_ConsentPath(string consentPath)
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { Interaction = { ConsentPath = consentPath } },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Interaction.ConsentPath");
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.interaction.consent_path.unsafe")
+            .Which.Message.Should().Contain("Interaction.ConsentPath");
     }
 
     [Fact]
     public void Validate_accepts_an_absolute_path_ConsentPath()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { Interaction = { ConsentPath = "/account/consent" } },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_accepts_an_absolute_path_LoginPath()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { Interaction = { LoginPath = "/account/login" } },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Theory]
@@ -1645,14 +1628,14 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("/account/logout#frag")]
     public void Validate_rejects_malformed_EndSessionEndpoint_LogoutPath(string logoutPath)
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             EndSessionEndpoint = { LogoutPath = logoutPath },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("EndSessionEndpoint.LogoutPath");
+        failures.Should().ContainSingle(f => f.Code == "configuration.end_session_endpoint.logout_path.unsafe")
+            .Which.Message.Should().Contain("EndSessionEndpoint.LogoutPath");
     }
 
     [Theory]
@@ -1663,44 +1646,153 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("/account/signed-out#frag")]
     public void Validate_rejects_malformed_EndSessionEndpoint_SignedOutPath(string signedOutPath)
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             EndSessionEndpoint = { SignedOutPath = signedOutPath },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("EndSessionEndpoint.SignedOutPath");
+        failures.Should().ContainSingle(f => f.Code == "configuration.end_session_endpoint.signed_out_path.unsafe")
+            .Which.Message.Should().Contain("EndSessionEndpoint.SignedOutPath");
     }
 
     [Fact]
     public void Validate_accepts_absolute_path_end_session_pages()
     {
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             EndSessionEndpoint = { LogoutPath = "/account/logout", SignedOutPath = "/account/signed-out" },
         });
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 
     [Theory]
-    [InlineData("https://auth.example.com/connect/endsession?x=1", "query component")]
-    [InlineData("https://auth.example.com/connect/endsession#frag", "fragment component")]
-    [InlineData("https://user@auth.example.com/connect/endsession", "user information")]
-    public void Validate_rejects_an_EndSessionEndpoint_Uri_its_route_could_not_serve_as_published(string value, string rule)
+    [InlineData("https://auth.example.com/connect/endsession?x=1", "query component", "configuration.end_session_endpoint.uri.query")]
+    [InlineData("https://auth.example.com/connect/endsession#frag", "fragment component", "configuration.end_session_endpoint.uri.fragment")]
+    [InlineData("https://user@auth.example.com/connect/endsession", "user information", "configuration.end_session_endpoint.uri.userinfo")]
+    public void Validate_rejects_an_EndSessionEndpoint_Uri_its_route_could_not_serve_as_published(string value, string rule, string expectedCode)
     {
         // The route matches on the path alone, so a query published in discovery would reach
         // relying parties and never be honoured.
-        var result = Validate(new AuthorizationServerOptions
+        var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             EndSessionEndpoint = { Uri = value },
         });
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("AuthorizationServerOptions.EndSessionEndpoint.Uri").And.Contain(rule);
+        failures.Should().ContainSingle(f => f.Code == expectedCode)
+            .Which.Message.Should().Contain("AuthorizationServerOptions.EndSessionEndpoint.Uri").And.Contain(rule);
+    }
+
+    // ── EndSessionEndpoint.Uri — HTTP non-loopback with AllowInsecureIssuer ──────────────────────
+
+    [Fact]
+    public void Validate_fails_for_HTTP_non_loopback_EndSessionEndpoint_override_with_AllowInsecureIssuer_flag()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AllowInsecureIssuer = true,
+            EndSessionEndpoint = { Uri = "http://auth.example.com/connect/endsession" },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.end_session_endpoint.uri.http_non_loopback")
+            .Which.Message.Should().Contain("loopback");
+    }
+
+    // ── UserInfoEndpoint.Uri — the same route-matches-on-path-alone rules as JWKS/EndSession ─────
+
+    [Fact]
+    public void Validate_fails_when_UserInfoEndpoint_override_is_not_an_absolute_URI()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            UserInfoEndpoint = { Uri = "not-a-uri" },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.user_info_endpoint.uri.invalid")
+            .Which.Message.Should().Contain("Uri");
+    }
+
+    [Fact]
+    public void Validate_fails_when_UserInfoEndpoint_override_has_user_info()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            UserInfoEndpoint = { Uri = "https://user:pass@auth.example.com/connect/userinfo" },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.user_info_endpoint.uri.userinfo")
+            .Which.Message.Should().Contain("user information");
+    }
+
+    [Fact]
+    public void Validate_fails_for_HTTP_UserInfoEndpoint_override_without_AllowInsecureIssuer_flag()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            UserInfoEndpoint = { Uri = "http://auth.example.com/connect/userinfo" },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.user_info_endpoint.uri.not_https")
+            .Which.Message.Should().Contain("HTTPS");
+    }
+
+    [Fact]
+    public void Validate_fails_for_HTTP_non_loopback_UserInfoEndpoint_override_with_AllowInsecureIssuer_flag()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AllowInsecureIssuer = true,
+            UserInfoEndpoint = { Uri = "http://auth.example.com/connect/userinfo" },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.user_info_endpoint.uri.http_non_loopback")
+            .Which.Message.Should().Contain("loopback");
+    }
+
+    [Fact]
+    public void Validate_fails_when_UserInfoEndpoint_override_has_different_authority()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            UserInfoEndpoint = { Uri = "https://evil.example.com/connect/userinfo" },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.user_info_endpoint.uri.authority_mismatch")
+            .Which.Message.Should().Contain("same authority");
+    }
+
+    [Theory]
+    [InlineData("https://auth.example.com/connect/userinfo?foo=bar", "configuration.user_info_endpoint.uri.query")]
+    [InlineData("https://auth.example.com/connect/userinfo#fragment", "configuration.user_info_endpoint.uri.fragment")]
+    public void Validate_fails_when_UserInfoEndpoint_override_has_query_or_fragment(string value, string expectedCode)
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            UserInfoEndpoint = { Uri = value },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == expectedCode);
+    }
+
+    [Fact]
+    public void Validate_succeeds_for_HTTPS_UserInfoEndpoint_override()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            UserInfoEndpoint = { Uri = "https://auth.example.com/connect/userinfo" },
+        });
+
+        failures.Should().BeEmpty();
     }
 }
-
