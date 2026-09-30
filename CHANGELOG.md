@@ -538,6 +538,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **`AuthorizationServerOptions.CorsOrigins` keeps the host's entries exactly as configured**
+  (#799). It is still frozen read-only after configuration, but no longer rewritten into lowercase,
+  de-duplicated form. The canonical allowlist the endpoints match `Origin` against is derived
+  internally, once, from the validated entries. CORS behaviour is unchanged.
+
 - **A persisted development key no longer walks its ancestor directories** (#826). The key file
   is still created `0600` in a `0700` directory (a non-inherited owner-only ACL on Windows), and
   loading still refuses a broader mode or a symlinked key file. What is gone is the walk up the

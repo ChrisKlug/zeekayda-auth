@@ -62,7 +62,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             .Configure(configure)
             .ValidateOnStart();
 
-        // Canonicalizes and freezes CorsOrigins before validation runs.
+        // Freezes CorsOrigins and AdvertisedSigningAlgorithms before validation runs.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IPostConfigureOptions<AuthorizationServerOptions>,
@@ -80,6 +80,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<IDiscoveryDocumentProvider, DiscoveryDocumentProvider>();
 
         // TryAddEnumerable keeps each endpoint registered exactly once across repeated calls.
+        services.TryAddSingleton<CorsAllowlist>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, DiscoveryEndpoint>());
         services.TryAddEnumerable(

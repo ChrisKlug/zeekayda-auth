@@ -11,70 +11,19 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
         return options;
     }
 
-    // ── Canonicalization ─────────────────────────────────────────────────────────────────────────
+    // ── CorsOrigins ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void PostConfigure_lowercases_CORS_origin_scheme_and_host()
+    public void PostConfigure_keeps_CorsOrigins_exactly_as_the_host_configured_them()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.CorsOrigins.Add("HTTPS://APP.EXAMPLE.COM");
-
-        PostConfigure(options);
-
-        options.CorsOrigins.Should().ContainSingle()
-            .Which.Should().Be("https://app.example.com");
-    }
-
-    [Fact]
-    public void PostConfigure_canonicalizes_an_internationalized_host_to_its_punycode_form()
-    {
-        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.CorsOrigins.Add("https://bücher.example");
-
-        PostConfigure(options);
-
-        // Browsers serialize the Origin header in punycode, so the stored canonical entry must
-        // be the A-label form or the allowlist entry could never match a real request.
-        options.CorsOrigins.Should().ContainSingle()
-            .Which.Should().Be("https://xn--bcher-kva.example");
-    }
-
-    [Fact]
-    public void PostConfigure_preserves_the_brackets_of_an_ipv6_origin()
-    {
-        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.CorsOrigins.Add("http://[::1]:5001");
-
-        PostConfigure(options);
-
-        // Browsers serialize an IPv6 Origin with brackets; an entry stored without them could
-        // never match a request.
-        options.CorsOrigins.Should().ContainSingle()
-            .Which.Should().Be("http://[::1]:5001");
-    }
-
-    [Fact]
-    public void PostConfigure_leaves_an_origin_with_an_invalid_idn_host_as_is_for_the_validator()
-    {
-        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.CorsOrigins.Add("https://℀.example");
-
-        PostConfigure(options);
-
-        options.CorsOrigins.Should().ContainSingle()
-            .Which.Should().Be("https://℀.example");
-    }
-
-    [Fact]
-    public void PostConfigure_deduplicates_origins_case_insensitively()
-    {
-        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
+        options.CorsOrigins.Add("HTTPS://APP.EXAMPLE.COM/");
         options.CorsOrigins.Add("https://app.example.com");
-        options.CorsOrigins.Add("HTTPS://APP.EXAMPLE.COM");
+        options.CorsOrigins.Add("not-a-uri");
 
         PostConfigure(options);
 
-        options.CorsOrigins.Should().ContainSingle();
+        options.CorsOrigins.Should().Equal("HTTPS://APP.EXAMPLE.COM/", "https://app.example.com", "not-a-uri");
     }
 
     [Fact]
@@ -101,51 +50,14 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     }
 
     [Fact]
-    public void PostConfigure_preserves_invalid_origins_so_validator_can_report_them()
-    {
-        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.CorsOrigins.Add("https://app.example.com");
-        options.CorsOrigins.Add("not-a-uri");
-
-        PostConfigure(options);
-
-        options.CorsOrigins.Should().Contain("not-a-uri");
-    }
-
-    [Fact]
     public void PostConfigure_is_idempotent_on_repeated_calls()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.CorsOrigins.Add("HTTPS://APP.EXAMPLE.COM");
         PostConfigure(options);
-        PostConfigure(options); // second call on already-canonical frozen list
-
-        options.CorsOrigins.Should().ContainSingle()
-            .Which.Should().Be("https://app.example.com");
-    }
-
-    [Fact]
-    public void PostConfigure_strips_trailing_slash_from_origin()
-    {
-        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.CorsOrigins.Add("https://app.example.com/");
-
         PostConfigure(options);
 
-        options.CorsOrigins.Should().ContainSingle()
-            .Which.Should().Be("https://app.example.com");
-    }
-
-    [Fact]
-    public void PostConfigure_preserves_non_default_port_in_canonical_form()
-    {
-        var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.CorsOrigins.Add("https://app.example.com:8443");
-
-        PostConfigure(options);
-
-        options.CorsOrigins.Should().ContainSingle()
-            .Which.Should().Be("https://app.example.com:8443");
+        options.CorsOrigins.Should().Equal("HTTPS://APP.EXAMPLE.COM");
     }
 
     // ── IdToken.AdvertisedSigningAlgorithms ──────────────────────────────────────────────────────

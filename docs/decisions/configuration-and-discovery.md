@@ -41,8 +41,9 @@ configuration across two surfaces, do not bind from `IConfiguration`, break
 **One root-rooted validator, not one per group.** Real rules are cross-group — `client_credentials`
 in `GrantTypesSupported` requires at least one non-`none` entry in `TokenEndpoint.AuthMethodsSupported`
 — so `IValidateOptions<AuthorizationServerOptions>` stays single and grows. It is a pure read-only
-check: CORS-origin canonicalisation runs earlier in an `IPostConfigureOptions<T>`, which also freezes
-the collection to read-only so nothing mutates it after validation.
+check. An `IPostConfigureOptions<T>` runs earlier and only freezes collections read-only; options are
+the host's input and are never rewritten. The canonical CORS allowlist is derived where it is used, by
+an internal `CorsAllowlist` beside the endpoints that match `Origin`.
 
 **One CORS allowlist, on the root, for every endpoint a browser script calls.** `CorsOrigins` governs
 discovery, JWKS and userinfo alike; none uses a cookie, so who may read one does not vary by endpoint.
@@ -128,9 +129,8 @@ sole path to a definition and the sole rule authority, so `InMemoryScopeReposito
 rewrites a raw space while the original reaches `aud`.
 
 **Collection keys bind by replacement, not merge.** An operator who sets one entry of an
-`IConfiguration` collection key loses the rest of that key's defaults. The validator's
-empty-and-subset checks are what turn the resulting gap into a startup failure rather than a quietly
-narrowed server.
+`IConfiguration` collection key loses the rest of that key's defaults. The validator's empty-and-subset
+checks turn the resulting gap into a startup failure rather than a quietly narrowed server.
 
 ## Tried, didn't work
 

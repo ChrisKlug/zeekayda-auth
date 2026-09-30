@@ -11,9 +11,8 @@ namespace ZeeKayDa.Auth.Configuration;
 /// <remarks>
 /// This validator is registered via <c>AddZeeKayDaAuth()</c> and activated by
 /// <c>ValidateOnStart()</c> so that misconfigured servers fail loudly at startup rather than
-/// silently at the first request. It is a pure read-only check: CORS-origin canonicalization is
-/// handled by <see cref="AuthorizationServerOptionsPostConfigurer"/> (which runs before this
-/// validator), and async checks (e.g. scope presence) are handled by hosted services. The issuer,
+/// silently at the first request. It is a pure read-only check of the host's values as configured,
+/// and async checks (e.g. scope presence) are handled by hosted services. The issuer,
 /// the endpoint URI overrides and the token endpoint's auth methods each have their own
 /// validator; this class calls them in order and keeps the single-group checks.
 /// </remarks>
