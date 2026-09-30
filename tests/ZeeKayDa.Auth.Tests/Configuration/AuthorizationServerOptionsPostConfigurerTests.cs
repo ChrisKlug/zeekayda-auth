@@ -189,6 +189,23 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     }
 
     [Fact]
+    public void Replacing_any_collection_after_PostConfigure_fails_with_options_frozen()
+    {
+        var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
+
+        CollectionProperties(options).Should().AllSatisfy(collection =>
+        {
+            var replacement = Activator.CreateInstance(typeof(List<>).MakeGenericType(collection.ElementType));
+            var act = () => collection.Assign(replacement);
+
+            act.Should().Throw<TargetInvocationException>(collection.Path)
+                .WithInnerException<ZeeKayDaConfigurationException>()
+                .Which.AggregatedFailures.Should().ContainSingle(f =>
+                    f.Code == "configuration.options_frozen" && f.Message.Contains(collection.Path, StringComparison.Ordinal));
+        });
+    }
+
+    [Fact]
     public void PostConfigure_is_idempotent_on_repeated_calls()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };

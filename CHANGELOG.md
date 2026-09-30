@@ -552,7 +552,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `TokenEndpoint.AuthMethodsSupported`, `AuthorizationEndpoint.CodeChallengeMethodsSupported`,
   `Response.TypesSupported` or `Response.ModesSupported` after startup validation had approved them.
   Each is now replaced by a read-only copy of the configured values, in the configured order, before
-  validation runs; a `null` collection stays `null`. `CorsOrigins` changes from `IList<string>` with
+  validation runs; a `null` collection stays `null`. From then on a setter refuses to replace a
+  collection, with `configuration.options_frozen`, so a `PostConfigure` registered after
+  `AddZeeKayDaAuth` fails startup instead of slipping past validation. `CorsOrigins` changes from `IList<string>` with
   an internal setter to `ICollection<string>` with a public one, the same shape as every other
   collection, so a host can assign it as well as add to it. The `ClockSkewTolerance` documentation
   now says what the code already did: it is one server-wide tolerance, used by access token

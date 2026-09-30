@@ -82,4 +82,19 @@ public sealed class ConfigurationExceptionDeliveryTests
             .Which.AggregatedFailures.Select(f => f.Code).Should().Contain(
                 new[] { "configuration.issuer.not_https", "configuration.pbkdf2.iterations_out_of_range" });
     }
+
+    [Fact]
+    public void A_later_PostConfigure_that_replaces_a_collection_fails_with_options_frozen()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+        services.PostConfigure<AuthorizationServerOptions>(options => options.GrantTypesSupported = [GrantType.AuthorizationCode]);
+        using var provider = services.BuildServiceProvider();
+
+        var act = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(provider);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.options_frozen");
+    }
 }

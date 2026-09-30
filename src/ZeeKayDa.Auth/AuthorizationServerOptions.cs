@@ -1,5 +1,6 @@
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Claims;
+using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Security;
@@ -20,6 +21,10 @@ namespace ZeeKayDa.Auth;
 /// </remarks>
 public sealed class AuthorizationServerOptions
 {
+    private ICollection<GrantType> _grantTypesSupported = [GrantType.AuthorizationCode];
+    private ICollection<string> _corsOrigins = [];
+    private bool _frozen;
+
     /// <summary>
     /// Gets or sets the issuer identifier for this authorization server.
     /// </summary>
@@ -64,7 +69,11 @@ public sealed class AuthorizationServerOptions
     /// <remarks>
     /// This is a server-wide setting with no per-endpoint variant in the OIDC Discovery specification.
     /// </remarks>
-    public ICollection<GrantType> GrantTypesSupported { get; set; } = [GrantType.AuthorizationCode];
+    public ICollection<GrantType> GrantTypesSupported
+    {
+        get => _grantTypesSupported;
+        set => _grantTypesSupported = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.GrantTypesSupported");
+    }
 
     /// <summary>
     /// Gets or sets the browser origins allowed to read the responses of the endpoints a script
@@ -90,7 +99,11 @@ public sealed class AuthorizationServerOptions
     /// <see langword="true"/> to permit HTTP loopback origins for local development only.
     /// </para>
     /// </remarks>
-    public ICollection<string> CorsOrigins { get; set; } = [];
+    public ICollection<string> CorsOrigins
+    {
+        get => _corsOrigins;
+        set => _corsOrigins = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.CorsOrigins");
+    }
 
     /// <summary>
     /// Gets the discovery document configuration options.
@@ -143,4 +156,19 @@ public sealed class AuthorizationServerOptions
     /// emits log entries and are not advertised in the OIDC Discovery document.
     /// </summary>
     public LoggingOptions Logging { get; } = new();
+
+    /// <summary>Makes every collection read-only and refuses any later replacement.</summary>
+    internal void Freeze()
+    {
+        if (_frozen)
+            return;
+
+        GrantTypesSupported = FrozenOptions.Copy(GrantTypesSupported);
+        CorsOrigins = FrozenOptions.Copy(CorsOrigins);
+        AuthorizationEndpoint.Freeze();
+        TokenEndpoint.Freeze();
+        IdToken.Freeze();
+        Response.Freeze();
+        _frozen = true;
+    }
 }

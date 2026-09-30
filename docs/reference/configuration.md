@@ -37,7 +37,10 @@ a `ZeeKayDaAuthBuilder` for registering optional features.
 
 Collections are filled or assigned while the options are configured. Once configuration completes,
 before validation runs, each collection is replaced by a read-only copy of the configured values in
-the configured order, so nothing can change them after validation has approved them.
+the configured order, so nothing can change them after validation has approved them. Assigning a
+collection after that point throws `ZeeKayDaConfigurationException` with the code
+`configuration.options_frozen`, so a `PostConfigure<AuthorizationServerOptions>` registered after
+`AddZeeKayDaAuth` fails startup rather than replacing a validated value.
 
 ## Properties
 
