@@ -35,8 +35,8 @@ public sealed class FamilyRevocationIntegrationTests
     {
         await using var provider = BuildServiceProvider();
 
-        var codeStore = provider.GetRequiredService<IAuthorizationCodeStore>();
-        var tokenStore = provider.GetRequiredService<IRefreshTokenStore>();
+        var codeStore = provider.GetRequiredService<AuthorizationCodeStore>();
+        var tokenStore = provider.GetRequiredService<RefreshTokenStore>();
 
         var code = Guid.NewGuid().ToString("N");
         var clientId = "test-client";
@@ -95,15 +95,11 @@ public sealed class FamilyRevocationIntegrationTests
 
         var consumeOutcome = await tokenStore.TryConsumeAsync(tokenHandle, clientId, CancellationToken.None);
 
-        // Issue #388 closes exactly this gap: RevokeFamilyAsync now unconditionally
-        // inserts a durable revocation sentinel, even when the family had zero rows at revoke time
-        // (as here — the auth-code replay is detected and the family revoked before the FIRST
-        // refresh token of that family is ever stored). The sentinel arms the
-        // IsFamilyRevokedAsync gate, so a grant stored afterward into the same family is caught at
-        // its own consume, closing the "auth-code replayed before its first refresh token" hole.
+        // The auth-code replay revoked the family before its FIRST refresh token was stored. The
+        // backing store's revocation record, not a row, is what makes the grant stored afterward
+        // dead at its own consume.
         consumeOutcome.Should().BeOfType<RefreshTokenConsumptionResult.Revoked>(
-                "the revocation sentinel arms the family-revoked gate even when the family " +
-                "had zero rows at revoke time, so a grant stored afterward is dead on arrival")
+                "the family is recorded as revoked even though it had zero rows at revoke time")
             .Which.FamilyId.Should().Be(familyId);
     }
 
@@ -112,7 +108,7 @@ public sealed class FamilyRevocationIntegrationTests
     {
         await using var provider = BuildServiceProvider();
 
-        var tokenStore = provider.GetRequiredService<IRefreshTokenStore>();
+        var tokenStore = provider.GetRequiredService<RefreshTokenStore>();
 
         var clientId = "test-client";
         var familyId = Guid.NewGuid().ToString("N");

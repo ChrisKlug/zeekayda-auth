@@ -20,8 +20,6 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </remarks>
 internal static class InteractionStoreKeys
 {
-    private const string Prefix = "zkd:interaction:";
-
     /// <summary>The entry holding the <see cref="Authorization.AuthorizationRequestContext"/>.</summary>
     public static StoreKey Context(string interactionId, string secret) => Derive("c", interactionId, secret);
 
@@ -38,9 +36,6 @@ internal static class InteractionStoreKeys
     public static IDataProtector ProtectorFor(IDataProtector root, string interactionId, string secret) =>
         root.CreateProtector(interactionId, secret);
 
-    private static StoreKey Derive(string kind, string interactionId, string secret)
-    {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(string.Concat(interactionId, ".", secret)));
-        return new StoreKey($"{Prefix}{kind}:{Convert.ToHexStringLower(hash)}");
-    }
+    private static StoreKey Derive(string kind, string interactionId, string secret) =>
+        StoreKey.Hash("interaction", kind, string.Concat(interactionId, ".", secret));
 }

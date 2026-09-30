@@ -287,7 +287,7 @@ internal sealed class AuthorizationFlow
         if (IsExpired(requestContext))
             await RefuseAsync(context, requestContext, ExpiredBeforeCompletion).ConfigureAwait(false);
 
-        var store = context.RequestServices.GetRequiredService<Stores.IAuthorizationCodeStore>();
+        var store = context.RequestServices.GetRequiredService<Stores.AuthorizationCodeStore>();
         var claimed = await store.TryClaimInteractionAsync(requestContext.Id, requestContext.ExpiresAt, context.RequestAborted).ConfigureAwait(false);
 
         if (!claimed)

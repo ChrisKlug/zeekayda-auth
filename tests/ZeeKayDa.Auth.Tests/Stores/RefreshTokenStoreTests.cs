@@ -9,20 +9,20 @@ namespace ZeeKayDa.Auth.Tests.Stores;
 /// Tests for the <c>RefreshTokenStore</c> framework coordinator. Covers the
 /// cleartext-first decision tree, the CAS pivot, the lost-race re-read, the clamp arithmetic
 /// (§5), and the single <c>Unprotect</c> catch site (§7) — wired over
-/// <see cref="InMemoryRefreshTokenGrantStore"/> for round-trip tests and a fake
-/// <see cref="IRefreshTokenGrantStore"/> where isolation of a specific decision path is needed.
+/// <see cref="InMemoryRefreshTokenBackingStore"/> for round-trip tests and a fake
+/// <see cref="IRefreshTokenBackingStore"/> where isolation of a specific decision path is needed.
 /// </summary>
 public sealed class RefreshTokenStoreTests
 {
     private static readonly DateTimeOffset FarFuture = new(2099, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     private static RefreshTokenStore CreateStore(
-        IRefreshTokenGrantStore? grantStore = null,
+        IRefreshTokenBackingStore? grantStore = null,
         IDataProtectionProvider? dp = null,
         AuthorizationServerOptions? serverOptions = null,
         TimeProvider? timeProvider = null)
         => new(
-            grantStore ?? new InMemoryRefreshTokenGrantStore(),
+            grantStore ?? new InMemoryRefreshTokenBackingStore(),
             dp ?? new EphemeralDataProtectionProvider(),
             new OptionsWrapper<AuthorizationServerOptions>(serverOptions ?? new AuthorizationServerOptions()),
             timeProvider ?? TimeProvider.System);
@@ -48,6 +48,21 @@ public sealed class RefreshTokenStoreTests
             PreviousTokenHandleHash = previousTokenHandleHash,
         };
 
+    // ── Key format ────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task StoreAsync_keys_the_grant_by_the_hashed_handle_in_the_shared_format()
+    {
+        var backing = new InMemoryRefreshTokenBackingStore();
+        var store = CreateStore(backing);
+
+        await store.StoreAsync("handle-1", BuildEntry(), CancellationToken.None);
+
+        var expected = StoreKey.Hash("refresh", "h", "handle-1");
+        expected.ToString().Should().StartWith("zkd:refresh:h:").And.NotContain("handle-1");
+        (await backing.FindByHandleAsync(expected, CancellationToken.None)).Should().NotBeNull();
+    }
+
     // ── Constructor guards ────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -66,7 +81,7 @@ public sealed class RefreshTokenStoreTests
     public void Constructor_throws_ArgumentNullException_for_null_dataProtectionProvider()
     {
         var act = () => new RefreshTokenStore(
-            new InMemoryRefreshTokenGrantStore(),
+            new InMemoryRefreshTokenBackingStore(),
             null!,
             new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
             TimeProvider.System);
@@ -78,7 +93,7 @@ public sealed class RefreshTokenStoreTests
     public void Constructor_throws_ArgumentNullException_for_null_serverOptions()
     {
         var act = () => new RefreshTokenStore(
-            new InMemoryRefreshTokenGrantStore(),
+            new InMemoryRefreshTokenBackingStore(),
             new EphemeralDataProtectionProvider(),
             null!,
             TimeProvider.System);
@@ -90,7 +105,7 @@ public sealed class RefreshTokenStoreTests
     public void Constructor_throws_ArgumentNullException_for_null_timeProvider()
     {
         var act = () => new RefreshTokenStore(
-            new InMemoryRefreshTokenGrantStore(),
+            new InMemoryRefreshTokenBackingStore(),
             new EphemeralDataProtectionProvider(),
             new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
             null!);
@@ -207,7 +222,7 @@ public sealed class RefreshTokenStoreTests
         var tp = new FakeTimeProvider(startTime);
         var lifetime = TimeSpan.FromDays(1);
         var familyAbsoluteExpiry = startTime.AddDays(365); // far beyond the per-token lifetime
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var store = CreateStore(
             grantStore: grantStore,
             serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = lifetime } },
@@ -228,7 +243,7 @@ public sealed class RefreshTokenStoreTests
         var tp = new FakeTimeProvider(startTime);
         var lifetime = TimeSpan.FromDays(365); // far beyond the family's absolute cap
         var familyAbsoluteExpiry = startTime.AddDays(1);
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var store = CreateStore(
             grantStore: grantStore,
             serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = lifetime } },
@@ -253,7 +268,7 @@ public sealed class RefreshTokenStoreTests
     public async Task StoreAsync_saturates_ExpiresAt_instead_of_throwing_when_now_plus_RefreshTokenLifetime_overflows(TimeSpan lifetime)
     {
         var tp = new FakeTimeProvider(new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero));
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var store = CreateStore(
             grantStore: grantStore,
             serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = lifetime } },
@@ -274,7 +289,7 @@ public sealed class RefreshTokenStoreTests
         var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
         var tp = new FakeTimeProvider(startTime);
         var familyAbsoluteExpiry = startTime.AddDays(90);
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var store = CreateStore(
             grantStore: grantStore,
             serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = lifetime } },
@@ -319,7 +334,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task StoreAsync_persists_FamilyAbsoluteExpiry_verbatim_as_a_queryable_column()
     {
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var store = CreateStore(grantStore: grantStore);
         const string handle = "family-absolute-expiry-column";
         var familyAbsoluteExpiry = new DateTimeOffset(2095, 6, 1, 0, 0, 0, TimeSpan.Zero);
@@ -523,7 +538,7 @@ public sealed class RefreshTokenStoreTests
         // inserted strictly after a sibling's RevokeFamilyAsync returned), but the family reads
         // revoked. The gate must catch this regardless of the row's own status.
         const string familyId = "fam-386-consume";
-        var innerStore = new InMemoryRefreshTokenGrantStore();
+        var innerStore = new InMemoryRefreshTokenBackingStore();
         var store = CreateStore(grantStore: new FamilyRevokedOverrideGrantStore(innerStore, familyId));
         const string handle = "family-revoked-out-of-band-consume";
 
@@ -539,7 +554,7 @@ public sealed class RefreshTokenStoreTests
     public async Task FindAsync_returns_null_when_grant_reads_Active_but_IsFamilyRevokedAsync_reports_true()
     {
         const string familyId = "fam-386-find";
-        var innerStore = new InMemoryRefreshTokenGrantStore();
+        var innerStore = new InMemoryRefreshTokenBackingStore();
         var store = CreateStore(grantStore: new FamilyRevokedOverrideGrantStore(innerStore, familyId));
         const string handle = "family-revoked-out-of-band-find";
 
@@ -555,7 +570,7 @@ public sealed class RefreshTokenStoreTests
     public async Task TryConsumeAsync_returns_Revoked_not_ClientMismatch_when_IsFamilyRevokedAsync_reports_true_and_client_mismatches()
     {
         const string familyId = "fam-386-mismatch";
-        var innerStore = new InMemoryRefreshTokenGrantStore();
+        var innerStore = new InMemoryRefreshTokenBackingStore();
         var store = CreateStore(grantStore: new FamilyRevokedOverrideGrantStore(innerStore, familyId));
         const string handle = "family-revoked-out-of-band-mismatch";
 
@@ -572,7 +587,7 @@ public sealed class RefreshTokenStoreTests
     {
         // §4: the coordinator checks Status == Revoked before Status == Consumed. Combined with
         // the grant store overwriting a Consumed row's Status to Revoked on RevokeFamilyAsync
-        // (both are terminal, non-Active states — see InMemoryRefreshTokenGrantStore's remarks),
+        // (both are terminal, non-Active states — see InMemoryRefreshTokenBackingStore's remarks),
         // a replay against a token that was consumed and then had its family revoked reads as
         // Revoked, not AlreadyConsumed.
         var store = CreateStore();
@@ -592,30 +607,25 @@ public sealed class RefreshTokenStoreTests
             .Which.FamilyId.Should().Be(familyId);
     }
 
-    // ── #388 gate: revocation sentinel arms IsFamilyRevokedAsync for a zero-row family ────────────────
+    // ── Family revocation is a record in the backing store, never a row ─────────────────────────────
 
     [Fact]
-    public async Task RevokeFamilyAsync_on_zero_row_family_inserts_a_sentinel_that_IsFamilyRevokedAsync_reports()
+    public async Task A_family_revoked_with_no_rows_reads_as_revoked()
     {
-        // The issue #388 case: RevokeFamilyAsync runs against a family with no rows at all (e.g. an
-        // auth-code replay racing ahead of its own first StoreAsync). Without the sentinel, the
-        // bulk mark matches nothing and leaves no trace.
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        // An authorization code replayed before its own first StoreAsync revokes a family that has
+        // no rows yet; the record, not a row, is what the gate reads.
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var store = CreateStore(grantStore: grantStore);
         const string familyId = "fam-388-zero-row";
 
         await store.RevokeFamilyAsync(familyId, CancellationToken.None);
 
-        var revoked = await grantStore.IsFamilyRevokedAsync(familyId, CancellationToken.None);
-        revoked.Should().BeTrue(
-            because: "the sentinel row must arm the gate even though the family had no rows at revoke time");
+        (await grantStore.IsFamilyRevokedAsync(familyId, CancellationToken.None)).Should().BeTrue();
     }
 
     [Fact]
     public async Task TryConsumeAsync_returns_Revoked_for_grant_inserted_after_zero_row_family_was_revoked()
     {
-        // §9 case 6: revoke a zero-row family, THEN insert a grant into it, then confirm the
-        // sentinel already armed the #386 gate so the late insert is dead on arrival.
         var store = CreateStore();
         const string familyId = "fam-388-late-insert";
         const string handle = "issue-388-late-insert-handle";
@@ -642,22 +652,21 @@ public sealed class RefreshTokenStoreTests
         var result = await store.FindAsync(handle, CancellationToken.None);
 
         result.Should().BeNull(
-            because: "introspection must not report a grant as live when its family's sentinel already reads revoked");
+            because: "introspection must not report a grant as live when its family already reads revoked");
     }
 
     [Fact]
-    public async Task RevokeFamilyAsync_called_twice_on_the_same_family_only_ever_inserts_the_sentinel_once()
+    public async Task RevokeFamilyAsync_never_writes_a_row_to_the_backing_store()
     {
-        var tracker = new HandleTrackingGrantStore(new InMemoryRefreshTokenGrantStore());
+        var tracker = new HandleTrackingGrantStore(new InMemoryRefreshTokenBackingStore());
         var store = CreateStore(grantStore: tracker);
-        const string familyId = "fam-388-idempotent";
+        const string familyId = "fam-388-no-row";
 
         await store.RevokeFamilyAsync(familyId, CancellationToken.None);
         await store.RevokeFamilyAsync(familyId, CancellationToken.None);
 
-        tracker.SuccessfulInsertCount.Should().Be(1,
-            because: "the sentinel's deterministic key means a repeat RevokeFamilyAsync collides with its own " +
-                      "prior sentinel and is caught as a no-op, never a second row (no unbounded growth)");
+        tracker.SuccessfulInsertCount.Should().Be(0,
+            because: "a revocation is a record in the backing store, never a grant-shaped row");
     }
 
     [Fact]
@@ -673,163 +682,38 @@ public sealed class RefreshTokenStoreTests
     }
 
     [Fact]
-    public async Task The_sentinel_row_expires_with_the_family_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime()
+    public async Task The_family_is_remembered_for_its_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime()
     {
-        // The sentinel must outlive any row later born into the family. Its expiry is the family's
-        // absolute lifetime from revoke time, plus the skew tolerance, so a first row born a moment
-        // after the revoke does not outlast it on a backend that evicts at FamilyAbsoluteExpiry.
+        // The record must outlive any row later born into the family: the family's absolute
+        // lifetime from revoke time, plus the skew tolerance for a first row born a moment later.
         var now = new DateTimeOffset(2026, 9, 14, 12, 0, 0, TimeSpan.Zero);
         var options = new AuthorizationServerOptions { ClockSkewTolerance = TimeSpan.FromMinutes(5) };
         options.TokenEndpoint.AbsoluteFamilyLifetime = TimeSpan.FromDays(90);
         options.AuthorizationEndpoint.AuthorizationCodeLifetime = TimeSpan.FromSeconds(60);
-        var grantStore = new InMemoryRefreshTokenGrantStore();
-        var store = CreateStore(grantStore: grantStore, serverOptions: options, timeProvider: new FakeTimeProvider(now));
-        const string familyId = "fam-485-expiry";
+        var tracker = new HandleTrackingGrantStore(new InMemoryRefreshTokenBackingStore());
+        var store = CreateStore(grantStore: tracker, serverOptions: options, timeProvider: new FakeTimeProvider(now));
 
-        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+        await store.RevokeFamilyAsync("fam-485-expiry", CancellationToken.None);
 
-        var sentinel = await grantStore.FindByHandleAsync(RefreshTokenStore.BuildRevocationSentinelKey(familyId), CancellationToken.None);
-        sentinel!.FamilyAbsoluteExpiry.Should().Be(now.AddDays(90).AddMinutes(5));
-        sentinel.ExpiresAt.Should().Be(sentinel.FamilyAbsoluteExpiry);
+        tracker.LastRememberUntil.Should().Be(now.AddDays(90).AddMinutes(5));
     }
 
     [Fact]
-    public async Task The_sentinel_row_never_expires_when_the_family_lifetime_is_unbounded()
+    public async Task The_family_is_remembered_forever_when_the_family_lifetime_is_unbounded()
     {
         var options = new AuthorizationServerOptions();
         options.TokenEndpoint.AbsoluteFamilyLifetime = TimeSpan.MaxValue;
-        var grantStore = new InMemoryRefreshTokenGrantStore();
-        var store = CreateStore(grantStore: grantStore, serverOptions: options);
-        const string familyId = "fam-485-unbounded";
+        var tracker = new HandleTrackingGrantStore(new InMemoryRefreshTokenBackingStore());
+        var store = CreateStore(grantStore: tracker, serverOptions: options);
 
-        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+        await store.RevokeFamilyAsync("fam-485-unbounded", CancellationToken.None);
 
-        var sentinel = await grantStore.FindByHandleAsync(RefreshTokenStore.BuildRevocationSentinelKey(familyId), CancellationToken.None);
-        sentinel!.FamilyAbsoluteExpiry.Should().Be(DateTimeOffset.MaxValue);
+        tracker.LastRememberUntil.Should().Be(DateTimeOffset.MaxValue);
     }
 
     [Fact]
-    public async Task Sentinels_of_two_families_carry_distinct_reserved_subjects()
+    public async Task RevokeFamilyAsync_revokes_the_rows_already_in_the_family()
     {
-        // A backend indexing by subject must not gather every family's sentinel under one key.
-        var grantStore = new InMemoryRefreshTokenGrantStore();
-        var store = CreateStore(grantStore: grantStore);
-
-        await store.RevokeFamilyAsync("fam-485-a", CancellationToken.None);
-        await store.RevokeFamilyAsync("fam-485-b", CancellationToken.None);
-
-        var first = await grantStore.FindByHandleAsync(RefreshTokenStore.BuildRevocationSentinelKey("fam-485-a"), CancellationToken.None);
-        var second = await grantStore.FindByHandleAsync(RefreshTokenStore.BuildRevocationSentinelKey("fam-485-b"), CancellationToken.None);
-        first!.Subject.Should().NotBe(second!.Subject);
-        first.Subject.Should().Contain("fam-485-a");
-    }
-
-    [Fact]
-    public async Task A_bulk_revoke_fault_still_leaves_the_family_revoked_because_the_sentinel_is_written_first()
-    {
-        // The sentinel arms the consume-time gate before the bulk mark runs, so a backend that
-        // fails the bulk mark leaves pre-existing rows dead on their next presentation anyway.
-        var inner = new InMemoryRefreshTokenGrantStore();
-        var seedStore = CreateStore(grantStore: inner);
-        const string familyId = "fam-485-bulk-fault";
-        const string handle = "issue-485-pre-existing-handle";
-        await seedStore.StoreAsync(handle, BuildEntry(familyId: familyId), CancellationToken.None);
-        var store = CreateStore(grantStore: new RevokeFamilyFailingGrantStore(inner));
-
-        var revoke = async () => await store.RevokeFamilyAsync(familyId, CancellationToken.None);
-        await revoke.Should().ThrowAsync<ZeeKayDaStoreException>();
-
-        var outcome = await seedStore.TryConsumeAsync(handle, "client-a", CancellationToken.None);
-        outcome.Should().BeOfType<RefreshTokenConsumptionResult.Revoked>();
-    }
-
-    [Fact]
-    public async Task RevokeFamilyAsync_rethrows_when_the_sentinel_row_was_written_but_the_gate_does_not_read_the_family_as_revoked()
-    {
-        // A backend that indexes separately can persist the row and then fail the index write the
-        // gate reads. Row presence must not pass that off as a benign collision: the family is not
-        // protected, and the failure has to reach the caller.
-        var inner = new InMemoryRefreshTokenGrantStore();
-        var store = CreateStore(grantStore: new RowWrittenButGateNotArmedGrantStore(inner));
-
-        var act = async () => await store.RevokeFamilyAsync("fam-485-index-lost", CancellationToken.None);
-
-        await act.Should().ThrowAsync<ZeeKayDaStoreException>();
-    }
-
-    [Fact]
-    public async Task RevokeFamilyAsync_propagates_a_fault_from_the_gate_read_rather_than_treating_the_insert_as_benign()
-    {
-        // The row is persisted and readable, so the first confirmation passes; the gate itself
-        // then faults. A gate that cannot answer must not be read as a gate that says revoked.
-        var inner = new InMemoryRefreshTokenGrantStore();
-        var gateFaulting = new RowWrittenButGateFaultingGrantStore(inner);
-        var store = CreateStore(grantStore: gateFaulting);
-
-        var act = async () => await store.RevokeFamilyAsync("fam-485-gate-fault", CancellationToken.None);
-
-        (await act.Should().ThrowAsync<ZeeKayDaStoreException>())
-            .WithInnerException<InvalidOperationException>().WithMessage("*gate read fault*",
-                because: "the gate's own fault must be what propagates, not the insert failure it was confirming");
-        gateFaulting.GateReads.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task RevokeFamilyAsync_propagates_a_fault_from_the_confirming_read_rather_than_treating_the_insert_as_benign()
-    {
-        var inner = new InMemoryRefreshTokenGrantStore();
-        var store = CreateStore(grantStore: new InsertAndConfirmFailingGrantStore(inner));
-
-        var act = async () => await store.RevokeFamilyAsync("fam-485-confirm-fault", CancellationToken.None);
-
-        await act.Should().ThrowAsync<ZeeKayDaStoreException>(
-            because: "a confirming read that cannot answer must not let the insert failure pass as a collision");
-    }
-
-    [Fact]
-    public async Task RevokeFamilyAsync_rethrows_when_the_sentinel_insert_fails_and_no_row_is_actually_persisted()
-    {
-        // A genuine backend fault on the sentinel InsertAsync surfaces as the exact same
-        // ZeeKayDaStoreException type as a benign self-collision would. The confirming
-        // FindByHandleAsync read shows no row for the sentinel's key, so the failure must be
-        // treated as real and rethrown rather than silently swallowed (the bug this fixes).
-        var inner = new InMemoryRefreshTokenGrantStore();
-        var faultingStore = new InsertAlwaysFailingGrantStore(inner);
-        var store = CreateStore(grantStore: faultingStore);
-
-        var act = async () => await store.RevokeFamilyAsync("fam-388-genuine-fault", CancellationToken.None);
-
-        await act.Should().ThrowAsync<ZeeKayDaStoreException>(
-            because: "a genuine InsertAsync fault must not be silently treated as a benign self-collision " +
-                      "just because it wraps into the same exception type");
-    }
-
-    [Fact]
-    public async Task RevokeFamilyAsync_treats_sentinel_insert_failure_as_benign_when_a_confirmed_prior_sentinel_exists()
-    {
-        // Seed a real sentinel for the family first (via a working store), then retry
-        // RevokeFamilyAsync through a store whose InsertAsync always fails. The confirming
-        // FindByHandleAsync read shows the sentinel's exact key durably present and Revoked, so
-        // this failure is the expected self-collision and must not propagate.
-        var inner = new InMemoryRefreshTokenGrantStore();
-        const string familyId = "fam-388-confirmed-collision";
-        var seedStore = CreateStore(grantStore: inner);
-        await seedStore.RevokeFamilyAsync(familyId, CancellationToken.None);
-
-        var faultingStore = new InsertAlwaysFailingGrantStore(inner);
-        var store = CreateStore(grantStore: faultingStore);
-
-        var act = async () => await store.RevokeFamilyAsync(familyId, CancellationToken.None);
-
-        await act.Should().NotThrowAsync(
-            because: "the confirming read shows the sentinel already durably present as Revoked, so the " +
-                      "InsertAsync failure is confirmed benign rather than assumed benign");
-    }
-
-    [Fact]
-    public async Task RevokeFamilyAsync_still_revokes_real_pre_existing_rows_in_addition_to_the_sentinel()
-    {
-        // The sentinel is additive, not a replacement for the existing bulk-revoke behaviour.
         var store = CreateStore();
         const string familyId = "fam-388-real-rows";
         const string handle = "issue-388-real-row-handle";
@@ -851,7 +735,7 @@ public sealed class RefreshTokenStoreTests
         // A grant with a deliberately corrupt/unparseable ProtectedPayload must still resolve
         // AlreadyConsumed purely from the cleartext Status column — reuse detection must never
         // ride on a successful decrypt.
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var store = CreateStore(grantStore: grantStore);
         const string handle = "corrupt-payload-consumed";
         const string familyId = "fam-corrupt-consumed";
@@ -878,7 +762,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_returns_Revoked_without_throwing_even_when_ProtectedPayload_is_corrupt()
     {
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var store = CreateStore(grantStore: grantStore);
         const string handle = "corrupt-payload-revoked";
         const string familyId = "fam-corrupt-revoked";
@@ -905,7 +789,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_returns_NotFound_without_throwing_when_expired_grant_has_corrupt_ProtectedPayload()
     {
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
         var tp = new FakeTimeProvider(startTime);
         var store = CreateStore(grantStore: grantStore, timeProvider: tp);
@@ -934,7 +818,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_returns_ClientMismatch_without_throwing_when_active_grant_has_corrupt_ProtectedPayload()
     {
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var store = CreateStore(grantStore: grantStore);
         const string handle = "corrupt-payload-mismatch";
         var key = new StoreKey(ComputeExpectedHandleHash(handle));
@@ -965,7 +849,7 @@ public sealed class RefreshTokenStoreTests
         // Two stores share the same grant store but use independent DP key rings. Store 1 writes
         // the grant; store 2 wins the CAS pivot but cannot decrypt the payload — the sole
         // Unprotect call's only failure mode, degrading to NotFound (fail-closed: already dead).
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var dp1 = new EphemeralDataProtectionProvider();
         var dp2 = new EphemeralDataProtectionProvider();
         var store1 = CreateStore(grantStore: grantStore, dp: dp1);
@@ -985,7 +869,7 @@ public sealed class RefreshTokenStoreTests
         // The row is already marked Consumed by the losing decrypt attempt — the token is dead
         // even though NotFound was returned, so a subsequent attempt (e.g. with a working key
         // ring) must not be able to consume it again.
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var dp1 = new EphemeralDataProtectionProvider();
         var dp2 = new EphemeralDataProtectionProvider();
         var store1 = CreateStore(grantStore: grantStore, dp: dp1);
@@ -1004,7 +888,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task FindAsync_returns_null_when_entry_cannot_be_unprotected()
     {
-        var grantStore = new InMemoryRefreshTokenGrantStore();
+        var grantStore = new InMemoryRefreshTokenBackingStore();
         var dp1 = new EphemeralDataProtectionProvider();
         var dp2 = new EphemeralDataProtectionProvider();
         var store1 = CreateStore(grantStore: grantStore, dp: dp1);
@@ -1023,7 +907,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_lost_race_resolves_to_AlreadyConsumed_via_re_read()
     {
-        var inner = new InMemoryRefreshTokenGrantStore();
+        var inner = new InMemoryRefreshTokenBackingStore();
         var dp = new EphemeralDataProtectionProvider();
         var seedStore = CreateStore(grantStore: inner, dp: dp);
         const string handle = "race-losing-handle";
@@ -1041,7 +925,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_lost_race_resolves_to_Revoked_when_the_winner_revoked_the_family_first()
     {
-        var inner = new InMemoryRefreshTokenGrantStore();
+        var inner = new InMemoryRefreshTokenBackingStore();
         var dp = new EphemeralDataProtectionProvider();
         var seedStore = CreateStore(grantStore: inner, dp: dp);
         const string handle = "race-losing-then-revoked-handle";
@@ -1133,7 +1017,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_rethrows_OperationCanceledException_from_TryMarkConsumedAsync_unwrapped()
     {
-        var grantStore = new CancellationThrowingOnMarkConsumedGrantStore(new InMemoryRefreshTokenGrantStore());
+        var grantStore = new CancellationThrowingOnMarkConsumedGrantStore(new InMemoryRefreshTokenBackingStore());
         var store = CreateStore(grantStore: grantStore);
         await store.StoreAsync("handle", BuildEntry(), CancellationToken.None);
 
@@ -1203,10 +1087,10 @@ public sealed class RefreshTokenStoreTests
     private static string ComputeExpectedHandleHash(string handle)
     {
         var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(handle));
-        return System.Buffers.Text.Base64Url.EncodeToString(bytes);
+        return "zkd:refresh:h:" + Convert.ToHexStringLower(bytes);
     }
 
-    private sealed class ThrowingGrantStore : IRefreshTokenGrantStore
+    private sealed class ThrowingGrantStore : IRefreshTokenBackingStore
     {
         public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated grant store failure.");
@@ -1217,7 +1101,7 @@ public sealed class RefreshTokenStoreTests
         public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated grant store failure.");
 
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
+        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Simulated grant store failure.");
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
@@ -1232,11 +1116,11 @@ public sealed class RefreshTokenStoreTests
     /// through the real store (as if another concurrent consumer had just won) and then reports
     /// the transition as lost, deterministically exercising the §4 "lost the race" re-read path.
     /// </summary>
-    private sealed class RaceLosingGrantStore : IRefreshTokenGrantStore
+    private sealed class RaceLosingGrantStore : IRefreshTokenBackingStore
     {
-        private readonly IRefreshTokenGrantStore _inner;
+        private readonly IRefreshTokenBackingStore _inner;
 
-        public RaceLosingGrantStore(IRefreshTokenGrantStore inner) => _inner = inner;
+        public RaceLosingGrantStore(IRefreshTokenBackingStore inner) => _inner = inner;
 
         public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
             => _inner.InsertAsync(grant, cancellationToken);
@@ -1250,8 +1134,8 @@ public sealed class RefreshTokenStoreTests
             return false;
         }
 
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
-            => _inner.RevokeFamilyAsync(familyId, cancellationToken);
+        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+            => _inner.RevokeFamilyAsync(familyId, rememberUntil, cancellationToken);
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
@@ -1265,12 +1149,12 @@ public sealed class RefreshTokenStoreTests
     /// immediately after winning the CAS, so the losing re-read observes <c>Revoked</c> rather
     /// than <c>Consumed</c>.
     /// </summary>
-    private sealed class RaceLosingThenRevokingGrantStore : IRefreshTokenGrantStore
+    private sealed class RaceLosingThenRevokingGrantStore : IRefreshTokenBackingStore
     {
-        private readonly IRefreshTokenGrantStore _inner;
+        private readonly IRefreshTokenBackingStore _inner;
         private readonly string _familyId;
 
-        public RaceLosingThenRevokingGrantStore(IRefreshTokenGrantStore inner, string familyId)
+        public RaceLosingThenRevokingGrantStore(IRefreshTokenBackingStore inner, string familyId)
         {
             _inner = inner;
             _familyId = familyId;
@@ -1285,12 +1169,12 @@ public sealed class RefreshTokenStoreTests
         public async ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
         {
             await _inner.TryMarkConsumedAsync(handleHash, cancellationToken).ConfigureAwait(false);
-            await _inner.RevokeFamilyAsync(_familyId, cancellationToken).ConfigureAwait(false);
+            await _inner.RevokeFamilyAsync(_familyId, DateTimeOffset.MaxValue, cancellationToken).ConfigureAwait(false);
             return false;
         }
 
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
-            => _inner.RevokeFamilyAsync(familyId, cancellationToken);
+        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+            => _inner.RevokeFamilyAsync(familyId, rememberUntil, cancellationToken);
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
@@ -1299,11 +1183,11 @@ public sealed class RefreshTokenStoreTests
             => _inner.IsFamilyRevokedAsync(familyId, cancellationToken);
     }
 
-    private sealed class CancellationThrowingOnMarkConsumedGrantStore : IRefreshTokenGrantStore
+    private sealed class CancellationThrowingOnMarkConsumedGrantStore : IRefreshTokenBackingStore
     {
-        private readonly IRefreshTokenGrantStore _inner;
+        private readonly IRefreshTokenBackingStore _inner;
 
-        public CancellationThrowingOnMarkConsumedGrantStore(IRefreshTokenGrantStore inner) => _inner = inner;
+        public CancellationThrowingOnMarkConsumedGrantStore(IRefreshTokenBackingStore inner) => _inner = inner;
 
         public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
             => _inner.InsertAsync(grant, cancellationToken);
@@ -1314,8 +1198,8 @@ public sealed class RefreshTokenStoreTests
         public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => throw new OperationCanceledException();
 
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
-            => _inner.RevokeFamilyAsync(familyId, cancellationToken);
+        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+            => _inner.RevokeFamilyAsync(familyId, rememberUntil, cancellationToken);
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
@@ -1331,12 +1215,12 @@ public sealed class RefreshTokenStoreTests
     /// scenario where a grant's own row still reads <see cref="RefreshGrantStatus.Active"/> but a
     /// sibling's revoke has already committed.
     /// </summary>
-    private sealed class FamilyRevokedOverrideGrantStore : IRefreshTokenGrantStore
+    private sealed class FamilyRevokedOverrideGrantStore : IRefreshTokenBackingStore
     {
-        private readonly IRefreshTokenGrantStore _inner;
+        private readonly IRefreshTokenBackingStore _inner;
         private readonly string _revokedFamilyId;
 
-        public FamilyRevokedOverrideGrantStore(IRefreshTokenGrantStore inner, string revokedFamilyId)
+        public FamilyRevokedOverrideGrantStore(IRefreshTokenBackingStore inner, string revokedFamilyId)
         {
             _inner = inner;
             _revokedFamilyId = revokedFamilyId;
@@ -1351,8 +1235,8 @@ public sealed class RefreshTokenStoreTests
         public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => _inner.TryMarkConsumedAsync(handleHash, cancellationToken);
 
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
-            => _inner.RevokeFamilyAsync(familyId, cancellationToken);
+        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+            => _inner.RevokeFamilyAsync(familyId, rememberUntil, cancellationToken);
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
@@ -1367,14 +1251,16 @@ public sealed class RefreshTokenStoreTests
     /// <c>RevokeFamilyAsync</c> for the same family must collide on its own prior sentinel and
     /// never grow past one successful insert for that key.
     /// </summary>
-    private sealed class HandleTrackingGrantStore : IRefreshTokenGrantStore
+    private sealed class HandleTrackingGrantStore : IRefreshTokenBackingStore
     {
-        private readonly IRefreshTokenGrantStore _inner;
+        private readonly IRefreshTokenBackingStore _inner;
         private int _successfulInsertCount;
 
-        public HandleTrackingGrantStore(IRefreshTokenGrantStore inner) => _inner = inner;
+        public HandleTrackingGrantStore(IRefreshTokenBackingStore inner) => _inner = inner;
 
         public int SuccessfulInsertCount => _successfulInsertCount;
+
+        public DateTimeOffset? LastRememberUntil { get; private set; }
 
         public async ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
         {
@@ -1388,143 +1274,17 @@ public sealed class RefreshTokenStoreTests
         public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => _inner.TryMarkConsumedAsync(handleHash, cancellationToken);
 
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
-            => _inner.RevokeFamilyAsync(familyId, cancellationToken);
+        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
+        {
+            LastRememberUntil = rememberUntil;
+            return _inner.RevokeFamilyAsync(familyId, rememberUntil, cancellationToken);
+        }
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
             => _inner.RevokeBySubjectAsync(subject, cancellationToken);
 
         public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
             => _inner.IsFamilyRevokedAsync(familyId, cancellationToken);
-    }
-
-    /// <summary>
-    /// Wraps a real grant store; <see cref="InsertAsync"/> always throws (simulating a genuine
-    /// backend fault, never a benign self-collision), while every other member delegates to
-    /// <see cref="_inner"/> — including <see cref="FindByHandleAsync"/>, so the confirming read
-    /// InsertRevocationSentinelAsync performs after a failed insert reflects the real, unmodified
-    /// persisted state.
-    /// </summary>
-    private sealed class InsertAlwaysFailingGrantStore : IRefreshTokenGrantStore
-    {
-        private readonly IRefreshTokenGrantStore _inner;
-
-        public InsertAlwaysFailingGrantStore(IRefreshTokenGrantStore inner) => _inner = inner;
-
-        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("Simulated genuine InsertAsync fault (not a collision).");
-
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => _inner.FindByHandleAsync(handleHash, cancellationToken);
-
-        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => _inner.TryMarkConsumedAsync(handleHash, cancellationToken);
-
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
-            => _inner.RevokeFamilyAsync(familyId, cancellationToken);
-
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
-            => _inner.RevokeBySubjectAsync(subject, cancellationToken);
-
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
-            => _inner.IsFamilyRevokedAsync(familyId, cancellationToken);
-    }
-
-    /// <summary>Persists the row, then fails the insert as a separately-indexed backend does when its index write fails; the gate never learns of the family.</summary>
-    private sealed class RowWrittenButGateNotArmedGrantStore(IRefreshTokenGrantStore inner) : IRefreshTokenGrantStore
-    {
-        public async ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
-        {
-            await inner.InsertAsync(grant, cancellationToken);
-            throw new InvalidOperationException("Simulated index write failure after the row was persisted.");
-        }
-
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => inner.FindByHandleAsync(handleHash, cancellationToken);
-
-        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => inner.TryMarkConsumedAsync(handleHash, cancellationToken);
-
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
-            => inner.RevokeFamilyAsync(familyId, cancellationToken);
-
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
-            => inner.RevokeBySubjectAsync(subject, cancellationToken);
-
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
-            => ValueTask.FromResult(false);
-    }
-
-    /// <summary>Persists the row, fails the insert, answers the row read, and faults on the gate read.</summary>
-    private sealed class RowWrittenButGateFaultingGrantStore(IRefreshTokenGrantStore inner) : IRefreshTokenGrantStore
-    {
-        public int GateReads { get; private set; }
-
-        public async ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
-        {
-            await inner.InsertAsync(grant, cancellationToken);
-            throw new InvalidOperationException("Simulated index write failure after the row was persisted.");
-        }
-
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => inner.FindByHandleAsync(handleHash, cancellationToken);
-
-        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => inner.TryMarkConsumedAsync(handleHash, cancellationToken);
-
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
-            => inner.RevokeFamilyAsync(familyId, cancellationToken);
-
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
-            => inner.RevokeBySubjectAsync(subject, cancellationToken);
-
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
-        {
-            GateReads++;
-            throw new InvalidOperationException("Simulated gate read fault.");
-        }
-    }
-
-    private sealed class InsertAndConfirmFailingGrantStore(IRefreshTokenGrantStore inner) : IRefreshTokenGrantStore
-    {
-        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("Simulated insert fault.");
-
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("Simulated confirming-read fault.");
-
-        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => inner.TryMarkConsumedAsync(handleHash, cancellationToken);
-
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
-            => inner.RevokeFamilyAsync(familyId, cancellationToken);
-
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
-            => inner.RevokeBySubjectAsync(subject, cancellationToken);
-
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
-            => inner.IsFamilyRevokedAsync(familyId, cancellationToken);
-    }
-
-    private sealed class RevokeFamilyFailingGrantStore(IRefreshTokenGrantStore inner) : IRefreshTokenGrantStore
-    {
-        public ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken)
-            => inner.InsertAsync(grant, cancellationToken);
-
-        public ValueTask<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => inner.FindByHandleAsync(handleHash, cancellationToken);
-
-        public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
-            => inner.TryMarkConsumedAsync(handleHash, cancellationToken);
-
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("Simulated bulk-revoke fault after the sentinel was written.");
-
-        public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
-            => inner.RevokeBySubjectAsync(subject, cancellationToken);
-
-        public ValueTask<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken)
-            => inner.IsFamilyRevokedAsync(familyId, cancellationToken);
     }
 
     private sealed class ProtectFailingDataProtectionProvider : IDataProtectionProvider

@@ -18,7 +18,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// authorization decisions and MUST NOT be used to validate or look up a prior token.
 /// </para>
 /// </remarks>
-public sealed record RefreshTokenEntry
+internal sealed record RefreshTokenEntry
 {
     /// <summary>
     /// Gets the family identifier shared across all rotations of a token chain.

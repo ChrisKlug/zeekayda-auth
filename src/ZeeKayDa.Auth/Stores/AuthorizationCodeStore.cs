@@ -9,7 +9,7 @@ using static ZeeKayDa.Auth.Stores.StoreGuard;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// The framework's sealed <see cref="IAuthorizationCodeStore"/> coordinator.
+/// The framework's authorization-code store: the protocol over an <see cref="IAuthorizationCodeBackingStore"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,7 +26,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// persisted as keys or embedded in stored values.
 /// </para>
 /// </remarks>
-internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
+internal sealed class AuthorizationCodeStore
 {
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:AuthorizationCodeStore";
 
@@ -41,7 +41,7 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
 
     /// <summary>Initialises a new <see cref="AuthorizationCodeStore"/>.</summary>
     /// <param name="backingStore">The opaque persistence primitive.</param>
-    /// <param name="dataProtectionProvider">Provider used to create the entry/tombstone protector.</param>
+    /// <param name="dataProtectionProvider">Provider used to create the entry protector.</param>
     /// <param name="serverOptions">Server options providing <see cref="AuthorizationServerOptions.ClockSkewTolerance"/>.</param>
     /// <param name="timeProvider">Time provider used for all UTC timestamp reads.</param>
     public AuthorizationCodeStore(
@@ -61,7 +61,8 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
         _clockSkewTolerance = serverOptions.Value.ClockSkewTolerance;
     }
 
-    /// <inheritdoc/>
+    /// <summary>Stores a newly minted code's entry under the hash of the code.</summary>
+    /// <exception cref="ZeeKayDaStoreException">Thrown when the backing store fails, or the key already exists.</exception>
     public async Task StoreAsync(string code, AuthorizationCodeEntry entry, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(code);
@@ -81,8 +82,11 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
                 "The authorization code handle collided with an existing store entry.");
     }
 
-    /// <inheritdoc/>
-    async ValueTask<bool> IAuthorizationCodeStore.TryClaimInteractionAsync(
+    /// <summary>
+    /// Claims an interaction's one terminal outcome (a code or a denial) through the same atomic
+    /// insert that makes a code single-use; <see langword="false"/> when another response holds it.
+    /// </summary>
+    public async ValueTask<bool> TryClaimInteractionAsync(
         string interactionId,
         DateTimeOffset interactionExpiresAt,
         CancellationToken cancellationToken)
@@ -99,7 +103,10 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
             "claim the interaction's terminal outcome").ConfigureAwait(false);
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Redeems a code exactly once: a client mismatch leaves it intact, and a replay reports the
+    /// family id the first redemption recorded, so the caller can revoke that family.
+    /// </summary>
     public async ValueTask<AuthorizationCodeRedemptionResult> TryRedeemAsync(
         string code,
         string clientId,
@@ -142,10 +149,10 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
             return new AuthorizationCodeRedemptionResult.ClientMismatch();
 
         var tombstoneExpiresAt = entry.ExpiresAt + _clockSkewTolerance;
-        var envelopeBytes = ProtectTombstone(familyId);
+        var tombstoneBytes = SerializeTombstone(familyId);
 
         var wonRace = await Guarded(
-            () => _backingStore.TryInsertAsync(tombstoneKey, envelopeBytes, tombstoneExpiresAt, cancellationToken),
+            () => _backingStore.TryInsertAsync(tombstoneKey, tombstoneBytes, tombstoneExpiresAt, cancellationToken),
             "write the authorization code redemption tombstone").ConfigureAwait(false);
 
         if (!wonRace)
@@ -158,9 +165,6 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
         return new AuthorizationCodeRedemptionResult.Redeemed { Entry = entry };
     }
 
-    /// <inheritdoc/>
-    void IAuthorizationCodeStore.SealAsFrameworkOwnedProtocol() { }
-
     private async ValueTask<AuthorizationCodeRedemptionResult> ResolveViaTombstoneAsync(
         StoreKey tombstoneKey, CancellationToken cancellationToken)
     {
@@ -171,12 +175,12 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
         if (tombstoneBytes is null)
             return new AuthorizationCodeRedemptionResult.NotFound();
 
-        AuthorizationCodeTombstoneEnvelope envelope;
+        string? familyId;
         try
         {
-            envelope = JsonSerializer.Deserialize(
+            familyId = JsonSerializer.Deserialize(
                 tombstoneBytes.Value.Span,
-                StoreJsonSerializerContext.Default.AuthorizationCodeTombstoneEnvelope)!;
+                StoreJsonSerializerContext.Default.AuthorizationCodeTombstone)?.FamilyId;
         }
         catch (JsonException ex)
         {
@@ -184,19 +188,10 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
                 "Failed to parse the authorization code redemption tombstone.", ex);
         }
 
-        // FamilyId is plaintext and recoverable independently of ProtectedSecret. Attempting the
-        // unprotect here (and discarding the result either way) pins the two-catch-site asymmetry:
-        // a rotated Data Protection key must not degrade this outcome to NotFound.
-        try
-        {
-            _protector.Unprotect(envelope.ProtectedSecret);
-        }
-        catch (Exception ex) when (ex is CryptographicException or ArgumentNullException)
-        {
-            // Deliberately ignored — see remarks above.
-        }
-
-        return new AuthorizationCodeRedemptionResult.AlreadyRedeemed { FamilyId = envelope.FamilyId };
+        // A JSON null, or a tombstone whose family id is null, is as corrupt as unparseable bytes.
+        return familyId is null
+            ? throw new ZeeKayDaStoreException("Failed to parse the authorization code redemption tombstone.")
+            : new AuthorizationCodeRedemptionResult.AlreadyRedeemed { FamilyId = familyId };
     }
 
     private byte[] ProtectEntry(AuthorizationCodeEntry entry)
@@ -218,25 +213,14 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
         return JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.AuthorizationCodeEntry)!;
     }
 
-    private byte[] ProtectTombstone(string familyId)
-    {
-        try
-        {
-            var protectedSecret = _protector.Protect([]);
-            var envelope = new AuthorizationCodeTombstoneEnvelope { FamilyId = familyId, ProtectedSecret = protectedSecret };
-            return JsonSerializer.SerializeToUtf8Bytes(envelope, StoreJsonSerializerContext.Default.AuthorizationCodeTombstoneEnvelope);
-        }
-        catch (Exception ex) when (ex is not ZeeKayDaStoreException)
-        {
-            throw new ZeeKayDaStoreException("Failed to protect the authorization code redemption tombstone.", ex);
-        }
-    }
+    private static byte[] SerializeTombstone(string familyId) =>
+        JsonSerializer.SerializeToUtf8Bytes(
+            new AuthorizationCodeTombstone { FamilyId = familyId },
+            StoreJsonSerializerContext.Default.AuthorizationCodeTombstone);
 
-    private static StoreKey BuildEntryKey(string code) => new($"zkd:code:e:{HashHex(code)}");
+    private static StoreKey BuildEntryKey(string code) => StoreKey.Hash("code", "e", code);
 
-    private static StoreKey BuildTombstoneKey(string code) => new($"zkd:code:t:{HashHex(code)}");
+    private static StoreKey BuildTombstoneKey(string code) => StoreKey.Hash("code", "t", code);
 
-    private static StoreKey BuildInteractionKey(string interactionId) => new($"zkd:code:i:{HashHex(interactionId)}");
-
-    private static string HashHex(string handle) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(handle)));
+    private static StoreKey BuildInteractionKey(string interactionId) => StoreKey.Hash("code", "i", interactionId);
 }

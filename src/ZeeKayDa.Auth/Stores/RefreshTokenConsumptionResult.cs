@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// Represents the outcome of a <see cref="IRefreshTokenStore.TryConsumeAsync"/> call.
+/// Represents the outcome of a <c>RefreshTokenStore.TryConsumeAsync</c> call.
 /// </summary>
 /// <remarks>
 /// A closed hierarchy — exhaustive pattern matching over its nested subtypes
@@ -11,7 +11,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// <see cref="Revoked"/>, <see cref="NotFound"/>) is both safe and encouraged. No further
 /// subtypes will be added without a major version bump.
 /// </remarks>
-public abstract class RefreshTokenConsumptionResult
+internal abstract class RefreshTokenConsumptionResult
 {
     [ExcludeFromCodeCoverage]
     private RefreshTokenConsumptionResult() { }
@@ -44,7 +44,7 @@ public abstract class RefreshTokenConsumptionResult
     /// <remarks>
     /// The primary signal for refresh token reuse detection. On receiving this outcome, the
     /// caller MUST revoke the entire token family by calling
-    /// <see cref="IRefreshTokenStore.RevokeFamilyAsync"/> with <see cref="FamilyId"/>.
+    /// <c>RefreshTokenStore.RevokeFamilyAsync</c> with <see cref="FamilyId"/>.
     /// </remarks>
     public sealed class AlreadyConsumed : RefreshTokenConsumptionResult
     {
@@ -57,7 +57,7 @@ public abstract class RefreshTokenConsumptionResult
     /// </summary>
     /// <remarks>
     /// The family is already revoked when this outcome is returned — a defensive call to
-    /// <see cref="IRefreshTokenStore.RevokeFamilyAsync"/> is safe and idempotent but not required.
+    /// <c>RefreshTokenStore.RevokeFamilyAsync</c> is safe and idempotent but not required.
     /// </remarks>
     public sealed class Revoked : RefreshTokenConsumptionResult
     {

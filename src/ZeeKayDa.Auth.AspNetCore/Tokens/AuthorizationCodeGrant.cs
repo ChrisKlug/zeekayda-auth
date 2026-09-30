@@ -63,7 +63,7 @@ internal sealed class AuthorizationCodeGrant
         // whose store and signing-ring dependencies are host registrations, and constructor
         // injection would surface their absence as a raw DI error instead of the startup
         // verifiers' own messages.
-        var store = context.RequestServices.GetRequiredService<IAuthorizationCodeStore>();
+        var store = context.RequestServices.GetRequiredService<AuthorizationCodeStore>();
 
         // Minted before the redemption so the tombstone written by it carries the family every
         // later replay must revoke — one fresh CSPRNG value per code, never a GUID.
@@ -200,7 +200,7 @@ internal sealed class AuthorizationCodeGrant
         {
             try
             {
-                var refreshTokens = context.RequestServices.GetRequiredService<IRefreshTokenStore>();
+                var refreshTokens = context.RequestServices.GetRequiredService<RefreshTokenStore>();
                 await refreshTokens.RevokeFamilyAsync(familyId, CancellationToken.None).ConfigureAwait(false);
             }
             catch (ZeeKayDaStoreException ex)

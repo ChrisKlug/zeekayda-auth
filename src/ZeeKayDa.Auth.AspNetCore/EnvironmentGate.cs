@@ -11,11 +11,8 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <remarks>
 /// <para>
 /// Every startup check that gates a development-only resource asks this type rather than testing
-/// the environment itself. The rule is one decision applied to several resources, and the previous
-/// arrangement — each check implementing it again — is exactly how
-/// <see cref="DistributedCacheStoreStartupValidator"/> came to omit it altogether while its
-/// interaction-store counterpart enforced it. A fourth check gets the policy by asking, not by
-/// being copied correctly.
+/// the environment itself, so the rule is one decision applied to several resources, and a new
+/// check gets the policy by asking, not by being copied correctly.
 /// </para>
 /// <para>
 /// What stays with each caller is everything specific to its resource: the failure text naming what
