@@ -1895,3 +1895,24 @@ round plus fix-diff verification; no High or Critical survived review.
   environment — `AllowedEnvironments_is_a_copy_the_assigning_caller_cannot_change_afterwards`,
   `AllowedEnvironments_cannot_be_changed_through_a_cast_to_a_mutable_type`,
   `Validate_fails_for_an_empty_allowed_list`.
+
+## 2026-09-30 — the development key drops the ancestor walk, and core drops native interop (#826, code frozen at `13064ee`)
+
+Reverses the #541 and #586 entries' ancestor-walk proofs for the development key. Copilot code and
+security lenses and the security agent, one round plus fix-diff verification; no High or Critical.
+
+- What the development key keeps, on .NET's own APIs. Closed —
+  `WriteKeyFileAsync_creates_the_key_file_readable_only_by_the_owner_on_Unix`,
+  `EnsureDirectorySafe_restricts_every_component_it_creates_to_the_owner`,
+  `EnsureDirectorySafe_rejects_an_existing_directory_that_grants_any_group_or_other_access`,
+  `ReadKeyFileAsync_rejects_a_key_file_that_grants_any_group_or_other_access`,
+  `ReadKeyFileAsync_rejects_a_key_path_that_is_itself_a_symlink`.
+- The production file provider's ancestor checks are unchanged by the interop move. Closed —
+  `ReadPemTextAsync_still_throws_for_a_file_under_a_non_root_owned_symlinked_ancestor_on_Unix`,
+  `ReadPemTextAsync_still_throws_when_a_non_root_owned_symlink_points_at_a_root_owned_directory_on_Unix`.
+- **Accepted trade (maintainer):** ancestors are not checked for a development key, which only
+  protects it on a shared multi-user machine; the environment gate keeps it out of production.
+  Pinned by `ReadKeyFileAsync_accepts_a_key_file_reached_through_a_symlinked_ancestor`,
+  `EnsureDirectorySafe_accepts_a_directory_under_a_group_writable_ancestor`.
+- **Accepted residual:** the symlink check on read re-reads the path, so a link swapped in after
+  open can pass; the BCL has no O_NOFOLLOW. No test: the window needs a race the host cannot stage.
