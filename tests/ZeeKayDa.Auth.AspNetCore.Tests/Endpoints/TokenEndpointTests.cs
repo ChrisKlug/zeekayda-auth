@@ -38,6 +38,7 @@ public sealed class TokenEndpointTests : IDisposable
     private const string ConfidentialSecret = "very-secret";
     private const string OtherClient = "other-client";
     private const string NoCodeGrantClient = "no-code-grant-client";
+    private const string NoCodeGrantSecret = "no-code-grant-secret";
     private const string PkceOptionalClient = "pkce-optional-client";
     private const string PkceOptionalSecret = "also-very-secret";
     private const string Nonce = "n-0S6_WzA2Mj";
@@ -72,9 +73,9 @@ public sealed class TokenEndpointTests : IDisposable
     private EndpointHost NewHost(Action<AuthorizationServerOptions>? configureOptions = null) => new(
         configureOptions: options =>
         {
-            // Served so the no-code-grant client, allowed only refresh_token, is a registration
+            // Served so the no-code-grant client, allowed only client_credentials, is a registration
             // startup accepts: a client may be allowed only the grants its server serves.
-            options.GrantTypesSupported.Add(GrantType.RefreshToken);
+            options.GrantTypesSupported.Add(GrantType.ClientCredentials);
             configureOptions?.Invoke(options);
         },
         configureBuilder: builder =>
@@ -101,10 +102,11 @@ public sealed class TokenEndpointTests : IDisposable
             with
         { RequireConsent = false };
 
+    /// <summary>A confidential client allowed only client_credentials, the grant RFC 6749 §4.4 keeps to confidential clients.</summary>
     private static ClientRegistration NoCodeGrantRegistration() =>
-        ClientRegistration.CreatePublic(NoCodeGrantClient, [RegisteredRedirect], [], ["openid"])
+        ClientRegistration.CreateConfidential(NoCodeGrantClient, Pbkdf2(NoCodeGrantSecret), [RegisteredRedirect], [], ["openid"])
             with
-        { AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken } };
+        { AllowedGrantTypes = new HashSet<GrantType> { GrantType.ClientCredentials } };
 
     /// <summary>A first-party confidential client the operator trusts to check the nonce, so it may leave PKCE out.</summary>
     private static ClientRegistration PkceOptionalRegistration() =>
@@ -824,7 +826,8 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_client_not_allowed_the_code_grant_is_refused_with_unauthorized_client()
     {
-        var response = await PostTokenAsync(TokenForm(StoreKeyGenerator.Generate(), NoCodeGrantClient));
+        var response = await PostTokenAsync(
+            TokenForm(StoreKeyGenerator.Generate(), NoCodeGrantClient), basic: (NoCodeGrantClient, NoCodeGrantSecret));
 
         await ShouldBeErrorAsync(response, "unauthorized_client");
     }

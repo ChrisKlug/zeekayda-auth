@@ -1524,6 +1524,76 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
+    public void A_client_allowed_refresh_token_without_a_grant_that_issues_one_warns_but_starts()
+    {
+        var options = BuildDefaultServerOptions();
+        options.GrantTypesSupported.Add(GrantType.RefreshToken);
+        var logger = new CapturingLogger();
+        var validator = MakeValidator(logger: logger, serverOptions: options);
+        var client = MakeValidPublicClient() with
+        {
+            AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken },
+            AllowedResponseTypes = new HashSet<ResponseType>(),
+            AllowedResponseModes = new HashSet<ResponseMode>(),
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow("a client whose code grant was withdrawn may still be draining refresh tokens");
+        logger.Warnings.Should().ContainSingle(w => w.Contains("refresh_token", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_client_allowed_refresh_token_with_the_code_grant_does_not_warn()
+    {
+        var options = BuildDefaultServerOptions();
+        options.GrantTypesSupported.Add(GrantType.RefreshToken);
+        var logger = new CapturingLogger();
+        var validator = MakeValidator(logger: logger, serverOptions: options);
+        var client = MakeValidPublicClient() with
+        {
+            AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode, GrantType.RefreshToken },
+        };
+
+        validator.Validate(client);
+
+        logger.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_public_client_allowed_client_credentials_fails_validation()
+    {
+        var options = BuildDefaultServerOptions();
+        options.GrantTypesSupported.Add(GrantType.ClientCredentials);
+        var validator = MakeValidator(serverOptions: options);
+        var client = MakeValidPublicClient() with
+        {
+            AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode, GrantType.ClientCredentials },
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.grant_types.client_credentials_on_public");
+    }
+
+    [Fact]
+    public void A_confidential_client_allowed_client_credentials_passes_validation()
+    {
+        var options = BuildDefaultServerOptions();
+        options.GrantTypesSupported.Add(GrantType.ClientCredentials);
+        var validator = MakeValidator(serverOptions: options);
+        var client = MakeValidConfidentialClient() with
+        {
+            AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode, GrantType.ClientCredentials },
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void Validate_fails_with_grant_types_empty_code_for_a_client_allowed_no_grant()
     {
         var validator = MakeValidator();
@@ -1566,11 +1636,11 @@ public sealed class ClientRegistrationValidatorTests
         // other grant no response type, so a client that never goes there needs no way to be
         // answered there.
         var options = BuildDefaultServerOptions();
-        options.GrantTypesSupported.Add(GrantType.RefreshToken);
+        options.GrantTypesSupported.Add(GrantType.ClientCredentials);
         var validator = MakeValidator(serverOptions: options);
-        var client = MakeValidPublicClient() with
+        var client = MakeValidConfidentialClient() with
         {
-            AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken },
+            AllowedGrantTypes = new HashSet<GrantType> { GrantType.ClientCredentials },
             AllowedResponseTypes = new HashSet<ResponseType>(),
             AllowedResponseModes = new HashSet<ResponseMode>(),
         };

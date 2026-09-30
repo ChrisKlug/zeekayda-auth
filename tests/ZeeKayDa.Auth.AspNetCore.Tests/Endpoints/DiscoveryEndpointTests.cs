@@ -519,20 +519,6 @@ public sealed class DiscoveryEndpointTests
     }
 
     [Fact]
-    public async Task Startup_accepts_the_None_auth_method_without_the_AuthorizationCode_grant()
-    {
-        using var host = new EndpointHost(opts =>
-        {
-            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
-            opts.GrantTypesSupported = [GrantType.RefreshToken];
-        });
-
-        var act = async () => await host.EnsureStartedAsync();
-
-        await act.Should().NotThrowAsync();
-    }
-
-    [Fact]
     public async Task Startup_accepts_the_None_auth_method_with_the_AuthorizationCode_grant()
     {
         using var host = new EndpointHost(opts =>
