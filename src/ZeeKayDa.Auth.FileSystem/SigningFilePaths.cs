@@ -23,14 +23,15 @@ namespace ZeeKayDa.Auth.FileSystem;
 internal static class SigningFilePaths
 {
     /// <summary>
-    /// Appends an error for each problem found across <paramref name="paths"/>.
+    /// Appends a failure for each problem found across <paramref name="paths"/>.
     /// </summary>
-    /// <param name="optionsTypeName">The options type to name in the errors, as the operator configured it.</param>
+    /// <param name="optionsTypeName">The options type to name in the failures, as the operator configured it.</param>
+    /// <param name="codePrefix">The code prefix the caller's path failures carry.</param>
     /// <param name="distinctnessRequirement">
     /// How the caller's own configuration spells the rule — PEM has a <c>KeyPath</c> beside its slot
     /// paths, PFX does not — so the error names the properties the operator actually set.
     /// </param>
-    /// <param name="errors">The aggregated error list to append to.</param>
+    /// <param name="failures">The aggregated failure list to append to.</param>
     /// <param name="paths">
     /// Every path the configuration names. A <see langword="null"/>, empty, or whitespace-only entry
     /// is ignored: the caller reports those under its own slot-specific message, and two
@@ -38,8 +39,9 @@ internal static class SigningFilePaths
     /// </param>
     public static void AppendPathErrors(
         string optionsTypeName,
+        string codePrefix,
         string distinctnessRequirement,
-        List<string> errors,
+        List<ZeeKayDaConfigurationFailure> failures,
         params ReadOnlySpan<string?> paths)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -61,8 +63,8 @@ internal static class SigningFilePaths
                 // An embedded NUL, a path over the platform limit, or — for a relative path, which
                 // resolves against the current directory — an I/O failure reading that directory. All
                 // are configuration errors like any other and belong in the aggregated result, not
-                // thrown out of a validator where they would escape as something other than an options
-                // failure. DirectoryNotFoundException derives from IOException, so a deleted working
+                // thrown out of a validator where they would escape without a code.
+                // DirectoryNotFoundException derives from IOException, so a deleted working
                 // directory is covered.
                 hasUnresolvable = true;
                 continue;
@@ -74,13 +76,18 @@ internal static class SigningFilePaths
 
         if (hasUnresolvable)
         {
-            errors.Add(
+            failures.Add(new(
+                $"{codePrefix}.unresolvable",
                 $"A {optionsTypeName} slot names a path the operating system cannot resolve — it " +
                 "contains an invalid character (such as an embedded NUL) or exceeds the platform's " +
-                "maximum path length.");
+                "maximum path length."));
         }
 
         if (hasDuplicate)
-            errors.Add($"Two {optionsTypeName} slots reference the same file. {distinctnessRequirement}");
+        {
+            failures.Add(new(
+                $"{codePrefix}.duplicate",
+                $"Two {optionsTypeName} slots reference the same file. {distinctnessRequirement}"));
+        }
     }
 }

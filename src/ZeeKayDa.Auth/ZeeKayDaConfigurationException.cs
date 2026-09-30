@@ -14,9 +14,10 @@ namespace ZeeKayDa.Auth;
 /// response is to fix the configuration and restart.
 /// </para>
 /// <para>
-/// Most configuration errors are caught earlier by the startup validator
-/// (<c>ValidateOnStart()</c> / <see cref="Microsoft.Extensions.Options.IValidateOptions{TOptions}"/>).
-/// This exception covers the residual cases where invalid state is only detectable at the moment
+/// The framework's options validators
+/// (<see cref="Microsoft.Extensions.Options.IValidateOptions{TOptions}"/>, run by
+/// <c>ValidateOnStart()</c>) throw this exception, with a code for every failure they find. It also
+/// covers the residual cases where invalid state is only detectable at the moment
 /// the framework needs to use a value — for example, when <c>MapZeeKayDaAuth()</c> is called
 /// before <c>AddZeeKayDaAuth()</c>.
 /// </para>

@@ -21,14 +21,16 @@ internal sealed class ClientSecretHasherOptionsValidator
         var defaultCount = options.Registrations.Count(r => r.IsDefault);
 
         if (defaultCount == 0)
-            return ValidateOptionsResult.Fail(
+            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                "configuration.hashers.no_default",
                 "Multiple IClientSecretHasher implementations are registered but none is marked as default. " +
-                "Call AddClientSecretHasher<T>(isDefault: true) for exactly one hasher.");
+                "Call AddClientSecretHasher<T>(isDefault: true) for exactly one hasher."));
 
         if (defaultCount > 1)
-            return ValidateOptionsResult.Fail(
+            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                "configuration.hashers.multiple_defaults",
                 $"{defaultCount} IClientSecretHasher implementations are marked as default. " +
-                "Exactly one hasher must have isDefault: true.");
+                "Exactly one hasher must have isDefault: true."));
 
         return ValidateOptionsResult.Success;
     }

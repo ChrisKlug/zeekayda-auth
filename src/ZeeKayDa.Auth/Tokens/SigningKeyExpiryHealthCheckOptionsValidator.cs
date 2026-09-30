@@ -15,10 +15,11 @@ internal sealed class SigningKeyExpiryHealthCheckOptionsValidator : IValidateOpt
     {
         if (options.DegradedThreshold <= TimeSpan.Zero)
         {
-            return ValidateOptionsResult.Fail(
+            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                "configuration.signing_key_expiry_health_check.degraded_threshold.not_positive",
                 $"SigningKeyExpiryHealthCheckOptions.DegradedThreshold ({options.DegradedThreshold}) " +
                 "must be greater than zero. A zero or negative threshold silently disables the only " +
-                "expiry watch a static signing key ring has.");
+                "expiry watch a static signing key ring has."));
         }
 
         return ValidateOptionsResult.Success;

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Configuration;
 
 namespace ZeeKayDa.Auth.Tokens;
 
@@ -14,34 +15,37 @@ internal sealed class AllowedDevEnvironmentsValidator : IValidateOptions<Develop
     public ValidateOptionsResult Validate(string? name, DevelopmentSigningOptions options)
     {
         var list = options.AllowedEnvironments;
-        var errors = new List<string>();
+        var failures = new List<ZeeKayDaConfigurationFailure>();
 
         if (list.Count == 0)
         {
-            errors.Add(
+            failures.Add(new(
+                "configuration.development_signing.allowed_environments.empty",
                 "DevelopmentSigningOptions.AllowedEnvironments must name at least one environment. " +
-                "An empty list refuses every environment, Development included.");
+                "An empty list refuses every environment, Development included."));
         }
 
         foreach (var entry in list)
         {
             if (string.IsNullOrWhiteSpace(entry))
             {
-                errors.Add(
+                failures.Add(new(
+                    "configuration.development_signing.allowed_environments.blank_entry",
                     "DevelopmentSigningOptions.AllowedEnvironments " +
-                    "must not contain null or empty entries.");
+                    "must not contain null or empty entries."));
                 continue;
             }
 
             if (string.Equals(entry, "Production", StringComparison.OrdinalIgnoreCase))
             {
-                errors.Add(
+                failures.Add(new(
+                    "configuration.development_signing.allowed_environments.contains_production",
                     "DevelopmentSigningOptions.AllowedEnvironments " +
                     "must not contain 'Production'. Development signing keys are never permitted in " +
-                    "Production regardless of this list. Listing 'Production' here is a misconfiguration.");
+                    "Production regardless of this list. Listing 'Production' here is a misconfiguration."));
             }
         }
 
-        return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
+        return failures.ThrowIfAny();
     }
 }

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Windows;
@@ -16,25 +17,27 @@ internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidate
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, WindowsCertificateStoreSigningOptions options)
     {
-        var errors = new List<string>();
+        var failures = new List<ZeeKayDaConfigurationFailure>();
 
         if (options.Current is null)
         {
-            errors.Add(
+            failures.Add(new(
+                "configuration.windows_certificate_store_signing.current.missing",
                 $"{nameof(WindowsCertificateStoreSigningOptions)}.{nameof(WindowsCertificateStoreSigningOptions.Current)} " +
-                "must be set to the certificate that signs. Previous and Next are optional; Current is not.");
+                "must be set to the certificate that signs. Previous and Next are optional; Current is not."));
         }
 
         if (!Enum.IsDefined(options.Algorithm))
         {
-            errors.Add(
+            failures.Add(new(
+                "configuration.windows_certificate_store_signing.algorithm.undefined_value",
                 $"{nameof(WindowsCertificateStoreSigningOptions)}.{nameof(WindowsCertificateStoreSigningOptions.Algorithm)} " +
-                $"value '{options.Algorithm}' is not a defined {nameof(SigningAlgorithm)} member.");
+                $"value '{options.Algorithm}' is not a defined {nameof(SigningAlgorithm)} member."));
         }
 
-        errors.AddRange(FindDuplicateSlotErrors(options));
+        failures.AddRange(FindDuplicateSlots(options));
 
-        return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
+        return failures.ThrowIfAny();
     }
 
     /// <summary>
@@ -42,7 +45,7 @@ internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidate
     /// certificate is always a configuration mistake: it publishes the same key twice and, when
     /// <c>Current</c> is one of them, means a rotation that has not actually moved anything.
     /// </summary>
-    private static IEnumerable<string> FindDuplicateSlotErrors(WindowsCertificateStoreSigningOptions options)
+    private static IEnumerable<ZeeKayDaConfigurationFailure> FindDuplicateSlots(WindowsCertificateStoreSigningOptions options)
     {
         var slots = new (string Name, CertificateLookup? Lookup)[]
         {
@@ -58,7 +61,9 @@ internal sealed class WindowsCertificateStoreSigningOptionsValidator : IValidate
         return from index in Enumerable.Range(0, configured.Length)
                from other in configured.Skip(index + 1)
                where configured[index].Lookup == other.Lookup
-               select $"{configured[index].Name} and {other.Name} are both configured with certificate " +
-                      $"'{other.Lookup!.NormalizedThumbprint}'. Each slot must name a different certificate.";
+               select new ZeeKayDaConfigurationFailure(
+                   "configuration.windows_certificate_store_signing.slots.duplicate_certificate",
+                   $"{configured[index].Name} and {other.Name} are both configured with certificate " +
+                   $"'{other.Lookup!.NormalizedThumbprint}'. Each slot must name a different certificate.");
     }
 }

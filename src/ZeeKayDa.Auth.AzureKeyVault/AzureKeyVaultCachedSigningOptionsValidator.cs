@@ -14,42 +14,50 @@ internal sealed class AzureKeyVaultCachedSigningOptionsValidator : IValidateOpti
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, AzureKeyVaultCachedSigningOptions options)
     {
-        var errors = new List<string>();
+        var failures = new List<ZeeKayDaConfigurationFailure>();
 
         if (options.CertificateIdentifier.VaultUri is null)
         {
-            errors.Add(
+            failures.Add(new(
+                "configuration.azure_key_vault_cached_signing.certificate_identifier.missing",
                 "AzureKeyVaultCachedSigningOptions.CertificateIdentifier must be set to a valid Key Vault " +
-                "certificate identifier (construct one with 'new KeyVaultCertificateIdentifier(certificateUri)').");
+                "certificate identifier (construct one with 'new KeyVaultCertificateIdentifier(certificateUri)')."));
         }
 
         if (options.Credential is null)
         {
-            errors.Add(
-                "AzureKeyVaultCachedSigningOptions.Credential must be set to a non-null TokenCredential.");
+            failures.Add(new(
+                "configuration.azure_key_vault_cached_signing.credential.missing",
+                "AzureKeyVaultCachedSigningOptions.Credential must be set to a non-null TokenCredential."));
         }
 
         if (!Enum.IsDefined(options.Algorithm))
         {
-            errors.Add(
+            failures.Add(new(
+                "configuration.azure_key_vault_cached_signing.algorithm.undefined_value",
                 $"AzureKeyVaultCachedSigningOptions.Algorithm value '{options.Algorithm}' is not a defined " +
-                $"{nameof(SigningAlgorithm)} member.");
+                $"{nameof(SigningAlgorithm)} member."));
         }
 
         if (options.PreviousVersionsToPublish < 0)
         {
-            errors.Add(
+            failures.Add(new(
+                "configuration.azure_key_vault_cached_signing.previous_versions_to_publish.negative",
                 $"AzureKeyVaultCachedSigningOptions.PreviousVersionsToPublish ({options.PreviousVersionsToPublish}) " +
-                "must be zero or greater. Use 0 to publish no versions older than the signing one.");
+                "must be zero or greater. Use 0 to publish no versions older than the signing one."));
         }
 
         if (options.PreActivationDelay < TimeSpan.Zero)
         {
-            errors.Add(
+            failures.Add(new(
+                "configuration.azure_key_vault_cached_signing.pre_activation_delay.negative",
                 $"AzureKeyVaultCachedSigningOptions.PreActivationDelay ({options.PreActivationDelay}) must be " +
-                "zero or greater. Use TimeSpan.Zero to let a newly created certificate version sign immediately.");
+                "zero or greater. Use TimeSpan.Zero to let a newly created certificate version sign immediately."));
         }
 
-        return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
+        // This package has no friend access to the core, so the core's ThrowIfAny is out of reach.
+        return failures.Count == 0
+            ? ValidateOptionsResult.Success
+            : throw new ZeeKayDaConfigurationException([.. failures]);
     }
 }
