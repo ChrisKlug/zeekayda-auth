@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// Validates <see cref="PemFileSigningOptions"/> at startup.
 /// </summary>
 /// <remarks>
-/// Registered via <c>AddPemFileSigning()</c> and activated by <c>ValidateOnStart()</c>.
+/// Registered via <c>AddPemFileSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
 /// </remarks>
 internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileSigningOptions>
 {

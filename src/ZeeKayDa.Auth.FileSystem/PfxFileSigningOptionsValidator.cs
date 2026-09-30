@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// Validates <see cref="PfxFileSigningOptions"/> at startup.
 /// </summary>
 /// <remarks>
-/// Registered via <c>AddPfxFileSigning()</c> and activated by <c>ValidateOnStart()</c>.
+/// Registered via <c>AddPfxFileSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
 /// </remarks>
 internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileSigningOptions>
 {

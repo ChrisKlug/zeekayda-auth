@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// Validates <see cref="SigningKeyExpiryHealthCheckOptions"/> at startup.
 /// </summary>
 /// <remarks>
-/// Registered via <c>AddZeeKayDaSigningKeys()</c> and activated by <c>ValidateOnStart()</c>.
+/// Registered via <c>AddZeeKayDaSigningKeys()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
 /// </remarks>
 internal sealed class SigningKeyExpiryHealthCheckOptionsValidator : IValidateOptions<SigningKeyExpiryHealthCheckOptions>
 {

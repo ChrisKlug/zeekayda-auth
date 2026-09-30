@@ -115,8 +115,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
         // Ensures core services are resolvable even if AddZeeKayDaAuth() hasn't run yet.
         builder.Services.AddZeeKayDaAuthCore();
 
-        builder.Services.AddOptions<DevelopmentSigningOptions>()
-            .ValidateOnStart();
+        builder.Services.AddZeeKayDaOptions<DevelopmentSigningOptions>();
 
         // Both are internal, so no caller-supplied configure callback can spoof the environment
         // or give the in-memory registration a directory.

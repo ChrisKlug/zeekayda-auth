@@ -7,9 +7,9 @@ namespace ZeeKayDa.Auth.Configuration;
 /// <see cref="ZeeKayDaConfigurationException"/>, the same coded shape as every other startup failure.
 /// </summary>
 /// <remarks>
-/// The options factory and <c>ValidateOnStart()</c> let an exception thrown from
-/// <see cref="IValidateOptions{TOptions}.Validate"/> through unchanged, so the operator sees the same
-/// codes wherever the options are first read. A returned <see cref="ValidateOptionsResult.Fail(string)"/>
+/// The options factory lets an exception thrown from <see cref="IValidateOptions{TOptions}.Validate"/>
+/// through unchanged, so the operator sees the same codes wherever the options are first read, and
+/// <see cref="ValidatedOptionsCheck"/> collects them across options types. A returned <see cref="ValidateOptionsResult.Fail(string)"/>
 /// would reach them as an <see cref="OptionsValidationException"/>, which carries text but no codes.
 /// </remarks>
 internal static class OptionsValidationFailures

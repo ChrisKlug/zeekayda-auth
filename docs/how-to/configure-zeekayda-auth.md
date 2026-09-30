@@ -68,10 +68,10 @@ confidential client.
 
 ## 3. Understand startup validation
 
-`AddZeeKayDaAuth` wires `ValidateOnStart()` so that any misconfiguration causes the host to fail
-immediately at startup, before it starts accepting requests. You will see a
-`ZeeKayDaConfigurationException` in the startup output, listing each failure with a stable code you
-can alert on.
+`AddZeeKayDaAuth` validates its options, and those of every signing source and hasher you add, when
+`MapZeeKayDaAuth()` runs, so any misconfiguration stops the host before it accepts requests. You will
+see one `ZeeKayDaConfigurationException` in the startup output, listing every failure with a stable
+code you can alert on.
 
 Common startup failures and their causes:
 

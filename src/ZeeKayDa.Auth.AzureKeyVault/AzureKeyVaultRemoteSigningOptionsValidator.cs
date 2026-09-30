@@ -7,7 +7,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// Validates <see cref="AzureKeyVaultRemoteSigningOptions"/> at startup.
 /// </summary>
 /// <remarks>
-/// Registered via <c>AddAzureKeyVaultRemoteSigning()</c> and activated by <c>ValidateOnStart()</c>.
+/// Registered via <c>AddAzureKeyVaultRemoteSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
 /// </remarks>
 internal sealed class AzureKeyVaultRemoteSigningOptionsValidator : IValidateOptions<AzureKeyVaultRemoteSigningOptions>
 {

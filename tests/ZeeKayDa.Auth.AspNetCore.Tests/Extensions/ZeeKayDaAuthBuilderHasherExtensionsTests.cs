@@ -107,7 +107,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     {
         using var provider = BuildWithPbkdf2Iterations(iterations);
 
-        var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
+        var act = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(provider);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.pbkdf2.iterations_out_of_range"

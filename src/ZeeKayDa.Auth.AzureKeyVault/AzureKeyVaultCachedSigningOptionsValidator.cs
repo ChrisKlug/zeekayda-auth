@@ -7,7 +7,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// Validates <see cref="AzureKeyVaultCachedSigningOptions"/> at startup.
 /// </summary>
 /// <remarks>
-/// Registered via <c>AddAzureKeyVaultCachedSigning()</c> and activated by <c>ValidateOnStart()</c>.
+/// Registered via <c>AddAzureKeyVaultCachedSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
 /// </remarks>
 internal sealed class AzureKeyVaultCachedSigningOptionsValidator : IValidateOptions<AzureKeyVaultCachedSigningOptions>
 {

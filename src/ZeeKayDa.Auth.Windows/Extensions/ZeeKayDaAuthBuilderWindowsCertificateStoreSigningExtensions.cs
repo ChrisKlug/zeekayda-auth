@@ -139,15 +139,14 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
         // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
         builder.Services.AddZeeKayDaAuthCore();
 
-        builder.Services.AddOptions<WindowsCertificateStoreSigningOptions>()
+        builder.Services.AddZeeKayDaOptions<WindowsCertificateStoreSigningOptions>()
             .Configure(options =>
             {
                 options.Algorithm = algorithm;
                 options.StoreLocation = storeLocation;
                 options.StoreName = storeName;
             })
-            .Configure(configure)
-            .ValidateOnStart();
+            .Configure(configure);
 
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<

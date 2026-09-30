@@ -9,8 +9,8 @@ namespace ZeeKayDa.Auth.Configuration;
 /// by the OIDC Discovery 1.0 and RFC 8414 specifications.
 /// </summary>
 /// <remarks>
-/// This validator is registered via <c>AddZeeKayDaAuth()</c> and activated by
-/// <c>ValidateOnStart()</c> so that misconfigured servers fail loudly at startup rather than
+/// This validator is registered via <c>AddZeeKayDaAuth()</c>, which registers the options with
+/// <c>AddZeeKayDaOptions</c>, so that misconfigured servers fail loudly at startup rather than
 /// silently at the first request. It is a pure read-only check of the host's values as configured,
 /// and async checks (e.g. scope presence) are handled by hosted services. The issuer,
 /// the endpoint URI overrides and the token endpoint's auth methods each have their own

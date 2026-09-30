@@ -27,15 +27,18 @@ and operator alerting switch on. The composed exception message lists every fail
 message so a startup crash is actionable from `ToString()` alone — which means every failure message
 is part of a public string, and the rule below binds all of them.
 
-**Options validation fails in the same shape.** A framework `IValidateOptions<T>` throws
+**Options validation fails in the same shape, all at once.** A framework `IValidateOptions<T>` throws
 `ZeeKayDaConfigurationException` from `Validate` with every failure it found, never
-`ValidateOptionsResult.Fail`. The options factory and `ValidateOnStart()` let that exception through
-unchanged, so the codes reach the operator wherever the options are first read. A code is
+`ValidateOptionsResult.Fail`; the options factory lets it through unchanged. A code is
 `configuration.` + the option's path in snake_case + the problem, `AuthorizationServerOptions` being
 the root (`configuration.issuer.not_https`); a runtime guard for the same mistake uses the same code.
-The throw ends validation for that start: failures in other options types, and a host's own
-validator for the same type, surface on a later start. A code inside `OptionsValidationException`
-text was rejected: it leaves alerting two failure shapes, one parsed out of a string.
+Options are registered with the public `AddZeeKayDaOptions<T>()` or `.ValidateWithZeeKayDa()`, not
+`ValidateOnStart()`, which stops at the first throw. `MapZeeKayDaAuth()` and a startup gate read
+every registered type and throw one exception with all their failures. The registration is public
+so a third-party package gets the same without friend access; its validator that returns `Fail`
+becomes one `configuration.options_invalid` failure naming the type, its text only in the inner
+exception. A host's own validator for a framework type runs only once the framework's passes. A
+code inside `OptionsValidationException` text was rejected: it leaves alerting two failure shapes.
 
 **Never copy `ex.Message`; name the exception type instead.** When the framework turns an arbitrary
 exception into a reported failure, it records `ex.GetType().FullName` and a fixed description, never

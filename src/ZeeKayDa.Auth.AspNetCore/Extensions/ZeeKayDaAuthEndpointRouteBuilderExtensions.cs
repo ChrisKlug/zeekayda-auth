@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
+using ZeeKayDa.Auth.Configuration;
 
 namespace Microsoft.AspNetCore.Builder;
 
@@ -34,8 +35,10 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        // Force eager options evaluation so Map-time failures match ValidateOnStart: the
-        // validator's ZeeKayDaConfigurationException, with its codes.
+        // Every registered options type is validated here, before routes exist, so the first
+        // error the host sees lists all of their failures, not only this method's own options'.
+        ValidatedOptionsCheck.ThrowIfAnyInvalid(endpoints.ServiceProvider);
+
         var options = endpoints.ServiceProvider
             .GetRequiredService<IOptions<AuthorizationServerOptions>>()
             .Value;

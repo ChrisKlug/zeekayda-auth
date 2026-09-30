@@ -52,6 +52,8 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         services.TryAddSingleton(_ => new SanitizingLoggerClosedOverrideScanner(services));
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerificationGate, SanitizingLoggerRegistrationGate>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerificationGate, ValidatedOptionsGate>());
 
         // Registered here as well as by AddSigningKeySource, and not for position — the
         // activator phase makes order irrelevant. It is for coverage: StaticSigningKeyRing has a

@@ -30,8 +30,9 @@ builder.Services.AddZeeKayDaAuth(options =>
 });
 ```
 
-`AddZeeKayDaAuth` registers all ZeeKayDa.Auth services and wires `ValidateOnStart()` so that
-misconfigured options cause the host to fail fast on startup rather than at request time. It returns
+`AddZeeKayDaAuth` registers all ZeeKayDa.Auth services and validates the options when
+`MapZeeKayDaAuth()` runs and again at startup, so that misconfigured options cause the host to fail
+fast rather than at request time. It returns
 a `ZeeKayDaAuthBuilder` for registering optional features.
 
 ## Properties
@@ -612,14 +613,16 @@ only when all relying parties are co-hosted on the same origin or site as the au
 
 ## Startup validation
 
-`AuthorizationServerOptionsValidator` validates `AuthorizationServerOptions` at host startup via
-`ValidateOnStart()`. The host will not start if any rule below is violated.
+`AuthorizationServerOptionsValidator` validates `AuthorizationServerOptions` when
+`MapZeeKayDaAuth()` runs and again at host startup, for a host that never maps the endpoints. The
+host will not start if any rule below is violated.
 
 A violation throws `ZeeKayDaConfigurationException`, the same exception every other startup check
 throws. Its `AggregatedFailures` holds one `ZeeKayDaConfigurationFailure` per violated rule, and each
 failure's `Code` is stable public contract, so operator alerting can key on it. The same exception
-comes from `MapZeeKayDaAuth()`, which reads the options before the host starts. It is visible in
-the startup output and host logs.
+also carries the failures of every other options type registered through ZeeKayDa.Auth (signing
+sources, client secret hashers and so on), so one start reports them all. It is visible in the
+startup output and host logs.
 
 | Code | Condition that causes failure |
 |---|---|

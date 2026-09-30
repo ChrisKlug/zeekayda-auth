@@ -27,6 +27,18 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
         return new ZeeKayDaAuthBuilder(services);
     }
 
+    /// <summary>Runs the registered hosted services' startup, which is where startup validation runs.</summary>
+    private static async Task StartAsync(Action<ZeeKayDaAuthBuilder> configure)
+    {
+        var builder = NewBuilder();
+        builder.Services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        configure(builder);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        foreach (var hostedService in provider.GetServices<IHostedService>())
+            await hostedService.StartAsync(CancellationToken.None);
+    }
+
     private static Func<CancellationToken, ValueTask<string>> AnyPassword() => _ => ValueTask.FromResult("password");
 
     // ── AddPemFileSigning: argument validation ───────────────────────────────────────────────────
@@ -376,16 +388,12 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     [Fact]
     public async Task AddPemFileSigning_fails_startup_validation_when_no_Current_slot_is_configured()
     {
-        // IStartupValidator is what ValidateOnStart registers and what Host.StartAsync runs before
-        // serving anything. Registering the options without their validator would leave it with
-        // nothing to run, and a misconfiguration would surface only on the first signing attempt.
-        var builder = NewBuilder();
-        builder.AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
+        // Registering the options without their validator, or without AddZeeKayDaOptions, would
+        // leave startup nothing to run, and a misconfiguration would surface only on the first
+        // signing attempt.
+        var act = () => StartAsync(builder => builder.AddPemFileSigning(SigningAlgorithm.RS256, _ => { }));
 
-        await using var provider = builder.Services.BuildServiceProvider();
-        var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
-
-        act.Should().Throw<ZeeKayDaConfigurationException>()
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .Where(e => e.AggregatedFailures.Any(f => f.Code == "configuration.pem_file_signing.current.missing"))
             .WithMessage("*Current must be set*");
     }
@@ -393,13 +401,9 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     [Fact]
     public async Task AddPfxFileSigning_fails_startup_validation_when_no_Current_slot_is_configured()
     {
-        var builder = NewBuilder();
-        builder.AddPfxFileSigning(SigningAlgorithm.RS256, _ => { });
+        var act = () => StartAsync(builder => builder.AddPfxFileSigning(SigningAlgorithm.RS256, _ => { }));
 
-        await using var provider = builder.Services.BuildServiceProvider();
-        var act = () => provider.GetRequiredService<IStartupValidator>().Validate();
-
-        act.Should().Throw<ZeeKayDaConfigurationException>()
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .Where(e => e.AggregatedFailures.Any(f => f.Code == "configuration.pfx_file_signing.current.missing"))
             .WithMessage("*Current must be set*");
     }

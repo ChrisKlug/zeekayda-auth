@@ -252,8 +252,8 @@ public static ZeeKayDaAuthBuilder AddClientSecretHasher<THasher>(
 | Exactly 1 | Auto-default — the flag is ignored |
 | 2 or more | Exactly one must have `isDefault: true`; zero or multiple defaults cause a startup failure |
 
-Startup validation is enforced by `IValidateOptions<ClientSecretHasherRegistrationOptions>` via
-`ValidateOnStart()`. A misconfigured hasher registration prevents the host from starting with a
+Startup validation is enforced by `IValidateOptions<ClientSecretHasherRegistrationOptions>`. A
+misconfigured hasher registration prevents the host from starting with a
 `ZeeKayDaConfigurationException`: `configuration.hashers.no_default` when none is marked default,
 `configuration.hashers.multiple_defaults` when more than one is.
 

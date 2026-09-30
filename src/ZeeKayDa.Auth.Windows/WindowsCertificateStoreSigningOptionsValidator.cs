@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Windows;
 /// Validates <see cref="WindowsCertificateStoreSigningOptions"/> at startup.
 /// </summary>
 /// <remarks>
-/// Registered via <c>AddWindowsCertificateStoreSigning()</c> and activated by <c>ValidateOnStart()</c>.
+/// Registered via <c>AddWindowsCertificateStoreSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
 /// There is no empty-thumbprint check here: <see cref="CertificateLookup.ByThumbprint"/> rejects a
 /// thumbprint with no hex digits at construction, so a configured slot always holds a usable one.
 /// </remarks>

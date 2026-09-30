@@ -2,15 +2,16 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Extensions;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 
 /// <summary>
-/// Pins the two points at which an invalid <see cref="AuthorizationServerOptions"/> is first read —
-/// <c>ValidateOnStart()</c> at host start, and <c>MapZeeKayDaAuth()</c>'s own eager read at map time —
-/// each surfacing the validator's <see cref="ZeeKayDaConfigurationException"/> itself, with its code,
-/// rather than wrapped in an <see cref="AggregateException"/> or an
+/// Pins the two points at which the framework's options are first validated — the startup gate at
+/// host start, and <c>MapZeeKayDaAuth()</c> at map time — each surfacing one
+/// <see cref="ZeeKayDaConfigurationException"/> with every options type's codes, rather than an
+/// <see cref="AggregateException"/> or an
 /// <see cref="Microsoft.Extensions.Options.OptionsValidationException"/>.
 /// </summary>
 public sealed class ConfigurationExceptionDeliveryTests
@@ -39,13 +40,46 @@ public sealed class ConfigurationExceptionDeliveryTests
         builder.Services.AddRouting();
         builder.Services.AddZeeKayDaAuth(options => options.Issuer = BadIssuer);
 
-        // Built, but never started — MapZeeKayDaAuth reads AuthorizationServerOptions eagerly, before
-        // the host would ever get to run ValidateOnStart.
+        // Built, but never started: MapZeeKayDaAuth validates before the host would ever start.
         using var app = builder.Build();
 
         Action act = () => ((IEndpointRouteBuilder)app).MapZeeKayDaAuth();
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.issuer.not_https");
+    }
+
+    [Fact]
+    public async Task StartAsync_reports_the_failures_of_every_invalid_options_type_in_one_exception()
+    {
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddZeeKayDaAuth(options => options.Issuer = BadIssuer);
+                services.Configure<Pbkdf2ClientSecretHasherOptions>(options => options.Iterations = 1);
+            })
+            .Build();
+
+        var act = () => host.StartAsync();
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Select(f => f.Code).Should().Contain(
+            new[] { "configuration.issuer.not_https", "configuration.pbkdf2.iterations_out_of_range" });
+    }
+
+    [Fact]
+    public void MapZeeKayDaAuth_reports_the_failures_of_every_invalid_options_type_in_one_exception()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddRouting();
+        builder.Services.AddZeeKayDaAuth(options => options.Issuer = BadIssuer);
+        builder.Services.Configure<Pbkdf2ClientSecretHasherOptions>(options => options.Iterations = 1);
+        using var app = builder.Build();
+
+        Action act = () => ((IEndpointRouteBuilder)app).MapZeeKayDaAuth();
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Select(f => f.Code).Should().Contain(
+                new[] { "configuration.issuer.not_https", "configuration.pbkdf2.iterations_out_of_range" });
     }
 }
