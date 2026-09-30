@@ -3,6 +3,8 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <PackageId>ZeeKayDa.Auth.FileSystem</PackageId>
+    <!-- Required by [LibraryImport] source generator, which emits unsafe marshaling stubs. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Description>Cross-platform file-based (PEM/PFX) JWT signing provider for ZeeKayDa.Auth: loads an X.509 certificate and private key from operator-supplied files and signs locally.</Description>
   </PropertyGroup>
 
