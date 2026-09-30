@@ -21,10 +21,10 @@ internal sealed record ValidatedOptions<TOptions>(string Name) : IValidatedOptio
         {
             _ = services.GetRequiredService<IOptionsMonitor<TOptions>>().Get(Name);
         }
-        catch (Exception ex) when (ex is ZeeKayDaConfigurationException or OptionsValidationException)
+        catch (Exception ex) when (OptionsFailures.ValidationFailure(ex) is { } failure)
         {
             if (!RecordEachValidator(services, failures))
-                failures.Record(ex);
+                failures.Record(failure);
         }
     }
 
@@ -42,7 +42,7 @@ internal sealed record ValidatedOptions<TOptions>(string Name) : IValidatedOptio
                 services.GetServices<IPostConfigureOptions<TOptions>>(),
                 []).Create(Name);
         }
-        catch (Exception ex) when (ex is ZeeKayDaConfigurationException or OptionsValidationException)
+        catch (Exception ex) when (OptionsFailures.ValidationFailure(ex) is not null)
         {
             return false;
         }

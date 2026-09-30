@@ -667,6 +667,7 @@ startup output and host logs.
 | `configuration.discovery_document.cache_max_age.negative` | `DiscoveryDocument.CacheMaxAge` is negative |
 | `configuration.jwks_endpoint.cache_max_age.negative` | `JwksEndpoint.CacheMaxAge` is negative |
 | `configuration.cors_origins.null` | `CorsOrigins` is `null` |
+| `configuration.options_frozen` | a collection was replaced after configuration finished, e.g. by a `PostConfigure<AuthorizationServerOptions>` registered after `AddZeeKayDaAuth` |
 | `configuration.cors_origins.invalid` | a `CorsOrigins` entry is not a bare `scheme://host[:port]` origin, uses HTTP while `AllowInsecureIssuer` is `false`, or uses HTTP with a non-loopback host |
 | `configuration.security_headers.referrer_policy.undefined_value` | `SecurityHeaders.ReferrerPolicy` is set via an out-of-range cast |
 | `configuration.security_headers.cross_origin_resource_policy.undefined_value` | `SecurityHeaders.CrossOriginResourcePolicy` is set via an out-of-range cast |
