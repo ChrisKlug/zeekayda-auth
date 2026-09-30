@@ -2,10 +2,10 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
-using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.Stores;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
 

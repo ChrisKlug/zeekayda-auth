@@ -12,15 +12,6 @@ using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.AspNetCore.Tokens;
-using ZeeKayDa.Auth.Authorization;
-using ZeeKayDa.Auth.Clients;
-using ZeeKayDa.Auth.Configuration;
-using ZeeKayDa.Auth.Discovery;
-using ZeeKayDa.Auth.Extensions;
-using ZeeKayDa.Auth.Logging;
-using ZeeKayDa.Auth.Scopes;
-using ZeeKayDa.Auth.Stores;
-using ZeeKayDa.Auth.Tokens;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
