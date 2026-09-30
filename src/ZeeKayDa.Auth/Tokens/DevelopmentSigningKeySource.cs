@@ -10,12 +10,11 @@ namespace ZeeKayDa.Auth.Tokens;
 /// startup, with optional persistence to a local file so that tokens survive application restarts.
 /// </summary>
 /// <remarks>
-/// Not suitable for production; registered via <c>AddInMemoryDevelopmentJwtSigningKeys()</c> or
-/// <c>AddPersistedDevelopmentJwtSigningKeys()</c>. The environment gate is enforced here via
+/// Not suitable for production; registered via <c>AddInMemoryDevelopmentSigning()</c> or
+/// <c>AddPersistedDevelopmentSigning()</c>. The environment gate is enforced here via
 /// <see cref="DevelopmentSigningKeyGate.Enforce"/> so the hard fail holds even when
-/// <c>DevelopmentSigningKeyWarningService</c> is not running (e.g. direct construction in unit
-/// tests); the gate is skipped when <see cref="DevelopmentSigningKeyOptions.EnvironmentName"/> is
-/// <see langword="null"/> (no host).
+/// <c>DevelopmentSigningKeyWarningService</c> is not running, and it refuses when the environment
+/// is unknown.
 /// </remarks>
 internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposable
 {
@@ -29,7 +28,7 @@ internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposab
     // derives that from the public key material.
     private static readonly SourceKeyId DevKeyId = new("development");
 
-    private readonly IOptions<DevelopmentSigningKeyOptions> _options;
+    private readonly IOptions<DevelopmentSigningOptions> _options;
     private readonly IDevelopmentSigningKeyFileSystem _fileSystem;
 
     // Serialises reads so the key is generated or loaded exactly once even if two callers read
@@ -47,7 +46,7 @@ internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposab
     private SourceKeySet? _keySet;
 
     public DevelopmentSigningKeySource(
-        IOptions<DevelopmentSigningKeyOptions> options,
+        IOptions<DevelopmentSigningOptions> options,
         IDevelopmentSigningKeyFileSystem fileSystem)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -64,7 +63,7 @@ internal sealed class DevelopmentSigningKeySource : ISigningKeySource, IDisposab
         // rejects it however often the source is read.
         DevelopmentSigningKeyGate.Enforce(
             _options.Value.EnvironmentName,
-            _options.Value.AllowedDevelopmentJwtSigningKeysEnvironments);
+            _options.Value.AllowedEnvironments);
 
         await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try

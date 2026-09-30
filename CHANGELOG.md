@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- **A development signing key refuses to sign when it cannot tell the host environment** (#825).
+  The environment gate used to let a source built outside the registration methods, with no
+  environment set, sign as though it were in `Development`. It now fails with
+  `signing.dev_keys.unknown_environment`.
+
 - **A signing-key provider's failure message no longer repeats the underlying parser's text** (#764).
   The PEM and PFX file sources and the Windows certificate-store reader interpolated a caught
   `CryptographicException`'s (or equivalent's) `Message` into the `ZeeKayDaConfigurationFailure` they
@@ -559,6 +564,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   and is not detectable from this method.
 
 ### Changed
+
+- **Development signing is renamed to match the other providers, with one options type** (#825).
+  `AddInMemoryDevelopmentJwtSigningKeys()` is now `AddInMemoryDevelopmentSigning()`, and
+  `AddPersistedDevelopmentJwtSigningKeys()` is now `AddPersistedDevelopmentSigning()`. Both
+  callbacks take `DevelopmentSigningOptions` (was `DevelopmentSigningKeyOptions`), whose only public
+  member is `AllowedEnvironments` (was `AllowedDevelopmentJwtSigningKeysEnvironments`).
+  `InMemoryDevelopmentSigningKeyOptions` is gone. The persist directory is set only through
+  `AddPersistedDevelopmentSigning`'s parameter.
 
 - **The framework's token stores are internal; every third-party store contract ends in
   `BackingStore`** (#827). `IAuthorizationCodeStore` and `IRefreshTokenStore` are gone: nobody

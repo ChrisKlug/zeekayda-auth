@@ -335,13 +335,10 @@ ZeeKayDa.Auth.Stores.StoreKey.Equals(ZeeKayDa.Auth.Stores.StoreKey other) -> boo
 ZeeKayDa.Auth.Stores.StoreKey.StoreKey() -> void
 ZeeKayDa.Auth.Tokens.AccessTokenIssuanceContext
 ZeeKayDa.Auth.Tokens.AccessTokenIssuanceContext.AccessTokenIssuanceContext(ZeeKayDa.Auth.Clients.IClientMetadata! client) -> void
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.get -> System.Collections.Generic.IReadOnlyList<string!>!
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.set -> void
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.DevelopmentSigningKeyOptions() -> void
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.EnvironmentName.get -> string?
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.PersistToDirectory.get -> string?
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.PersistToDirectory.set -> void
+ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions
+ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions.AllowedEnvironments.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions.AllowedEnvironments.set -> void
+ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions.DevelopmentSigningOptions() -> void
 ZeeKayDa.Auth.Tokens.ISigner
 ZeeKayDa.Auth.Tokens.ISigner.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.Tokens.ISigner.SignAsync(System.ReadOnlyMemory<byte> signingInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>>
@@ -360,10 +357,6 @@ ZeeKayDa.Auth.Tokens.IdTokenOptions
 ZeeKayDa.Auth.Tokens.IdTokenOptions.AdvertisedSigningAlgorithms.get -> System.Collections.Generic.ICollection<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
 ZeeKayDa.Auth.Tokens.IdTokenOptions.AdvertisedSigningAlgorithms.set -> void
 ZeeKayDa.Auth.Tokens.IdTokenOptions.IdTokenOptions() -> void
-ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions
-ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.get -> System.Collections.Generic.IReadOnlyList<string!>!
-ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.set -> void
-ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions.InMemoryDevelopmentSigningKeyOptions() -> void
 ZeeKayDa.Auth.Tokens.IssuedToken
 ZeeKayDa.Auth.Tokens.IssuedToken.<Clone>$() -> ZeeKayDa.Auth.Tokens.IssuedToken!
 ZeeKayDa.Auth.Tokens.IssuedToken.Deconstruct(out string! Value, out ZeeKayDa.Auth.Tokens.TokenKind Kind) -> void

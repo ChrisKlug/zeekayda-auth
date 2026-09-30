@@ -409,7 +409,8 @@ commit `0ea8ab8` (issue #512) — one review round plus two fix-diff verificatio
    included — `ReadAsync_enforces_the_gate_even_when_the_key_set_is_already_memoized`,
    `ReadAsync_throws_in_Production_regardless_of_AllowedEnvironments`. Neither the gate nor
    `PersistToDirectory` is reachable from a public configure callback —
-   `AddInMemoryDevelopmentJwtSigningKeys_configure_parameter_type_has_no_PersistToDirectory`.
+   AddInMemoryDevelopmentJwtSigningKeys_configure_parameter_type_has_no_PersistToDirectory
+   [renamed by #825; see the 2026-09-30 entry below].
 2. **The port changed no policy.** ≥3072-bit RSA and the fail-closed file checks survive it —
    `ReadAsync_generates_a_key_of_at_least_3072_bits`, `Directory_with_too_permissive_mode_fails_closed`,
    `Key_file_with_too_permissive_permissions_fails_closed`, `Key_file_reached_through_a_symlink_fails_closed`.
@@ -420,7 +421,8 @@ commit `0ea8ab8` (issue #512) — one review round plus two fix-diff verificatio
    configuration behind — `A_rejected_second_registration_leaves_the_first_one_unconfigured_by_it`.
 
 **Residuals, accepted.** No host means no gate: a directly-constructed source with a null
-`EnvironmentName` is ungated — `ReadAsync_skips_the_gate_when_EnvironmentName_is_null`. `Dispose`
+`EnvironmentName` is ungated — ReadAsync_skips_the_gate_when_EnvironmentName_is_null [reversed by the 2026-09-30 entry for #825
+below: a null environment now refuses]. `Dispose`
 racing an in-flight read strands the RSA until finalization; `_readGate` is deliberately never
 disposed so that race can neither throw from `Release` nor hang a queued reader — no test.
 
@@ -1869,3 +1871,20 @@ one round plus fix-diff verification; no High or Critical survived review.
 - **Accepted residual (maintainer):** nothing tests that a store keeps the record until
   `rememberUntil`, or commits it before marking rows; both are contract text, as the kit has no clock
   or mid-revoke fault seam.
+
+## 2026-09-30 — development signing fails closed on an unknown environment (#825, code frozen at `cf6a682`)
+
+Reverses §1.8's accepted residual. Copilot code and security lenses and the security agent, one
+round plus fix-diff verification; no High or Critical survived review.
+
+- A source with a null environment name used to be ungated. It now refuses with
+  `signing.dev_keys.unknown_environment`, in the source and in the startup verifier alike. Closed —
+  `ReadAsync_refuses_when_the_environment_is_unknown`,
+  `VerifyAsync_throws_with_unknown_environment_code_when_the_host_environment_name_is_null`.
+- §1.8's proof that the configure callback cannot reach `PersistToDirectory` was renamed with the
+  API; both registration methods now take one type whose only public member is `AllowedEnvironments`
+  — `The_configure_callback_can_set_only_AllowedEnvironments`.
+- The list is copied on assignment, cannot be edited through a cast, and must name at least one
+  environment — `AllowedEnvironments_is_a_copy_the_assigning_caller_cannot_change_afterwards`,
+  `AllowedEnvironments_cannot_be_changed_through_a_cast_to_a_mutable_type`,
+  `Validate_fails_for_an_empty_allowed_list`.
