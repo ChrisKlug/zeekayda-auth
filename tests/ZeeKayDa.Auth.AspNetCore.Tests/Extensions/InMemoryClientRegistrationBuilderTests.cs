@@ -1,5 +1,4 @@
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore.Clients;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Tokens;

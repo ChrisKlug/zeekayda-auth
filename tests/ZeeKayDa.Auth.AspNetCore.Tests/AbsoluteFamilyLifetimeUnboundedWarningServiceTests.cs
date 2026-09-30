@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
+using ZeeKayDa.Auth.Configuration;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 

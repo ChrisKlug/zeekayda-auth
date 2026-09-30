@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.Scopes;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth.Scopes;
 
 /// <summary>
 /// Verifies at application startup that the registered <see cref="IScopeRepository"/> keeps the

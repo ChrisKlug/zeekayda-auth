@@ -22,11 +22,9 @@ public sealed class FamilyRevocationIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddMemoryCache();
-        services.AddDataProtection();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment(Environments.Development));
-        services.AddZeeKayDaAuthCore();
-        new ZeeKayDaAuthBuilder(services).AddInMemoryStores();
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://issuer.test").AddInMemoryStores();
         return services.BuildServiceProvider();
     }
 

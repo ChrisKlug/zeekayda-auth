@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
 /// Emits a startup warning when <c>AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime</c>

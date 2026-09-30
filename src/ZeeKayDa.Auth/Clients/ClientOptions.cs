@@ -2,7 +2,7 @@ using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Tokens;
 
-namespace ZeeKayDa.Auth.AspNetCore.Clients;
+namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
 /// The settings every client registered through <see cref="IInMemoryClientRegistrationBuilder"/>

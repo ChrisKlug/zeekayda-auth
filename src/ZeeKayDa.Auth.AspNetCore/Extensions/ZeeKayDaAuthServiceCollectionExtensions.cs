@@ -45,8 +45,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// <see langword="null"/>.
     /// </exception>
     /// <remarks>
-    /// <see cref="AuthorizationServerOptions"/> is registered with <c>AddZeeKayDaOptions</c>, so
-    /// a misconfigured server fails loudly at startup rather than at the first request. Call
+    /// Calls <c>AddZeeKayDaAuthCore()</c>, which registers and validates
+    /// <see cref="AuthorizationServerOptions"/> so a misconfigured server fails loudly at startup
+    /// rather than at the first request, and adds the endpoints, cookies, interaction and external
+    /// providers on top. Call
     /// <c>app.UseRouting()</c> followed by <c>app.MapZeeKayDaAuth()</c> after building the
     /// application to register the OIDC protocol endpoints.
     /// </remarks>
@@ -57,26 +59,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configure);
 
-        services
-            .AddZeeKayDaOptions<AuthorizationServerOptions>()
-            .Configure(configure);
-
-        // Freezes every options collection before validation runs.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<
-                IPostConfigureOptions<AuthorizationServerOptions>,
-                AuthorizationServerOptionsPostConfigurer>());
-
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<
-                IValidateOptions<AuthorizationServerOptions>,
-                AuthorizationServerOptionsValidator>());
-
-        services.AddZeeKayDaAuthCore();
-        services.AddDefaultTokenIssuers();
-
-        services.TryAddSingleton<IScopeRepository>(new InMemoryScopeRepository(StandardScopes.All));
-        services.TryAddSingleton<IDiscoveryDocumentProvider, DiscoveryDocumentProvider>();
+        var builder = services.AddZeeKayDaAuthCore(configure);
 
         // TryAddEnumerable keeps each endpoint registered exactly once across repeated calls.
         services.TryAddSingleton<CorsAllowlist>();
@@ -97,27 +80,6 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<MatcherPolicy, ExactPathMatcherPolicy>());
 
-        // Registered unconditionally so using it without any IClientSecretHasher gives a clear
-        // error instead of a generic "service not registered" DI failure.
-        services.TryAddSingleton<CompositeClientSecretHasher>();
-
-        // Alias so repository authors can inject IClientSecretFactory without knowing about the
-        // composite's internal structure.
-        services.TryAddSingleton<IClientSecretFactory>(sp =>
-            sp.GetRequiredService<CompositeClientSecretHasher>());
-
-        // A factory rather than type activation: the ISigningKeyRing parameter is optional, and DI
-        // activation cannot supply a default for a service that is not registered.
-        services.TryAddSingleton(sp => new ClientRegistrationValidator(
-            sp.GetRequiredService<IOptions<AuthorizationServerOptions>>(),
-            sp.GetRequiredService<CompositeClientSecretHasher>(),
-            sp.GetRequiredService<ISanitizingLogger<ClientRegistrationValidator>>(),
-            sp.GetService<ISigningKeyRing>()));
-        services.TryAddSingleton<IClientRegistrationValidator>(sp => sp.GetRequiredService<ClientRegistrationValidator>());
-
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, ClientRepositoryPresenceValidator>());
-
         AddStartupChecks(services);
 
         // The composite is registered as its concrete type, not IClientAuthenticator, so it is
@@ -127,38 +89,17 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<CompositeClientAuthenticator>();
         services.TryAddSingleton<GrantClaimsResolver>();
         services.TryAddSingleton<AuthorizationCodeGrant>();
-
-        // The framework's own token stores, always present; a host supplies only what backs them,
-        // so a backing store registered straight on the service collection works too.
-        services.TryAddSingleton<AuthorizationCodeStore>();
-        services.TryAddSingleton<RefreshTokenStore>();
         services.TryAddSingleton<TokenRequestHandler>();
         AddAuthorizationRequestServices(services);
-
-        var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<
-                IValidateOptions<Pbkdf2ClientSecretHasherOptions>,
-                Pbkdf2ClientSecretHasherOptionsValidator>());
-        services.AddZeeKayDaOptions<Pbkdf2ClientSecretHasherOptions>();
         return builder;
     }
 
     /// <summary>
-    /// Registers everything that runs once at startup to fail or warn: an <see cref="IStartupVerifier"/>
-    /// where the check is pure configuration, an <see cref="IStartupActivator"/> where it calls
-    /// caller-supplied code or must be awaited. Each exists so a misconfiguration surfaces at
-    /// startup rather than as a DI resolution error or a wrong answer on the first request.
+    /// Registers the startup checks on the HTTP surface. The rest are registered by
+    /// <c>AddZeeKayDaAuthCore()</c>, together with the runner that drives them all.
     /// </summary>
-    /// <remarks>
-    /// Order-independent: the sanitizing-logger shadow gate and the runner that drives these are
-    /// registered by <c>AddZeeKayDaAuthCore()</c>, and nothing here observes another's result.
-    /// </remarks>
     private static void AddStartupChecks(IServiceCollection services)
     {
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, InsecureIssuerWarningService>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, LoginDispatchVerifier>());
         services.TryAddEnumerable(
@@ -175,39 +116,6 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // included.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupActivator, AuthenticatorCoverageValidator>());
-
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, ExceptionSanitizingDisabledWarningService>());
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, AbsoluteFamilyLifetimeUnboundedWarningService>());
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, TokenLifetimeCeilingWarningService>());
-
-        // A startup check rather than IValidateOptions so the openid-scope check can be awaited
-        // without risking a deadlock on synchronous, blocking async I/O. An activator because it
-        // calls a caller-supplied IScopeRepository.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ScopePresenceStartupValidator>());
-
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, TokenStorePresenceValidator>());
-
-        // The claims seam is mandatory with no default: a host that forgot it must not start and
-        // silently issue tokens with no subject claims. An activator, since on a container without
-        // IServiceProviderIsService it resolves the caller's provider to prove it is there.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ClaimsProviderPresenceValidator>());
-
-        // The discovery document derives id_token_signing_alg_values_supported from the signing key
-        // ring, so a host serving the protocol endpoints must have one. Failing startup here is what
-        // keeps that from surfacing as a DI resolution error on the first discovery request.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, SigningKeyRingPresenceValidator>());
-
-        // Resolves IClientRepository at startup so its construction-time validation fails fast
-        // rather than at first request.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ClientRepositoryStartupActivator>());
     }
 
     /// <summary>
@@ -218,31 +126,6 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     private static void AddAuthorizationRequestServices(IServiceCollection services)
     {
         services.AddHttpContextAccessor();
-
-        // The framework depends on Data Protection throughout (store payload encryption, the
-        // authorize error transport, and the interaction cookies to come). The default web host
-        // registers it already; this covers minimal hosts, and is idempotent everywhere else.
-        services.AddDataProtection();
-
-        services.TryAddSingleton(sp => new ValidatedClientResolver(
-            sp.GetRequiredService<IClientRepository>(),
-            new FrameworkThenHostValidator(
-                sp.GetRequiredService<ClientRegistrationValidator>(),
-                sp.GetRequiredService<IClientRegistrationValidator>()),
-            sp.GetRequiredService<ISanitizingLogger<ValidatedClientResolver>>()));
-
-        // The only path from IScopeRepository to a scope definition, so a custom repository's
-        // output is validated wherever it is read and not only at startup.
-        services.TryAddSingleton<ValidatedScopeCatalog>();
-
-        // Both wrappers above are singletons that hold the repository they are given, so a host
-        // registering one as scoped would have it captured. The scanner keeps the collection
-        // reference so the check sees registrations added after this call too.
-        services.TryAddSingleton(_ => new RepositoryLifetimeScanner(services));
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, WrappedRepositoryLifetimeValidator>());
-        services.TryAddSingleton<AuthorizeRequestValidator>();
-        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<AuthorizeErrorTransport>();
         services.TryAddSingleton<InteractionBindingCookie>();
         services.TryAddSingleton<AuthorizationRequestContextStore>();
@@ -259,8 +142,6 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
         services.TryAddSingleton<IConsentInteraction, ConsentInteraction>();
         services.TryAddSingleton<IProviderSignInInteraction, ProviderSignInInteraction>();
-        services.TryAddSingleton<IdTokenHintValidator>();
-        services.TryAddSingleton<AccessTokenValidator>();
         services.TryAddSingleton<LogoutRequestStore>();
         services.TryAddSingleton<EndSessionResponses>();
         services.TryAddSingleton<ILogoutInteraction, LogoutInteraction>();

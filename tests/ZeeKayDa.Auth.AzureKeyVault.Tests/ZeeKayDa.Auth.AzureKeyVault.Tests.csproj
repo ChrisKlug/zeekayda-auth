@@ -37,4 +37,8 @@
     <None Include="Fixtures/RealKeyVaultExports/*.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../Shared/MinimalCoreHost.cs" Link="Shared/MinimalCoreHost.cs" />
+  </ItemGroup>
+
 </Project>

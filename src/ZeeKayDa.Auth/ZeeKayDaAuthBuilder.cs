@@ -6,25 +6,13 @@ namespace ZeeKayDa.Auth;
 /// A builder for configuring ZeeKayDa.Auth services.
 /// </summary>
 /// <remarks>
-/// Returned by <c>AddZeeKayDaAuth()</c>. Use extension methods on this builder to register
+/// Returned by <c>AddZeeKayDaAuth()</c> and <c>AddZeeKayDaAuthCore()</c>. Use extension methods on this builder to register
 /// optional features (signing keys, client stores, etc.) without adding properties to
 /// <see cref="AuthorizationServerOptions"/>.
 /// </remarks>
 public sealed class ZeeKayDaAuthBuilder
 {
-    /// <summary>
-    /// Initialises a new <see cref="ZeeKayDaAuthBuilder"/> instance.
-    /// </summary>
-    /// <remarks>
-    /// This constructor is intended for use in provider package tests. Application code should
-    /// obtain a builder via <c>AddZeeKayDaAuth()</c>.
-    /// </remarks>
-    /// <param name="services">The application service collection.</param>
-    public ZeeKayDaAuthBuilder(IServiceCollection services)
-    {
-        ArgumentNullException.ThrowIfNull(services);
-        Services = services;
-    }
+    internal ZeeKayDaAuthBuilder(IServiceCollection services) => Services = services;
 
     /// <summary>
     /// Throws <see cref="InvalidOperationException"/> if <paramref name="serviceType"/> is

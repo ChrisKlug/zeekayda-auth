@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.FileSystem;
 using ZeeKayDa.Auth.Tokens;
 
@@ -128,15 +127,10 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
-
         // Registered first so a second signing key source is rejected before this method applies any
         // of its own configuration — a caller that catches the rejection must not be left with this
         // call's options callbacks applied to the surviving registration.
         builder.AddSigningKeySource<PemFileSigningKeySource>();
-
-        // Defensive/idempotent: guarantees the core services are resolvable even when this package is
-        // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
-        builder.Services.AddZeeKayDaAuthCore();
 
         builder.Services.AddZeeKayDaOptions<PemFileSigningOptions>()
             .Configure(options => options.Algorithm = algorithm)
@@ -247,15 +241,10 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
-
         // Registered first so a second signing key source is rejected before this method applies any
         // of its own configuration — a caller that catches the rejection must not be left with this
         // call's options callbacks applied to the surviving registration.
         builder.AddSigningKeySource<PfxFileSigningKeySource>();
-
-        // Defensive/idempotent: guarantees the core services are resolvable even when this package is
-        // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
-        builder.Services.AddZeeKayDaAuthCore();
 
         builder.Services.AddZeeKayDaOptions<PfxFileSigningOptions>()
             .Configure(options => options.Algorithm = algorithm)

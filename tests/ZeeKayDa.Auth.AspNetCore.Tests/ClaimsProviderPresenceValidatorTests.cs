@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
+using ZeeKayDa.Auth.Claims;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 

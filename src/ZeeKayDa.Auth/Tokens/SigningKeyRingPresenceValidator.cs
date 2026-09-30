@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.Tokens;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// Verifies at application startup that a signing key source — and therefore an

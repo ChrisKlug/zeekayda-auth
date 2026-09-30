@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
 /// Emits a startup warning when a server-wide access-token or ID-token lifetime is longer than

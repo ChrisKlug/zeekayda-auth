@@ -2,7 +2,7 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Logging;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
 /// Emits a startup warning when exception message sanitization has been disabled via

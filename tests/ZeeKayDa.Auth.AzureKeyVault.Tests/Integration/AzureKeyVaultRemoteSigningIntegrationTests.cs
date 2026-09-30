@@ -81,7 +81,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         const string version = "3a7f21c9e04b4d8fa16c5e93bd270f18";
         reader.AddRsaVersion(version, createdOn: T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -114,7 +114,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
         reader.AddRsaVersion("v3", createdOn: now - TimeSpan.FromHours(1)); // Younger than the delay -> staged.
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -134,7 +134,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         var (services, reader, _, timeProvider) = BuildServices(T0);
         reader.AddRsaVersion("v1", createdOn: T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -157,7 +157,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         var ct = TestContext.Current.CancellationToken;
         var (services, _, _, _) = BuildServices(T0); // No versions registered.
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -183,7 +183,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
                 "signing.azure_key_vault.access_denied",
                 "Simulated bad-credentials failure from the Key Vault reader seam."));
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -203,7 +203,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         var (services, reader, _, _) = BuildServices(T0);
         reader.AddRsaVersion("v1", createdOn: T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.ES256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();

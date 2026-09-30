@@ -59,7 +59,7 @@ public sealed class FileSigningIntegrationTests
         var path = tempDir.WritePemFile("current.pem", certificate);
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
@@ -91,7 +91,7 @@ public sealed class FileSigningIntegrationTests
         var nextPath = tempDir.WritePemFile("next.pem", next);
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
         {
             options.Previous = new PemCertificateFile(previousPath);
@@ -120,7 +120,7 @@ public sealed class FileSigningIntegrationTests
         var nextPath = tempDir.WritePemFile("next.pem", next);
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
         {
             options.Current = new PemSigningFile(currentPath);
@@ -153,7 +153,7 @@ public sealed class FileSigningIntegrationTests
         var path = tempDir.WritePemFile("current.pem", certificate);
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
@@ -172,7 +172,7 @@ public sealed class FileSigningIntegrationTests
         var path = tempDir.WritePemFile("current.pem", certificate);
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
@@ -191,7 +191,7 @@ public sealed class FileSigningIntegrationTests
         var nextPath = tempDir.WritePemFile("next.pem", certificate);
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPemFileSigning(SigningAlgorithm.RS256, options => options.Next = new PemCertificateFile(nextPath));
 
         await using var provider = services.BuildServiceProvider();
@@ -211,7 +211,7 @@ public sealed class FileSigningIntegrationTests
         var path = tempDir.WritePfxFile("key.pfx", certificate, CorrectPassword);
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPfxFileSigning(path, SigningAlgorithm.RS256, _ => Task.FromResult(CorrectPassword));
 
         await using var provider = services.BuildServiceProvider();
@@ -241,7 +241,7 @@ public sealed class FileSigningIntegrationTests
         var nextPath = tempDir.WritePfxFile("next.pfx", next, "next-password");
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPfxFileSigning(SigningAlgorithm.RS256, options =>
         {
             options.Previous = new PfxFile(previousPath, _ => Task.FromResult("previous-password"));
@@ -268,7 +268,7 @@ public sealed class FileSigningIntegrationTests
         var nextPath = tempDir.WritePfxFile("next.pfx", next, CorrectPassword);
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPfxFileSigning(SigningAlgorithm.RS256, options =>
         {
             options.Current = new PfxFile(currentPath, _ => Task.FromResult(CorrectPassword));
@@ -299,7 +299,7 @@ public sealed class FileSigningIntegrationTests
         var missingPath = tempDir.GetPath("does-not-exist.pem");
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPemFileSigning(missingPath, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
@@ -317,7 +317,7 @@ public sealed class FileSigningIntegrationTests
         var path = tempDir.WriteTextFile("key.pem", "this is not a valid PEM file");
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
@@ -336,7 +336,7 @@ public sealed class FileSigningIntegrationTests
         var path = tempDir.WritePfxFile("key.pfx", certificate, CorrectPassword);
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPfxFileSigning(path, SigningAlgorithm.RS256, _ => Task.FromResult("wrong-password"));
 
         await using var provider = services.BuildServiceProvider();
@@ -369,7 +369,7 @@ public sealed class FileSigningIntegrationTests
         var path = tempDir.WritePemFile("current.pem", certificate);
         var (services, _) = BuildServices(T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddMinimalZeeKayDaAuthCore();
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();

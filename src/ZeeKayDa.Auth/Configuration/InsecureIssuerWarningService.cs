@@ -2,7 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
 /// Records at startup that <see cref="AuthorizationServerOptions.AllowInsecureIssuer"/> is

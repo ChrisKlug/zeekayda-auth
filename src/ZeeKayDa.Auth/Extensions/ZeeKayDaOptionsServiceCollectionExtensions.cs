@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Configuration;
-using ZeeKayDa.Auth.Extensions;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -50,8 +49,7 @@ public static class ZeeKayDaOptionsServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        // The startup gate that validates them ships with the core services.
-        builder.Services.AddZeeKayDaAuthCore();
+        builder.Services.AddStartupVerificationRunner();
 
         var options = new ValidatedOptions<TOptions>(builder.Name);
         if (!builder.Services.Any(descriptor => Equals(descriptor.ImplementationInstance, options)))

@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.Claims;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth.Claims;
 
 /// <summary>
 /// Verifies at application startup that an <see cref="IClaimsProvider"/> is registered. There is

@@ -30,7 +30,7 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
         // SecretSanitizingLogger<T> (registered by AddZeeKayDaAuthCore) needs a real ILogger<T> to
         // resolve; a plain ServiceCollection has no logging provider registered by default.
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        return new ZeeKayDaAuthBuilder(services);
+        return services.AddMinimalZeeKayDaAuthCore();
     }
 
     // ── Platform guard ───────────────────────────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
             "This test verifies the non-Windows PlatformNotSupportedException guard and is only " +
             "meaningful when actually executed on a non-Windows CI agent/dev machine.");
 
-        var builder = new ZeeKayDaAuthBuilder(new ServiceCollection());
+        var builder = new ServiceCollection().AddMinimalZeeKayDaAuthCore();
 
         var act = () => builder.AddWindowsCertificateStoreSigning(
             Certificate(), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
@@ -61,7 +61,7 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
             "This test verifies the non-Windows PlatformNotSupportedException guard and is only " +
             "meaningful when actually executed on a non-Windows CI agent/dev machine.");
 
-        var builder = new ZeeKayDaAuthBuilder(new ServiceCollection());
+        var builder = new ServiceCollection().AddMinimalZeeKayDaAuthCore();
 
         var act = () => builder.AddWindowsCertificateStoreSigning(
             SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My, _ => { });

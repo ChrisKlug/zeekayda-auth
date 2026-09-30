@@ -1,6 +1,6 @@
 using ZeeKayDa.Auth.Clients;
 
-namespace ZeeKayDa.Auth.AspNetCore.Clients;
+namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
 /// A builder for registering clients with the in-memory client repository.

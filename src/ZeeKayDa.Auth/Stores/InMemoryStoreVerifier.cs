@@ -1,7 +1,8 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ZeeKayDa.Auth.Configuration;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
 /// Records at startup that an in-memory store is active, whose contents are lost on process

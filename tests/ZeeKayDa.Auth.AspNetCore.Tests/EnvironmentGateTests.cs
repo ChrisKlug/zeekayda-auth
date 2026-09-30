@@ -1,5 +1,6 @@
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using ZeeKayDa.Auth.Configuration;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 

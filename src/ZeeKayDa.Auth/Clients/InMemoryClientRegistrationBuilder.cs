@@ -1,6 +1,6 @@
 using ZeeKayDa.Auth.Clients;
 
-namespace ZeeKayDa.Auth.AspNetCore.Clients;
+namespace ZeeKayDa.Auth.Clients;
 
 internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistrationBuilder
 {

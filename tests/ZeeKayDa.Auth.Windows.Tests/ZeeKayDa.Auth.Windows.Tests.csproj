@@ -29,4 +29,8 @@
     <ProjectReference Include="../../src/ZeeKayDa.Auth.Windows/ZeeKayDa.Auth.Windows.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../Shared/MinimalCoreHost.cs" Link="Shared/MinimalCoreHost.cs" />
+  </ItemGroup>
+
 </Project>

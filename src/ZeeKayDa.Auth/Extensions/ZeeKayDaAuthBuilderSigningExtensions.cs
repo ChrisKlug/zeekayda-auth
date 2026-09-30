@@ -2,8 +2,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Tokens;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -111,9 +109,6 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
         // this call's options callbacks applied to the surviving registration.
         builder.AddSigningKeySource<DevelopmentSigningKeySource>();
         builder.Services.TryAddSingleton<IDevelopmentSigningKeyFileSystem, LocalSigningKeyFileSystem>();
-
-        // Ensures core services are resolvable even if AddZeeKayDaAuth() hasn't run yet.
-        builder.Services.AddZeeKayDaAuthCore();
 
         builder.Services.AddZeeKayDaOptions<DevelopmentSigningOptions>();
 

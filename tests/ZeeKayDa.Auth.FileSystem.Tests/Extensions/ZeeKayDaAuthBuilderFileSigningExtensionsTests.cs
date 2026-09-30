@@ -24,7 +24,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        return new ZeeKayDaAuthBuilder(services);
+        return services.AddMinimalZeeKayDaAuthCore();
     }
 
     /// <summary>Runs the registered hosted services' startup, which is where startup validation runs.</summary>

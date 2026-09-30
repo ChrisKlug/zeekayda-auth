@@ -1,68 +1,220 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Claims;
+using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Logging;
+using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
-namespace ZeeKayDa.Auth.Extensions;
+namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
-/// Extension methods for <see cref="IServiceCollection"/> to register ZeeKayDa.Auth core
-/// infrastructure services.
+/// Extension methods for <see cref="IServiceCollection"/> to register the ZeeKayDa.Auth
+/// authorization server without its HTTP surface.
 /// </summary>
 public static class ZeeKayDaAuthCoreServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers ZeeKayDa.Auth core infrastructure — the <see cref="ISanitizingLogger{T}"/>
-    /// implementation, the startup-verification runner and its gates, and the signing-key-ring
-    /// startup activator — so that core services are resolvable without the full ASP.NET Core
-    /// integration.
+    /// Registers everything in ZeeKayDa.Auth that does not need an HTTP request: the validated
+    /// server options, clients, scopes, stores, token issuance, and every startup check on them.
     /// </summary>
     /// <param name="services">The service collection to add services to.</param>
-    /// <returns><paramref name="services"/> for chaining.</returns>
+    /// <param name="configure">
+    /// A delegate used to configure <see cref="AuthorizationServerOptions"/>. At minimum,
+    /// <see cref="AuthorizationServerOptions.Issuer"/> must be set.
+    /// </param>
+    /// <returns>
+    /// A <see cref="ZeeKayDaAuthBuilder"/> that can be used to register optional features.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="services"/> or <paramref name="configure"/> is
+    /// <see langword="null"/>.
+    /// </exception>
     /// <remarks>
-    /// <c>AddZeeKayDaAuth()</c> in <c>ZeeKayDa.Auth.AspNetCore</c> calls this method
-    /// automatically; you only need to call it directly when building a host that does not use
-    /// the ASP.NET Core integration.
+    /// <c>AddZeeKayDaAuth()</c> in <c>ZeeKayDa.Auth.AspNetCore</c> calls this method and adds the
+    /// endpoints, cookies, interaction and external providers on top. Call it directly only for a
+    /// host that does not serve the protocol over ASP.NET Core.
     /// </remarks>
-    public static IServiceCollection AddZeeKayDaAuthCore(this IServiceCollection services)
+    public static ZeeKayDaAuthBuilder AddZeeKayDaAuthCore(
+        this IServiceCollection services,
+        Action<AuthorizationServerOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
 
-        // AddOptions<T>() is idempotent. Registering here ensures that
-        // SecretSanitizingLogger<T> can resolve IOptions<AuthorizationServerOptions> even when
-        // AddZeeKayDaAuthCore() is called standalone without AddZeeKayDaAuth().
-        services.AddOptions<AuthorizationServerOptions>();
+        services
+            .AddZeeKayDaOptions<AuthorizationServerOptions>()
+            .Configure(configure);
+
+        // Freezes every options collection before validation runs.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IPostConfigureOptions<AuthorizationServerOptions>,
+                AuthorizationServerOptionsPostConfigurer>());
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<AuthorizationServerOptions>,
+                AuthorizationServerOptionsValidator>());
 
         // Open-generic registration: every ZeeKayDa service that injects ISanitizingLogger<T>
-        // automatically receives SecretSanitizingLogger<T>. TryAdd is idempotent across
-        // repeated calls and allows AddZeeKayDaAuth() to override this registration.
+        // automatically receives SecretSanitizingLogger<T>.
         services.TryAddSingleton(typeof(ISanitizingLogger<>), typeof(SecretSanitizingLogger<>));
 
-        // The single runner for every framework startup check. TryAddEnumerable keeps this
-        // idempotent across repeated AddZeeKayDaAuthCore() calls (e.g. a provider package calling
-        // it defensively alongside AddZeeKayDaAuth()'s own call).
+        // The framework's token stores encrypt what they save.
+        services.AddDataProtection();
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+
+        AddStartupVerification(services);
+        AddClientServices(services);
+        AddScopeServices(services);
+
+        services.AddDefaultTokenIssuers();
+        services.TryAddSingleton<IdTokenHintValidator>();
+        services.TryAddSingleton<AccessTokenValidator>();
+
+        // The framework's own token stores, always present; a host supplies only what backs them,
+        // so a backing store registered straight on the service collection works too.
+        services.TryAddSingleton<AuthorizationCodeStore>();
+        services.TryAddSingleton<RefreshTokenStore>();
+
+        services.TryAddSingleton<IDiscoveryDocumentProvider, DiscoveryDocumentProvider>();
+        services.TryAddSingleton<AuthorizeRequestValidator>();
+
+        var builder = new ZeeKayDaAuthBuilder(services);
+        builder.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<Pbkdf2ClientSecretHasherOptions>,
+                Pbkdf2ClientSecretHasherOptionsValidator>());
+        services.AddZeeKayDaOptions<Pbkdf2ClientSecretHasherOptions>();
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers the startup-verification runner, its gates, and every check that does not need
+    /// HTTP: an <see cref="IStartupVerifier"/> where the check is pure configuration, an
+    /// <see cref="IStartupActivator"/> where it calls caller-supplied code or must be awaited.
+    /// </summary>
+    private static void AddStartupVerification(IServiceCollection services)
+    {
+        services.AddStartupVerificationRunner();
+
+        // Registered here as well as by AddSigningKeySource for coverage: StaticSigningKeyRing has
+        // a public constructor, so a host can register an ISigningKeyRing itself without going
+        // through AddSigningKeySource, and without this that ring would never be initialized or
+        // self-tested. A silent no-op when no ring is registered at all.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, SigningKeyRingStartupVerifier>());
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, InsecureIssuerWarningService>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, ExceptionSanitizingDisabledWarningService>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, AbsoluteFamilyLifetimeUnboundedWarningService>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, TokenLifetimeCeilingWarningService>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, TokenStorePresenceValidator>());
+
+        // Tokens are signed with the ring, so a server without one must not start.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, SigningKeyRingPresenceValidator>());
+
+        // The claims seam is mandatory with no default: a host that forgot it must not start and
+        // silently issue tokens with no subject claims. An activator, since on a container without
+        // IServiceProviderIsService it resolves the caller's provider to prove it is there.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, ClaimsProviderPresenceValidator>());
+
+        // Both wrapped repositories are held by singletons, so a host registering one as scoped
+        // would have it captured. The scanner keeps the collection reference so the check sees
+        // registrations added after this call too.
+        services.TryAddSingleton(_ => new RepositoryLifetimeScanner(services));
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, WrappedRepositoryLifetimeValidator>());
+    }
+
+    /// <summary>
+    /// Registers the startup-verification runner and its gates, which every framework check and
+    /// every <c>ValidateWithZeeKayDa()</c> options type relies on. Idempotent.
+    /// </summary>
+    internal static IServiceCollection AddStartupVerificationRunner(this IServiceCollection services)
+    {
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, StartupVerificationHostedService>());
 
-        // The sanitizing-logger shadow check must ship from the same registration call as the
-        // runner, so that a host calling only AddZeeKayDaAuthCore() (e.g. a signing-provider
-        // package wired without AddZeeKayDaAuth()) never gets a runner with an empty, vacuously
-        // passing gate collection.
         services.TryAddSingleton(_ => new SanitizingLoggerClosedOverrideScanner(services));
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerificationGate, SanitizingLoggerRegistrationGate>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerificationGate, ValidatedOptionsGate>());
-
-        // Registered here as well as by AddSigningKeySource, and not for position — the
-        // activator phase makes order irrelevant. It is for coverage: StaticSigningKeyRing has a
-        // public constructor, so a host can register an ISigningKeyRing itself without going
-        // through AddSigningKeySource, and without this that ring would never be
-        // initialized or self-tested. A silent no-op when no ring is registered at all.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, SigningKeyRingStartupVerifier>());
-
         return services;
+    }
+
+    /// <summary>
+    /// Registers client-secret hashing, client registration validation, and the validating
+    /// resolver every client lookup goes through.
+    /// </summary>
+    private static void AddClientServices(IServiceCollection services)
+    {
+        // Registered unconditionally so using it without any IClientSecretHasher gives a clear
+        // error instead of a generic "service not registered" DI failure.
+        services.TryAddSingleton<CompositeClientSecretHasher>();
+
+        // Alias so repository authors can inject IClientSecretFactory without knowing about the
+        // composite's internal structure.
+        services.TryAddSingleton<IClientSecretFactory>(sp =>
+            sp.GetRequiredService<CompositeClientSecretHasher>());
+
+        // A factory rather than type activation: the ISigningKeyRing parameter is optional, and DI
+        // activation cannot supply a default for a service that is not registered.
+        services.TryAddSingleton(sp => new ClientRegistrationValidator(
+            sp.GetRequiredService<IOptions<AuthorizationServerOptions>>(),
+            sp.GetRequiredService<CompositeClientSecretHasher>(),
+            sp.GetRequiredService<ISanitizingLogger<ClientRegistrationValidator>>(),
+            sp.GetService<ISigningKeyRing>()));
+        services.TryAddSingleton<IClientRegistrationValidator>(sp => sp.GetRequiredService<ClientRegistrationValidator>());
+
+        services.TryAddSingleton(sp => new ValidatedClientResolver(
+            sp.GetRequiredService<IClientRepository>(),
+            new FrameworkThenHostValidator(
+                sp.GetRequiredService<ClientRegistrationValidator>(),
+                sp.GetRequiredService<IClientRegistrationValidator>()),
+            sp.GetRequiredService<ISanitizingLogger<ValidatedClientResolver>>()));
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, ClientRepositoryPresenceValidator>());
+
+        // Resolves IClientRepository at startup so its construction-time validation fails fast
+        // rather than at first request.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, ClientRepositoryStartupActivator>());
+    }
+
+    /// <summary>
+    /// Registers the default scope repository and the validated catalog every scope lookup goes
+    /// through.
+    /// </summary>
+    private static void AddScopeServices(IServiceCollection services)
+    {
+        services.TryAddSingleton<IScopeRepository>(new InMemoryScopeRepository(StandardScopes.All));
+
+        // The only path from IScopeRepository to a scope definition, so a custom repository's
+        // output is validated wherever it is read and not only at startup.
+        services.TryAddSingleton<ValidatedScopeCatalog>();
+
+        // A startup check rather than IValidateOptions so the openid-scope check can be awaited
+        // without risking a deadlock on synchronous, blocking async I/O. An activator because it
+        // calls a caller-supplied IScopeRepository.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, ScopePresenceStartupValidator>());
     }
 }

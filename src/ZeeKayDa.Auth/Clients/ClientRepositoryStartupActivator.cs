@@ -3,7 +3,7 @@ using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Scopes;
 using ZeeKayDa.Auth.Tokens;
 
-namespace ZeeKayDa.Auth.AspNetCore;
+namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
 /// Forces the registered <see cref="IClientRepository"/> to be resolved during host startup, and
