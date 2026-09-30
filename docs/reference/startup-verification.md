@@ -183,9 +183,9 @@ internal sealed class SeedDataVerifier(IOptions<MyHostOptions> options) : IStart
 **Warn or fail depending on a branch, from one resolution:**
 
 ```csharp
-internal sealed class DistributedCacheStoreVerifier : IStartupVerifier
+internal sealed class SharedCacheActivator : IStartupActivator
 {
-    public string Name => "DistributedCacheStore";
+    public string Name => "SharedCache";
 
     public ValueTask VerifyAsync(
         StartupVerificationContext context,
@@ -197,22 +197,17 @@ internal sealed class DistributedCacheStoreVerifier : IStartupVerifier
         if (cache is null)
         {
             context.AddFailure(
-                "stores.idistributedcache.missing",
-                "The distributed-cache-backed token stores require an IDistributedCache " +
-                "registration. Call AddDistributedMemoryCache() or register a distributed " +
-                "cache implementation.");
+                "myapp.cache.missing",
+                "This host needs an IDistributedCache registration. Call " +
+                "AddDistributedMemoryCache() or register a shared cache.");
         }
-        else if (cache is not MemoryDistributedCache)
+        else if (cache is MemoryDistributedCache)
         {
             context.AddWarning(
-                "stores.idistributedcache.non_atomic",
-                "A distributed cache other than MemoryDistributedCache is registered. Review " +
-                "the atomicity trade-offs of the distributed-cache-backed token stores before " +
-                "relying on this in production.");
+                "myapp.cache.per_process",
+                "IDistributedCache is the per-process MemoryDistributedCache. It is shared " +
+                "with nothing, so instances do not see each other's entries.");
         }
-        // MemoryDistributedCache: nothing recorded here. The framework's own store checks
-        // gate that cache on the environment instead — it is refused outside Development
-        // unless the registration opted out. See docs/reference/token-stores.md.
 
         return ValueTask.CompletedTask;
     }
@@ -314,5 +309,5 @@ Being side-effecting does not disqualify a check from being an `IStartupVerifier
 ## Related pages
 
 - [Analyzer rules](analyzer-rules.md) — including `ZEEKAYDA0002`, which governs the `messageTemplate` argument to `AddWarning`
-- [Token stores](token-stores.md) — the store-presence and distributed-cache startup checks referenced above
+- [Token stores](token-stores.md) — the store-presence and distributed-cache interaction-store startup checks
 - [AuthorizationServerOptions reference](configuration.md) — options validated earlier, via `IValidateOptions<T>`

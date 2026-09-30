@@ -24,7 +24,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// <see cref="ExpiresAt"/> and refuse to return an entry past its expiry.
 /// </para>
 /// </remarks>
-public sealed record AuthorizationCodeEntry
+internal sealed record AuthorizationCodeEntry
 {
     /// <summary>
     /// The client identifier to which this code was issued (RFC 6749 §4.1.2).

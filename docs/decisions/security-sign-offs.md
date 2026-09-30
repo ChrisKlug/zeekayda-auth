@@ -409,7 +409,8 @@ commit `0ea8ab8` (issue #512) — one review round plus two fix-diff verificatio
    included — `ReadAsync_enforces_the_gate_even_when_the_key_set_is_already_memoized`,
    `ReadAsync_throws_in_Production_regardless_of_AllowedEnvironments`. Neither the gate nor
    `PersistToDirectory` is reachable from a public configure callback —
-   `AddInMemoryDevelopmentJwtSigningKeys_configure_parameter_type_has_no_PersistToDirectory`.
+   AddInMemoryDevelopmentJwtSigningKeys_configure_parameter_type_has_no_PersistToDirectory
+   [renamed by #825; see the 2026-09-30 entry below].
 2. **The port changed no policy.** ≥3072-bit RSA and the fail-closed file checks survive it —
    `ReadAsync_generates_a_key_of_at_least_3072_bits`, `Directory_with_too_permissive_mode_fails_closed`,
    `Key_file_with_too_permissive_permissions_fails_closed`, `Key_file_reached_through_a_symlink_fails_closed`.
@@ -420,7 +421,8 @@ commit `0ea8ab8` (issue #512) — one review round plus two fix-diff verificatio
    configuration behind — `A_rejected_second_registration_leaves_the_first_one_unconfigured_by_it`.
 
 **Residuals, accepted.** No host means no gate: a directly-constructed source with a null
-`EnvironmentName` is ungated — `ReadAsync_skips_the_gate_when_EnvironmentName_is_null`. `Dispose`
+`EnvironmentName` is ungated — ReadAsync_skips_the_gate_when_EnvironmentName_is_null [reversed by the 2026-09-30 entry for #825
+below: a null environment now refuses]. `Dispose`
 racing an in-flight read strands the RSA until finalization; `_readGate` is deliberately never
 disposed so that race can neither throw from `Release` nor hang a queued reader — no test.
 
@@ -1579,25 +1581,25 @@ Critical. Five Lows fixed in the same PR, code-lens-verified; the rest recorded 
 
 - A family with no rows is revoked and its first row is dead on arrival, at consume and at
   introspection, across both stores. Closed —
-  `RevokeFamilyAsync_on_zero_row_family_inserts_a_sentinel_that_IsFamilyRevokedAsync_reports`,
+  `A_family_revoked_with_no_rows_reads_as_revoked` [renamed by #828 from RevokeFamilyAsync_on_zero_row_family_inserts_a_sentinel_that_IsFamilyRevokedAsync_reports],
   `TryConsumeAsync_returns_Revoked_for_grant_inserted_after_zero_row_family_was_revoked`,
   `Code_replay_triggers_family_revocation_spanning_both_stores`,
   `A_replayed_code_revokes_the_family_its_first_exchange_started`.
 - The sentinel outlives any row born within the skew tolerance of the revoke: family lifetime from
   revoke time plus the skew tolerance, saturating when unbounded. Closed —
-  `The_sentinel_row_expires_with_the_family_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime`,
-  `The_sentinel_row_never_expires_when_the_family_lifetime_is_unbounded`.
+  `The_family_is_remembered_for_its_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime` [renamed by #828 from The_sentinel_row_expires_with_the_family_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime],
+  `The_family_is_remembered_forever_when_the_family_lifetime_is_unbounded` [renamed by #828 from The_sentinel_row_never_expires_when_the_family_lifetime_is_unbounded].
 - One row per family under a deterministic key and a per-family reserved subject; never redeemable.
-  Closed — `RevokeFamilyAsync_called_twice_on_the_same_family_only_ever_inserts_the_sentinel_once`,
-  `Sentinels_of_two_families_carry_distinct_reserved_subjects`,
+  Closed — `RevokeFamilyAsync_never_writes_a_row_to_the_backing_store` [replaced by #828, which removed the sentinel, RevokeFamilyAsync_called_twice_on_the_same_family_only_ever_inserts_the_sentinel_once],
+  Sentinels_of_two_families_carry_distinct_reserved_subjects [deleted by #828 with the sentinel],
   `TryMarkConsumedAsync_returns_false_for_a_Revoked_grant_and_does_not_change_its_status`.
 - The sentinel is written before the bulk mark, the confirming read is fail-closed, and a fault still
   refuses the replay with nothing in the logs. Closed —
-  `A_bulk_revoke_fault_still_leaves_the_family_revoked_because_the_sentinel_is_written_first`,
-  `RevokeFamilyAsync_rethrows_when_the_sentinel_insert_fails_and_no_row_is_actually_persisted`,
-  `RevokeFamilyAsync_rethrows_when_the_sentinel_row_was_written_but_the_gate_does_not_read_the_family_as_revoked`,
-  `RevokeFamilyAsync_propagates_a_fault_from_the_gate_read_rather_than_treating_the_insert_as_benign`,
-  `RevokeFamilyAsync_propagates_a_fault_from_the_confirming_read_rather_than_treating_the_insert_as_benign`,
+  A_bulk_revoke_fault_still_leaves_the_family_revoked_because_the_sentinel_is_written_first [deleted by #828: the backing contract now requires the record to be written before, or with, the marking; no test],
+  RevokeFamilyAsync_rethrows_when_the_sentinel_insert_fails_and_no_row_is_actually_persisted [deleted by #828 with the sentinel],
+  RevokeFamilyAsync_rethrows_when_the_sentinel_row_was_written_but_the_gate_does_not_read_the_family_as_revoked [deleted by #828 with the sentinel],
+  RevokeFamilyAsync_propagates_a_fault_from_the_gate_read_rather_than_treating_the_insert_as_benign [deleted by #828 with the sentinel],
+  RevokeFamilyAsync_propagates_a_fault_from_the_confirming_read_rather_than_treating_the_insert_as_benign [deleted by #828 with the sentinel],
   `A_replay_whose_family_revocation_fails_is_still_refused_and_the_failure_is_logged`.
 - Residuals, accepted: a row born later than the skew tolerance on an evicting backend at the end of
   the family's absolute life outlives the sentinel; a confirming read that itself faults drops the
@@ -1795,10 +1797,10 @@ Scoped to `DistributedCacheStoreStartupValidator`, `InsecureIssuerWarningService
 architecture lens and the security agent, one round, no High or Critical from any of them.
 
 - A `MemoryDistributedCache`-backed token store outside `Development` fails startup unless that
-  registration opted out. Closed — `The_per_process_cache_outside_Development_fails_startup_for_a_token_store`,
+  registration opted out. Closed — The_per_process_cache_outside_Development_fails_startup_for_a_token_store [deleted by #829 with the distributed-cache token stores],
   `The_per_process_cache_outside_Development_with_the_override_warns_at_Critical_on_every_start`.
 - The opt-out is per registration, not per implementation type, so one store opting out cannot
-  silently opt out the other. Closed — `The_two_store_registrations_each_keep_their_own_opt_out`.
+  silently opt out the other. Closed — The_two_store_registrations_each_keep_their_own_opt_out [deleted by #829 with the distributed-cache token stores].
 - `AllowInsecureIssuer` outside `Development` logs `Critical` and deliberately does not fail: it is
   itself the opt-out, and a non-loopback `http` issuer is already refused by options validation in
   every environment. Closed — `An_insecure_issuer_outside_Development_logs_at_Critical_on_every_start`,
@@ -1808,7 +1810,7 @@ architecture lens and the security agent, one round, no High or Critical from an
 - **Accepted residual (maintainer):** the cache check is a type test, so any other per-process
   `IDistributedCache` — a decorator over `MemoryDistributedCache`, a hand-rolled double — starts
   outside `Development` with only the non-atomic `Warning`. Proven by
-  `A_shared_cache_warns_that_the_stores_are_non_atomic_in_every_environment`.
+  A_shared_cache_warns_that_the_stores_are_non_atomic_in_every_environment [deleted by #829 with the distributed-cache token stores].
 
 ## 2026-09-21 — what a configuration failure's message may carry (#764, code frozen at `343bc3e`)
 
@@ -1853,3 +1855,43 @@ agent, one round plus fix-diff verification. No High or Critical survived review
   not have.
 - **Open (maintainer deferred):** nothing in CI enforces the "never `ex.Message` in a failure" rule
   — this entry's first bullet is five violations of a rule already in the register. Issue #766.
+
+## 2026-09-30 — the tombstone holds only the family id, and a revoked family is a record (#828, code frozen at `2b3bebf`)
+
+Replaces the 2026-09-14 revocation sentinel. Copilot code and security lenses and the security agent,
+one round plus fix-diff verification; no High or Critical survived review.
+
+- A replay after redemption resolves `AlreadyRedeemed{FamilyId}` from a plaintext tombstone that needs
+  no Data Protection key, and a corrupt one fails as a store error. Closed —
+  `TryRedeemAsync_returns_AlreadyRedeemed_from_a_tombstone_that_holds_only_the_family_id`,
+  `TryRedeemAsync_throws_ZeeKayDaStoreException_for_a_tombstone_without_a_family_id`.
+- A family revoked with no rows, or before a successor is stored, reads as revoked, and no non-grant
+  row is written. Closed — `A_family_revoked_with_no_rows_reads_as_revoked`,
+  `TryConsumeAsync_returns_Revoked_for_grant_inserted_after_zero_row_family_was_revoked`,
+  `RevokeFamilyAsync_never_writes_a_row_to_the_backing_store`.
+- The kit holds third-party stores to the record, its floor and fault propagation, and runs against
+  the in-memory store as `InMemoryRefreshTokenBackingStoreConformanceTests`. Closed — its tests
+  IsFamilyRevokedAsync_reports_revoked_for_a_family_revoked_before_it_had_any_grant,
+  A_repeat_RevokeFamilyAsync_with_an_earlier_rememberUntil_does_not_shorten_the_record and
+  RevokeFamilyAsync_propagates_a_transport_fault_instead_of_swallowing_it (declared in the TestKit,
+  outside `tests/`, so unquoted for the citation check).
+- **Accepted residual (maintainer):** nothing tests that a store keeps the record until
+  `rememberUntil`, or commits it before marking rows; both are contract text, as the kit has no clock
+  or mid-revoke fault seam.
+
+## 2026-09-30 — development signing fails closed on an unknown environment (#825, code frozen at `cf6a682`)
+
+Reverses §1.8's accepted residual. Copilot code and security lenses and the security agent, one
+round plus fix-diff verification; no High or Critical survived review.
+
+- A source with a null environment name used to be ungated. It now refuses with
+  `signing.dev_keys.unknown_environment`, in the source and in the startup verifier alike. Closed —
+  `ReadAsync_refuses_when_the_environment_is_unknown`,
+  `VerifyAsync_throws_with_unknown_environment_code_when_the_host_environment_name_is_null`.
+- §1.8's proof that the configure callback cannot reach `PersistToDirectory` was renamed with the
+  API; both registration methods now take one type whose only public member is `AllowedEnvironments`
+  — `The_configure_callback_can_set_only_AllowedEnvironments`.
+- The list is copied on assignment, cannot be edited through a cast, and must name at least one
+  environment — `AllowedEnvironments_is_a_copy_the_assigning_caller_cannot_change_afterwards`,
+  `AllowedEnvironments_cannot_be_changed_through_a_cast_to_a_mutable_type`,
+  `Validate_fails_for_an_empty_allowed_list`.

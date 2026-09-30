@@ -131,7 +131,7 @@ have one at all; `SigningKeyRingPresenceValidator` is the cheap-phase check that
 **Two instances of one check type register with plain `AddSingleton`.** `TryAddEnumerable`
 deduplicates by implementation type and would silently drop the second, which is why the per-store
 checks — one per registration call, each capturing its own store name and opt-out — are added
-directly, for in-memory and distributed-cache token stores alike. The log category is the shared
+directly. The log category is the shared
 type, so the instance `Name` tells them apart. Gating is in `token-stores.md`.
 
 **No check's warning is suppressed because another check failed.** Warnings log inline during a

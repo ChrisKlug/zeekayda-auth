@@ -3,30 +3,23 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.TestKit.Stores;
 
 /// <summary>
-/// Ready-to-derive conformance kit for <see cref="IRefreshTokenGrantStore"/> implementers. Running
+/// Ready-to-derive conformance kit for <see cref="IRefreshTokenBackingStore"/> implementers. Running
 /// this against a production backend is a MUST: it exercises invariants the CLR cannot verify
 /// structurally — revocation completeness by family and by subject (including a grant inserted
-/// mid-revoke), CAS atomicity on <see cref="IRefreshTokenGrantStore.TryMarkConsumedAsync"/>, and
+/// mid-revoke), CAS atomicity on <see cref="IRefreshTokenBackingStore.TryMarkConsumedAsync"/>, and
 /// fail-closed fault propagation on the store's read and consume paths.
 /// </summary>
 /// <remarks>
 /// Reference <c>ZeeKayDa.Auth.TestKit</c> from your own test project, derive this class, and
-/// implement <see cref="CreateStore"/> to return your <see cref="IRefreshTokenGrantStore"/>. You
+/// implement <see cref="CreateStore"/> to return your <see cref="IRefreshTokenBackingStore"/>. You
 /// do not need to construct a <see cref="StoreKey"/> yourself — this kit builds one internally.
 /// </remarks>
-public abstract class RefreshTokenGrantStoreConformanceTests
+public abstract class RefreshTokenBackingStoreConformanceTests
 {
     private static readonly DateTimeOffset FarFuture = new(2099, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>Creates a fresh, empty store instance under test.</summary>
-    protected abstract IRefreshTokenGrantStore CreateStore();
-
-    /// <summary>
-    /// Override to <see langword="false"/> only for a non-atomic dev/test backend (e.g. the
-    /// first-party <c>DistributedCacheRefreshTokenGrantStore</c>). Production backends MUST
-    /// support atomic compare-and-set.
-    /// </summary>
-    protected virtual bool SupportsAtomicConsume => true;
+    protected abstract IRefreshTokenBackingStore CreateStore();
 
     /// <summary>
     /// Override to <see langword="false"/> only for a non-transactional secondary-index backend
@@ -41,7 +34,7 @@ public abstract class RefreshTokenGrantStoreConformanceTests
     /// <see langword="null"/> if the backend has no injectable failure point — the fault-injection
     /// tests are then skipped for that subclass.
     /// </summary>
-    protected virtual IRefreshTokenGrantStore? CreateFaultInjectedStore(Exception fault) => null;
+    protected virtual IRefreshTokenBackingStore? CreateFaultInjectedStore(Exception fault) => null;
 
     private static StoreKey NewKey() => new($"conformance-{Guid.NewGuid():N}");
 
@@ -81,7 +74,7 @@ public abstract class RefreshTokenGrantStoreConformanceTests
         {
             // A non-transactional secondary-index backend cannot be proven complete against this
             // race; only the pre-existing-grants portion is asserted.
-            await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+            await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
             foreach (var grant in preExisting)
             {
                 var result = await store.FindByHandleAsync(grant.HandleHash, CancellationToken.None);
@@ -104,7 +97,7 @@ public abstract class RefreshTokenGrantStoreConformanceTests
         await insertStarted.WaitAsync();
         revokeMayProceed.Release();
         // Give the insert a genuine chance to race with the revoke rather than always losing.
-        await Task.WhenAll(insertTask, store.RevokeFamilyAsync(familyId, CancellationToken.None).AsTask());
+        await Task.WhenAll(insertTask, store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None).AsTask());
 
         foreach (var grant in preExisting.Append(midRevokeGrant))
         {
@@ -129,8 +122,8 @@ public abstract class RefreshTokenGrantStoreConformanceTests
         await store.InsertAsync(consumedGrant, CancellationToken.None);
         Assert.True(await store.TryMarkConsumedAsync(consumedGrant.HandleHash, CancellationToken.None));
 
-        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
-        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
 
         foreach (var grant in new[] { activeGrant, consumedGrant })
         {
@@ -150,7 +143,7 @@ public abstract class RefreshTokenGrantStoreConformanceTests
         await store.InsertAsync(NewGrant(familyId), CancellationToken.None);
         await store.InsertAsync(untouched, CancellationToken.None);
 
-        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
 
         var result = await store.FindByHandleAsync(untouched.HandleHash, CancellationToken.None);
         Assert.Equal(RefreshGrantStatus.Active, result!.Status);
@@ -226,9 +219,6 @@ public abstract class RefreshTokenGrantStoreConformanceTests
     [Fact]
     public async Task TryMarkConsumedAsync_exactly_one_of_many_concurrent_calls_to_the_same_handle_succeeds()
     {
-        if (!SupportsAtomicConsume)
-            return;
-
         var store = CreateStore();
         var grant = NewGrant(familyId: $"fam-{Guid.NewGuid():N}");
         await store.InsertAsync(grant, CancellationToken.None);
@@ -331,7 +321,7 @@ public abstract class RefreshTokenGrantStoreConformanceTests
     /// <summary>
     /// A grant inserted strictly after <c>RevokeFamilyAsync</c> returns need not be born
     /// <c>Revoked</c> on its own row — the consume-time gate must still see the family as revoked,
-    /// which is what <see cref="IRefreshTokenGrantStore.IsFamilyRevokedAsync"/> must report.
+    /// which is what <see cref="IRefreshTokenBackingStore.IsFamilyRevokedAsync"/> must report.
     /// </summary>
     [Fact]
     public async Task IsFamilyRevokedAsync_reports_revoked_for_a_grant_inserted_strictly_after_RevokeFamilyAsync_returns()
@@ -340,7 +330,7 @@ public abstract class RefreshTokenGrantStoreConformanceTests
         var familyId = $"family-{Guid.NewGuid():N}";
         await store.InsertAsync(NewGrant(familyId), CancellationToken.None);
 
-        await store.RevokeFamilyAsync(familyId, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
 
         var postRevokeGrant = NewGrant(familyId);
         await store.InsertAsync(postRevokeGrant, CancellationToken.None);
@@ -367,37 +357,77 @@ public abstract class RefreshTokenGrantStoreConformanceTests
         AssertPropagatedFault(fault, thrown);
     }
 
-    // ── Backend-level precondition for the revocation sentinel ──────────────────────────────────
-    //
-    // The coordinator's revoke-on-empty-family sentinel technique relies on InsertAsync accepting
-    // a grant born Revoked with no prior row for its family, and IsFamilyRevokedAsync then seeing
-    // it. A backend that (wrongly) infers "family exists" from "an Active row was ever written"
-    // rather than from row presence would break this silently — that is what this test guards.
+    /// <summary>
+    /// If <c>RevokeFamilyAsync</c> swallows a transport fault, the caller believes the family is
+    /// revoked when it is not, and a replayed authorization code or reused refresh token leaves the
+    /// family live with nothing logged.
+    /// </summary>
     [Fact]
-    public async Task InsertAsync_accepts_a_grant_born_Revoked_with_no_prior_row_and_IsFamilyRevokedAsync_reports_it()
+    public async Task RevokeFamilyAsync_propagates_a_transport_fault_instead_of_swallowing_it()
+    {
+        var fault = new TransportFaultException();
+        var store = CreateFaultInjectedStore(fault);
+        if (store is null)
+            return;
+
+        var thrown = await Assert.ThrowsAnyAsync<Exception>(
+            () => store.RevokeFamilyAsync("fam-fault", FarFuture, CancellationToken.None).AsTask());
+        AssertPropagatedFault(fault, thrown);
+    }
+
+    [Fact]
+    public async Task RevokeBySubjectAsync_propagates_a_transport_fault_instead_of_swallowing_it()
+    {
+        var fault = new TransportFaultException();
+        var store = CreateFaultInjectedStore(fault);
+        if (store is null)
+            return;
+
+        var thrown = await Assert.ThrowsAnyAsync<Exception>(
+            () => store.RevokeBySubjectAsync("subject-fault", CancellationToken.None).AsTask());
+        AssertPropagatedFault(fault, thrown);
+    }
+
+    /// <summary>
+    /// An authorization code replayed before its first refresh token is stored revokes a family
+    /// with no rows; the grant stored a moment later must still be refused.
+    /// </summary>
+    [Fact]
+    public async Task IsFamilyRevokedAsync_reports_revoked_for_a_family_revoked_before_it_had_any_grant()
     {
         var store = CreateStore();
         var familyId = $"family-{Guid.NewGuid():N}";
-        var revokedFromBirth = NewGrant(familyId, status: RefreshGrantStatus.Revoked) with
-        {
-            ProtectedPayload = ReadOnlyMemory<byte>.Empty,
-        };
 
-        await store.InsertAsync(revokedFromBirth, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
 
-        var stored = await store.FindByHandleAsync(revokedFromBirth.HandleHash, CancellationToken.None);
-        Assert.NotNull(stored);
-        Assert.Equal(revokedFromBirth.HandleHash, stored.HandleHash);
-        Assert.Equal(revokedFromBirth.FamilyId, stored.FamilyId);
-        Assert.Equal(revokedFromBirth.Subject, stored.Subject);
-        Assert.Equal(revokedFromBirth.ClientId, stored.ClientId);
-        Assert.Equal(revokedFromBirth.FamilyAbsoluteExpiry, stored.FamilyAbsoluteExpiry);
-        Assert.Equal(revokedFromBirth.ExpiresAt, stored.ExpiresAt);
-        Assert.Equal(RefreshGrantStatus.Revoked, stored.Status);
-        Assert.Equal(0, stored.ProtectedPayload.Length);
+        Assert.True(await store.IsFamilyRevokedAsync(familyId, CancellationToken.None));
+    }
 
-        var isRevoked = await store.IsFamilyRevokedAsync(familyId, CancellationToken.None);
-        Assert.True(isRevoked);
+    [Fact]
+    public async Task IsFamilyRevokedAsync_reports_not_revoked_for_a_family_that_was_never_revoked()
+    {
+        var store = CreateStore();
+        var familyId = $"family-{Guid.NewGuid():N}";
+        await store.InsertAsync(NewGrant(familyId), CancellationToken.None);
+        await store.RevokeFamilyAsync($"family-{Guid.NewGuid():N}", FarFuture, CancellationToken.None);
+
+        Assert.False(await store.IsFamilyRevokedAsync(familyId, CancellationToken.None));
+    }
+
+    /// <summary>
+    /// <c>rememberUntil</c> is a floor on how long the record is kept, so a repeat revoke carrying an
+    /// earlier one — here already in the past — must not shorten it.
+    /// </summary>
+    [Fact]
+    public async Task A_repeat_RevokeFamilyAsync_with_an_earlier_rememberUntil_does_not_shorten_the_record()
+    {
+        var store = CreateStore();
+        var familyId = $"family-{Guid.NewGuid():N}";
+
+        await store.RevokeFamilyAsync(familyId, FarFuture, CancellationToken.None);
+        await store.RevokeFamilyAsync(familyId, DateTimeOffset.UnixEpoch, CancellationToken.None);
+
+        Assert.True(await store.IsFamilyRevokedAsync(familyId, CancellationToken.None));
     }
 
     /// <summary>

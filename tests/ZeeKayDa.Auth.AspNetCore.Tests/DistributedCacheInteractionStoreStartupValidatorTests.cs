@@ -55,8 +55,10 @@ public sealed class DistributedCacheInteractionStoreStartupValidatorTests
     {
         var context = await VerifyAsync(Environments.Development, _ => { });
 
-        context.Failures.Should().ContainSingle()
-            .Which.Code.Should().Be("stores.idistributedcache.missing");
+        var failure = context.Failures.Should().ContainSingle().Subject;
+        failure.Code.Should().Be("stores.idistributedcache.missing");
+        failure.Message.Should().Be(DistributedCacheInteractionStoreStartupValidator.MissingCacheMessage)
+            .And.Contain("AddDistributedMemoryCache").And.Contain("interaction store");
     }
 
     [Fact]

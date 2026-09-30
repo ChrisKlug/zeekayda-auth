@@ -39,7 +39,7 @@ public sealed record RefreshTokenGrant
     public required RefreshGrantStatus Status { get; init; }
 
     /// <summary>
-    /// Opaque Data-Protection ciphertext of the serialized <see cref="RefreshTokenEntry"/>.
+    /// Opaque Data-Protection ciphertext of the framework's serialized refresh-token entry.
     /// Store verbatim. A backend can never read the sub/scope/session claims inside it.
     /// </summary>
     public required ReadOnlyMemory<byte> ProtectedPayload { get; init; }

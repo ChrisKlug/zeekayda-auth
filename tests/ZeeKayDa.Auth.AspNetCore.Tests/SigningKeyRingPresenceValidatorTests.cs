@@ -72,8 +72,8 @@ public sealed class SigningKeyRingPresenceValidatorTests
 
         await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
 
-        context.Failures.Single().Message.Should().Contain("AddInMemoryDevelopmentJwtSigningKeys");
         context.Failures.Single().Message.Should().Contain("AddSigningKeySource");
+        context.Failures.Single().Message.Should().Contain("AddInMemoryDevelopmentSigning");
     }
 
     [Fact]
