@@ -9,17 +9,94 @@ namespace ZeeKayDa.Auth.Configuration;
 /// </summary>
 internal interface IValidatedOptions
 {
-    /// <summary>Reads the options, which runs every validator registered for them.</summary>
-    void Read(IServiceProvider services);
+    /// <summary>Runs every validator registered for the options, recording what each reports.</summary>
+    void Validate(IServiceProvider services, OptionsFailures failures);
 }
 
 /// <inheritdoc cref="IValidatedOptions"/>
+/// <remarks>
+/// The options are built without validators and each validator is then run on its own. Reading
+/// them through <see cref="IOptionsMonitor{TOptions}"/> would stop at the first validator that
+/// throws, and a second validator's failures would wait for the next start.
+/// </remarks>
 internal sealed record ValidatedOptions<TOptions>(string Name) : IValidatedOptions
     where TOptions : class
 {
     /// <inheritdoc/>
-    public void Read(IServiceProvider services) =>
-        _ = services.GetRequiredService<IOptionsMonitor<TOptions>>().Get(Name);
+    public void Validate(IServiceProvider services, OptionsFailures failures)
+    {
+        var options = new OptionsFactory<TOptions>(
+            services.GetServices<IConfigureOptions<TOptions>>(),
+            services.GetServices<IPostConfigureOptions<TOptions>>(),
+            []).Create(Name);
+
+        foreach (var validator in services.GetServices<IValidateOptions<TOptions>>())
+            failures.Record(Name, options, validator);
+    }
+}
+
+/// <summary>What the validators of every <see cref="IValidatedOptions"/> reported.</summary>
+internal sealed class OptionsFailures
+{
+    private readonly List<ZeeKayDaConfigurationFailure> _failures = [];
+    private readonly List<Exception> _rootCauses = [];
+
+    /// <summary>Runs one validator and records its failures, coded or not.</summary>
+    public void Record<TOptions>(string name, TOptions options, IValidateOptions<TOptions> validator)
+        where TOptions : class
+    {
+        try
+        {
+            var result = validator.Validate(name, options);
+            if (result.Failed)
+                RecordUncoded(new OptionsValidationException(name, typeof(TOptions), result.Failures));
+        }
+        catch (ZeeKayDaConfigurationException ex)
+        {
+            _failures.AddRange(ex.AggregatedFailures);
+            if (ex.InnerException is not null)
+                _rootCauses.Add(ex.InnerException);
+        }
+        catch (OptionsValidationException ex)
+        {
+            RecordUncoded(ex);
+        }
+    }
+
+    /// <summary>
+    /// Throws one <see cref="ZeeKayDaConfigurationException"/> holding every recorded failure, or
+    /// returns when there are none.
+    /// </summary>
+    public void ThrowIfAny()
+    {
+        if (_failures.Count == 0)
+            return;
+
+        throw _rootCauses.Count switch
+        {
+            0 => new ZeeKayDaConfigurationException([.. _failures]),
+            1 => new ZeeKayDaConfigurationException(_failures, _rootCauses[0]),
+            _ => new ZeeKayDaConfigurationException(_failures, new AggregateException(_rootCauses)),
+        };
+    }
+
+    /// <summary>
+    /// A validator that reports through <see cref="ValidateOptionsResult.Fail(string)"/> has no
+    /// codes to give. Its text is not quoted: a failure message is public text the framework cannot
+    /// vouch for, so it travels only in the inner exception.
+    /// </summary>
+    private void RecordUncoded(OptionsValidationException ex)
+    {
+        var options = string.IsNullOrEmpty(ex.OptionsName) || ex.OptionsName == Options.DefaultName
+            ? ex.OptionsType.FullName
+            : $"{ex.OptionsType.FullName} ('{ex.OptionsName}')";
+
+        _failures.Add(new ZeeKayDaConfigurationFailure(
+            "configuration.options_invalid",
+            $"The options {options} failed {ex.Failures.Count()} validation rule(s) that report no " +
+            "code. See the inner exception for the validator's own messages."));
+        _rootCauses.Add(ex);
+    }
 }
 
 /// <summary>
@@ -28,8 +105,7 @@ internal sealed record ValidatedOptions<TOptions>(string Name) : IValidatedOptio
 /// </summary>
 /// <remarks>
 /// <c>ValidateOnStart()</c> would stop at the first options type whose validator throws, so the
-/// operator would meet a second type's failures only on the next start. Reading each type here and
-/// collecting what it throws keeps them together.
+/// operator would meet a second type's failures only on the next start.
 /// </remarks>
 internal static class ValidatedOptionsCheck
 {
@@ -39,63 +115,11 @@ internal static class ValidatedOptionsCheck
     /// </summary>
     public static void ThrowIfAnyInvalid(IServiceProvider services)
     {
-        var failures = new List<ZeeKayDaConfigurationFailure>();
-        var rootCauses = new List<Exception>();
+        var failures = new OptionsFailures();
 
         foreach (var options in services.GetServices<IValidatedOptions>())
-            Read(options, services, failures, rootCauses);
+            options.Validate(services, failures);
 
-        if (failures.Count > 0)
-            throw Aggregate(failures, rootCauses);
-    }
-
-    private static void Read(
-        IValidatedOptions options,
-        IServiceProvider services,
-        List<ZeeKayDaConfigurationFailure> failures,
-        List<Exception> rootCauses)
-    {
-        try
-        {
-            options.Read(services);
-        }
-        catch (ZeeKayDaConfigurationException ex)
-        {
-            failures.AddRange(ex.AggregatedFailures);
-            if (ex.InnerException is not null)
-                rootCauses.Add(ex.InnerException);
-        }
-        catch (OptionsValidationException ex)
-        {
-            failures.Add(Uncoded(ex));
-            rootCauses.Add(ex);
-        }
-    }
-
-    private static ZeeKayDaConfigurationException Aggregate(
-        List<ZeeKayDaConfigurationFailure> failures,
-        List<Exception> rootCauses) =>
-        rootCauses.Count switch
-        {
-            0 => new ZeeKayDaConfigurationException([.. failures]),
-            1 => new ZeeKayDaConfigurationException(failures, rootCauses[0]),
-            _ => new ZeeKayDaConfigurationException(failures, new AggregateException(rootCauses)),
-        };
-
-    /// <summary>
-    /// A validator that reports through <see cref="ValidateOptionsResult.Fail(string)"/> has no
-    /// codes to give. Its text is not quoted: a failure message is public text the framework cannot
-    /// vouch for, so it travels only in the inner exception.
-    /// </summary>
-    private static ZeeKayDaConfigurationFailure Uncoded(OptionsValidationException ex)
-    {
-        var options = string.IsNullOrEmpty(ex.OptionsName) || ex.OptionsName == Options.DefaultName
-            ? ex.OptionsType.FullName
-            : $"{ex.OptionsType.FullName} ('{ex.OptionsName}')";
-
-        return new ZeeKayDaConfigurationFailure(
-            "configuration.options_invalid",
-            $"The options {options} failed {ex.Failures.Count()} validation rule(s) that report no " +
-            "code. See the inner exception for the validator's own messages.");
+        failures.ThrowIfAny();
     }
 }

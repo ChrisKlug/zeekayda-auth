@@ -92,6 +92,36 @@ public sealed class ValidatedOptionsCheckTests
     }
 
     [Fact]
+    public void ThrowIfAnyInvalid_reports_every_validator_of_one_options_type_when_the_first_throws()
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaOptions<FirstOptions>();
+        services.AddSingleton<IValidateOptions<FirstOptions>>(new CodedValidator<FirstOptions>("test.framework"));
+        services.AddSingleton<IValidateOptions<FirstOptions>>(new CodedValidator<FirstOptions>("test.third_party"));
+        services.AddSingleton<IValidateOptions<FirstOptions>>(new UncodedValidator<FirstOptions>("host rule"));
+
+        var act = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(services.BuildServiceProvider());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Select(f => f.Code).Should()
+            .Equal("test.framework", "test.third_party", "configuration.options_invalid");
+    }
+
+    [Fact]
+    public void ThrowIfAnyInvalid_validates_the_options_as_configured()
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaOptions<FirstOptions>()
+            .Configure(options => options.Value = 1)
+            .Validate(options => options.Value == 0, "Value must be zero.");
+
+        var act = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(services.BuildServiceProvider());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.options_invalid");
+    }
+
+    [Fact]
     public void AddZeeKayDaOptions_called_twice_reports_the_options_failures_once()
     {
         var services = new ServiceCollection();
@@ -105,7 +135,10 @@ public sealed class ValidatedOptionsCheckTests
             .Which.AggregatedFailures.Should().ContainSingle();
     }
 
-    private sealed class FirstOptions;
+    private sealed class FirstOptions
+    {
+        public int Value { get; set; }
+    }
 
     private sealed class SecondOptions;
 
