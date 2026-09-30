@@ -69,7 +69,8 @@ confidential client.
 ## 3. Understand startup validation
 
 `AddZeeKayDaAuth` validates its options, and those of every signing source and hasher you add, when
-`MapZeeKayDaAuth()` runs, so any misconfiguration stops the host before it accepts requests. You will
+`MapZeeKayDaAuth()` runs and again when the host starts, so any misconfiguration stops the host
+before it accepts requests. You will
 see one `ZeeKayDaConfigurationException` in the startup output, listing every failure with a stable
 code you can alert on.
 

@@ -15,8 +15,8 @@ namespace ZeeKayDa.Auth;
 /// <see cref="ISanitizingLogger{T}"/> is a public extensibility surface, neither case can be ruled
 /// out at compile time, so this is a hard startup failure rather than a warning: a shadowed
 /// sanitizing logger silently disables the credential-redaction guarantee.
-/// This is the single permanent <see cref="IStartupVerificationGate"/> — it is never migrated to
-/// an <see cref="IStartupVerifier"/>, because nothing may be resolved or logged through a
+/// It is the first <see cref="IStartupVerificationGate"/> and is never migrated to an
+/// <see cref="IStartupVerifier"/>, because nothing may be resolved or logged through a
 /// possibly-shadowed <see cref="ISanitizingLogger{T}"/> before this check has passed.
 /// </remarks>
 internal sealed class SanitizingLoggerRegistrationGate(

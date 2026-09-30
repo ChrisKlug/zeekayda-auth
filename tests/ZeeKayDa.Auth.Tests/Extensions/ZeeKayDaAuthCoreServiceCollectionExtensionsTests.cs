@@ -143,4 +143,16 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
         provider.GetServices<IStartupVerificationGate>().Should().NotBeEmpty();
     }
+
+    [Fact]
+    public void AddZeeKayDaAuthCore_registers_the_sanitizing_logger_gate_first_and_the_options_gate_second()
+    {
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaAuthCore();
+
+        services.Where(descriptor => descriptor.ServiceType == typeof(IStartupVerificationGate))
+            .Select(descriptor => descriptor.ImplementationType)
+            .Should().Equal(typeof(SanitizingLoggerRegistrationGate), typeof(ValidatedOptionsGate));
+    }
 }

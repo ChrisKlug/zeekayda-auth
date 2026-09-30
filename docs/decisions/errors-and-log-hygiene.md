@@ -38,8 +38,7 @@ every registered type and throw one exception with all their failures. The regis
 so a third-party package gets the same without friend access; its validator that returns `Fail`
 becomes one `configuration.options_invalid` failure naming the type, its text only in the inner
 exception. The check reads each type as its consumers do and, when that fails, runs every validator
-on its own, so one that throws never hides the next, a host's own included. A code inside
-`OptionsValidationException` text was rejected: it leaves alerting two failure shapes.
+on its own, so one that throws never hides the next, a host's own included.
 
 **Never copy `ex.Message`; name the exception type instead.** When the framework turns an arbitrary
 exception into a reported failure, it records `ex.GetType().FullName` and a fixed description, never

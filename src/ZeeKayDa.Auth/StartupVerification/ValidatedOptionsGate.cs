@@ -1,5 +1,3 @@
-using ZeeKayDa.Auth.Configuration;
-
 namespace ZeeKayDa.Auth;
 
 /// <summary>

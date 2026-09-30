@@ -33,7 +33,9 @@ internal static class AuthMethodsSupportedValidator
         if (methods is not { Count: > 0 })
         {
             failures.Add(new(
-                "configuration.token_endpoint.auth_methods_supported.empty",
+                methods is null
+                    ? "configuration.token_endpoint.auth_methods_supported.null"
+                    : "configuration.token_endpoint.auth_methods_supported.empty",
                 TokenEndpointAuthMethodsRequiredMessage));
             return;
         }

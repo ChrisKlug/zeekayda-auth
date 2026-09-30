@@ -647,7 +647,8 @@ startup output and host logs.
 | `configuration.response.modes_supported.null` | `Response.ModesSupported` is `null` |
 | `configuration.grant_types_supported.null` | `GrantTypesSupported` is `null` |
 | `configuration.grant_types_supported.undefined_value` | `GrantTypesSupported` contains an out-of-range `GrantType` cast |
-| `configuration.token_endpoint.auth_methods_supported.empty` | `TokenEndpoint.AuthMethodsSupported` is `null` or empty |
+| `configuration.token_endpoint.auth_methods_supported.null` | `TokenEndpoint.AuthMethodsSupported` is `null` |
+| `configuration.token_endpoint.auth_methods_supported.empty` | `TokenEndpoint.AuthMethodsSupported` is empty |
 | `configuration.token_endpoint.auth_methods_supported.invalid_entry` | a `TokenEndpoint.AuthMethodsSupported` entry is blank, has surrounding whitespace, or contains a control character |
 | `configuration.token_endpoint.auth_methods_supported.only_none_with_client_credentials` | `GrantTypesSupported` includes `ClientCredentials` and every `TokenEndpoint.AuthMethodsSupported` value is `None` |
 | `configuration.token_endpoint.access_token_lifetime.not_positive` | `TokenEndpoint.AccessTokenLifetime` is zero or negative |

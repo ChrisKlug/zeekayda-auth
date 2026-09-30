@@ -353,7 +353,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
             TokenEndpoint = { AuthMethodsSupported = null! },
         });
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.empty")
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.null")
             .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported").And.Contain("null or empty");
     }
 

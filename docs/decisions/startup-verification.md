@@ -28,17 +28,16 @@ activator validates against the advertised algorithms, so it calls it rather tha
 second. That is what "make the dependency structural" means here, and it answers any future request
 for an ordering knob.
 
-**Gates are `internal` and the collection is closed; there is exactly one.**
-`SanitizingLoggerRegistrationGate` — the check that nothing has shadowed the open-generic
-`ISanitizingLogger<>` — is the sole `IStartupVerificationGate`. A gate collection third parties
-structurally cannot register into is what makes "nothing logs through an unverified sanitizing
-logger" true rather than advised. A collection, not an optional singleton, so a second needs no
-reshape.
+**Gates are `internal` and the collection is closed; there are two, in this order.**
+`SanitizingLoggerRegistrationGate` proves nothing has shadowed the open-generic `ISanitizingLogger<>`;
+`ValidatedOptionsGate` then validates every registered options type. A gate collection third
+parties structurally cannot register into is what makes "nothing logs through an unverified
+sanitizing logger" true rather than advised, and no check runs against invalid options.
 
-**The gate ships from the same registration call as the runner.** Both come from
+**The gates ship from the same registration call as the runner.** All come from
 `AddZeeKayDaAuthCore()`, which is public and which provider packages call directly — a host can reach
 a fully-wired signing configuration without ever calling `AddZeeKayDaAuth()`, and registering the
-gate there is what stops phase 1 passing vacuously in that configuration.
+gates there is what stops phase 1 passing vacuously in that configuration.
 
 **Nothing is logged, and no check is constructed, until every gate has passed.** The runner holds no
 logger of its own; gates report through the context and never log; gate warnings are buffered until

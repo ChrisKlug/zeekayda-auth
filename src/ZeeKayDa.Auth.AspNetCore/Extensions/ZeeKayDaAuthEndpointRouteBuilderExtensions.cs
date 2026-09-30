@@ -5,7 +5,6 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
-using ZeeKayDa.Auth.Configuration;
 
 namespace Microsoft.AspNetCore.Builder;
 
