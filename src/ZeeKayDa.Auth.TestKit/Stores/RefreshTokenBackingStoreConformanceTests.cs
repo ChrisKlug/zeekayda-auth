@@ -358,6 +358,37 @@ public abstract class RefreshTokenBackingStoreConformanceTests
     }
 
     /// <summary>
+    /// If <c>RevokeFamilyAsync</c> swallows a transport fault, the caller believes the family is
+    /// revoked when it is not, and a replayed authorization code or reused refresh token leaves the
+    /// family live with nothing logged.
+    /// </summary>
+    [Fact]
+    public async Task RevokeFamilyAsync_propagates_a_transport_fault_instead_of_swallowing_it()
+    {
+        var fault = new TransportFaultException();
+        var store = CreateFaultInjectedStore(fault);
+        if (store is null)
+            return;
+
+        var thrown = await Assert.ThrowsAnyAsync<Exception>(
+            () => store.RevokeFamilyAsync("fam-fault", FarFuture, CancellationToken.None).AsTask());
+        AssertPropagatedFault(fault, thrown);
+    }
+
+    [Fact]
+    public async Task RevokeBySubjectAsync_propagates_a_transport_fault_instead_of_swallowing_it()
+    {
+        var fault = new TransportFaultException();
+        var store = CreateFaultInjectedStore(fault);
+        if (store is null)
+            return;
+
+        var thrown = await Assert.ThrowsAnyAsync<Exception>(
+            () => store.RevokeBySubjectAsync("subject-fault", CancellationToken.None).AsTask());
+        AssertPropagatedFault(fault, thrown);
+    }
+
+    /// <summary>
     /// An authorization code replayed before its first refresh token is stored revokes a family
     /// with no rows; the grant stored a moment later must still be refused.
     /// </summary>

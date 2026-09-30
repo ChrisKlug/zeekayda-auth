@@ -41,7 +41,7 @@ internal sealed class AuthorizationCodeStore
 
     /// <summary>Initialises a new <see cref="AuthorizationCodeStore"/>.</summary>
     /// <param name="backingStore">The opaque persistence primitive.</param>
-    /// <param name="dataProtectionProvider">Provider used to create the entry/tombstone protector.</param>
+    /// <param name="dataProtectionProvider">Provider used to create the entry protector.</param>
     /// <param name="serverOptions">Server options providing <see cref="AuthorizationServerOptions.ClockSkewTolerance"/>.</param>
     /// <param name="timeProvider">Time provider used for all UTC timestamp reads.</param>
     public AuthorizationCodeStore(
@@ -175,12 +175,12 @@ internal sealed class AuthorizationCodeStore
         if (tombstoneBytes is null)
             return new AuthorizationCodeRedemptionResult.NotFound();
 
-        AuthorizationCodeTombstone tombstone;
+        string? familyId;
         try
         {
-            tombstone = JsonSerializer.Deserialize(
+            familyId = JsonSerializer.Deserialize(
                 tombstoneBytes.Value.Span,
-                StoreJsonSerializerContext.Default.AuthorizationCodeTombstone)!;
+                StoreJsonSerializerContext.Default.AuthorizationCodeTombstone)?.FamilyId;
         }
         catch (JsonException ex)
         {
@@ -188,7 +188,10 @@ internal sealed class AuthorizationCodeStore
                 "Failed to parse the authorization code redemption tombstone.", ex);
         }
 
-        return new AuthorizationCodeRedemptionResult.AlreadyRedeemed { FamilyId = tombstone.FamilyId };
+        // A JSON null, or a tombstone whose family id is null, is as corrupt as unparseable bytes.
+        return familyId is null
+            ? throw new ZeeKayDaStoreException("Failed to parse the authorization code redemption tombstone.")
+            : new AuthorizationCodeRedemptionResult.AlreadyRedeemed { FamilyId = familyId };
     }
 
     private byte[] ProtectEntry(AuthorizationCodeEntry entry)

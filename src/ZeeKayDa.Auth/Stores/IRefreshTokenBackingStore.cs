@@ -69,8 +69,9 @@ public interface IRefreshTokenBackingStore
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <remarks>
     /// The record is not a grant: never write it as a row that <see cref="FindByHandleAsync"/> or a
-    /// subject query can return. Write it before, or atomically with, the marking, so a fault while
-    /// marking still leaves the family revoked. The family may have no rows yet — an authorization
+    /// subject query can return. Commit it before marking any row, not in the same transaction: a
+    /// fault while marking then still leaves the family revoked, where a rolled-back transaction
+    /// would take the record with it. The family may have no rows yet — an authorization
     /// code replayed before its first refresh token is stored revokes an empty family.
     /// </remarks>
     ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken);

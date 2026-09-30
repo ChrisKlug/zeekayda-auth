@@ -373,7 +373,19 @@ public sealed class AuthorizationCodeStoreTests
         var act = async () => await store.TryRedeemAsync("no-entry-code", "client-a", "family-1", CancellationToken.None);
 
         await act.Should().ThrowAsync<ZeeKayDaStoreException>(
-            because: "a corrupted tombstone envelope is a genuine data-integrity fault, not a DP-rotation outcome");
+            because: "a corrupted tombstone is a genuine data-integrity fault");
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("""{"familyId":null}""")]
+    public async Task TryRedeemAsync_throws_ZeeKayDaStoreException_for_a_tombstone_without_a_family_id(string tombstone)
+    {
+        var store = CreateStore(backingStore: new CorruptTombstoneBackingStore(Encoding.UTF8.GetBytes(tombstone)));
+
+        var act = async () => await store.TryRedeemAsync("no-entry-code", "client-a", "family-1", CancellationToken.None);
+
+        await act.Should().ThrowAsync<ZeeKayDaStoreException>();
     }
 
     [Fact]
@@ -669,15 +681,17 @@ public sealed class AuthorizationCodeStoreTests
             => _inner.RemoveAsync(key, cancellationToken);
     }
 
-    private sealed class CorruptTombstoneBackingStore : IAuthorizationCodeBackingStore
+    private sealed class CorruptTombstoneBackingStore(byte[]? tombstone = null) : IAuthorizationCodeBackingStore
     {
+        private readonly byte[] _tombstone = tombstone ?? [0x00, 0x01, 0x02];
+
         public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
             => ValueTask.FromResult(true);
 
         public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
         {
             var isTombstone = key.ToString().Contains(":t:", StringComparison.Ordinal);
-            return ValueTask.FromResult(isTombstone ? (ReadOnlyMemory<byte>?)new byte[] { 0x00, 0x01, 0x02 } : null);
+            return ValueTask.FromResult(isTombstone ? (ReadOnlyMemory<byte>?)_tombstone : null);
         }
 
         public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
