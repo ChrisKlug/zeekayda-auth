@@ -571,6 +571,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `zkd:{store}:{kind}:{hex(sha256(value))}`; refresh-token keys change from bare base64url to
   `zkd:refresh:h:…`.
 
+- **`IRefreshTokenBackingStore.RevokeFamilyAsync` takes `rememberUntil` and records the revoked
+  family; `IsFamilyRevokedAsync` answers from that record** (#828). The framework no longer inserts a
+  fake revoked grant (the "revocation sentinel") to mark a family that has no rows yet, so a backing
+  store never holds a row that is not a grant. An implementation needs a small second record: the
+  revoked family id, kept at least until `rememberUntil` and never shortened by a repeat call. The
+  authorization-code tombstone now holds only the family id, with no Data Protection.
+
 - **`IScopeRepository` has a documented contract, and the framework enforces it on every read**
   (#759). `GetScopesAsync` now states what an implementation must return: a non-null collection
   with no null element, every scope named and no two names alike, every claim list non-null with

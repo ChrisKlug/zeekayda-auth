@@ -1118,7 +1118,7 @@ public sealed class TokenEndpointTests : IDisposable
         public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken) =>
             throw new NotSupportedException("The code grant issues no refresh token yet.");
 
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
+        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
         {
             RevocationWasCancellable = cancellationToken.CanBeCanceled;
 

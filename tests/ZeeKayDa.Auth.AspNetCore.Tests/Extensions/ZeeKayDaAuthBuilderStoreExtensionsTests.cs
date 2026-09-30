@@ -633,7 +633,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => ValueTask.FromResult(false);
 
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
+        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
             => ValueTask.CompletedTask;
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)
@@ -654,7 +654,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         public ValueTask<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken)
             => ValueTask.FromResult(false);
 
-        public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
+        public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
             => ValueTask.CompletedTask;
 
         public ValueTask RevokeBySubjectAsync(string subject, CancellationToken cancellationToken)

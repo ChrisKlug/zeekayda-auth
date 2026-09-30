@@ -41,6 +41,9 @@ namespace ZeeKayDa.Auth.Stores;
 internal sealed class InMemoryRefreshTokenBackingStore : IRefreshTokenBackingStore
 {
     private readonly ConcurrentDictionary<StoreKey, RefreshTokenGrant> _grants = new();
+
+    // Never forgotten, like the grants: rememberUntil is only a floor on how long to keep a record.
+    private readonly ConcurrentDictionary<string, byte> _revokedFamilies = new(StringComparer.Ordinal);
     private readonly ReaderWriterLockSlim _revokeLock = new(LockRecursionPolicy.NoRecursion);
 
     /// <inheritdoc/>
@@ -85,11 +88,12 @@ internal sealed class InMemoryRefreshTokenBackingStore : IRefreshTokenBackingSto
     }
 
     /// <inheritdoc/>
-    public ValueTask RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
+    public ValueTask RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(familyId);
         cancellationToken.ThrowIfCancellationRequested();
 
+        _revokedFamilies.TryAdd(familyId, 0);
         RevokeWhere(grant => string.Equals(grant.FamilyId, familyId, StringComparison.Ordinal));
 
         return ValueTask.CompletedTask;
@@ -112,16 +116,7 @@ internal sealed class InMemoryRefreshTokenBackingStore : IRefreshTokenBackingSto
         ArgumentNullException.ThrowIfNull(familyId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Plain read of already-committed state: no lock needed. _revokeLock only needs to
-        // exclude a concurrent InsertAsync from being missed by a RevokeWhere *scan*; a
-        // single-row-per-family membership read has nothing to race against that would
-        // change the answer's correctness — either the revoke has committed and is visible on
-        // the dictionary already (ConcurrentDictionary read-your-writes), or it hasn't yet, which
-        // is the same bounded, accepted race every backend must tolerate.
-        var revoked = _grants.Values.Any(grant =>
-            grant.Status == RefreshGrantStatus.Revoked && string.Equals(grant.FamilyId, familyId, StringComparison.Ordinal));
-
-        return ValueTask.FromResult(revoked);
+        return ValueTask.FromResult(_revokedFamilies.ContainsKey(familyId));
     }
 
     private void RevokeWhere(Func<RefreshTokenGrant, bool> predicate)

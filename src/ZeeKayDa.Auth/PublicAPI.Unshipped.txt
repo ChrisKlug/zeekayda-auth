@@ -304,7 +304,7 @@ ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.FindByHandleAsync(ZeeKayDa.Auth.S
 ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.InsertAsync(ZeeKayDa.Auth.Stores.RefreshTokenGrant! grant, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
 ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.IsFamilyRevokedAsync(string! familyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
 ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.RevokeBySubjectAsync(string! subject, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
-ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.RevokeFamilyAsync(string! familyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.RevokeFamilyAsync(string! familyId, System.DateTimeOffset rememberUntil, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
 ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.TryMarkConsumedAsync(ZeeKayDa.Auth.Stores.StoreKey handleHash, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
 ZeeKayDa.Auth.Stores.RefreshGrantStatus
 ZeeKayDa.Auth.Stores.RefreshGrantStatus.Active = 0 -> ZeeKayDa.Auth.Stores.RefreshGrantStatus
