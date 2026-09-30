@@ -68,20 +68,22 @@ confidential client.
 
 ## 3. Understand startup validation
 
-`AddZeeKayDaAuth` wires `ValidateOnStart()` so that any misconfiguration causes the host to fail
-immediately at startup, before it starts accepting requests. You will see an
-`OptionsValidationException` in the startup output.
+`AddZeeKayDaAuth` validates its options, and those of every signing source and hasher you add, when
+`MapZeeKayDaAuth()` runs and again when the host starts, so any misconfiguration stops the host
+before it accepts requests. You will
+see one `ZeeKayDaConfigurationException` in the startup output, listing every failure with a stable
+code you can alert on.
 
 Common startup failures and their causes:
 
-| Failure | Cause |
+| Code | Cause |
 |---|---|
-| `Issuer` validation error | `Issuer` is not set, not an absolute URI, is not canonical (uppercase scheme/host or explicit default port), uses HTTP without `AllowInsecureIssuer`, uses HTTP on a non-loopback host, or contains query, fragment, or user information |
-| `Response.TypesSupported` validation error | The collection was set to `null` or emptied |
-| `IdToken.AdvertisedSigningAlgorithms` validation error | The filter was set to a non-null empty collection |
+| `configuration.issuer.*` | `Issuer` is not set, not an absolute URI, is not canonical (uppercase scheme/host or explicit default port), uses HTTP without `AllowInsecureIssuer`, uses HTTP on a non-loopback host, ends with `/`, or contains query, fragment, or user information |
+| `configuration.response.types_supported.null` / `.empty` | The collection was set to `null` or emptied |
+| `configuration.id_token.advertised_signing_algorithms.empty` | The filter was set to a non-null empty collection |
 | `signing.key_ring.missing` | No signing key source was registered — the discovery document has no key set to derive `id_token_signing_alg_values_supported` from |
 | `signing.advertised_algorithms.excludes_signing_key` | `IdToken.AdvertisedSigningAlgorithms` excludes the algorithm of the key that signs |
-| Other collection validation errors | Any of the remaining `ICollection` properties was set to `null` |
+| `configuration.grant_types_supported.null`, `configuration.response.modes_supported.null` | `GrantTypesSupported` or `Response.ModesSupported` was set to `null` |
 
 The full validation rule set is in the
 [AuthorizationServerOptions reference](../reference/configuration.md#startup-validation).

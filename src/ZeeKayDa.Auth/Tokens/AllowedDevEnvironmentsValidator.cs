@@ -8,40 +8,43 @@ namespace ZeeKayDa.Auth.Tokens;
 /// Registered only when <c>AddInMemoryDevelopmentSigning()</c> or
 /// <c>AddPersistedDevelopmentSigning()</c> is called.
 /// </summary>
-internal sealed class AllowedDevEnvironmentsValidator : IValidateOptions<DevelopmentSigningOptions>
+internal sealed class AllowedDevEnvironmentsValidator : ZeeKayDaOptionsValidator<DevelopmentSigningOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, DevelopmentSigningOptions options)
+    protected override void Validate(
+        string? name,
+        DevelopmentSigningOptions options,
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         var list = options.AllowedEnvironments;
-        var errors = new List<string>();
 
         if (list.Count == 0)
         {
-            errors.Add(
+            failures.Add(new(
+                "configuration.development_signing.allowed_environments.empty",
                 "DevelopmentSigningOptions.AllowedEnvironments must name at least one environment. " +
-                "An empty list refuses every environment, Development included.");
+                "An empty list refuses every environment, Development included."));
         }
 
         foreach (var entry in list)
         {
             if (string.IsNullOrWhiteSpace(entry))
             {
-                errors.Add(
+                failures.Add(new(
+                    "configuration.development_signing.allowed_environments.blank_entry",
                     "DevelopmentSigningOptions.AllowedEnvironments " +
-                    "must not contain null or empty entries.");
+                    "must not contain null or empty entries."));
                 continue;
             }
 
             if (string.Equals(entry, "Production", StringComparison.OrdinalIgnoreCase))
             {
-                errors.Add(
+                failures.Add(new(
+                    "configuration.development_signing.allowed_environments.contains_production",
                     "DevelopmentSigningOptions.AllowedEnvironments " +
                     "must not contain 'Production'. Development signing keys are never permitted in " +
-                    "Production regardless of this list. Listing 'Production' here is a misconfiguration.");
+                    "Production regardless of this list. Listing 'Production' here is a misconfiguration."));
             }
         }
-
-        return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 }

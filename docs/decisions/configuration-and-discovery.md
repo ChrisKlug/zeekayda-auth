@@ -65,9 +65,9 @@ valid at the OAuth address. A second, OAuth-only document was rejected: it doubl
 model and provider surface for no client that needs the smaller shape, and it can still be added
 later without breaking a host or a custom provider.
 
-**`IValidateOptions<T>` plus `ValidateOnStart()` is the primary validation mechanism.** A check leaves
-it only for one of three reasons: it needs async I/O, it needs a DI scope, or its whole purpose is a
-side effect such as emitting a warning. Those become `IStartupVerifier`s (see
+**`IValidateOptions<T>`, registered with `AddZeeKayDaOptions<T>()`, is the primary validation
+mechanism.** A check leaves it only for one of three reasons: it needs async I/O, it needs a DI
+scope, or its whole purpose is a side effect such as emitting a warning. Those become `IStartupVerifier`s (see
 `startup-verification.md`); everything decidable synchronously from options values stays here.
 
 **Closed protocol vocabularies are enums; genuinely open ones are ordinal strings.**

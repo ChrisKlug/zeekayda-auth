@@ -1,5 +1,4 @@
 using Azure.Security.KeyVault.Certificates;
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AzureKeyVault.Tests.Fakes;
 using ZeeKayDa.Auth.Tokens;
 
@@ -16,8 +15,18 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
         Algorithm = SigningAlgorithm.RS256,
     };
 
-    private static ValidateOptionsResult Validate(AzureKeyVaultCachedSigningOptions options)
-        => new AzureKeyVaultCachedSigningOptionsValidator().Validate(null, options);
+    private static IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(AzureKeyVaultCachedSigningOptions options)
+    {
+        try
+        {
+            new AzureKeyVaultCachedSigningOptionsValidator().Validate(null, options);
+            return [];
+        }
+        catch (ZeeKayDaConfigurationException exception)
+        {
+            return exception.AggregatedFailures;
+        }
+    }
 
     // ── Valid options ─────────────────────────────────────────────────────────────────────────────
 
@@ -26,9 +35,7 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
     {
         var options = ValidOptions();
 
-        var result = Validate(options);
-
-        result.Succeeded.Should().BeTrue();
+        Validate(options).Should().BeEmpty();
     }
 
     // ── CertificateIdentifier ─────────────────────────────────────────────────────────────────────
@@ -39,10 +46,10 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
         var options = ValidOptions();
         options.CertificateIdentifier = default;
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("CertificateIdentifier");
+        failures.Should().ContainSingle(f => f.Code == "configuration.azure_key_vault_cached_signing.certificate_identifier.missing")
+            .Which.Message.Should().Contain("CertificateIdentifier");
     }
 
     // ── Credential ────────────────────────────────────────────────────────────────────────────────
@@ -53,10 +60,10 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Credential = null;
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Credential");
+        failures.Should().ContainSingle(f => f.Code == "configuration.azure_key_vault_cached_signing.credential.missing")
+            .Which.Message.Should().Contain("Credential");
     }
 
     // ── Algorithm ─────────────────────────────────────────────────────────────────────────────────
@@ -67,10 +74,10 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Algorithm = (SigningAlgorithm)999;
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Algorithm");
+        failures.Should().ContainSingle(f => f.Code == "configuration.azure_key_vault_cached_signing.algorithm.undefined_value")
+            .Which.Message.Should().Contain("Algorithm");
     }
 
     // ── PreviousVersionsToPublish ─────────────────────────────────────────────────────────────────
@@ -81,10 +88,10 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
         var options = ValidOptions();
         options.PreviousVersionsToPublish = -1;
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("PreviousVersionsToPublish");
+        failures.Should().ContainSingle(f => f.Code == "configuration.azure_key_vault_cached_signing.previous_versions_to_publish.negative")
+            .Which.Message.Should().Contain("PreviousVersionsToPublish");
     }
 
     [Fact]
@@ -93,9 +100,7 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
         var options = ValidOptions();
         options.PreviousVersionsToPublish = 0;
 
-        var result = Validate(options);
-
-        result.Succeeded.Should().BeTrue();
+        Validate(options).Should().BeEmpty();
     }
 
     // ── PreActivationDelay ────────────────────────────────────────────────────────────────────────
@@ -106,10 +111,10 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
         var options = ValidOptions();
         options.PreActivationDelay = TimeSpan.FromSeconds(-1);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("PreActivationDelay");
+        failures.Should().ContainSingle(f => f.Code == "configuration.azure_key_vault_cached_signing.pre_activation_delay.negative")
+            .Which.Message.Should().Contain("PreActivationDelay");
     }
 
     [Fact]
@@ -118,9 +123,7 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
         var options = ValidOptions();
         options.PreActivationDelay = TimeSpan.Zero;
 
-        var result = Validate(options);
-
-        result.Succeeded.Should().BeTrue();
+        Validate(options).Should().BeEmpty();
     }
 
     // ── Batched, not fail-fast ────────────────────────────────────────────────────────────────────
@@ -135,13 +138,15 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
         options.PreviousVersionsToPublish = -1;
         options.PreActivationDelay = TimeSpan.FromSeconds(-1);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().Contain(f => f.Contains("CertificateIdentifier"));
-        result.Failures.Should().Contain(f => f.Contains("Credential"));
-        result.Failures.Should().Contain(f => f.Contains("Algorithm"));
-        result.Failures.Should().Contain(f => f.Contains("PreviousVersionsToPublish"));
-        result.Failures.Should().Contain(f => f.Contains("PreActivationDelay"));
+        failures.Select(f => f.Code).Should().Contain(
+        [
+            "configuration.azure_key_vault_cached_signing.certificate_identifier.missing",
+            "configuration.azure_key_vault_cached_signing.credential.missing",
+            "configuration.azure_key_vault_cached_signing.algorithm.undefined_value",
+            "configuration.azure_key_vault_cached_signing.previous_versions_to_publish.negative",
+            "configuration.azure_key_vault_cached_signing.pre_activation_delay.negative",
+        ]);
     }
 }

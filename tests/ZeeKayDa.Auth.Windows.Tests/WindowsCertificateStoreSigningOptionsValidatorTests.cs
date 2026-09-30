@@ -24,12 +24,23 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
 
     private static WindowsCertificateStoreSigningOptionsValidator Validator() => new();
 
+    private static IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(WindowsCertificateStoreSigningOptions options)
+    {
+        try
+        {
+            Validator().Validate(null, options);
+            return [];
+        }
+        catch (ZeeKayDaConfigurationException exception)
+        {
+            return exception.AggregatedFailures;
+        }
+    }
+
     [Fact]
     public void Validate_succeeds_for_valid_options()
     {
-        var result = Validator().Validate(null, ValidOptions());
-
-        result.Succeeded.Should().BeTrue();
+        Validate(ValidOptions()).Should().BeEmpty();
     }
 
     [Fact]
@@ -37,9 +48,7 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
     {
         var options = ValidOptions();
 
-        var result = Validator().Validate(null, options);
-
-        result.Succeeded.Should().BeTrue("Previous and Next are independently optional");
+        Validate(options).Should().BeEmpty("Previous and Next are independently optional");
     }
 
     [Fact]
@@ -49,9 +58,7 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         options.Previous = CertificateLookup.ByThumbprint(OtherThumbprint);
         options.Next = CertificateLookup.ByThumbprint("2222222222222222222222222222222222222B");
 
-        var result = Validator().Validate(null, options);
-
-        result.Succeeded.Should().BeTrue();
+        Validate(options).Should().BeEmpty();
     }
 
     [Fact]
@@ -63,10 +70,10 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
             Algorithm = SigningAlgorithm.RS256,
         };
 
-        var result = Validator().Validate(null, options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Current");
+        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.current.missing")
+            .Which.Message.Should().Contain("Current");
     }
 
     [Fact]
@@ -75,10 +82,10 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Algorithm = (SigningAlgorithm)999;
 
-        var result = Validator().Validate(null, options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Algorithm");
+        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.algorithm.undefined_value")
+            .Which.Message.Should().Contain("Algorithm");
     }
 
     [Fact]
@@ -87,10 +94,10 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Previous = CertificateLookup.ByThumbprint(CurrentThumbprint);
 
-        var result = Validator().Validate(null, options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Previous").And.Contain("Current");
+        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.slots.duplicate_certificate")
+            .Which.Message.Should().Contain("Previous").And.Contain("Current");
     }
 
     [Fact]
@@ -99,10 +106,10 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Next = CertificateLookup.ByThumbprint(CurrentThumbprint);
 
-        var result = Validator().Validate(null, options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Current").And.Contain("Next");
+        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.slots.duplicate_certificate")
+            .Which.Message.Should().Contain("Current").And.Contain("Next");
     }
 
     [Fact]
@@ -112,10 +119,10 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         options.Previous = CertificateLookup.ByThumbprint(OtherThumbprint);
         options.Next = CertificateLookup.ByThumbprint(OtherThumbprint);
 
-        var result = Validator().Validate(null, options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Previous").And.Contain("Next");
+        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.slots.duplicate_certificate")
+            .Which.Message.Should().Contain("Previous").And.Contain("Next");
     }
 
     [Fact]
@@ -126,8 +133,8 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Previous = CertificateLookup.ByThumbprint("  aa bb cc dd ee ff 00 11 22 33 44 55 66 77 88 99 aa bb cc d  ");
 
-        var result = Validator().Validate(null, options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
+        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.slots.duplicate_certificate");
     }
 }

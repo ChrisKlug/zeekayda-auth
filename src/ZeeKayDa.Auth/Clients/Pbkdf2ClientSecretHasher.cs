@@ -51,8 +51,8 @@ internal sealed class Pbkdf2ClientSecretHasher(
     private const int SaltLength = 16;
     private const int HashLength = 32;
 
-    // The monitor, not IOptions<T>: ValidateOnStart validates through the monitor, so this reads
-    // exactly the value startup validated, even when a host registers IOptions<T> directly.
+    // The monitor, not IOptions<T>: the framework's options check validates through the monitor, so
+    // this reads exactly the value startup validated, even when a host registers IOptions<T> directly.
     private readonly int _iterations = RequireWithinBounds(options.CurrentValue.Iterations);
 
     /// <summary>

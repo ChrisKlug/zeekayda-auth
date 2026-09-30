@@ -138,10 +138,9 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
         builder.Services.AddZeeKayDaAuthCore();
 
-        builder.Services.AddOptions<PemFileSigningOptions>()
+        builder.Services.AddZeeKayDaOptions<PemFileSigningOptions>()
             .Configure(options => options.Algorithm = algorithm)
-            .Configure(configure)
-            .ValidateOnStart();
+            .Configure(configure);
 
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<PemFileSigningOptions>, PemFileSigningOptionsValidator>());
@@ -258,10 +257,9 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
         builder.Services.AddZeeKayDaAuthCore();
 
-        builder.Services.AddOptions<PfxFileSigningOptions>()
+        builder.Services.AddZeeKayDaOptions<PfxFileSigningOptions>()
             .Configure(options => options.Algorithm = algorithm)
-            .Configure(configure)
-            .ValidateOnStart();
+            .Configure(configure);
 
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<PfxFileSigningOptions>, PfxFileSigningOptionsValidator>());

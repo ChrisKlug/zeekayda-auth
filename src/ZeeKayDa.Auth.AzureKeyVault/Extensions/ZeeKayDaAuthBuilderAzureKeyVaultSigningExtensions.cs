@@ -82,15 +82,14 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
         // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
         builder.Services.AddZeeKayDaAuthCore();
 
-        builder.Services.AddOptions<AzureKeyVaultRemoteSigningOptions>()
+        builder.Services.AddZeeKayDaOptions<AzureKeyVaultRemoteSigningOptions>()
             .Configure(options =>
             {
                 options.KeyIdentifier = keyIdentifier;
                 options.Algorithm = algorithm;
                 options.Credential = credential;
             })
-            .Configure(configure ?? (_ => { }))
-            .ValidateOnStart();
+            .Configure(configure ?? (_ => { }));
 
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
@@ -179,15 +178,14 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
         // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
         builder.Services.AddZeeKayDaAuthCore();
 
-        builder.Services.AddOptions<AzureKeyVaultCachedSigningOptions>()
+        builder.Services.AddZeeKayDaOptions<AzureKeyVaultCachedSigningOptions>()
             .Configure(options =>
             {
                 options.CertificateIdentifier = certificateIdentifier;
                 options.Algorithm = algorithm;
                 options.Credential = credential;
             })
-            .Configure(configure ?? (_ => { }))
-            .ValidateOnStart();
+            .Configure(configure ?? (_ => { }));
 
         builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<

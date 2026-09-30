@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
@@ -7,14 +6,26 @@ public sealed class AllowedDevEnvironmentsValidatorTests
 {
     private static readonly AllowedDevEnvironmentsValidator Sut = new();
 
+    private static IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(DevelopmentSigningOptions options, string? name = null)
+    {
+        try
+        {
+            Sut.Validate(name, options);
+            return [];
+        }
+        catch (ZeeKayDaConfigurationException exception)
+        {
+            return exception.AggregatedFailures;
+        }
+    }
+
     // ── Valid configurations (no errors) ─────────────────────────────────────────────────────────
 
     [Fact]
     public void Validate_succeeds_for_default_allowed_environments()
     {
         var options = new DevelopmentSigningOptions(); // defaults to ["Development"]
-        var result = Sut.Validate(null, options);
-        result.Succeeded.Should().BeTrue();
+        Validate(options).Should().BeEmpty();
     }
 
     [Fact]
@@ -24,8 +35,7 @@ public sealed class AllowedDevEnvironmentsValidatorTests
         {
             AllowedEnvironments = ["Development", "Staging", "IntegrationTesting"],
         };
-        var result = Sut.Validate(null, options);
-        result.Succeeded.Should().BeTrue();
+        Validate(options).Should().BeEmpty();
     }
 
     [Fact]
@@ -35,9 +45,9 @@ public sealed class AllowedDevEnvironmentsValidatorTests
         {
             AllowedEnvironments = [],
         };
-        var result = Sut.Validate(null, options);
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("at least one environment");
+        var failures = Validate(options);
+        failures.Should().ContainSingle(f => f.Code == "configuration.development_signing.allowed_environments.empty")
+            .Which.Message.Should().Contain("at least one environment");
     }
 
     // ── Production entries are rejected ──────────────────────────────────────────────────────────
@@ -52,9 +62,9 @@ public sealed class AllowedDevEnvironmentsValidatorTests
         {
             AllowedEnvironments = ["Development", productionEntry],
         };
-        var result = Sut.Validate(null, options);
-        result.Succeeded.Should().BeFalse();
-        result.FailureMessage.Should().Contain("Production");
+        var failures = Validate(options);
+        failures.Should().ContainSingle(f => f.Code == "configuration.development_signing.allowed_environments.contains_production")
+            .Which.Message.Should().Contain("Production");
     }
 
     [Fact]
@@ -64,8 +74,8 @@ public sealed class AllowedDevEnvironmentsValidatorTests
         {
             AllowedEnvironments = ["Production"],
         };
-        var result = Sut.Validate(null, options);
-        result.Succeeded.Should().BeFalse();
+        var failures = Validate(options);
+        failures.Should().ContainSingle(f => f.Code == "configuration.development_signing.allowed_environments.contains_production");
     }
 
     // ── Null/empty entries are rejected ──────────────────────────────────────────────────────────
@@ -77,9 +87,9 @@ public sealed class AllowedDevEnvironmentsValidatorTests
         {
             AllowedEnvironments = ["Development", ""],
         };
-        var result = Sut.Validate(null, options);
-        result.Succeeded.Should().BeFalse();
-        result.FailureMessage.Should().Contain("null or empty");
+        var failures = Validate(options);
+        failures.Should().ContainSingle(f => f.Code == "configuration.development_signing.allowed_environments.blank_entry")
+            .Which.Message.Should().Contain("null or empty");
     }
 
     [Fact]
@@ -89,9 +99,9 @@ public sealed class AllowedDevEnvironmentsValidatorTests
         {
             AllowedEnvironments = ["Development", "   "],
         };
-        var result = Sut.Validate(null, options);
-        result.Succeeded.Should().BeFalse();
-        result.FailureMessage.Should().Contain("null or empty");
+        var failures = Validate(options);
+        failures.Should().ContainSingle(f => f.Code == "configuration.development_signing.allowed_environments.blank_entry")
+            .Which.Message.Should().Contain("null or empty");
     }
 
     // ── Multiple errors are reported together ─────────────────────────────────────────────────────
@@ -103,11 +113,13 @@ public sealed class AllowedDevEnvironmentsValidatorTests
         {
             AllowedEnvironments = ["Production", ""],
         };
-        var result = Sut.Validate(null, options);
-        result.Succeeded.Should().BeFalse();
-        // Both Production and empty-entry errors should be reported.
-        result.FailureMessage.Should().Contain("Production");
-        result.FailureMessage.Should().Contain("null or empty");
+        var failures = Validate(options);
+
+        failures.Select(f => f.Code).Should().Contain(
+        [
+            "configuration.development_signing.allowed_environments.contains_production",
+            "configuration.development_signing.allowed_environments.blank_entry",
+        ]);
     }
 
     // ── Name parameter is ignored (IValidateOptions contract) ─────────────────────────────────────
@@ -116,8 +128,8 @@ public sealed class AllowedDevEnvironmentsValidatorTests
     public void Validate_succeeds_regardless_of_name_parameter()
     {
         var options = new DevelopmentSigningOptions();
-        Sut.Validate("some-name", options).Succeeded.Should().BeTrue();
-        Sut.Validate(null, options).Succeeded.Should().BeTrue();
-        Sut.Validate(string.Empty, options).Succeeded.Should().BeTrue();
+        Validate(options, "some-name").Should().BeEmpty();
+        Validate(options, null).Should().BeEmpty();
+        Validate(options, string.Empty).Should().BeEmpty();
     }
 }

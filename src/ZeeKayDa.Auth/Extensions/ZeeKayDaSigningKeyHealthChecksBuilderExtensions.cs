@@ -43,7 +43,7 @@ public static class ZeeKayDaSigningKeyHealthChecksBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        builder.Services.AddOptions<SigningKeyExpiryHealthCheckOptions>().ValidateOnStart();
+        builder.Services.AddZeeKayDaOptions<SigningKeyExpiryHealthCheckOptions>();
         if (configure is not null)
             builder.Services.Configure(configure);
 

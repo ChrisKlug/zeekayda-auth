@@ -41,6 +41,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **`AddZeeKayDaOptions<T>()` and `.ValidateWithZeeKayDa()` register options that ZeeKayDa.Auth
+  validates together** (#796). They replace `ValidateOnStart()` for the framework's own options and
+  are public so a third-party package, a signing source for example, gets the same behaviour: its
+  failures arrive in the one `ZeeKayDaConfigurationException` with everyone else's. A validator
+  derived from the new `ZeeKayDaOptionsValidator<TOptions>` adds its coded failures to a collection
+  and the base throws them; one that returns `ValidateOptionsResult.Fail` is reported as
+  `configuration.options_invalid`, with its messages in the inner exception.
+
 - **The discovery document advertises `claims_supported`** (#716). `OpenIdConfigurationDocument`
   gains an optional `ClaimsSupported`, which OpenID Connect Discovery 1.0 §3 lists as RECOMMENDED
   and the conformance suite's `oidcc-discovery-endpoint-verification` module warned was missing.
@@ -537,6 +545,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   host's disposal path selects.
 
 ### Changed
+
+- **Options-validation failures throw `ZeeKayDaConfigurationException` with a stable code for each
+  failure** (#796). The framework's options validators, for `AuthorizationServerOptions`, the client
+  secret hashers, the development, file, Azure Key Vault and Windows certificate-store signing
+  sources and the signing-key expiry health check, used to fail with an `OptionsValidationException`
+  of plain strings, so an operator could alert on a missing signing key but not on a bad issuer. They
+  now throw the same exception as every other startup check, at host start and from
+  `MapZeeKayDaAuth()` alike. A code is `configuration.` + the option's path in snake_case + the
+  problem, e.g. `configuration.issuer.not_https`; the full list for `AuthorizationServerOptions` is
+  in the configuration reference. Every options type is validated together, when `MapZeeKayDaAuth()`
+  runs and again at host start, so one exception lists every failure across them. Provider handler
+  options are unchanged: they still report `provider.options_invalid`.
 
 - **`AuthorizationServerOptions.CorsOrigins` keeps the host's entries exactly as configured**
   (#799). It is still frozen read-only after configuration, but no longer rewritten into lowercase,

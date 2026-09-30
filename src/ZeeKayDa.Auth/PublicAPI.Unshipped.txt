@@ -736,3 +736,10 @@ ZeeKayDa.Auth.Claims.UserInfoEndpointOptions
 ZeeKayDa.Auth.Claims.UserInfoEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Claims.UserInfoEndpointOptions.Uri.set -> void
 ZeeKayDa.Auth.Claims.UserInfoEndpointOptions.UserInfoEndpointOptions() -> void
+Microsoft.Extensions.DependencyInjection.ZeeKayDaOptionsServiceCollectionExtensions
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaOptionsServiceCollectionExtensions.AddZeeKayDaOptions<TOptions>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.Options.OptionsBuilder<TOptions!>!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaOptionsServiceCollectionExtensions.ValidateWithZeeKayDa<TOptions>(this Microsoft.Extensions.Options.OptionsBuilder<TOptions!>! builder) -> Microsoft.Extensions.Options.OptionsBuilder<TOptions!>!
+ZeeKayDa.Auth.ZeeKayDaOptionsValidator<TOptions>
+ZeeKayDa.Auth.ZeeKayDaOptionsValidator<TOptions>.ZeeKayDaOptionsValidator() -> void
+ZeeKayDa.Auth.ZeeKayDaOptionsValidator<TOptions>.Validate(string? name, TOptions! options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
+abstract ZeeKayDa.Auth.ZeeKayDaOptionsValidator<TOptions>.Validate(string? name, TOptions! options, System.Collections.Generic.ICollection<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>! failures) -> void

@@ -55,8 +55,7 @@ public static class ZeeKayDaAuthBuilderHasherExtensions
                 IValidateOptions<ClientSecretHasherRegistrationOptions>,
                 ClientSecretHasherOptionsValidator>());
 
-        builder.Services.AddOptions<ClientSecretHasherRegistrationOptions>()
-            .ValidateOnStart();
+        builder.Services.AddZeeKayDaOptions<ClientSecretHasherRegistrationOptions>();
 
         return builder;
     }

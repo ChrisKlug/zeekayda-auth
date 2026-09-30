@@ -8,24 +8,27 @@ namespace ZeeKayDa.Auth.Clients;
 /// serving under load.
 /// </summary>
 internal sealed class Pbkdf2ClientSecretHasherOptionsValidator
-    : IValidateOptions<Pbkdf2ClientSecretHasherOptions>
+    : ZeeKayDaOptionsValidator<Pbkdf2ClientSecretHasherOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, Pbkdf2ClientSecretHasherOptions options)
+    protected override void Validate(
+        string? name,
+        Pbkdf2ClientSecretHasherOptions options,
+        ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         var iterations = options.Iterations;
 
         if (iterations < Pbkdf2ClientSecretHasher.MinIterations)
-            return ValidateOptionsResult.Fail(
+            failures.Add(new(
+                "configuration.pbkdf2.iterations_out_of_range",
                 $"Pbkdf2ClientSecretHasherOptions.Iterations is {iterations:N0}, below the minimum of " +
-                $"{Pbkdf2ClientSecretHasher.MinIterations:N0} (OWASP PBKDF2-HMAC-SHA256).");
+                $"{Pbkdf2ClientSecretHasher.MinIterations:N0} (OWASP PBKDF2-HMAC-SHA256)."));
 
         if (iterations > Pbkdf2ClientSecretHasher.MaxIterations)
-            return ValidateOptionsResult.Fail(
+            failures.Add(new(
+                "configuration.pbkdf2.iterations_out_of_range",
                 $"Pbkdf2ClientSecretHasherOptions.Iterations is {iterations:N0}, above the maximum of " +
                 $"{Pbkdf2ClientSecretHasher.MaxIterations:N0}. Each verification would take over a " +
-                "second, and the token endpoint would stop serving under load.");
-
-        return ValidateOptionsResult.Success;
+                "second, and the token endpoint would stop serving under load."));
     }
 }

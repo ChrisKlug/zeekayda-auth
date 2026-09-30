@@ -45,7 +45,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// <see langword="null"/>.
     /// </exception>
     /// <remarks>
-    /// <see cref="AuthorizationServerOptions"/> validation runs with <c>ValidateOnStart()</c>, so
+    /// <see cref="AuthorizationServerOptions"/> is registered with <c>AddZeeKayDaOptions</c>, so
     /// a misconfigured server fails loudly at startup rather than at the first request. Call
     /// <c>app.UseRouting()</c> followed by <c>app.MapZeeKayDaAuth()</c> after building the
     /// application to register the OIDC protocol endpoints.
@@ -58,9 +58,8 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configure);
 
         services
-            .AddOptions<AuthorizationServerOptions>()
-            .Configure(configure)
-            .ValidateOnStart();
+            .AddZeeKayDaOptions<AuthorizationServerOptions>()
+            .Configure(configure);
 
         // Freezes CorsOrigins and AdvertisedSigningAlgorithms before validation runs.
         services.TryAddEnumerable(
@@ -142,7 +141,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             ServiceDescriptor.Singleton<
                 IValidateOptions<Pbkdf2ClientSecretHasherOptions>,
                 Pbkdf2ClientSecretHasherOptionsValidator>());
-        services.AddOptions<Pbkdf2ClientSecretHasherOptions>().ValidateOnStart();
+        services.AddZeeKayDaOptions<Pbkdf2ClientSecretHasherOptions>();
         return builder;
     }
 

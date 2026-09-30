@@ -9,68 +9,89 @@ namespace ZeeKayDa.Auth.Configuration;
 /// </summary>
 internal static class EndpointUriValidator
 {
-    /// <summary>One endpoint override, and whether a query component is prohibited on it.</summary>
-    private readonly record struct EndpointOverride(string PropertyName, string? Value, bool RejectQuery);
+    /// <summary>
+    /// One endpoint override, the code prefix its failures carry, and whether a query component is
+    /// prohibited on it.
+    /// </summary>
+    private readonly record struct EndpointOverride(string PropertyName, string CodePrefix, string? Value, bool RejectQuery);
 
-    internal static void Validate(AuthorizationServerOptions options, Uri issuerUri, List<string> errors)
+    internal static void Validate(AuthorizationServerOptions options, Uri issuerUri, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         EndpointOverride[] endpoints =
         [
             // Full option paths, not nameof(...Uri): that is just "Uri" for every one of them, and
             // the operator could not tell which endpoint the message is about.
-            new("AuthorizationEndpoint.Uri", options.AuthorizationEndpoint.Uri, RejectQuery: false),
-            new("TokenEndpoint.Uri", options.TokenEndpoint.Uri, RejectQuery: false),
-            new("JwksEndpoint.Uri", options.JwksEndpoint.Uri, RejectQuery: true),
-            new("EndSessionEndpoint.Uri", options.EndSessionEndpoint.Uri, RejectQuery: true),
-            new("UserInfoEndpoint.Uri", options.UserInfoEndpoint.Uri, RejectQuery: true),
+            new("AuthorizationEndpoint.Uri", "configuration.authorization_endpoint.uri", options.AuthorizationEndpoint.Uri, RejectQuery: false),
+            new("TokenEndpoint.Uri", "configuration.token_endpoint.uri", options.TokenEndpoint.Uri, RejectQuery: false),
+            new("JwksEndpoint.Uri", "configuration.jwks_endpoint.uri", options.JwksEndpoint.Uri, RejectQuery: true),
+            new("EndSessionEndpoint.Uri", "configuration.end_session_endpoint.uri", options.EndSessionEndpoint.Uri, RejectQuery: true),
+            new("UserInfoEndpoint.Uri", "configuration.user_info_endpoint.uri", options.UserInfoEndpoint.Uri, RejectQuery: true),
         ];
 
-        errors.AddRange(endpoints
+        var broken = endpoints
             .Select(endpoint => ValidateEndpoint(options, issuerUri, endpoint))
-            .OfType<string>());
+            .OfType<ZeeKayDaConfigurationFailure>();
+
+        foreach (var failure in broken)
+            failures.Add(failure);
     }
 
     /// <summary>The endpoint's first broken rule, or <see langword="null"/> when it broke none.</summary>
-    private static string? ValidateEndpoint(AuthorizationServerOptions options, Uri issuerUri, EndpointOverride endpoint)
+    private static ZeeKayDaConfigurationFailure? ValidateEndpoint(AuthorizationServerOptions options, Uri issuerUri, EndpointOverride endpoint)
     {
         if (endpoint.Value is null)
             return null;
 
         if (!Uri.TryCreate(endpoint.Value, UriKind.Absolute, out var uri))
-            return $"AuthorizationServerOptions.{endpoint.PropertyName} '{endpoint.Value}' is not a valid absolute URI.";
+            return new(
+                $"{endpoint.CodePrefix}.invalid",
+                $"AuthorizationServerOptions.{endpoint.PropertyName} is not a valid absolute URI.");
 
         return ValidateParsedEndpoint(options, issuerUri, endpoint, uri);
     }
 
-    private static string? ValidateParsedEndpoint(
+    private static ZeeKayDaConfigurationFailure? ValidateParsedEndpoint(
         AuthorizationServerOptions options,
         Uri issuerUri,
         EndpointOverride endpoint,
         Uri uri)
     {
-        var (propertyName, value, rejectQuery) = endpoint;
+        var (propertyName, codePrefix, configured, rejectQuery) = endpoint;
+        var value = ConfiguredUri.Display(configured!, uri);
 
         if (uri.UserInfo.Length > 0)
-            return $"AuthorizationServerOptions.{propertyName} '{value}' must not contain user information.";
+            return new(
+                $"{codePrefix}.userinfo",
+                $"AuthorizationServerOptions.{propertyName} '{value}' must not contain user information.");
 
         if (!ServerUriRules.IsSchemePermitted(uri, options.AllowInsecureIssuer))
-            return $"AuthorizationServerOptions.{propertyName} '{value}' must use HTTPS. " +
-                "Set AllowInsecureIssuer = true to permit HTTP loopback endpoints for local development only.";
+            return new(
+                $"{codePrefix}.not_https",
+                $"AuthorizationServerOptions.{propertyName} '{value}' must use HTTPS. " +
+                "Set AllowInsecureIssuer = true to permit HTTP loopback endpoints for local development only.");
 
         if (ServerUriRules.IsInsecureNonLoopback(uri, options.AllowInsecureIssuer))
-            return $"AuthorizationServerOptions.{propertyName} '{value}' uses HTTP for a non-loopback host. " +
-                "AllowInsecureIssuer only permits HTTP loopback endpoints for local development and testing.";
+            return new(
+                $"{codePrefix}.http_non_loopback",
+                $"AuthorizationServerOptions.{propertyName} '{value}' uses HTTP for a non-loopback host. " +
+                "AllowInsecureIssuer only permits HTTP loopback endpoints for local development and testing.");
 
         if (!HasSameAuthority(uri, issuerUri))
-            return $"AuthorizationServerOptions.{propertyName} '{value}' must use the same authority as " +
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}'.";
+            return new(
+                $"{codePrefix}.authority_mismatch",
+                $"AuthorizationServerOptions.{propertyName} '{value}' must use the same authority as " +
+                $"AuthorizationServerOptions.Issuer '{ConfiguredUri.Display(options.Issuer!, issuerUri)}'.");
 
         if (rejectQuery && uri.Query.Length > 0)
-            return $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a query component ('?').";
+            return new(
+                $"{codePrefix}.query",
+                $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a query component ('?').");
 
         // Every endpoint override rejects a fragment.
         if (uri.Fragment.Length > 0)
-            return $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a fragment component ('#').";
+            return new(
+                $"{codePrefix}.fragment",
+                $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a fragment component ('#').");
 
         return null;
     }

@@ -34,8 +34,10 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        // Force eager options evaluation so Map-time failures match ValidateOnStart
-        // (OptionsValidationException with the validator's exact messages).
+        // Every registered options type is validated here, before routes exist, so the first
+        // error the host sees lists all of their failures, not only this method's own options'.
+        ValidatedOptionsCheck.ThrowIfAnyInvalid(endpoints.ServiceProvider);
+
         var options = endpoints.ServiceProvider
             .GetRequiredService<IOptions<AuthorizationServerOptions>>()
             .Value;

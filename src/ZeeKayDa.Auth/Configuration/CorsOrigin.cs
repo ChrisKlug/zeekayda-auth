@@ -59,7 +59,7 @@ internal sealed class CorsOrigin
         // The flag feeds only the scheme rules, which canonicalization ignores.
         new CorsOrigin(origin, allowInsecureIssuer: true).Canonical
             ?? throw new InvalidOperationException(
-                $"CORS origin '{origin}' has no canonical form; startup validation did not run.");
+                "A CORS origin has no canonical form; startup validation did not run.");
 
     private string? FirstProblem(Func<CorsOrigin, string?>[] rules)
         => rules
@@ -74,7 +74,7 @@ internal sealed class CorsOrigin
 
     private string? HasCrOrLfCharacters()
         => _origin!.IndexOfAny(['\r', '\n']) >= 0
-            ? $"CORS origin '{_origin}' must not contain CR or LF characters."
+            ? "A CORS origin must not contain CR or LF characters."
             : null;
 
     private string? HasNullLiteral()
@@ -84,31 +84,31 @@ internal sealed class CorsOrigin
 
     private string? HasWildcardCharacters()
         => _origin!.Contains('*')
-            ? $"CORS origin '{_origin}' must not contain wildcard characters."
+            ? "A CORS origin must not contain wildcard characters."
             : null;
 
     private string? HasNoAbsoluteUri()
-        => _uri is null ? $"CORS origin '{_origin}' is not a valid absolute URI." : null;
+        => _uri is null ? "A CORS origin must be a valid absolute URI." : null;
 
     private string? HasUserInfo()
         => _uri!.UserInfo.Length > 0
-            ? $"CORS origin '{_origin}' must not contain user information."
+            ? $"CORS origin '{Shown}' must not contain user information."
             : null;
 
     private string? HasQueryComponent()
         => _uri!.Query.Length > 0
-            ? $"CORS origin '{_origin}' must not contain a query component."
+            ? $"CORS origin '{Shown}' must not contain a query component."
             : null;
 
     private string? HasFragmentComponent()
         => _uri!.Fragment.Length > 0
-            ? $"CORS origin '{_origin}' must not contain a fragment component."
+            ? $"CORS origin '{Shown}' must not contain a fragment component."
             : null;
 
     // An origin is scheme + host + port only; path must be empty or just "/".
     private string? HasPathComponent()
         => _uri!.AbsolutePath.Length > 1
-            ? $"CORS origin '{_origin}' must not contain a path component. Use 'scheme://host[:port]' only."
+            ? $"CORS origin '{Shown}' must not contain a path component. Use 'scheme://host[:port]' only."
             : null;
 
     // A host that is not a valid IDN cannot be canonicalized to the punycode form a browser's
@@ -126,7 +126,7 @@ internal sealed class CorsOrigin
         }
         catch (UriFormatException)
         {
-            return $"CORS origin '{_origin}' does not contain a valid host name.";
+            return "A CORS origin must contain a valid host name.";
         }
     }
 
@@ -139,7 +139,7 @@ internal sealed class CorsOrigin
         if (IsHttp && _allowInsecureIssuer)
             return null;
 
-        return $"CORS origin '{_origin}' uses scheme '{_uri!.Scheme}'. " +
+        return $"CORS origin '{Shown}' uses scheme '{_uri!.Scheme}'. " +
             "Only 'https' is permitted in production. Set AllowInsecureIssuer = true to " +
             "permit HTTP CORS origins for local development and testing only.";
     }
@@ -148,7 +148,7 @@ internal sealed class CorsOrigin
     // AllowInsecureIssuer is set — what remains to check is the loopback restriction.
     private string? HasHttpNonLoopbackHost()
         => IsHttp && !LoopbackHelper.IsLoopbackHost(_uri!.Host)
-            ? $"CORS origin '{_origin}' uses HTTP for a non-loopback host. " +
+            ? $"CORS origin '{Shown}' uses HTTP for a non-loopback host. " +
                 "AllowInsecureIssuer only permits HTTP loopback CORS origins for local development and testing."
             : null;
 
@@ -177,6 +177,10 @@ internal sealed class CorsOrigin
     /// is not structurally valid and should be left as-is for validation to name.
     /// </summary>
     public string? Canonical { get; }
+
+    // Only read by rules that run once the entry parsed; the ones before them never repeat the value,
+    // which could be anything, a CR/LF pair included.
+    private string Shown => ConfiguredUri.Display(_origin!, _uri!);
 
     private bool IsHttps
         => string.Equals(_uri!.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);

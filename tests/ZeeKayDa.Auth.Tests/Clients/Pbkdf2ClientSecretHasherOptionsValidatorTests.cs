@@ -4,9 +4,19 @@ namespace ZeeKayDa.Auth.Tests.Clients;
 
 public sealed class Pbkdf2ClientSecretHasherOptionsValidatorTests
 {
-    private static Microsoft.Extensions.Options.ValidateOptionsResult Validate(int iterations)
-        => new Pbkdf2ClientSecretHasherOptionsValidator().Validate(
-            null, new Pbkdf2ClientSecretHasherOptions { Iterations = iterations });
+    private static IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(int iterations)
+    {
+        try
+        {
+            new Pbkdf2ClientSecretHasherOptionsValidator().Validate(
+                null, new Pbkdf2ClientSecretHasherOptions { Iterations = iterations });
+            return [];
+        }
+        catch (ZeeKayDaConfigurationException exception)
+        {
+            return exception.AggregatedFailures;
+        }
+    }
 
     [Theory]
     [InlineData(Pbkdf2ClientSecretHasher.MinIterations)]
@@ -14,24 +24,24 @@ public sealed class Pbkdf2ClientSecretHasherOptionsValidatorTests
     [InlineData(Pbkdf2ClientSecretHasher.MaxIterations)]
     public void Validate_accepts_an_iteration_count_within_the_allowed_range(int iterations)
     {
-        Validate(iterations).Succeeded.Should().BeTrue();
+        Validate(iterations).Should().BeEmpty();
     }
 
     [Fact]
     public void Validate_refuses_an_iteration_count_below_the_minimum()
     {
-        var result = Validate(Pbkdf2ClientSecretHasher.MinIterations - 1);
+        var failures = Validate(Pbkdf2ClientSecretHasher.MinIterations - 1);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("below the minimum");
+        failures.Should().ContainSingle(f => f.Code == "configuration.pbkdf2.iterations_out_of_range")
+            .Which.Message.Should().Contain("below the minimum");
     }
 
     [Fact]
     public void Validate_refuses_an_iteration_count_above_the_maximum_rather_than_clamping_it()
     {
-        var result = Validate(Pbkdf2ClientSecretHasher.MaxIterations + 1);
+        var failures = Validate(Pbkdf2ClientSecretHasher.MaxIterations + 1);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("above the maximum");
+        failures.Should().ContainSingle(f => f.Code == "configuration.pbkdf2.iterations_out_of_range")
+            .Which.Message.Should().Contain("above the maximum");
     }
 }

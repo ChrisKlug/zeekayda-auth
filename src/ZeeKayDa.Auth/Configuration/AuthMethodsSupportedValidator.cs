@@ -4,7 +4,7 @@ namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
 /// Validates <c>TokenEndpoint.AuthMethodsSupported</c>, on its own and against the advertised
-/// grant types, recording an error for every rule it breaks.
+/// grant types, recording a failure for every rule it breaks.
 /// </summary>
 internal static class AuthMethodsSupportedValidator
 {
@@ -26,24 +26,36 @@ internal static class AuthMethodsSupportedValidator
         "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
         "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).";
 
-    internal static void Validate(AuthorizationServerOptions options, List<string> errors)
+    internal static void Validate(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         var methods = options.TokenEndpoint.AuthMethodsSupported;
 
         if (methods is not { Count: > 0 })
         {
-            errors.Add(TokenEndpointAuthMethodsRequiredMessage);
+            failures.Add(new(
+                methods is null
+                    ? "configuration.token_endpoint.auth_methods_supported.null"
+                    : "configuration.token_endpoint.auth_methods_supported.empty",
+                TokenEndpointAuthMethodsRequiredMessage));
             return;
         }
 
-        errors.AddRange(methods.Select(ValidateEntry).OfType<string>());
+        foreach (var failure in methods.Select(ValidateEntry).OfType<ZeeKayDaConfigurationFailure>())
+            failures.Add(failure);
 
         if (AdvertisesClientCredentialsWithOnlyNone(options))
-            errors.Add(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
+            failures.Add(new(
+                "configuration.token_endpoint.auth_methods_supported.only_none_with_client_credentials",
+                ClientCredentialsRequiresNonNoneTokenAuthMethodMessage));
     }
 
     /// <summary>The entry's first broken rule, or <see langword="null"/> when it broke none.</summary>
-    private static string? ValidateEntry(string? authMethod)
+    private static ZeeKayDaConfigurationFailure? ValidateEntry(string? authMethod) =>
+        EntryProblem(authMethod) is { } problem
+            ? new("configuration.token_endpoint.auth_methods_supported.invalid_entry", problem)
+            : null;
+
+    private static string? EntryProblem(string? authMethod)
     {
         if (TokenEndpointAuthMethodRules.IsBlank(authMethod))
             return "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +

@@ -14,8 +14,18 @@ public sealed class PemFileSigningOptionsValidatorTests
         Algorithm = SigningAlgorithm.RS256,
     };
 
-    private static IReadOnlyList<string> Validate(PemFileSigningOptions options) =>
-        new PemFileSigningOptionsValidator().Validate(null, options).Failures?.ToList() ?? [];
+    private static IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(PemFileSigningOptions options)
+    {
+        try
+        {
+            new PemFileSigningOptionsValidator().Validate(null, options);
+            return [];
+        }
+        catch (ZeeKayDaConfigurationException exception)
+        {
+            return exception.AggregatedFailures;
+        }
+    }
 
     // ── Current is required ──────────────────────────────────────────────────────────────────────
 
@@ -26,11 +36,10 @@ public sealed class PemFileSigningOptionsValidatorTests
     }
 
     [Fact]
-    public void Reports_Succeeded_not_merely_zero_failures_for_a_valid_configuration()
+    public void Returns_Success_rather_than_merely_not_throwing_for_a_valid_configuration()
     {
-        // The Validate() helper above inspects only Failures, which a Fail result built over an
-        // empty error list would also satisfy — this pins the Succeeded flag itself, so a validator
-        // that never returns Success cannot pass startup on the strength of an empty failure list.
+        // Pins the Success result itself, so a validator that never returns Success cannot pass
+        // startup on the strength of never having thrown.
         var result = new PemFileSigningOptionsValidator().Validate(null, ValidOptions());
 
         result.Succeeded.Should().BeTrue();
@@ -41,7 +50,8 @@ public sealed class PemFileSigningOptionsValidatorTests
     {
         var options = new PemFileSigningOptions { Current = null };
 
-        Validate(options).Should().ContainSingle(e => e.Contains("Current must be set"));
+        Validate(options).Should().ContainSingle(f => f.Code == "configuration.pem_file_signing.current.missing")
+            .Which.Message.Should().Contain("Current must be set");
     }
 
     [Fact]
@@ -53,7 +63,8 @@ public sealed class PemFileSigningOptionsValidatorTests
             Next = new PemCertificateFile("/etc/zeekayda/next.pem"),
         };
 
-        Validate(options).Should().ContainSingle(e => e.Contains("Current must be set"));
+        Validate(options).Should().ContainSingle(f => f.Code == "configuration.pem_file_signing.current.missing")
+            .Which.Message.Should().Contain("Current must be set");
     }
 
     [Fact]
@@ -75,7 +86,8 @@ public sealed class PemFileSigningOptionsValidatorTests
     {
         var options = new PemFileSigningOptions { Current = new PemSigningFile(path) };
 
-        Validate(options).Should().Contain(e => e.Contains("Current.Path must be set"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.current.path.missing"
+            && f.Message.Contains("Current.Path must be set"));
     }
 
     [Theory]
@@ -86,7 +98,8 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Previous = new PemCertificateFile(path);
 
-        Validate(options).Should().Contain(e => e.Contains("Previous.Path must be set"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.previous.path.missing"
+            && f.Message.Contains("Previous.Path must be set"));
     }
 
     [Theory]
@@ -97,7 +110,8 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Next = new PemCertificateFile(path);
 
-        Validate(options).Should().Contain(e => e.Contains("Next.Path must be set"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.next.path.missing"
+            && f.Message.Contains("Next.Path must be set"));
     }
 
     [Fact]
@@ -115,7 +129,8 @@ public sealed class PemFileSigningOptionsValidatorTests
     {
         var options = new PemFileSigningOptions { Current = new PemSigningFile("/etc/zeekayda/current.pem", keyPath) };
 
-        Validate(options).Should().Contain(e => e.Contains("Current.KeyPath must be null"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.current.key_path.blank"
+            && f.Message.Contains("Current.KeyPath must be null"));
     }
 
     [Fact]
@@ -140,7 +155,8 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Algorithm = (SigningAlgorithm)9999;
 
-        Validate(options).Should().Contain(e => e.Contains("Algorithm value"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.algorithm.undefined_value"
+            && f.Message.Contains("Algorithm value"));
     }
 
     // ── Pairwise distinct paths ──────────────────────────────────────────────────────────────────
@@ -151,7 +167,8 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Previous = new PemCertificateFile("/etc/zeekayda/current.pem");
 
-        Validate(options).Should().Contain(e => e.Contains("slots reference the same file"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.paths.duplicate"
+            && f.Message.Contains("slots reference the same file"));
     }
 
     [Fact]
@@ -160,7 +177,8 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Next = new PemCertificateFile("/etc/zeekayda/current.pem");
 
-        Validate(options).Should().Contain(e => e.Contains("slots reference the same file"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.paths.duplicate"
+            && f.Message.Contains("slots reference the same file"));
     }
 
     [Fact]
@@ -170,7 +188,8 @@ public sealed class PemFileSigningOptionsValidatorTests
         options.Previous = new PemCertificateFile("/etc/zeekayda/staged.pem");
         options.Next = new PemCertificateFile("/etc/zeekayda/staged.pem");
 
-        Validate(options).Should().Contain(e => e.Contains("slots reference the same file"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.paths.duplicate"
+            && f.Message.Contains("slots reference the same file"));
     }
 
     [Fact]
@@ -182,7 +201,8 @@ public sealed class PemFileSigningOptionsValidatorTests
             Next = new PemCertificateFile(Path.Join(Path.GetTempPath(), ".", "tls.pem")),
         };
 
-        Validate(options).Should().Contain(e => e.Contains("slots reference the same file"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.paths.duplicate"
+            && f.Message.Contains("slots reference the same file"));
     }
 
     [Fact]
@@ -194,7 +214,8 @@ public sealed class PemFileSigningOptionsValidatorTests
             Next = new PemCertificateFile("/etc/zeekayda/shared.key"),
         };
 
-        Validate(options).Should().Contain(e => e.Contains("slots reference the same file"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.paths.duplicate"
+            && f.Message.Contains("slots reference the same file"));
     }
 
     [Fact]
@@ -205,7 +226,8 @@ public sealed class PemFileSigningOptionsValidatorTests
             Current = new PemSigningFile("/etc/zeekayda/tls.pem", "/etc/zeekayda/tls.pem"),
         };
 
-        Validate(options).Should().Contain(e => e.Contains("slots reference the same file"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.paths.duplicate"
+            && f.Message.Contains("slots reference the same file"));
     }
 
     [Fact]
@@ -217,32 +239,34 @@ public sealed class PemFileSigningOptionsValidatorTests
             Next = new PemCertificateFile(""),
         };
 
-        Validate(options).Should().NotContain(e => e.Contains("slots reference the same file"));
+        Validate(options).Should().NotContain(f => f.Code == "configuration.pem_file_signing.paths.duplicate");
     }
 
     // ── Paths the OS cannot resolve ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Fails_rather_than_throwing_when_a_slot_path_contains_an_embedded_NUL()
+    public void Fails_with_a_coded_configuration_exception_rather_than_an_unhandled_exception_for_a_slot_path_with_an_embedded_NUL()
     {
         var options = new PemFileSigningOptions { Current = new PemSigningFile("/etc/zeekayda/tls\0.pem") };
 
-        var act = () => Validate(options);
+        var act = () => new PemFileSigningOptionsValidator().Validate(null, options);
 
-        act.Should().NotThrow("an unresolvable path is a configuration error like any other");
-        Validate(options).Should().Contain(e => e.Contains("cannot resolve"));
+        act.Should().Throw<ZeeKayDaConfigurationException>("an unresolvable path is a configuration error like any other");
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.paths.unresolvable"
+            && f.Message.Contains("cannot resolve"));
     }
 
     [Fact]
-    public void Fails_rather_than_throwing_when_a_published_only_slot_path_contains_an_embedded_NUL()
+    public void Fails_with_a_coded_configuration_exception_for_a_published_only_slot_path_with_an_embedded_NUL()
     {
         var options = ValidOptions();
         options.Next = new PemCertificateFile("/etc/zeekayda/next\0.pem");
 
-        var act = () => Validate(options);
+        var act = () => new PemFileSigningOptionsValidator().Validate(null, options);
 
-        act.Should().NotThrow();
-        Validate(options).Should().Contain(e => e.Contains("cannot resolve"));
+        act.Should().Throw<ZeeKayDaConfigurationException>();
+        Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.paths.unresolvable"
+            && f.Message.Contains("cannot resolve"));
     }
 
     // ── Aggregation ──────────────────────────────────────────────────────────────────────────────
