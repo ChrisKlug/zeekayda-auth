@@ -25,17 +25,17 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     /// </summary>
     private sealed class ExternalSigningKeySource : ISigningKeySource
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
             using var rsa = RSA.Create(2048);
             var current = new SourceKey(
                 new SourceKeyId("current"), SigningAlgorithm.RS256,
                 PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), DateTimeOffset.UtcNow.AddDays(90));
 
-            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
 
@@ -45,12 +45,12 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     {
         public SigningKeySet Current => throw new NotSupportedException();
 
-        public ValueTask<SigningOutcome> SignAsync<TState>(
+        public Task<SigningOutcome> SignAsync<TState>(
             TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => null;
     }
@@ -59,10 +59,10 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     /// registering a different source than one already registered fails loudly.</summary>
     private sealed class OtherExternalSigningKeySource : ISigningKeySource
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
 
@@ -77,18 +77,18 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
 
         public int CreateSignerAsyncCallCount { get; private set; }
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
             ReadAsyncCallCount++;
-            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             CreateSignerAsyncCallCount++;
             var rsa = RSA.Create();
             rsa.ImportFromPem(privateKeyPem);
-            return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, rsa));
+            return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, rsa));
         }
     }
 
@@ -96,10 +96,10 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     /// <see cref="IAsyncDisposable"/>, modelling the shape registration must reject.</summary>
     private sealed class AsyncOnlySigningKeySource : ISigningKeySource, IAsyncDisposable
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -123,14 +123,14 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     private sealed class OrderRecordingSigningKeySource(TestKey key, DisposalLog log)
         : ISigningKeySource, IDisposable
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
-            => new(SourceKeySet.Create(previous: null, key.Current, next: null));
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, key.Current, next: null));
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             var rsa = RSA.Create();
             rsa.ImportFromPem(key.PrivateKeyPem);
-            return new ValueTask<ISigner>(new OrderRecordingSigner(new LocalSigner(SigningAlgorithm.RS256, rsa), log.Order));
+            return Task.FromResult<ISigner>(new OrderRecordingSigner(new LocalSigner(SigningAlgorithm.RS256, rsa), log.Order));
         }
 
         public void Dispose() => log.Order.Add("source");
@@ -140,7 +140,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     {
         public SigningAlgorithm Algorithm => inner.Algorithm;
 
-        public ValueTask<ReadOnlyMemory<byte>> SignAsync(
+        public Task<ReadOnlyMemory<byte>> SignAsync(
             ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
             => inner.SignAsync(signingInput, cancellationToken);
 
@@ -156,14 +156,14 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     private sealed class DualDisposableSigningKeySource(TestKey key, DisposalLog log)
         : ISigningKeySource, IDisposable, IAsyncDisposable
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
-            => new(SourceKeySet.Create(previous: null, key.Current, next: null));
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, key.Current, next: null));
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             var rsa = RSA.Create();
             rsa.ImportFromPem(key.PrivateKeyPem);
-            return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, rsa));
+            return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, rsa));
         }
 
         public void Dispose() => log.SyncDisposed = true;
@@ -392,10 +392,10 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     {
         public ConstructionRecordingSigningKeySource(ConstructionLog log) => log.Constructed = true;
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
 
@@ -444,9 +444,9 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
 
     private abstract class AbstractSigningKeySource : ISigningKeySource
     {
-        public abstract ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default);
+        public abstract Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default);
 
-        public abstract ValueTask<ISigner> CreateSignerAsync(
+        public abstract Task<ISigner> CreateSignerAsync(
             SourceKeyId id, CancellationToken cancellationToken = default);
     }
 

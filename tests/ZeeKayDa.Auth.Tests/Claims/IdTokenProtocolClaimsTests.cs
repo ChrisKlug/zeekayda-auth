@@ -99,8 +99,8 @@ public sealed class IdTokenProtocolClaimsTests
 
     private sealed class SingleKeySource(RSA rsa) : ISigningKeySource
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) =>
-            new(SourceKeySet.Create(
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<SourceKeySet>(SourceKeySet.Create(
                 previous: null,
                 new SourceKey(
                     new SourceKeyId("current"),
@@ -109,11 +109,11 @@ public sealed class IdTokenProtocolClaimsTests
                     ExpiresAt: null),
                 next: null));
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             var copy = RSA.Create();
             copy.ImportParameters(rsa.ExportParameters(includePrivateParameters: true));
-            return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, copy));
+            return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, copy));
         }
     }
 }

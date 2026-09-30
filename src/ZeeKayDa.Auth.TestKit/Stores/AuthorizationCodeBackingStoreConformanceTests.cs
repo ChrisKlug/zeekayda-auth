@@ -109,7 +109,7 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
 
         // A backing store MUST let a transport fault propagate rather than swallow it.
         await Assert.ThrowsAsync<TransportFaultException>(
-            () => store.TryInsertAsync(NewKey(), new byte[] { 1 }, FarFuture, CancellationToken.None).AsTask());
+            () => store.TryInsertAsync(NewKey(), new byte[] { 1 }, FarFuture, CancellationToken.None));
     }
 
     /// <summary>
@@ -125,7 +125,7 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
             return;
 
         await Assert.ThrowsAsync<TransportFaultException>(
-            () => store.GetAsync(NewKey(), CancellationToken.None).AsTask());
+            () => store.GetAsync(NewKey(), CancellationToken.None));
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public abstract class AuthorizationCodeBackingStoreConformanceTests
 
         // A backing store MUST let a transport fault propagate rather than swallow it.
         await Assert.ThrowsAsync<TransportFaultException>(
-            () => store.RemoveAsync(NewKey(), CancellationToken.None).AsTask());
+            () => store.RemoveAsync(NewKey(), CancellationToken.None));
     }
 
     /// <summary>A distinct, clearly-fake exception type used to inject transport faults, so these

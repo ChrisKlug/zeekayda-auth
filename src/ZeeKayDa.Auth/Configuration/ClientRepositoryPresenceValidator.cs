@@ -20,7 +20,7 @@ internal sealed class ClientRepositoryPresenceValidator : IStartupVerifier
     public string Name => "ClientRepositoryPresence";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -31,7 +31,7 @@ internal sealed class ClientRepositoryPresenceValidator : IStartupVerifier
                 "No IClientRepository has been registered. " +
                 "Call builder.AddInMemoryClients(...) or register a custom IClientRepository implementation.");
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 
     private static bool IsClientRepositoryRegistered(IServiceProvider scopedServices)

@@ -88,7 +88,7 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
     }
 
     /// <inheritdoc/>
-    public async ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
     {
         await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -139,7 +139,7 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
     }
 
     /// <inheritdoc/>
-    public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+    public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -158,7 +158,7 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
                 "it ever signs.");
         }
 
-        return new ValueTask<ISigner>(new KeyVaultRemoteSigner(
+        return Task.FromResult<ISigner>(new KeyVaultRemoteSigner(
             _signer, signingVersion.KeyVersionUri, signingVersion.Version, _options.Value.Algorithm));
     }
 
@@ -213,7 +213,7 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource : ISigningKeySource
     private sealed class KeyVaultRemoteSigner(IKeyVaultSigner signer, Uri keyVersionUri, string version, SigningAlgorithm algorithm)
         : ISigner
     {
-        public ValueTask<ReadOnlyMemory<byte>> SignAsync(
+        public Task<ReadOnlyMemory<byte>> SignAsync(
             ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default) =>
             signer.SignAsync(keyVersionUri, version, algorithm, signingInput.ToArray(), cancellationToken);
 

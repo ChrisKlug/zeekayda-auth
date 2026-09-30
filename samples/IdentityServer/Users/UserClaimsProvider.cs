@@ -8,10 +8,10 @@ namespace ZeeKayDa.Auth.Samples.IdentityServer.Users;
 /// </summary>
 public sealed class UserClaimsProvider(UserStore users) : IClaimsProvider
 {
-    public ValueTask<ClaimsResolutionResult> GetClaimsAsync(
+    public Task<ClaimsResolutionResult> GetClaimsAsync(
         ClaimsProviderContext context,
         CancellationToken cancellationToken = default) =>
-        ValueTask.FromResult<ClaimsResolutionResult>(users.FindBySubject(context.Sub) is { } user
+        Task.FromResult<ClaimsResolutionResult>(users.FindBySubject(context.Sub) is { } user
             ? new ClaimsResolutionResult.Resolved { Claims = user.Claims }
             : new ClaimsResolutionResult.SubjectInvalid());
 }

@@ -31,7 +31,7 @@ internal sealed class AuthenticatorCoverageValidator : IStartupActivator
     public string Name => "AuthenticatorCoverage";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -65,7 +65,7 @@ internal sealed class AuthenticatorCoverageValidator : IStartupActivator
                 "IClientAuthenticator covers it. Register an authenticator or remove the method.");
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 
     private static void CheckDeclaredMethod(

@@ -17,20 +17,20 @@ public sealed class StaticSigningKeyRingTests
     // ── Fakes ────────────────────────────────────────────────────────────────────────────────────
 
     private sealed class FakeSigningKeySource(
-        Func<CancellationToken, ValueTask<SourceKeySet>> read,
-        Func<SourceKeyId, CancellationToken, ValueTask<ISigner>> createSigner) : ISigningKeySource
+        Func<CancellationToken, Task<SourceKeySet>> read,
+        Func<SourceKeyId, CancellationToken, Task<ISigner>> createSigner) : ISigningKeySource
     {
         public int ReadAsyncCallCount { get; private set; }
 
         public int CreateSignerAsyncCallCount { get; private set; }
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
             ReadAsyncCallCount++;
             return read(cancellationToken);
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             CreateSignerAsyncCallCount++;
             return createSigner(id, cancellationToken);
@@ -52,7 +52,7 @@ public sealed class StaticSigningKeyRingTests
 
         public SigningAlgorithm Algorithm => inner.Algorithm;
 
-        public async ValueTask<ReadOnlyMemory<byte>> SignAsync(
+        public async Task<ReadOnlyMemory<byte>> SignAsync(
             ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
         {
             _cachedSignature ??= await inner.SignAsync(signingInput, cancellationToken).ConfigureAwait(false);
@@ -66,7 +66,7 @@ public sealed class StaticSigningKeyRingTests
     {
         public SigningAlgorithm Algorithm => algorithm;
 
-        public ValueTask<ReadOnlyMemory<byte>> SignAsync(
+        public Task<ReadOnlyMemory<byte>> SignAsync(
             ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
             => inner.SignAsync(signingInput, cancellationToken);
 
@@ -83,7 +83,7 @@ public sealed class StaticSigningKeyRingTests
 
         public SigningAlgorithm Algorithm => inner.Algorithm;
 
-        public async ValueTask<ReadOnlyMemory<byte>> SignAsync(
+        public async Task<ReadOnlyMemory<byte>> SignAsync(
             ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
         {
             var signature = (await inner.SignAsync(signingInput, cancellationToken).ConfigureAwait(false)).ToArray();
@@ -102,7 +102,7 @@ public sealed class StaticSigningKeyRingTests
     {
         public SigningAlgorithm Algorithm => inner.Algorithm;
 
-        public ValueTask<ReadOnlyMemory<byte>> SignAsync(
+        public Task<ReadOnlyMemory<byte>> SignAsync(
             ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
             => inner.SignAsync(signingInput, cancellationToken);
 
@@ -119,7 +119,7 @@ public sealed class StaticSigningKeyRingTests
     {
         public SigningAlgorithm Algorithm => inner.Algorithm;
 
-        public ValueTask<ReadOnlyMemory<byte>> SignAsync(
+        public Task<ReadOnlyMemory<byte>> SignAsync(
             ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
             => inner.SignAsync(signingInput, cancellationToken);
 
@@ -129,13 +129,13 @@ public sealed class StaticSigningKeyRingTests
     /// <summary>A working <see cref="ISigningKeySource"/> that also implements <see cref="IDisposable"/>,
     /// recording disposal via a caller-supplied callback.</summary>
     private sealed class DisposableSigningKeySource(
-        Func<CancellationToken, ValueTask<SourceKeySet>> read,
-        Func<SourceKeyId, CancellationToken, ValueTask<ISigner>> createSigner,
+        Func<CancellationToken, Task<SourceKeySet>> read,
+        Func<SourceKeyId, CancellationToken, Task<ISigner>> createSigner,
         Action onDispose) : ISigningKeySource, IDisposable
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
             => createSigner(id, cancellationToken);
 
         public void Dispose() => onDispose();
@@ -145,13 +145,13 @@ public sealed class StaticSigningKeyRingTests
     /// <see cref="IAsyncDisposable"/>, modelling the shape the ring's synchronous <c>Dispose</c>
     /// rejects as a last line of defence.</summary>
     private sealed class AsyncOnlySigningKeySource(
-        Func<CancellationToken, ValueTask<SourceKeySet>> read,
-        Func<SourceKeyId, CancellationToken, ValueTask<ISigner>> createSigner,
+        Func<CancellationToken, Task<SourceKeySet>> read,
+        Func<SourceKeyId, CancellationToken, Task<ISigner>> createSigner,
         Func<ValueTask> onDisposeAsync) : ISigningKeySource, IAsyncDisposable
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
             => createSigner(id, cancellationToken);
 
         public ValueTask DisposeAsync() => onDisposeAsync();
@@ -160,14 +160,14 @@ public sealed class StaticSigningKeyRingTests
     /// <summary>A working <see cref="ISigningKeySource"/> implementing both disposal interfaces,
     /// recording which one was invoked via caller-supplied callbacks.</summary>
     private sealed class DualDisposableSigningKeySource(
-        Func<CancellationToken, ValueTask<SourceKeySet>> read,
-        Func<SourceKeyId, CancellationToken, ValueTask<ISigner>> createSigner,
+        Func<CancellationToken, Task<SourceKeySet>> read,
+        Func<SourceKeyId, CancellationToken, Task<ISigner>> createSigner,
         Action onDispose,
         Func<ValueTask> onDisposeAsync) : ISigningKeySource, IDisposable, IAsyncDisposable
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
             => createSigner(id, cancellationToken);
 
         public void Dispose() => onDispose();
@@ -266,12 +266,12 @@ public sealed class StaticSigningKeyRingTests
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
 
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
+            _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) =>
             {
                 var signerRsa = RSA.Create();
                 signerRsa.ImportFromPem(privateKeyPem);
-                return new ValueTask<ISigner>(
+                return Task.FromResult<ISigner>(
                     new TrackingSigner(new LocalSigner(SigningAlgorithm.RS256, signerRsa), () => disposeCount++));
             });
 
@@ -345,8 +345,8 @@ public sealed class StaticSigningKeyRingTests
 
     private static ISigningKeySource CreateDisposalOrderingSource(
         DisposalOrderingSourceShape shape,
-        Func<CancellationToken, ValueTask<SourceKeySet>> read,
-        Func<SourceKeyId, CancellationToken, ValueTask<ISigner>> createSigner,
+        Func<CancellationToken, Task<SourceKeySet>> read,
+        Func<SourceKeyId, CancellationToken, Task<ISigner>> createSigner,
         List<string> disposalOrder) => shape switch
         {
             DisposalOrderingSourceShape.SyncOnly =>
@@ -519,7 +519,7 @@ public sealed class StaticSigningKeyRingTests
     public async Task InitializeAsync_propagates_a_builder_validation_failure_from_ReadAsync()
     {
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, null, null)), // no Current
+            _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, null, null)), // no Current
             (_, _) => throw new NotSupportedException("must not be reached"));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
@@ -536,7 +536,7 @@ public sealed class StaticSigningKeyRingTests
         var current = new SourceKey(
             new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
+            _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => throw new InvalidOperationException("simulated: key vault unreachable"));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
@@ -553,8 +553,8 @@ public sealed class StaticSigningKeyRingTests
         var current = new SourceKey(
             new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
-            (_, _) => new ValueTask<ISigner>(
+            _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
+            (_, _) => Task.FromResult<ISigner>(
                 new WrongAlgorithmSigner(new LocalSigner(SigningAlgorithm.RS256, RSA.Create(2048)), SigningAlgorithm.RS384)));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
@@ -572,8 +572,8 @@ public sealed class StaticSigningKeyRingTests
         var current = new SourceKey(
             new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(publicRsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
-            (_, _) => new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, otherRsa)));
+            _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
+            (_, _) => Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, otherRsa)));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
@@ -594,16 +594,16 @@ public sealed class StaticSigningKeyRingTests
         var sharedSigner = new MemoizingSigner(new LocalSigner(SigningAlgorithm.RS256, signerRsa));
 
         SourceKeySet ReadCurrent(CancellationToken _) => SourceKeySet.Create(null, current, null);
-        ValueTask<ISigner> LendSharedSigner(SourceKeyId _, CancellationToken __) => new(sharedSigner);
+        Task<ISigner> LendSharedSigner(SourceKeyId _, CancellationToken __) => Task.FromResult<ISigner>(sharedSigner);
 
-        var firstSource = new FakeSigningKeySource(t => new ValueTask<SourceKeySet>(ReadCurrent(t)), LendSharedSigner);
+        var firstSource = new FakeSigningKeySource(t => Task.FromResult<SourceKeySet>(ReadCurrent(t)), LendSharedSigner);
         ISigningKeyRing firstRing = new StaticSigningKeyRing(firstSource, new FakeTimeProvider(Epoch));
 
         // Succeeds: the shared signer's very first call is a genuine sign over this self-test's own
         // random nonce, so it verifies and the cache is primed with a correct-for-that-nonce signature.
         await firstRing.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
-        var secondSource = new FakeSigningKeySource(t => new ValueTask<SourceKeySet>(ReadCurrent(t)), LendSharedSigner);
+        var secondSource = new FakeSigningKeySource(t => Task.FromResult<SourceKeySet>(ReadCurrent(t)), LendSharedSigner);
         ISigningKeyRing secondRing = new StaticSigningKeyRing(secondSource, new FakeTimeProvider(Epoch));
 
         // A second, independent self-test generates a different random nonce, but the shared signer
@@ -623,8 +623,8 @@ public sealed class StaticSigningKeyRingTests
         var current = new SourceKey(
             new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(publicRsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
-            (_, _) => new ValueTask<ISigner>(
+            _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
+            (_, _) => Task.FromResult<ISigner>(
                 new TrackingSigner(new LocalSigner(SigningAlgorithm.RS256, otherRsa), () => disposeCount++)));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
@@ -642,8 +642,8 @@ public sealed class StaticSigningKeyRingTests
         var current = new SourceKey(
             new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
-            (_, _) => new ValueTask<ISigner>(
+            _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
+            (_, _) => Task.FromResult<ISigner>(
                 new TrackingSigner(
                     new WrongAlgorithmSigner(new LocalSigner(SigningAlgorithm.RS256, RSA.Create(2048)), SigningAlgorithm.RS384),
                     () => disposeCount++)));
@@ -659,7 +659,7 @@ public sealed class StaticSigningKeyRingTests
     public async Task InitializeAsync_throws_ZeeKayDaConfigurationException_when_ReadAsync_returns_null()
     {
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>((SourceKeySet)null!),
+            _ => Task.FromResult<SourceKeySet>((SourceKeySet)null!),
             (_, _) => throw new NotSupportedException("must not be reached"));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
@@ -676,8 +676,8 @@ public sealed class StaticSigningKeyRingTests
         var current = new SourceKey(
             new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
-            (_, _) => new ValueTask<ISigner>((ISigner)null!));
+            _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
+            (_, _) => Task.FromResult<ISigner>((ISigner)null!));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
@@ -694,7 +694,7 @@ public sealed class StaticSigningKeyRingTests
         var current = new SourceKey(
             new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
+            _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => throw new InvalidOperationException($"GET https://contoso-prod.vault.azure.net/keys/signing 401; {secret}"));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
@@ -713,7 +713,7 @@ public sealed class StaticSigningKeyRingTests
         var current = new SourceKey(
             new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
+            _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure("provider.custom_failure", "a provider-specific failure")));
         ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
@@ -750,7 +750,7 @@ public sealed class StaticSigningKeyRingTests
         using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         await Task.WhenAll(Enumerable.Range(0, 8).Select(_ =>
-            ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken).AsTask()));
+            ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken)));
 
         source.ReadAsyncCallCount.Should().Be(1);
         source.CreateSignerAsyncCallCount.Should().Be(1);
@@ -818,13 +818,13 @@ public sealed class StaticSigningKeyRingTests
         BufferReusingSigner? reusingSigner = null;
 
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, null)),
+            _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) =>
             {
                 var signerRsa = RSA.Create();
                 signerRsa.ImportFromPem(privateKeyPem);
                 reusingSigner = new BufferReusingSigner(new LocalSigner(SigningAlgorithm.RS256, signerRsa));
-                return new ValueTask<ISigner>(reusingSigner);
+                return Task.FromResult<ISigner>(reusingSigner);
             });
         using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
         await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
@@ -856,12 +856,12 @@ public sealed class StaticSigningKeyRingTests
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
 
         var source = new FakeSigningKeySource(
-            _ => new ValueTask<SourceKeySet>(SourceKeySet.Create(null, current, next)),
+            _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, next)),
             (_, _) =>
             {
                 var signerRsa = RSA.Create();
                 signerRsa.ImportFromPem(privateKeyPem);
-                return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, signerRsa));
+                return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, signerRsa));
             });
 
         return (source, current);
@@ -883,8 +883,8 @@ public sealed class StaticSigningKeyRingTests
     /// whose cleanup fails.
     /// </summary>
     private static (
-        Func<CancellationToken, ValueTask<SourceKeySet>> Read,
-        Func<SourceKeyId, CancellationToken, ValueTask<ISigner>> CreateSigner,
+        Func<CancellationToken, Task<SourceKeySet>> Read,
+        Func<SourceKeyId, CancellationToken, Task<ISigner>> CreateSigner,
         SourceKey Current) CreateSuccessfulReadAndSigner(ReadAndSignerRequest request)
     {
         var current = new SourceKey(
@@ -892,9 +892,9 @@ public sealed class StaticSigningKeyRingTests
             PublicKeyParameters.FromRsa(request.Rsa.ExportParameters(false)), request.ExpiresAt);
         var privateKeyPem = request.Rsa.ExportRSAPrivateKeyPem();
 
-        ValueTask<SourceKeySet> Read(CancellationToken _) => new(SourceKeySet.Create(null, current, null));
+        Task<SourceKeySet> Read(CancellationToken _) => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null));
 
-        ValueTask<ISigner> CreateSigner(SourceKeyId _, CancellationToken __)
+        Task<ISigner> CreateSigner(SourceKeyId _, CancellationToken __)
         {
             var signerRsa = RSA.Create();
             signerRsa.ImportFromPem(privateKeyPem);
@@ -902,7 +902,7 @@ public sealed class StaticSigningKeyRingTests
             ISigner signer = request.SignerThrowsOnDispose
                 ? new ThrowingDisposeSigner(local)
                 : new TrackingSigner(local, () => request.DisposalOrder.Add("signer"));
-            return new ValueTask<ISigner>(signer);
+            return Task.FromResult<ISigner>(signer);
         }
 
         return (Read, CreateSigner, current);
@@ -917,8 +917,8 @@ public sealed class StaticSigningKeyRingTests
     private static async Task<StaticSigningKeyRing> CreateInitializedRingAsync(
         List<string> disposalOrder,
         Func<
-            Func<CancellationToken, ValueTask<SourceKeySet>>,
-            Func<SourceKeyId, CancellationToken, ValueTask<ISigner>>,
+            Func<CancellationToken, Task<SourceKeySet>>,
+            Func<SourceKeyId, CancellationToken, Task<ISigner>>,
             ISigningKeySource> createSource,
         bool signerThrowsOnDispose = false)
     {

@@ -24,6 +24,6 @@ internal interface IKeyVaultSigner
     /// <param name="signingInput">The exact bytes to sign — Key Vault computes the digest itself.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The raw signature bytes in the format required by <paramref name="algorithm"/>.</returns>
-    ValueTask<ReadOnlyMemory<byte>> SignAsync(
+    Task<ReadOnlyMemory<byte>> SignAsync(
         Uri keyVersionUri, string keyLabel, SigningAlgorithm algorithm, byte[] signingInput, CancellationToken cancellationToken);
 }

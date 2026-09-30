@@ -22,7 +22,7 @@ internal sealed class ClaimsProviderPresenceValidator : IStartupActivator
     public string Name => "ClaimsProviderPresence";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -36,7 +36,7 @@ internal sealed class ClaimsProviderPresenceValidator : IStartupActivator
                 "provider no token could carry a subject claim.");
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 
     private static bool IsProviderRegistered(IServiceProvider scopedServices) =>

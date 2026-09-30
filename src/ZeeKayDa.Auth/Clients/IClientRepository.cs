@@ -21,7 +21,7 @@ public interface IClientRepository
     /// <c>client_id</c> values — never throw. Throwing from this method changes response
     /// timing and enables client enumeration attacks.
     /// </remarks>
-    ValueTask<IClientRegistration?> FindByClientIdAsync(
+    Task<IClientRegistration?> FindByClientIdAsync(
         string clientId,
         CancellationToken cancellationToken = default);
 }

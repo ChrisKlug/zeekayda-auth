@@ -80,7 +80,7 @@ internal sealed class WindowsCertificateStoreSigningKeySource : ISigningKeySourc
     }
 
     /// <inheritdoc/>
-    public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -89,14 +89,14 @@ internal sealed class WindowsCertificateStoreSigningKeySource : ISigningKeySourc
         lock (_readLock)
         {
             if (_keySet is not null)
-                return new ValueTask<SourceKeySet>(_keySet);
+                return Task.FromResult<SourceKeySet>(_keySet);
 
             var previous = ReadSlot(options.Previous, options);
             var current = ReadSlot(options.Current, options);
             var next = ReadSlot(options.Next, options);
 
             _keySet = SourceKeySet.Create(previous, current, next);
-            return new ValueTask<SourceKeySet>(_keySet);
+            return Task.FromResult<SourceKeySet>(_keySet);
         }
     }
 
@@ -105,7 +105,7 @@ internal sealed class WindowsCertificateStoreSigningKeySource : ISigningKeySourc
     /// Every step here is synchronous, so failures throw at the call site rather than through the
     /// returned task. The ring awaits this call immediately, so the two are indistinguishable to it.
     /// </remarks>
-    public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+    public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -129,7 +129,7 @@ internal sealed class WindowsCertificateStoreSigningKeySource : ISigningKeySourc
         // Private/public key pairing is verified by the ring's per-handoff self-test, not here.
         var (privateKey, _) = _keyExtractor.ExtractPrivateKey(certificate, current.NormalizedThumbprint);
 
-        return new ValueTask<ISigner>(new LocalSigner(options.Algorithm, privateKey));
+        return Task.FromResult<ISigner>(new LocalSigner(options.Algorithm, privateKey));
     }
 
     /// <summary>

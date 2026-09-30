@@ -27,7 +27,7 @@ internal sealed class DistributedCacheInteractionBackingStore : IInteractionBack
     }
 
     /// <inheritdoc/>
-    public async ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+    public async Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
     {
         var ttl = expiresAt - _timeProvider.GetUtcNow();
         if (ttl <= TimeSpan.Zero)
@@ -38,13 +38,13 @@ internal sealed class DistributedCacheInteractionBackingStore : IInteractionBack
     }
 
     /// <inheritdoc/>
-    public async ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+    public async Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
     {
         var bytes = await _cache.GetAsync(key.ToString(), cancellationToken).ConfigureAwait(false);
         return bytes is null ? null : (ReadOnlyMemory<byte>?)bytes;
     }
 
     /// <inheritdoc/>
-    public async ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+    public async Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
         => await _cache.RemoveAsync(key.ToString(), cancellationToken).ConfigureAwait(false);
 }

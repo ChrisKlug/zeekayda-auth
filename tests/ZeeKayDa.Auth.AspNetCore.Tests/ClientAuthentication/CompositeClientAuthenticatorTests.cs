@@ -74,8 +74,8 @@ public sealed class CompositeClientAuthenticatorTests
     {
         private readonly IClientRegistration? _client;
         public FakeClientRepository(IClientRegistration? client = null) => _client = client;
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken ct)
-            => ValueTask.FromResult(_client);
+        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken ct)
+            => Task.FromResult(_client);
     }
 
     /// <summary>
@@ -129,9 +129,9 @@ public sealed class CompositeClientAuthenticatorTests
             method = _method;
             return true;
         }
-        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+        public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken ct)
-            => ValueTask.FromResult(ClientAuthenticationResult.Valid());
+            => Task.FromResult(ClientAuthenticationResult.Valid());
     }
 
     /// <summary>A caller-supplied authenticator that returns null despite its non-null contract.</summary>
@@ -146,9 +146,9 @@ public sealed class CompositeClientAuthenticatorTests
             return true;
         }
 
-        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+        public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken ct)
-            => ValueTask.FromResult<ClientAuthenticationResult>(null!);
+            => Task.FromResult<ClientAuthenticationResult>(null!);
     }
 
     private sealed class ThrowingCanHandleAuthenticator : IClientAuthenticator
@@ -159,7 +159,7 @@ public sealed class CompositeClientAuthenticatorTests
         public bool CanHandle(TokenRequestContext context, out string? method)
             => throw new InvalidOperationException("Simulated authenticator bug");
 
-        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+        public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken ct)
             => throw new NotSupportedException("Should not be reached");
     }
@@ -188,7 +188,7 @@ public sealed class CompositeClientAuthenticatorTests
             return true;
         }
 
-        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+        public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken ct)
             => throw new NotSupportedException("Should not be reached");
     }

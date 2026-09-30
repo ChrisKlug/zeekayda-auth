@@ -26,4 +26,4 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// <see cref="PfxFileSigningKeySource"/>.
 /// </para>
 /// </remarks>
-public sealed record PfxFile(string Path, Func<CancellationToken, ValueTask<string>> PasswordSource);
+public sealed record PfxFile(string Path, Func<CancellationToken, Task<string>> PasswordSource);

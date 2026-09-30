@@ -299,15 +299,15 @@ public sealed class ScopePresenceStartupValidatorTests
 
     private sealed class ThrowingRepository(Exception exception) : IScopeRepository
     {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
             => throw exception;
     }
 
     private sealed class NullReturningRepository : IScopeRepository
     {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(
             CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>(null!);
+            => Task.FromResult<IReadOnlyCollection<ScopeDefinition>>(null!);
     }
 
     // ── Reserved claim names in a scope's lists ───────────────────────────────────────────────
@@ -345,9 +345,9 @@ public sealed class ScopePresenceStartupValidatorTests
 
     private sealed class CustomRepositoryWithoutOpenId : IScopeRepository
     {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(
             CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
+            => Task.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
     }
 
     /// <summary>
@@ -356,7 +356,7 @@ public sealed class ScopePresenceStartupValidatorTests
     /// </summary>
     private sealed class CustomRepository(IReadOnlyCollection<ScopeDefinition> scopes) : IScopeRepository
     {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(scopes);
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(scopes);
     }
 }

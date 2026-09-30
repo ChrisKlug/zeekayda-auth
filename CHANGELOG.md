@@ -546,6 +546,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Every public async member returns `Task` or `Task<T>`; none returns `ValueTask`** (#784). The
+  public API mixed the two with no rule. A `ValueTask` must be awaited exactly once and never stored,
+  which is easy to get wrong when implementing or calling an interface, so the public surface now uses
+  `Task` throughout. The changed members are `IClientRepository.FindByClientIdAsync`,
+  `IScopeRepository.GetScopesAsync`, `IDiscoveryDocumentProvider.GetDocumentAsync`,
+  `IClaimsProvider.GetClaimsAsync`, `IStartupCheck.VerifyAsync` (and so every `IStartupVerifier` and
+  `IStartupActivator`), every member of `IAuthorizationCodeBackingStore` and
+  `IRefreshTokenBackingStore`, `ISigner.SignAsync`, `ISigningKeySource.ReadAsync` and
+  `CreateSignerAsync`, `ISigningKeyRing.SignAsync`, `ITokenIssuer.IssueAsync`,
+  `IClientAuthenticator.AuthenticateAsync`, `IErrorInteraction.GetErrorAsync`, and the PFX password
+  source (`PfxFile.PasswordSource` and the `passwordSource` parameter of `AddPfxFileSigning`), which is
+  now `Func<CancellationToken, Task<string>>`. The shipped implementations change with them. An
+  implementation that completes synchronously returns `Task.FromResult(value)` or
+  `Task.CompletedTask`. Behaviour is unchanged.
+
 - **Options-validation failures throw `ZeeKayDaConfigurationException` with a stable code for each
   failure** (#796). The framework's options validators, for `AuthorizationServerOptions`, the client
   secret hashers, the development, file, Azure Key Vault and Windows certificate-store signing

@@ -24,9 +24,9 @@ public sealed class AuthenticatorCoverageValidatorTests
             return false;
         }
 
-        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+        public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken ct) =>
-            ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+            Task.FromResult(ClientAuthenticationResult.NotValid());
     }
 
     /// <summary>
@@ -56,9 +56,9 @@ public sealed class AuthenticatorCoverageValidatorTests
             return false;
         }
 
-        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+        public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken ct) =>
-            ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+            Task.FromResult(ClientAuthenticationResult.NotValid());
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────

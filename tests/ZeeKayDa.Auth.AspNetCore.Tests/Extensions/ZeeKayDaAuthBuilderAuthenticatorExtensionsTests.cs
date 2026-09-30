@@ -59,9 +59,9 @@ public sealed class ZeeKayDaAuthBuilderAuthenticatorExtensionsTests
             return false;
         }
 
-        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+        public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken cancellationToken)
-            => ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+            => Task.FromResult(ClientAuthenticationResult.NotValid());
     }
 
     private sealed class AnotherFakeAuthenticator : IClientAuthenticator
@@ -75,8 +75,8 @@ public sealed class ZeeKayDaAuthBuilderAuthenticatorExtensionsTests
             return false;
         }
 
-        public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+        public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken cancellationToken)
-            => ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+            => Task.FromResult(ClientAuthenticationResult.NotValid());
     }
 }

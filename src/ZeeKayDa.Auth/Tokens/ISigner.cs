@@ -52,7 +52,7 @@ public interface ISigner : IDisposable
     /// signer failing, and reports it as such rather than as the caller's cancellation.
     /// </param>
     /// <returns>The raw signature bytes in the format required by the key's algorithm.</returns>
-    ValueTask<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default);
+    Task<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The algorithm this signer actually signs under.

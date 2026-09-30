@@ -23,7 +23,7 @@ internal sealed class SanitizingLoggerRegistrationGate(
     ISanitizingLogger<SanitizingLoggerRegistrationGate> logger,
     SanitizingLoggerClosedOverrideScanner closedOverrideScanner) : IStartupVerificationGate
 {
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -51,7 +51,7 @@ internal sealed class SanitizingLoggerRegistrationGate(
                 "specific type. Remove the closed-generic registration(s).");
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 
     private static string DescribeClosedGenericArgument(Type closedSanitizingLoggerType)

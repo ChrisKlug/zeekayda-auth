@@ -891,15 +891,15 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
         private readonly InMemoryInteractionBackingStore _inner = new(time);
         private int _writes;
 
-        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             Interlocked.Increment(ref _writes) >= failFromWrite
                 ? throw new IOException("The cache is unreachable.")
                 : _inner.SetAsync(key, value, expiresAt, cancellationToken);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
             _inner.GetAsync(key, cancellationToken);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             failRemoval
                 ? throw new IOException("The cache is unreachable.")
                 : _inner.RemoveAsync(key, cancellationToken);
@@ -917,7 +917,7 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
 
         public bool Claimed { get; private set; }
 
-        public async ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+        public async Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
         {
             if (!key.ToString().StartsWith("zkd:code:i:", StringComparison.Ordinal))
             {
@@ -931,10 +931,10 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
             return reserved;
         }
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
             inner.GetAsync(key, cancellationToken);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             inner.RemoveAsync(key, cancellationToken);
     }
 
@@ -951,25 +951,25 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
     /// <summary>A backing store on which every interaction claim has already been taken by someone else.</summary>
     private sealed class AlreadyClaimedBackingStore : IAuthorizationCodeBackingStore
     {
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
-            new(!key.ToString().StartsWith("zkd:code:i:", StringComparison.Ordinal));
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+            Task.FromResult<bool>(!key.ToString().StartsWith("zkd:code:i:", StringComparison.Ordinal));
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
-            new((ReadOnlyMemory<byte>?)null);
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            Task.FromResult<ReadOnlyMemory<byte>?>((ReadOnlyMemory<byte>?)null);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     /// <summary>A backing store whose every write fails, as an unreachable cache would.</summary>
     private sealed class FailingBackingStore : IAuthorizationCodeBackingStore
     {
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             throw new IOException("The cache is unreachable.");
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
-            new((ReadOnlyMemory<byte>?)null);
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            Task.FromResult<ReadOnlyMemory<byte>?>((ReadOnlyMemory<byte>?)null);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     /// <summary>A repository holding one registration an operator can change mid-flow.</summary>
@@ -977,8 +977,8 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
     {
         public IClientRegistration? Current { get; set; } = initial;
 
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            new(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
+        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientRegistration?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
     }
 
     /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>

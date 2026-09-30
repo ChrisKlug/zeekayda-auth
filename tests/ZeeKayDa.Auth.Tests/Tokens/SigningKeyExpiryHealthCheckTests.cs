@@ -20,11 +20,11 @@ public sealed class SigningKeyExpiryHealthCheckTests
     {
         public SigningKeySet Current => current ?? throw new InvalidOperationException();
 
-        public ValueTask<SigningOutcome> SignAsync<TState>(
+        public Task<SigningOutcome> SignAsync<TState>(
             TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => current;
     }
@@ -214,17 +214,17 @@ public sealed class SigningKeyExpiryHealthCheckTests
     {
         public int ReadAsyncCallCount { get; private set; }
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
             ReadAsyncCallCount++;
-            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             var signerRsa = RSA.Create();
             signerRsa.ImportFromPem(privateKeyPem);
-            return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, signerRsa));
+            return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, signerRsa));
         }
     }
 

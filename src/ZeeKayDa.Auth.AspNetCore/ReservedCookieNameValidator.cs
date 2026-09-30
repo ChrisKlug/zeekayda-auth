@@ -28,7 +28,7 @@ internal sealed class ReservedCookieNameValidator : IStartupActivator
     public string Name => "ReservedCookieNames";
 
     /// <inheritdoc/>
-    public async ValueTask VerifyAsync(
+    public async Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)

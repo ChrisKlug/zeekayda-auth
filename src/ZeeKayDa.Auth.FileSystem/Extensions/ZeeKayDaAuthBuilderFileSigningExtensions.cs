@@ -191,7 +191,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         this ZeeKayDaAuthBuilder builder,
         string path,
         SigningAlgorithm algorithm,
-        Func<CancellationToken, ValueTask<string>> passwordSource)
+        Func<CancellationToken, Task<string>> passwordSource)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);

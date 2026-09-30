@@ -118,10 +118,10 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         /// <summary>How many parked-principal removals the store has performed.</summary>
         public int PendingRemoves => Volatile.Read(ref _pendingRemoves);
 
-        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             FailPendingWrites && IsPending(key) ? throw new InvalidOperationException("store is down") : _inner.SetAsync(key, value, expiresAt, cancellationToken);
 
-        public async ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+        public async Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
         {
             if (!IsPending(key))
                 return await _inner.GetAsync(key, cancellationToken);
@@ -135,7 +135,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
             return await _inner.GetAsync(key, cancellationToken);
         }
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
         {
             if (IsPending(key))
                 Interlocked.Increment(ref _pendingRemoves);

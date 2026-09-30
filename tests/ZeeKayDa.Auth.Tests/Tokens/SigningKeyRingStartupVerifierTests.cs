@@ -14,7 +14,7 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 /// </summary>
 public sealed class SigningKeyRingStartupVerifierTests
 {
-    private sealed class FakeSigningKeyRing(Func<CancellationToken, ValueTask> initialize) : ISigningKeyRing
+    private sealed class FakeSigningKeyRing(Func<CancellationToken, Task> initialize) : ISigningKeyRing
     {
         private readonly SigningKeySet _keySet = TestSigningKeys.KeySet(SigningAlgorithm.RS256);
 
@@ -22,11 +22,11 @@ public sealed class SigningKeyRingStartupVerifierTests
 
         public SigningKeySet Current => _keySet;
 
-        public ValueTask<SigningOutcome> SignAsync<TState>(
+        public Task<SigningOutcome> SignAsync<TState>(
             TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        async ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
+        async Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
         {
             InitializeAsyncCallCount++;
             await initialize(cancellationToken);
@@ -47,7 +47,7 @@ public sealed class SigningKeyRingStartupVerifierTests
     [Fact]
     public async Task VerifyAsync_delegates_to_the_registered_ISigningKeyRing()
     {
-        var ring = new FakeSigningKeyRing(_ => ValueTask.CompletedTask);
+        var ring = new FakeSigningKeyRing(_ => Task.CompletedTask);
         using var provider = BuildProvider(ring);
         var sut = new SigningKeyRingStartupVerifier();
         var context = new StartupVerificationContext();
@@ -92,11 +92,11 @@ public sealed class SigningKeyRingStartupVerifierTests
     {
         public SigningKeySet Current => keySet;
 
-        public ValueTask<SigningOutcome> SignAsync<TState>(
+        public Task<SigningOutcome> SignAsync<TState>(
             TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => keySet;
     }

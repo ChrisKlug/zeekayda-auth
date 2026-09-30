@@ -21,7 +21,7 @@ internal sealed class TokenLifetimeCeilingWarningService : IStartupVerifier
     public string Name => "TokenLifetimeCeiling";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -46,6 +46,6 @@ internal sealed class TokenLifetimeCeilingWarningService : IStartupVerifier
                 "at the end of a grant family's life outlives the family. Ensure this is an intentional choice.");
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }

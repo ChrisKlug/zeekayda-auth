@@ -42,13 +42,13 @@ public sealed class AccessTokenValidatorTests
     {
         public SigningKeySet Current => current;
 
-        public ValueTask<SigningOutcome> SignAsync<TState>(
+        public Task<SigningOutcome> SignAsync<TState>(
             TState state,
             Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
+        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
             => throw new NotSupportedException();
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => current;

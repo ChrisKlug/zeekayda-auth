@@ -50,13 +50,13 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
             CreateSignerAsyncCallCount = 0;
         }
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
             ReadAsyncCallCount++;
             throw new NotSupportedException();
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             CreateSignerAsyncCallCount++;
             throw new NotSupportedException();
@@ -102,11 +102,11 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
     {
         public string Name => "AlwaysFails";
 
-        public ValueTask VerifyAsync(
+        public Task VerifyAsync(
             StartupVerificationContext context, IServiceProvider scopedServices, CancellationToken cancellationToken)
         {
             context.AddFailure("test.cheap_failure", "A cheap configuration check failed.");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         }
     }
 }

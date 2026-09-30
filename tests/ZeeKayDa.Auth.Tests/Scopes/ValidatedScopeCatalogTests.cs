@@ -320,27 +320,27 @@ public sealed class ValidatedScopeCatalogTests
 
     private sealed class StubRepository(IReadOnlyCollection<ScopeDefinition> scopes) : IScopeRepository
     {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(scopes);
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(scopes);
     }
 
     private sealed class MutableRepository(IReadOnlyCollection<ScopeDefinition> scopes) : IScopeRepository
     {
         public IReadOnlyCollection<ScopeDefinition> Scopes { get; set; } = scopes;
 
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(Scopes);
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(Scopes);
     }
 
     private sealed class NullReturningRepository : IScopeRepository
     {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>(null!);
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<ScopeDefinition>>(null!);
     }
 
     private sealed class ThrowingRepository(Exception exception) : IScopeRepository
     {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
             => throw exception;
     }
 
@@ -348,10 +348,10 @@ public sealed class ValidatedScopeCatalogTests
     {
         public CancellationToken ObservedToken { get; private set; }
 
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
         {
             ObservedToken = cancellationToken;
-            return ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
+            return Task.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
         }
     }
 }

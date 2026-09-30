@@ -66,7 +66,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
     }
 
     /// <inheritdoc/>
-    public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+    public Task<ClientAuthenticationResult> AuthenticateAsync(
         ClientAuthenticationContext context,
         CancellationToken cancellationToken)
     {
@@ -79,7 +79,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
         if (hasBasic && hasPost)
         {
             _hasher.PadFailureToCredentialBudget(0);
-            return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+            return Task.FromResult(ClientAuthenticationResult.NotValid());
         }
 
         string presented;
@@ -90,7 +90,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
                 !string.Equals(username, context.ClientId, StringComparison.Ordinal))
             {
                 _hasher.PadFailureToCredentialBudget(0);
-                return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+                return Task.FromResult(ClientAuthenticationResult.NotValid());
             }
 
             // If the form body also carries a client_id it must agree with the Basic-auth
@@ -101,7 +101,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
                 !string.Equals(formClientId, username, StringComparison.Ordinal))
             {
                 _hasher.PadFailureToCredentialBudget(0);
-                return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+                return Task.FromResult(ClientAuthenticationResult.NotValid());
             }
 
             presented = password;
@@ -120,7 +120,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
         if (secrets.Count == 0 || presented.Length == 0)
         {
             _hasher.PadFailureToCredentialBudget(0);
-            return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+            return Task.FromResult(ClientAuthenticationResult.NotValid());
         }
 
         var attempted = 0;
@@ -128,12 +128,12 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
         {
             attempted++;
             if (_hasher.Verify(stored, presented.AsSpan()))
-                return ValueTask.FromResult(ClientAuthenticationResult.Valid());
+                return Task.FromResult(ClientAuthenticationResult.Valid());
         }
 
         // Pad timing to the credential budget so a client with fewer active secrets is not
         // distinguishable from one with the maximum by timing.
         _hasher.PadFailureToCredentialBudget(attempted);
-        return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+        return Task.FromResult(ClientAuthenticationResult.NotValid());
     }
 }

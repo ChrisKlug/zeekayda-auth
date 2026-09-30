@@ -66,6 +66,13 @@ consume-only. Adding to this list is a minor version; changing anything on it is
 question asked of every new public member before it lands is whether it can be changed later without a
 breaking change.
 
+**The public API returns `Task`, never `ValueTask`, unless a measurement justifies it.** Every public
+async member — interface members, delegates, and members a third party overrides — returns `Task` or
+`Task<T>`. A `ValueTask` must be awaited exactly once and never stored, and an implementer or caller who
+breaks that compiles cleanly and fails intermittently; a `Task` has no such rule. A specific hot path
+moves to `ValueTask` only with a measurement showing the allocation matters. Internal code may use
+either, and a member whose type a BCL contract fixes (`IAsyncDisposable.DisposeAsync`) keeps it.
+
 **The sanitizing logger is inject-only by convention, backed by a startup gate.** The interface is
 public so provider packages can constructor-inject it, and it is a marker over `ILogger<T>` with no
 members of its own. A host registering its own implementation before the framework's would shadow

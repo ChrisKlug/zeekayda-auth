@@ -223,7 +223,7 @@ public sealed class DevelopmentSigningKeySourceTests
         var set = await sut.ReadAsync(ct);
         using var first = await sut.CreateSignerAsync(set.SigningKey.Id, ct);
 
-        var act = () => sut.CreateSignerAsync(set.SigningKey.Id, ct).AsTask();
+        var act = () => sut.CreateSignerAsync(set.SigningKey.Id, ct);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*no pending private key is available*");
@@ -236,7 +236,7 @@ public sealed class DevelopmentSigningKeySourceTests
         var ct = TestContext.Current.CancellationToken;
         await sut.ReadAsync(ct);
 
-        var act = () => sut.CreateSignerAsync(new SourceKeyId("someone-elses-key"), ct).AsTask();
+        var act = () => sut.CreateSignerAsync(new SourceKeyId("someone-elses-key"), ct);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*which this source did not report*");
@@ -248,7 +248,7 @@ public sealed class DevelopmentSigningKeySourceTests
         using var sut = BuildEphemeral();
 
         var act = () => sut.CreateSignerAsync(
-            new SourceKeyId("development"), TestContext.Current.CancellationToken).AsTask();
+            new SourceKeyId("development"), TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*no pending private key is available*");
@@ -414,7 +414,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildPersisted(new InMemorySigningKeyFileSystem { DirectoryTooPermissive = true });
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
             .WithMessage("*directory_too_permissive*");
@@ -427,7 +427,7 @@ public sealed class DevelopmentSigningKeySourceTests
         fs.SeedFile(Path.Join(PersistDirectory, KeyFileName), "dummy content");
         using var sut = BuildPersisted(fs);
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
             .WithMessage("*file_too_permissive*");
@@ -440,7 +440,7 @@ public sealed class DevelopmentSigningKeySourceTests
         fs.SeedFile(Path.Join(PersistDirectory, KeyFileName), "dummy content");
         using var sut = BuildPersisted(fs);
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
             .WithMessage("*symlink_detected*");
@@ -453,7 +453,7 @@ public sealed class DevelopmentSigningKeySourceTests
         fs.SeedFile(Path.Join(PersistDirectory, KeyFileName), "this is not a valid PEM");
         using var sut = BuildPersisted(fs);
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<Exception>("corrupt PEM must cause an exception");
     }
@@ -463,7 +463,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildPersisted(new ThrowOnWriteFileSystem());
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<IOException>("failure to write the key file must bubble out");
     }
@@ -478,7 +478,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildForEnvironment(environmentName, allowed: ["Production"]);
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>().WithMessage("*Production*");
     }
@@ -490,7 +490,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildForEnvironment(environmentName, allowed: null);
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>().WithMessage($"*{environmentName}*");
     }
@@ -530,7 +530,7 @@ public sealed class DevelopmentSigningKeySourceTests
         await sut.ReadAsync(ct);
 
         options.AllowedEnvironments = ["Staging"];
-        var act = () => sut.ReadAsync(ct).AsTask();
+        var act = () => sut.ReadAsync(ct);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
             .WithMessage("*Development*");
@@ -543,7 +543,7 @@ public sealed class DevelopmentSigningKeySourceTests
         // verifier never runs for, so it must refuse on its own rather than assume Development.
         using var sut = BuildForEnvironment(environmentName: null, allowed: null);
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .Which.AggregatedFailures.Should().ContainSingle()

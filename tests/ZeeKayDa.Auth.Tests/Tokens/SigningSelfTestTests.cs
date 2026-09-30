@@ -16,11 +16,11 @@ public sealed class SigningSelfTestTests
 
         public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public ValueTask<ReadOnlyMemory<byte>> SignAsync(
+        public Task<ReadOnlyMemory<byte>> SignAsync(
             ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
         {
             LastSigningInput = signingInput;
-            return new ValueTask<ReadOnlyMemory<byte>>(
+            return Task.FromResult<ReadOnlyMemory<byte>>(
                 rsa.SignData(signingInput.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1));
         }
 
@@ -198,8 +198,8 @@ public sealed class SigningSelfTestTests
     {
         public SigningAlgorithm Algorithm => SigningAlgorithm.ES256;
 
-        public ValueTask<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default) =>
-            new(ec.SignData(signingInput.Span, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
+        public Task<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default) =>
+            Task.FromResult<ReadOnlyMemory<byte>>(ec.SignData(signingInput.Span, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
 
         public void Dispose()
         {
@@ -210,8 +210,8 @@ public sealed class SigningSelfTestTests
     {
         public SigningAlgorithm Algorithm => algorithm;
 
-        public ValueTask<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default) =>
-            new(new byte[] { 1, 2, 3 });
+        public Task<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default) =>
+            Task.FromResult<ReadOnlyMemory<byte>>(new byte[] { 1, 2, 3 });
 
         public void Dispose()
         {
@@ -222,7 +222,7 @@ public sealed class SigningSelfTestTests
     {
         public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public ValueTask<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default) =>
+        public Task<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default) =>
             throw exception;
 
         public void Dispose()

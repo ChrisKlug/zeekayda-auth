@@ -41,12 +41,12 @@ public sealed class LocalSigner : ISigner
     }
 
     /// <inheritdoc/>
-    public ValueTask<ReadOnlyMemory<byte>> SignAsync(
+    public Task<ReadOnlyMemory<byte>> SignAsync(
         ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed != 0, this);
 
-        return new ValueTask<ReadOnlyMemory<byte>>(SigningAlgorithms.Sign(_algorithm, signingInput.ToArray(), _privateKey));
+        return Task.FromResult<ReadOnlyMemory<byte>>(SigningAlgorithms.Sign(_algorithm, signingInput.ToArray(), _privateKey));
     }
 
     /// <summary>

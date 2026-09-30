@@ -29,7 +29,7 @@ public interface IStartupCheck
 {
     string Name { get; }
 
-    ValueTask VerifyAsync(
+    Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken);
@@ -132,7 +132,7 @@ internal sealed class ScopePresenceActivator : IStartupActivator
 {
     public string Name => "ScopePresence";
 
-    public async ValueTask VerifyAsync(
+    public async Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -159,7 +159,7 @@ internal sealed class SeedDataVerifier(IOptions<MyHostOptions> options) : IStart
 {
     public string Name => "SeedData";
 
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -173,7 +173,7 @@ internal sealed class SeedDataVerifier(IOptions<MyHostOptions> options) : IStart
                 options.Value.Tenant);
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }
 ```
@@ -187,7 +187,7 @@ internal sealed class SharedCacheActivator : IStartupActivator
 {
     public string Name => "SharedCache";
 
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -209,7 +209,7 @@ internal sealed class SharedCacheActivator : IStartupActivator
                 "with nothing, so instances do not see each other's entries.");
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }
 ```
@@ -226,7 +226,7 @@ internal sealed class InMemoryStoreVerifier(
 {
     public string Name => $"InMemoryStore({storeName})";
 
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -255,7 +255,7 @@ internal sealed class InMemoryStoreVerifier(
                 storeName);
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }
 ```
@@ -278,7 +278,7 @@ internal sealed class ClientRepositoryActivator : IStartupActivator
 {
     public string Name => "ClientRepositoryActivation";
 
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -299,7 +299,7 @@ internal sealed class ClientRepositoryActivator : IStartupActivator
                 repository.GetType().FullName);
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }
 ```

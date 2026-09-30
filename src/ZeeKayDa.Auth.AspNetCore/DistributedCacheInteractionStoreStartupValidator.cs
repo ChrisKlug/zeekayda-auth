@@ -53,7 +53,7 @@ internal sealed class DistributedCacheInteractionStoreStartupValidator : IStartu
     public string Name => "DistributedCacheInteractionStore";
 
     /// <inheritdoc/>
-    public ValueTask VerifyAsync(
+    public Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
@@ -63,11 +63,11 @@ internal sealed class DistributedCacheInteractionStoreStartupValidator : IStartu
         if (cache is null)
         {
             context.AddFailure("stores.idistributedcache.missing", MissingCacheMessage);
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         }
 
         if (cache is not MemoryDistributedCache)
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
 
         switch (EnvironmentGate.Evaluate(_environment, _allowMemoryCacheOutsideDevelopment))
         {
@@ -96,6 +96,6 @@ internal sealed class DistributedCacheInteractionStoreStartupValidator : IStartu
                 break;
         }
 
-        return ValueTask.CompletedTask;
+        return Task.CompletedTask;
     }
 }

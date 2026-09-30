@@ -29,7 +29,7 @@ internal sealed class ScopePresenceStartupValidator : IStartupActivator
     public string Name => "ScopePresence";
 
     /// <inheritdoc/>
-    public async ValueTask VerifyAsync(
+    public async Task VerifyAsync(
         StartupVerificationContext context,
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)

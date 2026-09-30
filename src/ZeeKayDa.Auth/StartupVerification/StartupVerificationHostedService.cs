@@ -274,7 +274,7 @@ internal sealed class StartupVerificationHostedService(
     private static async ValueTask<Exception?> InvokeAsync(
         string name,
         StartupVerificationContext context,
-        Func<CancellationToken, ValueTask> invoke,
+        Func<CancellationToken, Task> invoke,
         CancellationToken cancellationToken)
     {
         try
