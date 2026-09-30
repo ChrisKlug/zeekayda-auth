@@ -87,10 +87,7 @@ method that needs it, never a bindable option — it is meaningless without the 
 call, because its production story differs from the token stores' (below): a shared cache is a
 complete answer, while the per-process `MemoryDistributedCache` is logged at `Information` in
 `Development` and fails startup outside it unless the call opts out, which downgrades to a
-`Critical` warning on every start. The distributed-cache *token* store registrations carry the same
-per-registration gate on the same `allowMemoryCacheOutsideDevelopment` parameter — a cache shared
-with nothing loses single-use enforcement and reuse detection across instances — on top of the
-non-atomicity warning a shared cache does not clear.
+`Critical` warning on every start.
 
 **One terminal outcome per interaction is the code store's invariant, keyed `zkd:code:i:{hex(sha256(id))}`.**
 `IAuthorizationCodeStore.TryClaimInteractionAsync` writes the claim — taken by issuance and by
@@ -109,11 +106,8 @@ undecryptable; because a failed decrypt is fail-closed to `NotFound`, the visibl
 being logged out with no error at all.
 
 **No token store that ships today is a production store; the distributed-cache interaction store
-is.** The in-memory and `IDistributedCache`-backed token stores are development and test only.
-`IDistributedCache` has no atomic check-and-set, so insert-if-absent and the grant-store
-compare-and-set are both read-then-write with a real TOCTOU window, and an evicting cache can drop a
-tombstone before its TTL. Production means a backend with a native atomic primitive, registered
-through the typed path. The interaction store is the asymmetry: it needs no atomic operation — the
+is.** The in-memory token stores are development and test only. Production means a backend with a
+native atomic primitive, registered through the typed path. The interaction store is the asymmetry: it needs no atomic operation — the
 one race is decided by the code store — and eviction only fails a flow closed, so a shared cache is
 a complete answer for it and no Redis-specific interaction store is wanted.
 
@@ -138,3 +132,9 @@ made unrepresentable instead, it is, and the kit is not offered as an alternativ
 - **An operator-configurable tombstone TTL.** Shipped, then removed. Every off-default value is
   either harmful (shorter than the code's own lifetime, silently defeating replay detection with no
   startup error) or useless (longer, holding space for a code that can no longer be redeemed).
+- **Token stores over `IDistributedCache`.** Shipped for development and test, then deleted.
+  `IDistributedCache` has no atomic check-and-set, so insert-if-absent and the grant-store
+  compare-and-set were read-then-write with a real race window, and an evicting cache could drop a
+  tombstone before its TTL. Development was already covered by the in-memory stores, so all they
+  added was a production trap: they worked in testing and lost replay protection under load. The
+  conformance kit's switches that let them skip the atomicity tests went with them.

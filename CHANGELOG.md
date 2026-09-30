@@ -610,6 +610,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   them, which the `WebClient` sample already does. `claims_supported` in the discovery document is
   unchanged: it is the union across both destinations.
 
+### Removed
+
+- **The distributed-cache token stores** (#829). `AddDistributedCacheAuthorizationCodeStore`,
+  `AddDistributedCacheRefreshTokenStore` and `AddDistributedCacheTokenStores` are gone.
+  `IDistributedCache` has no atomic check-and-set, so on a shared cache they could redeem a code
+  twice or miss refresh-token reuse. Use `AddInMemoryStores()` in development, and a backing store
+  with a native atomic operation in production. The distributed-cache interaction store is
+  unchanged. The TestKit's `SupportsAtomicInsert` and `SupportsAtomicConsume` switches went with
+  them: the atomicity tests can no longer be turned off.
+
 ### Fixed
 
 - **A client registration that cannot be read is logged once, not on every request** (#698). A

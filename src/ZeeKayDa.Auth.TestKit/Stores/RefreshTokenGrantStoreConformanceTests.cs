@@ -22,13 +22,6 @@ public abstract class RefreshTokenGrantStoreConformanceTests
     protected abstract IRefreshTokenGrantStore CreateStore();
 
     /// <summary>
-    /// Override to <see langword="false"/> only for a non-atomic dev/test backend (e.g. the
-    /// first-party <c>DistributedCacheRefreshTokenGrantStore</c>). Production backends MUST
-    /// support atomic compare-and-set.
-    /// </summary>
-    protected virtual bool SupportsAtomicConsume => true;
-
-    /// <summary>
     /// Override to <see langword="false"/> only for a non-transactional secondary-index backend
     /// whose family/subject revocation cannot be proven complete against a grant inserted
     /// concurrently with the revoke call. Production backends MUST support this.
@@ -226,9 +219,6 @@ public abstract class RefreshTokenGrantStoreConformanceTests
     [Fact]
     public async Task TryMarkConsumedAsync_exactly_one_of_many_concurrent_calls_to_the_same_handle_succeeds()
     {
-        if (!SupportsAtomicConsume)
-            return;
-
         var store = CreateStore();
         var grant = NewGrant(familyId: $"fam-{Guid.NewGuid():N}");
         await store.InsertAsync(grant, CancellationToken.None);

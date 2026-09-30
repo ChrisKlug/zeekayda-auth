@@ -21,6 +21,11 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// </remarks>
 internal sealed class DistributedCacheInteractionStoreStartupValidator : IStartupActivator
 {
+    internal const string MissingCacheMessage =
+        "IDistributedCache is not registered. Call services.AddDistributedMemoryCache() " +
+        "(development) or register a shared distributed cache before adding the " +
+        "distributed-cache interaction store.";
+
     internal const string PerProcessCacheActiveMessage =
         "ZeeKayDa.Auth: the distributed-cache interaction store is running on the per-process " +
         "MemoryDistributedCache. Despite its name, that cache is shared with nothing: an " +
@@ -57,7 +62,7 @@ internal sealed class DistributedCacheInteractionStoreStartupValidator : IStartu
 
         if (cache is null)
         {
-            context.AddFailure("stores.idistributedcache.missing", DistributedCacheStoreStartupValidator.MissingCacheMessage);
+            context.AddFailure("stores.idistributedcache.missing", MissingCacheMessage);
             return ValueTask.CompletedTask;
         }
 
