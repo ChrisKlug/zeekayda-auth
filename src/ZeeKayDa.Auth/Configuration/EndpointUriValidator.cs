@@ -45,7 +45,7 @@ internal static class EndpointUriValidator
         if (!Uri.TryCreate(endpoint.Value, UriKind.Absolute, out var uri))
             return new(
                 $"{endpoint.CodePrefix}.invalid",
-                $"AuthorizationServerOptions.{endpoint.PropertyName} '{endpoint.Value}' is not a valid absolute URI.");
+                $"AuthorizationServerOptions.{endpoint.PropertyName} is not a valid absolute URI.");
 
         return ValidateParsedEndpoint(options, issuerUri, endpoint, uri);
     }
@@ -56,7 +56,8 @@ internal static class EndpointUriValidator
         EndpointOverride endpoint,
         Uri uri)
     {
-        var (propertyName, codePrefix, value, rejectQuery) = endpoint;
+        var (propertyName, codePrefix, configured, rejectQuery) = endpoint;
+        var value = ConfiguredUri.Display(configured!, uri);
 
         if (uri.UserInfo.Length > 0)
             return new(
@@ -79,7 +80,7 @@ internal static class EndpointUriValidator
             return new(
                 $"{codePrefix}.authority_mismatch",
                 $"AuthorizationServerOptions.{propertyName} '{value}' must use the same authority as " +
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}'.");
+                $"AuthorizationServerOptions.Issuer '{ConfiguredUri.Display(options.Issuer!, issuerUri)}'.");
 
         if (rejectQuery && uri.Query.Length > 0)
             return new(

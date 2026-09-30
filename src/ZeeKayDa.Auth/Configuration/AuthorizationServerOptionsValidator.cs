@@ -134,14 +134,14 @@ internal sealed class AuthorizationServerOptionsValidator : ZeeKayDaOptionsValid
     private static void ValidateCors(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         var problems = options.CorsOrigins
-            .Select(origin => new CorsOrigin(origin, options.AllowInsecureIssuer).ErrorMessage)
-            .OfType<string>();
+            .Select((origin, index) => (index, new CorsOrigin(origin, options.AllowInsecureIssuer).ErrorMessage))
+            .Where(entry => entry.ErrorMessage is not null);
 
-        foreach (var problem in problems)
+        foreach (var (index, problem) in problems)
         {
             failures.Add(new(
                 "configuration.cors_origins.invalid",
-                $"AuthorizationServerOptions.CorsOrigins: {problem}"));
+                $"AuthorizationServerOptions.CorsOrigins[{index}]: {problem}"));
         }
     }
 

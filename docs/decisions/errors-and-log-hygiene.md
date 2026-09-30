@@ -40,6 +40,10 @@ same base; one that returns `Fail` instead becomes one `configuration.options_in
 the type, its text only in the inner exception. The check reads each type as its consumers do and, when that fails, runs every validator
 on its own, so one that throws never hides the next, a host's own included.
 
+**A failure message never repeats a configured URI's user information, query or fragment.** They
+can hold a password or a signed token, and nothing redacts a failure message, so the URI is shown as
+scheme, host, port and path only (`ConfiguredUri`), and a value that does not parse is not shown.
+
 **Never copy `ex.Message`; name the exception type instead.** When the framework turns an arbitrary
 exception into a reported failure, it records `ex.GetType().FullName` and a fixed description, never
 the message text. An exception message is untrusted text that may embed a connection string, a

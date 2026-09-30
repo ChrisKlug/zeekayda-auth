@@ -70,7 +70,7 @@ public sealed class CorsAllowlistTests
         // shrink to empty, which would allow every origin.
         var act = () => Allowlist("not-a-uri");
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*not-a-uri*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*no canonical form*");
     }
 
     [Fact]

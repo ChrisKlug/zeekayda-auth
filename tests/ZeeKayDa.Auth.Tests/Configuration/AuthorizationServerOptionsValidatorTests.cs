@@ -753,7 +753,63 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var failures = Validate(options);
 
         failures.Should().ContainSingle(f => f.Code == expectedCode)
-            .Which.Message.Should().Contain($"AuthorizationServerOptions.{propertyPath} '{value}'");
+            .Which.Message.Should().Contain($"AuthorizationServerOptions.{propertyPath}");
+    }
+
+    [Fact]
+    public void Validate_failure_messages_never_repeat_the_issuers_user_information_query_or_fragment()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://admin:s3cret@Auth.Example.com/?token=t0ken#fr4g",
+        });
+
+        failures.Should().NotBeEmpty();
+        failures.Should().AllSatisfy(f => f.Message.Should()
+            .NotContain("s3cret").And.NotContain("t0ken").And.NotContain("fr4g"));
+    }
+
+    [Fact]
+    public void Validate_failure_messages_never_repeat_an_endpoint_overrides_user_information_or_query()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            JwksEndpoint = { Uri = "http://admin:s3cret@evil.example.com/jwks?sig=t0ken" },
+        });
+
+        failures.Should().Contain(f => f.Code.StartsWith("configuration.jwks_endpoint.uri.", StringComparison.Ordinal));
+        failures.Should().AllSatisfy(f => f.Message.Should().NotContain("s3cret").And.NotContain("t0ken"));
+    }
+
+    [Fact]
+    public void Validate_authority_mismatch_message_never_repeats_the_issuers_user_information()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://admin:s3cret@auth.example.com",
+            TokenEndpoint = { Uri = "https://other.example.com/connect/token" },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.uri.authority_mismatch")
+            .Which.Message.Should().NotContain("s3cret");
+    }
+
+    [Theory]
+    [InlineData("https://admin:s3cret@app.example.com")]
+    [InlineData("https://app.example.com/?sig=s3cret")]
+    [InlineData("https://app.example.com/#s3cret")]
+    [InlineData("https://app.example.com\r\nX-Injected: s3cret")]
+    public void Validate_CORS_failure_messages_never_repeat_an_origins_secrets_or_line_breaks(string origin)
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            CorsOrigins = [origin],
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.cors_origins.invalid")
+            .Which.Message.Should().StartWith("AuthorizationServerOptions.CorsOrigins[0]: ").And.NotContain("s3cret");
     }
 
     [Theory]
@@ -1067,7 +1123,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("https://app.example.com\r\nx:y", "must not contain CR or LF characters")]
     [InlineData("null", "'null' is not a valid CORS origin.")]
     [InlineData("https://*.example.com", "must not contain wildcard characters")]
-    [InlineData("not-a-uri", "is not a valid absolute URI")]
+    [InlineData("not-a-uri", "must be a valid absolute URI")]
     [InlineData("https://user@app.example.com", "must not contain user information")]
     [InlineData("https://app.example.com?x=1", "must not contain a query component")]
     [InlineData("https://app.example.com#frag", "must not contain a fragment component")]

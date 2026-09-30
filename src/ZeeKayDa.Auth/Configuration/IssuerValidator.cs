@@ -25,7 +25,7 @@ internal static class IssuerValidator
         {
             failures.Add(new(
                 "configuration.issuer.invalid",
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}' is not a valid absolute URI."));
+                "AuthorizationServerOptions.Issuer is not a valid absolute URI."));
             issuerUri = null!;
             return false;
         }
@@ -37,19 +37,20 @@ internal static class IssuerValidator
     /// <summary>Validates the shape, scheme and canonical form of the parsed issuer.</summary>
     internal static void Validate(AuthorizationServerOptions options, Uri uri, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
-        ValidateComponents(options.Issuer!, uri, failures);
-        ValidateScheme(options, uri, failures);
-        ValidateCanonicalForm(options.Issuer!, uri, failures);
+        var shown = ConfiguredUri.Display(options.Issuer!, uri);
+        ValidateComponents(options.Issuer!, shown, uri, failures);
+        ValidateScheme(options, shown, uri, failures);
+        ValidateCanonicalForm(options.Issuer!, shown, uri, failures);
     }
 
-    private static void ValidateComponents(string issuer, Uri uri, ICollection<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateComponents(string issuer, string shown, Uri uri, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         // RFC 8414 §2 and OIDC Discovery 1.0 §4.1 prohibit query strings in the issuer.
         if (uri.Query.Length > 0)
         {
             failures.Add(new(
                 "configuration.issuer.query",
-                $"AuthorizationServerOptions.Issuer '{issuer}' must not contain a query component ('?')."));
+                $"AuthorizationServerOptions.Issuer '{shown}' must not contain a query component ('?')."));
         }
 
         // RFC 8414 §2 and OIDC Discovery 1.0 §4.1 prohibit fragment components in the issuer.
@@ -57,14 +58,14 @@ internal static class IssuerValidator
         {
             failures.Add(new(
                 "configuration.issuer.fragment",
-                $"AuthorizationServerOptions.Issuer '{issuer}' must not contain a fragment component ('#')."));
+                $"AuthorizationServerOptions.Issuer '{shown}' must not contain a fragment component ('#')."));
         }
 
         if (uri.UserInfo.Length > 0)
         {
             failures.Add(new(
                 "configuration.issuer.userinfo",
-                $"AuthorizationServerOptions.Issuer '{issuer}' must not contain user information."));
+                $"AuthorizationServerOptions.Issuer '{shown}' must not contain user information."));
         }
 
         // OIDC Discovery 1.0 §4.3 and RFC 8414 §3.3 require the published issuer to be
@@ -76,7 +77,7 @@ internal static class IssuerValidator
         {
             failures.Add(new(
                 "configuration.issuer.trailing_slash",
-                $"AuthorizationServerOptions.Issuer '{issuer}' must not have a trailing slash. " +
+                $"AuthorizationServerOptions.Issuer '{shown}' must not have a trailing slash. " +
                 "Use 'https://auth.example.com' rather than 'https://auth.example.com/', and " +
                 "'https://auth.example.com/tenant1' rather than 'https://auth.example.com/tenant1/'. " +
                 "OIDC Discovery 1.0 §4.3 requires the published issuer to be identical to the URL " +
@@ -84,7 +85,7 @@ internal static class IssuerValidator
         }
     }
 
-    private static void ValidateScheme(AuthorizationServerOptions options, Uri uri, ICollection<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateScheme(AuthorizationServerOptions options, string shown, Uri uri, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         // The OIDC specification requires the issuer to be an HTTPS URI in production.
         // AllowInsecureIssuer permits only HTTP loopback issuers for local development.
@@ -92,7 +93,7 @@ internal static class IssuerValidator
         {
             failures.Add(new(
                 "configuration.issuer.not_https",
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}' uses an unsupported scheme '{uri.Scheme}'. " +
+                $"AuthorizationServerOptions.Issuer '{shown}' uses an unsupported scheme '{uri.Scheme}'. " +
                 "Only 'https' is permitted in production. " +
                 "Set AllowInsecureIssuer = true to permit 'http' loopback issuers for local development and testing only."));
         }
@@ -101,12 +102,12 @@ internal static class IssuerValidator
         {
             failures.Add(new(
                 "configuration.issuer.http_non_loopback",
-                $"AuthorizationServerOptions.Issuer '{options.Issuer}' uses HTTP for a non-loopback host. " +
+                $"AuthorizationServerOptions.Issuer '{shown}' uses HTTP for a non-loopback host. " +
                 "AllowInsecureIssuer only permits HTTP loopback issuers for local development and testing."));
         }
     }
 
-    private static void ValidateCanonicalForm(string issuer, Uri uri, ICollection<ZeeKayDaConfigurationFailure> failures)
+    private static void ValidateCanonicalForm(string issuer, string shown, Uri uri, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         var canonicalIssuer = BuildCanonicalIssuer(uri);
         var normalizedInputIssuer = NormalizeRootIssuer(issuer, uri);
@@ -114,7 +115,10 @@ internal static class IssuerValidator
         {
             failures.Add(new(
                 "configuration.issuer.not_canonical",
-                $"AuthorizationServerOptions.Issuer '{issuer}' is not canonical. Use '{canonicalIssuer}'."));
+                $"AuthorizationServerOptions.Issuer '{shown}' is not canonical. " +
+                (ConfiguredUri.CanShowVerbatim(uri)
+                    ? $"Use '{canonicalIssuer}'."
+                    : "Use a lowercase scheme and host, and leave out a default port.")));
         }
     }
 
