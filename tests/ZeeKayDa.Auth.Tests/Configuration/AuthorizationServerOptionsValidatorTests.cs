@@ -1363,6 +1363,36 @@ public sealed class AuthorizationServerOptionsValidatorTests
             .Which.Message.Should().Contain("greater than zero");
     }
 
+    // ── AbsoluteFamilyLifetime ────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_fails_when_AbsoluteFamilyLifetime_is_not_positive(int seconds)
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { AbsoluteFamilyLifetime = TimeSpan.FromSeconds(seconds) },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.absolute_family_lifetime.not_positive")
+            .Which.Message.Should().Contain("AbsoluteFamilyLifetime must be greater than zero");
+    }
+
+    [Fact]
+    public void Validate_succeeds_when_AbsoluteFamilyLifetime_is_TimeSpan_MaxValue()
+    {
+        // TimeSpan.MaxValue is the explicit, warned "unbounded" sentinel and remains valid.
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            TokenEndpoint = { AbsoluteFamilyLifetime = TimeSpan.MaxValue },
+        });
+
+        failures.Should().BeEmpty();
+    }
+
     // ── Cross-field: RefreshTokenLifetime >= AuthorizationCodeLifetime ────────────────────────────
 
     [Fact]
