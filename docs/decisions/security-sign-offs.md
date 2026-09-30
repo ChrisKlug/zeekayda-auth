@@ -1860,10 +1860,12 @@ one round plus fix-diff verification; no High or Critical survived review.
   row is written. Closed — `A_family_revoked_with_no_rows_reads_as_revoked`,
   `TryConsumeAsync_returns_Revoked_for_grant_inserted_after_zero_row_family_was_revoked`,
   `RevokeFamilyAsync_never_writes_a_row_to_the_backing_store`.
-- The kit holds third-party stores to the record, its floor and fault propagation. Closed —
-  `IsFamilyRevokedAsync_reports_revoked_for_a_family_revoked_before_it_had_any_grant`,
-  `A_repeat_RevokeFamilyAsync_with_an_earlier_rememberUntil_does_not_shorten_the_record`,
-  `RevokeFamilyAsync_propagates_a_transport_fault_instead_of_swallowing_it`.
+- The kit holds third-party stores to the record, its floor and fault propagation, and runs against
+  the in-memory store as `InMemoryRefreshTokenBackingStoreConformanceTests`. Closed — its tests
+  IsFamilyRevokedAsync_reports_revoked_for_a_family_revoked_before_it_had_any_grant,
+  A_repeat_RevokeFamilyAsync_with_an_earlier_rememberUntil_does_not_shorten_the_record and
+  RevokeFamilyAsync_propagates_a_transport_fault_instead_of_swallowing_it (declared in the TestKit,
+  outside `tests/`, so unquoted for the citation check).
 - **Accepted residual (maintainer):** nothing tests that a store keeps the record until
   `rememberUntil`, or commits it before marking rows; both are contract text, as the kit has no clock
   or mid-revoke fault seam.
