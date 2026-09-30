@@ -128,7 +128,7 @@ The following patterns cover every shape a real verifier takes.
 **Validate and fail:**
 
 ```csharp
-internal sealed class ScopePresenceVerifier : IStartupVerifier
+internal sealed class ScopePresenceActivator : IStartupActivator
 {
     public string Name => "ScopePresence";
 
@@ -274,7 +274,7 @@ Two registrations of the *same implementation type* with different captured stat
 **Side-effecting activation:**
 
 ```csharp
-internal sealed class ClientRepositoryActivationVerifier : IStartupVerifier
+internal sealed class ClientRepositoryActivator : IStartupActivator
 {
     public string Name => "ClientRepositoryActivation";
 
@@ -304,7 +304,7 @@ internal sealed class ClientRepositoryActivationVerifier : IStartupVerifier
 }
 ```
 
-Being side-effecting does not disqualify a check from being an `IStartupVerifier` — the per-verifier scope is precisely what makes forcing construction safe here, and letting an unexpected exception propagate rather than catching it is the correct behaviour.
+It is an `IStartupActivator` because it resolves `IClientRepository`, which the host registers — the framework's own `ClientRepositoryStartupActivator` is one for the same reason. The per-check scope is what makes forcing construction safe here, and letting an unexpected exception propagate rather than catching it is the correct behaviour.
 
 ## Related pages
 
