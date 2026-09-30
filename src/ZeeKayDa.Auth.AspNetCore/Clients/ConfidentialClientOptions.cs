@@ -19,9 +19,8 @@ public sealed class ConfidentialClientOptions : ClientOptions
     internal override ClientRegistration ApplyTo(ClientRegistration registration) => base.ApplyTo(registration) with
     {
         RequirePkce = RequirePkce,
-        AllowedTokenEndpointAuthMethods = new HashSet<string>(
-            AllowedTokenEndpointAuthMethods.Count > 0 ? AllowedTokenEndpointAuthMethods : registration.AllowedTokenEndpointAuthMethods,
-            StringComparer.Ordinal),
+        AllowedTokenEndpointAuthMethods = OrDefault(
+            AllowedTokenEndpointAuthMethods, registration.AllowedTokenEndpointAuthMethods, StringComparer.Ordinal),
     };
 
     /// <inheritdoc cref="IClientMetadata.RequirePkce"/>

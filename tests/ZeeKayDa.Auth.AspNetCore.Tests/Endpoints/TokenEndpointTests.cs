@@ -72,9 +72,9 @@ public sealed class TokenEndpointTests : IDisposable
     private EndpointHost NewHost(Action<AuthorizationServerOptions>? configureOptions = null) => new(
         configureOptions: options =>
         {
-            // Served so the no-code-grant client, allowed only refresh_token, is a registration
+            // Served so the no-code-grant client, allowed only client_credentials, is a registration
             // startup accepts: a client may be allowed only the grants its server serves.
-            options.GrantTypesSupported.Add(GrantType.RefreshToken);
+            options.GrantTypesSupported.Add(GrantType.ClientCredentials);
             configureOptions?.Invoke(options);
         },
         configureBuilder: builder =>
@@ -104,7 +104,7 @@ public sealed class TokenEndpointTests : IDisposable
     private static ClientRegistration NoCodeGrantRegistration() =>
         ClientRegistration.CreatePublic(NoCodeGrantClient, [RegisteredRedirect], [], ["openid"])
             with
-        { AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken } };
+        { AllowedGrantTypes = new HashSet<GrantType> { GrantType.ClientCredentials } };
 
     /// <summary>A first-party confidential client the operator trusts to check the nonce, so it may leave PKCE out.</summary>
     private static ClientRegistration PkceOptionalRegistration() =>

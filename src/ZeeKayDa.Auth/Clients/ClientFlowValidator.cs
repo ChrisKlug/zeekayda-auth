@@ -39,6 +39,18 @@ internal static class ClientFlowValidator
         if (ValidateEntries(client, grantTypes, failures) == 0)
             failures.Add(Empty(client, grantTypes, ", so it can use no grant"));
 
+        // A refresh token is issued only by the code grant here (RFC 6749 §4.4.3: client_credentials
+        // SHOULD NOT issue one), so refresh_token without it can never be used.
+        if (client.AllowedGrantTypes.Any(grantType => grantType == GrantType.RefreshToken)
+            && !client.AllowedGrantTypes.Any(grantType => grantType == GrantType.AuthorizationCode))
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.grant_types.refresh_without_issuer",
+                $"Client '{client.ClientId}' allows the refresh_token grant but not authorization_code, the " +
+                "only grant that issues a refresh token, so it can never use one. Add authorization_code, " +
+                "or remove refresh_token."));
+        }
+
         var responseTypeCount = ValidateEntries(client, responseTypes, failures);
         var responseModeCount = ValidateEntries(client, responseModes, failures);
 

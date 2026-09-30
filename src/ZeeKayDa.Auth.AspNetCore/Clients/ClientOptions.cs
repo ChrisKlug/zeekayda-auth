@@ -72,8 +72,9 @@ public abstract class ClientOptions
     }
 
     /// <summary>A copy of what the callback configured, or of the default if it configured nothing.</summary>
-    private static HashSet<T> OrDefault<T>(ISet<T> configured, IEnumerable<T> defaults) =>
-        [.. configured.Count > 0 ? configured : defaults];
+    private protected static HashSet<T> OrDefault<T>(
+        ISet<T> configured, IEnumerable<T> defaults, IEqualityComparer<T>? comparer = null) =>
+        new(configured.Count > 0 ? configured : defaults, comparer);
 
     /// <inheritdoc cref="IClientMetadata.DisplayName"/>
     public string? DisplayName { get; set; }
