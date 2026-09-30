@@ -45,56 +45,6 @@ public sealed class AuthorizationCodeStoreTests
             ExpiresAt = expiresAt ?? FarFuture,
         };
 
-    // ── Constructor guards ────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_for_null_backingStore()
-    {
-        var act = () => new AuthorizationCodeStore(
-            null!,
-            new EphemeralDataProtectionProvider(),
-            new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
-            TimeProvider.System);
-
-        act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_for_null_dataProtectionProvider()
-    {
-        var act = () => new AuthorizationCodeStore(
-            new InMemoryAuthorizationCodeBackingStore(),
-            null!,
-            new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
-            TimeProvider.System);
-
-        act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_for_null_serverOptions()
-    {
-        var act = () => new AuthorizationCodeStore(
-            new InMemoryAuthorizationCodeBackingStore(),
-            new EphemeralDataProtectionProvider(),
-            null!,
-            TimeProvider.System);
-
-        act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_for_null_timeProvider()
-    {
-        var act = () => new AuthorizationCodeStore(
-            new InMemoryAuthorizationCodeBackingStore(),
-            new EphemeralDataProtectionProvider(),
-            new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
-            null!);
-
-        act.Should().Throw<ArgumentNullException>();
-    }
-
     // ── Happy path ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

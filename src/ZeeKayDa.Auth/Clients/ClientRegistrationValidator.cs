@@ -18,45 +18,16 @@ namespace ZeeKayDa.Auth.Clients;
 /// dependency of their own live in their own validators; this class holds the dependencies,
 /// does all the logging, and keeps only the single-rule checks.
 /// </remarks>
-internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
+// keyRing is null when no ring is registered, and deliberately has no default: omitting it would
+// silently weaken the check that a client's AllowedSigningAlgorithms are ones the ring signs with.
+internal sealed class ClientRegistrationValidator(
+    IOptions<AuthorizationServerOptions> options,
+    CompositeClientSecretHasher hasher,
+    ISanitizingLogger<ClientRegistrationValidator> logger,
+    ISigningKeyRing? keyRing) : IClientRegistrationValidator
 {
     private static readonly Regex ClientIdPattern =
         new(@"^[A-Za-z0-9_\-.]+$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
-
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly CompositeClientSecretHasher _hasher;
-    private readonly ISanitizingLogger<ClientRegistrationValidator> _logger;
-    private readonly ISigningKeyRing? _keyRing;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ClientRegistrationValidator"/> class.
-    /// </summary>
-    /// <param name="options">The authorization server options.</param>
-    /// <param name="hasher">The composite hasher used to validate client secrets.</param>
-    /// <param name="logger">The sanitizing logger.</param>
-    /// <param name="keyRing">
-    /// The signing key ring, or <see langword="null"/> when none is registered — a host that only
-    /// adds the signing key health check has no ring, and the protocol endpoints refuse to start
-    /// without one. Supplies the algorithms a client's <c>AllowedSigningAlgorithms</c> must be a
-    /// subset of, once the ring has read its source. Deliberately has no default: omitting it
-    /// silently weakens the subset check, which is not something a call site should be able to do
-    /// by accident.
-    /// </param>
-    public ClientRegistrationValidator(
-        IOptions<AuthorizationServerOptions> options,
-        CompositeClientSecretHasher hasher,
-        ISanitizingLogger<ClientRegistrationValidator> logger,
-        ISigningKeyRing? keyRing)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(hasher);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _options = options;
-        _hasher = hasher;
-        _logger = logger;
-        _keyRing = keyRing;
-    }
 
     /// <inheritdoc/>
     public void Validate(IClientRegistration client)
@@ -72,12 +43,12 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         InitiateLoginUriValidator.Validate(client, failures);
         ValidateAllowedTokenEndpointAuthMethods(client, failures);
         ValidatePkceOptOut(client, failures);
-        ClientCredentialValidator.Validate(client, _hasher, failures);
+        ClientCredentialValidator.Validate(client, hasher, failures);
         ValidateAllowedSigningAlgorithms(client, failures);
         ValidateTokenLifetimes(client, failures);
         ValidateAllowedScopes(client, failures);
         ClaimAdditionValidator.Validate(client, failures);
-        ClientFlowValidator.Validate(client, _options.Value, failures);
+        ClientFlowValidator.Validate(client, options.Value, failures);
         WarnOfRefreshWithoutIssuer(client);
         ValidateAllowedPromptValues(client, failures);
 
@@ -107,7 +78,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
             if (RedirectUriValidator.ValidateRedirectUri(clientId, uriString, propertyName, failures) &&
                 RedirectUriRules.IsHttpLocalhost(uriString))
             {
-                _logger.LogWarning(
+                logger.LogWarning(
                     "Client '{ClientId}' uses 'localhost' in {PropertyName}: '{Uri}'. " +
                     "RFC 8252 §8.3 recommends using the IP literal '127.0.0.1' instead of 'localhost' " +
                     "to avoid DNS rebinding and cross-platform compatibility issues.",
@@ -172,7 +143,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         List<ZeeKayDaConfigurationFailure> failures)
     {
         var serverMethods = new HashSet<string>(
-            _options.Value.TokenEndpoint.AuthMethodsSupported,
+            options.Value.TokenEndpoint.AuthMethodsSupported,
             StringComparer.Ordinal);
 
         TokenEndpointAuthMethodValidator.Validate(client, serverMethods, failures);
@@ -201,13 +172,13 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         List<ZeeKayDaConfigurationFailure> failures)
     {
         var checkedAgainstServer = SigningAlgorithmValidator.Validate(
-            client, _keyRing, _options.Value.IdToken.AdvertisedSigningAlgorithms, failures);
+            client, keyRing, options.Value.IdToken.AdvertisedSigningAlgorithms, failures);
 
         // Say so rather than passing silently. A host with no ring at all stays quiet: the protocol
         // endpoints refuse to start without one, so there is nothing a warning here would add.
-        if (!checkedAgainstServer && _keyRing is not null)
+        if (!checkedAgainstServer && keyRing is not null)
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "Client '{ClientId}' declares AllowedSigningAlgorithms, but the signing key ring " +
                 "has not yet read its source, so the set could not be checked against the " +
                 "server's advertised algorithms. This happens when an IClientRepository is " +
@@ -247,9 +218,9 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
             return;
         }
 
-        if (value > _options.Value.TokenEndpoint.AbsoluteFamilyLifetime)
+        if (value > options.Value.TokenEndpoint.AbsoluteFamilyLifetime)
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "Client '{ClientId}' has {PropertyName} set past TokenEndpoint.AbsoluteFamilyLifetime, " +
                 "so a token issued to it would outlive the grant family that produced it.",
                 client.ClientId,
@@ -267,7 +238,7 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
         if (client.AllowedGrantTypes.Any(grantType => grantType == GrantType.RefreshToken)
             && !client.AllowedGrantTypes.Any(grantType => grantType == GrantType.AuthorizationCode))
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "Client '{ClientId}' allows the refresh_token grant but not authorization_code, the only grant " +
                 "that issues a refresh token, so it can use only refresh tokens issued before.",
                 client.ClientId);
@@ -298,5 +269,4 @@ internal sealed class ClientRegistrationValidator : IClientRegistrationValidator
                 $"Client '{client.ClientId}' has an undefined value '{(int)promptValue}' in AllowedPromptValues."));
         }
     }
-
 }

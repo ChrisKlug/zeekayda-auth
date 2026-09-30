@@ -23,21 +23,9 @@ internal sealed record IdTokenHint(string ClientId, string Subject);
 /// which has usually expired by the time the user signs out, and the hint only has to prove where
 /// it came from.
 /// </remarks>
-internal sealed class IdTokenHintValidator
+internal sealed class IdTokenHintValidator(ISigningKeyRing keyRing, IOptions<AuthorizationServerOptions> options)
 {
     private static readonly string[] IdTokenTypes = ["JWT"];
-
-    private readonly ISigningKeyRing _keyRing;
-    private readonly IOptions<AuthorizationServerOptions> _options;
-
-    public IdTokenHintValidator(ISigningKeyRing keyRing, IOptions<AuthorizationServerOptions> options)
-    {
-        ArgumentNullException.ThrowIfNull(keyRing);
-        ArgumentNullException.ThrowIfNull(options);
-
-        _keyRing = keyRing;
-        _options = options;
-    }
 
     /// <summary>
     /// Returns the client and user <paramref name="idTokenHint"/> names, or <see langword="null"/>
@@ -54,7 +42,7 @@ internal sealed class IdTokenHintValidator
     /// </exception>
     public IdTokenHint? Validate(string? idTokenHint, string? clientId)
     {
-        using var payload = SignedTokenReader.Verify(idTokenHint, IdTokenTypes, _keyRing.Current.Published);
+        using var payload = SignedTokenReader.Verify(idTokenHint, IdTokenTypes, keyRing.Current.Published);
         if (payload is null)
             return null;
 
@@ -71,7 +59,7 @@ internal sealed class IdTokenHintValidator
     }
 
     private bool IsThisServer(string? issuer) =>
-        !string.IsNullOrEmpty(issuer) && string.Equals(issuer, _options.Value.Issuer, StringComparison.Ordinal);
+        !string.IsNullOrEmpty(issuer) && string.Equals(issuer, options.Value.Issuer, StringComparison.Ordinal);
 
     /// <summary>
     /// Whether <paramref name="audience"/> names a client, and, when the request named one too,

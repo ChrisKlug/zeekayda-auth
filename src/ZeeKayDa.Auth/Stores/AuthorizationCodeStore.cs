@@ -26,7 +26,11 @@ namespace ZeeKayDa.Auth.Stores;
 /// persisted as keys or embedded in stored values.
 /// </para>
 /// </remarks>
-internal sealed class AuthorizationCodeStore
+internal sealed class AuthorizationCodeStore(
+    IAuthorizationCodeBackingStore backingStore,
+    IDataProtectionProvider dataProtectionProvider,
+    IOptions<AuthorizationServerOptions> serverOptions,
+    TimeProvider timeProvider)
 {
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:AuthorizationCodeStore";
 
@@ -34,32 +38,8 @@ internal sealed class AuthorizationCodeStore
     // rather than an empty value some backends refuse.
     private static readonly ReadOnlyMemory<byte> ReservationMarker = new byte[] { 1 };
 
-    private readonly IAuthorizationCodeBackingStore _backingStore;
-    private readonly IDataProtector _protector;
-    private readonly TimeProvider _timeProvider;
-    private readonly TimeSpan _clockSkewTolerance;
-
-    /// <summary>Initialises a new <see cref="AuthorizationCodeStore"/>.</summary>
-    /// <param name="backingStore">The opaque persistence primitive.</param>
-    /// <param name="dataProtectionProvider">Provider used to create the entry protector.</param>
-    /// <param name="serverOptions">Server options providing <see cref="AuthorizationServerOptions.ClockSkewTolerance"/>.</param>
-    /// <param name="timeProvider">Time provider used for all UTC timestamp reads.</param>
-    public AuthorizationCodeStore(
-        IAuthorizationCodeBackingStore backingStore,
-        IDataProtectionProvider dataProtectionProvider,
-        IOptions<AuthorizationServerOptions> serverOptions,
-        TimeProvider timeProvider)
-    {
-        ArgumentNullException.ThrowIfNull(backingStore);
-        ArgumentNullException.ThrowIfNull(dataProtectionProvider);
-        ArgumentNullException.ThrowIfNull(serverOptions);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-
-        _backingStore = backingStore;
-        _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
-        _timeProvider = timeProvider;
-        _clockSkewTolerance = serverOptions.Value.ClockSkewTolerance;
-    }
+    private readonly IDataProtector _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
+    private readonly TimeSpan _clockSkewTolerance = serverOptions.Value.ClockSkewTolerance;
 
     /// <summary>Stores a newly minted code's entry under the hash of the code.</summary>
     /// <exception cref="ZeeKayDaStoreException">Thrown when the backing store fails, or the key already exists.</exception>
@@ -74,7 +54,7 @@ internal sealed class AuthorizationCodeStore
         var protectedBytes = ProtectEntry(entry);
 
         var inserted = await Guarded(
-            () => _backingStore.TryInsertAsync(key, protectedBytes, expiresAt, cancellationToken),
+            () => backingStore.TryInsertAsync(key, protectedBytes, expiresAt, cancellationToken),
             "store the authorization code entry").ConfigureAwait(false);
 
         if (!inserted)
@@ -95,7 +75,7 @@ internal sealed class AuthorizationCodeStore
         cancellationToken.ThrowIfCancellationRequested();
 
         return await Guarded(
-            () => _backingStore.TryInsertAsync(
+            () => backingStore.TryInsertAsync(
                 BuildInteractionKey(interactionId),
                 ReservationMarker,
                 interactionExpiresAt + _clockSkewTolerance,
@@ -122,7 +102,7 @@ internal sealed class AuthorizationCodeStore
         var tombstoneKey = BuildTombstoneKey(code);
 
         var entryBytes = await Guarded(
-            () => _backingStore.GetAsync(entryKey, cancellationToken),
+            () => backingStore.GetAsync(entryKey, cancellationToken),
             "read the authorization code entry").ConfigureAwait(false);
 
         if (entryBytes is null)
@@ -141,7 +121,7 @@ internal sealed class AuthorizationCodeStore
             return new AuthorizationCodeRedemptionResult.NotFound();
         }
 
-        var now = _timeProvider.GetUtcNow();
+        var now = timeProvider.GetUtcNow();
         if (now >= entry.ExpiresAt + _clockSkewTolerance)
             return new AuthorizationCodeRedemptionResult.NotFound();
 
@@ -152,14 +132,14 @@ internal sealed class AuthorizationCodeStore
         var tombstoneBytes = SerializeTombstone(familyId);
 
         var wonRace = await Guarded(
-            () => _backingStore.TryInsertAsync(tombstoneKey, tombstoneBytes, tombstoneExpiresAt, cancellationToken),
+            () => backingStore.TryInsertAsync(tombstoneKey, tombstoneBytes, tombstoneExpiresAt, cancellationToken),
             "write the authorization code redemption tombstone").ConfigureAwait(false);
 
         if (!wonRace)
             return await ResolveViaTombstoneAsync(tombstoneKey, cancellationToken).ConfigureAwait(false);
 
         await Guarded(
-            () => _backingStore.RemoveAsync(entryKey, cancellationToken),
+            () => backingStore.RemoveAsync(entryKey, cancellationToken),
             "remove the redeemed authorization code entry").ConfigureAwait(false);
 
         return new AuthorizationCodeRedemptionResult.Redeemed { Entry = entry };
@@ -169,7 +149,7 @@ internal sealed class AuthorizationCodeStore
         StoreKey tombstoneKey, CancellationToken cancellationToken)
     {
         var tombstoneBytes = await Guarded(
-            () => _backingStore.GetAsync(tombstoneKey, cancellationToken),
+            () => backingStore.GetAsync(tombstoneKey, cancellationToken),
             "read the authorization code redemption tombstone").ConfigureAwait(false);
 
         if (tombstoneBytes is null)

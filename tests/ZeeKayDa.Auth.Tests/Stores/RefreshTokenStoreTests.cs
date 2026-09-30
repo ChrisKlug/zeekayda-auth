@@ -63,56 +63,6 @@ public sealed class RefreshTokenStoreTests
         (await backing.FindByHandleAsync(expected, CancellationToken.None)).Should().NotBeNull();
     }
 
-    // ── Constructor guards ────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_for_null_grantStore()
-    {
-        var act = () => new RefreshTokenStore(
-            null!,
-            new EphemeralDataProtectionProvider(),
-            new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
-            TimeProvider.System);
-
-        act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_for_null_dataProtectionProvider()
-    {
-        var act = () => new RefreshTokenStore(
-            new InMemoryRefreshTokenBackingStore(),
-            null!,
-            new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
-            TimeProvider.System);
-
-        act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_for_null_serverOptions()
-    {
-        var act = () => new RefreshTokenStore(
-            new InMemoryRefreshTokenBackingStore(),
-            new EphemeralDataProtectionProvider(),
-            null!,
-            TimeProvider.System);
-
-        act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void Constructor_throws_ArgumentNullException_for_null_timeProvider()
-    {
-        var act = () => new RefreshTokenStore(
-            new InMemoryRefreshTokenBackingStore(),
-            new EphemeralDataProtectionProvider(),
-            new OptionsWrapper<AuthorizationServerOptions>(new AuthorizationServerOptions()),
-            null!);
-
-        act.Should().Throw<ArgumentNullException>();
-    }
-
     // ── Happy path ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

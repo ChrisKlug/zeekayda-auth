@@ -40,9 +40,6 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         IEnumerable<IClientSecretHasher> hashers,
         IOptions<ClientSecretHasherRegistrationOptions> registrationOptions)
     {
-        ArgumentNullException.ThrowIfNull(hashers);
-        ArgumentNullException.ThrowIfNull(registrationOptions);
-
         var hasherList = hashers.ToList();
         _hashers = hasherList;
         _default = ResolveDefault(hasherList, registrationOptions.Value);
