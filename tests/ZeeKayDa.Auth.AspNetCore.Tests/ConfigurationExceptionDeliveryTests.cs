@@ -43,7 +43,7 @@ public sealed class ConfigurationExceptionDeliveryTests
         // Built, but never started: MapZeeKayDaAuth validates before the host would ever start.
         using var app = builder.Build();
 
-        Action act = () => ((IEndpointRouteBuilder)app).MapZeeKayDaAuth();
+        Action act = () => app.MapZeeKayDaAuth();
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.issuer.not_https");
@@ -76,7 +76,7 @@ public sealed class ConfigurationExceptionDeliveryTests
         builder.Services.Configure<Pbkdf2ClientSecretHasherOptions>(options => options.Iterations = 1);
         using var app = builder.Build();
 
-        Action act = () => ((IEndpointRouteBuilder)app).MapZeeKayDaAuth();
+        Action act = () => app.MapZeeKayDaAuth();
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Select(f => f.Code).Should().Contain(
