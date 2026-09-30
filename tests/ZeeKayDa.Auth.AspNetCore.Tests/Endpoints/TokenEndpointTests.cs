@@ -398,7 +398,6 @@ public sealed class TokenEndpointTests : IDisposable
     {
         // ES256 is published as the next key, so the subset rule passes; the key that signs is
         // RS256, and a client that will accept only ES256 could never be issued an ID token.
-        using var keys = new RsaCurrentEcNextKeySource();
         using var host = new EndpointHost(
             configureBuilder: builder =>
             {
@@ -406,7 +405,7 @@ public sealed class TokenEndpointTests : IDisposable
                 {
                     AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 },
                 }));
-                builder.Services.AddZeeKayDaSigningKeySource(_ => keys);
+                builder.AddSigningKeySource<RsaCurrentEcNextKeySource>();
             });
 
         var failure = await host.StartupFailureAsync();

@@ -22,11 +22,23 @@ public sealed class SigningKeyRingPresenceValidatorTests
             => throw new NotSupportedException();
     }
 
+    private sealed class UnconstructableSigningKeySource : ISigningKeySource
+    {
+        public UnconstructableSigningKeySource() => throw new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("test.source.broken", "The source cannot be built."));
+
+        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
     [Fact]
     public async Task VerifyAsync_completes_without_failures_when_a_signing_key_source_is_registered()
     {
         var services = new ServiceCollection();
-        services.AddZeeKayDaSigningKeySource<StubSigningKeySource>();
+        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<StubSigningKeySource>();
         using var provider = services.BuildServiceProvider();
         var sut = new SigningKeyRingPresenceValidator();
         var context = new StartupVerificationContext();
@@ -60,8 +72,8 @@ public sealed class SigningKeyRingPresenceValidatorTests
 
         await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
 
+        context.Failures.Single().Message.Should().Contain("AddSigningKeySource");
         context.Failures.Single().Message.Should().Contain("AddInMemoryDevelopmentSigning");
-        context.Failures.Single().Message.Should().Contain("AddZeeKayDaSigningKeySource");
     }
 
     [Fact]
@@ -88,7 +100,7 @@ public sealed class SigningKeyRingPresenceValidatorTests
         // IServiceProviderIsService, because that is the only path that resolves the ring at all —
         // the default container answers without invoking the factory.
         var services = new ServiceCollection();
-        services.AddZeeKayDaSigningKeySource<StubSigningKeySource>(_ => null!);
+        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<UnconstructableSigningKeySource>();
         using var inner = services.BuildServiceProvider();
         var sut = new SigningKeyRingPresenceValidator();
         var context = new StartupVerificationContext();

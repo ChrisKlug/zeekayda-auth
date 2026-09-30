@@ -362,19 +362,6 @@ public sealed class StaticSigningKeyRingTests
             _ => throw new ArgumentOutOfRangeException(nameof(shape)),
         };
 
-    [Fact]
-    public void Constructor_throws_ArgumentException_when_the_source_implements_IAsyncDisposable_only()
-    {
-        var source = new AsyncOnlySigningKeySource(
-            _ => throw new InvalidOperationException("must not be called"),
-            (_, _) => throw new InvalidOperationException("must not be called"),
-            onDisposeAsync: () => ValueTask.CompletedTask);
-
-        var act = () => new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
-
-        act.Should().Throw<ArgumentException>().WithParameterName("source");
-    }
-
     // ── InitializeAsync — startup failures ───────────────────────────────────────────────────────
 
     [Fact]

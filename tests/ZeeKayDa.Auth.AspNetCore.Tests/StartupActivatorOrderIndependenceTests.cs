@@ -37,8 +37,8 @@ public sealed class StartupActivatorOrderIndependenceTests
     public void Both_activators_are_registered_in_the_activator_collection()
     {
         var services = new ServiceCollection();
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://test.example.com");
-        services.AddZeeKayDaSigningKeySource<TestSigningKeySource>();
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://test.example.com")
+            .AddSigningKeySource<TestSigningKeySource>();
 
         var activators = services
             .Where(d => d.ServiceType == typeof(IStartupActivator))
@@ -89,7 +89,7 @@ public sealed class StartupActivatorOrderIndependenceTests
 
                 // What a provider package's sample looks like when signing comes first.
                 if (signingFirst)
-                    services.AddZeeKayDaSigningKeySource<TestSigningKeySource>();
+                    new ZeeKayDaAuthBuilder(services).AddSigningKeySource<TestSigningKeySource>();
 
                 var authBuilder = services.AddZeeKayDaAuth(options =>
                 {

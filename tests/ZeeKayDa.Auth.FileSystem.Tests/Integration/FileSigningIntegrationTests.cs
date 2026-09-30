@@ -353,7 +353,7 @@ public sealed class FileSigningIntegrationTests
     // ── Startup verifier ──────────────────────────────────────────────────────────────────────────
     // The PEM provider no longer registers an IJwtSigningService, so the generic
     // SigningStartupSelfTest verifier that used to pre-warm and self-test it does not apply here.
-    // AddZeeKayDaSigningKeySource registers the SigningKeyRing verifier instead, and that verifier
+    // AddSigningKeySource registers the SigningKeyRing verifier instead, and that verifier
     // is what the hosted-service tests above run: they already prove it reads the source, builds the
     // set, opens the signer and self-tests it, and that a configuration failure fails the host. The
     // two PEM-specific self-test tests that stood here were deleted as duplicates of those; the PFX
