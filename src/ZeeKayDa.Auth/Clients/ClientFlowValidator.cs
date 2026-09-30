@@ -39,6 +39,15 @@ internal static class ClientFlowValidator
         if (ValidateEntries(client, grantTypes, failures) == 0)
             failures.Add(Empty(client, grantTypes, ", so it can use no grant"));
 
+        // RFC 6749 §4.4: the client credentials grant MUST only be used by confidential clients.
+        if (client.IsPublic && client.AllowedGrantTypes.Any(grantType => grantType == GrantType.ClientCredentials))
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.grant_types.client_credentials_on_public",
+                $"Client '{client.ClientId}' is public but allows the client_credentials grant, which only a " +
+                "confidential client may use (RFC 6749 §4.4). Register it as confidential, or remove the grant."));
+        }
+
         var responseTypeCount = ValidateEntries(client, responseTypes, failures);
         var responseModeCount = ValidateEntries(client, responseModes, failures);
 

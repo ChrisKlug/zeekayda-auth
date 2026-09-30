@@ -1561,6 +1561,39 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
+    public void A_public_client_allowed_client_credentials_fails_validation()
+    {
+        var options = BuildDefaultServerOptions();
+        options.GrantTypesSupported.Add(GrantType.ClientCredentials);
+        var validator = MakeValidator(serverOptions: options);
+        var client = MakeValidPublicClient() with
+        {
+            AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode, GrantType.ClientCredentials },
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.grant_types.client_credentials_on_public");
+    }
+
+    [Fact]
+    public void A_confidential_client_allowed_client_credentials_passes_validation()
+    {
+        var options = BuildDefaultServerOptions();
+        options.GrantTypesSupported.Add(GrantType.ClientCredentials);
+        var validator = MakeValidator(serverOptions: options);
+        var client = MakeValidConfidentialClient() with
+        {
+            AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode, GrantType.ClientCredentials },
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void Validate_fails_with_grant_types_empty_code_for_a_client_allowed_no_grant()
     {
         var validator = MakeValidator();

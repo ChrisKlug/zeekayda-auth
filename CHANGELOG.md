@@ -565,7 +565,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   modes default to `code` and `query` only when the client may use `authorization_code`, so a
   `client_credentials`-only client no longer carries them. A client allowed `refresh_token` without
   `authorization_code`, the only grant that issues one, now logs a warning at validation: usually a
-  mistake, but a client whose code grant was withdrawn may still be draining refresh tokens.
+  mistake, but a client whose code grant was withdrawn may still be draining refresh tokens. A public
+  client allowed `client_credentials` now fails validation
+  (`client.grant_types.client_credentials_on_public`), since RFC 6749 §4.4 keeps that grant to
+  confidential clients.
 
 - **The framework's token stores are internal; every third-party store contract ends in
   `BackingStore`** (#827). `IAuthorizationCodeStore` and `IRefreshTokenStore` are gone: nobody

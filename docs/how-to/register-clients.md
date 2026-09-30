@@ -239,6 +239,7 @@ Common validation failures:
 | `client.redirect_uri.fragment` | Redirect URI contains a `#` fragment |
 | `client.redirect_uri.scheme_http_non_loopback` | `http://` URI for a non-loopback host |
 | `client.is_public.trinity_violation` | `IsPublic`, `Credentials`, and `AllowedTokenEndpointAuthMethods` are inconsistent |
+| `client.grant_types.client_credentials_on_public` | A public client allows `client_credentials`, which only a confidential client may use (RFC 6749 §4.4) |
 | `client.token_endpoint_auth_methods.not_subset` | Client auth method not in server's `AuthMethodsSupported` |
 | `client.client_id.duplicate` | Two clients with the same `ClientId` |
 
