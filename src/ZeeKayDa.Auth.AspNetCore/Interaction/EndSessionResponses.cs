@@ -17,17 +17,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// are framework text; the one value rendered, a client's display name, comes from its
 /// registration and is HTML-encoded.
 /// </remarks>
-internal sealed class EndSessionResponses
+internal sealed class EndSessionResponses(IOptions<AuthorizationServerOptions> options)
 {
-    private readonly IOptions<AuthorizationServerOptions> _options;
-
-    public EndSessionResponses(IOptions<AuthorizationServerOptions> options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-
-        _options = options;
-    }
-
     /// <summary>
     /// Ends the SSO session and every interaction this browser has in flight, then answers: at the
     /// client's post-logout redirect URI, at the host's signed-out page, or with the framework's
@@ -63,7 +54,7 @@ internal sealed class EndSessionResponses
 
     /// <summary>The host's signed-out page, or the framework's own. Signs nothing out.</summary>
     public IResult SignedOut() =>
-        _options.Value.EndSessionEndpoint.SignedOutPath is { } signedOutPath
+        options.Value.EndSessionEndpoint.SignedOutPath is { } signedOutPath
             ? Results.Redirect(signedOutPath)
             : Page(StatusCodes.Status200OK, "Signed out", "<h1>You have been signed out.</h1>");
 

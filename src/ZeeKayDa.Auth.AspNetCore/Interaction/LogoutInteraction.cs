@@ -8,33 +8,14 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// Default <see cref="ILogoutInteraction"/> implementation: resolves the sign-out this browser was
 /// sent to confirm, and ends the session when the user confirms it.
 /// </summary>
-internal sealed class LogoutInteraction : ILogoutInteraction
+internal sealed class LogoutInteraction(
+    IHttpContextAccessor httpContextAccessor,
+    LogoutRequestStore requests,
+    EndSessionResponses responses,
+    SsoSession session,
+    NothingToContinue nothingToContinue) : ILogoutInteraction
 {
-    private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly LogoutRequestStore _requests;
-    private readonly EndSessionResponses _responses;
-    private readonly SsoSession _session;
-    private readonly NothingToContinue _nothingToContinue;
-
-    public LogoutInteraction(
-        IHttpContextAccessor httpContextAccessor,
-        LogoutRequestStore requests,
-        EndSessionResponses responses,
-        SsoSession session,
-        NothingToContinue nothingToContinue)
-    {
-        ArgumentNullException.ThrowIfNull(httpContextAccessor);
-        ArgumentNullException.ThrowIfNull(requests);
-        ArgumentNullException.ThrowIfNull(responses);
-        ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(nothingToContinue);
-
-        _httpContextAccessor = httpContextAccessor;
-        _requests = requests;
-        _responses = responses;
-        _session = session;
-        _nothingToContinue = nothingToContinue;
-    }
+    private readonly SsoSession _session = session;
 
     /// <inheritdoc/>
     public async Task<LogoutRequest> GetRequestAsync(CancellationToken cancellationToken = default)
@@ -70,7 +51,7 @@ internal sealed class LogoutInteraction : ILogoutInteraction
         }
         catch (NothingToContinueException missing)
         {
-            _nothingToContinue.Log("logout", missing);
+            nothingToContinue.Log("logout", missing);
             return null;
         }
     }
@@ -79,7 +60,7 @@ internal sealed class LogoutInteraction : ILogoutInteraction
     public async Task SignOutAsync()
     {
         var context = RequireStateChangingRequest();
-        await _nothingToContinue.SignOutStepAsync(context, () => ConfirmAsync(context)).ConfigureAwait(false);
+        await nothingToContinue.SignOutStepAsync(context, () => ConfirmAsync(context)).ConfigureAwait(false);
     }
 
     private async Task ConfirmAsync(HttpContext context)
@@ -94,8 +75,8 @@ internal sealed class LogoutInteraction : ILogoutInteraction
             : await FindClientAsync(context, request.ClientId, context.RequestAborted).ConfigureAwait(false);
         var redirect = PostLogoutRedirect.For(client, request.PostLogoutRedirectUri, request.State);
 
-        await _requests.DeleteAsync(context, request.Id, context.RequestAborted).ConfigureAwait(false);
-        var result = await _responses.SignOutAsync(context, redirect).ConfigureAwait(false);
+        await requests.DeleteAsync(context, request.Id, context.RequestAborted).ConfigureAwait(false);
+        var result = await responses.SignOutAsync(context, redirect).ConfigureAwait(false);
 
         context.Response.Headers.CacheControl = "no-store";
         await result.ExecuteAsync(context).ConfigureAwait(false);
@@ -116,13 +97,13 @@ internal sealed class LogoutInteraction : ILogoutInteraction
                 "form that regenerates its action from routing drops it, and must pass it back explicitly " +
                 $"(asp-route-{InteractionHandoff.InteractionIdParameter}).");
 
-        var request = await _requests.ReadAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
+        var request = await requests.ReadAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
         if (request is not null)
             return request;
 
         // Nothing is left for this binding to address, so its secret is retired rather than left
         // live for the rest of the cookie's life, taking a per-browser slot from a live tab.
-        await _requests.DeleteAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
+        await requests.DeleteAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
 
         throw new NothingToContinueException(
                 NothingToContinueReason.NotFound,
@@ -148,7 +129,7 @@ internal sealed class LogoutInteraction : ILogoutInteraction
             return;
 
         // One answer either way: a sign-out that cannot be completed is not left for a later try.
-        await _requests.DeleteAsync(context, request.Id, cancellationToken).ConfigureAwait(false);
+        await requests.DeleteAsync(context, request.Id, cancellationToken).ConfigureAwait(false);
 
         throw new NothingToContinueException(
             NothingToContinueReason.SessionChanged,
@@ -165,7 +146,7 @@ internal sealed class LogoutInteraction : ILogoutInteraction
         context.RequestServices.GetRequiredService<ValidatedClientResolver>().FindByClientIdAsync(clientId, cancellationToken);
 
     private HttpContext RequireHttpContext() =>
-        _httpContextAccessor.HttpContext ?? throw new InvalidOperationException(
+        httpContextAccessor.HttpContext ?? throw new InvalidOperationException(
             "ILogoutInteraction requires an active HTTP request. Resolve it from request services inside " +
             "the logout page, not from a background service.");
 

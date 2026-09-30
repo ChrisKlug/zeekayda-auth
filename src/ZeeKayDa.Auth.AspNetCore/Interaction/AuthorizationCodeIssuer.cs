@@ -40,7 +40,11 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// interaction is taken before a code is minted, and the response that loses it issues nothing.
 /// </para>
 /// </remarks>
-internal sealed class AuthorizationCodeIssuer
+internal sealed class AuthorizationCodeIssuer(
+    AuthorizationFlow flow,
+    AuthorizationResponses responses,
+    IOptions<AuthorizationServerOptions> options,
+    ISanitizingLogger<AuthorizationCodeIssuer> logger)
 {
     /// <summary>
     /// What a registration that changed underneath the request tells the user. The same text
@@ -52,32 +56,6 @@ internal sealed class AuthorizationCodeIssuer
         "The client that sent the authorization request is no longer registered, or no longer lists its redirect URI.";
 
     private const string CouldNotIssue = "The authorization server could not issue an authorization code.";
-
-    private readonly AuthorizationFlow _flow;
-    private readonly AuthorizationResponses _responses;
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly TimeProvider _timeProvider;
-    private readonly ISanitizingLogger<AuthorizationCodeIssuer> _logger;
-
-    public AuthorizationCodeIssuer(
-        AuthorizationFlow flow,
-        AuthorizationResponses responses,
-        IOptions<AuthorizationServerOptions> options,
-        TimeProvider timeProvider,
-        ISanitizingLogger<AuthorizationCodeIssuer> logger)
-    {
-        ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(responses);
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _flow = flow;
-        _responses = responses;
-        _options = options;
-        _timeProvider = timeProvider;
-        _logger = logger;
-    }
 
     /// <summary>
     /// Issues the authorization code for <paramref name="requestContext"/> to
@@ -111,8 +89,8 @@ internal sealed class AuthorizationCodeIssuer
 
         if (!scopes.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
         {
-            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-            return _responses.Local(context, AuthorizeRequestErrors.InvalidRequest, ClientNoLongerAnswers);
+            await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+            return responses.Local(context, AuthorizeRequestErrors.InvalidRequest, ClientNoLongerAnswers);
         }
 
         // Resolved from the request's services rather than the constructor, for the reason
@@ -124,7 +102,7 @@ internal sealed class AuthorizationCodeIssuer
         string code;
         try
         {
-            var now = await _flow.ClaimCompletionAsync(context, requestContext).ConfigureAwait(false);
+            var now = await flow.ClaimCompletionAsync(context, requestContext).ConfigureAwait(false);
 
             code = StoreKeyGenerator.Generate();
             await store.StoreAsync(code, BuildEntry(requestContext, session, scopes, now), context.RequestAborted).ConfigureAwait(false);
@@ -133,16 +111,16 @@ internal sealed class AuthorizationCodeIssuer
         {
             // Nothing was handed out, so nothing needs revoking. The client learns the server
             // failed; the operator learns which store operation did, through the sanitizing logger.
-            _logger.LogError(ex, "Storing the authorization code for client {ClientId} failed.", client.ClientId);
+            logger.LogError(ex, "Storing the authorization code for client {ClientId} failed.", client.ClientId);
 
-            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-            return _responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.ServerError, CouldNotIssue, requestContext.State);
+            await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+            return responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.ServerError, CouldNotIssue, requestContext.State);
         }
 
         // The code is stored, so the response carries it whatever the discard does: a store that
         // refuses the removal is logged by the discard itself and the entry left to expire.
-        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-        return _responses.CodeAtClient(requestContext.RedirectUri, code, requestContext.State);
+        await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+        return responses.CodeAtClient(requestContext.RedirectUri, code, requestContext.State);
     }
 
     /// <summary>The entry the token endpoint will redeem: everything it binds comes from the context and the session that authenticated it.</summary>
@@ -165,7 +143,7 @@ internal sealed class AuthorizationCodeIssuer
             SsoSessionId = session.SessionId,
             InteractionId = requestContext.Id,
             IssuedAt = now,
-            ExpiresAt = now + _options.Value.AuthorizationEndpoint.AuthorizationCodeLifetime,
+            ExpiresAt = now + options.Value.AuthorizationEndpoint.AuthorizationCodeLifetime,
         };
 
     /// <summary>

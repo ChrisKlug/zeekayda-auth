@@ -30,7 +30,12 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// it cannot move an entry under a secret of their own and read it back through that.
 /// </para>
 /// </remarks>
-internal sealed class AuthorizationRequestContextStore
+internal sealed class AuthorizationRequestContextStore(
+    IInteractionBackingStore store,
+    InteractionBindingCookie binding,
+    IDataProtectionProvider dataProtectionProvider,
+    TimeProvider timeProvider,
+    ISanitizingLogger<AuthorizationRequestContextStore> logger)
 {
     /// <summary>
     /// The hard lifetime of an interaction. Not sliding: a request gets one window to complete,
@@ -40,31 +45,7 @@ internal sealed class AuthorizationRequestContextStore
 
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:AuthorizationRequestContext";
 
-    private readonly IInteractionBackingStore _store;
-    private readonly InteractionBindingCookie _binding;
-    private readonly IDataProtector _protector;
-    private readonly TimeProvider _timeProvider;
-    private readonly ISanitizingLogger<AuthorizationRequestContextStore> _logger;
-
-    public AuthorizationRequestContextStore(
-        IInteractionBackingStore store,
-        InteractionBindingCookie binding,
-        IDataProtectionProvider dataProtectionProvider,
-        TimeProvider timeProvider,
-        ISanitizingLogger<AuthorizationRequestContextStore> logger)
-    {
-        ArgumentNullException.ThrowIfNull(store);
-        ArgumentNullException.ThrowIfNull(binding);
-        ArgumentNullException.ThrowIfNull(dataProtectionProvider);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _store = store;
-        _binding = binding;
-        _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
-        _timeProvider = timeProvider;
-        _logger = logger;
-    }
+    private readonly IDataProtector _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
 
     /// <summary>
     /// Stores a freshly accepted request and binds it to this browser with a new binding cookie.
@@ -95,7 +76,7 @@ internal sealed class AuthorizationRequestContextStore
         // binding to a nothing, and evicts no other tab's binding for it.
         var secret = InteractionBindingCookie.NewSecret();
         await SetAsync(requestContext, secret, encoded, cancellationToken).ConfigureAwait(false);
-        _binding.Issue(context, new(requestContext.Id, requestContext.ExpiresAt, secret, requestContext.ClientId));
+        binding.Issue(context, new(requestContext.Id, requestContext.ExpiresAt, secret, requestContext.ClientId));
 
         return true;
     }
@@ -115,7 +96,7 @@ internal sealed class AuthorizationRequestContextStore
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
 
-        var secret = _binding.Read(context, requestContext.Id)
+        var secret = binding.Read(context, requestContext.Id)
             ?? throw new InvalidOperationException(
                 "The interaction context cannot be updated from a request that carries no binding for it. " +
                 "Read the context first; a rewrite is only ever of a context this browser holds.");
@@ -128,7 +109,7 @@ internal sealed class AuthorizationRequestContextStore
         var protectedValue = ProtectorFor(requestContext.Id, secret).Protect(encoded);
 
         await Guarded(
-            () => _store.SetAsync(KeyFor(requestContext.Id, secret), protectedValue, requestContext.ExpiresAt, cancellationToken),
+            () => store.SetAsync(KeyFor(requestContext.Id, secret), protectedValue, requestContext.ExpiresAt, cancellationToken),
             "store the interaction context").ConfigureAwait(false);
     }
 
@@ -144,11 +125,11 @@ internal sealed class AuthorizationRequestContextStore
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
-        if (_binding.Read(context, interactionId) is not { } secret)
+        if (binding.Read(context, interactionId) is not { } secret)
             return null;
 
         var stored = await Guarded(
-            () => _store.GetAsync(KeyFor(interactionId, secret), cancellationToken),
+            () => store.GetAsync(KeyFor(interactionId, secret), cancellationToken),
             "read the interaction context").ConfigureAwait(false);
 
         if (stored is null)
@@ -175,7 +156,7 @@ internal sealed class AuthorizationRequestContextStore
 
         // The expiry inside the payload is authoritative, not the store's TTL or the cookie's
         // MaxAge: neither of those is checked by anything this framework controls.
-        return _timeProvider.GetUtcNow() >= requestContext.ExpiresAt ? null : requestContext;
+        return timeProvider.GetUtcNow() >= requestContext.ExpiresAt ? null : requestContext;
     }
 
     /// <summary>
@@ -195,8 +176,8 @@ internal sealed class AuthorizationRequestContextStore
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
-        var secret = _binding.Read(context, interactionId);
-        _binding.Retire(context, interactionId);
+        var secret = binding.Read(context, interactionId);
+        binding.Retire(context, interactionId);
 
         if (secret is null)
             return;
@@ -204,12 +185,12 @@ internal sealed class AuthorizationRequestContextStore
         try
         {
             await Guarded(
-                () => _store.RemoveAsync(KeyFor(interactionId, secret), cancellationToken),
+                () => store.RemoveAsync(KeyFor(interactionId, secret), cancellationToken),
                 "remove the interaction context").ConfigureAwait(false);
         }
         catch (ZeeKayDaStoreException ex)
         {
-            _logger.LogError(ex, "Removing a completed interaction from the store failed; the entry is left to expire.");
+            logger.LogError(ex, "Removing a completed interaction from the store failed; the entry is left to expire.");
         }
     }
 

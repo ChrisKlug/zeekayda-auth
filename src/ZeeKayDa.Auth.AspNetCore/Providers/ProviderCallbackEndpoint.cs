@@ -33,7 +33,13 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// what the provider said.
 /// </para>
 /// </remarks>
-internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
+internal sealed class ProviderCallbackEndpoint(
+    IOptions<AuthorizationServerOptions> options,
+    ProviderRegistry providers,
+    ProviderHandlerActivator activator,
+    AuthorizationFlow flow,
+    InteractionOutcomes outcomes,
+    ISanitizingLogger<ProviderCallbackEndpoint> logger) : IZeeKayDaEndpoint
 {
     private const string DeclinedAtProvider =
         "The user declined to sign in at the external identity provider.";
@@ -41,42 +47,12 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
     private const string DidNotComplete =
         "Sign-in at the external identity provider did not complete. Return to the application and try again.";
 
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly ProviderRegistry _providers;
-    private readonly ProviderHandlerActivator _activator;
-    private readonly AuthorizationFlow _flow;
-    private readonly InteractionOutcomes _outcomes;
-    private readonly ISanitizingLogger<ProviderCallbackEndpoint> _logger;
-
-    public ProviderCallbackEndpoint(
-        IOptions<AuthorizationServerOptions> options,
-        ProviderRegistry providers,
-        ProviderHandlerActivator activator,
-        AuthorizationFlow flow,
-        InteractionOutcomes outcomes,
-        ISanitizingLogger<ProviderCallbackEndpoint> logger)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(providers);
-        ArgumentNullException.ThrowIfNull(activator);
-        ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(outcomes);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _options = options;
-        _providers = providers;
-        _activator = activator;
-        _flow = flow;
-        _outcomes = outcomes;
-        _logger = logger;
-    }
-
     /// <inheritdoc/>
     public void Map(IEndpointRouteBuilder endpoints)
     {
-        var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
+        var issuerUri = EndpointRouteHelper.GetIssuerUri(options);
 
-        foreach (var registration in _providers.Registrations)
+        foreach (var registration in providers.Registrations)
         {
             var route = ProviderCallbackRoute.For(issuerUri, registration.Name);
 
@@ -106,10 +82,10 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
         bool handled;
         try
         {
-            var handler = await _activator.ActivateAsync(context, registration).ConfigureAwait(false);
+            var handler = await activator.ActivateAsync(context, registration).ConfigureAwait(false);
             if (handler is not IAuthenticationRequestHandler requestHandler)
             {
-                _logger.LogError(
+                logger.LogError(
                     "The handler for provider {Provider} does not handle requests, so its callback cannot be completed.",
                     registration.Name);
                 return await DeclineAsync(context).ConfigureAwait(false);
@@ -125,7 +101,7 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
         if (handled)
             return Results.Empty;
 
-        _logger.LogError("The handler for provider {Provider} declined its own callback.", registration.Name);
+        logger.LogError("The handler for provider {Provider} declined its own callback.", registration.Name);
         return await DeclineAsync(context).ConfigureAwait(false);
     }
 
@@ -177,27 +153,27 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
 
         if (!feature.Refused)
         {
-            _logger.LogError(
+            logger.LogError(
                 "The handler for provider {Provider} failed its callback with {ExceptionType}.",
                 feature.Provider.Name,
                 exception.GetType().FullName);
-            return _outcomes.LocalError(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
+            return outcomes.LocalError(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
         }
 
-        _logger.LogInformation("The user declined to sign in at provider {Provider}.", feature.Provider.Name);
+        logger.LogInformation("The user declined to sign in at provider {Provider}.", feature.Provider.Name);
 
         // The refusal reaches the client only for the interaction this browser is carrying and
         // the refused challenge was issued for. Without the binding cookie — a form_post callback
         // is a cross-site POST the Lax cookie does not accompany — the refusal renders locally and
         // the interaction, if any, survives.
         var requestContext = feature.RefusedInteractionId is { } refusedInteractionId
-            ? await _flow.ReadAsync(context, refusedInteractionId).ConfigureAwait(false)
+            ? await flow.ReadAsync(context, refusedInteractionId).ConfigureAwait(false)
             : null;
 
         if (requestContext is null)
-            return _outcomes.LocalError(context, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider);
+            return outcomes.LocalError(context, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider);
 
-        return await _outcomes.ClientErrorAsync(context, requestContext, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider)
+        return await outcomes.ClientErrorAsync(context, requestContext, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider)
             .ConfigureAwait(false);
     }
 }

@@ -7,16 +7,9 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// is set to the <see cref="TimeSpan.MaxValue"/> escape-hatch sentinel, so that an unbounded
 /// refresh-token-family lifetime is never a silent configuration accident.
 /// </summary>
-internal sealed class AbsoluteFamilyLifetimeUnboundedWarningService : IStartupVerifier
+internal sealed class AbsoluteFamilyLifetimeUnboundedWarningService(
+    IOptions<AuthorizationServerOptions> options) : IStartupVerifier
 {
-    private readonly IOptions<AuthorizationServerOptions> _options;
-
-    public AbsoluteFamilyLifetimeUnboundedWarningService(IOptions<AuthorizationServerOptions> options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        _options = options;
-    }
-
     /// <inheritdoc/>
     public string Name => "AbsoluteFamilyLifetimeUnbounded";
 
@@ -26,7 +19,7 @@ internal sealed class AbsoluteFamilyLifetimeUnboundedWarningService : IStartupVe
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
-        if (_options.Value.TokenEndpoint.AbsoluteFamilyLifetime == TimeSpan.MaxValue)
+        if (options.Value.TokenEndpoint.AbsoluteFamilyLifetime == TimeSpan.MaxValue)
         {
             context.AddWarning(
                 "tokens.absolute_family_lifetime_unbounded",

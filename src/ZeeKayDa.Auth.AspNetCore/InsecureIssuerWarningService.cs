@@ -26,7 +26,9 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <c>http://localhost</c>.
 /// </para>
 /// </remarks>
-internal sealed class InsecureIssuerWarningService : IStartupVerifier
+internal sealed class InsecureIssuerWarningService(
+    IOptions<AuthorizationServerOptions> options,
+    IHostEnvironment environment) : IStartupVerifier
 {
     /// <summary>Named-placeholder template for the Development message.</summary>
     internal const string ActiveMessageFormat =
@@ -42,20 +44,6 @@ internal sealed class InsecureIssuerWarningService : IStartupVerifier
         "an intentional non-Development test host, and remove AllowInsecureIssuer = true before " +
         "this configuration reaches production.";
 
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly IHostEnvironment _environment;
-
-    public InsecureIssuerWarningService(
-        IOptions<AuthorizationServerOptions> options,
-        IHostEnvironment environment)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(environment);
-
-        _options = options;
-        _environment = environment;
-    }
-
     /// <inheritdoc/>
     public string Name => "InsecureIssuer";
 
@@ -65,16 +53,16 @@ internal sealed class InsecureIssuerWarningService : IStartupVerifier
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
-        if (!_options.Value.AllowInsecureIssuer)
+        if (!options.Value.AllowInsecureIssuer)
             return ValueTask.CompletedTask;
 
-        if (_environment.IsDevelopment())
+        if (environment.IsDevelopment())
         {
             context.AddWarning(
                 "issuer.insecure_allowed",
                 ActiveMessageFormat,
                 LogLevel.Information,
-                _options.Value.Issuer);
+                options.Value.Issuer);
         }
         else
         {
@@ -82,7 +70,7 @@ internal sealed class InsecureIssuerWarningService : IStartupVerifier
                 "issuer.insecure_allowed_outside_development",
                 NonDevelopmentCriticalMessageFormat,
                 LogLevel.Critical,
-                _options.Value.Issuer);
+                options.Value.Issuer);
         }
 
         return ValueTask.CompletedTask;

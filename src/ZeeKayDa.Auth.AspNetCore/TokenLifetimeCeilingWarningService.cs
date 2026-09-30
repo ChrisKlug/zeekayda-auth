@@ -7,16 +7,9 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// <c>TokenEndpoint.AbsoluteFamilyLifetime</c>: such a token outlives the grant family that
 /// produced it, which is rarely what an operator meant.
 /// </summary>
-internal sealed class TokenLifetimeCeilingWarningService : IStartupVerifier
+internal sealed class TokenLifetimeCeilingWarningService(
+    IOptions<AuthorizationServerOptions> options) : IStartupVerifier
 {
-    private readonly IOptions<AuthorizationServerOptions> _options;
-
-    public TokenLifetimeCeilingWarningService(IOptions<AuthorizationServerOptions> options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        _options = options;
-    }
-
     /// <inheritdoc/>
     public string Name => "TokenLifetimeCeiling";
 
@@ -26,7 +19,7 @@ internal sealed class TokenLifetimeCeilingWarningService : IStartupVerifier
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
-        var tokens = _options.Value.TokenEndpoint;
+        var tokens = options.Value.TokenEndpoint;
 
         if (tokens.AccessTokenLifetime > tokens.AbsoluteFamilyLifetime)
         {

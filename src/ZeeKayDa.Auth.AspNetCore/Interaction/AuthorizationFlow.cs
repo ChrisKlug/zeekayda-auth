@@ -24,33 +24,14 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// badly.
 /// </para>
 /// </remarks>
-internal sealed class AuthorizationFlow
+internal sealed class AuthorizationFlow(
+    AuthorizationRequestContextStore contexts,
+    SsoSession session,
+    PendingPrincipalStore pending,
+    IOptions<AuthorizationServerOptions> options,
+    TimeProvider timeProvider)
 {
-    private readonly AuthorizationRequestContextStore _contexts;
-    private readonly SsoSession _session;
-    private readonly PendingPrincipalStore _pending;
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly TimeProvider _timeProvider;
-
-    public AuthorizationFlow(
-        AuthorizationRequestContextStore contexts,
-        SsoSession session,
-        PendingPrincipalStore pending,
-        IOptions<AuthorizationServerOptions> options,
-        TimeProvider timeProvider)
-    {
-        ArgumentNullException.ThrowIfNull(contexts);
-        ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(pending);
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-
-        _contexts = contexts;
-        _session = session;
-        _pending = pending;
-        _options = options;
-        _timeProvider = timeProvider;
-    }
+    private readonly SsoSession _session = session;
 
     /// <summary>Reads the established SSO session, or <see langword="null"/> when there is none.</summary>
     public Task<SsoSessionState?> ReadSessionAsync(HttpContext context) => _session.ReadAsync(context);
@@ -76,7 +57,7 @@ internal sealed class AuthorizationFlow
 
         // max_age=0 asks for re-authentication unconditionally, and falls out of the comparison
         // rather than needing a case of its own.
-        return request.MaxAge is { } maxAge && _timeProvider.GetUtcNow() - session.AuthTime > maxAge;
+        return request.MaxAge is { } maxAge && timeProvider.GetUtcNow() - session.AuthTime > maxAge;
     }
 
     /// <summary>
@@ -90,7 +71,7 @@ internal sealed class AuthorizationFlow
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var now = _timeProvider.GetUtcNow();
+        var now = timeProvider.GetUtcNow();
 
         return new AuthorizationRequestContext
         {
@@ -195,7 +176,7 @@ internal sealed class AuthorizationFlow
         return requestContext with
         {
             GrantedScopes = grantedScopes,
-            ConsentedAt = _timeProvider.GetUtcNow(),
+            ConsentedAt = timeProvider.GetUtcNow(),
         };
     }
 
@@ -205,7 +186,7 @@ internal sealed class AuthorizationFlow
     /// </summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
     public ValueTask<AuthorizationRequestContext?> ReadAsync(HttpContext context, string interactionId) =>
-        _contexts.ReadAsync(context, interactionId, context.RequestAborted);
+        contexts.ReadAsync(context, interactionId, context.RequestAborted);
 
     /// <summary>
     /// Resolves the interaction this request is entitled to complete: the one the framework sent
@@ -293,7 +274,7 @@ internal sealed class AuthorizationFlow
         if (!claimed)
             await RefuseAsync(context, requestContext, AlreadyCompleted).ConfigureAwait(false);
 
-        var now = _timeProvider.GetUtcNow();
+        var now = timeProvider.GetUtcNow();
         if (now >= requestContext.ExpiresAt)
             await RefuseAsync(context, requestContext, ExpiredBeforeCompletion).ConfigureAwait(false);
 
@@ -309,7 +290,7 @@ internal sealed class AuthorizationFlow
         "The authorization request expired before it could be completed. Start the authorization request again.";
 
     private bool IsExpired(AuthorizationRequestContext requestContext) =>
-        _timeProvider.GetUtcNow() >= requestContext.ExpiresAt;
+        timeProvider.GetUtcNow() >= requestContext.ExpiresAt;
 
     private async ValueTask RefuseAsync(HttpContext context, AuthorizationRequestContext requestContext, string reason)
     {
@@ -324,12 +305,12 @@ internal sealed class AuthorizationFlow
     /// </summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
     public ValueTask<bool> TryPersistAsync(HttpContext context, AuthorizationRequestContext requestContext) =>
-        _contexts.TryStoreAsync(context, requestContext, _options.Value.AuthorizationEndpoint.MaxRequestContextBytes, context.RequestAborted);
+        contexts.TryStoreAsync(context, requestContext, options.Value.AuthorizationEndpoint.MaxRequestContextBytes, context.RequestAborted);
 
     /// <summary>Replaces the stored context in place, under the binding this request carries.</summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
     public ValueTask UpdateAsync(HttpContext context, AuthorizationRequestContext requestContext) =>
-        _contexts.UpdateAsync(context, requestContext, context.RequestAborted);
+        contexts.UpdateAsync(context, requestContext, context.RequestAborted);
 
     /// <summary>
     /// Discards the interaction. Called whenever a request ends, so that a completed, failed or
@@ -339,7 +320,7 @@ internal sealed class AuthorizationFlow
     /// here and is left to its own lifetime.
     /// </summary>
     public ValueTask ClearAsync(HttpContext context, string interactionId) =>
-        _contexts.DeleteAsync(context, interactionId, context.RequestAborted);
+        contexts.DeleteAsync(context, interactionId, context.RequestAborted);
 
     /// <summary>
     /// Parks a principal an external provider returned, with that provider, for
@@ -347,12 +328,12 @@ internal sealed class AuthorizationFlow
     /// </summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
     public ValueTask ParkPendingAsync(HttpContext context, PendingTicket ticket, AuthorizationRequestContext requestContext) =>
-        _pending.ParkAsync(context, ticket, requestContext, context.RequestAborted);
+        pending.ParkAsync(context, ticket, requestContext, context.RequestAborted);
 
     /// <summary>The parked principal bound to <paramref name="interactionId"/>, or <see langword="null"/>.</summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
     public ValueTask<PendingTicket?> ReadPendingAsync(HttpContext context, string interactionId, CancellationToken cancellationToken) =>
-        _pending.ReadAsync(context, interactionId, cancellationToken);
+        pending.ReadAsync(context, interactionId, cancellationToken);
 
     /// <summary>
     /// Reads and removes the parked principal: whichever sign-in or denial completes the
@@ -360,5 +341,5 @@ internal sealed class AuthorizationFlow
     /// </summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
     public ValueTask<PendingTicket?> ConsumePendingAsync(HttpContext context, string interactionId) =>
-        _pending.ConsumeAsync(context, interactionId, context.RequestAborted);
+        pending.ConsumeAsync(context, interactionId, context.RequestAborted);
 }

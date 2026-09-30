@@ -9,7 +9,11 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// Default <see cref="ILoginInteraction"/> implementation: verifies the handoff, then signs the
 /// user in, cancels the request, or sends the user out to an external provider.
 /// </summary>
-internal sealed class LoginInteraction : ILoginInteraction
+internal sealed class LoginInteraction(
+    IHttpContextAccessor httpContextAccessor,
+    IOptions<AuthorizationServerOptions> options,
+    ProviderRegistry providers,
+    PageInteractionServices services) : ILoginInteraction
 {
     /// <summary>
     /// What a cancelled request tells the client. Names the stage as well as the outcome, so this
@@ -20,28 +24,6 @@ internal sealed class LoginInteraction : ILoginInteraction
     private const string CancelledAtSignIn = "The user cancelled the request at the sign-in page.";
 
     private const string Page = "login";
-
-    private readonly IHttpContextAccessor _httpContextAccessor;
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly ProviderRegistry _providers;
-    private readonly PageInteractionServices _services;
-
-    public LoginInteraction(
-        IHttpContextAccessor httpContextAccessor,
-        IOptions<AuthorizationServerOptions> options,
-        ProviderRegistry providers,
-        PageInteractionServices services)
-    {
-        ArgumentNullException.ThrowIfNull(httpContextAccessor);
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(providers);
-        ArgumentNullException.ThrowIfNull(services);
-
-        _httpContextAccessor = httpContextAccessor;
-        _options = options;
-        _providers = providers;
-        _services = services;
-    }
 
     /// <inheritdoc/>
     public async Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods)
@@ -65,15 +47,15 @@ internal sealed class LoginInteraction : ILoginInteraction
         var user = ReservedClaims.Snapshot(principal);
 
         var context = RequireStateChangingRequest();
-        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
+        await services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
-            var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            var requestContext = await services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
             // A principal an external provider parked for this interaction is discarded, not
             // adopted: the login page signs in the host's own principal, and a local sign-in
             // records no provider.
-            await _services.Flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
-            await _services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(user, methods, ProviderScheme: null))
+            await services.Flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
+            await services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(user, methods, ProviderScheme: null))
                 .ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
@@ -87,10 +69,10 @@ internal sealed class LoginInteraction : ILoginInteraction
     public async Task DenyAsync()
     {
         var context = RequireStateChangingRequest();
-        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
+        await services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
-            var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-            await _services.Outcomes.DenyAsync(context, requestContext, CancelledAtSignIn).ConfigureAwait(false);
+            var requestContext = await services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            await services.Outcomes.DenyAsync(context, requestContext, CancelledAtSignIn).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 
@@ -103,20 +85,20 @@ internal sealed class LoginInteraction : ILoginInteraction
         // request input, so the message does not echo it. Checked before the interaction is
         // resolved: a wrong identifier is the page's bug, whatever state the interaction is in.
         var context = RequireStateChangingRequest();
-        var registration = _providers.Find(provider)
+        var registration = providers.Find(provider)
             ?? throw new ZeeKayDaInteractionException(
                 "The provider identifier is not one of the registered providers. Pass the Id of an " +
                 "entry in ILoginInteraction.Providers, as the login page received it.");
 
-        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
+        await services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
-            var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-            await _services.Outcomes.ChallengeAsync(context, requestContext, registration).ConfigureAwait(false);
+            var requestContext = await services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            await services.Outcomes.ChallengeAsync(context, requestContext, registration).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 
     private HttpContext RequireHttpContext() =>
-        _httpContextAccessor.HttpContext ?? throw new InvalidOperationException(
+        httpContextAccessor.HttpContext ?? throw new InvalidOperationException(
             "ILoginInteraction requires an active HTTP request. Resolve it from request services " +
             "inside the login page, not from a background service.");
 
@@ -142,8 +124,8 @@ internal sealed class LoginInteraction : ILoginInteraction
     }
 
     /// <inheritdoc/>
-    public bool LocalLoginEnabled => _options.Value.AuthorizationEndpoint.Interaction.SupportsLocalSignIn;
+    public bool LocalLoginEnabled => options.Value.AuthorizationEndpoint.Interaction.SupportsLocalSignIn;
 
     /// <inheritdoc/>
-    public IReadOnlyList<ProviderDescriptor> Providers => _providers.Descriptors;
+    public IReadOnlyList<ProviderDescriptor> Providers => providers.Descriptors;
 }

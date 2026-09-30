@@ -20,19 +20,11 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// people to ignore it.
 /// </para>
 /// </remarks>
-internal sealed class LoginDispatchVerifier : IStartupVerifier
+internal sealed class LoginDispatchVerifier(
+    IOptions<AuthorizationServerOptions> options,
+    ProviderRegistry providers) : IStartupVerifier
 {
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly ProviderRegistry _providers;
-
-    public LoginDispatchVerifier(IOptions<AuthorizationServerOptions> options, ProviderRegistry providers)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(providers);
-
-        _options = options;
-        _providers = providers;
-    }
+    private readonly IOptions<AuthorizationServerOptions> _options = options;
 
     /// <inheritdoc/>
     public string Name => "LoginDispatch";
@@ -49,7 +41,7 @@ internal sealed class LoginDispatchVerifier : IStartupVerifier
         if (!options.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
             return ValueTask.CompletedTask;
 
-        switch (LoginDispatch.Decide(options.AuthorizationEndpoint.Interaction, _providers.Count))
+        switch (LoginDispatch.Decide(options.AuthorizationEndpoint.Interaction, providers.Count))
         {
             case LoginDispatchRule.NoSignInMethod:
                 context.AddFailure(

@@ -16,33 +16,14 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// Registered as the concrete type — not as <see cref="IClientAuthenticator"/> — so it is
 /// excluded from the injected authenticator enumerable and cannot be dispatched recursively.
 /// </remarks>
-internal sealed class CompositeClientAuthenticator
+internal sealed class CompositeClientAuthenticator(
+    IEnumerable<IClientAuthenticator> authenticators,
+    ValidatedClientResolver clientResolver,
+    IOptions<AuthorizationServerOptions> serverOptions,
+    CompositeClientSecretHasher secretHasher,
+    ISanitizingLogger<CompositeClientAuthenticator> logger)
 {
-    private readonly IReadOnlyList<IClientAuthenticator> _authenticators;
-    private readonly ValidatedClientResolver _clientResolver;
-    private readonly IOptions<AuthorizationServerOptions> _serverOptions;
-    private readonly CompositeClientSecretHasher _secretHasher;
-    private readonly ISanitizingLogger<CompositeClientAuthenticator> _logger;
-
-    public CompositeClientAuthenticator(
-        IEnumerable<IClientAuthenticator> authenticators,
-        ValidatedClientResolver clientResolver,
-        IOptions<AuthorizationServerOptions> serverOptions,
-        CompositeClientSecretHasher secretHasher,
-        ISanitizingLogger<CompositeClientAuthenticator> logger)
-    {
-        ArgumentNullException.ThrowIfNull(authenticators);
-        ArgumentNullException.ThrowIfNull(clientResolver);
-        ArgumentNullException.ThrowIfNull(serverOptions);
-        ArgumentNullException.ThrowIfNull(secretHasher);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _authenticators = authenticators.ToList().AsReadOnly();
-        _clientResolver = clientResolver;
-        _serverOptions = serverOptions;
-        _secretHasher = secretHasher;
-        _logger = logger;
-    }
+    private readonly IReadOnlyList<IClientAuthenticator> _authenticators = authenticators.ToList().AsReadOnly();
 
     /// <summary>
     /// Authenticates the client identified by <paramref name="clientId"/> using the mechanism(s)
@@ -97,7 +78,7 @@ internal sealed class CompositeClientAuthenticator
 
         // Repository lookup deferred past the early-reject check above so ambiguous or
         // conflicting requests never incur unnecessary I/O.
-        var client = await _clientResolver.FindByClientIdAsync(clientId, cancellationToken);
+        var client = await clientResolver.FindByClientIdAsync(clientId, cancellationToken);
 
         // No mechanism → none fallback.
         if (matches.Count == 0)
@@ -118,7 +99,7 @@ internal sealed class CompositeClientAuthenticator
         // Unknown client → invalid_client with timing padding.
         if (client is null)
         {
-            _secretHasher.PadToCredentialBudget();
+            secretHasher.PadToCredentialBudget();
             return AuthenticatedClient.Refused;
         }
 
@@ -127,7 +108,7 @@ internal sealed class CompositeClientAuthenticator
         // from "client does not exist".
         if (!client.AllowedTokenEndpointAuthMethods.ContainsOrdinal(matchedMethod))
         {
-            _secretHasher.PadToCredentialBudget();
+            secretHasher.PadToCredentialBudget();
             return AuthenticatedClient.Refused;
         }
 
@@ -153,7 +134,7 @@ internal sealed class CompositeClientAuthenticator
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
+            logger.LogError(ex,
                 "Authenticator {AuthenticatorType} threw from CanHandle; treating as non-matching.",
                 authenticator.GetType().FullName);
             method = null;
@@ -176,10 +157,9 @@ internal sealed class CompositeClientAuthenticator
         return AuthenticatedClient.Accepted(client);
     }
 
-    private void PadNoneRejection() => _secretHasher.PadToCredentialBudget();
+    private void PadNoneRejection() => secretHasher.PadToCredentialBudget();
 
     private bool IsMethodAllowedByServer(string method)
-        => _serverOptions.Value.TokenEndpoint.AuthMethodsSupported
+        => serverOptions.Value.TokenEndpoint.AuthMethodsSupported
             .Contains(method, StringComparer.Ordinal);
-
 }

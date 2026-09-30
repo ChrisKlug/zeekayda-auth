@@ -17,7 +17,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// a path nothing serves. The failure surfaces at startup because
 /// <see cref="HandlerOptionsStartupActivator"/> resolves each provider's options once.
 /// </remarks>
-internal sealed class HandlerOptionsValidator<TOptions> : IValidateOptions<TOptions>
+internal sealed class HandlerOptionsValidator<TOptions>(
+    ProviderRegistry registry,
+    IOptions<AuthorizationServerOptions> options,
+    PinnedOptionDriftRecorder recorder) : IValidateOptions<TOptions>
     where TOptions : AuthenticationSchemeOptions
 {
     /// <summary>
@@ -33,30 +36,14 @@ internal sealed class HandlerOptionsValidator<TOptions> : IValidateOptions<TOpti
     /// </remarks>
     public const string FailurePrefix = "Pinned by ZeeKayDa.Auth: ";
 
-    private readonly ProviderRegistry _registry;
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly PinnedOptionDriftRecorder _recorder;
-
-    public HandlerOptionsValidator(
-        ProviderRegistry registry,
-        IOptions<AuthorizationServerOptions> options,
-        PinnedOptionDriftRecorder recorder)
-    {
-        ArgumentNullException.ThrowIfNull(registry);
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(recorder);
-
-        _registry = registry;
-        _options = options;
-        _recorder = recorder;
-    }
+    private readonly IOptions<AuthorizationServerOptions> _options = options;
 
     /// <inheritdoc/>
     public ValidateOptionsResult Validate(string? name, TOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        if (name is null || !_registry.Contains(name))
+        if (name is null || !registry.Contains(name))
             return ValidateOptionsResult.Skip;
 
         var drifts = Forwards(options)
@@ -70,7 +57,7 @@ internal sealed class HandlerOptionsValidator<TOptions> : IValidateOptions<TOpti
         // Recorded on every validating run, including the passing one: an empty record overwrites
         // a previous failure's findings, so the activator can never read a drift that has since
         // been fixed.
-        _recorder.Record(name, typeof(TOptions), drifts);
+        recorder.Record(name, typeof(TOptions), drifts);
 
         return drifts.Count == 0
             ? ValidateOptionsResult.Success

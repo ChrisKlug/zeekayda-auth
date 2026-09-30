@@ -13,7 +13,7 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// compares secret strings directly. Tries all <see cref="IClientSecret"/> credentials before
 /// returning a failure to support credential rotation.
 /// </remarks>
-internal sealed class ClientSecretAuthenticator : IClientAuthenticator
+internal sealed class ClientSecretAuthenticator(CompositeClientSecretHasher hasher) : IClientAuthenticator
 {
     private static readonly IReadOnlySet<string> _authMethods =
         new HashSet<string>(StringComparer.Ordinal)
@@ -21,14 +21,6 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
             TokenEndpointAuthMethods.ClientSecretBasic,
             TokenEndpointAuthMethods.ClientSecretPost,
         };
-
-    private readonly CompositeClientSecretHasher _hasher;
-
-    public ClientSecretAuthenticator(CompositeClientSecretHasher hasher)
-    {
-        ArgumentNullException.ThrowIfNull(hasher);
-        _hasher = hasher;
-    }
 
     /// <inheritdoc/>
     public IReadOnlySet<string> AuthenticationMethods => _authMethods;
@@ -78,7 +70,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
         // RFC 6749 §2.3: a client MUST NOT use more than one authentication method per request.
         if (hasBasic && hasPost)
         {
-            _hasher.PadFailureToCredentialBudget(0);
+            hasher.PadFailureToCredentialBudget(0);
             return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
         }
 
@@ -89,7 +81,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
             if (!BasicAuthorizationHeader.TryParse(context.Headers, out var username, out var password) ||
                 !string.Equals(username, context.ClientId, StringComparison.Ordinal))
             {
-                _hasher.PadFailureToCredentialBudget(0);
+                hasher.PadFailureToCredentialBudget(0);
                 return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
             }
 
@@ -100,7 +92,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
             if (formClientId.Length > 0 &&
                 !string.Equals(formClientId, username, StringComparison.Ordinal))
             {
-                _hasher.PadFailureToCredentialBudget(0);
+                hasher.PadFailureToCredentialBudget(0);
                 return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
             }
 
@@ -119,7 +111,7 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
         // holds — from an unknown one. It is padded from zero instead, like no credentials at all.
         if (secrets.Count == 0 || presented.Length == 0)
         {
-            _hasher.PadFailureToCredentialBudget(0);
+            hasher.PadFailureToCredentialBudget(0);
             return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
         }
 
@@ -127,13 +119,13 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
         foreach (var stored in secrets)
         {
             attempted++;
-            if (_hasher.Verify(stored, presented.AsSpan()))
+            if (hasher.Verify(stored, presented.AsSpan()))
                 return ValueTask.FromResult(ClientAuthenticationResult.Valid());
         }
 
         // Pad timing to the credential budget so a client with fewer active secrets is not
         // distinguishable from one with the maximum by timing.
-        _hasher.PadFailureToCredentialBudget(attempted);
+        hasher.PadFailureToCredentialBudget(attempted);
         return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
     }
 }

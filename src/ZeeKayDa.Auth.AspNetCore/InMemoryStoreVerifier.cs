@@ -17,7 +17,10 @@ namespace ZeeKayDa.Auth.AspNetCore;
 /// implementation type but are added via plain <c>AddSingleton&lt;IStartupVerifier&gt;</c> rather
 /// than <c>TryAddEnumerable</c>, which would otherwise deduplicate them away.
 /// </remarks>
-internal sealed class InMemoryStoreVerifier : IStartupVerifier
+internal sealed class InMemoryStoreVerifier(
+    IHostEnvironment environment,
+    string storeName,
+    bool allowOutsideDevelopment) : IStartupVerifier
 {
     /// <summary>The store name passed for the authorization code store registration.</summary>
     internal const string AuthorizationCodeStoreName = "authorization code store";
@@ -42,23 +45,6 @@ internal sealed class InMemoryStoreVerifier : IStartupVerifier
         "allowOutsideDevelopment has been set to true for this registration — ensure this is " +
         "intentional (e.g. an integration test host). Do not use in-memory stores in production.";
 
-    private readonly IHostEnvironment _environment;
-    private readonly string _storeName;
-    private readonly bool _allowOutsideDevelopment;
-
-    public InMemoryStoreVerifier(
-        IHostEnvironment environment,
-        string storeName,
-        bool allowOutsideDevelopment)
-    {
-        ArgumentNullException.ThrowIfNull(environment);
-        ArgumentException.ThrowIfNullOrWhiteSpace(storeName);
-
-        _environment = environment;
-        _storeName = storeName;
-        _allowOutsideDevelopment = allowOutsideDevelopment;
-    }
-
     /// <inheritdoc/>
     /// <remarks>
     /// Every <see cref="InMemoryStoreVerifier"/> instance shares the category
@@ -66,7 +52,7 @@ internal sealed class InMemoryStoreVerifier : IStartupVerifier
     /// <c>InMemoryStore(authorization code store)</c>) is what still lets an operator or log query
     /// tell the registrations apart.
     /// </remarks>
-    public string Name => $"InMemoryStore({_storeName})";
+    public string Name => $"InMemoryStore({storeName})";
 
     /// <inheritdoc/>
     public ValueTask VerifyAsync(
@@ -74,10 +60,10 @@ internal sealed class InMemoryStoreVerifier : IStartupVerifier
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
-        switch (EnvironmentGate.Evaluate(_environment, _allowOutsideDevelopment))
+        switch (EnvironmentGate.Evaluate(environment, allowOutsideDevelopment))
         {
             case EnvironmentGate.Verdict.ExpectedInDevelopment:
-                context.AddWarning("stores.inmemory.active", ActiveMessageFormat, LogLevel.Information, _storeName);
+                context.AddWarning("stores.inmemory.active", ActiveMessageFormat, LogLevel.Information, storeName);
                 break;
 
             case EnvironmentGate.Verdict.AllowedByOptOut:
@@ -85,7 +71,7 @@ internal sealed class InMemoryStoreVerifier : IStartupVerifier
                     "stores.inmemory.non_development_override",
                     NonDevelopmentOverrideWarningMessageFormat,
                     LogLevel.Critical,
-                    _storeName);
+                    storeName);
                 break;
 
             default:
@@ -95,7 +81,7 @@ internal sealed class InMemoryStoreVerifier : IStartupVerifier
                 // registrations and send the operator round the restart cycle for the others.
                 context.AddFailure(
                     "stores.inmemory.non_development",
-                    $"The in-memory {_storeName} is active outside a Development environment. " +
+                    $"The in-memory {storeName} is active outside a Development environment. " +
                     "This is a configuration error: in-memory stores lose their contents on restart " +
                     "and are invisible to other instances. " +
                     "Replace this registration with a persistent store implementation, or pass " +
