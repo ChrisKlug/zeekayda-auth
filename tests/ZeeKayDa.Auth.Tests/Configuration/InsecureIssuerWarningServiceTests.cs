@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Configuration;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests;
+namespace ZeeKayDa.Auth.Tests.Configuration;
 
 /// <summary>
 /// The startup record of an insecure issuer: absent unless the host opted in, and louder outside

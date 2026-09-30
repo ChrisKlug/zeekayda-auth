@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Configuration;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests;
+namespace ZeeKayDa.Auth.Tests.Configuration;
 
 /// <summary>
 /// The startup warning for a server-wide token lifetime past the refresh-token family ceiling:

@@ -3,10 +3,9 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Stores;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests;
+namespace ZeeKayDa.Auth.Tests.Stores;
 
 public sealed class InMemoryStoreVerifierTests
 {

@@ -3,8 +3,10 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
+namespace ZeeKayDa.Auth.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
 {
@@ -14,7 +16,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     public void AddClientSecretHasher_registers_hasher_as_IClientSecretHasher()
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddOptions();
         var builder = new ZeeKayDaAuthBuilder(services);
 
@@ -29,7 +31,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     public void AddClientSecretHasher_registers_multiple_hashers_when_called_multiple_times()
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddOptions();
         var builder = new ZeeKayDaAuthBuilder(services);
 
@@ -45,7 +47,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     public void AddClientSecretHasher_records_registration_in_options()
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddOptions();
         var builder = new ZeeKayDaAuthBuilder(services);
 
@@ -61,7 +63,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     public void AddClientSecretHasher_throws_InvalidOperationException_if_same_type_registered_twice()
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddOptions();
         var builder = new ZeeKayDaAuthBuilder(services);
         builder.AddClientSecretHasher<FakeHasher>();
@@ -76,8 +78,8 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     private static ServiceProvider BuildWithPbkdf2Iterations(int iterations)
     {
         var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com")
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com")
             .ConfigurePbkdf2ClientSecretHasher(options => options.Iterations = iterations);
         // Only so the options validators have nothing else to report.
         services.AddSingleton<IClientRepository, EmptyClientRepository>();
@@ -133,8 +135,8 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     public void Pbkdf2_iteration_count_set_with_Configure_is_used_for_new_secrets()
     {
         var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com");
         services.Configure<Pbkdf2ClientSecretHasherOptions>(options => options.Iterations = 1_200_000);
         using var provider = services.BuildServiceProvider();
 
@@ -148,10 +150,10 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
     {
         // A host-registered IOptionsMonitor<T> bypasses the validator; the hasher's own guard stops it.
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<IOptionsMonitor<Pbkdf2ClientSecretHasherOptions>>(
             new FixedMonitor(new Pbkdf2ClientSecretHasherOptions { Iterations = 2_000_001 }));
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com");
         using var provider = services.BuildServiceProvider();
 
         var act = () => provider.GetServices<IClientSecretHasher>().ToList();
@@ -174,9 +176,9 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
         // A direct IOptions<T> registration bypasses the options factory and its validators. The
         // hasher must not read it, or an out-of-range count would reach the timing decoy unchecked.
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton(Options.Create(new Pbkdf2ClientSecretHasherOptions { Iterations = 2_000_001 }));
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com");
         using var provider = services.BuildServiceProvider();
 
         var created = provider.GetRequiredService<IClientSecretFactory>().Create("a-client-secret");

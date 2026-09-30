@@ -2,7 +2,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth.Configuration;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests;
+namespace ZeeKayDa.Auth.Tests.Configuration;
 
 /// <summary>
 /// The one decision every development-only resource asks for. The validators that call it prove

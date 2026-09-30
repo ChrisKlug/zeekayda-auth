@@ -31,10 +31,11 @@ internal static class MinimalCoreHost
         public string ContentRootPath { get; set; } = "/";
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
+}
 
-    private sealed class NoClaimsProvider : IClaimsProvider
-    {
-        public Task<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
-            Task.FromResult<ClaimsResolutionResult>(new ClaimsResolutionResult.Resolved { Claims = [] });
-    }
+/// <summary>An <see cref="IClaimsProvider"/> that knows every subject and has nothing to say about any of them.</summary>
+internal sealed class NoClaimsProvider : IClaimsProvider
+{
+    public Task<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
+        Task.FromResult<ClaimsResolutionResult>(new ClaimsResolutionResult.Resolved { Claims = [] });
 }

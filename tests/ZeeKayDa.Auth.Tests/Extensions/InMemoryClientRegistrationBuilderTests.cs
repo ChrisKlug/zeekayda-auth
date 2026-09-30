@@ -3,7 +3,7 @@ using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Tokens;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
+namespace ZeeKayDa.Auth.Tests.Extensions;
 
 public sealed class InMemoryClientRegistrationBuilderTests
 {

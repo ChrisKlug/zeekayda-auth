@@ -4,8 +4,10 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Stores;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
+namespace ZeeKayDa.Auth.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
 {
@@ -585,8 +587,8 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         // The backing contracts are public, so a host can register them without the builder
         // methods; the framework's own stores must still be there to run over them.
         var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://test.example.com");
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://test.example.com");
         services.AddSingleton<IAuthorizationCodeBackingStore, StubAuthorizationCodeBackingStore>();
         services.AddSingleton<IRefreshTokenBackingStore, StubRefreshTokenBackingStore>();
 

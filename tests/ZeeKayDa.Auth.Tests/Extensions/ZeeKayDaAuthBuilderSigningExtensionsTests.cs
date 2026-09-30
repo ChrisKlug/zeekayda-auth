@@ -5,8 +5,10 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Tokens;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
+namespace ZeeKayDa.Auth.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
 {
@@ -58,7 +60,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     public async Task AddInMemoryDevelopmentSigning_registers_the_ring_over_the_development_source()
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
         var builder = new ZeeKayDaAuthBuilder(services);
 
@@ -74,7 +76,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     public async Task AddInMemoryDevelopmentSigning_does_not_register_the_source_in_the_container()
     {
         var services = new ServiceCollection();
-        services.AddLogging();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
         var builder = new ZeeKayDaAuthBuilder(services);
 

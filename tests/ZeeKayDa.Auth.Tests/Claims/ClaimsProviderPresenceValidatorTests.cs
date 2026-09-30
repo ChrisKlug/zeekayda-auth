@@ -1,9 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Claims;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests;
+namespace ZeeKayDa.Auth.Tests.Claims;
 
 /// <summary>
 /// The claims seam is mandatory with no default. A real <see cref="ServiceProvider"/> answers
@@ -69,6 +68,6 @@ public sealed class ClaimsProviderPresenceValidatorTests
     private sealed class ResolvingOnlyServiceProvider(NoClaimsProvider? provider) : IServiceProvider
     {
         public object? GetService(Type serviceType) =>
-            serviceType == typeof(Claims.IClaimsProvider) ? provider : null;
+            serviceType == typeof(IClaimsProvider) ? provider : null;
     }
 }

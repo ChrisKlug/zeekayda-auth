@@ -1,9 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Claims;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
+namespace ZeeKayDa.Auth.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthBuilderClaimsExtensionsTests
 {
@@ -38,7 +37,7 @@ public sealed class ZeeKayDaAuthBuilderClaimsExtensionsTests
         // IServiceProviderIsService, and only the activator phase may touch caller-supplied code.
         var services = new ServiceCollection();
 
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://test.example.com");
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://test.example.com");
 
         services.Should().ContainSingle(d => d.ImplementationType == typeof(ClaimsProviderPresenceValidator))
             .Which.ServiceType.Should().Be(typeof(IStartupActivator));

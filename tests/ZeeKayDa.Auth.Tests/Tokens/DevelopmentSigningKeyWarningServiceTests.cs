@@ -4,10 +4,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Tokens;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests;
+namespace ZeeKayDa.Auth.Tests.Tokens;
 
 public sealed class DevelopmentSigningKeyWarningServiceTests
 {

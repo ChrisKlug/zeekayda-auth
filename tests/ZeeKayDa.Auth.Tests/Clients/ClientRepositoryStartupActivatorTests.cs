@@ -1,10 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Tokens;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests;
+namespace ZeeKayDa.Auth.Tests.Clients;
 
 public sealed class ClientRepositoryStartupActivatorTests
 {

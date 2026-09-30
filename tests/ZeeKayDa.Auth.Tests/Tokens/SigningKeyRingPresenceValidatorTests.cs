@@ -1,10 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Tokens;
 
-namespace ZeeKayDa.Auth.AspNetCore.Tests;
+namespace ZeeKayDa.Auth.Tests.Tokens;
 
 /// <summary>
 /// Exercises <see cref="SigningKeyRingPresenceValidator"/> — the check that makes a host with no
