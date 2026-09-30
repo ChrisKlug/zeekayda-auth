@@ -125,6 +125,22 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     }
 
     [Fact]
+    public void PostConfigure_leaves_a_null_CorsOrigins_for_validation_to_report()
+    {
+        var options = new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            CorsOrigins = null!,
+        };
+
+        PostConfigure(options);
+        var act = () => new AuthorizationServerOptionsValidator().Validate(null, options);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "configuration.cors_origins.null");
+    }
+
+    [Fact]
     public void Validate_accepts_the_frozen_default_options()
     {
         var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });

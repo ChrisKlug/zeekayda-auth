@@ -133,6 +133,14 @@ internal sealed class AuthorizationServerOptionsValidator : ZeeKayDaOptionsValid
     /// </summary>
     private static void ValidateCors(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
+        if (options.CorsOrigins is null)
+        {
+            failures.Add(new(
+                "configuration.cors_origins.null",
+                "AuthorizationServerOptions.CorsOrigins must not be null. Leave it empty to allow no cross-origin caller."));
+            return;
+        }
+
         var problems = options.CorsOrigins
             .Select((origin, index) => (index, new CorsOrigin(origin, options.AllowInsecureIssuer).ErrorMessage))
             .Where(entry => entry.ErrorMessage is not null);
