@@ -79,7 +79,7 @@ internal sealed class EndpointHost : IDisposable
 
         configureBuilder?.Invoke(authBuilder);
 
-        if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IAuthorizationCodeStore)))
+        if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IAuthorizationCodeBackingStore)))
             authBuilder.AddInMemoryStores(allowOutsideDevelopment: true);
 
         authBuilder.AddTestSigningKeys();

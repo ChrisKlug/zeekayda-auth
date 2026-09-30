@@ -3,12 +3,12 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.Tests.Stores;
 
 /// <summary>
-/// Adapter-level tests for <see cref="InMemoryRefreshTokenGrantStore"/>: insert,
+/// Adapter-level tests for <see cref="InMemoryRefreshTokenBackingStore"/>: insert,
 /// find, the CAS invariant, and family/subject revocation. No hashing, encryption, expiry, or
 /// outcome-selection knowledge belongs here — that is the coordinator's job
 /// (<c>RefreshTokenStoreTests</c>).
 /// </summary>
-public sealed class InMemoryRefreshTokenGrantStoreTests
+public sealed class InMemoryRefreshTokenBackingStoreTests
 {
     private static readonly DateTimeOffset FarFuture = new(2099, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
@@ -37,7 +37,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task InsertAsync_then_FindByHandleAsync_round_trips_the_grant()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         var grant = BuildGrant();
 
         await store.InsertAsync(grant, CancellationToken.None);
@@ -49,7 +49,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task FindByHandleAsync_returns_null_for_a_confirmed_absent_handle()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
 
         var result = await store.FindByHandleAsync(NewKey(), CancellationToken.None);
 
@@ -59,7 +59,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task InsertAsync_throws_ZeeKayDaStoreException_on_handle_collision()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         var key = NewKey();
         await store.InsertAsync(BuildGrant(handleHash: key), CancellationToken.None);
 
@@ -74,7 +74,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task TryMarkConsumedAsync_returns_true_and_transitions_an_Active_grant_to_Consumed()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         var grant = BuildGrant(status: RefreshGrantStatus.Active);
         await store.InsertAsync(grant, CancellationToken.None);
 
@@ -88,7 +88,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task TryMarkConsumedAsync_returns_false_for_an_already_Consumed_grant()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         var grant = BuildGrant(status: RefreshGrantStatus.Consumed);
         await store.InsertAsync(grant, CancellationToken.None);
 
@@ -100,7 +100,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task TryMarkConsumedAsync_returns_false_for_a_Revoked_grant_and_does_not_change_its_status()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         var grant = BuildGrant(status: RefreshGrantStatus.Revoked);
         await store.InsertAsync(grant, CancellationToken.None);
 
@@ -114,7 +114,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task TryMarkConsumedAsync_returns_false_for_an_absent_handle()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
 
         var won = await store.TryMarkConsumedAsync(NewKey(), CancellationToken.None);
 
@@ -124,7 +124,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task TryMarkConsumedAsync_exactly_one_of_many_concurrent_calls_returns_true()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         var grant = BuildGrant();
         await store.InsertAsync(grant, CancellationToken.None);
 
@@ -149,7 +149,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task RevokeFamilyAsync_marks_every_grant_in_the_family_as_Revoked()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         const string familyId = "family-to-revoke";
         var g1 = BuildGrant(familyId: familyId);
         var g2 = BuildGrant(familyId: familyId);
@@ -170,7 +170,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     public async Task RevokeFamilyAsync_does_not_overwrite_a_Consumed_status_back_to_Active()
     {
         // Mark-don't-delete: a consumed tombstone must remain a terminal state, not regress.
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         const string familyId = "family-consumed-then-revoked";
         var grant = BuildGrant(familyId: familyId);
         await store.InsertAsync(grant, CancellationToken.None);
@@ -186,7 +186,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task RevokeFamilyAsync_with_unknown_family_id_does_not_throw()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
 
         var act = async () => await store.RevokeFamilyAsync("completely-unknown-family", CancellationToken.None);
 
@@ -196,7 +196,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task RevokeFamilyAsync_is_idempotent()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         const string familyId = "idempotent-family";
         await store.InsertAsync(BuildGrant(familyId: familyId), CancellationToken.None);
 
@@ -211,7 +211,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task RevokeBySubjectAsync_marks_every_grant_for_the_subject_as_Revoked_across_families()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         const string subject = "user-to-revoke";
         var g1 = BuildGrant(familyId: "fam-1", subject: subject);
         var g2 = BuildGrant(familyId: "fam-2", subject: subject);
@@ -230,7 +230,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task RevokeBySubjectAsync_with_unknown_subject_does_not_throw()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
 
         var act = async () => await store.RevokeBySubjectAsync("unknown-subject", CancellationToken.None);
 
@@ -242,7 +242,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task IsFamilyRevokedAsync_returns_true_when_a_grant_in_the_family_is_Revoked()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         const string familyId = "family-revoked";
         var grant = BuildGrant(familyId: familyId);
         await store.InsertAsync(grant, CancellationToken.None);
@@ -257,7 +257,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     public async Task IsFamilyRevokedAsync_returns_true_for_a_successor_inserted_strictly_after_the_revoke()
     {
         // The exact issue #386 scenario: RT0 gets revoked, RT1 is inserted afterwards still Active.
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         const string familyId = "family-post-revoke-insert";
         var rt0 = BuildGrant(familyId: familyId);
         await store.InsertAsync(rt0, CancellationToken.None);
@@ -276,7 +276,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task IsFamilyRevokedAsync_returns_false_when_no_grant_in_the_family_is_Revoked()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         const string familyId = "family-live";
         await store.InsertAsync(BuildGrant(familyId: familyId), CancellationToken.None);
 
@@ -288,7 +288,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task IsFamilyRevokedAsync_returns_false_for_an_unknown_family_id()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
 
         var result = await store.IsFamilyRevokedAsync("completely-unknown-family", CancellationToken.None);
 
@@ -298,7 +298,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task IsFamilyRevokedAsync_ignores_Revoked_grants_in_a_different_family()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         await store.InsertAsync(BuildGrant(familyId: "other-family", status: RefreshGrantStatus.Revoked), CancellationToken.None);
         const string familyId = "family-not-revoked";
         await store.InsertAsync(BuildGrant(familyId: familyId), CancellationToken.None);
@@ -311,7 +311,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task IsFamilyRevokedAsync_throws_ArgumentNullException_for_null_familyId()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
 
         var act = async () => await store.IsFamilyRevokedAsync(null!, CancellationToken.None);
 
@@ -323,7 +323,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task InsertAsync_throws_ArgumentNullException_for_null_grant()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
 
         var act = async () => await store.InsertAsync(null!, CancellationToken.None);
 
@@ -333,7 +333,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task RevokeFamilyAsync_throws_ArgumentNullException_for_null_familyId()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
 
         var act = async () => await store.RevokeFamilyAsync(null!, CancellationToken.None);
 
@@ -343,7 +343,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task RevokeBySubjectAsync_throws_ArgumentNullException_for_null_subject()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
 
         var act = async () => await store.RevokeBySubjectAsync(null!, CancellationToken.None);
 
@@ -355,7 +355,7 @@ public sealed class InMemoryRefreshTokenGrantStoreTests
     [Fact]
     public async Task InsertAsync_respects_pre_cancelled_CancellationToken()
     {
-        var store = new InMemoryRefreshTokenGrantStore();
+        var store = new InMemoryRefreshTokenBackingStore();
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 

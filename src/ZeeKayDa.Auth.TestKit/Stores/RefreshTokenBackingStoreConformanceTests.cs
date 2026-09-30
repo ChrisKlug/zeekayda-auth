@@ -3,23 +3,23 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.TestKit.Stores;
 
 /// <summary>
-/// Ready-to-derive conformance kit for <see cref="IRefreshTokenGrantStore"/> implementers. Running
+/// Ready-to-derive conformance kit for <see cref="IRefreshTokenBackingStore"/> implementers. Running
 /// this against a production backend is a MUST: it exercises invariants the CLR cannot verify
 /// structurally — revocation completeness by family and by subject (including a grant inserted
-/// mid-revoke), CAS atomicity on <see cref="IRefreshTokenGrantStore.TryMarkConsumedAsync"/>, and
+/// mid-revoke), CAS atomicity on <see cref="IRefreshTokenBackingStore.TryMarkConsumedAsync"/>, and
 /// fail-closed fault propagation on the store's read and consume paths.
 /// </summary>
 /// <remarks>
 /// Reference <c>ZeeKayDa.Auth.TestKit</c> from your own test project, derive this class, and
-/// implement <see cref="CreateStore"/> to return your <see cref="IRefreshTokenGrantStore"/>. You
+/// implement <see cref="CreateStore"/> to return your <see cref="IRefreshTokenBackingStore"/>. You
 /// do not need to construct a <see cref="StoreKey"/> yourself — this kit builds one internally.
 /// </remarks>
-public abstract class RefreshTokenGrantStoreConformanceTests
+public abstract class RefreshTokenBackingStoreConformanceTests
 {
     private static readonly DateTimeOffset FarFuture = new(2099, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>Creates a fresh, empty store instance under test.</summary>
-    protected abstract IRefreshTokenGrantStore CreateStore();
+    protected abstract IRefreshTokenBackingStore CreateStore();
 
     /// <summary>
     /// Override to <see langword="false"/> only for a non-transactional secondary-index backend
@@ -34,7 +34,7 @@ public abstract class RefreshTokenGrantStoreConformanceTests
     /// <see langword="null"/> if the backend has no injectable failure point — the fault-injection
     /// tests are then skipped for that subclass.
     /// </summary>
-    protected virtual IRefreshTokenGrantStore? CreateFaultInjectedStore(Exception fault) => null;
+    protected virtual IRefreshTokenBackingStore? CreateFaultInjectedStore(Exception fault) => null;
 
     private static StoreKey NewKey() => new($"conformance-{Guid.NewGuid():N}");
 
@@ -321,7 +321,7 @@ public abstract class RefreshTokenGrantStoreConformanceTests
     /// <summary>
     /// A grant inserted strictly after <c>RevokeFamilyAsync</c> returns need not be born
     /// <c>Revoked</c> on its own row — the consume-time gate must still see the family as revoked,
-    /// which is what <see cref="IRefreshTokenGrantStore.IsFamilyRevokedAsync"/> must report.
+    /// which is what <see cref="IRefreshTokenBackingStore.IsFamilyRevokedAsync"/> must report.
     /// </summary>
     [Fact]
     public async Task IsFamilyRevokedAsync_reports_revoked_for_a_grant_inserted_strictly_after_RevokeFamilyAsync_returns()

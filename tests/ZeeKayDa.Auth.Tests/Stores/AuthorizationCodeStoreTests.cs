@@ -483,7 +483,7 @@ public sealed class AuthorizationCodeStoreTests
     {
         var store = CreateStore();
 
-        var reserved = await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        var reserved = await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
         reserved.Should().BeTrue();
     }
@@ -494,9 +494,9 @@ public sealed class AuthorizationCodeStoreTests
         // Two consent POSTs racing before the first response lands: whichever reserves second
         // issues nothing.
         var store = CreateStore();
-        await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
-        var second = await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        var second = await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
         second.Should().BeFalse();
     }
@@ -505,9 +505,9 @@ public sealed class AuthorizationCodeStoreTests
     public async Task TryClaimInteractionAsync_for_another_interaction_is_independent()
     {
         var store = CreateStore();
-        await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
-        var other = await ClaimAsync(store, "interaction-2", FarFuture, CancellationToken.None);
+        var other = await store.TryClaimInteractionAsync("interaction-2", FarFuture, CancellationToken.None);
 
         other.Should().BeTrue();
     }
@@ -523,7 +523,7 @@ public sealed class AuthorizationCodeStoreTests
             .Select(_ => Task.Run(async () =>
             {
                 await gate.WaitAsync();
-                return await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+                return await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
             }))
             .ToArray();
 
@@ -544,7 +544,7 @@ public sealed class AuthorizationCodeStoreTests
         var store = CreateStore(backingStore: backing, serverOptions: options);
         var expiresAt = new DateTimeOffset(2026, 9, 6, 12, 30, 0, TimeSpan.Zero);
 
-        await ClaimAsync(store, "interaction-1", expiresAt, CancellationToken.None);
+        await store.TryClaimInteractionAsync("interaction-1", expiresAt, CancellationToken.None);
 
         backing.LastExpiresAt.Should().Be(expiresAt.AddSeconds(5));
     }
@@ -555,7 +555,7 @@ public sealed class AuthorizationCodeStoreTests
         var backing = new RecordingBackingStore();
         var store = CreateStore(backingStore: backing);
 
-        await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
         backing.LastKey.ToString().Should().StartWith("zkd:code:i:").And.NotContain("interaction-1");
     }
@@ -565,7 +565,7 @@ public sealed class AuthorizationCodeStoreTests
     {
         var store = CreateStore(backingStore: new ThrowingBackingStore());
 
-        var act = async () => await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        var act = async () => await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
         var assertion = await act.Should().ThrowAsync<ZeeKayDaStoreException>();
         assertion.Which.InnerException.Should().BeOfType<InvalidOperationException>();
@@ -576,7 +576,7 @@ public sealed class AuthorizationCodeStoreTests
     {
         var store = CreateStore(backingStore: new CancellationThrowingBackingStore());
 
-        var act = async () => await ClaimAsync(store, "interaction-1", FarFuture, CancellationToken.None);
+        var act = async () => await store.TryClaimInteractionAsync("interaction-1", FarFuture, CancellationToken.None);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -586,16 +586,12 @@ public sealed class AuthorizationCodeStoreTests
     {
         var store = CreateStore();
 
-        var act = async () => await ClaimAsync(store, string.Empty, FarFuture, CancellationToken.None);
+        var act = async () => await store.TryClaimInteractionAsync(string.Empty, FarFuture, CancellationToken.None);
 
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
-
-    /// <summary>The claim is an internal interface member, so it is reached through the interface, as the framework reaches it.</summary>
-    private static ValueTask<bool> ClaimAsync(IAuthorizationCodeStore store, string interactionId, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
-        store.TryClaimInteractionAsync(interactionId, expiresAt, cancellationToken);
 
     private sealed class RecordingBackingStore : IAuthorizationCodeBackingStore
     {

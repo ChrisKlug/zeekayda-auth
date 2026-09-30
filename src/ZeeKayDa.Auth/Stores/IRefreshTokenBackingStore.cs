@@ -12,7 +12,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// The interface is deliberately limited to exactly these six methods — there is no bulk
 /// remove/cleanup method and no bulk-read-by-family/subject.
 /// </remarks>
-public interface IRefreshTokenGrantStore
+public interface IRefreshTokenBackingStore
 {
     /// <summary>
     /// Insert a new grant. The handle is 256-bit random, so a primary-key collision is a

@@ -560,6 +560,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **The framework's token stores are internal; every third-party store contract ends in
+  `BackingStore`** (#827). `IAuthorizationCodeStore` and `IRefreshTokenStore` are gone: nobody
+  outside the framework could implement them, and nothing public exposed them. The entry and result
+  types only they used (`AuthorizationCodeEntry`, `RefreshTokenEntry`,
+  `AuthorizationCodeRedemptionResult`, `RefreshTokenConsumptionResult`) are internal too. A host implements
+  `IAuthorizationCodeBackingStore`, `IRefreshTokenBackingStore` (was `IRefreshTokenGrantStore`) or
+  the interaction store's backing contract. `AddRefreshTokenGrantStore<T>()` is now
+  `AddRefreshTokenStore<T>()`. All three stores key their records as
+  `zkd:{store}:{kind}:{hex(sha256(value))}`; refresh-token keys change from bare base64url to
+  `zkd:refresh:h:…`.
+
 - **`IScopeRepository` has a documented contract, and the framework enforces it on every read**
   (#759). `GetScopesAsync` now states what an implementation must return: a non-null collection
   with no null element, every scope named and no two names alike, every claim list non-null with

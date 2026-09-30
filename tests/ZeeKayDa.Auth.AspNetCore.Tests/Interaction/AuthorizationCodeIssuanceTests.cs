@@ -25,7 +25,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 /// <remarks>
 /// The test host maps a login page and a consent page written as a real host writes them, plus
 /// probes that report what the encrypted session and interaction cookies carry. The issued code
-/// is redeemed through the host's own <see cref="IAuthorizationCodeStore"/>, which is what the
+/// is redeemed through the host's own <see cref="AuthorizationCodeStore"/>, which is what the
 /// token endpoint will do with it.
 /// </remarks>
 public sealed class AuthorizationCodeIssuanceTests : IClassFixture<AuthorizationCodeIssuanceHostFixture>
@@ -228,7 +228,7 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
 
     private static async Task<AuthorizationCodeRedemptionResult> RedeemAsync(IServiceProvider services, string code, string clientId = ConsentingClient)
     {
-        var store = services.GetRequiredService<IAuthorizationCodeStore>();
+        var store = services.GetRequiredService<AuthorizationCodeStore>();
         return await store.TryRedeemAsync(code, clientId, familyId: StoreKeyGenerator.Generate(), Cancellation);
     }
 
@@ -812,7 +812,7 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
         // would otherwise mint a code after an earlier response's claim had already lapsed. The
         // store here moves the clock past expiry during the claim itself.
         var issuer = _fixture.Services.GetRequiredService<AuthorizationCodeIssuer>();
-        var stalling = new StallingCodeStore(_fixture.Services.GetRequiredService<IAuthorizationCodeStore>(), _time, TimeSpan.FromMinutes(11));
+        var stalling = new StallingBackingStore(_fixture.Services.GetRequiredService<IAuthorizationCodeBackingStore>(), _time, TimeSpan.FromMinutes(11));
         var context = new DefaultHttpContext { RequestServices = new OverridingServiceProvider(_fixture.Services, stalling) };
         var alive = UnauthenticatedContext() with
         {
@@ -834,7 +834,7 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
         // A response that reaches issuance with a request already past its lifetime is refused as
         // expired, without handing the store a claim it would reject for a past expiry.
         var issuer = _fixture.Services.GetRequiredService<AuthorizationCodeIssuer>();
-        var recording = new StallingCodeStore(_fixture.Services.GetRequiredService<IAuthorizationCodeStore>(), _time, TimeSpan.Zero);
+        var recording = new StallingBackingStore(_fixture.Services.GetRequiredService<IAuthorizationCodeBackingStore>(), _time, TimeSpan.Zero);
         var context = new DefaultHttpContext { RequestServices = new OverridingServiceProvider(_fixture.Services, recording) };
         var expired = UnauthenticatedContext() with
         {
@@ -906,41 +906,46 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
     }
 
     /// <summary>
-    /// A code store whose claim on the interaction takes long enough for the clock to move by
-    /// <paramref name="stall"/> — a slow cache round trip — and which records whether a code was
-    /// then stored.
+    /// A backing store under the real code store whose interaction claim takes long enough for the
+    /// clock to move by <paramref name="stall"/> — a slow cache round trip — and which records
+    /// whether a code was then stored.
     /// </summary>
-    private sealed class StallingCodeStore(IAuthorizationCodeStore inner, FakeTimeProvider time, TimeSpan stall) : IAuthorizationCodeStore
+    private sealed class StallingBackingStore(IAuthorizationCodeBackingStore inner, FakeTimeProvider time, TimeSpan stall)
+        : IAuthorizationCodeBackingStore
     {
         public bool Stored { get; private set; }
 
         public bool Claimed { get; private set; }
 
-        async ValueTask<bool> IAuthorizationCodeStore.TryClaimInteractionAsync(string interactionId, DateTimeOffset interactionExpiresAt, CancellationToken cancellationToken)
+        public async ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
         {
+            if (!key.ToString().StartsWith("zkd:code:i:", StringComparison.Ordinal))
+            {
+                Stored = true;
+                return await inner.TryInsertAsync(key, value, expiresAt, cancellationToken);
+            }
+
             Claimed = true;
-            var reserved = await inner.TryClaimInteractionAsync(interactionId, interactionExpiresAt, cancellationToken);
+            var reserved = await inner.TryInsertAsync(key, value, expiresAt, cancellationToken);
             time.Advance(stall);
             return reserved;
         }
 
-        public Task StoreAsync(string code, AuthorizationCodeEntry entry, CancellationToken cancellationToken)
-        {
-            Stored = true;
-            return inner.StoreAsync(code, entry, cancellationToken);
-        }
+        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            inner.GetAsync(key, cancellationToken);
 
-        public ValueTask<AuthorizationCodeRedemptionResult> TryRedeemAsync(string code, string clientId, string familyId, CancellationToken cancellationToken) =>
-            inner.TryRedeemAsync(code, clientId, familyId, cancellationToken);
-
-        void IAuthorizationCodeStore.SealAsFrameworkOwnedProtocol() { }
+        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+            inner.RemoveAsync(key, cancellationToken);
     }
 
-    /// <summary>The host's services, with one <see cref="IAuthorizationCodeStore"/> swapped in for a single request.</summary>
-    private sealed class OverridingServiceProvider(IServiceProvider inner, IAuthorizationCodeStore store) : IServiceProvider
+    /// <summary>The host's services, with the code store swapped for one over <paramref name="backing"/> for a single request.</summary>
+    private sealed class OverridingServiceProvider(IServiceProvider inner, IAuthorizationCodeBackingStore backing) : IServiceProvider
     {
+        private readonly AuthorizationCodeStore _store =
+            ActivatorUtilities.CreateInstance<AuthorizationCodeStore>(inner, backing);
+
         public object? GetService(Type serviceType) =>
-            serviceType == typeof(IAuthorizationCodeStore) ? store : inner.GetService(serviceType);
+            serviceType == typeof(AuthorizationCodeStore) ? _store : inner.GetService(serviceType);
     }
 
     /// <summary>A backing store on which every interaction claim has already been taken by someone else.</summary>

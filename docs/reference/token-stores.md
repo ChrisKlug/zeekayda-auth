@@ -1,6 +1,6 @@
 ---
 title: "Token stores"
-description: "Reference for IAuthorizationCodeStore, IRefreshTokenStore, the IAuthorizationCodeBackingStore and IRefreshTokenGrantStore extension points, lifetime options, built-in implementations, and ZeeKayDaStoreException."
+description: "Reference for the authorization-code and refresh-token stores, the IAuthorizationCodeBackingStore and IRefreshTokenBackingStore extension points, lifetime options, built-in implementations, and ZeeKayDaStoreException."
 parent: "Reference"
 nav_order: 5
 ---
@@ -9,11 +9,11 @@ nav_order: 5
 
 ZeeKayDa.Auth requires three stores to be registered before the application starts:
 
-- `IAuthorizationCodeStore` — persists short-lived authorization codes, enforces single-use redemption per [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1), and guarantees at most one code per authorization request.
-- `IRefreshTokenStore` — persists long-lived refresh tokens, enforces rotation and reuse detection per [RFC 9700 §4.13](https://www.rfc-editor.org/rfc/rfc9700#section-4.13), and supports family-level revocation.
+- The authorization code store — persists short-lived authorization codes, enforces single-use redemption per [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1), and guarantees at most one code per authorization request.
+- The refresh token store — persists long-lived refresh tokens, enforces rotation and reuse detection per [RFC 9700 §4.13](https://www.rfc-editor.org/rfc/rfc9700#section-4.13), and supports family-level revocation.
 - The interaction store — holds each in-flight authorization request between `/connect/authorize` and the response to the client, one entry per request, so any number can be in flight in one browser. It has no public interface: register the per-process implementation or the one over your `IDistributedCache`.
 
-None is registered automatically by `AddZeeKayDaAuth`. You must choose an implementation for each using the builder methods below, or register a custom type for the token stores. If any store is missing at startup, the application fails with `ZeeKayDaConfigurationException` naming what is missing.
+`AddZeeKayDaAuth` registers the framework side of both token stores — single-use redemption, rotation and reuse detection — but none of the three storage implementations. You must choose one for each using the builder methods below, or register a custom backing store for the token stores. If any store is missing at startup, the application fails with `ZeeKayDaConfigurationException` naming what is missing.
 
 For step-by-step registration instructions, see [Configure token stores](../how-to/configure-token-stores.md).
 
@@ -21,7 +21,7 @@ For step-by-step registration instructions, see [Configure token stores](../how-
 
 ## Choosing the right store
 
-| Scenario | `IAuthorizationCodeStore` | `IRefreshTokenStore` |
+| Scenario | Authorization code store | Refresh token store |
 |---|---|---|
 | Local development | `.AddInMemoryAuthorizationCodeStore()` | `.AddInMemoryRefreshTokenStore()` |
 | Integration tests | `.AddInMemoryAuthorizationCodeStore()` | `.AddInMemoryRefreshTokenStore()` |
@@ -37,7 +37,7 @@ All store registration goes through the `ZeeKayDaAuthBuilder` returned by `AddZe
 
 ### `.AddInMemoryStores(bool allowOutsideDevelopment = false)`
 
-Registers all three in-memory stores — `InMemoryAuthorizationCodeBackingStore` and `InMemoryRefreshTokenGrantStore` wired underneath the framework's sealed `AuthorizationCodeStore` and `RefreshTokenStore` coordinators, and the per-process interaction store. In a `Development` environment, logs one `LogLevel.Information` message per store at startup. Outside a `Development` environment, startup fails with `ZeeKayDaConfigurationException` unless `allowOutsideDevelopment` is `true`. The value is passed through to `.AddInMemoryAuthorizationCodeStore()`, `.AddInMemoryRefreshTokenStore()` and `.AddInMemoryInteractionStore()`, each of which gates on it independently.
+Registers all three in-memory stores — `InMemoryAuthorizationCodeBackingStore` and `InMemoryRefreshTokenBackingStore` wired underneath the framework's sealed `AuthorizationCodeStore` and `RefreshTokenStore` coordinators, and the per-process interaction store. In a `Development` environment, logs one `LogLevel.Information` message per store at startup. Outside a `Development` environment, startup fails with `ZeeKayDaConfigurationException` unless `allowOutsideDevelopment` is `true`. The value is passed through to `.AddInMemoryAuthorizationCodeStore()`, `.AddInMemoryRefreshTokenStore()` and `.AddInMemoryInteractionStore()`, each of which gates on it independently.
 
 ```csharp
 builder.Services
@@ -47,18 +47,18 @@ builder.Services
 
 ### `.AddInMemoryAuthorizationCodeStore(bool allowOutsideDevelopment = false)`
 
-Registers `InMemoryAuthorizationCodeBackingStore` as the backing store, wired underneath the framework's sealed `AuthorizationCodeStore` coordinator, which is registered as `IAuthorizationCodeStore`. Logs the same startup message as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
+Registers `InMemoryAuthorizationCodeBackingStore` as the backing store, wired underneath the framework's own `AuthorizationCodeStore`. Logs the same startup message as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
 
 ```csharp
 builder.Services
     .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
     .AddInMemoryAuthorizationCodeStore()
-    .AddRefreshTokenGrantStore<MyPersistentRefreshTokenGrantStore>();
+    .AddRefreshTokenStore<MyPersistentRefreshTokenBackingStore>();
 ```
 
 ### `.AddInMemoryRefreshTokenStore(bool allowOutsideDevelopment = false)`
 
-Registers `InMemoryRefreshTokenGrantStore` as the backing store, wired underneath the framework's sealed `RefreshTokenStore` coordinator, which is registered as `IRefreshTokenStore`. Logs the same startup message as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
+Registers `InMemoryRefreshTokenBackingStore` as the backing store, wired underneath the framework's own `RefreshTokenStore`. Logs the same startup message as `.AddInMemoryStores()`. The environment check applies, gated on this method's own `allowOutsideDevelopment` value — independent of any other in-memory store registration on the same builder.
 
 ### `.AddInMemoryInteractionStore(bool allowOutsideDevelopment = false)`
 
@@ -66,7 +66,7 @@ Registers the per-process interaction store. An authorization request started on
 
 ### `.AddDistributedCacheInteractionStore(bool allowMemoryCacheOutsideDevelopment = false)`
 
-Registers the interaction store over the host's `IDistributedCache`. Requires an `IDistributedCache`; startup fails without one. The interaction store needs only set, get and remove, so a shared cache — Redis, SQL Server, any `IDistributedCache` implementation — is a complete production answer: the one race in the flow, two responses completing one request, is decided by `IAuthorizationCodeStore.TryClaimInteractionAsync`, not here.
+Registers the interaction store over the host's `IDistributedCache`. Requires an `IDistributedCache`; startup fails without one. The interaction store needs only set, get and remove, so a shared cache — Redis, SQL Server, any `IDistributedCache` implementation — is a complete production answer: the one race in the flow, two responses completing one request, is decided by the authorization code store's interaction claim, not here.
 
 The exception is the per-process `MemoryDistributedCache` from `AddDistributedMemoryCache()`, which is shared with nothing. Outside a `Development` environment startup fails when the store resolves that cache, unless `allowMemoryCacheOutsideDevelopment` is `true`, which downgrades the failure to a `LogLevel.Critical` warning on every start.
 
@@ -75,26 +75,26 @@ builder.Services.AddStackExchangeRedisCache(o => o.Configuration = "...");
 builder.Services
     .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
     .AddAuthorizationCodeStore<MyRedisAuthorizationCodeBackingStore>()
-    .AddRefreshTokenGrantStore<MyRedisRefreshTokenGrantStore>()
+    .AddRefreshTokenStore<MyRedisRefreshTokenBackingStore>()
     .AddDistributedCacheInteractionStore();
 ```
 
 ### `.AddAuthorizationCodeStore<T>()`
 
-Registers a custom `T : class, IAuthorizationCodeBackingStore` as the singleton backing store, wired underneath the framework's sealed `IAuthorizationCodeStore` coordinator. This is the recommended registration path for production custom stores. You implement `IAuthorizationCodeBackingStore`, not `IAuthorizationCodeStore` directly — see [The backing store contracts](#the-backing-store-contracts) below.
+Registers a custom `T : class, IAuthorizationCodeBackingStore` as the singleton backing store, wired underneath the framework's own `AuthorizationCodeStore`. This is the registration path for production custom stores — see [The backing store contracts](#the-backing-store-contracts) below.
 
 ```csharp
 builder.Services
     .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
     .AddAuthorizationCodeStore<MyRedisAuthorizationCodeBackingStore>()
-    .AddRefreshTokenGrantStore<MyRedisRefreshTokenGrantStore>();
+    .AddRefreshTokenStore<MyRedisRefreshTokenBackingStore>();
 ```
 
 `T` must be a concrete reference type with a publicly accessible constructor so the DI container can instantiate it.
 
-### `.AddRefreshTokenGrantStore<T>()`
+### `.AddRefreshTokenStore<T>()`
 
-Registers a custom `T : class, IRefreshTokenGrantStore` as the singleton backing store, wired underneath the framework's sealed `IRefreshTokenStore` coordinator. You implement `IRefreshTokenGrantStore`, not `IRefreshTokenStore` directly — see [The backing store contracts](#the-backing-store-contracts) below.
+Registers a custom `T : class, IRefreshTokenBackingStore` as the singleton backing store, wired underneath the framework's own `RefreshTokenStore` — see [The backing store contracts](#the-backing-store-contracts) below.
 
 ---
 
@@ -153,7 +153,7 @@ The default is intentionally small. Values approaching half of `AuthorizationCod
 
 ## In-memory stores
 
-`InMemoryAuthorizationCodeBackingStore` and `InMemoryRefreshTokenGrantStore` are the backing stores wired underneath the `AuthorizationCodeStore` and `RefreshTokenStore` coordinators when you register in-memory stores. Both are backed by a plain `ConcurrentDictionary<StoreKey, ...>` — there is no `IMemoryCache` and no `SemaphoreSlim` locking involved. Each provides its one required atomicity guarantee natively: `InMemoryAuthorizationCodeBackingStore.TryInsertAsync` uses `ConcurrentDictionary.TryAdd`, and `InMemoryRefreshTokenGrantStore.TryMarkConsumedAsync` uses `ConcurrentDictionary.TryUpdate` as its compare-and-set. `InMemoryRefreshTokenGrantStore` additionally holds a `ReaderWriterLockSlim` around family/subject revocation scans so that a grant inserted concurrently with a revoke call is never missed.
+`InMemoryAuthorizationCodeBackingStore` and `InMemoryRefreshTokenBackingStore` are the backing stores wired underneath the `AuthorizationCodeStore` and `RefreshTokenStore` coordinators when you register in-memory stores. Both are backed by a plain `ConcurrentDictionary<StoreKey, ...>` — there is no `IMemoryCache` and no `SemaphoreSlim` locking involved. Each provides its one required atomicity guarantee natively: `InMemoryAuthorizationCodeBackingStore.TryInsertAsync` uses `ConcurrentDictionary.TryAdd`, and `InMemoryRefreshTokenBackingStore.TryMarkConsumedAsync` uses `ConcurrentDictionary.TryUpdate` as its compare-and-set. `InMemoryRefreshTokenBackingStore` additionally holds a `ReaderWriterLockSlim` around family/subject revocation scans so that a grant inserted concurrently with a revoke call is never missed.
 
 **Limitations:**
 
@@ -179,7 +179,7 @@ be used in production.
 
 ## `ZeeKayDaStoreException`
 
-`ZeeKayDaStoreException` is thrown by `IAuthorizationCodeStore` and `IRefreshTokenStore` implementations when an underlying transport fails — a cache unavailability, database timeout, or network error. It derives from `ZeeKayDaException`.
+`ZeeKayDaStoreException` is thrown by the framework's authorization-code and refresh-token stores when an underlying transport fails — a cache unavailability, database timeout, or network error. It derives from `ZeeKayDaException`.
 
 ```csharp
 public class ZeeKayDaStoreException : ZeeKayDaException
@@ -209,10 +209,10 @@ public class ZeeKayDaStoreException : ZeeKayDaException
 
 ## Implementing a custom store
 
-A production custom store does not implement `IAuthorizationCodeStore` or `IRefreshTokenStore` directly. Those two interfaces are sealed **coordinators**: the framework owns the redemption protocol — single-use enforcement, replay/reuse detection, at-rest encryption, clock-skew-tolerant expiry — and only delegates the question of *where the bytes live* to a backing store you write. The two backing-store contracts are:
+A production custom store implements a backing store only. The framework's own stores own the redemption protocol — single-use enforcement, replay/reuse detection, at-rest encryption, clock-skew-tolerant expiry — and only delegates the question of *where the bytes live* to a backing store you write. The two backing-store contracts are:
 
-- `IAuthorizationCodeBackingStore` — sits underneath `IAuthorizationCodeStore`. It has no knowledge of OAuth, tombstones, encryption, or expiry semantics; it stores opaque, already-encrypted bytes under already-hashed keys.
-- `IRefreshTokenGrantStore` — sits underneath `IRefreshTokenStore`. It has no hashing, no encryption, and no single-use state machine beyond one atomic invariant; it stores rows and runs equality queries over their non-secret columns.
+- `IAuthorizationCodeBackingStore` — sits underneath the framework's authorization code store. It has no knowledge of OAuth, tombstones, encryption, or expiry semantics; it stores opaque, already-encrypted bytes under already-hashed keys.
+- `IRefreshTokenBackingStore` — sits underneath the framework's refresh token store. It has no hashing, no encryption, and no single-use state machine beyond one atomic invariant; it stores rows and runs equality queries over their non-secret columns.
 
 Register a custom implementation of either with the typed builder methods, exactly as for the built-in stores:
 
@@ -220,10 +220,10 @@ Register a custom implementation of either with the typed builder methods, exact
 builder.Services
     .AddZeeKayDaAuth(options => { options.Issuer = "https://id.example.com"; })
     .AddAuthorizationCodeStore<MyAtomicCodeBackingStore>()
-    .AddRefreshTokenGrantStore<MyAtomicRefreshTokenGrantStore>();
+    .AddRefreshTokenStore<MyAtomicRefreshTokenBackingStore>();
 ```
 
-> 💡 **Tip:** The two stores are independently replaceable. You can mix an in-memory authorization code store (acceptable during development) with a custom persistent refresh-token grant store by calling `.AddInMemoryAuthorizationCodeStore()` and `.AddRefreshTokenGrantStore<T>()` on the same builder chain.
+> 💡 **Tip:** The two stores are independently replaceable. You can mix an in-memory authorization code store (acceptable during development) with a custom persistent refresh-token grant store by calling `.AddInMemoryAuthorizationCodeStore()` and `.AddRefreshTokenStore<T>()` on the same builder chain.
 
 ### `StoreKey`
 
@@ -262,10 +262,10 @@ public interface IAuthorizationCodeBackingStore
 
 > ⚠️ **Warning:** `TryInsertAsync` is the one hard atomicity invariant on this interface. If your backend cannot express insert-if-absent as a single operation, do not implement this interface against it directly — use a backend that can, or a first-party adapter.
 
-#### `IRefreshTokenGrantStore`
+#### `IRefreshTokenBackingStore`
 
 ```csharp
-public interface IRefreshTokenGrantStore
+public interface IRefreshTokenBackingStore
 {
     ValueTask InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken);
 
@@ -296,7 +296,7 @@ The interface is deliberately limited to exactly these six methods — there is 
 
 ### `RefreshTokenGrant`
 
-The persisted row shape `IRefreshTokenGrantStore` operates on. The framework constructs and consumes these; a backend only stores, retrieves, and runs equality queries over them.
+The persisted row shape `IRefreshTokenBackingStore` operates on. The framework constructs and consumes these; a backend only stores, retrieves, and runs equality queries over them.
 
 ```csharp
 public sealed record RefreshTokenGrant
@@ -334,7 +334,7 @@ public enum RefreshGrantStatus
 
 ### Backend suitability
 
-Which backends can implement `IRefreshTokenGrantStore` correctly without extra machinery:
+Which backends can implement `IRefreshTokenBackingStore` correctly without extra machinery:
 
 | Backend | Insert | Find-by-handle | CAS consume | Revoke by family / subject | Verdict |
 |---|---|---|---|---|---|
@@ -346,7 +346,7 @@ The same shape of trade-off applies to `IAuthorizationCodeBackingStore`: relatio
 
 ### Conformance kit
 
-`ZeeKayDa.Auth.TestKit` ships ready-to-derive xUnit fixtures for both backing-store contracts: `AuthorizationCodeBackingStoreConformanceTests` and `RefreshTokenGrantStoreConformanceTests`. Running the matching fixture against your implementation is a **MUST** before deploying it — it exercises the invariants the compiler cannot check:
+`ZeeKayDa.Auth.TestKit` ships ready-to-derive xUnit fixtures for both backing-store contracts: `AuthorizationCodeBackingStoreConformanceTests` and `RefreshTokenBackingStoreConformanceTests`. Running the matching fixture against your implementation is a **MUST** before deploying it — it exercises the invariants the compiler cannot check:
 
 - **Atomicity** — a 50-way concurrent race against the same key/handle, asserting exactly one caller wins `TryInsertAsync` or `TryMarkConsumedAsync`.
 - **Revocation completeness** — insert grants across a family (or subject), call `RevokeFamilyAsync` (or `RevokeBySubjectAsync`), and assert every grant reads `Revoked`, including one inserted concurrently with the revoke call — the race a drifting secondary index loses.
@@ -361,9 +361,9 @@ Reference `ZeeKayDa.Auth.TestKit` from your own test project and derive the abst
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.TestKit.Stores;
 
-public sealed class MyRefreshTokenGrantStoreConformanceTests : RefreshTokenGrantStoreConformanceTests
+public sealed class MyRefreshTokenBackingStoreConformanceTests : RefreshTokenBackingStoreConformanceTests
 {
-    protected override IRefreshTokenGrantStore CreateStore() => new MyRefreshTokenGrantStore(/* ... */);
+    protected override IRefreshTokenBackingStore CreateStore() => new MyRefreshTokenBackingStore(/* ... */);
 }
 ```
 

@@ -9,7 +9,7 @@ using static ZeeKayDa.Auth.Stores.StoreGuard;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// The framework's sealed <see cref="IAuthorizationCodeStore"/> coordinator.
+/// The framework's authorization-code store: the protocol over an <see cref="IAuthorizationCodeBackingStore"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,7 +26,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// persisted as keys or embedded in stored values.
 /// </para>
 /// </remarks>
-internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
+internal sealed class AuthorizationCodeStore
 {
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:AuthorizationCodeStore";
 
@@ -61,7 +61,8 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
         _clockSkewTolerance = serverOptions.Value.ClockSkewTolerance;
     }
 
-    /// <inheritdoc/>
+    /// <summary>Stores a newly minted code's entry under the hash of the code.</summary>
+    /// <exception cref="ZeeKayDaStoreException">Thrown when the backing store fails, or the key already exists.</exception>
     public async Task StoreAsync(string code, AuthorizationCodeEntry entry, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(code);
@@ -81,8 +82,11 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
                 "The authorization code handle collided with an existing store entry.");
     }
 
-    /// <inheritdoc/>
-    async ValueTask<bool> IAuthorizationCodeStore.TryClaimInteractionAsync(
+    /// <summary>
+    /// Claims an interaction's one terminal outcome (a code or a denial) through the same atomic
+    /// insert that makes a code single-use; <see langword="false"/> when another response holds it.
+    /// </summary>
+    public async ValueTask<bool> TryClaimInteractionAsync(
         string interactionId,
         DateTimeOffset interactionExpiresAt,
         CancellationToken cancellationToken)
@@ -99,7 +103,10 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
             "claim the interaction's terminal outcome").ConfigureAwait(false);
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Redeems a code exactly once: a client mismatch leaves it intact, and a replay reports the
+    /// family id the first redemption recorded, so the caller can revoke that family.
+    /// </summary>
     public async ValueTask<AuthorizationCodeRedemptionResult> TryRedeemAsync(
         string code,
         string clientId,
@@ -157,9 +164,6 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
 
         return new AuthorizationCodeRedemptionResult.Redeemed { Entry = entry };
     }
-
-    /// <inheritdoc/>
-    void IAuthorizationCodeStore.SealAsFrameworkOwnedProtocol() { }
 
     private async ValueTask<AuthorizationCodeRedemptionResult> ResolveViaTombstoneAsync(
         StoreKey tombstoneKey, CancellationToken cancellationToken)
@@ -232,11 +236,9 @@ internal sealed class AuthorizationCodeStore : IAuthorizationCodeStore
         }
     }
 
-    private static StoreKey BuildEntryKey(string code) => new($"zkd:code:e:{HashHex(code)}");
+    private static StoreKey BuildEntryKey(string code) => StoreKey.Hash("code", "e", code);
 
-    private static StoreKey BuildTombstoneKey(string code) => new($"zkd:code:t:{HashHex(code)}");
+    private static StoreKey BuildTombstoneKey(string code) => StoreKey.Hash("code", "t", code);
 
-    private static StoreKey BuildInteractionKey(string interactionId) => new($"zkd:code:i:{HashHex(interactionId)}");
-
-    private static string HashHex(string handle) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(handle)));
+    private static StoreKey BuildInteractionKey(string interactionId) => StoreKey.Hash("code", "i", interactionId);
 }

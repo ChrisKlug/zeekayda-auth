@@ -4,7 +4,7 @@ namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
 /// Represents the outcome of an authorization code redemption attempt via
-/// <see cref="IAuthorizationCodeStore.TryRedeemAsync"/>.
+/// <c>AuthorizationCodeStore.TryRedeemAsync</c>.
 /// </summary>
 /// <remarks>
 /// A closed discriminated union with exactly four states — see <see cref="Redeemed"/>,
@@ -14,7 +14,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// distinction between them would either under-revoke on replay attacks or over-revoke on
 /// legitimate requests.
 /// </remarks>
-public abstract class AuthorizationCodeRedemptionResult
+internal abstract class AuthorizationCodeRedemptionResult
 {
     [ExcludeFromCodeCoverage]
     private AuthorizationCodeRedemptionResult() { }

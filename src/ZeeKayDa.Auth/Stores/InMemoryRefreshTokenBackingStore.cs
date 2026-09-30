@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// Default <see cref="IRefreshTokenGrantStore"/> implementation backed by an in-process
+/// Default <see cref="IRefreshTokenBackingStore"/> implementation backed by an in-process
 /// <see cref="ConcurrentDictionary{TKey,TValue}"/>.
 /// </summary>
 /// <remarks>
@@ -38,7 +38,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// as an indexed <c>UPDATE ... WHERE</c> instead.
 /// </para>
 /// </remarks>
-internal sealed class InMemoryRefreshTokenGrantStore : IRefreshTokenGrantStore
+internal sealed class InMemoryRefreshTokenBackingStore : IRefreshTokenBackingStore
 {
     private readonly ConcurrentDictionary<StoreKey, RefreshTokenGrant> _grants = new();
     private readonly ReaderWriterLockSlim _revokeLock = new(LockRecursionPolicy.NoRecursion);

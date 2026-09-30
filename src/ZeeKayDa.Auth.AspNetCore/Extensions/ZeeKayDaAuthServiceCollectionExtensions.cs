@@ -19,6 +19,7 @@ using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -126,6 +127,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<CompositeClientAuthenticator>();
         services.TryAddSingleton<GrantClaimsResolver>();
         services.TryAddSingleton<AuthorizationCodeGrant>();
+
+        // The framework's own token stores, always present; a host supplies only what backs them,
+        // so a backing store registered straight on the service collection works too.
+        services.TryAddSingleton<AuthorizationCodeStore>();
+        services.TryAddSingleton<RefreshTokenStore>();
         services.TryAddSingleton<TokenRequestHandler>();
         AddAuthorizationRequestServices(services);
 
