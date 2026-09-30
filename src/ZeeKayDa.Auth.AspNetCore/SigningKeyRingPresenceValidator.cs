@@ -44,12 +44,12 @@ internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
                 "signing.key_ring.missing",
                 "No signing key source has been registered, so no token can be signed and " +
                 "id_token_signing_alg_values_supported cannot be published. Call " +
-                "builder.AddInMemoryDevelopmentJwtSigningKeys() or " +
-                "builder.AddPersistedDevelopmentJwtSigningKeys() for local development, one of the " +
+                "builder.AddInMemoryDevelopmentSigning() or " +
+                "builder.AddPersistedDevelopmentSigning() for local development, one of the " +
                 "provider packages' registrations (builder.AddPemFileSigning(), " +
                 "builder.AddPfxFileSigning(), builder.AddAzureKeyVaultRemoteSigning(), " +
                 "builder.AddAzureKeyVaultCachedSigning(), builder.AddWindowsCertificateStoreSigning()), " +
-                "or services.AddZeeKayDaSigningKeySource<TSource>() for a custom ISigningKeySource.");
+                "or builder.AddSigningKeySource<TSource>() for a custom ISigningKeySource.");
 
         return ValueTask.CompletedTask;
     }

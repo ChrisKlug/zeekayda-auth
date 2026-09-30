@@ -24,7 +24,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests;
 /// Registers the signing key source every test host needs: the discovery document derives
 /// <c>id_token_signing_alg_values_supported</c> from the signing key ring, so a host with no signing
 /// key source fails startup. A test-local source rather than
-/// <c>AddInMemoryDevelopmentJwtSigningKeys()</c>, because these hosts run as "Production" and the
+/// <c>AddInMemoryDevelopmentSigning()</c>, because these hosts run as "Production" and the
 /// development keys refuse that environment by design.
 /// </summary>
 internal static class TestSigningKeyRegistration
@@ -34,7 +34,7 @@ internal static class TestSigningKeyRegistration
         if (builder.Services.Any(d => d.ServiceType == typeof(ISigningKeyRing)))
             return builder;
 
-        builder.Services.AddZeeKayDaSigningKeySource<TestSigningKeySource>();
+        builder.AddSigningKeySource<TestSigningKeySource>();
         return builder;
     }
 }

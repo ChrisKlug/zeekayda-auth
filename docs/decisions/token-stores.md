@@ -43,9 +43,8 @@ entirely.
 written with that id inside the one atomic insert, so every future `AlreadyRedeemed` is guaranteed to
 carry a non-null, revocable `FamilyId`.
 
-**The tombstone is an envelope with a cleartext `FamilyId`, not one opaque blob.** The two decryption
-failures have deliberately opposite outcomes: an undecryptable *entry* is unusable and resolves
-`NotFound`, while an undecryptable tombstone still yields the cleartext id and resolves
+**The tombstone holds only a cleartext `FamilyId`, with no Data Protection.** An undecryptable
+*entry* is unusable and resolves `NotFound`, while a tombstone needs no key at all and always resolves
 `AlreadyRedeemed{FamilyId}` — so replay detection and family revocation survive a Data Protection key
 rotation. Security signed off on the cleartext id: it is an unguessable random value used only for
 correlation and revocation lookup, it grants no capability if leaked, and it lives only as long as
@@ -123,6 +122,8 @@ made unrepresentable instead, it is, and the kit is not offered as an alternativ
   consumer implement the whole redemption protocol. Reversed: the correctness-bearing invariants a
   naive implementation violated while compiling outnumbered the one thing a third party actually
   wants to vary. The coordinator plus a narrow backing primitive is the fix.
+- **A Data Protection–protected part in the tombstone.** It protected an empty payload that was
+  decrypted and thrown away, so it proved nothing and cost a key round trip on every redemption.
 - **Two-phase redemption — `TryRedeemAsync` followed by `CompleteRedemptionAsync(token, familyId)`.**
   A crash or dropped connection between the two calls leaves a tombstone with a null `FamilyId`, so a
   later replay resolves `AlreadyRedeemed(null)`: nothing to revoke, RFC 9700 §2.1.1 violated. The

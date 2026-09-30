@@ -51,16 +51,14 @@ internal abstract class AuthorizationCodeRedemptionResult
     /// <remarks>
     /// This outcome indicates a potential replay attack. Caller MUST immediately revoke the
     /// refresh token family identified by <see cref="FamilyId"/> and return
-    /// <c>error=invalid_grant</c> (RFC 9700 §2.1.1). <see cref="FamilyId"/> lives in the
-    /// tombstone envelope's cleartext part, so it remains recoverable even across a
-    /// Data-Protection key rotation.
+    /// <c>error=invalid_grant</c> (RFC 9700 §2.1.1). <see cref="FamilyId"/> is stored in the
+    /// tombstone in plaintext, so it remains recoverable across a Data Protection key rotation.
     /// </remarks>
     public sealed class AlreadyRedeemed : AuthorizationCodeRedemptionResult
     {
         /// <summary>
-        /// The refresh token family identifier committed into the tombstone envelope during the
-        /// original redemption. Plaintext, and recoverable even when the envelope's
-        /// Data-Protection-protected part cannot be decrypted (e.g. after a key rotation).
+        /// The refresh token family identifier committed into the tombstone during the original
+        /// redemption. Plaintext, so no Data Protection key is needed to read it.
         /// </summary>
         /// <remarks>
         /// Caller MUST revoke all tokens in this family via the refresh token store before

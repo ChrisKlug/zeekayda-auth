@@ -123,7 +123,7 @@ public sealed class DevelopmentSigningKeySourceTests
     public void Constructor_throws_when_fileSystem_is_null()
     {
         var act = () => new DevelopmentSigningKeySource(
-            Options.Create(new DevelopmentSigningKeyOptions()), null!);
+            Options.Create(new DevelopmentSigningOptions()), null!);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("fileSystem");
     }
@@ -523,13 +523,13 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         // Memoizing the key set must not memoize the decision to allow it: a read that skipped the
         // gate because an earlier read passed it would be the one fail-open this source can have.
-        var options = new DevelopmentSigningKeyOptions { EnvironmentName = "Development" };
+        var options = new DevelopmentSigningOptions { EnvironmentName = "Development" };
         using var sut = new DevelopmentSigningKeySource(
             Options.Create(options), new InMemorySigningKeyFileSystem());
         var ct = TestContext.Current.CancellationToken;
         await sut.ReadAsync(ct);
 
-        options.AllowedDevelopmentJwtSigningKeysEnvironments = ["Staging"];
+        options.AllowedEnvironments = ["Staging"];
         var act = () => sut.ReadAsync(ct).AsTask();
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
@@ -537,34 +537,38 @@ public sealed class DevelopmentSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_skips_the_gate_when_EnvironmentName_is_null()
+    public async Task ReadAsync_refuses_when_the_environment_is_unknown()
     {
+        // A source built by hand, outside the registration methods, may also be one the startup
+        // verifier never runs for, so it must refuse on its own rather than assume Development.
         using var sut = BuildForEnvironment(environmentName: null, allowed: null);
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
 
-        set.Keys.Should().ContainSingle("no host means no environment to gate on");
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("signing.dev_keys.unknown_environment");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private static DevelopmentSigningKeySource BuildEphemeral(IDevelopmentSigningKeyFileSystem? fileSystem = null)
         => new(
-            Options.Create(new DevelopmentSigningKeyOptions()),
+            Options.Create(new DevelopmentSigningOptions { EnvironmentName = "Development" }),
             fileSystem ?? new InMemorySigningKeyFileSystem());
 
     private static DevelopmentSigningKeySource BuildPersisted(IDevelopmentSigningKeyFileSystem fileSystem)
         => new(
-            Options.Create(new DevelopmentSigningKeyOptions { PersistToDirectory = PersistDirectory }),
+            Options.Create(new DevelopmentSigningOptions { EnvironmentName = "Development", PersistToDirectory = PersistDirectory }),
             fileSystem);
 
     private static DevelopmentSigningKeySource BuildForEnvironment(
         string? environmentName, IReadOnlyList<string>? allowed)
     {
-        var options = new DevelopmentSigningKeyOptions { EnvironmentName = environmentName };
+        var options = new DevelopmentSigningOptions { EnvironmentName = environmentName };
 
         if (allowed is not null)
-            options.AllowedDevelopmentJwtSigningKeysEnvironments = allowed;
+            options.AllowedEnvironments = allowed;
 
         return new DevelopmentSigningKeySource(Options.Create(options), new InMemorySigningKeyFileSystem());
     }

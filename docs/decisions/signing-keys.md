@@ -64,10 +64,10 @@ pairing, RSA modulus size (2048-bit minimum), NIST-curve-only EC keys, and rejec
 and derived `kid`s all run before any private material is loaded, throwing `ZeeKayDaConfigurationException`.
 A provider never repeats these locally — duplicated validation is how two layers drift.
 
-**Development signing keys are one line, and hard-gated on environment.** The persistence choice lives in
-the method name rather than a `null` argument. The allowed-environment list is reachable only through the
-registration callback, never bindable configuration, so a committed `appsettings.json` cannot widen it;
-`Production` is rejected unconditionally, and any non-`Development` entry logs `Critical` on every startup.
+**Development signing keys are one line, and hard-gated on environment.** Persistence is in the method
+name, never a `null` argument. `AllowedEnvironments` is set in the registration callback and the
+framework never binds it, so `appsettings.json` alone cannot widen it; `Production` is always rejected, a host
+running in an allowed non-`Development` environment logs `Critical` on every start, and an unknown one fails closed.
 Persisted keys are plain PEM with permissions set atomically at creation (`0700`/`0600` POSIX, a restrictive
 non-inherited ACL on Windows), and loading fails closed on a broader mode, a foreign-owned directory, or a
 symlink anywhere in the path — except a root-owned symlinked ancestor, which no unprivileged attacker can
@@ -87,14 +87,12 @@ surface into the SemVer contract. The JWK mapping is hand-rolled over BCL types,
 known-answer vectors — a cost taken over the dependency.
 
 **One signing provider per application, and nothing is registered for the source.**
-`AddZeeKayDaSigningKeySource<TSource>()` (both overloads) enforces this with an internal marker: a second
-call always throws, whichever overload either used and whether or not `TSource` matches. A same-type repeat
-is deliberately not a no-op — a provider registers its source *and* configures options beside it, so a
-"harmless" duplicate still applies a second configuration callback. A manual `ISigningKeyRing` also throws,
-but only one already registered; one added afterwards wins under MS DI's last-wins resolution, undetectably.
-`ISigningKeySource` itself is never registered: the ring factory re-validates the marker set, constructs the
-source directly (unreachable from the container), owns its lifetime alongside the signer's, and rejects
-`IAsyncDisposable` without `IDisposable`.
+`builder.AddSigningKeySource<TSource>()`, which every provider calls first from its own registration method,
+enforces this with an internal marker: a second call on the same collection throws, whatever `TSource` — a
+provider configures options beside its source, so a "harmless" duplicate would still apply a second callback.
+`ISigningKeySource` itself is never registered: the ring constructs the source directly (unreachable from the
+container) and owns its lifetime alongside the signer's. A source implementing `IAsyncDisposable` without
+`IDisposable` is refused at registration. A manual `ISigningKeyRing` is not policed.
 
 **A client's allowed algorithms are an acceptance list, not a selector.** The ring owns one key set and
 signs with one key; a client whose list excludes that key's algorithm fails closed (`token-contents.md`).
@@ -148,3 +146,5 @@ development provider stays in core.
   and it still materialises the key. Never decrypting the key bag beats it everywhere.
 - **A macOS Keychain signing provider.** Implemented and reviewed, then descoped: the file-system provider
   already covers macOS and Linux without native interop.
+- **A factory overload, and two more registration checks.** The overload was a second way to build a source;
+  the resolve-time check against merged collections and the manual-ring refusal policed exotic mistakes.

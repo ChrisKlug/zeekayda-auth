@@ -1,12 +1,11 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem.Tests.Extensions;
 
 /// <summary>
-/// Proves both <c>AddZeeKayDaSigningKeySource</c> overloads, including the one-source-per-application
+/// Proves <c>AddSigningKeySource</c>, including the one-source-per-application
 /// guard's different-source failure, work for source types defined entirely outside this framework's
 /// own assemblies. Unlike <c>ZeeKayDa.Auth.Tests</c>, this assembly carries no
 /// <c>InternalsVisibleTo</c> grant from core, so this test compiling and passing is the actual proof
@@ -44,34 +43,23 @@ public sealed class ThirdPartySigningKeySourceRegistrationTests
     }
 
     [Fact]
-    public void AddZeeKayDaSigningKeySource_registers_an_ISigningKeyRing_for_a_third_party_source()
+    public void AddSigningKeySource_registers_an_ISigningKeyRing_for_a_third_party_source()
     {
         var services = new ServiceCollection();
 
-        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<ISigningKeyRing>().Should().NotBeNull();
     }
 
     [Fact]
-    public void AddZeeKayDaSigningKeySource_with_factory_registers_an_ISigningKeyRing_for_a_third_party_source()
+    public void AddSigningKeySource_called_with_a_different_source_throws_InvalidOperationException()
     {
-        var services = new ServiceCollection();
+        var builder = new ZeeKayDaAuthBuilder(new ServiceCollection());
+        builder.AddSigningKeySource<ExternalSigningKeySource>();
 
-        services.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
-
-        using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISigningKeyRing>().Should().NotBeNull();
-    }
-
-    [Fact]
-    public void AddZeeKayDaSigningKeySource_called_with_a_different_source_throws_InvalidOperationException()
-    {
-        var services = new ServiceCollection();
-        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
-
-        var act = () => services.AddZeeKayDaSigningKeySource<OtherExternalSigningKeySource>();
+        var act = () => builder.AddSigningKeySource<OtherExternalSigningKeySource>();
 
         act.Should().Throw<InvalidOperationException>();
     }

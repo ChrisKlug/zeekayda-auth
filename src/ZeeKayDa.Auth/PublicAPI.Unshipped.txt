@@ -225,7 +225,7 @@ ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.UserInfoEndpoint.get -> stri
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.UserInfoEndpoint.init -> void
 ZeeKayDa.Auth.Extensions.ZeeKayDaAuthCoreServiceCollectionExtensions
 ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyHealthChecksBuilderExtensions
-ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderSigningKeySourceExtensions
 ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.AuthorizationCode = 0 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.ClientCredentials = 2 -> ZeeKayDa.Auth.GrantType
@@ -304,7 +304,7 @@ ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.FindByHandleAsync(ZeeKayDa.Auth.S
 ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.InsertAsync(ZeeKayDa.Auth.Stores.RefreshTokenGrant! grant, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
 ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.IsFamilyRevokedAsync(string! familyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
 ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.RevokeBySubjectAsync(string! subject, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
-ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.RevokeFamilyAsync(string! familyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.RevokeFamilyAsync(string! familyId, System.DateTimeOffset rememberUntil, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
 ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.TryMarkConsumedAsync(ZeeKayDa.Auth.Stores.StoreKey handleHash, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
 ZeeKayDa.Auth.Stores.RefreshGrantStatus
 ZeeKayDa.Auth.Stores.RefreshGrantStatus.Active = 0 -> ZeeKayDa.Auth.Stores.RefreshGrantStatus
@@ -335,13 +335,10 @@ ZeeKayDa.Auth.Stores.StoreKey.Equals(ZeeKayDa.Auth.Stores.StoreKey other) -> boo
 ZeeKayDa.Auth.Stores.StoreKey.StoreKey() -> void
 ZeeKayDa.Auth.Tokens.AccessTokenIssuanceContext
 ZeeKayDa.Auth.Tokens.AccessTokenIssuanceContext.AccessTokenIssuanceContext(ZeeKayDa.Auth.Clients.IClientMetadata! client) -> void
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.get -> System.Collections.Generic.IReadOnlyList<string!>!
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.set -> void
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.DevelopmentSigningKeyOptions() -> void
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.EnvironmentName.get -> string?
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.PersistToDirectory.get -> string?
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.PersistToDirectory.set -> void
+ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions
+ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions.AllowedEnvironments.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions.AllowedEnvironments.set -> void
+ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions.DevelopmentSigningOptions() -> void
 ZeeKayDa.Auth.Tokens.ISigner
 ZeeKayDa.Auth.Tokens.ISigner.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.Tokens.ISigner.SignAsync(System.ReadOnlyMemory<byte> signingInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>>
@@ -360,10 +357,6 @@ ZeeKayDa.Auth.Tokens.IdTokenOptions
 ZeeKayDa.Auth.Tokens.IdTokenOptions.AdvertisedSigningAlgorithms.get -> System.Collections.Generic.ICollection<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
 ZeeKayDa.Auth.Tokens.IdTokenOptions.AdvertisedSigningAlgorithms.set -> void
 ZeeKayDa.Auth.Tokens.IdTokenOptions.IdTokenOptions() -> void
-ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions
-ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.get -> System.Collections.Generic.IReadOnlyList<string!>!
-ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.set -> void
-ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions.InMemoryDevelopmentSigningKeyOptions() -> void
 ZeeKayDa.Auth.Tokens.IssuedToken
 ZeeKayDa.Auth.Tokens.IssuedToken.<Clone>$() -> ZeeKayDa.Auth.Tokens.IssuedToken!
 ZeeKayDa.Auth.Tokens.IssuedToken.Deconstruct(out string! Value, out ZeeKayDa.Auth.Tokens.TokenKind Kind) -> void
@@ -607,8 +600,7 @@ static ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.operator !=(ZeeKayDa.
 static ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.operator ==(ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? left, ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? right) -> bool
 static ZeeKayDa.Auth.Extensions.ZeeKayDaAuthCoreServiceCollectionExtensions.AddZeeKayDaAuthCore(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyHealthChecksBuilderExtensions.AddZeeKayDaSigningKeys(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, System.Action<ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions!>? configure = null, string! name = "zeekayda-signing-keys", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
-static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource<TSource>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource<TSource>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Func<System.IServiceProvider!, TSource!>! implementationFactory) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderSigningKeySourceExtensions.AddSigningKeySource<TSource>(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
 static ZeeKayDa.Auth.Scopes.ScopeDefinition.operator !=(ZeeKayDa.Auth.Scopes.ScopeDefinition? left, ZeeKayDa.Auth.Scopes.ScopeDefinition? right) -> bool
 static ZeeKayDa.Auth.Scopes.ScopeDefinition.operator ==(ZeeKayDa.Auth.Scopes.ScopeDefinition? left, ZeeKayDa.Auth.Scopes.ScopeDefinition? right) -> bool
 static ZeeKayDa.Auth.Scopes.StandardScopes.Address.get -> ZeeKayDa.Auth.Scopes.ScopeDefinition!
