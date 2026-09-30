@@ -783,6 +783,19 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_query_failure_message_never_repeats_an_endpoint_overrides_query()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            JwksEndpoint = { Uri = "https://auth.example.com/jwks?sig=t0ken" },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.jwks_endpoint.uri.query")
+            .Which.Message.Should().NotContain("t0ken");
+    }
+
+    [Fact]
     public void Validate_authority_mismatch_message_never_repeats_the_issuers_user_information()
     {
         var failures = Validate(new AuthorizationServerOptions
@@ -809,7 +822,8 @@ public sealed class AuthorizationServerOptionsValidatorTests
         });
 
         failures.Should().ContainSingle(f => f.Code == "configuration.cors_origins.invalid")
-            .Which.Message.Should().StartWith("AuthorizationServerOptions.CorsOrigins[0]: ").And.NotContain("s3cret");
+            .Which.Message.Should().StartWith("AuthorizationServerOptions.CorsOrigins[0]: ")
+            .And.NotContain("s3cret").And.NotContain("\r").And.NotContain("\n");
     }
 
     [Theory]
