@@ -15,9 +15,11 @@ internal interface IValidatedOptions
 
 /// <inheritdoc cref="IValidatedOptions"/>
 /// <remarks>
-/// The options are built without validators and each validator is then run on its own. Reading
-/// them through <see cref="IOptionsMonitor{TOptions}"/> would stop at the first validator that
-/// throws, and a second validator's failures would wait for the next start.
+/// The options are read the way every consumer reads them, through
+/// <see cref="IOptionsMonitor{TOptions}"/>, so what passes here is the instance the application
+/// uses. That read stops at the first validator that throws, so on a failure each validator is run
+/// again on its own to find every failure, and only if that finds none (a host's own options
+/// factory, say) is the first read's exception reported as it was.
 /// </remarks>
 internal sealed record ValidatedOptions<TOptions>(string Name) : IValidatedOptions
     where TOptions : class
@@ -25,13 +27,30 @@ internal sealed record ValidatedOptions<TOptions>(string Name) : IValidatedOptio
     /// <inheritdoc/>
     public void Validate(IServiceProvider services, OptionsFailures failures)
     {
+        try
+        {
+            _ = services.GetRequiredService<IOptionsMonitor<TOptions>>().Get(Name);
+        }
+        catch (Exception ex) when (ex is ZeeKayDaConfigurationException or OptionsValidationException)
+        {
+            if (!RecordEachValidator(services, failures))
+                failures.Record(ex);
+        }
+    }
+
+    /// <summary>Runs every validator on its own; whether any of them failed.</summary>
+    private bool RecordEachValidator(IServiceProvider services, OptionsFailures failures)
+    {
         var options = new OptionsFactory<TOptions>(
             services.GetServices<IConfigureOptions<TOptions>>(),
             services.GetServices<IPostConfigureOptions<TOptions>>(),
             []).Create(Name);
 
+        var anyFailed = false;
         foreach (var validator in services.GetServices<IValidateOptions<TOptions>>())
-            failures.Record(Name, options, validator);
+            anyFailed |= failures.Record(Name, options, validator);
+
+        return anyFailed;
     }
 }
 
@@ -41,26 +60,38 @@ internal sealed class OptionsFailures
     private readonly List<ZeeKayDaConfigurationFailure> _failures = [];
     private readonly List<Exception> _rootCauses = [];
 
-    /// <summary>Runs one validator and records its failures, coded or not.</summary>
-    public void Record<TOptions>(string name, TOptions options, IValidateOptions<TOptions> validator)
+    /// <summary>Runs one validator and records its failures, coded or not; whether it failed.</summary>
+    public bool Record<TOptions>(string name, TOptions options, IValidateOptions<TOptions> validator)
         where TOptions : class
     {
         try
         {
             var result = validator.Validate(name, options);
-            if (result.Failed)
-                RecordUncoded(new OptionsValidationException(name, typeof(TOptions), result.Failures));
+            if (!result.Failed)
+                return false;
+
+            RecordUncoded(new OptionsValidationException(name, typeof(TOptions), result.Failures));
         }
-        catch (ZeeKayDaConfigurationException ex)
+        catch (Exception ex) when (ex is ZeeKayDaConfigurationException or OptionsValidationException)
         {
-            _failures.AddRange(ex.AggregatedFailures);
-            if (ex.InnerException is not null)
-                _rootCauses.Add(ex.InnerException);
+            Record(ex);
         }
-        catch (OptionsValidationException ex)
+
+        return true;
+    }
+
+    /// <summary>Records a validation exception: a coded one keeps its codes, any other is uncoded.</summary>
+    public void Record(Exception validationException)
+    {
+        if (validationException is not ZeeKayDaConfigurationException coded)
         {
-            RecordUncoded(ex);
+            RecordUncoded((OptionsValidationException)validationException);
+            return;
         }
+
+        _failures.AddRange(coded.AggregatedFailures);
+        if (coded.InnerException is not null)
+            _rootCauses.Add(coded.InnerException);
     }
 
     /// <summary>

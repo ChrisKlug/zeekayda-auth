@@ -122,6 +122,34 @@ public sealed class ValidatedOptionsCheckTests
     }
 
     [Fact]
+    public void ThrowIfAnyInvalid_validates_the_instance_the_application_reads()
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaOptions<FirstOptions>();
+        var validator = new RecordingValidator();
+        services.AddSingleton<IValidateOptions<FirstOptions>>(validator);
+        using var provider = services.BuildServiceProvider();
+
+        ValidatedOptionsCheck.ThrowIfAnyInvalid(provider);
+
+        validator.Validated.Should().ContainSingle()
+            .Which.Should().BeSameAs(provider.GetRequiredService<IOptionsMonitor<FirstOptions>>().CurrentValue);
+    }
+
+    [Fact]
+    public void ThrowIfAnyInvalid_reports_the_read_failure_when_no_single_validator_reproduces_it()
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaOptions<FirstOptions>();
+        services.AddSingleton<IOptionsFactory<FirstOptions>, ThrowingFactory>();
+
+        var act = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(services.BuildServiceProvider());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "test.factory");
+    }
+
+    [Fact]
     public void AddZeeKayDaOptions_called_twice_reports_the_options_failures_once()
     {
         var services = new ServiceCollection();
@@ -149,6 +177,23 @@ public sealed class ValidatedOptionsCheckTests
             code is null || (onlyName is not null && name != onlyName)
                 ? ValidateOptionsResult.Success
                 : throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(code, "Invalid."));
+    }
+
+    private sealed class RecordingValidator : IValidateOptions<FirstOptions>
+    {
+        public List<FirstOptions> Validated { get; } = [];
+
+        public ValidateOptionsResult Validate(string? name, FirstOptions options)
+        {
+            Validated.Add(options);
+            return ValidateOptionsResult.Success;
+        }
+    }
+
+    private sealed class ThrowingFactory : IOptionsFactory<FirstOptions>
+    {
+        public FirstOptions Create(string name) =>
+            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure("test.factory", "Invalid."));
     }
 
     private sealed class UncodedValidator<TOptions>(string message) : IValidateOptions<TOptions>
