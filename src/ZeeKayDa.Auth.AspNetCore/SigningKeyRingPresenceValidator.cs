@@ -49,7 +49,7 @@ internal sealed class SigningKeyRingPresenceValidator : IStartupVerifier
                 "provider packages' registrations (builder.AddPemFileSigning(), " +
                 "builder.AddPfxFileSigning(), builder.AddAzureKeyVaultRemoteSigning(), " +
                 "builder.AddAzureKeyVaultCachedSigning(), builder.AddWindowsCertificateStoreSigning()), " +
-                "or services.AddZeeKayDaSigningKeySource<TSource>() for a custom ISigningKeySource.");
+                "or builder.AddSigningKeySource<TSource>() for a custom ISigningKeySource.");
 
         return ValueTask.CompletedTask;
     }

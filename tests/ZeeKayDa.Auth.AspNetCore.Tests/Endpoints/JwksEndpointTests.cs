@@ -45,10 +45,15 @@ public sealed class JwksEndpointTests
     /// an EC key in <c>Next</c>.
     /// </summary>
     private static EndpointHost CreateMultiSlotHost(bool includePrevious, bool includeNext)
-        => new(configureBuilder: builder => builder.Services.AddZeeKayDaSigningKeySource(
-            _ => new MultiSlotSigningKeySource(includePrevious, includeNext)));
+        => new(configureBuilder: builder =>
+        {
+            builder.Services.AddSingleton(new MultiSlotLayout(includePrevious, includeNext));
+            builder.AddSigningKeySource<MultiSlotSigningKeySource>();
+        });
 
-    private sealed class MultiSlotSigningKeySource(bool includePrevious, bool includeNext)
+    private sealed record MultiSlotLayout(bool IncludePrevious, bool IncludeNext);
+
+    private sealed class MultiSlotSigningKeySource(MultiSlotLayout layout)
         : ISigningKeySource, IDisposable
     {
         private readonly RSA _previous = RSA.Create(2048);
@@ -57,7 +62,7 @@ public sealed class JwksEndpointTests
 
         public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
         {
-            var previous = includePrevious
+            var previous = layout.IncludePrevious
                 ? new SourceKey(
                     new SourceKeyId("previous-key"),
                     SigningAlgorithm.RS256,
@@ -69,7 +74,7 @@ public sealed class JwksEndpointTests
                 SigningAlgorithm.RS256,
                 PublicKeyParameters.FromRsa(_current.ExportParameters(includePrivateParameters: false)),
                 ExpiresAt: null);
-            var next = includeNext
+            var next = layout.IncludeNext
                 ? new SourceKey(
                     new SourceKeyId("next-key"),
                     SigningAlgorithm.ES256,
@@ -314,8 +319,10 @@ public sealed class JwksEndpointTests
         SigningAlgorithm algorithm)
     {
         using var host = new EndpointHost(configureBuilder: builder =>
-            builder.Services.AddZeeKayDaSigningKeySource(
-                _ => new SingleAlgorithmSigningKeySource(algorithm)));
+        {
+            builder.Services.AddSingleton(new SingleAlgorithm(algorithm));
+            builder.AddSigningKeySource<SingleAlgorithmSigningKeySource>();
+        });
         await host.EnsureStartedAsync();
 
         var issuer = host.Services.GetRequiredKeyedService<ITokenIssuer>(TokenKind.IdToken);
@@ -375,14 +382,17 @@ public sealed class JwksEndpointTests
         return ecdsa.VerifyData(signingInput, signature, hash);
     }
 
+    private sealed record SingleAlgorithm(SigningAlgorithm Value);
+
     private sealed class SingleAlgorithmSigningKeySource : ISigningKeySource, IDisposable
     {
         private readonly SigningAlgorithm _algorithm;
         private readonly RSA? _rsa;
         private readonly ECDsa? _ecdsa;
 
-        public SingleAlgorithmSigningKeySource(SigningAlgorithm algorithm)
+        public SingleAlgorithmSigningKeySource(SingleAlgorithm choice)
         {
+            var algorithm = choice.Value;
             _algorithm = algorithm;
             if (algorithm == SigningAlgorithm.RS256)
                 _rsa = RSA.Create(2048);

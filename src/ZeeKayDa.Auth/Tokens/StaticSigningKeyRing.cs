@@ -60,24 +60,10 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     /// Thrown when <paramref name="source"/> or <paramref name="timeProvider"/> is
     /// <see langword="null"/>.
     /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="source"/> implements <see cref="IAsyncDisposable"/> without also
-    /// implementing <see cref="IDisposable"/>. The ring cannot know whether the host will dispose the
-    /// service provider synchronously or asynchronously, so that shape can never be disposed safely.
-    /// </exception>
     public StaticSigningKeyRing(ISigningKeySource source, TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(timeProvider);
-
-        if (source is IAsyncDisposable && source is not IDisposable)
-        {
-            throw new ArgumentException(
-                $"'{source.GetType().FullName}' implements {nameof(IAsyncDisposable)} but not " +
-                $"{nameof(IDisposable)}. The ring that owns this source cannot know whether the host " +
-                $"will dispose the service provider synchronously or asynchronously, so implement " +
-                $"{nameof(IDisposable)} as well.", nameof(source));
-        }
 
         _source = source;
         _timeProvider = timeProvider;
