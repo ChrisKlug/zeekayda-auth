@@ -8,7 +8,8 @@ ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.SignedOutPath.get -> strin
 ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.SignedOutPath.set -> void
 ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.Uri.set -> void
-ZeeKayDa.Auth.AuthorizationServerOptions.CorsOrigins.get -> System.Collections.Generic.IList<string!>!
+ZeeKayDa.Auth.AuthorizationServerOptions.CorsOrigins.get -> System.Collections.Generic.ICollection<string!>!
+ZeeKayDa.Auth.AuthorizationServerOptions.CorsOrigins.set -> void
 ZeeKayDa.Auth.AuthorizationServerOptions.EndSessionEndpoint.get -> ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions!
 ZeeKayDa.Auth.Clients.ClientRegistration.SkipLogoutConfirmation.get -> bool
 ZeeKayDa.Auth.Clients.ClientRegistration.SkipLogoutConfirmation.init -> void

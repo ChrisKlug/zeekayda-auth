@@ -319,6 +319,19 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_fails_when_CorsOrigins_is_null()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            CorsOrigins = null!,
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.cors_origins.null")
+            .Which.Message.Should().Contain(nameof(AuthorizationServerOptions.CorsOrigins));
+    }
+
+    [Fact]
     public void Validate_fails_when_GrantTypesSupported_is_null()
     {
         var failures = Validate(new AuthorizationServerOptions

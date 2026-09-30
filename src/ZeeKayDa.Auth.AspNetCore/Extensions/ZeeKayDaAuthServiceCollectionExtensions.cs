@@ -61,7 +61,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             .AddZeeKayDaOptions<AuthorizationServerOptions>()
             .Configure(configure);
 
-        // Freezes CorsOrigins and AdvertisedSigningAlgorithms before validation runs.
+        // Freezes every options collection before validation runs.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IPostConfigureOptions<AuthorizationServerOptions>,
