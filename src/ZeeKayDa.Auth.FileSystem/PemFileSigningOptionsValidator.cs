@@ -38,7 +38,7 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
                 $"{nameof(SigningAlgorithm)} member."));
         }
 
-        AppendDuplicatePathErrors(options, failures);
+        failures.AddRange(DuplicatePathFailures(options));
 
         return failures.ThrowIfAny();
     }
@@ -67,12 +67,11 @@ internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileS
         }
     }
 
-    private static void AppendDuplicatePathErrors(PemFileSigningOptions options, List<ZeeKayDaConfigurationFailure> failures) =>
-        SigningFilePaths.AppendPathErrors(
+    private static List<ZeeKayDaConfigurationFailure> DuplicatePathFailures(PemFileSigningOptions options) =>
+        SigningFilePaths.PathFailures(
             nameof(PemFileSigningOptions),
             "configuration.pem_file_signing.paths",
             "Every Path, and Current's KeyPath, must be a distinct file.",
-            failures,
             options.Previous?.Path,
             options.Current?.Path,
             options.Current?.KeyPath,

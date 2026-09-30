@@ -37,7 +37,7 @@ internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileS
                 $"{nameof(SigningAlgorithm)} member."));
         }
 
-        AppendDuplicatePathErrors(options, failures);
+        failures.AddRange(DuplicatePathFailures(options));
 
         return failures.ThrowIfAny();
     }
@@ -60,12 +60,11 @@ internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileS
                 $"PfxFileSigningOptions.{slotName}.PasswordSource must be set to a password-source delegate."));
     }
 
-    private static void AppendDuplicatePathErrors(PfxFileSigningOptions options, List<ZeeKayDaConfigurationFailure> failures) =>
-        SigningFilePaths.AppendPathErrors(
+    private static List<ZeeKayDaConfigurationFailure> DuplicatePathFailures(PfxFileSigningOptions options) =>
+        SigningFilePaths.PathFailures(
             nameof(PfxFileSigningOptions),
             "configuration.pfx_file_signing.paths",
             "Every configured path must be a distinct file.",
-            failures,
             options.Previous?.Path,
             options.Current?.Path,
             options.Next?.Path);

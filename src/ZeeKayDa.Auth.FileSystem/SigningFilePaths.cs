@@ -23,7 +23,7 @@ namespace ZeeKayDa.Auth.FileSystem;
 internal static class SigningFilePaths
 {
     /// <summary>
-    /// Appends a failure for each problem found across <paramref name="paths"/>.
+    /// Returns a failure for each problem found across <paramref name="paths"/>.
     /// </summary>
     /// <param name="optionsTypeName">The options type to name in the failures, as the operator configured it.</param>
     /// <param name="codePrefix">The code prefix the caller's path failures carry.</param>
@@ -31,19 +31,18 @@ internal static class SigningFilePaths
     /// How the caller's own configuration spells the rule — PEM has a <c>KeyPath</c> beside its slot
     /// paths, PFX does not — so the error names the properties the operator actually set.
     /// </param>
-    /// <param name="failures">The aggregated failure list to append to.</param>
     /// <param name="paths">
     /// Every path the configuration names. A <see langword="null"/>, empty, or whitespace-only entry
     /// is ignored: the caller reports those under its own slot-specific message, and two
     /// independently empty values are not "the same path".
     /// </param>
-    public static void AppendPathErrors(
+    public static List<ZeeKayDaConfigurationFailure> PathFailures(
         string optionsTypeName,
         string codePrefix,
         string distinctnessRequirement,
-        List<ZeeKayDaConfigurationFailure> failures,
         params ReadOnlySpan<string?> paths)
     {
+        var failures = new List<ZeeKayDaConfigurationFailure>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var hasDuplicate = false;
         var hasUnresolvable = false;
@@ -89,5 +88,7 @@ internal static class SigningFilePaths
                 $"{codePrefix}.duplicate",
                 $"Two {optionsTypeName} slots reference the same file. {distinctnessRequirement}"));
         }
+
+        return failures;
     }
 }

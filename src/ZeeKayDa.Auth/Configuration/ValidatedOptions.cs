@@ -43,34 +43,44 @@ internal static class ValidatedOptionsCheck
         var rootCauses = new List<Exception>();
 
         foreach (var options in services.GetServices<IValidatedOptions>())
+            Read(options, services, failures, rootCauses);
+
+        if (failures.Count > 0)
+            throw Aggregate(failures, rootCauses);
+    }
+
+    private static void Read(
+        IValidatedOptions options,
+        IServiceProvider services,
+        List<ZeeKayDaConfigurationFailure> failures,
+        List<Exception> rootCauses)
+    {
+        try
         {
-            try
-            {
-                options.Read(services);
-            }
-            catch (ZeeKayDaConfigurationException ex)
-            {
-                failures.AddRange(ex.AggregatedFailures);
-                if (ex.InnerException is not null)
-                    rootCauses.Add(ex.InnerException);
-            }
-            catch (OptionsValidationException ex)
-            {
-                failures.Add(Uncoded(ex));
-                rootCauses.Add(ex);
-            }
+            options.Read(services);
         }
+        catch (ZeeKayDaConfigurationException ex)
+        {
+            failures.AddRange(ex.AggregatedFailures);
+            if (ex.InnerException is not null)
+                rootCauses.Add(ex.InnerException);
+        }
+        catch (OptionsValidationException ex)
+        {
+            failures.Add(Uncoded(ex));
+            rootCauses.Add(ex);
+        }
+    }
 
-        if (failures.Count == 0)
-            return;
-
-        throw rootCauses.Count switch
+    private static ZeeKayDaConfigurationException Aggregate(
+        List<ZeeKayDaConfigurationFailure> failures,
+        List<Exception> rootCauses) =>
+        rootCauses.Count switch
         {
             0 => new ZeeKayDaConfigurationException([.. failures]),
             1 => new ZeeKayDaConfigurationException(failures, rootCauses[0]),
             _ => new ZeeKayDaConfigurationException(failures, new AggregateException(rootCauses)),
         };
-    }
 
     /// <summary>
     /// A validator that reports through <see cref="ValidateOptionsResult.Fail(string)"/> has no
