@@ -12,21 +12,13 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// The options keep the host's entries exactly as configured; the canonical set is derived here,
 /// where it is used. Startup validation has already refused any entry with no canonical form.
 /// </remarks>
-internal sealed class CorsAllowlist
+internal sealed class CorsAllowlist(IOptions<AuthorizationServerOptions> options)
 {
-    private readonly HashSet<string> _origins;
-
-    public CorsAllowlist(IOptions<AuthorizationServerOptions> options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-
-        var allowInsecureIssuer = options.Value.AllowInsecureIssuer;
-        _origins = new HashSet<string>(
-            options.Value.CorsOrigins
-                .Select(origin => new CorsOrigin(origin, allowInsecureIssuer).Canonical)
-                .OfType<string>(),
-            StringComparer.OrdinalIgnoreCase);
-    }
+    private readonly HashSet<string> _origins = new(
+        options.Value.CorsOrigins
+            .Select(origin => new CorsOrigin(origin, options.Value.AllowInsecureIssuer).Canonical)
+            .OfType<string>(),
+        StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Whether no origin is listed, which allows every origin.</summary>
     public bool IsEmpty => _origins.Count == 0;

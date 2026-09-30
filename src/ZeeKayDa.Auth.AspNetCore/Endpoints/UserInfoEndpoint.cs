@@ -27,24 +27,12 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// rather than at the end of the token's life.
 /// </para>
 /// </remarks>
-internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
+internal sealed class UserInfoEndpoint(IOptions<AuthorizationServerOptions> options, CorsAllowlist allowedOrigins) : IZeeKayDaEndpoint
 {
     private const string DefaultPath = "connect/userinfo";
     private const string BearerScheme = "Bearer";
     private const string AccessTokenFormField = "access_token";
     private const string FormUrlEncoded = "application/x-www-form-urlencoded";
-
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly CorsAllowlist _allowedOrigins;
-
-    public UserInfoEndpoint(IOptions<AuthorizationServerOptions> options, CorsAllowlist allowedOrigins)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(allowedOrigins);
-
-        _options = options;
-        _allowedOrigins = allowedOrigins;
-    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -54,12 +42,12 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
     /// </remarks>
     public void Map(IEndpointRouteBuilder endpoints)
     {
-        if (!_options.Value.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
+        if (!options.Value.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
             return;
 
-        var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
+        var issuerUri = EndpointRouteHelper.GetIssuerUri(options);
         var endpointUri = EndpointRouteHelper.GetPublishedEndpointUri(
-            issuerUri, _options.Value.UserInfoEndpoint.Uri, DefaultPath);
+            issuerUri, options.Value.UserInfoEndpoint.Uri, DefaultPath);
 
         // AllowAnonymous so a host-wide authorization fallback policy cannot challenge with the
         // host's own scheme: the bearer token is this endpoint's authentication, not the host's.
@@ -80,7 +68,7 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
     {
         CorsHeaders.ApplyPreflight(
             context,
-            _allowedOrigins,
+            allowedOrigins,
             methods: "GET, POST, OPTIONS",
             headers: "Authorization, Content-Type");
 
@@ -93,7 +81,7 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
         ValidatedClientResolver clients,
         GrantClaimsResolver claims)
     {
-        CorsHeaders.ApplyOrigin(context, _allowedOrigins);
+        CorsHeaders.ApplyOrigin(context, allowedOrigins);
 
         var authorization = await AuthorizeAsync(context, tokens, clients).ConfigureAwait(false);
         if (authorization is not Authorization.Caller caller)

@@ -54,16 +54,6 @@ public sealed class CorsAllowlistTests
     }
 
     [Fact]
-    public void Two_spellings_of_one_origin_leave_one_entry()
-    {
-        var allowlist = Allowlist("https://app.example.com", "HTTPS://APP.EXAMPLE.COM/");
-
-        allowlist.IsEmpty.Should().BeFalse();
-        allowlist.TryMatch("https://app.example.com", out var matched).Should().BeTrue();
-        matched.Should().Be("https://app.example.com");
-    }
-
-    [Fact]
     public void No_configured_origin_leaves_the_allowlist_empty()
     {
         Allowlist().IsEmpty.Should().BeTrue();

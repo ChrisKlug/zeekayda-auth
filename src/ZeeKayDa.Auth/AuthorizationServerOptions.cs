@@ -80,8 +80,8 @@ public sealed class AuthorizationServerOptions
     /// <para>
     /// Each entry must be an absolute origin in the form <c>scheme://host[:port]</c> with no path,
     /// query, fragment, userinfo, wildcards, or <c>null</c> literal. Entries are validated at
-    /// startup, canonicalized (lowercased), deduplicated, then replaced with an immutable snapshot.
-    /// Invalid entries fail startup.
+    /// startup and frozen as configured; invalid entries fail startup. The endpoints match against
+    /// a canonical (lowercased, punycode, de-duplicated) form derived from them, not stored here.
     /// </para>
     /// <para>
     /// HTTP origins are rejected by default. Set <see cref="AllowInsecureIssuer"/> to

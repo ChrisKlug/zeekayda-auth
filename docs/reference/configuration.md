@@ -527,8 +527,8 @@ allowlist decides which origins may read a public document or a response the cal
 the access token for, and that answer does not vary by endpoint.
 
 Each entry must be an absolute origin in the form `scheme://host[:port]` with no path, query,
-fragment, user information, wildcards, or the literal string `null`. Entries are canonicalized
-(lowercased), deduplicated, and frozen into an immutable startup snapshot. Invalid entries cause
+fragment, user information, wildcards, or the literal string `null`. The option is frozen as
+configured; the endpoints match against a canonical (lowercased, de-duplicated) form derived from it. Invalid entries cause
 the host to fail fast.
 
 `https://` origins are always accepted. `http://` origins are rejected unless
