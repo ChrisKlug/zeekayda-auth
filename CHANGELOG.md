@@ -543,6 +543,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   de-duplicated form. The canonical allowlist the endpoints match `Origin` against is derived
   internally, once, from the validated entries. CORS behaviour is unchanged.
 
+- **A persisted development key no longer walks its ancestor directories** (#826). The key file
+  is still created `0600` in a `0700` directory (a non-inherited owner-only ACL on Windows), and
+  loading still refuses a broader mode or a symlinked key file. What is gone is the walk up the
+  path that refused a directory owned by another user, a group-writable one or a symlinked one.
+  That only protects a development key on a shared multi-user machine, and the environment gate
+  still keeps it out of production. The error codes `signing.dev_keys.directory_not_owned_by_current_user`,
+  `…directory_component_writable_by_others`, `…directory_component_not_a_directory` and
+  `…directory_ownership_undetermined` are no longer raised. Core no longer contains native
+  interop; the `lstat` owner check used by `ZeeKayDa.Auth.FileSystem` now lives in that package.
+
 - **Development signing is renamed to match the other providers, with one options type** (#825).
   `AddInMemoryDevelopmentJwtSigningKeys()` is now `AddInMemoryDevelopmentSigning()`, and
   `AddPersistedDevelopmentJwtSigningKeys()` is now `AddPersistedDevelopmentSigning()`. Both

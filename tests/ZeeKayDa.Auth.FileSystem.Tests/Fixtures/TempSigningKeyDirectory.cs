@@ -45,8 +45,7 @@ internal sealed class TempSigningKeyDirectory : IDisposable
     /// <c>/var</c>, or <c>/etc</c> on macOS — all common locations — would have hit this same
     /// false-positive rejection in production.
     /// <c>FileSigningKeyReader.ValidateNoUntrustedSymlinkedAncestorUnix</c> now stops its
-    /// ancestor-symlink walk at the first root-owned directory (the same trust anchor
-    /// <c>LocalSigningKeyFileSystem.ValidateDirectoryChainOwnershipUnix</c> already uses), so an
+    /// ancestor-symlink walk at the first root-owned directory, so an
     /// OS-managed symlink no longer false-positives while a genuinely attacker-plantable symlinked
     /// ancestor still does — see
     /// <see cref="ZeeKayDa.Auth.FileSystem.Tests.FileSigningKeyReaderTests.ReadPemTextAsync_succeeds_for_a_file_under_the_OS_temp_directory_on_Unix"/>
