@@ -137,11 +137,9 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
 
     /// <summary>
     /// Registers what external providers need before any is registered: an empty scheme map that
-    /// <c>WithProviders</c> replaces, the validator that asserts the framework's pins on every
-    /// registered provider's options, and the round trip — the challenge, one callback endpoint
-    /// per provider, and the resume endpoint, each of which maps nothing while the map is empty.
-    /// The pin itself is registered by <c>WithProviders</c>, at the tail of the collection, so it
-    /// runs after the provider's own post-configuration.
+    /// <c>WithProviders</c> replaces, and the round trip — the challenge, one callback endpoint per
+    /// provider, and the resume endpoint, each of which maps nothing while the map is empty. The
+    /// pin, its validator and the provider startup checks are registered by <c>WithProviders</c>.
     /// </summary>
     private static void AddProviderServices(IServiceCollection services)
     {
@@ -151,15 +149,6 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, ProviderCallbackEndpoint>());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, ResumeEndpoint>());
-
-        // Open generic, constrained to AuthenticationSchemeOptions: the container skips it for
-        // every other options type, and it skips itself for every name that is not a provider.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton(typeof(IValidateOptions<>), typeof(HandlerOptionsValidator<>)));
-
-        // The channel that carries the validator's findings to the startup activator with their
-        // provenance intact. Registered next to the validator because it is useless without it.
-        services.TryAddSingleton<PinnedOptionDriftRecorder>();
     }
 
     /// <summary>

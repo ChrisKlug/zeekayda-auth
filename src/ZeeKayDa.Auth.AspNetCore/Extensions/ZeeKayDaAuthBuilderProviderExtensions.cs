@@ -103,6 +103,14 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton(typeof(IPostConfigureOptions<>), typeof(HandlerOptionsPin<>)));
 
+        // Open generic, constrained to AuthenticationSchemeOptions: the container skips it for
+        // every other options type, and it skips itself for every name that is not a provider.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton(typeof(IValidateOptions<>), typeof(HandlerOptionsValidator<>)));
+
+        // Carries the validator's findings to HandlerOptionsActivator with their provenance intact.
+        services.TryAddSingleton<PinnedOptionDriftRecorder>();
+
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupActivator, HandlerOptionsActivator>());
         services.TryAddEnumerable(
