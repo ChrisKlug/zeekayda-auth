@@ -22,7 +22,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <para>
 /// An ID token is bound to the access token issued with it: <c>at_hash</c> is computed inside the
 /// same callback, with the hash function the resolved key's algorithm implies (OpenID Connect Core
-/// §3.1.3.6), and the client's <see cref="Clients.IClientMetadata.AllowedSigningAlgorithms"/> is
+/// §3.1.3.6), and the client's <see cref="Clients.IClient.AllowedSigningAlgorithms"/> is
 /// checked there against that key before the signer is touched. Those two are everything this
 /// issuer adds to a payload; every other claim is written verbatim.
 /// </para>
@@ -59,7 +59,7 @@ public sealed class JwtTokenIssuer : ITokenIssuer
     /// <exception cref="InvalidOperationException">
     /// Thrown, before anything is signed, when the access token an ID token is bound to is not
     /// ASCII, when <paramref name="payload"/> already carries <c>at_hash</c>, or when the client's
-    /// <see cref="Clients.IClientMetadata.AllowedSigningAlgorithms"/> excludes the algorithm of the
+    /// <see cref="Clients.IClient.AllowedSigningAlgorithms"/> excludes the algorithm of the
     /// key the ring resolved for an ID token.
     /// </exception>
     /// <exception cref="System.Text.Json.JsonException">

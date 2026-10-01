@@ -13,16 +13,16 @@ internal sealed class AuthenticatedClient
 {
     public static readonly AuthenticatedClient Refused = new(null);
 
-    private AuthenticatedClient(IClientMetadata? client) => Client = client;
+    private AuthenticatedClient(IClient? client) => Client = client;
 
-    public static AuthenticatedClient Accepted(IClientMetadata client)
+    public static AuthenticatedClient Accepted(IClient client)
     {
         ArgumentNullException.ThrowIfNull(client);
         return new AuthenticatedClient(client);
     }
 
     /// <summary>The authenticated registration, or <see langword="null"/> when authentication failed.</summary>
-    public IClientMetadata? Client { get; }
+    public IClient? Client { get; }
 
     public bool Authenticated => Client is not null;
 }

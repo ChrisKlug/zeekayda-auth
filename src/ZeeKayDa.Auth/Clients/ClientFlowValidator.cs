@@ -3,8 +3,8 @@ using ZeeKayDa.Auth.Authorization;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Validates the flows a client may use — its <see cref="IClientMetadata.AllowedGrantTypes"/>,
-/// <see cref="IClientMetadata.AllowedResponseTypes"/> and <see cref="IClientMetadata.AllowedResponseModes"/>
+/// Validates the flows a client may use — its <see cref="IClient.AllowedGrantTypes"/>,
+/// <see cref="IClient.AllowedResponseTypes"/> and <see cref="IClient.AllowedResponseModes"/>
 /// — against what the server serves, and records a <see cref="ZeeKayDaConfigurationFailure"/> for
 /// every rule they break.
 /// </summary>
@@ -19,20 +19,20 @@ internal static class ClientFlowValidator
     /// Validates the client's three flow sets against the server's supported values.
     /// </summary>
     internal static void Validate(
-        IClientRegistration client,
+        IClientWithCredentials client,
         AuthorizationServerOptions options,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         var grantTypes = new FlowSet<GrantType>(
-            nameof(IClientMetadata.AllowedGrantTypes), client.AllowedGrantTypes,
+            nameof(IClient.AllowedGrantTypes), client.AllowedGrantTypes,
             nameof(AuthorizationServerOptions.GrantTypesSupported), options.GrantTypesSupported,
             "client.grant_types");
         var responseTypes = new FlowSet<ResponseType>(
-            nameof(IClientMetadata.AllowedResponseTypes), client.AllowedResponseTypes,
+            nameof(IClient.AllowedResponseTypes), client.AllowedResponseTypes,
             "Response.TypesSupported", options.Response.TypesSupported,
             "client.response_types");
         var responseModes = new FlowSet<ResponseMode>(
-            nameof(IClientMetadata.AllowedResponseModes), client.AllowedResponseModes,
+            nameof(IClient.AllowedResponseModes), client.AllowedResponseModes,
             "Response.ModesSupported", options.Response.ModesSupported,
             "client.response_modes");
 
@@ -74,7 +74,7 @@ internal static class ClientFlowValidator
     /// <c>Count</c> from what it yields.
     /// </summary>
     private static int ValidateEntries<T>(
-        IClientRegistration client,
+        IClientWithCredentials client,
         FlowSet<T> set,
         List<ZeeKayDaConfigurationFailure> failures)
         where T : struct, Enum
@@ -96,7 +96,7 @@ internal static class ClientFlowValidator
     /// value is not also reported as one the server does not serve.
     /// </summary>
     private static ZeeKayDaConfigurationFailure? ValidateEntry<T>(
-        IClientRegistration client,
+        IClientWithCredentials client,
         FlowSet<T> set,
         T value)
         where T : struct, Enum
@@ -121,7 +121,7 @@ internal static class ClientFlowValidator
     }
 
     private static ZeeKayDaConfigurationFailure Empty<T>(
-        IClientRegistration client,
+        IClientWithCredentials client,
         FlowSet<T> set,
         string reason)
         where T : struct, Enum =>

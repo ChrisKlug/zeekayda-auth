@@ -96,20 +96,20 @@ public sealed class TokenEndpointTests : IDisposable
         });
 
     /// <summary>A first-party public client: no consent, so sign-in ends the flow with a code.</summary>
-    private static ClientRegistration PublicRegistration() =>
-        ClientRegistration.CreatePublic(PublicClient, [RegisteredRedirect], [], ["openid", "profile", "email"])
+    private static Client PublicRegistration() =>
+        Client.CreatePublic(PublicClient, [RegisteredRedirect], [], ["openid", "profile", "email"])
             with
         { RequireConsent = false };
 
     /// <summary>A confidential client allowed only client_credentials, the grant RFC 6749 §4.4 keeps to confidential clients.</summary>
-    private static ClientRegistration NoCodeGrantRegistration() =>
-        ClientRegistration.CreateConfidential(NoCodeGrantClient, Pbkdf2(NoCodeGrantSecret), [RegisteredRedirect], [], ["openid"])
+    private static Client NoCodeGrantRegistration() =>
+        Client.CreateConfidential(NoCodeGrantClient, Pbkdf2(NoCodeGrantSecret), [RegisteredRedirect], [], ["openid"])
             with
         { AllowedGrantTypes = new HashSet<GrantType> { GrantType.ClientCredentials } };
 
     /// <summary>A first-party confidential client the operator trusts to check the nonce, so it may leave PKCE out.</summary>
-    private static ClientRegistration PkceOptionalRegistration() =>
-        ClientRegistration.CreateConfidential(PkceOptionalClient, Pbkdf2(PkceOptionalSecret), [RegisteredRedirect], [], ["openid", "profile"])
+    private static Client PkceOptionalRegistration() =>
+        Client.CreateConfidential(PkceOptionalClient, Pbkdf2(PkceOptionalSecret), [RegisteredRedirect], [], ["openid", "profile"])
             with
         { RequirePkce = false, RequireConsent = false };
 
@@ -442,7 +442,7 @@ public sealed class TokenEndpointTests : IDisposable
         // authorization request did before the code was issued. ValidatedClientResolver caches its
         // verdict, so without this the rotation below would make the token request fail client
         // resolution instead of reaching the signing refusal this test is about.
-        (await host.Resolve<ValidatedClientResolver>().FindByClientIdAsync(PublicClient, Cancellation))
+        (await host.Resolve<ValidatedClientResolver>().FindClientWithCredentialsAsync(PublicClient, Cancellation))
             .Should().NotBeNull();
 
         ring.SwitchToEs256();
@@ -974,7 +974,7 @@ public sealed class TokenEndpointTests : IDisposable
     // ── Fakes ─────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>A repository answering with one registration on the first read after a reset and another on every read after it.</summary>
-    private sealed class FirstReadThenOtherRepository(IClientRegistration first, IClientRegistration other) : IClientRepository
+    private sealed class FirstReadThenOtherRepository(IClientWithCredentials first, IClientWithCredentials other) : IClientRepository
     {
         private int _reads;
 
@@ -982,10 +982,10 @@ public sealed class TokenEndpointTests : IDisposable
 
         public void ResetToFirst() => Interlocked.Exchange(ref _reads, 0);
 
-        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
         {
             var registration = Interlocked.Increment(ref _reads) == 1 ? first : other;
-            return Task.FromResult<IClientRegistration?>(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
+            return Task.FromResult<IClientWithCredentials?>(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
         }
     }
 

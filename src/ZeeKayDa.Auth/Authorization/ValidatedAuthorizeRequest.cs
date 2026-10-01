@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.Authorization;
 internal sealed record ValidatedAuthorizeRequest
 {
     /// <summary>The validated client registration, credential-free view.</summary>
-    public required IClientMetadata Client { get; init; }
+    public required IClient Client { get; init; }
 
     /// <summary>The exact redirect URI the response will be delivered to.</summary>
     public required string RedirectUri { get; init; }

@@ -225,17 +225,17 @@ public sealed class ClientRegistrationValidatorTests
         return opts;
     }
 
-    private static ClientRegistration MakeValidPublicClient(string clientId = "test-client") =>
-        ClientRegistration.CreatePublic(
+    private static Client MakeValidPublicClient(string clientId = "test-client") =>
+        Client.CreatePublic(
             clientId,
             ["https://app.example.com/callback"],
             [],
             ["openid"]);
 
-    private static ClientRegistration MakeValidConfidentialClient(
+    private static Client MakeValidConfidentialClient(
         string clientId = "test-client",
         IClientSecret? secret = null) =>
-        ClientRegistration.CreateConfidential(
+        Client.CreateConfidential(
             clientId,
             secret ?? new FakeSecret(),
             ["https://app.example.com/callback"],
@@ -693,7 +693,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_passes_for_public_client_with_no_credentials_and_none_auth_method()
     {
         var validator = MakeValidator();
-        var client = ClientRegistration.CreatePublic(
+        var client = Client.CreatePublic(
             "client",
             ["https://app.example.com/cb"],
             [],
@@ -708,7 +708,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_passes_for_confidential_client_with_secret_and_ClientSecretBasic_auth_method()
     {
         var validator = MakeValidator();
-        var client = ClientRegistration.CreateConfidential(
+        var client = Client.CreateConfidential(
             "client",
             new FakeSecret(),
             ["https://app.example.com/cb"],
@@ -741,7 +741,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_fails_with_trinity_violation_code_if_IsPublic_is_true_but_has_credential()
     {
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new FakeSecret()],
@@ -762,7 +762,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_fails_with_trinity_violation_code_if_IsPublic_is_false_with_no_credentials_and_ClientSecretBasic()
     {
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [],
@@ -783,7 +783,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_fails_with_trinity_violation_code_if_IsPublic_is_true_with_no_credentials_and_ClientSecretBasic()
     {
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [],
@@ -804,7 +804,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_fails_with_empty_and_trinity_codes_if_IsPublic_is_false_with_no_credentials_and_empty_auth_methods()
     {
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [],
@@ -843,7 +843,7 @@ public sealed class ClientRegistrationValidatorTests
         // An invalid entry is reported once, as invalid — it must not additionally trip the
         // duplicate or unsupported-method checks it was never eligible for.
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new FakeSecret()],
@@ -866,7 +866,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_reports_an_auth_method_entry_with_a_control_character_as_invalid()
     {
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new FakeSecret()],
@@ -891,7 +891,7 @@ public sealed class ClientRegistrationValidatorTests
         // (it has credentials and is not "none-only") but advertising 'none' means it could be
         // called without credentials. RFC 6749 §2.3 reserves 'none' for public clients.
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new FakeSecret()],
@@ -919,7 +919,7 @@ public sealed class ClientRegistrationValidatorTests
 
         // We need a confidential client with exactly 2 IClientSecret credentials.
         // Use object initialiser to bypass CreateConfidential (which only allows one credential).
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new FakeSecret(), new FakeSecret()],
@@ -939,7 +939,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_fails_with_too_many_secrets_code_for_client_with_three_secrets()
     {
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new FakeSecret(), new FakeSecret(), new FakeSecret()],
@@ -1136,7 +1136,7 @@ public sealed class ClientRegistrationValidatorTests
         // rejected at registration rather than failing silently at runtime as invalid_client.
         var validator = MakeValidator(hasher: new FakeHasher());
 
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new AnySecret()],
@@ -1397,7 +1397,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         // Default server supports only ClientSecretBasic
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new FakeSecret()],
@@ -1774,7 +1774,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_aggregates_all_failures_for_multiple_violations()
     {
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "my client!", // invalid client_id
             Credentials = [],
@@ -1856,7 +1856,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_fails_with_invalid_entry_code_if_auth_method_has_leading_whitespace()
     {
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new FakeSecret()],
@@ -1878,7 +1878,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_fails_with_invalid_entry_code_if_auth_method_has_control_character()
     {
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new FakeSecret()],
@@ -1903,7 +1903,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         // IReadOnlySet<string> deduplicates, so we use a custom stub that allows duplicate entries.
         var validator = MakeValidator();
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new FakeSecret()],
@@ -1928,7 +1928,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_failure_message_contains_wire_string_if_ClientSecretJwt_is_not_in_server_subset()
     {
         var validator = MakeValidator(); // default server: client_secret_basic + none
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new FakeSecret()],
@@ -1956,7 +1956,7 @@ public sealed class ClientRegistrationValidatorTests
         serverOptions.TokenEndpoint.AuthMethodsSupported =
             [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None];
         var validator = MakeValidator(serverOptions: serverOptions);
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "client",
             Credentials = [new FakeSecret()],
@@ -1982,7 +1982,7 @@ public sealed class ClientRegistrationValidatorTests
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         // Deliberately do NOT add TokenEndpointAuthMethods.None
         var validator = MakeValidator(serverOptions: opts);
-        var client = ClientRegistration.CreatePublic(
+        var client = Client.CreatePublic(
             "client",
             ["https://app.example.com/cb"],
             [],

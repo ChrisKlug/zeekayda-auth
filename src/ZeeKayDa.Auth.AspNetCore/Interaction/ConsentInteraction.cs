@@ -118,7 +118,7 @@ internal sealed class ConsentInteraction(
     /// has no page worth rendering and no redirect URI anyone vouches for any more, so the
     /// request ends where it stands.
     /// </remarks>
-    private async ValueTask<(AuthorizationRequestContext RequestContext, IClientMetadata Client)> ResolveAsync(
+    private async ValueTask<(AuthorizationRequestContext RequestContext, IClient Client)> ResolveAsync(
         HttpContext context,
         CancellationToken cancellationToken)
     {

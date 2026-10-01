@@ -5,12 +5,12 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// An immutable copy of an <see cref="IClientRegistration"/>, read once at the point the store
+/// An immutable copy of an <see cref="IClientWithCredentials"/>, read once at the point the store
 /// hands it over. <see cref="ValidatedClientResolver"/> validates the copy and serves the copy.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Every member of <see cref="IClientRegistration"/> and <see cref="IClientMetadata"/>
+/// <strong>Every member of <see cref="IClientWithCredentials"/> and <see cref="IClient"/>
 /// MUST be copied here.</strong> A member left reading through to the store's instance can change
 /// after the verdict that blessed it, which is the whole bug this type exists to close. When adding
 /// a member to either interface, add it here in the same change —
@@ -34,7 +34,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// </para>
 /// <para>
 /// The string sets are rebuilt with <see cref="StringComparer.Ordinal"/>, which makes
-/// <see cref="IClientMetadata"/>'s string-set comparison invariant structural rather than a rule
+/// <see cref="IClient"/>'s string-set comparison invariant structural rather than a rule
 /// every consumer has to remember: past this point the set's own comparer cannot be the wrong one,
 /// because the framework chose it.
 /// </para>
@@ -51,9 +51,9 @@ namespace ZeeKayDa.Auth.Clients;
 /// time, and a credential that answered differently could pass while this copy held its instance.
 /// </para>
 /// </remarks>
-internal sealed class ClientRegistrationSnapshot : IClientRegistration
+internal sealed class ClientRegistrationSnapshot : IClientWithCredentials
 {
-    private ClientRegistrationSnapshot(IClientRegistration client)
+    private ClientRegistrationSnapshot(IClientWithCredentials client)
     {
         ClientId = client.ClientId;
         IsPublic = client.IsPublic;
@@ -162,7 +162,7 @@ internal sealed class ClientRegistrationSnapshot : IClientRegistration
     /// <see cref="ValidatedClientResolver"/> — turns that into an unknown client, on the same terms
     /// as a registration that fails validation.
     /// </remarks>
-    public static ClientRegistrationSnapshot Of(IClientRegistration client) => new(client);
+    public static ClientRegistrationSnapshot Of(IClientWithCredentials client) => new(client);
 
     // Every copy is wrapped, never handed over bare. An IReadOnlySet<string> whose runtime type is
     // HashSet<string> is read-only only by convention: TokenIssuanceContext.Client hands this

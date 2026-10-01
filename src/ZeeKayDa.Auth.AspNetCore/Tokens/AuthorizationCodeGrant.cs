@@ -31,7 +31,7 @@ internal sealed class AuthorizationCodeGrant(
     private readonly GrantClaimsResolver _claims = claims;
 
     /// <summary>Exchanges the request's code for tokens on behalf of <paramref name="client"/>, which has been authenticated.</summary>
-    public async Task<IResult> ExchangeAsync(HttpContext context, TokenRequest request, IClientMetadata client)
+    public async Task<IResult> ExchangeAsync(HttpContext context, TokenRequest request, IClient client)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(request);
@@ -81,7 +81,7 @@ internal sealed class AuthorizationCodeGrant(
     }
 
     /// <summary>The code is consumed; what it was bound to must now match what the request presents.</summary>
-    private async Task<IResult> IssueAsync(HttpContext context, TokenRequest request, IClientMetadata client, AuthorizationCodeEntry entry, string familyId)
+    private async Task<IResult> IssueAsync(HttpContext context, TokenRequest request, IClient client, AuthorizationCodeEntry entry, string familyId)
     {
         if (!string.Equals(request.RedirectUri, entry.RedirectUri, StringComparison.Ordinal))
         {
@@ -129,7 +129,7 @@ internal sealed class AuthorizationCodeGrant(
         };
     }
 
-    private async Task<IResult> IssueTokensAsync(HttpContext context, IClientMetadata client, AuthorizationCodeEntry entry, GrantClaimsOutcome.Issue issue)
+    private async Task<IResult> IssueTokensAsync(HttpContext context, IClient client, AuthorizationCodeEntry entry, GrantClaimsOutcome.Issue issue)
     {
         var now = time.GetUtcNow();
         var lifetimes = options.Value.TokenEndpoint;
@@ -176,7 +176,7 @@ internal sealed class AuthorizationCodeGrant(
     /// server's own action, so a client dropping the connection does not cancel it; one the
     /// store cannot perform is logged; the client is refused regardless.
     /// </summary>
-    private async Task<IResult> RefuseReplayAsync(HttpContext context, IClientMetadata client, string familyId)
+    private async Task<IResult> RefuseReplayAsync(HttpContext context, IClient client, string familyId)
     {
         logger.LogWarning("Client {ClientId} presented an authorization code that was already redeemed; revoking the family it started.", client.ClientId);
 
@@ -196,7 +196,7 @@ internal sealed class AuthorizationCodeGrant(
         return InvalidGrant();
     }
 
-    private IResult RefuseMismatchedClient(IClientMetadata client)
+    private IResult RefuseMismatchedClient(IClient client)
     {
         logger.LogWarning("Client {ClientId} presented an authorization code issued to a different client.", client.ClientId);
         return InvalidGrant();
@@ -216,7 +216,7 @@ internal sealed class AuthorizationCodeGrant(
     private static bool VerifierProvesTheChallengeTheCodeWasIssuedWith(TokenRequest request, AuthorizationCodeEntry entry) =>
         entry.Pkce is not { } pkce || (request.CodeVerifier is { } verifier && PkceVerifier.Verify(verifier, pkce));
 
-    private static bool ClientAcceptsCurrentSigningKey(HttpContext context, IClientMetadata client) =>
+    private static bool ClientAcceptsCurrentSigningKey(HttpContext context, IClient client) =>
         client.AllowedSigningAlgorithms is not { } allowed ||
         allowed.Contains(context.RequestServices.GetRequiredService<ISigningKeyRing>().Current.SigningKey.Algorithm);
 

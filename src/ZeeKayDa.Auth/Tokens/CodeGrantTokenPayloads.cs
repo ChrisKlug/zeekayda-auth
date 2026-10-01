@@ -19,7 +19,7 @@ namespace ZeeKayDa.Auth.Tokens;
 internal sealed class CodeGrantTokenPayloads
 {
     private readonly string _issuer;
-    private readonly IClientMetadata _client;
+    private readonly IClient _client;
     private readonly AuthorizationCodeEntry _entry;
     private readonly DateTimeOffset _now;
     private readonly SelectedClaims _subject;
@@ -37,7 +37,7 @@ internal sealed class CodeGrantTokenPayloads
     /// </param>
     public CodeGrantTokenPayloads(
         string issuer,
-        IClientMetadata client,
+        IClient client,
         AuthorizationCodeEntry entry,
         DateTimeOffset now,
         SelectedClaims subject,

@@ -12,13 +12,13 @@ package can decorate them later without a breaking change.
 
 **A client registration is a pair of interfaces, not a sealed shape.** A custom repository makes its
 own ORM entity implement them directly, so lookup on the token endpoint's hot path allocates no
-mapping object. `IClientMetadata` carries everything except the credentials and `IClientRegistration`
-adds them, so code deciding *what* to issue a client — token issuance above all — never receives its
-secrets; only client authentication takes `IClientRegistration`. The inheritance means a downcast
-still reaches them, which is the point: a guardrail against accidental use, not a boundary against a
-determined caller, who could resolve the repository anyway. The framework ships a sealed record implementation for hosts that want one, and validation
-lives in a separate validator rather than in a constructor, so a test can construct an invalid
-registration deliberately.
+mapping object. The safe view gets the plain name: `IClient` carries everything but the credentials,
+and `IClientWithCredentials` adds them. The resolver's `FindClientAsync` returns `IClient` to every
+caller; only client authentication calls `FindClientWithCredentialsAsync`
+(`Only_client_storage_and_client_authentication_look_up_credentials`). A downcast still
+reaches the secrets: a guardrail against accidental use, not a boundary against a determined caller,
+who could resolve the repository anyway. The shipped record `Client` is validated by a separate
+validator, not its constructor, so a test can build an invalid registration deliberately.
 
 **String sets on a registration are compared ordinally and counted by enumeration, and the
 resolver's snapshot guarantees both for everything the framework serves.** A custom repository's

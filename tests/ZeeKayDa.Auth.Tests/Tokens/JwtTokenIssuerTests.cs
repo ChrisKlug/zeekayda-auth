@@ -18,11 +18,11 @@ public sealed class JwtTokenIssuerTests
 {
     private static readonly DateTimeOffset Epoch = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    private static readonly IClientMetadata Client = new TestClient();
+    private static readonly IClient Client = new TestClient();
 
     // ── Fakes ────────────────────────────────────────────────────────────────────────────────────
 
-    private sealed class TestClient : IClientMetadata
+    private sealed class TestClient : IClient
     {
         public string ClientId => "test-client";
         public bool IsPublic => true;
@@ -108,7 +108,7 @@ public sealed class JwtTokenIssuerTests
     }
 
     /// <summary>A client that restricted the algorithms its ID tokens may be signed with.</summary>
-    private sealed class RestrictedClient(IReadOnlySet<SigningAlgorithm>? allowed) : IClientMetadata
+    private sealed class RestrictedClient(IReadOnlySet<SigningAlgorithm>? allowed) : IClient
     {
         public string ClientId => "restricted-client";
         public bool IsPublic => true;

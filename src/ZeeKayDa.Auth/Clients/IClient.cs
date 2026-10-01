@@ -12,7 +12,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// <para>
 /// This is the view handed to code that must decide <em>what</em> to issue a client without ever
 /// needing to authenticate it — <c>ITokenIssuer</c> above all. Client authentication takes
-/// <see cref="IClientRegistration"/>, which adds <see cref="IClientRegistration.Credentials"/>;
+/// <see cref="IClientWithCredentials"/>, which adds <see cref="IClientWithCredentials.Credentials"/>;
 /// everything else takes this. A downcast still reaches the credentials, so this is a guardrail
 /// rather than a boundary: its value is that the default path does not carry secrets, so code that
 /// touches them has to visibly reach for them.
@@ -40,7 +40,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// accepts values that were never registered.
 /// </para>
 /// </remarks>
-public interface IClientMetadata
+public interface IClient
 {
     /// <summary>The unique identifier for this client.</summary>
     string ClientId { get; }
@@ -53,7 +53,7 @@ public interface IClientMetadata
     /// Declared (non-default interface member) because a silent default value would convert a
     /// configuration omission into a security-relevant runtime behaviour change. Three-way
     /// consistency rule: a client is public if and only if it has no entries in
-    /// <see cref="IClientRegistration.Credentials"/>, and if and only if
+    /// <see cref="IClientWithCredentials.Credentials"/>, and if and only if
     /// <see cref="AllowedTokenEndpointAuthMethods"/> is exactly <c>{ "none" }</c>. Enforced by
     /// <see cref="IClientRegistrationValidator"/> on every registration the framework serves.
     /// See <see href="https://www.rfc-editor.org/rfc/rfc6749#section-2.1">RFC 6749 §2.1</see>.
@@ -65,7 +65,7 @@ public interface IClientMetadata
     /// </summary>
     /// <remarks>
     /// Matched with <see cref="System.StringComparer.Ordinal"/>, as
-    /// <see cref="IClientMetadata"/>'s string-set comparison invariant describes. Exact string
+    /// <see cref="IClient"/>'s string-set comparison invariant describes. Exact string
     /// matching is required by
     /// <see href="https://www.rfc-editor.org/rfc/rfc9700#section-2.1">RFC 9700 §2.1</see>.
     /// </remarks>
@@ -74,13 +74,13 @@ public interface IClientMetadata
     /// <summary>
     /// Permitted post-logout redirect URIs. May be empty.
     /// </summary>
-    /// <remarks>See <see cref="IClientMetadata"/>'s string-set comparison invariant.</remarks>
+    /// <remarks>See <see cref="IClient"/>'s string-set comparison invariant.</remarks>
     IReadOnlySet<string> PostLogoutRedirectUris { get; }
 
     /// <summary>
     /// Scopes this client is permitted to request.
     /// </summary>
-    /// <remarks>See <see cref="IClientMetadata"/>'s string-set comparison invariant.</remarks>
+    /// <remarks>See <see cref="IClient"/>'s string-set comparison invariant.</remarks>
     IReadOnlySet<string> AllowedScopes { get; }
 
     /// <summary>OAuth 2.0 grant types this client is permitted to use.</summary>
@@ -110,7 +110,7 @@ public interface IClientMetadata
     /// Token endpoint authentication methods this client is permitted to use.
     /// </summary>
     /// <remarks>
-    /// See <see cref="IClientMetadata"/>'s string-set comparison invariant. The value
+    /// See <see cref="IClient"/>'s string-set comparison invariant. The value
     /// <c>"none"</c> (see <see cref="TokenEndpointAuthMethods.None"/>) is only valid for public
     /// clients (<see cref="IsPublic"/> == <see langword="true"/>).
     /// </remarks>

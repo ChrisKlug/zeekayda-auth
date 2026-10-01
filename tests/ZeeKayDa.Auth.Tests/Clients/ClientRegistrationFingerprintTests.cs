@@ -9,7 +9,7 @@ public class ClientRegistrationFingerprintTests
 {
     /// <summary>
     /// The guard that makes the fingerprint's coverage rule enforceable rather than advisory.
-    /// A member added to <see cref="IClientRegistration"/> or <see cref="IClientMetadata"/> and
+    /// A member added to <see cref="IClientWithCredentials"/> or <see cref="IClient"/> and
     /// not added to <c>ClientRegistrationFingerprint.Compute</c> can be changed without
     /// invalidating a cached validation verdict — so this test fails the build until both are
     /// updated together. If you are here because it failed: add the member to the fingerprint,
@@ -20,36 +20,36 @@ public class ClientRegistrationFingerprintTests
     {
         string[] covered =
         [
-            nameof(IClientMetadata.ClientId),
-            nameof(IClientMetadata.IsPublic),
-            nameof(IClientMetadata.EnableZkdErrorCodes),
-            nameof(IClientMetadata.DisplayName),
-            nameof(IClientMetadata.InitiateLoginUri),
-            nameof(IClientMetadata.RequireConsent),
-            nameof(IClientMetadata.SkipLogoutConfirmation),
-            nameof(IClientMetadata.RequirePkce),
-            nameof(IClientMetadata.RedirectUris),
-            nameof(IClientMetadata.PostLogoutRedirectUris),
-            nameof(IClientMetadata.AllowedScopes),
-            nameof(IClientMetadata.AllowedTokenEndpointAuthMethods),
-            nameof(IClientMetadata.AllowedGrantTypes),
-            nameof(IClientMetadata.AllowedResponseTypes),
-            nameof(IClientMetadata.AllowedResponseModes),
-            nameof(IClientMetadata.AllowedPromptValues),
-            nameof(IClientMetadata.AllowedSigningAlgorithms),
-            nameof(IClientMetadata.AccessTokenLifetime),
-            nameof(IClientMetadata.IdTokenLifetime),
-            nameof(IClientMetadata.AdditionalIdTokenClaims),
-            nameof(IClientMetadata.AdditionalUserInfoClaims),
-            nameof(IClientMetadata.AdditionalAccessTokenClaims),
-            nameof(IClientRegistration.Credentials),
+            nameof(IClient.ClientId),
+            nameof(IClient.IsPublic),
+            nameof(IClient.EnableZkdErrorCodes),
+            nameof(IClient.DisplayName),
+            nameof(IClient.InitiateLoginUri),
+            nameof(IClient.RequireConsent),
+            nameof(IClient.SkipLogoutConfirmation),
+            nameof(IClient.RequirePkce),
+            nameof(IClient.RedirectUris),
+            nameof(IClient.PostLogoutRedirectUris),
+            nameof(IClient.AllowedScopes),
+            nameof(IClient.AllowedTokenEndpointAuthMethods),
+            nameof(IClient.AllowedGrantTypes),
+            nameof(IClient.AllowedResponseTypes),
+            nameof(IClient.AllowedResponseModes),
+            nameof(IClient.AllowedPromptValues),
+            nameof(IClient.AllowedSigningAlgorithms),
+            nameof(IClient.AccessTokenLifetime),
+            nameof(IClient.IdTokenLifetime),
+            nameof(IClient.AdditionalIdTokenClaims),
+            nameof(IClient.AdditionalUserInfoClaims),
+            nameof(IClient.AdditionalAccessTokenClaims),
+            nameof(IClientWithCredentials.Credentials),
         ];
 
         // Type.GetProperties() on an interface does not return inherited members, so the whole
         // implemented-interface set is walked. Naming the interfaces by hand would let a member
         // on a newly inserted base interface pass this guard while the fingerprint missed it.
-        var declared = typeof(IClientRegistration).GetInterfaces()
-            .Append(typeof(IClientRegistration))
+        var declared = typeof(IClientWithCredentials).GetInterfaces()
+            .Append(typeof(IClientWithCredentials))
             .SelectMany(t => t.GetProperties())
             .Select(p => p.Name)
             .Distinct(StringComparer.Ordinal);
@@ -61,7 +61,7 @@ public class ClientRegistrationFingerprintTests
         // the fingerprint actually changes, so every covered member must appear there too.
         // Credentials is exercised by its own dedicated tests rather than the theory.
         MemberMutations().Keys
-            .Should().BeEquivalentTo(covered.Except([nameof(IClientRegistration.Credentials)]));
+            .Should().BeEquivalentTo(covered.Except([nameof(IClientWithCredentials.Credentials)]));
     }
 
     [Fact]
@@ -70,11 +70,11 @@ public class ClientRegistrationFingerprintTests
         // Values reach the fingerprint straight from the store, before validation, so a
         // delimiter-only encoding would let {"a","b"} and {"a\u001Fb"} serialize identically —
         // and a collision means an invalid registration inheriting a valid one's verdict.
-        var twoScopes = Client() with
+        var twoScopes = NewClient() with
         {
             AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "a", "b" },
         };
-        var oneJoinedScope = Client() with
+        var oneJoinedScope = NewClient() with
         {
             AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "a\u001Fb" },
         };
@@ -88,18 +88,18 @@ public class ClientRegistrationFingerprintTests
     {
         // The property that removes the per-request PBKDF2 for a store handing out fresh
         // instances (an EF Core repository, for example).
-        ClientRegistrationFingerprint.Compute(Client()).Value
-            .Should().Be(ClientRegistrationFingerprint.Compute(Client()).Value);
+        ClientRegistrationFingerprint.Compute(NewClient()).Value
+            .Should().Be(ClientRegistrationFingerprint.Compute(NewClient()).Value);
     }
 
     [Fact]
     public void Set_ordering_does_not_change_the_fingerprint()
     {
-        var forwards = Client() with
+        var forwards = NewClient() with
         {
             AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "profile", "email" },
         };
-        var backwards = Client() with
+        var backwards = NewClient() with
         {
             AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "email", "profile", "openid" },
         };
@@ -108,35 +108,35 @@ public class ClientRegistrationFingerprintTests
             .Should().Be(ClientRegistrationFingerprint.Compute(backwards).Value);
     }
 
-    private static Dictionary<string, ClientRegistration> MemberMutations() => new(StringComparer.Ordinal)
+    private static Dictionary<string, Client> MemberMutations() => new(StringComparer.Ordinal)
     {
-        ["ClientId"] = Client() with { ClientId = "other-client" },
-        ["IsPublic"] = Client() with { IsPublic = false },
-        ["EnableZkdErrorCodes"] = Client() with { EnableZkdErrorCodes = true },
-        ["DisplayName"] = Client() with { DisplayName = "Other App" },
-        ["InitiateLoginUri"] = Client() with { InitiateLoginUri = "https://app.example.com/start" },
-        ["RequireConsent"] = Client() with { RequireConsent = false },
-        ["SkipLogoutConfirmation"] = Client() with { SkipLogoutConfirmation = true },
-        ["RequirePkce"] = Client() with { RequirePkce = false },
-        ["RedirectUris"] = Client() with { RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/other" } },
-        ["PostLogoutRedirectUris"] = Client() with { PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/bye" } },
-        ["AllowedScopes"] = Client() with { AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "admin" } },
-        ["AllowedTokenEndpointAuthMethods"] = Client() with { AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.ClientSecretBasic } },
-        ["AllowedGrantTypes"] = Client() with { AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken } },
-        ["AllowedResponseTypes"] = Client() with { AllowedResponseTypes = new HashSet<ResponseType>() },
-        ["AllowedResponseModes"] = Client() with { AllowedResponseModes = new HashSet<ResponseMode>() },
-        ["AllowedPromptValues"] = Client() with { AllowedPromptValues = new HashSet<PromptValue> { PromptValue.Login } },
-        ["AllowedSigningAlgorithms"] = Client() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } },
-        ["AccessTokenLifetime"] = Client() with { AccessTokenLifetime = TimeSpan.FromMinutes(10) },
-        ["IdTokenLifetime"] = Client() with { IdTokenLifetime = TimeSpan.FromMinutes(1) },
-        ["AdditionalIdTokenClaims"] = Client() with { AdditionalIdTokenClaims = ["tenant"] },
-        ["AdditionalUserInfoClaims"] = Client() with { AdditionalUserInfoClaims = ["tenant"] },
-        ["AdditionalAccessTokenClaims"] = Client() with { AdditionalAccessTokenClaims = ["tenant"] },
+        ["ClientId"] = NewClient() with { ClientId = "other-client" },
+        ["IsPublic"] = NewClient() with { IsPublic = false },
+        ["EnableZkdErrorCodes"] = NewClient() with { EnableZkdErrorCodes = true },
+        ["DisplayName"] = NewClient() with { DisplayName = "Other App" },
+        ["InitiateLoginUri"] = NewClient() with { InitiateLoginUri = "https://app.example.com/start" },
+        ["RequireConsent"] = NewClient() with { RequireConsent = false },
+        ["SkipLogoutConfirmation"] = NewClient() with { SkipLogoutConfirmation = true },
+        ["RequirePkce"] = NewClient() with { RequirePkce = false },
+        ["RedirectUris"] = NewClient() with { RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/other" } },
+        ["PostLogoutRedirectUris"] = NewClient() with { PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/bye" } },
+        ["AllowedScopes"] = NewClient() with { AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "admin" } },
+        ["AllowedTokenEndpointAuthMethods"] = NewClient() with { AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.ClientSecretBasic } },
+        ["AllowedGrantTypes"] = NewClient() with { AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken } },
+        ["AllowedResponseTypes"] = NewClient() with { AllowedResponseTypes = new HashSet<ResponseType>() },
+        ["AllowedResponseModes"] = NewClient() with { AllowedResponseModes = new HashSet<ResponseMode>() },
+        ["AllowedPromptValues"] = NewClient() with { AllowedPromptValues = new HashSet<PromptValue> { PromptValue.Login } },
+        ["AllowedSigningAlgorithms"] = NewClient() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } },
+        ["AccessTokenLifetime"] = NewClient() with { AccessTokenLifetime = TimeSpan.FromMinutes(10) },
+        ["IdTokenLifetime"] = NewClient() with { IdTokenLifetime = TimeSpan.FromMinutes(1) },
+        ["AdditionalIdTokenClaims"] = NewClient() with { AdditionalIdTokenClaims = ["tenant"] },
+        ["AdditionalUserInfoClaims"] = NewClient() with { AdditionalUserInfoClaims = ["tenant"] },
+        ["AdditionalAccessTokenClaims"] = NewClient() with { AdditionalAccessTokenClaims = ["tenant"] },
     };
 
-    public static TheoryData<string, ClientRegistration> MutatedRegistrations()
+    public static TheoryData<string, Client> MutatedRegistrations()
     {
-        var data = new TheoryData<string, ClientRegistration>();
+        var data = new TheoryData<string, Client>();
         foreach (var (member, registration) in MemberMutations())
             data.Add(member, registration);
 
@@ -145,12 +145,12 @@ public class ClientRegistrationFingerprintTests
 
     [Theory]
     [MemberData(nameof(MutatedRegistrations))]
-    public void Changing_any_covered_member_changes_the_fingerprint(string member, ClientRegistration mutated)
+    public void Changing_any_covered_member_changes_the_fingerprint(string member, Client mutated)
     {
         // Given a registration that differs only in {member}, the fingerprint must differ —
         // otherwise a stale verdict would keep serving a registration validation now rejects.
         ClientRegistrationFingerprint.Compute(mutated).Value
-            .Should().NotBe(ClientRegistrationFingerprint.Compute(Client()).Value, $"{member} is covered");
+            .Should().NotBe(ClientRegistrationFingerprint.Compute(NewClient()).Value, $"{member} is covered");
     }
 
     [Fact]
@@ -158,8 +158,8 @@ public class ClientRegistrationFingerprintTests
     {
         // Null means "inherit the server's advertised set"; empty means "none permitted". They
         // validate differently, so they must not share a verdict.
-        var nullAlgs = Client() with { AllowedSigningAlgorithms = null };
-        var emptyAlgs = Client() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm>() };
+        var nullAlgs = NewClient() with { AllowedSigningAlgorithms = null };
+        var emptyAlgs = NewClient() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm>() };
 
         ClientRegistrationFingerprint.Compute(nullAlgs).Value
             .Should().NotBe(ClientRegistrationFingerprint.Compute(emptyAlgs).Value);
@@ -189,8 +189,8 @@ public class ClientRegistrationFingerprintTests
         // IClientCredential is a marker interface, so a custom credential exposes nothing to
         // fingerprint by content. Distinct instances must therefore produce distinct
         // fingerprints — conservative, and no worse than instance-keyed memoization.
-        var first = Client() with { Credentials = [new CustomCredential()] };
-        var second = Client() with { Credentials = [new CustomCredential()] };
+        var first = NewClient() with { Credentials = [new CustomCredential()] };
+        var second = NewClient() with { Credentials = [new CustomCredential()] };
 
         var firstPrint = ClientRegistrationFingerprint.Compute(first);
 
@@ -201,14 +201,14 @@ public class ClientRegistrationFingerprintTests
 
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
 
-    private static ClientRegistration Client() =>
-        ClientRegistration.CreatePublic(
+    private static Client NewClient() =>
+        Client.CreatePublic(
             "client-1",
             redirectUris: ["https://app.example.com/callback"],
             postLogoutRedirectUris: [],
             allowedScopes: ["openid", "profile"]);
 
-    private static ClientRegistration Confidential(byte[] hash) => Client() with
+    private static Client Confidential(byte[] hash) => NewClient() with
     {
         IsPublic = false,
         Credentials = [new StubPbkdf2Secret(hash)],

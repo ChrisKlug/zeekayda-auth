@@ -26,5 +26,5 @@ public interface IClientRegistrationValidator
     /// a single exception so operators see every problem in one pass — see
     /// <see cref="ZeeKayDaConfigurationException.AggregatedFailures"/>.
     /// </exception>
-    void Validate(IClientRegistration client);
+    void Validate(IClientWithCredentials client);
 }

@@ -61,7 +61,7 @@ public interface IInMemoryClientRegistrationBuilder
         Action<ConfidentialClientOptions>? configure = null);
 
     /// <summary>
-    /// Registers a pre-built or pre-hashed <see cref="IClientRegistration"/> directly.
+    /// Registers a pre-built or pre-hashed <see cref="IClientWithCredentials"/> directly.
     /// </summary>
-    IInMemoryClientRegistrationBuilder Add(IClientRegistration registration);
+    IInMemoryClientRegistrationBuilder Add(IClientWithCredentials registration);
 }

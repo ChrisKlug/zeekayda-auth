@@ -10,7 +10,7 @@ internal sealed class FrameworkThenHostValidator(
     ClientRegistrationValidator framework,
     IClientRegistrationValidator host) : IClientRegistrationValidator
 {
-    public void Validate(IClientRegistration client)
+    public void Validate(IClientWithCredentials client)
     {
         framework.Validate(client);
         if (!ReferenceEquals(host, framework))

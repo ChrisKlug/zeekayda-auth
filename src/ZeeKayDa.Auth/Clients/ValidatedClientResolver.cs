@@ -83,17 +83,26 @@ internal sealed class ValidatedClientResolver(
     private const int MaxCachedVerdicts = 16_384;
 
     /// <summary>
-    /// Returns an immutable snapshot of the validated registration for <paramref name="clientId"/>,
-    /// or <see langword="null"/> when the client is unknown <em>or</em> its registration fails
+    /// Returns the credential-free <see cref="IClient"/> view of the validated client for
+    /// <paramref name="clientId"/>, or
+    /// <see langword="null"/> when the client is unknown <em>or</em> its registration fails
     /// validation. Callers cannot and must not distinguish the two.
     /// </summary>
     /// <remarks>
     /// The returned instance is never the store's own, and neither are its credentials — see the
     /// snapshot's remarks for why.
     /// </remarks>
-    public async ValueTask<IClientRegistration?> FindByClientIdAsync(
-        string clientId,
-        CancellationToken cancellationToken)
+    public ValueTask<IClient?> FindClientAsync(string clientId, CancellationToken cancellationToken) =>
+        FindAsync<IClient>(clientId, cancellationToken);
+
+    /// <summary>
+    /// <see cref="FindClientAsync"/> with the client's credentials, for client authentication only.
+    /// </summary>
+    public ValueTask<IClientWithCredentials?> FindClientWithCredentialsAsync(string clientId, CancellationToken cancellationToken) =>
+        FindAsync<IClientWithCredentials>(clientId, cancellationToken);
+
+    private async ValueTask<TClient?> FindAsync<TClient>(string clientId, CancellationToken cancellationToken)
+        where TClient : class, IClient
     {
         ArgumentNullException.ThrowIfNull(clientId);
 
@@ -103,7 +112,7 @@ internal sealed class ValidatedClientResolver(
 
         var (snapshot, verdict) = Resolve(client);
         if (snapshot is not null && verdict.IsValid)
-            return snapshot;
+            return snapshot as TClient;
 
         // Logged once per distinct failure, not per request — a known-bad client_id must not be
         // an unauthenticated log-amplification lever. The registration's own ClientId is what
@@ -214,7 +223,7 @@ internal sealed class ValidatedClientResolver(
     /// snapshot is <see langword="null"/> only when the registration could not be read at all,
     /// which the verdict then says.
     /// </summary>
-    private (ClientRegistrationSnapshot? Snapshot, Verdict Verdict) Resolve(IClientRegistration client)
+    private (ClientRegistrationSnapshot? Snapshot, Verdict Verdict) Resolve(IClientWithCredentials client)
     {
         ClientRegistrationSnapshot snapshot;
         ClientRegistrationFingerprint.Fingerprint fingerprint;
@@ -275,7 +284,7 @@ internal sealed class ValidatedClientResolver(
         return entry.Value;
     }
 
-    private Verdict Validate(IClientRegistration client)
+    private Verdict Validate(IClientWithCredentials client)
     {
         try
         {

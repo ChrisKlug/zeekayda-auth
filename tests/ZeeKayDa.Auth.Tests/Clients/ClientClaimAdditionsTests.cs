@@ -16,11 +16,11 @@ public sealed class ClientClaimAdditionsTests
         UserInfoClaims = ["customer_number"],
     };
 
-    private static ClientRegistration Client(
+    private static Client NewClient(
         IReadOnlyCollection<string>? idToken = null,
         IReadOnlyCollection<string>? userInfo = null,
         IReadOnlyCollection<string>? accessToken = null) =>
-        ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]) with
+        Client.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]) with
         {
             AdditionalIdTokenClaims = idToken ?? [],
             AdditionalUserInfoClaims = userInfo ?? [],
@@ -30,7 +30,7 @@ public sealed class ClientClaimAdditionsTests
     [Fact]
     public void An_addition_no_scope_unlocks_is_allowed()
     {
-        var collision = ClientClaimAdditions.FindCollision(Client(idToken: ["tenant"], accessToken: ["tenant"]), StandardScopes.All);
+        var collision = ClientClaimAdditions.FindCollision(NewClient(idToken: ["tenant"], accessToken: ["tenant"]), StandardScopes.All);
 
         collision.Should().BeNull();
     }
@@ -38,25 +38,25 @@ public sealed class ClientClaimAdditionsTests
     [Fact]
     public void An_addition_naming_a_consent_bearing_claim_is_refused()
     {
-        var collision = ClientClaimAdditions.FindCollision(Client(idToken: ["email"]), StandardScopes.All);
+        var collision = ClientClaimAdditions.FindCollision(NewClient(idToken: ["email"]), StandardScopes.All);
 
-        collision.Should().Be(new ClaimAdditionCollision("email", "email", nameof(IClientMetadata.AdditionalIdTokenClaims)));
+        collision.Should().Be(new ClaimAdditionCollision("email", "email", nameof(IClient.AdditionalIdTokenClaims)));
     }
 
     [Fact]
     public void The_check_spans_destinations_so_an_access_token_addition_cannot_bypass_the_email_scope()
     {
         // No scope lists email for the access token; a per-destination check would let this through.
-        var collision = ClientClaimAdditions.FindCollision(Client(accessToken: ["email"]), StandardScopes.All);
+        var collision = ClientClaimAdditions.FindCollision(NewClient(accessToken: ["email"]), StandardScopes.All);
 
         collision.Should().NotBeNull();
-        collision!.Value.Property.Should().Be(nameof(IClientMetadata.AdditionalAccessTokenClaims));
+        collision!.Value.Property.Should().Be(nameof(IClient.AdditionalAccessTokenClaims));
     }
 
     [Fact]
     public void A_userinfo_only_claim_counts_as_unlocked()
     {
-        var collision = ClientClaimAdditions.FindCollision(Client(idToken: ["customer_number"]), [StandardScopes.OpenId, OrdersRead]);
+        var collision = ClientClaimAdditions.FindCollision(NewClient(idToken: ["customer_number"]), [StandardScopes.OpenId, OrdersRead]);
 
         collision!.Value.Scope.Should().Be("orders.read");
     }
@@ -66,7 +66,7 @@ public sealed class ClientClaimAdditionsTests
     {
         // The standard scopes release their claims at userinfo only, so telling an operator to
         // "grant it through the scope" would send them somewhere that never reaches the ID token.
-        var collision = ClientClaimAdditions.FindCollision(Client(idToken: ["email"]), StandardScopes.All);
+        var collision = ClientClaimAdditions.FindCollision(NewClient(idToken: ["email"]), StandardScopes.All);
 
         var message = collision!.Value.Describe("app");
 
@@ -79,7 +79,7 @@ public sealed class ClientClaimAdditionsTests
     {
         // A consuming ClaimsPrincipal matches claim types ignoring case, so 'Email' would be read
         // as the consent-bearing claim by a client that never held the email scope.
-        var collision = ClientClaimAdditions.FindCollision(Client(idToken: ["Email"]), StandardScopes.All);
+        var collision = ClientClaimAdditions.FindCollision(NewClient(idToken: ["Email"]), StandardScopes.All);
 
         collision.Should().NotBeNull();
         collision!.Value.Scope.Should().Be("email");
@@ -88,7 +88,7 @@ public sealed class ClientClaimAdditionsTests
     [Fact]
     public void A_client_with_no_additions_never_collides_whatever_the_scopes_say()
     {
-        var collision = ClientClaimAdditions.FindCollision(Client(), [new ScopeDefinition { Name = "custom" }]);
+        var collision = ClientClaimAdditions.FindCollision(NewClient(), [new ScopeDefinition { Name = "custom" }]);
 
         collision.Should().BeNull();
     }
