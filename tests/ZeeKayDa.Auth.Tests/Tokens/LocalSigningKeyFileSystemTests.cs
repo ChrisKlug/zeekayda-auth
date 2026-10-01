@@ -226,6 +226,20 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteKeyFileAsync_leaves_neither_a_pending_file_nor_a_key_when_cancelled()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        var act = async () => await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), cancelled.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        Directory.GetFiles(_tempDirectory, "*.pending").Should().BeEmpty();
+        File.Exists(keyPath).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task WriteKeyFileAsync_checks_for_an_existing_key_only_once_it_holds_the_lock()
     {
         // The key created by whoever held the lock must be found, not replaced: checking before
