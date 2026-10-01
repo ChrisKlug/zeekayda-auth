@@ -1932,9 +1932,10 @@ Every host, Core-only included, gets the Discovery §3 RS256 warning — proven 
 Residual: a host that calls only AddZeeKayDaSigningKeys() without Core has those options
 unvalidated at start; unsupported by decision, and it cannot issue tokens. No test.
 
-## 2026-10-01 — a host hasher can be the default; failures pad per hasher (#791, code frozen at `4e2e614`)
+## 2026-10-01 — a host hasher can be the default; failures pad per hasher (#791, code frozen at `9518e62`)
 
-Copilot code, text and security lenses and two security agents, plus fix-diff verification; no Critical.
+Copilot code, text and security lenses, two security agents and the PR's Copilot review, plus fix-diff
+verification; no Critical.
 
 - A host's `isDefault: true` hasher creates new secrets and PBKDF2 keeps verifying its own; two
   marked defaults fail closed. Closed — `A_host_hasher_marked_default_creates_new_secrets_while_PBKDF2_secrets_still_verify`,
@@ -1943,8 +1944,10 @@ Copilot code, text and security lenses and two security agents, plus fix-diff ve
   an older hasher's secret is not timing-distinguishable from an unknown one. Closed —
   `A_failed_authentication_under_two_hashers_runs_the_same_verifications_as_an_unknown_client`,
   `Verify_of_a_credential_no_hasher_handles_spends_a_full_slot`.
-- Every hasher builds a decoy at startup; a throwing `Create` fails with a coded failure naming only
-  the exception type. Closed — `A_hasher_whose_Create_throws_fails_startup_with_a_configuration_failure`.
+- Every hasher builds a decoy at startup on every host, its own client repository included; a
+  throwing `Create` fails with a coded failure naming only the exception type. Closed —
+  `A_hasher_whose_Create_throws_fails_startup_with_a_configuration_failure`,
+  `A_hasher_whose_Create_throws_fails_startup_on_a_host_with_its_own_client_repository`.
 - **Accepted cost (maintainer):** a host with several hashers pays every hasher on each failure;
   rate limiting (RFC 9700 §2.1) bounds volume. No test.
 - **Accepted residual:** an imported PBKDF2 secret above the configured iteration count verifies
