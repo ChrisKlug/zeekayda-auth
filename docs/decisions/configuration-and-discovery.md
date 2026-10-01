@@ -22,9 +22,9 @@ on `AuthorizationEndpoint` with nothing to form a prefix group with. It is never
 
 **Framework-behavior groups are a second, explicit category.** `SecurityHeaders` and `Development`
 govern the framework's own runtime behaviour, have no discovery counterpart, and sit outside the
-prefix rule: plain English names, never an `Endpoint` suffix. Every switch that weakens security
-lives in `Development`, one flag per effect, each reported by its own startup verifier, so a config
-file shows what must not reach production. "Not for production", not "local only": CI hosts use it.
+prefix rule: plain English names, never an `Endpoint` suffix. Every bindable switch that weakens
+security lives in `Development`, one flag per effect, each reported by its own startup verifier, so a
+config file shows what must not reach production. "Not for production", not "local only": CI hosts use it.
 
 **The grouping rule places discovery-shaped configuration only.** A feature-registration hatch or
 safety gate that is inert unless some other opt-in was also registered is not metadata, and this rule
