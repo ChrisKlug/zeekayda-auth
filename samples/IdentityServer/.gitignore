@@ -1,2 +1,5 @@
 # The development signing key is generated on first run and must never be committed.
 .zeekayda/
+# Where this sample wrote its PEM signing key before the conformance host moved out; a checkout from
+# that time can still hold one.
+keys/
