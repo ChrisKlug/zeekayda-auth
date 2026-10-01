@@ -82,8 +82,8 @@ OAuth secret. Enumeration by request volume is left to rate limiting (RFC 9700 �
 
 **The composite hasher is registered as its own concrete type, never as the hasher interface.**
 Registering it under the interface would let it be injected into its own `IEnumerable<>` dependency
-and recurse on the first verification. Multiple registered hashers require one explicit default;
-ambiguity is a startup failure, not a silent pick.
+and recurse on the first verification. At most one hasher may be marked default — two is a startup
+failure, not a silent pick — and with none marked, PBKDF2 is the default.
 
 **Authenticators are self-describing; the composite has zero method-specific knowledge.** Each
 authenticator declares the method strings it owns and detects its own request shape, so adding mTLS
