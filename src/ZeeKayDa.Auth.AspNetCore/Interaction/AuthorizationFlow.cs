@@ -134,7 +134,7 @@ internal sealed class AuthorizationFlow(
     /// touch the ring, which is startup verification's job to do, and to refuse to do when a
     /// cheaper check has already failed.
     /// </remarks>
-    public async ValueTask<IClientMetadata?> ResolveClientAsync(
+    public async ValueTask<IClient?> ResolveClientAsync(
         HttpContext context,
         AuthorizationRequestContext requestContext,
         CancellationToken cancellationToken)
@@ -143,7 +143,7 @@ internal sealed class AuthorizationFlow(
         ArgumentNullException.ThrowIfNull(requestContext);
 
         var clients = context.RequestServices.GetRequiredService<ValidatedClientResolver>();
-        var client = await clients.FindByClientIdAsync(requestContext.ClientId, cancellationToken).ConfigureAwait(false);
+        var client = await clients.FindClientAsync(requestContext.ClientId, cancellationToken).ConfigureAwait(false);
 
         return client is not null
             && AuthorizeRedirectUriMatcher.TryMatch(requestContext.RedirectUri, client.RedirectUris, out _)

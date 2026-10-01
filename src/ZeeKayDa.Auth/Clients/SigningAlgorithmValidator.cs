@@ -3,7 +3,7 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Validates a client's <see cref="IClientMetadata.AllowedSigningAlgorithms"/> against the
+/// Validates a client's <see cref="IClient.AllowedSigningAlgorithms"/> against the
 /// algorithms the server advertises and records a <see cref="ZeeKayDaConfigurationFailure"/> for
 /// every rule it breaks.
 /// </summary>
@@ -21,7 +21,7 @@ internal static class SigningAlgorithmValidator
     /// them against yet; otherwise <see langword="true"/>.
     /// </returns>
     internal static bool Validate(
-        IClientRegistration client,
+        IClientWithCredentials client,
         ISigningKeyRing? keyRing,
         ICollection<SigningAlgorithm>? advertisedFilter,
         List<ZeeKayDaConfigurationFailure> failures)

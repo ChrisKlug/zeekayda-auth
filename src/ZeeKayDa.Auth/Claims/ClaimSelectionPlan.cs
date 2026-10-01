@@ -25,7 +25,7 @@ internal sealed record ClaimSelectionPlan(
     IReadOnlySet<string> AccessToken,
     IReadOnlySet<string> All)
 {
-    public static ClaimSelectionPlan For(IReadOnlyList<ScopeDefinition> granted, IClientMetadata client)
+    public static ClaimSelectionPlan For(IReadOnlyList<ScopeDefinition> granted, IClient client)
     {
         ArgumentNullException.ThrowIfNull(granted);
         ArgumentNullException.ThrowIfNull(client);

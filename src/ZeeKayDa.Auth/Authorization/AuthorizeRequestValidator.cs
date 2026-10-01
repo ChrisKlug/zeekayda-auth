@@ -158,7 +158,7 @@ internal sealed partial class AuthorizeRequestValidator(
         if (!TryGetSingle(parameters, "client_id", out var clientId) || string.IsNullOrEmpty(clientId))
             return null;
 
-        var client = await clientResolver.FindByClientIdAsync(clientId, cancellationToken).ConfigureAwait(false);
+        var client = await clientResolver.FindClientAsync(clientId, cancellationToken).ConfigureAwait(false);
         if (client is null)
             return null;
 
@@ -481,7 +481,7 @@ internal sealed partial class AuthorizeRequestValidator(
     private sealed record Problem(string Error, string Description, string? OperatorDetail = null);
 
     /// <summary>The authenticated client and the redirect URI that is safe to send it.</summary>
-    private sealed record RedirectTarget(IClientRegistration Client, string RedirectUri);
+    private sealed record RedirectTarget(IClient Client, string RedirectUri);
 
     /// <summary>
     /// The request under evaluation, plus the values rules parse out of it as they run. Rules
@@ -489,12 +489,12 @@ internal sealed partial class AuthorizeRequestValidator(
     /// </summary>
     private sealed class RequestContext(
         IReadOnlyDictionary<string, IReadOnlyList<string?>> parameters,
-        IClientRegistration client,
+        IClient client,
         IReadOnlyCollection<ScopeDefinition> scopes)
     {
         public IReadOnlyDictionary<string, IReadOnlyList<string?>> Parameters => parameters;
 
-        public IClientRegistration Client => client;
+        public IClient Client => client;
 
         /// <summary>Every scope the repository defines, fetched once for this request.</summary>
         public IReadOnlyCollection<ScopeDefinition> Scopes => scopes;

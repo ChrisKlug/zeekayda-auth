@@ -112,7 +112,7 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                 })
                 .AddInMemoryClients(clients =>
                     clients.Add(
-                        ClientRegistration.CreateConfidential(
+                        Client.CreateConfidential(
                             "bad-method-client",
                             // Structurally valid pre-hashed credential (fake bytes, not used for auth).
                             new Pbkdf2ClientSecret(
@@ -170,7 +170,7 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                 })
                 .AddInMemoryClients(clients =>
                     clients.Add(
-                        ClientRegistration.CreateConfidential(
+                        Client.CreateConfidential(
                             "good-method-client",
                             new Pbkdf2ClientSecret(
                                 Iterations: 600_000,

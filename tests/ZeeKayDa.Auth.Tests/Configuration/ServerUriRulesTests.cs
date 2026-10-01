@@ -7,7 +7,7 @@ public sealed class ServerUriRulesTests
     [Theory]
     [InlineData("https://auth.example.com", false, true)]
     [InlineData("HTTPS://auth.example.com", false, true)]
-    [InlineData("http://localhost", false, false)]         // HTTP needs AllowInsecureIssuer
+    [InlineData("http://localhost", false, false)]         // HTTP needs AllowHttpLoopbackIssuer
     [InlineData("http://localhost", true, true)]
     [InlineData("http://auth.example.com", true, true)]    // scheme is permitted; the loopback rule is separate
     [InlineData("ftp://auth.example.com", true, false)]

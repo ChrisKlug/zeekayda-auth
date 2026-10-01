@@ -147,7 +147,7 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
         var ct = TestContext.Current.CancellationToken;
         var services = ServicesWithLogging();
 
-        var preBuilt = ClientRegistration.CreatePublic(
+        var preBuilt = Client.CreatePublic(
             "pre-built-client",
             ["https://app.example.com/cb"],
             [],
@@ -179,8 +179,8 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
 
     private sealed class CustomClientRepository : IClientRepository
     {
-        public Task<IClientRegistration?> FindByClientIdAsync(
+        public Task<IClientWithCredentials?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IClientRegistration?>(null);
+            => Task.FromResult<IClientWithCredentials?>(null);
     }
 }

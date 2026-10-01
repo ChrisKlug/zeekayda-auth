@@ -88,22 +88,21 @@ internal static class IssuerValidator
     private static void ValidateScheme(AuthorizationServerOptions options, string shown, Uri uri, ICollection<ZeeKayDaConfigurationFailure> failures)
     {
         // The OIDC specification requires the issuer to be an HTTPS URI in production.
-        // AllowInsecureIssuer permits only HTTP loopback issuers for local development.
-        if (!ServerUriRules.IsSchemePermitted(uri, options.AllowInsecureIssuer))
+        if (!ServerUriRules.IsSchemePermitted(uri, options.Development.AllowHttpLoopbackIssuer))
         {
             failures.Add(new(
                 "configuration.issuer.not_https",
                 $"AuthorizationServerOptions.Issuer '{shown}' uses an unsupported scheme '{uri.Scheme}'. " +
                 "Only 'https' is permitted in production. " +
-                "Set AllowInsecureIssuer = true to permit 'http' loopback issuers for local development and testing only."));
+                "Set Development.AllowHttpLoopbackIssuer = true to permit 'http' loopback issuers for local development and testing only."));
         }
 
-        if (ServerUriRules.IsInsecureNonLoopback(uri, options.AllowInsecureIssuer))
+        if (ServerUriRules.IsInsecureNonLoopback(uri, options.Development.AllowHttpLoopbackIssuer))
         {
             failures.Add(new(
                 "configuration.issuer.http_non_loopback",
                 $"AuthorizationServerOptions.Issuer '{shown}' uses HTTP for a non-loopback host. " +
-                "AllowInsecureIssuer only permits HTTP loopback issuers for local development and testing."));
+                "Development.AllowHttpLoopbackIssuer only permits HTTP loopback issuers for local development and testing."));
         }
     }
 

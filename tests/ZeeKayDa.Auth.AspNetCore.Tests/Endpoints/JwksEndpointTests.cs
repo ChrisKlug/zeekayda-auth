@@ -101,7 +101,7 @@ public sealed class JwksEndpointTests
         }
     }
 
-    private sealed class TestClient : IClientMetadata
+    private sealed class TestClient : IClient
     {
         public string ClientId => "test-client";
         public bool IsPublic => true;

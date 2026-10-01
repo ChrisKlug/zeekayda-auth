@@ -21,7 +21,7 @@ internal static class ClientCredentialValidator
     /// <c>Snapshot</c> whose successive copies differ would get an unsafe first copy served.
     /// </remarks>
     internal static void Validate(
-        IClientRegistration client,
+        IClientWithCredentials client,
         CompositeClientSecretHasher hasher,
         List<ZeeKayDaConfigurationFailure> failures)
     {
@@ -47,7 +47,7 @@ internal static class ClientCredentialValidator
     /// asked a second time could answer differently from what is served.
     /// </remarks>
     private static List<IClientSecret> CopySecrets(
-        IClientRegistration client,
+        IClientWithCredentials client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         // Filtering by type skips a null entry silently; the registration would then pass here and

@@ -51,7 +51,7 @@ public sealed class UserInfoEndpointTests : IDisposable
                 builder.Services.AddSingleton<IScopeRepository>(_scopes);
                 builder.Services.AddSingleton<IClaimsProvider>(_provider);
                 builder.AddInMemoryClients(clients => clients
-                    .Add(ClientRegistration.CreatePublic(App, [Redirect], [], ["openid", "profile", "email", "orders.read"]) with { RequireConsent = false }));
+                    .Add(Client.CreatePublic(App, [Redirect], [], ["openid", "profile", "email", "orders.read"]) with { RequireConsent = false }));
             });
     }
 

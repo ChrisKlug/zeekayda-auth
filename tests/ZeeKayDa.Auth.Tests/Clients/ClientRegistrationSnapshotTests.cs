@@ -11,7 +11,7 @@ public class ClientRegistrationSnapshotTests
 {
     /// <summary>
     /// The guard that makes the snapshot's coverage rule enforceable rather than advisory. A
-    /// member added to <see cref="IClientRegistration"/> or <see cref="IClientMetadata"/> and not
+    /// member added to <see cref="IClientWithCredentials"/> or <see cref="IClient"/> and not
     /// copied by the snapshot keeps reading through to the store's instance, which is the bug the
     /// snapshot exists to close — so this test fails the build until both are updated together.
     /// If you are here because it failed: copy the member in the snapshot, then add a mutation for
@@ -27,7 +27,7 @@ public class ClientRegistrationSnapshotTests
 
     /// <summary>
     /// The guard that catches a member the snapshot forgot to copy. Such a member is not a compile
-    /// error — <see cref="IClientMetadata"/>'s newer members are default interface implementations,
+    /// error — <see cref="IClient"/>'s newer members are default interface implementations,
     /// so an uncopied one silently answers the interface default instead of the store's value.
     /// Fingerprint equality is the check because the fingerprint covers every member and has its
     /// own guard saying so, and the fixture leaves no member at a default an omission could match.
@@ -204,7 +204,7 @@ public class ClientRegistrationSnapshotTests
     [Fact]
     public void String_sets_are_rebuilt_with_ordinal_comparison()
     {
-        // The IClientMetadata string-set invariant says a set's own comparer is not trusted. Past
+        // The IClient string-set invariant says a set's own comparer is not trusted. Past
         // the snapshot it cannot be the wrong one, because the framework chose it — so a
         // case-insensitive registration can no longer make a consumer match a URI it did not register.
         var snapshot = ClientRegistrationSnapshot.Of(new MutableRegistration
@@ -251,8 +251,8 @@ public class ClientRegistrationSnapshotTests
     /// by hand would let a member on a newly inserted base interface escape both guards.
     /// </summary>
     private static IEnumerable<PropertyInfo> DeclaredProperties() =>
-        typeof(IClientRegistration).GetInterfaces()
-            .Append(typeof(IClientRegistration))
+        typeof(IClientWithCredentials).GetInterfaces()
+            .Append(typeof(IClientWithCredentials))
             .SelectMany(t => t.GetProperties())
             .DistinctBy(p => p.Name, StringComparer.Ordinal);
 
@@ -334,7 +334,7 @@ public class ClientRegistrationSnapshotTests
     /// What a custom store is free to hand back: every member settable, so the test can change one
     /// after the snapshot has been taken.
     /// </summary>
-    public sealed class MutableRegistration : IClientRegistration
+    public sealed class MutableRegistration : IClientWithCredentials
     {
         public string ClientId { get; set; } = "client-1";
 
@@ -383,7 +383,7 @@ public class ClientRegistrationSnapshotTests
         public IReadOnlyList<IClientCredential> Credentials { get; set; } = [];
     }
 
-    private sealed class ThrowingRegistration : IClientRegistration
+    private sealed class ThrowingRegistration : IClientWithCredentials
     {
         public string ClientId => throw new InvalidOperationException("The store could not read this registration.");
 

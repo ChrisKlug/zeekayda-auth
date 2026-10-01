@@ -27,8 +27,8 @@ public sealed class ClientRepositoryPresenceVerifierTests
 
     private sealed class StubRepository : IClientRepository
     {
-        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IClientRegistration?>(null);
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IClientWithCredentials?>(null);
     }
 
     private static async Task<StartupVerificationContext> VerifyAsync(IServiceProvider services)

@@ -97,7 +97,7 @@ public sealed class StartupActivatorOrderIndependenceTests
                     options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 })
                 .AddInMemoryClients(clients =>
-                    clients.Add(ClientRegistration.CreatePublic(
+                    clients.Add(Client.CreatePublic(
                         "es512-client",
                         ["https://test.example.com/callback"],
                         [],
