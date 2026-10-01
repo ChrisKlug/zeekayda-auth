@@ -192,25 +192,23 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     }
 
     [Fact]
-    public async Task WriteKeyFileAsync_reports_that_it_created_the_file()
+    public async Task WriteKeyFileAsync_writes_the_key_at_the_key_path()
     {
         var keyPath = Path.Join(_tempDirectory, KeyFileName);
 
-        var written = await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+        await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
 
-        written.Should().BeTrue();
         File.ReadAllText(keyPath).Should().Be(SamplePem);
     }
 
     [Fact]
-    public async Task WriteKeyFileAsync_leaves_an_existing_key_file_untouched_and_reports_it_lost()
+    public async Task WriteKeyFileAsync_leaves_an_existing_key_file_untouched()
     {
         var keyPath = Path.Join(_tempDirectory, KeyFileName);
         await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
 
-        var written = await _sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken);
+        await _sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken);
 
-        written.Should().BeFalse();
         File.ReadAllText(keyPath).Should().Be(SamplePem);
     }
 
@@ -293,10 +291,10 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
             PublishPending = (pending, target) =>
             {
                 published = true;
-                return LocalSigningKeyFileSystem.Publish(pending, target);
+                LocalSigningKeyFileSystem.Publish(pending, target);
             },
         };
-        Task<bool> write;
+        Task write;
         Task finishedFirst;
         await using (new FileStream(keyPath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
         {
@@ -306,7 +304,7 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
         }
 
         finishedFirst.Should().NotBeSameAs(write, "a host must wait while another holds the lock");
-        (await write).Should().BeFalse();
+        await write;
         published.Should().BeFalse("a host that finds the key under the lock never tries to publish its own");
         File.ReadAllText(keyPath).Should().Be(SamplePem);
     }
@@ -324,7 +322,7 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
             PublishPending = (pending, target) =>
             {
                 atPublication = File.ReadAllText(pending);
-                return LocalSigningKeyFileSystem.Publish(pending, target);
+                LocalSigningKeyFileSystem.Publish(pending, target);
             },
         };
 
@@ -349,24 +347,21 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     }
 
     [Fact]
-    public async Task WriteKeyFileAsync_racers_that_lose_read_the_winners_whole_key()
+    public async Task WriteKeyFileAsync_racers_all_read_one_whole_key()
     {
         var keyPath = Path.Join(_tempDirectory, KeyFileName);
         var ct = TestContext.Current.CancellationToken;
         var pems = Enumerable.Range(0, 8).Select(i => new string((char)('a' + i), 256 * 1024)).ToArray();
 
-        var outcomes = await Task.WhenAll(pems.Select(pem => Task.Run(async () =>
+        var reads = await Task.WhenAll(pems.Select(pem => Task.Run(async () =>
         {
-            if (await _sut.WriteKeyFileAsync(keyPath, pem.AsMemory(), ct))
-                return (Won: true, Read: pem);
-
+            await _sut.WriteKeyFileAsync(keyPath, pem.AsMemory(), ct);
             using var content = await _sut.ReadKeyFileAsync(keyPath, ct);
-            return (Won: false, Read: Encoding.UTF8.GetString(content.Bytes));
+            return Encoding.UTF8.GetString(content.Bytes);
         }, ct)));
 
-        outcomes.Count(outcome => outcome.Won).Should().Be(1);
-        var winnersPem = outcomes.Single(outcome => outcome.Won).Read;
-        outcomes.Should().AllSatisfy(outcome => outcome.Read.Should().Be(winnersPem));
+        pems.Should().Contain(reads[0], "the key on disk is one racer's whole key");
+        reads.Should().AllBe(reads[0]);
     }
 
     [Fact]
@@ -377,9 +372,8 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
         File.WriteAllText(keyPath, SamplePem);
         File.WriteAllText(pending, "another key");
 
-        var published = LocalSigningKeyFileSystem.Publish(pending, keyPath);
+        LocalSigningKeyFileSystem.Publish(pending, keyPath);
 
-        published.Should().BeFalse();
         File.ReadAllText(keyPath).Should().Be(SamplePem);
     }
 

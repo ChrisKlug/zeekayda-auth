@@ -41,7 +41,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     internal TimeSpan LockTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <inheritdoc/>
-    public async ValueTask<bool> WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
+    public async ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
         // Hosts sharing the folder take turns on a lock file beside the key, and check for a key
         // under it, so exactly one creates the key: on Unix File.Move's no-overwrite is a check then
@@ -60,7 +60,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         }
 
         if (File.Exists(keyPath))
-            return false;
+            return;
 
         // Written beside the key and renamed into place, so a host loading the key never reads a
         // half-written file.
@@ -74,7 +74,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
             else
                 await WriteKeyFileUnixAsync(pending, pem, cancellationToken).ConfigureAwait(false);
 
-            return PublishPending(pending, keyPath);
+            PublishPending(pending, keyPath);
         }
         finally
         {
@@ -86,7 +86,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// The step that moves a fully written pending file to the key's name. Replaceable by tests only,
     /// so they can see the pending file at the instant it is published rather than after the fact.
     /// </summary>
-    internal Func<string, string, bool> PublishPending { get; init; } = Publish;
+    internal Action<string, string> PublishPending { get; init; } = Publish;
 
     /// <summary>
     /// Opens <paramref name="lockPath"/> exclusively, waiting while another host holds it. An
@@ -136,16 +136,15 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
 
     // Internal rather than private so the losing half of the race can be driven directly,
     // without depending on thread scheduling to produce it.
-    internal static bool Publish(string pending, string keyPath)
+    internal static void Publish(string pending, string keyPath)
     {
         try
         {
             File.Move(pending, keyPath, overwrite: false);
-            return true;
         }
         catch (IOException) when (File.Exists(keyPath))
         {
-            return false;
+            // Another host's key is already there; it stays, and this one is discarded.
         }
     }
 

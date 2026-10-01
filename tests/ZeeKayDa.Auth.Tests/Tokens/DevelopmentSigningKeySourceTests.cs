@@ -45,8 +45,11 @@ public sealed class DevelopmentSigningKeySourceTests
             _directories.Add(directory);
         }
 
-        public ValueTask<bool> WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken) =>
-            ValueTask.FromResult(_files.TryAdd(keyPath, new string(pem.Span)));
+        public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
+        {
+            _files.TryAdd(keyPath, new string(pem.Span));
+            return ValueTask.CompletedTask;
+        }
 
         public ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
         {
@@ -82,7 +85,7 @@ public sealed class DevelopmentSigningKeySourceTests
         {
         }
 
-        public ValueTask<bool> WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
+        public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
             => throw new IOException("Simulated write failure.");
 
         public ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
@@ -96,7 +99,7 @@ public sealed class DevelopmentSigningKeySourceTests
         public void EnsureDirectorySafe(string directory)
             => throw new InvalidOperationException("The file system must not be touched in ephemeral mode.");
 
-        public ValueTask<bool> WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
+        public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
             => throw new InvalidOperationException("The file system must not be touched in ephemeral mode.");
 
         public ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
@@ -108,7 +111,7 @@ public sealed class DevelopmentSigningKeySourceTests
 
     /// <summary>
     /// Another host creates the key file between this host's existence check and its write: the
-    /// check finds nothing, and the write reports that a file is already there.
+    /// check finds nothing, and the write leaves the other host's key in place.
     /// </summary>
     private sealed class LosesTheCreateRaceFileSystem(string winnersPem) : IDevelopmentSigningKeyFileSystem
     {
@@ -116,8 +119,8 @@ public sealed class DevelopmentSigningKeySourceTests
         {
         }
 
-        public ValueTask<bool> WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
-            => ValueTask.FromResult(false);
+        public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
+            => ValueTask.CompletedTask;
 
         public ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
             => ValueTask.FromResult(new KeyFileContent(Encoding.UTF8.GetBytes(winnersPem)));
