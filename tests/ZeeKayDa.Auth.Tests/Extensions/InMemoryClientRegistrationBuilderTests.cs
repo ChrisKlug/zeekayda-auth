@@ -202,12 +202,12 @@ public sealed class InMemoryClientRegistrationBuilderTests
     // The builder methods set the client's identity themselves; everything else is an option.
     private static readonly string[] SetByTheBuilderMethods =
     [
-        nameof(IClientRegistration.ClientId),
-        nameof(IClientRegistration.IsPublic),
-        nameof(IClientRegistration.Credentials),
-        nameof(IClientRegistration.RedirectUris),
-        nameof(IClientRegistration.PostLogoutRedirectUris),
-        nameof(IClientRegistration.AllowedScopes),
+        nameof(IClientWithCredentials.ClientId),
+        nameof(IClientWithCredentials.IsPublic),
+        nameof(IClientWithCredentials.Credentials),
+        nameof(IClientWithCredentials.RedirectUris),
+        nameof(IClientWithCredentials.PostLogoutRedirectUris),
+        nameof(IClientWithCredentials.AllowedScopes),
     ];
 
     private static readonly string[] ConfidentialOnly =
@@ -277,13 +277,13 @@ public sealed class InMemoryClientRegistrationBuilderTests
     // Type.GetProperties() on an interface does not return inherited members, so the whole
     // implemented-interface set is walked; a member on a new base interface is then caught too.
     private static IEnumerable<string> RegistrationMembers()
-        => typeof(IClientRegistration).GetInterfaces()
-            .Append(typeof(IClientRegistration))
+        => typeof(IClientWithCredentials).GetInterfaces()
+            .Append(typeof(IClientWithCredentials))
             .SelectMany(t => t.GetProperties())
             .Select(p => p.Name)
             .Distinct(StringComparer.Ordinal);
 
-    private IClientRegistration SinglePublic()
+    private IClientWithCredentials SinglePublic()
         => _options.PreBuilt.Should().ContainSingle().Which;
 
     private PendingConfidentialClientSpec SinglePending()

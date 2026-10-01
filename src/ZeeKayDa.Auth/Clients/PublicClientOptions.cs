@@ -12,7 +12,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// </remarks>
 public sealed class PublicClientOptions : ClientOptions
 {
-    internal PublicClientOptions(ClientRegistration defaults)
+    internal PublicClientOptions(Client defaults)
         : base(defaults)
     {
     }

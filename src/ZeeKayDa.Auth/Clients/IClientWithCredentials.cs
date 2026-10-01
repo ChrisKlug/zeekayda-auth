@@ -9,12 +9,12 @@ namespace ZeeKayDa.Auth.Clients;
 /// this interface directly, avoiding a framework-type mapping step on the hot path.
 /// </para>
 /// <para>
-/// This adds <see cref="Credentials"/> to <see cref="IClientMetadata"/> and nothing else. Depend on it
+/// This adds <see cref="Credentials"/> to <see cref="IClient"/> and nothing else. Depend on it
 /// only where authenticating the client is the job; everything else takes
-/// <see cref="IClientMetadata"/>, so secrets stay off code paths that never need them.
+/// <see cref="IClient"/>, so secrets stay off code paths that never need them.
 /// </para>
 /// <para>
-/// See <see cref="IClientMetadata"/> for the string-set comparison invariant: which code may rely
+/// See <see cref="IClient"/> for the string-set comparison invariant: which code may rely
 /// on the framework's ordinal copy of a registration, and which code MUST compare ordinally
 /// itself.
 /// </para>
@@ -23,11 +23,11 @@ namespace ZeeKayDa.Auth.Clients;
 /// public/confidential client distinction.
 /// </para>
 /// </remarks>
-public interface IClientRegistration : IClientMetadata
+public interface IClientWithCredentials : IClient
 {
     /// <summary>
     /// Credentials stored for this client. An empty list indicates a public client — see
-    /// <see cref="IClientMetadata.IsPublic"/> for the consistency rule the two must satisfy.
+    /// <see cref="IClient.IsPublic"/> for the consistency rule the two must satisfy.
     /// Use <c>Credentials.OfType&lt;IClientSecret&gt;()</c> to obtain shared-secret credentials.
     /// </summary>
     IReadOnlyList<IClientCredential> Credentials { get; }

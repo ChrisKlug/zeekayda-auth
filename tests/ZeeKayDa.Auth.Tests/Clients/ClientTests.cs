@@ -5,14 +5,14 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
 
-public sealed class ClientRegistrationTests
+public sealed class ClientTests
 {
     private sealed record FakeCredential : IClientCredential
     {
         public IClientCredential Snapshot() => this with { };
     }
 
-    private sealed class MinimalPublicClient : IClientRegistration
+    private sealed class MinimalPublicClient : IClientWithCredentials
     {
         public string ClientId => "minimal";
         public IReadOnlyList<IClientCredential> Credentials => [];
@@ -30,7 +30,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void CreateConfidential_sets_IsPublic_to_false_and_provides_non_empty_Credentials()
     {
-        var client = ClientRegistration.CreateConfidential(
+        var client = Client.CreateConfidential(
             clientId: "my-client",
             credential: new FakeCredential(),
             redirectUris: ["https://app/callback"],
@@ -44,7 +44,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void CreatePublic_sets_IsPublic_to_true_and_Credentials_to_empty()
     {
-        var client = ClientRegistration.CreatePublic(
+        var client = Client.CreatePublic(
             clientId: "spa-client",
             redirectUris: ["https://app/callback"],
             postLogoutRedirectUris: [],
@@ -57,7 +57,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void CreatePublic_sets_AllowedTokenEndpointAuthMethods_to_none()
     {
-        var client = ClientRegistration.CreatePublic(
+        var client = Client.CreatePublic(
             clientId: "spa-client",
             redirectUris: ["https://app/callback"],
             postLogoutRedirectUris: [],
@@ -70,7 +70,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void RequireConsent_defaults_to_true_and_DisplayName_to_null()
     {
-        var client = ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]);
+        var client = Client.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]);
 
         client.RequireConsent.Should().BeTrue();
         client.DisplayName.Should().BeNull();
@@ -79,7 +79,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void SkipLogoutConfirmation_defaults_to_false()
     {
-        var client = ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]);
+        var client = Client.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]);
 
         client.SkipLogoutConfirmation.Should().BeFalse();
     }
@@ -87,7 +87,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void AllowedSigningAlgorithms_defaults_to_null()
     {
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "test",
             Credentials = [],
@@ -102,7 +102,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void IClientRegistration_AllowedSigningAlgorithms_dim_default_is_null()
     {
-        IClientRegistration client = new MinimalPublicClient();
+        IClientWithCredentials client = new MinimalPublicClient();
 
         client.AllowedSigningAlgorithms.Should().BeNull();
     }
@@ -112,7 +112,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void DefaultProperties_AllowedGrantTypes_defaults_to_AuthorizationCode()
     {
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "test",
             Credentials = [],
@@ -127,7 +127,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void DefaultProperties_AllowedResponseTypes_defaults_to_Code()
     {
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "test",
             Credentials = [],
@@ -142,7 +142,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void DefaultProperties_AllowedResponseModes_defaults_to_Query_only()
     {
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "test",
             Credentials = [],
@@ -159,7 +159,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void DefaultProperties_AllowedTokenEndpointAuthMethods_defaults_to_ClientSecretBasic()
     {
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "test",
             Credentials = [],
@@ -175,7 +175,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void DefaultProperties_AllowedScopes_defaults_to_empty()
     {
-        var client = new ClientRegistration
+        var client = new Client
         {
             ClientId = "test",
             Credentials = [],
@@ -192,7 +192,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void CreatePublic_stores_AllowedScopes()
     {
-        var client = ClientRegistration.CreatePublic(
+        var client = Client.CreatePublic(
             clientId: "spa-client",
             redirectUris: ["https://app/callback"],
             postLogoutRedirectUris: ["https://app/logout"],
@@ -204,7 +204,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void CreatePublic_stores_RedirectUris()
     {
-        var client = ClientRegistration.CreatePublic(
+        var client = Client.CreatePublic(
             clientId: "spa-client",
             redirectUris: ["https://app/callback"],
             postLogoutRedirectUris: [],
@@ -216,7 +216,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void CreatePublic_stores_PostLogoutRedirectUris()
     {
-        var client = ClientRegistration.CreatePublic(
+        var client = Client.CreatePublic(
             clientId: "spa-client",
             redirectUris: [],
             postLogoutRedirectUris: ["https://app/logout"],
@@ -232,7 +232,7 @@ public sealed class ClientRegistrationTests
     {
         var credential = new FakeCredential();
 
-        var client = ClientRegistration.CreateConfidential(
+        var client = Client.CreateConfidential(
             clientId: "my-client",
             credential: credential,
             redirectUris: [],
@@ -248,7 +248,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void CreateConfidential_sets_AllowedTokenEndpointAuthMethods_to_ClientSecretBasic()
     {
-        var client = ClientRegistration.CreateConfidential(
+        var client = Client.CreateConfidential(
             clientId: "my-client",
             credential: new FakeCredential(),
             redirectUris: [],
@@ -264,7 +264,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void CreateConfidential_stores_AllowedScopes()
     {
-        var client = ClientRegistration.CreateConfidential(
+        var client = Client.CreateConfidential(
             clientId: "my-client",
             credential: new FakeCredential(),
             redirectUris: [],
@@ -277,7 +277,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void CreateConfidential_stores_RedirectUris()
     {
-        var client = ClientRegistration.CreateConfidential(
+        var client = Client.CreateConfidential(
             clientId: "my-client",
             credential: new FakeCredential(),
             redirectUris: ["https://app/callback"],
@@ -290,7 +290,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void CreateConfidential_stores_PostLogoutRedirectUris()
     {
-        var client = ClientRegistration.CreateConfidential(
+        var client = Client.CreateConfidential(
             clientId: "my-client",
             credential: new FakeCredential(),
             redirectUris: [],
@@ -305,7 +305,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void CreatePublic_RedirectUris_does_not_match_different_case()
     {
-        var client = ClientRegistration.CreatePublic(
+        var client = Client.CreatePublic(
             clientId: "spa-client",
             redirectUris: ["https://app/callback"],
             postLogoutRedirectUris: [],
@@ -317,7 +317,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void CreatePublic_AllowedScopes_does_not_match_different_case()
     {
-        var client = ClientRegistration.CreatePublic(
+        var client = Client.CreatePublic(
             clientId: "spa-client",
             redirectUris: [],
             postLogoutRedirectUris: [],
@@ -402,7 +402,7 @@ public sealed class ClientRegistrationTests
     [Fact]
     public void IClientRegistration_IsPublic_returns_implemented_value()
     {
-        IClientRegistration client = new MinimalPublicClient();
+        IClientWithCredentials client = new MinimalPublicClient();
 
         client.IsPublic.Should().BeTrue();
     }

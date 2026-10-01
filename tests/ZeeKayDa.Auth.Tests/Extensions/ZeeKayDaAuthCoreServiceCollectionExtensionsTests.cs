@@ -119,8 +119,8 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
 
     private sealed class EmptyClientRepository : IClientRepository
     {
-        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IClientRegistration?>(null);
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IClientWithCredentials?>(null);
     }
 
     private sealed class LegacySecret : IClientSecret { public IClientCredential Snapshot() => new LegacySecret(); }

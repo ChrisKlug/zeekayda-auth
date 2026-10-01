@@ -12,7 +12,7 @@ namespace ZeeKayDa.Auth.Tests.Configuration;
 /// The startup record of an insecure issuer: absent unless the host opted in, and louder outside
 /// the environment where opting in is the expected thing to do.
 /// </summary>
-public sealed class InsecureIssuerVerifierTests
+public sealed class HttpLoopbackIssuerVerifierTests
 {
     private sealed class FakeHostEnvironment(string environmentName) : IHostEnvironment
     {
@@ -24,11 +24,11 @@ public sealed class InsecureIssuerVerifierTests
 
     private static async Task<StartupVerificationContext> VerifyAsync(string environment, bool allowInsecureIssuer)
     {
-        var sut = new InsecureIssuerVerifier(
+        var sut = new HttpLoopbackIssuerVerifier(
             Options.Create(new AuthorizationServerOptions
             {
                 Issuer = allowInsecureIssuer ? "http://localhost:5000" : "https://auth.example.com",
-                AllowInsecureIssuer = allowInsecureIssuer,
+                Development = { AllowHttpLoopbackIssuer = allowInsecureIssuer },
             }),
             new FakeHostEnvironment(environment));
         var context = new StartupVerificationContext();
@@ -67,7 +67,7 @@ public sealed class InsecureIssuerVerifierTests
     [InlineData("Production")]
     public async Task An_insecure_issuer_outside_Development_does_not_fail_startup(string environment)
     {
-        // AllowInsecureIssuer is itself the opt-out, and IssuerValidator.ValidateScheme already
+        // AllowHttpLoopbackIssuer is itself the opt-out, and IssuerValidator.ValidateScheme already
         // fails startup for a non-loopback http issuer, so what remains here can only be
         // http://localhost. Failing would break an intentional non-Development test host and buy
         // no security the scheme rule has not already bought.

@@ -142,8 +142,8 @@ internal sealed class LogoutInteraction(
     /// <c>AuthorizationFlow.ResolveClientAsync</c> gives; <see langword="null"/> when it is no
     /// longer registered.
     /// </summary>
-    private static ValueTask<IClientRegistration?> FindClientAsync(HttpContext context, string clientId, CancellationToken cancellationToken) =>
-        context.RequestServices.GetRequiredService<ValidatedClientResolver>().FindByClientIdAsync(clientId, cancellationToken);
+    private static ValueTask<IClient?> FindClientAsync(HttpContext context, string clientId, CancellationToken cancellationToken) =>
+        context.RequestServices.GetRequiredService<ValidatedClientResolver>().FindClientAsync(clientId, cancellationToken);
 
     private HttpContext RequireHttpContext() =>
         httpContextAccessor.HttpContext ?? throw new InvalidOperationException(

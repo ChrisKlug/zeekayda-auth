@@ -15,7 +15,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// <remarks>
 /// <para>
 /// A sign-in or consent step sends the user back to the client to start again, at the client's
-/// registered <see cref="IClientMetadata.InitiateLoginUri"/> with <c>iss</c>, when the browser's
+/// registered <see cref="IClient.InitiateLoginUri"/> with <c>iss</c>, when the browser's
 /// retired binding still names the client and the client registered one. Otherwise the user sees
 /// the host's error page, or the framework's, with <see cref="AuthorizationErrorKind.NothingToContinue"/>.
 /// </para>
@@ -120,7 +120,7 @@ internal sealed class NothingToContinue(
 
     /// <summary>
     /// The client's login restart, when the browser's binding names a client that is still
-    /// registered and registered an <see cref="IClientMetadata.InitiateLoginUri"/>. The destination
+    /// registered and registered an <see cref="IClient.InitiateLoginUri"/>. The destination
     /// comes from the registration, never from the request.
     /// </summary>
     private async ValueTask<IResult?> RestartAtClientAsync(HttpContext context)
@@ -130,7 +130,7 @@ internal sealed class NothingToContinue(
             return null;
 
         var clients = context.RequestServices.GetRequiredService<ValidatedClientResolver>();
-        var client = await clients.FindByClientIdAsync(clientId, context.RequestAborted).ConfigureAwait(false);
+        var client = await clients.FindClientAsync(clientId, context.RequestAborted).ConfigureAwait(false);
         if (client?.InitiateLoginUri is not { } initiateLoginUri)
             return null;
 

@@ -15,7 +15,7 @@ public sealed class SanitizingLoggerTests
         bool disableExceptionSanitizing = false)
     {
         var opts = new AuthorizationServerOptions();
-        opts.Logging.DisableExceptionSanitizing = disableExceptionSanitizing;
+        opts.Development.DisableExceptionSanitizing = disableExceptionSanitizing;
         return new(inner, Options.Create(opts));
     }
 
@@ -799,25 +799,17 @@ internal static partial class LoggerMessageFixtures
     public static partial void LogSensitiveAuth(ILogger logger, string client_secret);
 }
 
-public sealed class LoggingOptionsTests
+public sealed class DevelopmentOptionsTests
 {
     [Fact]
-    public void DisableExceptionSanitizing_defaults_to_false()
+    public void Every_development_switch_defaults_to_off()
     {
-        // Security default: sanitization must be on by default so production deployments that
-        // never configure this flag are protected.
-        var opts = new LoggingOptions();
-
-        opts.DisableExceptionSanitizing.Should().BeFalse();
-    }
-
-    [Fact]
-    public void AuthorizationServerOptions_Logging_DisableExceptionSanitizing_defaults_to_false()
-    {
-        // Verify the safe default is preserved through the full options graph.
+        // A host that never configures the group must get production behaviour.
         var opts = new AuthorizationServerOptions();
 
-        opts.Logging.DisableExceptionSanitizing.Should().BeFalse();
+        opts.Development.AllowHttpLoopbackIssuer.Should().BeFalse();
+        opts.Development.AllowHttpLoopbackCorsOrigins.Should().BeFalse();
+        opts.Development.DisableExceptionSanitizing.Should().BeFalse();
     }
 }
 

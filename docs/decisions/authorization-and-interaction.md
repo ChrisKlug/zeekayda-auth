@@ -64,7 +64,7 @@ session plus a prior consent grant covering the requested scopes, and otherwise 
 **Consent is asked of every user for every client on first use, and only a remembered grant or a
 per-registration opt-out skips it.** The consent page is the one thing between a sign-in and an
 issued code for a request the user never started — a malicious registered client navigating a
-victim to a valid request of its own — so no default skips it. `IClientMetadata.RequireConsent`
+victim to a valid request of its own — so no default skips it. `IClient.RequireConsent`
 (default `true`, a default interface member so an implementation that never heard of it keeps it)
 is the opt-out, for an operator's own first-party applications and nothing else; a registration
 that sets it false accepts that attack unmitigated for that client. `prompt=consent` sends even an

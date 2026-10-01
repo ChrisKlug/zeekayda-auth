@@ -19,7 +19,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// </remarks>
 public abstract class ClientOptions
 {
-    private protected ClientOptions(ClientRegistration defaults)
+    private protected ClientOptions(Client defaults)
     {
         DisplayName = defaults.DisplayName;
         InitiateLoginUri = defaults.InitiateLoginUri;
@@ -41,7 +41,7 @@ public abstract class ClientOptions
 
     // Copies every collection, so a caller holding on to this instance cannot change the
     // registration after it has been handed to the repository.
-    internal virtual ClientRegistration ApplyTo(ClientRegistration registration)
+    internal virtual Client ApplyTo(Client registration)
     {
         var grantTypes = OrDefault(AllowedGrantTypes, registration.AllowedGrantTypes);
 
@@ -76,10 +76,10 @@ public abstract class ClientOptions
         ISet<T> configured, IEnumerable<T> defaults, IEqualityComparer<T>? comparer = null) =>
         new(configured.Count > 0 ? configured : defaults, comparer);
 
-    /// <inheritdoc cref="IClientMetadata.DisplayName"/>
+    /// <inheritdoc cref="IClient.DisplayName"/>
     public string? DisplayName { get; set; }
 
-    /// <inheritdoc cref="IClientMetadata.InitiateLoginUri"/>
+    /// <inheritdoc cref="IClient.InitiateLoginUri"/>
     public string? InitiateLoginUri { get; set; }
 
     /// <summary>
@@ -93,10 +93,10 @@ public abstract class ClientOptions
     /// </remarks>
     public bool RequireConsent { get; set; }
 
-    /// <inheritdoc cref="IClientMetadata.SkipLogoutConfirmation"/>
+    /// <inheritdoc cref="IClient.SkipLogoutConfirmation"/>
     public bool SkipLogoutConfirmation { get; set; }
 
-    /// <inheritdoc cref="IClientMetadata.EnableZkdErrorCodes"/>
+    /// <inheritdoc cref="IClient.EnableZkdErrorCodes"/>
     public bool EnableZkdErrorCodes { get; set; }
 
     /// <summary>
@@ -119,7 +119,7 @@ public abstract class ClientOptions
     /// </summary>
     public ISet<ResponseMode> AllowedResponseModes { get; }
 
-    /// <inheritdoc cref="IClientMetadata.AllowedPromptValues" path="/summary"/>
+    /// <inheritdoc cref="IClient.AllowedPromptValues" path="/summary"/>
     public ISet<PromptValue> AllowedPromptValues { get; }
 
     /// <summary>
@@ -131,18 +131,18 @@ public abstract class ClientOptions
     /// </remarks>
     public ISet<SigningAlgorithm> AllowedSigningAlgorithms { get; }
 
-    /// <inheritdoc cref="IClientMetadata.AccessTokenLifetime"/>
+    /// <inheritdoc cref="IClient.AccessTokenLifetime"/>
     public TimeSpan? AccessTokenLifetime { get; set; }
 
-    /// <inheritdoc cref="IClientMetadata.IdTokenLifetime"/>
+    /// <inheritdoc cref="IClient.IdTokenLifetime"/>
     public TimeSpan? IdTokenLifetime { get; set; }
 
-    /// <inheritdoc cref="IClientMetadata.AdditionalIdTokenClaims"/>
+    /// <inheritdoc cref="IClient.AdditionalIdTokenClaims"/>
     public ISet<string> AdditionalIdTokenClaims { get; }
 
-    /// <inheritdoc cref="IClientMetadata.AdditionalUserInfoClaims"/>
+    /// <inheritdoc cref="IClient.AdditionalUserInfoClaims"/>
     public ISet<string> AdditionalUserInfoClaims { get; }
 
-    /// <inheritdoc cref="IClientMetadata.AdditionalAccessTokenClaims"/>
+    /// <inheritdoc cref="IClient.AdditionalAccessTokenClaims"/>
     public ISet<string> AdditionalAccessTokenClaims { get; }
 }

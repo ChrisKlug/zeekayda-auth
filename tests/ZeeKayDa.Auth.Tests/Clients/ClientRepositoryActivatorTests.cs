@@ -76,10 +76,10 @@ public sealed class ClientRepositoryActivatorTests
 
     private sealed class CustomClientRepository : IClientRepository
     {
-        public Task<IClientRegistration?> FindByClientIdAsync(
+        public Task<IClientWithCredentials?> FindByClientIdAsync(
             string clientId,
             CancellationToken cancellationToken = default)
-            => Task.FromResult<IClientRegistration?>(null);
+            => Task.FromResult<IClientWithCredentials?>(null);
     }
 
     // ── Asking the signing key ring for the key set (#499) ───────────────────────────────────────

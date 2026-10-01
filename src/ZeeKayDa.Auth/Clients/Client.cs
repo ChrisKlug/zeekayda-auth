@@ -5,7 +5,7 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Framework-provided implementation of <see cref="IClientRegistration"/> for use with
+/// Framework-provided implementation of <see cref="IClientWithCredentials"/> for use with
 /// <c>InMemoryClientRepository</c> and unit tests.
 /// </summary>
 /// <remarks>
@@ -20,7 +20,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// test scenarios.
 /// </para>
 /// </remarks>
-public sealed record ClientRegistration : IClientRegistration
+public sealed record Client : IClientWithCredentials
 {
     /// <inheritdoc/>
     public required string ClientId { get; init; }
@@ -113,7 +113,7 @@ public sealed record ClientRegistration : IClientRegistration
     /// <see cref="Credentials"/> with the supplied credential. All other properties use their
     /// default values and can be overridden using <c>with</c> expressions.
     /// </remarks>
-    public static ClientRegistration CreateConfidential(
+    public static Client CreateConfidential(
         string clientId,
         IClientCredential credential,
         IEnumerable<string> redirectUris,
@@ -144,7 +144,7 @@ public sealed record ClientRegistration : IClientRegistration
     /// <c>TokenEndpoint.AuthMethodsSupported</c>, or startup rejects the registration.
     /// </para>
     /// </remarks>
-    public static ClientRegistration CreatePublic(
+    public static Client CreatePublic(
         string clientId,
         IEnumerable<string> redirectUris,
         IEnumerable<string> postLogoutRedirectUris,
@@ -164,7 +164,7 @@ public sealed record ClientRegistration : IClientRegistration
     // A confidential registration whose credential is added later — by the in-memory builder,
     // whose secret is hashed only when the repository is built. Sharing it with CreateConfidential
     // keeps both paths on the same defaults.
-    internal static ClientRegistration CreateConfidentialWithoutCredential(
+    internal static Client CreateConfidentialWithoutCredential(
         string clientId,
         IEnumerable<string> redirectUris,
         IEnumerable<string> postLogoutRedirectUris,

@@ -124,7 +124,9 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
             ServiceDescriptor.Scoped<IStartupActivator, SigningKeyRingActivator>());
 
         services.TryAddEnumerable(
-            ServiceDescriptor.Scoped<IStartupVerifier, InsecureIssuerVerifier>());
+            ServiceDescriptor.Scoped<IStartupVerifier, HttpLoopbackIssuerVerifier>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IStartupVerifier, HttpLoopbackCorsOriginsVerifier>());
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupVerifier, ExceptionSanitizingDisabledVerifier>());
         services.TryAddEnumerable(

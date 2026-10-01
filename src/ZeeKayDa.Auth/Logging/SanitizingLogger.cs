@@ -44,7 +44,7 @@ namespace ZeeKayDa.Auth.Logging;
 /// <para>
 /// Exception messages are wrapped in a <see cref="RedactedExceptionWrapper"/> by default so that
 /// credential material embedded in exception messages cannot reach log sinks. Set
-/// <see cref="AuthorizationServerOptions.Logging"/>.<see cref="LoggingOptions.DisableExceptionSanitizing"/>
+/// <see cref="AuthorizationServerOptions.Development"/>.<see cref="Configuration.DevelopmentOptions.DisableExceptionSanitizing"/>
 /// to <see langword="true"/> to opt out (development environments only).
 /// </para>
 /// <para>
@@ -152,7 +152,7 @@ public class SanitizingLogger<T> : ILogger<T>
 
     private Exception? WrapException(Exception? exception)
     {
-        if (exception is null || _options.Value.Logging.DisableExceptionSanitizing)
+        if (exception is null || _options.Value.Development.DisableExceptionSanitizing)
             return exception;
 
         return new RedactedExceptionWrapper(exception);

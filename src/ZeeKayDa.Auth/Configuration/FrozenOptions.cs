@@ -4,8 +4,9 @@ using System.Diagnostics.CodeAnalysis;
 namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
-/// Freezes the collections on <see cref="AuthorizationServerOptions"/> and its groups once
-/// configuration has finished, so nothing can change what startup validation approved.
+/// Freezes the collections and <see cref="DevelopmentOptions"/> switches on
+/// <see cref="AuthorizationServerOptions"/> once configuration has finished, so nothing can change
+/// what startup validation and verification approved.
 /// </summary>
 internal static class FrozenOptions
 {
@@ -14,7 +15,7 @@ internal static class FrozenOptions
     public static ReadOnlyCollection<T>? Copy<T>(ICollection<T>? values) => values?.ToList().AsReadOnly();
 
     /// <summary>
-    /// The value to assign, or a failure when the options are frozen: a collection replaced after
+    /// The value to assign, or a failure when the options are frozen: a value replaced after
     /// validation would never be checked.
     /// </summary>
     public static T Assign<T>(bool frozen, T value, string property) =>

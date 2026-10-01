@@ -21,7 +21,7 @@ namespace ZeeKayDa.Auth.Clients;
 internal static class ClientClaimAdditions
 {
     /// <summary>The first addition a scope also unlocks, or <see langword="null"/> when there is none.</summary>
-    public static ClaimAdditionCollision? FindCollision(IClientMetadata client, IEnumerable<ScopeDefinition> scopes)
+    public static ClaimAdditionCollision? FindCollision(IClient client, IEnumerable<ScopeDefinition> scopes)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(scopes);
@@ -32,12 +32,12 @@ internal static class ClientClaimAdditions
 
         var unlocked = UnlockedByAnyScope(scopes);
 
-        return Collision(unlocked, client.AdditionalIdTokenClaims, nameof(IClientMetadata.AdditionalIdTokenClaims))
-            ?? Collision(unlocked, client.AdditionalUserInfoClaims, nameof(IClientMetadata.AdditionalUserInfoClaims))
-            ?? Collision(unlocked, client.AdditionalAccessTokenClaims, nameof(IClientMetadata.AdditionalAccessTokenClaims));
+        return Collision(unlocked, client.AdditionalIdTokenClaims, nameof(IClient.AdditionalIdTokenClaims))
+            ?? Collision(unlocked, client.AdditionalUserInfoClaims, nameof(IClient.AdditionalUserInfoClaims))
+            ?? Collision(unlocked, client.AdditionalAccessTokenClaims, nameof(IClient.AdditionalAccessTokenClaims));
     }
 
-    private static bool HasNoAdditions(IClientMetadata client) =>
+    private static bool HasNoAdditions(IClient client) =>
         IsEmpty(client.AdditionalIdTokenClaims)
         && IsEmpty(client.AdditionalUserInfoClaims)
         && IsEmpty(client.AdditionalAccessTokenClaims);

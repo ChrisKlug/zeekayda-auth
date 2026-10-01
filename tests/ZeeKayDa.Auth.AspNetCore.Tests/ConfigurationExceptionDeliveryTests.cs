@@ -17,7 +17,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests;
 /// </summary>
 public sealed class ConfigurationExceptionDeliveryTests
 {
-    // A bad issuer (no scheme permitted without AllowInsecureIssuer) triggers exactly one failure,
+    // A bad issuer (no scheme permitted without AllowHttpLoopbackIssuer) triggers exactly one failure,
     // "configuration.issuer.not_https", so the exception this delivery path throws is pinned to it.
     private const string BadIssuer = "http://auth.example.com";
 

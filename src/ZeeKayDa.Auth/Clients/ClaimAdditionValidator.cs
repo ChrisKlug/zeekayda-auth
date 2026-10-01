@@ -10,12 +10,12 @@ internal static class ClaimAdditionValidator
     /// Validates all three of the client's claim addition collections.
     /// </summary>
     internal static void Validate(
-        IClientRegistration client,
+        IClientWithCredentials client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        Validate(client, client.AdditionalIdTokenClaims, nameof(IClientMetadata.AdditionalIdTokenClaims), failures);
-        Validate(client, client.AdditionalUserInfoClaims, nameof(IClientMetadata.AdditionalUserInfoClaims), failures);
-        Validate(client, client.AdditionalAccessTokenClaims, nameof(IClientMetadata.AdditionalAccessTokenClaims), failures);
+        Validate(client, client.AdditionalIdTokenClaims, nameof(IClient.AdditionalIdTokenClaims), failures);
+        Validate(client, client.AdditionalUserInfoClaims, nameof(IClient.AdditionalUserInfoClaims), failures);
+        Validate(client, client.AdditionalAccessTokenClaims, nameof(IClient.AdditionalAccessTokenClaims), failures);
     }
 
     /// <summary>
@@ -25,7 +25,7 @@ internal static class ClaimAdditionValidator
     /// cannot see.
     /// </summary>
     private static void Validate(
-        IClientRegistration client,
+        IClientWithCredentials client,
         IReadOnlyCollection<string>? additions,
         string propertyName,
         List<ZeeKayDaConfigurationFailure> failures)

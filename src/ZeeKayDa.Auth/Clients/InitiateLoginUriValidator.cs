@@ -1,7 +1,7 @@
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Validates a client's <see cref="IClientMetadata.InitiateLoginUri"/>: absent, or an absolute
+/// Validates a client's <see cref="IClient.InitiateLoginUri"/>: absent, or an absolute
 /// <c>https</c> URI the framework can send a browser to without it becoming anything else.
 /// </summary>
 /// <remarks>
@@ -12,7 +12,7 @@ internal static class InitiateLoginUriValidator
 {
     private const string PropertyName = "InitiateLoginUri";
 
-    internal static void Validate(IClientRegistration client, List<ZeeKayDaConfigurationFailure> failures)
+    internal static void Validate(IClientWithCredentials client, List<ZeeKayDaConfigurationFailure> failures)
     {
         if (client.InitiateLoginUri is not { } uriString)
             return;

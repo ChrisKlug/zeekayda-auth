@@ -30,7 +30,7 @@ internal sealed class ClientRegistrationValidator(
         new(@"^[A-Za-z0-9_\-.]+$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
 
     /// <inheritdoc/>
-    public void Validate(IClientRegistration client)
+    public void Validate(IClientWithCredentials client)
     {
         ArgumentNullException.ThrowIfNull(client);
 
@@ -95,7 +95,7 @@ internal sealed class ClientRegistrationValidator(
     }
 
     private static void ValidateClientId(
-        IClientRegistration client,
+        IClientWithCredentials client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         var clientId = client.ClientId;
@@ -120,7 +120,7 @@ internal sealed class ClientRegistrationValidator(
     /// printable, bounded string — never something a page has to defend itself against.
     /// </summary>
     private static void ValidateDisplayName(
-        IClientRegistration client,
+        IClientWithCredentials client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         if (client.DisplayName is { } displayName && !IsValidDisplayName(displayName))
@@ -139,7 +139,7 @@ internal sealed class ClientRegistrationValidator(
         && !displayName.Any(char.IsControl);
 
     private void ValidateAllowedTokenEndpointAuthMethods(
-        IClientRegistration client,
+        IClientWithCredentials client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         var serverMethods = new HashSet<string>(
@@ -154,7 +154,7 @@ internal sealed class ClientRegistrationValidator(
     /// code is the one that started the flow; nothing else can stand in for it.
     /// </summary>
     private static void ValidatePkceOptOut(
-        IClientRegistration client,
+        IClientWithCredentials client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         if (client.IsPublic && !client.RequirePkce)
@@ -168,7 +168,7 @@ internal sealed class ClientRegistrationValidator(
     }
 
     private void ValidateAllowedSigningAlgorithms(
-        IClientRegistration client,
+        IClientWithCredentials client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         var checkedAgainstServer = SigningAlgorithmValidator.Validate(
@@ -188,11 +188,11 @@ internal sealed class ClientRegistrationValidator(
     }
 
     private void ValidateTokenLifetimes(
-        IClientRegistration client,
+        IClientWithCredentials client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        ValidateTokenLifetime(client, client.AccessTokenLifetime, nameof(IClientMetadata.AccessTokenLifetime), failures);
-        ValidateTokenLifetime(client, client.IdTokenLifetime, nameof(IClientMetadata.IdTokenLifetime), failures);
+        ValidateTokenLifetime(client, client.AccessTokenLifetime, nameof(IClient.AccessTokenLifetime), failures);
+        ValidateTokenLifetime(client, client.IdTokenLifetime, nameof(IClient.IdTokenLifetime), failures);
     }
 
     /// <summary>
@@ -201,7 +201,7 @@ internal sealed class ClientRegistrationValidator(
     /// is still read while a failure would take the request down with it.
     /// </summary>
     private void ValidateTokenLifetime(
-        IClientRegistration client,
+        IClientWithCredentials client,
         TimeSpan? lifetime,
         string propertyName,
         List<ZeeKayDaConfigurationFailure> failures)
@@ -233,7 +233,7 @@ internal sealed class ClientRegistrationValidator(
     /// NOT issue one), so refresh_token alone is usually a mistake. It only warns: a client whose code
     /// grant was withdrawn may still be draining refresh tokens it was issued before.
     /// </summary>
-    private void WarnOfRefreshWithoutIssuer(IClientRegistration client)
+    private void WarnOfRefreshWithoutIssuer(IClientWithCredentials client)
     {
         if (client.AllowedGrantTypes.Any(grantType => grantType == GrantType.RefreshToken)
             && !client.AllowedGrantTypes.Any(grantType => grantType == GrantType.AuthorizationCode))
@@ -246,7 +246,7 @@ internal sealed class ClientRegistrationValidator(
     }
 
     private static void ValidateAllowedScopes(
-        IClientRegistration client,
+        IClientWithCredentials client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         foreach (var _ in client.AllowedScopes.Where(string.IsNullOrWhiteSpace))
@@ -259,7 +259,7 @@ internal sealed class ClientRegistrationValidator(
     }
 
     private static void ValidateAllowedPromptValues(
-        IClientRegistration client,
+        IClientWithCredentials client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         foreach (var promptValue in client.AllowedPromptValues.Where(promptValue => !Enum.IsDefined(promptValue)))

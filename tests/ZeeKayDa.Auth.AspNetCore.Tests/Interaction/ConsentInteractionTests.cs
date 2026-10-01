@@ -70,16 +70,16 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
         },
         mapEndpoints: MapHostPages);
 
-    internal static ClientRegistration ConsentingRegistration()
+    internal static Client ConsentingRegistration()
     {
-        var client = ClientRegistration.CreatePublic(ConsentingClient, [RegisteredRedirect], [], ["openid", "profile", "email"]);
+        var client = Client.CreatePublic(ConsentingClient, [RegisteredRedirect], [], ["openid", "profile", "email"]);
         return client with { DisplayName = "Example App" };
     }
 
     /// <summary>A first-party client the operator chose to exempt from consent.</summary>
-    internal static ClientRegistration TrustedRegistration()
+    internal static Client TrustedRegistration()
     {
-        var client = ClientRegistration.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid", "profile"]);
+        var client = Client.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid", "profile"]);
         return client with { RequireConsent = false };
     }
 
@@ -382,7 +382,7 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
         signIn.Headers.Location.Should().BeNull();
     }
 
-    private static ClientRegistration WithOtherRedirectUri(ClientRegistration registration) =>
+    private static Client WithOtherRedirectUri(Client registration) =>
         registration with
         {
             RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://test.example.com/elsewhere" },
@@ -868,12 +868,12 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
     }
 
     /// <summary>A repository holding one registration an operator can change or remove mid-flow.</summary>
-    private sealed class MutableClientRepository(IClientRegistration initial) : IClientRepository
+    private sealed class MutableClientRepository(IClientWithCredentials initial) : IClientRepository
     {
         /// <summary>The registration as it is now; <see langword="null"/> once removed.</summary>
-        public IClientRegistration? Current { get; set; } = initial;
+        public IClientWithCredentials? Current { get; set; } = initial;
 
-        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IClientRegistration?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientWithCredentials?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
     }
 }

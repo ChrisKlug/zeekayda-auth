@@ -57,7 +57,7 @@ public sealed class CompositeClientAuthenticatorTests
 
     private sealed class PassingRegistrationValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientRegistration client)
+        public void Validate(IClientWithCredentials client)
         {
             // Deliberately accepts everything: these tests exercise the composite's dispatch
             // rules with minimal fake registrations, not registration validation, which has its
@@ -65,16 +65,16 @@ public sealed class CompositeClientAuthenticatorTests
         }
     }
 
-    private static ValidatedClientResolver Resolver(IClientRegistration? client) => new(
+    private static ValidatedClientResolver Resolver(IClientWithCredentials? client) => new(
         new FakeClientRepository(client),
         new PassingRegistrationValidator(),
         NullSanitizingLogger<ValidatedClientResolver>.Instance);
 
     private sealed class FakeClientRepository : IClientRepository
     {
-        private readonly IClientRegistration? _client;
-        public FakeClientRepository(IClientRegistration? client = null) => _client = client;
-        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken ct)
+        private readonly IClientWithCredentials? _client;
+        public FakeClientRepository(IClientWithCredentials? client = null) => _client = client;
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken ct)
             => Task.FromResult(_client);
     }
 
@@ -98,7 +98,7 @@ public sealed class CompositeClientAuthenticatorTests
         public bool SetEquals(IEnumerable<string> other) => throw new NotSupportedException();
     }
 
-    private sealed class MinimalClient : IClientRegistration
+    private sealed class MinimalClient : IClientWithCredentials
     {
         public required string ClientId { get; init; }
         public required IReadOnlyList<IClientCredential> Credentials { get; init; }
@@ -199,7 +199,7 @@ public sealed class CompositeClientAuthenticatorTests
         CompositeClientAuthenticator Composite,
         FakeHasher Hasher)
         CreateComposite(
-            IClientRegistration? client,
+            IClientWithCredentials? client,
             bool verifyResult = false,
             string[]? allowedMethods = null)
     {
@@ -211,7 +211,7 @@ public sealed class CompositeClientAuthenticatorTests
         CompositeClientAuthenticator Composite,
         FakeHasher Hasher)
         CreateCompositeWithHasher(
-            IClientRegistration? client,
+            IClientWithCredentials? client,
             FakeHasher hasher,
             string[]? allowedMethods = null)
     {
@@ -236,11 +236,11 @@ public sealed class CompositeClientAuthenticatorTests
 
     /// <summary>
     /// A composite whose resolver runs the real registration validator. The <c>none</c> path trusts
-    /// <see cref="IClientMetadata.IsPublic"/> because the resolver guarantees public ⇔ no credentials
+    /// <see cref="IClient.IsPublic"/> because the resolver guarantees public ⇔ no credentials
     /// ⇔ methods exactly <c>{ "none" }</c>; these tests prove that guarantee end to end.
     /// </summary>
     private static (CompositeClientAuthenticator Composite, CapturingSanitizingLogger<ValidatedClientResolver> ResolverLogger)
-        CreateValidatingComposite(IClientRegistration client, FakeHasher hasher)
+        CreateValidatingComposite(IClientWithCredentials client, FakeHasher hasher)
     {
         var compositeHasher = new CompositeClientSecretHasher(
             [hasher],

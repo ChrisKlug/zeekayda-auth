@@ -172,7 +172,7 @@ public sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactory>
                 // the unconfigured case clear it themselves.
                 options.AuthorizationEndpoint.Interaction.ConsentPath = "/account/consent";
 
-                // Allow per-test overrides (e.g. path-bearing issuer, AllowInsecureIssuer, etc.)
+                // Allow per-test overrides (e.g. path-bearing issuer, AllowHttpLoopbackIssuer, etc.)
                 _configureOptions?.Invoke(options);
             });
 
@@ -242,7 +242,7 @@ internal sealed class TestWebAppFactoryWithRemoteIp : WebApplicationFactory<Test
             services.AddZeeKayDaAuth(options =>
             {
                 options.Issuer = "http://localhost:5000";
-                options.AllowInsecureIssuer = true;
+                options.Development.AllowHttpLoopbackIssuer = true;
                 // Advertise "none" so the public test client passes the subset validation.
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 _configureOptions?.Invoke(options);

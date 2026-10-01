@@ -16,7 +16,7 @@ public sealed class PkceRulesTests
     [InlineData(true, true, false)]
     public void Only_a_confidential_client_registered_without_RequirePkce_may_omit_the_challenge(bool isPublic, bool requirePkce, bool expected)
     {
-        var client = ClientRegistration.CreatePublic("client", ["https://app.example.com/cb"], [], ["openid"])
+        var client = Client.CreatePublic("client", ["https://app.example.com/cb"], [], ["openid"])
             with
         { IsPublic = isPublic, RequirePkce = requirePkce };
 

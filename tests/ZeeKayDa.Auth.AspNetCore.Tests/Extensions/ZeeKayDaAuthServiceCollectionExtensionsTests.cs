@@ -29,18 +29,21 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         host.Resolve<IOptions<AuthorizationServerOptions>>().Value.ClockSkewTolerance.Should().Be(TimeSpan.FromSeconds(10));
     }
 
-    [Fact]
-    public void AddZeeKayDaAuth_always_registers_ExceptionSanitizingDisabledVerifier_as_IStartupVerifier()
+    [Theory]
+    [InlineData(typeof(HttpLoopbackIssuerVerifier))]
+    [InlineData(typeof(HttpLoopbackCorsOriginsVerifier))]
+    [InlineData(typeof(ExceptionSanitizingDisabledVerifier))]
+    public void AddZeeKayDaAuth_always_registers_a_verifier_for_each_Development_switch(Type verifierType)
     {
-        // The warning verifier reads the flag at startup and emits a warning only when the flag
-        // is set. It is always registered (unconditionally) so no additional method call is needed.
+        // Each verifier reads its flag at startup and reports only when the flag is set, so it is
+        // registered unconditionally and no additional method call is needed.
         var services = new ServiceCollection();
 
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
 
         services.Should().Contain(sd =>
             sd.ServiceType == typeof(IStartupVerifier) &&
-            sd.ImplementationType == typeof(ExceptionSanitizingDisabledVerifier));
+            sd.ImplementationType == verifierType);
     }
 
     [Theory]
@@ -63,7 +66,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     {
         // The none path trusts IsPublic because the resolver enforces public <=> no credentials.
         // A host's own IClientRegistrationValidator, however lax, must not replace that check.
-        var corrupt = ClientRegistration.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"])
+        var corrupt = Client.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"])
             with
         { Credentials = [new Pbkdf2ClientSecret(600_000, new byte[16], new byte[32])] };
         var services = new ServiceCollection();
@@ -78,7 +81,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
 
         var served = await provider.GetRequiredService<ValidatedClientResolver>()
-            .FindByClientIdAsync("public-client", TestContext.Current.CancellationToken);
+            .FindClientWithCredentialsAsync("public-client", TestContext.Current.CancellationToken);
 
         served.Should().BeNull();
         provider.GetRequiredService<IClientRegistrationValidator>().Should().BeOfType<AcceptEverythingValidator>(
@@ -88,7 +91,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     [Fact]
     public async Task ValidatedClientResolver_also_runs_the_hosts_own_validator_on_what_it_serves()
     {
-        var valid = ClientRegistration.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"]);
+        var valid = Client.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"]);
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IClientRegistrationValidator, RejectEverythingValidator>();
@@ -101,26 +104,26 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
 
         var served = await provider.GetRequiredService<ValidatedClientResolver>()
-            .FindByClientIdAsync("public-client", TestContext.Current.CancellationToken);
+            .FindClientWithCredentialsAsync("public-client", TestContext.Current.CancellationToken);
 
         served.Should().BeNull("a host's stricter rule applies to what is served, on top of the framework's");
     }
 
     private sealed class RejectEverythingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientRegistration client) =>
+        public void Validate(IClientWithCredentials client) =>
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure("host.tenant_rule", "Redirect URIs must be on the tenant domain."));
     }
 
     private sealed class AcceptEverythingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientRegistration client) { }
+        public void Validate(IClientWithCredentials client) { }
     }
 
-    private sealed class SingleClientRepository(IClientRegistration client) : IClientRepository
+    private sealed class SingleClientRepository(IClientWithCredentials client) : IClientRepository
     {
-        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
             => Task.FromResult(clientId == client.ClientId ? client : null);
     }
 
@@ -259,12 +262,9 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_binds_DisableExceptionSanitizing_from_configuration()
+    public void AddZeeKayDaAuth_binds_the_Development_switches_from_configuration()
     {
-        // Verify the documented appsettings.Development.json path actually works — i.e., that
-        // the JSON key "ZeeKayDaAuth:Logging:DisableExceptionSanitizing" binds to the correct
-        // property on AuthorizationServerOptions.
-        var json = """{"ZeeKayDaAuth":{"Logging":{"DisableExceptionSanitizing":true}}}""";
+        var json = """{"ZeeKayDaAuth":{"Development":{"AllowHttpLoopbackIssuer":true,"AllowHttpLoopbackCorsOrigins":true,"DisableExceptionSanitizing":true}}}""";
         var jsonBytes = System.Text.Encoding.UTF8.GetBytes(json);
         using var jsonStream = new System.IO.MemoryStream(jsonBytes);
         var configuration = new ConfigurationBuilder()
@@ -280,7 +280,9 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
         var opts = provider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
 
-        opts.Logging.DisableExceptionSanitizing.Should().BeTrue();
+        opts.Development.AllowHttpLoopbackIssuer.Should().BeTrue();
+        opts.Development.AllowHttpLoopbackCorsOrigins.Should().BeTrue();
+        opts.Development.DisableExceptionSanitizing.Should().BeTrue();
     }
 
     // ── Test doubles ─────────────────────────────────────────────────────────────────────────────

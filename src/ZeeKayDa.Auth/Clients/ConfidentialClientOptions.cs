@@ -9,21 +9,21 @@ namespace ZeeKayDa.Auth.Clients;
 /// </summary>
 public sealed class ConfidentialClientOptions : ClientOptions
 {
-    internal ConfidentialClientOptions(ClientRegistration defaults)
+    internal ConfidentialClientOptions(Client defaults)
         : base(defaults)
     {
         RequirePkce = defaults.RequirePkce;
         AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal);
     }
 
-    internal override ClientRegistration ApplyTo(ClientRegistration registration) => base.ApplyTo(registration) with
+    internal override Client ApplyTo(Client registration) => base.ApplyTo(registration) with
     {
         RequirePkce = RequirePkce,
         AllowedTokenEndpointAuthMethods = OrDefault(
             AllowedTokenEndpointAuthMethods, registration.AllowedTokenEndpointAuthMethods, StringComparer.Ordinal),
     };
 
-    /// <inheritdoc cref="IClientMetadata.RequirePkce"/>
+    /// <inheritdoc cref="IClient.RequirePkce"/>
     public bool RequirePkce { get; set; }
 
     /// <summary>

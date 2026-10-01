@@ -97,7 +97,7 @@ internal sealed class EndSessionEndpoint(
     /// the one <c>client_id</c> names otherwise. <c>client_id</c> is passed to the validator as
     /// sent, so a hint issued to any other client is refused.
     /// </summary>
-    private async ValueTask<(IdTokenHint? Hint, IClientRegistration? Client)> ResolveClientAsync(
+    private async ValueTask<(IdTokenHint? Hint, IClient? Client)> ResolveClientAsync(
         Dictionary<string, StringValues> parameters,
         IdTokenHintValidator hints,
         ValidatedClientResolver clients,
@@ -113,7 +113,7 @@ internal sealed class EndSessionEndpoint(
         var clientId = hint?.ClientId ?? requestedClientId;
         var client = clientId is null
             ? null
-            : await clients.FindByClientIdAsync(clientId, cancellationToken).ConfigureAwait(false);
+            : await clients.FindClientAsync(clientId, cancellationToken).ConfigureAwait(false);
 
         return (hint, client);
     }
@@ -122,7 +122,7 @@ internal sealed class EndSessionEndpoint(
     /// The redirect back to the client, when the request asked for one the client registered and
     /// its <c>state</c> is short enough to echo.
     /// </summary>
-    private static PostLogoutRedirect? RedirectFor(IClientMetadata? client, Dictionary<string, StringValues> parameters)
+    private static PostLogoutRedirect? RedirectFor(IClient? client, Dictionary<string, StringValues> parameters)
     {
         var state = Single(parameters, "state");
         if (state is not null && state.Length > MaxStateLength)
@@ -185,7 +185,7 @@ internal sealed class EndSessionEndpoint(
     /// A valid hint for the user signed in to this browser, from a client that opted out of the
     /// question. The hint's client is the one resolved, so the opt-out is that client's own.
     /// </summary>
-    private static bool MayEndWithoutAsking(IClientMetadata? client, IdTokenHint? hint, SsoSessionState session) =>
+    private static bool MayEndWithoutAsking(IClient? client, IdTokenHint? hint, SsoSessionState session) =>
         hint is not null
         && client is { SkipLogoutConfirmation: true }
         && string.Equals(hint.Subject, session.Subject, StringComparison.Ordinal);

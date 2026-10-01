@@ -27,19 +27,19 @@ public sealed class ClaimSelectionTests
         UserInfoClaims = ["customer_number"],
     };
 
-    private static ClientRegistration Client(
+    private static Client NewClient(
         IReadOnlyCollection<string>? idToken = null,
         IReadOnlyCollection<string>? userInfo = null,
         IReadOnlyCollection<string>? accessToken = null) =>
-        ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]) with
+        Client.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]) with
         {
             AdditionalIdTokenClaims = idToken ?? [],
             AdditionalUserInfoClaims = userInfo ?? [],
             AdditionalAccessTokenClaims = accessToken ?? [],
         };
 
-    private static SelectedClaims Select(IReadOnlyList<ClaimRecord> pool, IReadOnlyList<ScopeDefinition> granted, IClientMetadata? client = null) =>
-        ClaimSelection.Select(pool, ClaimSelectionPlan.For(granted, client ?? Client()));
+    private static SelectedClaims Select(IReadOnlyList<ClaimRecord> pool, IReadOnlyList<ScopeDefinition> granted, IClient? client = null) =>
+        ClaimSelection.Select(pool, ClaimSelectionPlan.For(granted, client ?? NewClient()));
 
     private static string Json(ClaimValue value) => JsonSerializer.Serialize(value);
 
@@ -50,7 +50,7 @@ public sealed class ClaimSelectionTests
     {
         var plan = ClaimSelectionPlan.For(
             [StandardScopes.OpenId, Profile, OrdersRead],
-            Client(idToken: ["tenant"], accessToken: ["tenant"]));
+            NewClient(idToken: ["tenant"], accessToken: ["tenant"]));
 
         plan.IdToken.Should().Contain(["name", "given_name", "tenant"]).And.NotContain("role");
         plan.AccessToken.Should().BeEquivalentTo(["role", "tenant"]);
@@ -64,7 +64,7 @@ public sealed class ClaimSelectionTests
         // The standard scopes as shipped unlock their claims at userinfo only, so without this
         // narrowing every code exchange would ask the provider for personal data no token carries.
         var plan = ClaimSelectionPlan
-            .For([StandardScopes.OpenId, StandardScopes.Profile, StandardScopes.Email], Client())
+            .For([StandardScopes.OpenId, StandardScopes.Profile, StandardScopes.Email], NewClient())
             .For(ClaimsDestination.Tokens);
 
         plan.All.Should().BeEquivalentTo(["sub"], "only openid's sub reaches a token");
@@ -76,7 +76,7 @@ public sealed class ClaimSelectionTests
     public void The_plan_for_the_tokens_keeps_what_the_ID_and_access_tokens_want()
     {
         var plan = ClaimSelectionPlan
-            .For([StandardScopes.OpenId, Profile, OrdersRead], Client(idToken: ["tenant"], accessToken: ["tenant"]))
+            .For([StandardScopes.OpenId, Profile, OrdersRead], NewClient(idToken: ["tenant"], accessToken: ["tenant"]))
             .For(ClaimsDestination.Tokens);
 
         plan.IdToken.Should().Contain(["name", "tenant"]);
@@ -89,7 +89,7 @@ public sealed class ClaimSelectionTests
     {
         // A repeat of a single-valued claim aborts the destination that wants it. customer_number
         // is unlocked at userinfo only, so an exchange must not be the request that dies on it.
-        var plan = ClaimSelectionPlan.For([StandardScopes.OpenId, OrdersRead], Client());
+        var plan = ClaimSelectionPlan.For([StandardScopes.OpenId, OrdersRead], NewClient());
 
         var act = () => ClaimSelection.Select(
             [new("customer_number", "a"), new("customer_number", "b")],
@@ -101,7 +101,7 @@ public sealed class ClaimSelectionTests
     [Fact]
     public void The_plan_is_empty_for_a_scope_that_unlocks_nothing_and_a_client_that_adds_nothing()
     {
-        var plan = ClaimSelectionPlan.For([new ScopeDefinition { Name = "api" }], Client());
+        var plan = ClaimSelectionPlan.For([new ScopeDefinition { Name = "api" }], NewClient());
 
         plan.All.Should().BeEmpty();
     }
@@ -155,7 +155,7 @@ public sealed class ClaimSelectionTests
         var selected = Select(
             [new("tenant", "acme")],
             [StandardScopes.OpenId],
-            Client(idToken: ["tenant"], accessToken: ["tenant"]));
+            NewClient(idToken: ["tenant"], accessToken: ["tenant"]));
 
         selected.IdToken.Keys.Should().BeEquivalentTo(["tenant"]);
         selected.AccessToken.Keys.Should().BeEquivalentTo(["tenant"]);
@@ -382,7 +382,7 @@ public sealed class ClaimSelectionTests
         plan.All.Should().BeEquivalentTo(["sub"]);
     }
 
-    private sealed class NullAdditionsClient : IClientMetadata
+    private sealed class NullAdditionsClient : IClient
     {
         public string ClientId => "custom";
         public bool IsPublic => true;

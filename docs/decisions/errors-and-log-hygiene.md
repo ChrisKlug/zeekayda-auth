@@ -103,8 +103,8 @@ nothing in the diff to notice. The startup runner's `{ErrorCode}` prefix is one 
 rule, not a local quirk.
 
 **The redaction opt-out is public, bindable, and named to read as a risk escalation.** It lives on the
-`Logging` options group because it is configuration data, not a DI registration; the options group has
-to stay `public` because the root is bound from `IConfiguration`; and the property name is
+`Development` options group, with every other switch that weakens security, because it is
+configuration data, not a DI registration; the options group has to stay `public` because the root is bound from `IConfiguration`; and the property name is
 deliberately explicit and unambiguous so it cannot slip through a configuration review as an
 innocuous flag. It is read from the singleton options binding and cannot be toggled at runtime, which
 is correct for a security policy switch. It emits a startup warning on every boot when enabled.

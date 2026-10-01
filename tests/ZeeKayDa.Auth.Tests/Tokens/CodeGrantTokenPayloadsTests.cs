@@ -18,8 +18,8 @@ public sealed class CodeGrantTokenPayloadsTests
     private static readonly DateTimeOffset Now = new(2026, 9, 13, 12, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan Lifetime = TimeSpan.FromHours(1);
 
-    private static readonly IClientMetadata Client =
-        ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]);
+    private static readonly IClient TestClient =
+        Client.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]);
 
     private static AuthorizationCodeEntry Entry(
         string? nonce = "n-0S6_WzA2Mj",
@@ -45,7 +45,7 @@ public sealed class CodeGrantTokenPayloadsTests
         AuthorizationCodeEntry? entry = null,
         SelectedClaims? subject = null,
         string? resourceAudience = null) =>
-        new(Issuer, Client, entry ?? Entry(), Now, subject ?? SelectedClaims.None, resourceAudience);
+        new(Issuer, TestClient, entry ?? Entry(), Now, subject ?? SelectedClaims.None, resourceAudience);
 
     // ── The access token ──────────────────────────────────────────────────────────────────────
 

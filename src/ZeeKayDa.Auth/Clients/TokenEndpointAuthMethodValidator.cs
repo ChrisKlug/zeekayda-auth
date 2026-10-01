@@ -4,8 +4,8 @@ namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
 /// Validates how a client authenticates at the token endpoint — its
-/// <see cref="IClientMetadata.AllowedTokenEndpointAuthMethods"/>, and their consistency with
-/// <see cref="IClientMetadata.IsPublic"/> and its credentials — and records a
+/// <see cref="IClient.AllowedTokenEndpointAuthMethods"/>, and their consistency with
+/// <see cref="IClient.IsPublic"/> and its credentials — and records a
 /// <see cref="ZeeKayDaConfigurationFailure"/> for every rule it breaks.
 /// </summary>
 internal static class TokenEndpointAuthMethodValidator
@@ -14,7 +14,7 @@ internal static class TokenEndpointAuthMethodValidator
     /// Validates the client's allowed methods against the server's supported methods.
     /// </summary>
     internal static void Validate(
-        IClientRegistration client,
+        IClientWithCredentials client,
         IReadOnlySet<string> serverMethods,
         List<ZeeKayDaConfigurationFailure> failures)
     {
@@ -40,7 +40,7 @@ internal static class TokenEndpointAuthMethodValidator
     }
 
     private static void ValidateIsPublicTrinity(
-        IClientRegistration client,
+        IClientWithCredentials client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         var hasNoCredentials = client.Credentials.Count == 0;
@@ -85,7 +85,7 @@ internal static class TokenEndpointAuthMethodValidator
     /// and a duplicate is not also checked against the server's methods.
     /// </summary>
     private static void ValidateEntry(
-        IClientRegistration client,
+        IClientWithCredentials client,
         string? method,
         HashSet<string> seen,
         IReadOnlySet<string> serverMethods,
@@ -116,7 +116,7 @@ internal static class TokenEndpointAuthMethodValidator
     // A confidential client listing 'none' is fixed by removing it (none_on_confidential), never by
     // advertising it, so it gets no hint.
     private static ZeeKayDaConfigurationFailure NotSupportedByServer(
-        IClientRegistration client,
+        IClientWithCredentials client,
         string method,
         IReadOnlySet<string> serverMethods)
     {
@@ -133,6 +133,6 @@ internal static class TokenEndpointAuthMethodValidator
             $"in the server's AuthMethodsSupported: [{string.Join(", ", serverMethods)}]." + fix);
     }
 
-    private static bool NeedsNoneOptIn(IClientRegistration client, string method)
+    private static bool NeedsNoneOptIn(IClientWithCredentials client, string method)
         => client.IsPublic && string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal);
 }
