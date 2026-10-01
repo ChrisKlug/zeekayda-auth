@@ -168,6 +168,18 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteKeyFileAsync_creates_the_lock_file_readable_only_by_the_owner_on_Unix()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
+
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+
+        await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        GetUnixMode(keyPath + ".lock").Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
+
+    [Fact]
     public async Task WriteKeyFileAsync_applies_a_non_inherited_owner_only_acl_on_Windows()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);

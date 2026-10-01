@@ -86,7 +86,9 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         {
             try
             {
-                return new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None)
+                    : OpenLockUnix(lockPath);
             }
             catch (IOException) when (DateTime.UtcNow < deadline)
             {
@@ -94,6 +96,18 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
             }
         }
     }
+
+    // Owner-only like every other file here, though it holds nothing: on Windows it inherits the
+    // folder's owner-only ACL, and on Unix the mode is set at creation.
+    [UnsupportedOSPlatform("windows")]
+    private static FileStream OpenLockUnix(string lockPath) =>
+        new(lockPath, new FileStreamOptions
+        {
+            Mode = FileMode.OpenOrCreate,
+            Access = FileAccess.ReadWrite,
+            Share = FileShare.None,
+            UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+        });
 
     // Internal rather than private so the losing half of the race can be driven directly,
     // without depending on thread scheduling to produce it.
