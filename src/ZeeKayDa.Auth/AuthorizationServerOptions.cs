@@ -144,7 +144,10 @@ public sealed class AuthorizationServerOptions
     /// </summary>
     public DevelopmentOptions Development { get; } = new();
 
-    /// <summary>Makes every collection read-only and refuses any later replacement.</summary>
+    /// <summary>
+    /// Makes every collection read-only, refuses any later replacement, and fixes the
+    /// <see cref="Development"/> switches.
+    /// </summary>
     internal void Freeze()
     {
         if (_frozen)
@@ -156,6 +159,7 @@ public sealed class AuthorizationServerOptions
         TokenEndpoint.Freeze();
         IdToken.Freeze();
         Response.Freeze();
+        Development.Freeze();
         _frozen = true;
     }
 }
