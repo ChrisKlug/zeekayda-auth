@@ -1967,7 +1967,7 @@ fix-diff verification of each round; no Critical.
   `WriteKeyFileAsync_leaves_neither_a_pending_file_nor_a_key_when_cancelled`,
   `WriteKeyFileAsync_refuses_a_dangling_symlink_at_the_key_path_without_writing_through_it`,
   `WriteKeyFileAsync_creates_the_lock_file_readable_only_by_the_owner_on_Unix`.
-- **Accepted residual (maintainer):** with file locking disabled (`DOTNET_SYSTEM_IO_DISABLEFILELOCKING`
+- **Accepted residual (maintainer):** with file locking disabled (the DOTNET_SYSTEM_IO_DISABLEFILELOCKING variable
   or a filesystem without locks) the race returns; the lock test above fails in that configuration.
 - **Accepted residual:** a crash between write and rename leaves an owner-only `.pending` file; a
   directory at the `.lock` path fails only after the 30 s `lock_timeout`. No test.
