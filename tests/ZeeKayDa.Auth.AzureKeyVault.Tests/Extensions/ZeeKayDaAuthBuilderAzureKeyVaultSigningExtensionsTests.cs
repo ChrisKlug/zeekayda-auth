@@ -24,7 +24,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     public void AddAzureKeyVaultRemoteSigning_throws_ArgumentNullException_when_credential_is_null()
     {
         var services = new ServiceCollection();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         var act = () => builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, null!);
 
@@ -73,7 +73,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         var services = new ServiceCollection();
         var hostProvider = new FakeTimeProvider();
         services.AddSingleton<TimeProvider>(hostProvider);
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
@@ -87,7 +87,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         var services = new ServiceCollection();
         var hostProvider = new FakeTimeProvider();
         services.AddSingleton<TimeProvider>(hostProvider);
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
@@ -102,7 +102,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     public void AddAzureKeyVaultRemoteSigning_throws_when_a_signing_key_source_is_already_registered()
     {
         var services = new ServiceCollection();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         var act = () => builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
@@ -123,7 +123,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         // SecretSanitizingLogger<T> (registered by AddZeeKayDaAuthCore) needs a real ILogger<T> to
         // resolve; a plain ServiceCollection has no logging provider registered by default.
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
@@ -138,7 +138,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     {
         var services = new ServiceCollection();
         var credential = new FakeTokenCredential();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.ES256, credential);
 
@@ -155,7 +155,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     public async Task AddAzureKeyVaultRemoteSigning_applies_the_configure_callback()
     {
         var services = new ServiceCollection();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential(),
             options => options.PreActivationDelay = TimeSpan.FromHours(2));
@@ -205,7 +205,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     public void AddAzureKeyVaultCachedSigning_throws_ArgumentNullException_when_credential_is_null()
     {
         var services = new ServiceCollection();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, null!);
 
@@ -222,7 +222,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         // AddSigningKeySource, whose own guard rejects a second source in either order —
         // this closes the gap accepted in #548, where remote-then-cached was undetectable.
         var services = new ServiceCollection();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         var act = () => builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
@@ -235,7 +235,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     public void AddAzureKeyVaultCachedSigning_throws_when_AddAzureKeyVaultRemoteSigning_already_registered()
     {
         var services = new ServiceCollection();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
@@ -252,7 +252,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     public void AddAzureKeyVaultCachedSigning_after_AddAzureKeyVaultCachedSigning_with_different_options_throws()
     {
         var services = new ServiceCollection();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         var act = () => builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.ES256, new FakeTokenCredential());
@@ -270,7 +270,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         // TryAddSingleton-registers the real implementation, so a pre-registered fake wins.
         services.AddSingleton<IKeyVaultCertificateReader>(new FakeKeyVaultCertificateReader());
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
@@ -285,7 +285,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     {
         var services = new ServiceCollection();
         var credential = new FakeTokenCredential();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.ES256, credential);
 
@@ -302,7 +302,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     public async Task AddAzureKeyVaultCachedSigning_applies_the_configure_callback()
     {
         var services = new ServiceCollection();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential(),
             options => options.PreviousVersionsToPublish = 3);
@@ -363,7 +363,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     public async Task AddAzureKeyVaultRemoteSigning_registers_the_startup_options_validator()
     {
         var services = new ServiceCollection();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
@@ -376,7 +376,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     public async Task AddAzureKeyVaultCachedSigning_registers_the_startup_options_validator()
     {
         var services = new ServiceCollection();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
@@ -389,7 +389,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     public async Task AddAzureKeyVaultRemoteSigning_registers_the_real_key_vault_seams_by_default()
     {
         var services = new ServiceCollection();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
@@ -403,7 +403,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     public async Task AddAzureKeyVaultCachedSigning_registers_the_real_key_vault_seams_by_default()
     {
         var services = new ServiceCollection();
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 

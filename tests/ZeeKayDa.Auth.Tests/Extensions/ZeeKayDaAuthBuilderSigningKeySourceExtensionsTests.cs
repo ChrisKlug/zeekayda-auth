@@ -458,7 +458,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
         // initialized or self-tested, and the host would start with an uninitialized ring.
         var services = new ServiceCollection();
 
-        services.AddZeeKayDaAuthCore(options => options.Issuer = MinimalCoreHost.Issuer);
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://issuer.test");
 
         services.Should().Contain(
             d => d.ServiceType == typeof(IStartupActivator)

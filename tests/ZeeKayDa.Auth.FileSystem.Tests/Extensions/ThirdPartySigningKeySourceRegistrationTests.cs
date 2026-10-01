@@ -47,7 +47,7 @@ public sealed class ThirdPartySigningKeySourceRegistrationTests
     {
         var services = new ServiceCollection();
 
-        services.AddMinimalZeeKayDaAuthCore().AddSigningKeySource<ExternalSigningKeySource>();
+        services.AddZeeKayDaAuthCoreForTesting().AddSigningKeySource<ExternalSigningKeySource>();
 
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<ISigningKeyRing>().Should().NotBeNull();
@@ -56,7 +56,7 @@ public sealed class ThirdPartySigningKeySourceRegistrationTests
     [Fact]
     public void AddSigningKeySource_called_with_a_different_source_throws_InvalidOperationException()
     {
-        var builder = new ServiceCollection().AddMinimalZeeKayDaAuthCore();
+        var builder = new ServiceCollection().AddZeeKayDaAuthCoreForTesting();
         builder.AddSigningKeySource<ExternalSigningKeySource>();
 
         var act = () => builder.AddSigningKeySource<OtherExternalSigningKeySource>();

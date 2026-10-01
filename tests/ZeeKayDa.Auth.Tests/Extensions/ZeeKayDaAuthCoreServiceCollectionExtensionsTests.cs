@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
 {
-    private static void ValidIssuer(AuthorizationServerOptions options) => options.Issuer = MinimalCoreHost.Issuer;
+    private static void ValidIssuer(AuthorizationServerOptions options) => options.Issuer = "https://issuer.test";
 
     private static ServiceCollection ServicesWithLogging()
     {
@@ -59,7 +59,7 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     public async Task A_core_only_host_with_every_mandatory_seam_starts()
     {
         var services = ServicesWithLogging();
-        services.AddMinimalZeeKayDaAuthCore().AddInMemoryDevelopmentSigning();
+        services.AddZeeKayDaAuthCoreForTesting().AddInMemoryDevelopmentSigning();
 
         await using var provider = services.BuildServiceProvider();
         var act = () => StartAsync(provider);
@@ -71,7 +71,7 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     public async Task A_core_only_host_validates_the_server_options_at_startup()
     {
         var services = ServicesWithLogging();
-        services.AddMinimalZeeKayDaAuthCore().AddInMemoryDevelopmentSigning();
+        services.AddZeeKayDaAuthCoreForTesting().AddInMemoryDevelopmentSigning();
         services.Configure<AuthorizationServerOptions>(options => options.Issuer = "not-a-uri");
 
         await using var provider = services.BuildServiceProvider();

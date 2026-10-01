@@ -63,7 +63,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         const string version = "3a7f21c9e04b4d8fa16c5e93bd270f18";
         reader.AddRsaVersion(version, createdOn: T0);
 
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -95,7 +95,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
         reader.AddRsaVersion("v3", createdOn: now - TimeSpan.FromHours(1)); // Younger than the delay -> staged.
 
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -117,7 +117,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var (services, reader, timeProvider) = BuildServices(T0);
         reader.AddRsaVersion("v1", createdOn: T0);
 
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -140,7 +140,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var ct = TestContext.Current.CancellationToken;
         var (services, _, _) = BuildServices(T0); // No versions registered.
 
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -164,7 +164,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         using var divergedKey = RSA.Create(2048);
         reader.SetMismatchedPrivateKeyMaterial("v1", divergedKey.ExportParameters(includePrivateParameters: true));
 
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -184,7 +184,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var (services, reader, _) = BuildServices(T0);
         reader.AddRsaVersion("v1", createdOn: T0);
 
-        var builder = services.AddMinimalZeeKayDaAuthCore();
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.ES256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();

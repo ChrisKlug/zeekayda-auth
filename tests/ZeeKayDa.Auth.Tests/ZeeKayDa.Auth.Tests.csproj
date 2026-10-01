@@ -28,8 +28,4 @@
     <ProjectReference Include="../../src/ZeeKayDa.Auth.TestKit/ZeeKayDa.Auth.TestKit.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Compile Include="../Shared/MinimalCoreHost.cs" Link="Shared/MinimalCoreHost.cs" />
-  </ItemGroup>
-
 </Project>

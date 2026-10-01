@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/ZeeKayDa.Auth/ZeeKayDa.Auth.csproj" />
+    <ProjectReference Include="../../src/ZeeKayDa.Auth.TestKit/ZeeKayDa.Auth.TestKit.csproj" />
     <ProjectReference Include="../../src/ZeeKayDa.Auth.AzureKeyVault/ZeeKayDa.Auth.AzureKeyVault.csproj" />
   </ItemGroup>
 
@@ -35,10 +36,6 @@
          against Key Vault's real PBE/MAC/key-bag encoding, not just .NET's own PFX export defaults.
          These are throwaway, test-only key material — never real production secrets. -->
     <None Include="Fixtures/RealKeyVaultExports/*.txt" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Include="../Shared/MinimalCoreHost.cs" Link="Shared/MinimalCoreHost.cs" />
   </ItemGroup>
 
 </Project>
