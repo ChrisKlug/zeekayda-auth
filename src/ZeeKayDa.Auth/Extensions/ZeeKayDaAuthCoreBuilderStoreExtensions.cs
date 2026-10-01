@@ -41,13 +41,11 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
         this TBuilder builder,
         bool allowOutsideDevelopment = false)
         where TBuilder : ZeeKayDaAuthCoreBuilder
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-
-        AddInteractionStore<InMemoryInteractionBackingStore>(builder, services =>
-            AddInMemoryStoreVerifier(services, InMemoryStoreVerifier.InteractionStoreName, allowOutsideDevelopment));
-        return builder;
-    }
+        => AddInMemoryStore(
+            builder,
+            AddInteractionStore<InMemoryInteractionBackingStore>,
+            InMemoryStoreVerifier.InteractionStoreName,
+            allowOutsideDevelopment);
 
     /// <summary>
     /// Registers the interaction store over the host's <see cref="IDistributedCache"/>. A shared
@@ -83,19 +81,18 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
     {
         ArgumentNullException.ThrowIfNull(builder);
 
-        AddInteractionStore<DistributedCacheInteractionBackingStore>(builder, services =>
-            services.AddSingleton<IStartupActivator>(sp => new DistributedCacheInteractionStoreActivator(
-                sp.GetRequiredService<IHostEnvironment>(),
-                allowMemoryCacheOutsideDevelopment)));
+        AddInteractionStore<DistributedCacheInteractionBackingStore>(builder);
+        builder.Services.AddSingleton<IStartupActivator>(sp => new DistributedCacheInteractionStoreActivator(
+            sp.GetRequiredService<IHostEnvironment>(),
+            allowMemoryCacheOutsideDevelopment));
         return builder;
     }
 
     /// <summary>
-    /// Registers <typeparamref name="TStore"/> as the one interaction store, with the startup gate
-    /// <paramref name="addGate"/> registers alongside it. The guard names the public methods rather
-    /// than the internal seam, since those are what the host called.
+    /// Registers <typeparamref name="TStore"/> as the one interaction store. The guard names the
+    /// public methods rather than the internal seam, since those are what the host called.
     /// </summary>
-    private static void AddInteractionStore<TStore>(ZeeKayDaAuthCoreBuilder builder, Action<IServiceCollection> addGate)
+    private static void AddInteractionStore<TStore>(ZeeKayDaAuthCoreBuilder builder)
         where TStore : class, IInteractionBackingStore
     {
         if (builder.Services.Any(descriptor => descriptor.ServiceType == typeof(IInteractionBackingStore)))
@@ -107,7 +104,6 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
 
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.AddSingleton<IInteractionBackingStore, TStore>();
-        addGate(builder.Services);
     }
 
     /// <summary>
@@ -198,14 +194,11 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
         this TBuilder builder,
         bool allowOutsideDevelopment = false)
         where TBuilder : ZeeKayDaAuthCoreBuilder
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-
-        builder.AddAuthorizationCodeStore<InMemoryAuthorizationCodeBackingStore>();
-        AddInMemoryStoreVerifier(builder.Services, InMemoryStoreVerifier.AuthorizationCodeStoreName, allowOutsideDevelopment);
-
-        return builder;
-    }
+        => AddInMemoryStore(
+            builder,
+            core => core.AddAuthorizationCodeStore<InMemoryAuthorizationCodeBackingStore>(),
+            InMemoryStoreVerifier.AuthorizationCodeStoreName,
+            allowOutsideDevelopment);
 
     /// <summary>
     /// Registers an in-memory refresh token store for development and testing only. Tokens are
@@ -235,14 +228,11 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
         this TBuilder builder,
         bool allowOutsideDevelopment = false)
         where TBuilder : ZeeKayDaAuthCoreBuilder
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-
-        builder.AddRefreshTokenStore<InMemoryRefreshTokenBackingStore>();
-        AddInMemoryStoreVerifier(builder.Services, InMemoryStoreVerifier.RefreshTokenStoreName, allowOutsideDevelopment);
-
-        return builder;
-    }
+        => AddInMemoryStore(
+            builder,
+            core => core.AddRefreshTokenStore<InMemoryRefreshTokenBackingStore>(),
+            InMemoryStoreVerifier.RefreshTokenStoreName,
+            allowOutsideDevelopment);
 
     /// <summary>
     /// Registers in-memory authorization code, refresh token and interaction stores for
@@ -282,8 +272,19 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
         return builder;
     }
 
-    private static void AddInMemoryStoreVerifier(
-        IServiceCollection services, string storeName, bool allowOutsideDevelopment) =>
-        services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
+    private static TBuilder AddInMemoryStore<TBuilder>(
+        TBuilder builder,
+        Action<ZeeKayDaAuthCoreBuilder> addStore,
+        string storeName,
+        bool allowOutsideDevelopment)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        addStore(builder);
+        builder.Services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
             sp.GetRequiredService<IHostEnvironment>(), storeName, allowOutsideDevelopment));
+
+        return builder;
+    }
 }
