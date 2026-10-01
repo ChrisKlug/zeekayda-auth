@@ -13,6 +13,8 @@
       "tests/ZeeKayDa.Auth.FileSystem.Tests/ZeeKayDa.Auth.FileSystem.Tests.csproj",
       "samples/IdentityServer/ZeeKayDa.Auth.Samples.IdentityServer.csproj",
       "tests/ZeeKayDa.Auth.Samples.IdentityServer.Tests/ZeeKayDa.Auth.Samples.IdentityServer.Tests.csproj",
+      "tests/ZeeKayDa.Auth.ConformanceHost/ZeeKayDa.Auth.ConformanceHost.csproj",
+      "tests/ZeeKayDa.Auth.ConformanceHost.Tests/ZeeKayDa.Auth.ConformanceHost.Tests.csproj",
       "samples/WebClient/ZeeKayDa.Auth.Samples.WebClient.csproj",
       "tests/ZeeKayDa.Auth.Samples.WebClient.Tests/ZeeKayDa.Auth.Samples.WebClient.Tests.csproj"
     ]
