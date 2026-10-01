@@ -6,7 +6,7 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
-/// Records at startup that <see cref="AuthorizationServerOptions.AllowInsecureIssuer"/> is
+/// Records at startup that <see cref="DevelopmentOptions.AllowHttpLoopbackIssuer"/> is
 /// enabled, so an insecure development configuration is never silently deployed.
 /// </summary>
 /// <remarks>
@@ -17,7 +17,7 @@ namespace ZeeKayDa.Auth.Configuration;
 /// </para>
 /// <para>
 /// <strong>It does not fail startup, and there is no opt-out parameter, because the flag is
-/// itself the opt-out.</strong> A host had to set <c>AllowInsecureIssuer</c> deliberately, so this
+/// itself the opt-out.</strong> A host had to set <c>AllowHttpLoopbackIssuer</c> deliberately, so this
 /// is the "log <see cref="LogLevel.Critical"/> when they do" half of the environment rule rather
 /// than a missing gate; an option whose only job is to authorise another option would be one more
 /// thing to get wrong. The blast radius is capped elsewhere:
@@ -27,26 +27,26 @@ namespace ZeeKayDa.Auth.Configuration;
 /// <c>http://localhost</c>.
 /// </para>
 /// </remarks>
-internal sealed class InsecureIssuerVerifier(
+internal sealed class HttpLoopbackIssuerVerifier(
     IOptions<AuthorizationServerOptions> options,
     IHostEnvironment environment) : IStartupVerifier
 {
     /// <summary>Named-placeholder template for the Development message.</summary>
     internal const string ActiveMessageFormat =
-        "AllowInsecureIssuer is enabled for issuer '{Issuer}'. " +
+        "Development.AllowHttpLoopbackIssuer is enabled for issuer '{Issuer}'. " +
         "This is a LOOPBACK DEVELOPMENT-ONLY setting and must NEVER be used in production. " +
-        "Remove AllowInsecureIssuer = true before deploying to any non-development environment.";
+        "Remove Development.AllowHttpLoopbackIssuer = true before deploying to any non-development environment.";
 
     /// <summary>Named-placeholder template for the non-Development message.</summary>
     internal const string NonDevelopmentCriticalMessageFormat =
-        "AllowInsecureIssuer is enabled for issuer '{Issuer}' outside a Development environment. " +
+        "Development.AllowHttpLoopbackIssuer is enabled for issuer '{Issuer}' outside a Development environment. " +
         "This is a LOOPBACK DEVELOPMENT-ONLY setting: the issuer is served over HTTP, so every " +
         "token and code exchanged with it crosses the network in the clear. Ensure this host is " +
-        "an intentional non-Development test host, and remove AllowInsecureIssuer = true before " +
+        "an intentional non-Development test host, and remove Development.AllowHttpLoopbackIssuer = true before " +
         "this configuration reaches production.";
 
     /// <inheritdoc/>
-    public string Name => "InsecureIssuer";
+    public string Name => "HttpLoopbackIssuer";
 
     /// <inheritdoc/>
     public Task VerifyAsync(
@@ -54,7 +54,7 @@ internal sealed class InsecureIssuerVerifier(
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
-        if (!options.Value.AllowInsecureIssuer)
+        if (!options.Value.Development.AllowHttpLoopbackIssuer)
             return Task.CompletedTask;
 
         if (environment.IsDevelopment())

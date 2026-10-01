@@ -6,14 +6,14 @@ namespace ZeeKayDa.Auth.Logging;
 
 /// <summary>
 /// Emits a startup warning when exception message sanitization has been disabled via
-/// <see cref="LoggingOptions.DisableExceptionSanitizing"/>, alerting operators that exception
+/// <see cref="Configuration.DevelopmentOptions.DisableExceptionSanitizing"/>, alerting operators that exception
 /// messages may reach log sinks unredacted.
 /// </summary>
 internal sealed class ExceptionSanitizingDisabledVerifier(
     IOptions<AuthorizationServerOptions> options) : IStartupVerifier
 {
     internal const string WarningMessage =
-        "Exception message sanitization is disabled via AuthorizationServerOptions.Logging.DisableExceptionSanitizing. " +
+        "Exception message sanitization is disabled via AuthorizationServerOptions.Development.DisableExceptionSanitizing. " +
         "Exception messages logged by ZeeKayDa.Auth services may contain credential material " +
         "and will reach log sinks unredacted.";
 
@@ -26,7 +26,7 @@ internal sealed class ExceptionSanitizingDisabledVerifier(
         IServiceProvider scopedServices,
         CancellationToken cancellationToken)
     {
-        if (options.Value.Logging.DisableExceptionSanitizing)
+        if (options.Value.Development.DisableExceptionSanitizing)
         {
             context.AddWarning("logging.exception_sanitizing_disabled", WarningMessage);
         }

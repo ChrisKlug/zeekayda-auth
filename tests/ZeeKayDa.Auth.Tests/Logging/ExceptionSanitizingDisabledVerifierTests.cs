@@ -14,7 +14,7 @@ public sealed class ExceptionSanitizingDisabledVerifierTests
     private static ExceptionSanitizingDisabledVerifier CreateSut(bool disableExceptionSanitizing)
     {
         var opts = new AuthorizationServerOptions();
-        opts.Logging.DisableExceptionSanitizing = disableExceptionSanitizing;
+        opts.Development.DisableExceptionSanitizing = disableExceptionSanitizing;
         return new(Options.Create(opts));
     }
 

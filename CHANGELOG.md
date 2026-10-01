@@ -546,6 +546,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Every not-for-production switch lives in one `Development` options group, one flag per effect**
+  (#773). `AuthorizationServerOptions.AllowInsecureIssuer` is replaced by
+  `Development.AllowHttpLoopbackIssuer` (HTTP loopback issuer, endpoint URIs and requests) and
+  `Development.AllowHttpLoopbackCorsOrigins` (HTTP loopback `CorsOrigins` entries); a host that used
+  the old flag for both sets both. `Logging.DisableExceptionSanitizing` moved to
+  `Development.DisableExceptionSanitizing`, and the now-empty `Logging` group and `LoggingOptions` are
+  removed. Configuration keys move with them (`ZeeKayDaAuth:Development:…`). The CORS flag gets its own
+  startup record (`cors_origins.http_loopback_allowed`, `Critical` outside `Development`), and the
+  issuer check is renamed `HttpLoopbackIssuer`; existing warning codes are unchanged.
 - **Startup checks are named by their phase and live with the feature they check** (#770). Every
   `IStartupVerifier` now ends in `Verifier` and every `IStartupActivator` in `Activator`, replacing six
   suffixes that hid the phase (`*Validator`, `*StartupValidator`, `*Verifier`, `*StartupVerifier`,

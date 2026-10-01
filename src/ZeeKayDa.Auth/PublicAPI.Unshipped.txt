@@ -14,6 +14,14 @@ ZeeKayDa.Auth.AuthorizationServerOptions.EndSessionEndpoint.get -> ZeeKayDa.Auth
 ZeeKayDa.Auth.Clients.ClientRegistration.SkipLogoutConfirmation.get -> bool
 ZeeKayDa.Auth.Clients.ClientRegistration.SkipLogoutConfirmation.init -> void
 ZeeKayDa.Auth.Clients.IClientMetadata.SkipLogoutConfirmation.get -> bool
+ZeeKayDa.Auth.Configuration.DevelopmentOptions
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.AllowHttpLoopbackCorsOrigins.get -> bool
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.AllowHttpLoopbackCorsOrigins.set -> void
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.AllowHttpLoopbackIssuer.get -> bool
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.AllowHttpLoopbackIssuer.set -> void
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.DevelopmentOptions() -> void
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.DisableExceptionSanitizing.get -> bool
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.DisableExceptionSanitizing.set -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.EndSessionEndpoint.get -> string?
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.EndSessionEndpoint.init -> void
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions
@@ -61,8 +69,6 @@ ZeeKayDa.Auth.Authorization.ResponseOptions.TypesSupported.set -> void
 ZeeKayDa.Auth.Authorization.ResponseType
 ZeeKayDa.Auth.Authorization.ResponseType.Code = 0 -> ZeeKayDa.Auth.Authorization.ResponseType
 ZeeKayDa.Auth.AuthorizationServerOptions
-ZeeKayDa.Auth.AuthorizationServerOptions.AllowInsecureIssuer.get -> bool
-ZeeKayDa.Auth.AuthorizationServerOptions.AllowInsecureIssuer.set -> void
 ZeeKayDa.Auth.AuthorizationServerOptions.AuthorizationEndpoint.get -> ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.AuthorizationServerOptions() -> void
 ZeeKayDa.Auth.AuthorizationServerOptions.ClockSkewTolerance.get -> System.TimeSpan
@@ -74,7 +80,7 @@ ZeeKayDa.Auth.AuthorizationServerOptions.IdToken.get -> ZeeKayDa.Auth.Tokens.IdT
 ZeeKayDa.Auth.AuthorizationServerOptions.Issuer.get -> string?
 ZeeKayDa.Auth.AuthorizationServerOptions.Issuer.set -> void
 ZeeKayDa.Auth.AuthorizationServerOptions.JwksEndpoint.get -> ZeeKayDa.Auth.Discovery.JwksEndpointOptions!
-ZeeKayDa.Auth.AuthorizationServerOptions.Logging.get -> ZeeKayDa.Auth.Logging.LoggingOptions!
+ZeeKayDa.Auth.AuthorizationServerOptions.Development.get -> ZeeKayDa.Auth.Configuration.DevelopmentOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.Response.get -> ZeeKayDa.Auth.Authorization.ResponseOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.SecurityHeaders.get -> ZeeKayDa.Auth.Security.SecurityHeadersOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.TokenEndpoint.get -> ZeeKayDa.Auth.Tokens.TokenEndpointOptions!
@@ -236,10 +242,6 @@ ZeeKayDa.Auth.StartupVerification.IStartupCheck.Name.get -> string!
 ZeeKayDa.Auth.StartupVerification.IStartupCheck.VerifyAsync(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext! context, System.IServiceProvider! scopedServices, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.StartupVerification.IStartupVerifier
 ZeeKayDa.Auth.Logging.ISanitizingLogger<T>
-ZeeKayDa.Auth.Logging.LoggingOptions
-ZeeKayDa.Auth.Logging.LoggingOptions.DisableExceptionSanitizing.get -> bool
-ZeeKayDa.Auth.Logging.LoggingOptions.DisableExceptionSanitizing.set -> void
-ZeeKayDa.Auth.Logging.LoggingOptions.LoggingOptions() -> void
 ZeeKayDa.Auth.Scopes.IScopeRepository
 ZeeKayDa.Auth.Scopes.IScopeRepository.GetScopesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Scopes.ScopeDefinition!>!>!
 ZeeKayDa.Auth.Scopes.InMemoryScopeRepository

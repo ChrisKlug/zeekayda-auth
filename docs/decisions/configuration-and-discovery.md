@@ -1,8 +1,7 @@
 # Configuration and discovery
 
-The shape of `AuthorizationServerOptions`, how it is validated, and how it becomes the discovery
-document. Issuer and endpoint-URI rules are `endpoints.md`. The full options reference is
-`docs/reference/configuration.md`.
+The shape of `AuthorizationServerOptions`, its validation, and how it becomes the discovery document.
+Issuer and endpoint-URI rules: `endpoints.md`. Full options reference: `docs/reference/configuration.md`.
 
 ## Decisions in force
 
@@ -21,10 +20,11 @@ property as a modifier of that endpoint — that is how RFC 7636's `code_challen
 on `AuthorizationEndpoint` with nothing to form a prefix group with. It is never a judgement call.
 `JwksEndpoint` exists holding only `Uri`, for the policy fields it will plausibly grow.
 
-**Framework-behavior groups are a second, explicit category.** `SecurityHeaders` and `Logging` govern
-the framework's own runtime behaviour and have no discovery-document counterpart at all. They are
-permitted outside the prefix rule provided the name is plain descriptive English and never carries an
-`Endpoint` suffix.
+**Framework-behavior groups are a second, explicit category.** `SecurityHeaders` and `Development`
+govern the framework's own runtime behaviour, have no discovery counterpart, and sit outside the
+prefix rule: plain English names, never an `Endpoint` suffix. Every switch that weakens security
+lives in `Development`, one flag per effect, each reported by its own startup verifier, so a config
+file shows what must not reach production. "Not for production", not "local only": CI hosts use it.
 
 **The grouping rule places discovery-shaped configuration only.** A feature-registration hatch or
 safety gate that is inert unless some other opt-in was also registered is not metadata, and this rule

@@ -2,7 +2,6 @@ using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Discovery;
-using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Security;
 using ZeeKayDa.Auth.Tokens;
 
@@ -15,7 +14,7 @@ namespace ZeeKayDa.Auth;
 /// Server-wide settings are exposed directly on this class. Per-endpoint settings are grouped
 /// into nested sealed option classes (<see cref="DiscoveryDocument"/>, <see cref="AuthorizationEndpoint"/>,
 /// <see cref="TokenEndpoint"/>, <see cref="JwksEndpoint"/>, <see cref="IdToken"/>, <see cref="Response"/>,
-/// <see cref="SecurityHeaders"/>, <see cref="Logging"/>)
+/// <see cref="SecurityHeaders"/>, <see cref="Development"/>)
 /// which are initialized to default instances. Group properties are get-only and cannot be nulled;
 /// consumers may mutate the members of each group but not replace the group itself.
 /// </remarks>
@@ -33,17 +32,6 @@ public sealed class AuthorizationServerOptions
     /// This value is published verbatim as the <c>issuer</c> field in the OIDC Discovery document.
     /// </remarks>
     public string? Issuer { get; set; }
-
-    /// <summary>
-    /// Gets or sets a value indicating whether an HTTP (non-HTTPS) loopback issuer URI is permitted.
-    /// </summary>
-    /// <remarks>
-    /// <strong>Development-only</strong> — must never be <see langword="true"/> in production. A
-    /// warning is emitted at startup whenever this flag is enabled. When <see langword="false"/>
-    /// (the default), an HTTP issuer fails startup validation; when <see langword="true"/>, only
-    /// loopback HTTP issuers such as <c>http://localhost:5000</c> are accepted.
-    /// </remarks>
-    public bool AllowInsecureIssuer { get; set; }
 
     /// <summary>
     /// Gets or sets the server-wide clock-skew grace window applied to token and authorization code
@@ -95,8 +83,8 @@ public sealed class AuthorizationServerOptions
     /// a canonical (lowercased, punycode, de-duplicated) form derived from them, not stored here.
     /// </para>
     /// <para>
-    /// HTTP origins are rejected by default. Set <see cref="AllowInsecureIssuer"/> to
-    /// <see langword="true"/> to permit HTTP loopback origins for local development only.
+    /// HTTP origins are rejected unless
+    /// <see cref="DevelopmentOptions.AllowHttpLoopbackCorsOrigins"/> admits HTTP loopback origins.
     /// </para>
     /// </remarks>
     public ICollection<string> CorsOrigins
@@ -152,10 +140,9 @@ public sealed class AuthorizationServerOptions
     public SecurityHeadersOptions SecurityHeaders { get; } = new();
 
     /// <summary>
-    /// Gets the logging framework-behavior options. These settings control how ZeeKayDa.Auth
-    /// emits log entries and are not advertised in the OIDC Discovery document.
+    /// Gets the switches that weaken security and must not be enabled in production.
     /// </summary>
-    public LoggingOptions Logging { get; } = new();
+    public DevelopmentOptions Development { get; } = new();
 
     /// <summary>Makes every collection read-only and refuses any later replacement.</summary>
     internal void Freeze()
