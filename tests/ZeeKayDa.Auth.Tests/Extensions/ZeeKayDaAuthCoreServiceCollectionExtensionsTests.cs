@@ -2,7 +2,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
@@ -36,6 +38,22 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
         var resolved = provider.GetRequiredService<ISanitizingLogger<object>>();
 
         resolved.Should().BeOfType<SecretSanitizingLogger<object>>();
+    }
+
+    [Fact]
+    public void AddZeeKayDaAuthCore_called_twice_registers_everything_once_and_applies_both_delegates()
+    {
+        var services = ServicesWithLogging();
+
+        services.AddZeeKayDaAuthCore(ValidIssuer);
+        services.AddZeeKayDaAuthCore(options => options.ClockSkewTolerance = TimeSpan.FromSeconds(10));
+
+        services.Should().ContainSingle(descriptor => descriptor.ServiceType == typeof(ISanitizingLogger<>));
+        services.Should().ContainSingle(descriptor => descriptor.ImplementationType == typeof(Pbkdf2ClientSecretHasher));
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
+        options.Issuer.Should().Be("https://issuer.test");
+        options.ClockSkewTolerance.Should().Be(TimeSpan.FromSeconds(10));
     }
 
     [Fact]

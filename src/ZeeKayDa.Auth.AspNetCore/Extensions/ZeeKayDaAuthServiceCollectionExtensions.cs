@@ -39,9 +39,9 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// Calls <c>AddZeeKayDaAuthCore(configure)</c>, which registers and validates
     /// <see cref="AuthorizationServerOptions"/> so a misconfigured server fails loudly at startup
     /// rather than at the first request, and adds the endpoints, cookies, interaction and external
-    /// providers on top. Call
-    /// <c>app.UseRouting()</c> followed by <c>app.MapZeeKayDaAuth()</c> after building the
-    /// application to register the OIDC protocol endpoints.
+    /// providers on top. A repeated call adds its <paramref name="configure"/> delegate and registers
+    /// nothing twice. Call <c>app.UseRouting()</c> followed by <c>app.MapZeeKayDaAuth()</c> after
+    /// building the application to register the OIDC protocol endpoints.
     /// </remarks>
     public static ZeeKayDaAuthBuilder AddZeeKayDaAuth(
         this IServiceCollection services,
@@ -52,7 +52,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
 
         var builder = services.AddZeeKayDaAuthCore(configure);
 
-        // TryAddEnumerable keeps each endpoint registered exactly once across repeated calls.
+        // A repeated call adds only its configure delegate: the cookie schemes below cannot be
+        // registered twice, so the HTTP surface is registered by the first call alone.
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(IZeeKayDaEndpoint)))
+            return builder;
+
         services.TryAddSingleton<CorsAllowlist>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, DiscoveryEndpoint>());

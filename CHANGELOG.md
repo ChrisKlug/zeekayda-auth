@@ -564,7 +564,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `ZeeKayDa.Auth.TestKit`. `AddZeeKayDaOptions<T>()` and `ValidateWithZeeKayDa()` no longer register
   the startup runner; only `AddZeeKayDaAuthCore` does. `AddZeeKayDaSigningKeys()` moved to namespace
   `Microsoft.Extensions.DependencyInjection`. A Core-only host whose signing keys do not advertise
-  RS256 now gets the same OpenID Connect Discovery 1.0 §3 warning as an ASP.NET Core host.
+  RS256 now gets the same OpenID Connect Discovery 1.0 §3 warning as an ASP.NET Core host. Both
+  `AddZeeKayDaAuth` and `AddZeeKayDaAuthCore` can now be called more than once: a repeated call adds
+  its `configure` delegate and registers nothing twice, where before it threw.
 
 - **Every public async member returns `Task` or `Task<T>`; none returns `ValueTask`** (#784). The
   public API mixed the two with no rule. A `ValueTask` must be awaited exactly once and never stored,

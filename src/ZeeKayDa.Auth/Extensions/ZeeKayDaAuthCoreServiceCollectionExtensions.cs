@@ -39,7 +39,8 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
     /// <remarks>
     /// <c>AddZeeKayDaAuth()</c> in <c>ZeeKayDa.Auth.AspNetCore</c> calls this method and adds the
     /// endpoints, cookies, interaction and external providers on top. Call it directly only for a
-    /// host that does not serve the protocol over ASP.NET Core.
+    /// host that does not serve the protocol over ASP.NET Core. A repeated call adds its
+    /// <paramref name="configure"/> delegate and registers nothing twice.
     /// </remarks>
     public static ZeeKayDaAuthBuilder AddZeeKayDaAuthCore(
         this IServiceCollection services,
@@ -87,8 +88,11 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         services.TryAddSingleton<IDiscoveryDocumentProvider, DiscoveryDocumentProvider>();
         services.TryAddSingleton<AuthorizeRequestValidator>();
 
+        // Every other registration here is a TryAdd; this guard is what keeps a repeated call from
+        // throwing on the hasher's one-registration-per-type rule.
         var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
+        if (!services.Any(descriptor => descriptor.ImplementationType == typeof(Pbkdf2ClientSecretHasher)))
+            builder.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IValidateOptions<Pbkdf2ClientSecretHasherOptions>,
