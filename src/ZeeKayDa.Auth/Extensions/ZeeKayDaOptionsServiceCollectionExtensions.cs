@@ -13,7 +13,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// The framework registers all of its own options this way, and a package that extends it (a
 /// signing-key source, for example) should do the same instead of calling <c>ValidateOnStart()</c>.
 /// The options are validated when <c>MapZeeKayDaAuth()</c> runs, and again when the host starts for
-/// a host that never maps the endpoints.
+/// a host that never maps the endpoints, by the startup gate <c>AddZeeKayDaAuthCore()</c> registers.
 /// </para>
 /// <para>
 /// For its failures to carry codes, a validator derives from
@@ -48,8 +48,6 @@ public static class ZeeKayDaOptionsServiceCollectionExtensions
         where TOptions : class
     {
         ArgumentNullException.ThrowIfNull(builder);
-
-        builder.Services.AddStartupVerificationRunner();
 
         var options = new ValidatedOptions<TOptions>(builder.Name);
         if (!builder.Services.Any(descriptor => Equals(descriptor.ImplementationInstance, options)))

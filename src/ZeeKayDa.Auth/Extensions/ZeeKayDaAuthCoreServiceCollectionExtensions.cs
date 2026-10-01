@@ -104,7 +104,14 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
     /// </summary>
     private static void AddStartupVerification(IServiceCollection services)
     {
-        services.AddStartupVerificationRunner();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, StartupVerificationHostedService>());
+
+        services.TryAddSingleton(_ => new SanitizingLoggerClosedOverrideScanner(services));
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerificationGate, SanitizingLoggerRegistrationGate>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerificationGate, ValidatedOptionsGate>());
 
         // Registered here as well as by AddSigningKeySource for coverage: StaticSigningKeyRing has
         // a public constructor, so a host can register an ISigningKeyRing itself without going
@@ -140,23 +147,6 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         services.TryAddSingleton(_ => new RepositoryLifetimeScanner(services));
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, WrappedRepositoryLifetimeValidator>());
-    }
-
-    /// <summary>
-    /// Registers the startup-verification runner and its gates, which every framework check and
-    /// every <c>ValidateWithZeeKayDa()</c> options type relies on. Idempotent.
-    /// </summary>
-    internal static IServiceCollection AddStartupVerificationRunner(this IServiceCollection services)
-    {
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, StartupVerificationHostedService>());
-
-        services.TryAddSingleton(_ => new SanitizingLoggerClosedOverrideScanner(services));
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerificationGate, SanitizingLoggerRegistrationGate>());
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerificationGate, ValidatedOptionsGate>());
-        return services;
     }
 
     /// <summary>
