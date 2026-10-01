@@ -61,6 +61,28 @@ public sealed class ClaimsProviderPresenceActivatorTests
         context.Failures.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task A_container_that_cannot_answer_IsService_resolves_a_scoped_provider_from_the_phase_scope()
+    {
+        var services = new ServiceCollection();
+        services.AddScoped<IClaimsProvider, NoClaimsProvider>();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var context = new StartupVerificationContext();
+
+        await new ClaimsProviderPresenceActivator(new WithholdingIsService(scope.ServiceProvider))
+            .VerifyAsync(context, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().BeEmpty();
+    }
+
+    /// <summary>Forwards every resolution but withholds <see cref="IServiceProviderIsService"/>.</summary>
+    private sealed class WithholdingIsService(IServiceProvider inner) : IServiceProvider
+    {
+        public object? GetService(Type serviceType) =>
+            serviceType == typeof(IServiceProviderIsService) ? null : inner.GetService(serviceType);
+    }
+
     /// <summary>A container with no <see cref="IServiceProviderIsService"/>, answering only a direct resolution of the provider.</summary>
     private sealed class ResolvingOnlyServiceProvider(NoClaimsProvider? provider) : IServiceProvider
     {
