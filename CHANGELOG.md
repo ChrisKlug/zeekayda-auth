@@ -546,7 +546,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- **Every not-for-production switch lives in one `Development` options group, one flag per effect**
+- **Every bindable not-for-production switch lives in one `Development` options group, one flag per effect**
   (#773). `AuthorizationServerOptions.AllowInsecureIssuer` is replaced by
   `Development.AllowHttpLoopbackIssuer` (HTTP loopback issuer, endpoint URIs and requests) and
   `Development.AllowHttpLoopbackCorsOrigins` (HTTP loopback `CorsOrigins` entries); a host that used

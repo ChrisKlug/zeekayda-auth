@@ -1,9 +1,10 @@
 namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
-/// Every switch that weakens the server's security, one flag per effect. <strong>Not for
-/// production</strong> — each defaults to <see langword="false"/>, each enabled flag is reported
-/// at startup, and none can change once configuration has finished.
+/// Every bindable switch that weakens the server's security, one flag per effect. <strong>Not
+/// for production</strong> — each defaults to <see langword="false"/>, each enabled flag is
+/// reported at startup, and none can change once configuration has finished. Registration-level
+/// opt-outs such as <c>allowOutsideDevelopment</c> stay on the method they qualify.
 /// </summary>
 /// <remarks>
 /// Not only for a developer's machine: a test host in CI may need them too. Grouping them here
