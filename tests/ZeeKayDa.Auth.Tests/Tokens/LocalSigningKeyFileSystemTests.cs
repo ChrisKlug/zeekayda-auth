@@ -168,6 +168,18 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteKeyFileAsync_creates_the_lock_file_readable_only_by_the_owner_on_Unix()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);
+
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+
+        await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        GetUnixMode(keyPath + ".lock").Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
+
+    [Fact]
     public async Task WriteKeyFileAsync_applies_a_non_inherited_owner_only_acl_on_Windows()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
@@ -177,6 +189,192 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
         await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
 
         AssertOwnerOnlyProtectedAcl(keyPath);
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_writes_the_key_at_the_key_path()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+
+        await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        File.ReadAllText(keyPath).Should().Be(SamplePem);
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_leaves_an_existing_key_file_untouched()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        await _sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken);
+
+        File.ReadAllText(keyPath).Should().Be(SamplePem);
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_leaves_no_pending_file_behind_whether_it_won_or_lost()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+
+        await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+        await _sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken);
+
+        Directory.GetFiles(_tempDirectory, "*.pending").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_leaves_neither_a_pending_file_nor_a_key_when_cancelled()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        var act = async () => await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), cancelled.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        Directory.GetFiles(_tempDirectory, "*.pending").Should().BeEmpty();
+        File.Exists(keyPath).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_refuses_a_key_path_that_is_a_directory()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        Directory.CreateDirectory(keyPath);
+
+        var act = async () => await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("signing.dev_keys.key_path_not_a_file");
+        Directory.EnumerateFileSystemEntries(keyPath).Should().BeEmpty();
+        Directory.GetFiles(_tempDirectory, "*.pending").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_refuses_a_dangling_symlink_at_the_key_path_without_writing_through_it()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symlink on Windows requires elevation.");
+
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var target = Path.Join(_tempDirectory, "elsewhere.pem");
+        File.CreateSymbolicLink(keyPath, target);
+
+        var act = async () => await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("signing.dev_keys.key_path_not_a_file");
+        File.Exists(target).Should().BeFalse("nothing may be written through the link");
+        Directory.GetFiles(_tempDirectory, "*.pending").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FileExists_reports_a_dangling_symlink_as_absent()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symlink on Windows requires elevation.");
+
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        File.CreateSymbolicLink(keyPath, Path.Join(_tempDirectory, "elsewhere.pem"));
+
+        _sut.FileExists(keyPath).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_checks_for_an_existing_key_only_once_it_holds_the_lock()
+    {
+        // The key created by whoever held the lock must be found, not replaced: checking before
+        // taking the lock is the check-then-rename race the lock exists to close.
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var published = false;
+        var sut = new LocalSigningKeyFileSystem
+        {
+            PublishPending = (pending, target) =>
+            {
+                published = true;
+                LocalSigningKeyFileSystem.Publish(pending, target);
+            },
+        };
+        Task write;
+        Task finishedFirst;
+        await using (new FileStream(keyPath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+        {
+            write = sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken).AsTask();
+            finishedFirst = await Task.WhenAny(write, Task.Delay(TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken));
+            await File.WriteAllTextAsync(keyPath, SamplePem, TestContext.Current.CancellationToken);
+        }
+
+        finishedFirst.Should().NotBeSameAs(write, "a host must wait while another holds the lock");
+        await write;
+        published.Should().BeFalse("a host that finds the key under the lock never tries to publish its own");
+        File.ReadAllText(keyPath).Should().Be(SamplePem);
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_publishes_the_key_only_once_it_is_fully_written()
+    {
+        // Large enough to span many write buffers, so a file published before its writer flushed
+        // and closed it would be seen short at the instant of publication.
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var pem = new string('k', 256 * 1024);
+        string? atPublication = null;
+        var sut = new LocalSigningKeyFileSystem
+        {
+            PublishPending = (pending, target) =>
+            {
+                atPublication = File.ReadAllText(pending);
+                LocalSigningKeyFileSystem.Publish(pending, target);
+            },
+        };
+
+        await sut.WriteKeyFileAsync(keyPath, pem.AsMemory(), TestContext.Current.CancellationToken);
+
+        atPublication.Should().Be(pem);
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_fails_with_lock_timeout_when_the_lock_is_never_released()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var sut = new LocalSigningKeyFileSystem { LockTimeout = TimeSpan.FromMilliseconds(200) };
+        await using var otherHostsLock = new FileStream(keyPath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+        var act = async () => await sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("signing.dev_keys.lock_timeout");
+        thrown.Which.InnerException.Should().BeAssignableTo<IOException>();
+        File.Exists(keyPath).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_racers_all_read_one_whole_key()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var ct = TestContext.Current.CancellationToken;
+        var pems = Enumerable.Range(0, 8).Select(i => new string((char)('a' + i), 256 * 1024)).ToArray();
+
+        var reads = await Task.WhenAll(pems.Select(pem => Task.Run(async () =>
+        {
+            await _sut.WriteKeyFileAsync(keyPath, pem.AsMemory(), ct);
+            using var content = await _sut.ReadKeyFileAsync(keyPath, ct);
+            return Encoding.UTF8.GetString(content.Bytes);
+        }, ct)));
+
+        pems.Should().Contain(reads[0], "the key on disk is one racer's whole key");
+        reads.Should().AllBe(reads[0]);
+    }
+
+    [Fact]
+    public void Publish_keeps_the_existing_key_when_another_host_got_there_first()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var pending = Path.Join(_tempDirectory, "pending");
+        File.WriteAllText(keyPath, SamplePem);
+        File.WriteAllText(pending, "another key");
+
+        LocalSigningKeyFileSystem.Publish(pending, keyPath);
+
+        File.ReadAllText(keyPath).Should().Be(SamplePem);
     }
 
     // ── ReadKeyFileAsync ─────────────────────────────────────────────────────────────────────────

@@ -33,9 +33,9 @@ public sealed class ClaimSelectionTests
         IReadOnlyCollection<string>? accessToken = null) =>
         Client.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]) with
         {
-            AdditionalIdTokenClaims = idToken ?? [],
-            AdditionalUserInfoClaims = userInfo ?? [],
-            AdditionalAccessTokenClaims = accessToken ?? [],
+            AdditionalIdTokenClaims = new HashSet<string>(idToken ?? [], StringComparer.Ordinal),
+            AdditionalUserInfoClaims = new HashSet<string>(userInfo ?? [], StringComparer.Ordinal),
+            AdditionalAccessTokenClaims = new HashSet<string>(accessToken ?? [], StringComparer.Ordinal),
         };
 
     private static SelectedClaims Select(IReadOnlyList<ClaimRecord> pool, IReadOnlyList<ScopeDefinition> granted, IClient? client = null) =>
@@ -394,8 +394,8 @@ public sealed class ClaimSelectionTests
         public IReadOnlySet<ResponseMode> AllowedResponseModes => new HashSet<ResponseMode>();
         public IReadOnlySet<string> AllowedTokenEndpointAuthMethods => new HashSet<string>();
         public bool EnableZkdErrorCodes => false;
-        public IReadOnlyCollection<string> AdditionalIdTokenClaims => null!;
-        public IReadOnlyCollection<string> AdditionalUserInfoClaims => null!;
-        public IReadOnlyCollection<string> AdditionalAccessTokenClaims => null!;
+        public IReadOnlySet<string> AdditionalIdTokenClaims => null!;
+        public IReadOnlySet<string> AdditionalUserInfoClaims => null!;
+        public IReadOnlySet<string> AdditionalAccessTokenClaims => null!;
     }
 }

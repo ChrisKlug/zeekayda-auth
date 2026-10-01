@@ -29,8 +29,12 @@ internal interface IDevelopmentSigningKeyFileSystem
 
     /// <summary>
     /// Writes <paramref name="pem"/> to <paramref name="keyPath"/> with restrictive permissions
-    /// so that only the current user can read the file.
+    /// so that only the current user can read the file, unless a file is already there.
     /// </summary>
+    /// <remarks>
+    /// The file appears whole or not at all, so a host reading it never sees a partial key. Of hosts
+    /// racing to create it, exactly one writes it and the rest leave it untouched.
+    /// </remarks>
     /// <param name="keyPath">The file path to write.</param>
     /// <param name="pem">
     /// The PEM-encoded key material as a char buffer. Callers should rent a <c>char[]</c>
@@ -54,7 +58,8 @@ internal interface IDevelopmentSigningKeyFileSystem
     ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Returns <see langword="true"/> if a file exists at <paramref name="path"/>.
+    /// Returns <see langword="true"/> if a file exists at <paramref name="path"/>, directly or through
+    /// a symlink that resolves to one. A dangling symlink counts as absent.
     /// </summary>
     /// <param name="path">The file path to test.</param>
     bool FileExists(string path);
