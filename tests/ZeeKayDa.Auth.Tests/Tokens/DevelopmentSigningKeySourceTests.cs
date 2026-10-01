@@ -47,7 +47,7 @@ public sealed class DevelopmentSigningKeySourceTests
 
         public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
         {
-            _files[keyPath] = new string(pem.Span);
+            _files.TryAdd(keyPath, new string(pem.Span));
             return ValueTask.CompletedTask;
         }
 
@@ -107,6 +107,25 @@ public sealed class DevelopmentSigningKeySourceTests
 
         public bool FileExists(string path)
             => throw new InvalidOperationException("The file system must not be touched in ephemeral mode.");
+    }
+
+    /// <summary>
+    /// Another host creates the key file between this host's existence check and its write: the
+    /// check finds nothing, and the write leaves the other host's key in place.
+    /// </summary>
+    private sealed class LosesTheCreateRaceFileSystem(string winnersPem) : IDevelopmentSigningKeyFileSystem
+    {
+        public void EnsureDirectorySafe(string directory)
+        {
+        }
+
+        public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
+            => ValueTask.CompletedTask;
+
+        public ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
+            => ValueTask.FromResult(new KeyFileContent(Encoding.UTF8.GetBytes(winnersPem)));
+
+        public bool FileExists(string path) => false;
     }
 
     // ── Ephemeral key generation ─────────────────────────────────────────────────────────────────
@@ -302,6 +321,19 @@ public sealed class DevelopmentSigningKeySourceTests
         secondSet.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().Equal(firstModulus,
                 "a persisted key must survive a restart, or tokens issued before it would stop verifying");
+    }
+
+    [Fact]
+    public async Task A_host_that_loses_the_race_to_create_the_key_file_uses_the_winners_key()
+    {
+        using var winner = RSA.Create(3072);
+        using var sut = BuildPersisted(new LosesTheCreateRaceFileSystem(winner.ExportRSAPrivateKeyPem()));
+
+        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+
+        set.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus
+            .Should().Equal(winner.ExportParameters(false).Modulus,
+                "hosts sharing a key folder must sign with the one key on disk, not each with its own");
     }
 
     // ── Disposal of an unclaimed key ─────────────────────────────────────────────────────────────

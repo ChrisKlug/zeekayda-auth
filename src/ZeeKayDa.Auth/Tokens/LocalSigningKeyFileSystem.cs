@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -18,6 +19,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </remarks>
 internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSystem
 {
+    private static readonly TimeSpan LockRetryInterval = TimeSpan.FromMilliseconds(50);
+
     private const UnixFileMode GroupOrOtherBits =
         UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
         | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
@@ -31,13 +34,118 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
             EnsureDirectorySafeUnix(directory);
     }
 
+    /// <summary>
+    /// How long a host waits for the lock before failing. Writing one key under it takes well under a
+    /// second; a lock held this long is not a host taking its turn. Shortened only by tests.
+    /// </summary>
+    internal TimeSpan LockTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
     /// <inheritdoc/>
     public async ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            await WriteKeyFileWindowsAsync(keyPath, pem, cancellationToken).ConfigureAwait(false);
-        else
-            await WriteKeyFileUnixAsync(keyPath, pem, cancellationToken).ConfigureAwait(false);
+        // Hosts sharing the folder take turns on a lock file beside the key, and check for a key
+        // under it, so exactly one creates the key: on Unix File.Move's no-overwrite is a check then
+        // a rename, which two hosts can both pass.
+        await using var turn = await TakeTurnAsync(keyPath + ".lock", cancellationToken).ConfigureAwait(false);
+
+        // Refused before anything is written: File.Exists reports a dangling symlink as present on
+        // Unix and a directory as absent, so neither would otherwise get a useful error.
+        if (Directory.Exists(keyPath) || new FileInfo(keyPath).LinkTarget is not null)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.dev_keys.key_path_not_a_file",
+                    $"Signing key path '{keyPath}' is a directory or a symlink, not a key file. " +
+                    "Remove it and restart the application to generate a new key."));
+        }
+
+        if (File.Exists(keyPath))
+            return;
+
+        // Written beside the key and renamed into place, so a host loading the key never reads a
+        // half-written file.
+        var pending = Path.Join(
+            Path.GetDirectoryName(Path.GetFullPath(keyPath)),
+            $"{Path.GetFileName(keyPath)}.{Path.GetRandomFileName()}.pending");
+        try
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                await WriteKeyFileWindowsAsync(pending, pem, cancellationToken).ConfigureAwait(false);
+            else
+                await WriteKeyFileUnixAsync(pending, pem, cancellationToken).ConfigureAwait(false);
+
+            PublishPending(pending, keyPath);
+        }
+        finally
+        {
+            File.Delete(pending);
+        }
+    }
+
+    /// <summary>
+    /// The step that moves a fully written pending file to the key's name. Replaceable by tests only,
+    /// so they can see the pending file at the instant it is published rather than after the fact.
+    /// </summary>
+    internal Action<string, string> PublishPending { get; init; } = Publish;
+
+    /// <summary>
+    /// Opens <paramref name="lockPath"/> exclusively, waiting while another host holds it. An
+    /// exclusive open is an <c>flock</c> on Unix and a share mode on Windows, so it excludes other
+    /// processes as well as other threads. The file is never deleted: a host deleting it while
+    /// another waits would let a third open a fresh one alongside.
+    /// </summary>
+    private async Task<FileStream> TakeTurnAsync(string lockPath, CancellationToken cancellationToken)
+    {
+        var waited = Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None)
+                    : OpenLockUnix(lockPath);
+            }
+            catch (IOException ex) when (waited.Elapsed >= LockTimeout)
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.dev_keys.lock_timeout",
+                        $"Could not take the signing key lock '{lockPath}' within {LockTimeout.TotalSeconds:0} seconds. " +
+                        "Another process may be holding it, or the file cannot be opened. " +
+                        "Stop other hosts sharing the key folder, check the file's permissions, and restart."),
+                    ex);
+            }
+            catch (IOException)
+            {
+                await Task.Delay(LockRetryInterval, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    // Owner-only like every other file here, though it holds nothing: on Windows it inherits the
+    // folder's owner-only ACL, and on Unix the mode is set at creation.
+    [UnsupportedOSPlatform("windows")]
+    private static FileStream OpenLockUnix(string lockPath) =>
+        new(lockPath, new FileStreamOptions
+        {
+            Mode = FileMode.OpenOrCreate,
+            Access = FileAccess.ReadWrite,
+            Share = FileShare.None,
+            UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+        });
+
+    // Internal rather than private so the losing half of the race can be driven directly,
+    // without depending on thread scheduling to produce it.
+    internal static void Publish(string pending, string keyPath)
+    {
+        try
+        {
+            File.Move(pending, keyPath, overwrite: false);
+        }
+        catch (IOException) when (File.Exists(keyPath))
+        {
+            // Another host's key is already there; it stays, and this one is discarded.
+        }
     }
 
     /// <inheritdoc/>
@@ -66,8 +174,11 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         return new KeyFileContent(bytes);
     }
 
+    // File.Exists alone reports a dangling symlink as present on Unix, which would send the caller to
+    // load a key that is not there instead of to the write that refuses the link by name.
     /// <inheritdoc/>
-    public bool FileExists(string path) => File.Exists(path);
+    public bool FileExists(string path) =>
+        File.Exists(path) && new FileInfo(path).ResolveLinkTarget(returnFinalTarget: true) is null or { Exists: true };
 
     [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. LocalSigningKeyFileSystemTests covers this on the windows-latest runner.")]
     [SupportedOSPlatform("windows")]
@@ -131,7 +242,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     [SupportedOSPlatform("windows")]
     private static async ValueTask WriteKeyFileWindowsAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
-        await using var stream = new FileStream(keyPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
+        await using var stream = new FileStream(keyPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
         await using var writer = new StreamWriter(stream);
         await writer.WriteAsync(pem, cancellationToken).ConfigureAwait(false);
         ApplyRestrictiveFileAclWindows(keyPath);
