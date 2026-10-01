@@ -72,9 +72,9 @@ public sealed class TokenEndpointHandler
 // Correct: SanitizingLogger<T> used instead.
 public sealed class TokenEndpointHandler
 {
-    private readonly ISanitizingLogger<TokenEndpointHandler> _logger;
+    private readonly SanitizingLogger<TokenEndpointHandler> _logger;
 
-    public TokenEndpointHandler(ISanitizingLogger<TokenEndpointHandler> logger)
+    public TokenEndpointHandler(SanitizingLogger<TokenEndpointHandler> logger)
     {
         _logger = logger;
     }
@@ -167,8 +167,8 @@ The rule also constrains one specific non-`Log*` method by symbol rather than by
 heuristic: `StartupVerificationContext.AddWarning`'s `messageTemplate` parameter, whether the call
 is receiver-qualified or (from inside `StartupVerificationContext` itself) unqualified. `AddWarning`
 is how an `IStartupVerifier`/`IStartupActivator` implementation reports a warning for the
-startup-verification runner to log on its behalf (see [ADR
-0016](../decisions/0016-unified-startup-verification.md) §3, §9) — its template flows into the same
+startup-verification runner to log on its behalf (see [Startup
+verification](../decisions/startup-verification.md)) — its template flows into the same
 redaction-sensitive log call the `Log*` branch above protects, so it needs the same constant-string
 guarantee even though it isn't itself a call to `ILogger`.
 

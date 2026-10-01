@@ -3,7 +3,7 @@ namespace ZeeKayDa.Auth.StartupVerification;
 /// <summary>
 /// A cheap startup check that reads configuration or inspects the container, run by
 /// <c>StartupVerificationHostedService</c> before any <see cref="IStartupActivator"/>. Implement this
-/// for a check that needs async I/O or a DI scope — anything
+/// for a check that needs an async signature or a DI scope — anything
 /// <see cref="Microsoft.Extensions.Options.IValidateOptions{TOptions}"/> structurally cannot host
 /// because its <c>Validate</c> method is synchronous.
 /// </summary>

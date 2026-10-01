@@ -11,7 +11,8 @@ It validates every options type registered through `AddZeeKayDaOptions` — no c
 options that do not validate — then drains `IEnumerable<IStartupVerifier>`, then
 `IEnumerable<IStartupActivator>`. Because every phase runs inside one `StartAsync`,
 `HostOptions.ServicesStartConcurrently` cannot reach the ordering, and no registration order puts a
-check ahead of an earlier phase — they are not in the same list.
+check ahead of an earlier phase — they are not in the same list. Only `AddZeeKayDaAuthCore(configure)`
+registers the runner; `ValidateWithZeeKayDa()` does not (a host without a server is unsupported).
 
 **Cheap checks run before anything does work.** The activator phase does not run when a verifier
 failed, so an application with a broken issuer never opens a connection to a key vault before being
@@ -31,14 +32,13 @@ closed-generic — can supply a logger that skips redaction. The framework regis
 subclass open-generic, because the DI container activates only public constructors. Accepted cost: a
 host cannot decorate it.
 
-**The runner comes only from `AddZeeKayDaAuthCore(configure)`**, the call every builder comes from.
-`ValidateWithZeeKayDa()` registers no runner: a host without a ZeeKayDa server is not supported.
-
 **Checks are constructor-injected, resolved from one scope per phase.** Checks register as scoped. The
 runner creates one `AsyncServiceScope` per phase and resolves that phase's collection from it, so
 **the checks in a phase share a scope**, and no activator is constructed when a verifier failed. A
-dependency that must wait for an awaited step (the client repository validates against algorithms the
-ring reads first) is resolved in `VerifyAsync` from an injected `IServiceProvider`. Accepted costs: a
+check injects `IServiceProvider` only to resolve in `VerifyAsync` instead: a dependency that must
+wait for an awaited step (the client repository, validated against algorithms the ring reads first);
+one whose construction *is* the check (the client-secret hasher); an options type known only at
+runtime; or a presence question to a container without `IServiceProviderIsService`. Accepted costs: a
 check leaving scoped state broken can cause a misleading second failure on a failing startup; a check
 whose constructor throws fails its phase's resolution, so the rest of that phase does not run — it is
 still reported, as below, naming the phase rather than the check.

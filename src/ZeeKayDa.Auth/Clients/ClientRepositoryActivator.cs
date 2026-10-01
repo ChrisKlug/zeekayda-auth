@@ -14,9 +14,9 @@ namespace ZeeKayDa.Auth.Clients;
 /// <see cref="InMemoryClientRepository"/> performs duplicate detection, per-client validation, and
 /// secret hashing in its constructor; since it's a singleton, nothing else forces construction
 /// before the first request needing it. Nothing here catches exceptions thrown while resolving
-/// <see cref="IClientRepository"/>; when none is registered at all, the friendlier
-/// <c>ClientRepositoryPresenceVerifier</c> options-validation message aborts startup before this
-/// verifier ever runs, otherwise the exception propagates unhandled from this method.
+/// <see cref="IClientRepository"/>; when none is registered at all, the
+/// <c>ClientRepositoryPresenceVerifier</c> failure aborts startup before this activator runs,
+/// otherwise the exception propagates to the runner.
 /// </remarks>
 internal sealed class ClientRepositoryActivator(
     IServiceProvider services,
