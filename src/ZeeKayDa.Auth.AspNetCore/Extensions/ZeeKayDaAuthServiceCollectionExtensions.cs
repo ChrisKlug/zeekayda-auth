@@ -76,42 +76,20 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<MatcherPolicy, ExactPathMatcherPolicy>());
 
-        AddStartupChecks(services);
-
         // The composite is registered as its concrete type, not IClientAuthenticator, so it is
         // excluded from IEnumerable<IClientAuthenticator> and cannot dispatch recursively.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
         services.TryAddSingleton<CompositeClientAuthenticator>();
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, AuthenticatorCoverageActivator>());
+
         services.TryAddSingleton<GrantClaimsResolver>();
         services.TryAddSingleton<AuthorizationCodeGrant>();
         services.TryAddSingleton<TokenRequestHandler>();
         AddAuthorizationRequestServices(services);
         return builder;
-    }
-
-    /// <summary>
-    /// Registers the startup checks on the HTTP surface. The rest are registered by
-    /// <c>AddZeeKayDaAuthCore(configure)</c>, together with the runner that drives them all.
-    /// </summary>
-    private static void AddStartupChecks(IServiceCollection services)
-    {
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, LoginDispatchVerifier>());
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ReservedCookieNameActivator>());
-
-        // Both read what the host's own configuration code produces — a provider's options, the
-        // resolved scheme map — so both are activators.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, HandlerOptionsActivator>());
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ProviderSchemeCollisionActivator>());
-
-        // An activator because it constructs every registered IClientAuthenticator, the host's own
-        // included.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, AuthenticatorCoverageActivator>());
     }
 
     /// <summary>
@@ -136,6 +114,12 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<PageInteractionServices>();
         services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
         services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
+
+        // Registered whether or not WithProviders is called: its job is to catch a host with
+        // neither a login page nor a provider, so nothing can sign a user in.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupVerifier, LoginDispatchVerifier>());
+
         services.TryAddSingleton<IConsentInteraction, ConsentInteraction>();
         services.TryAddSingleton<IProviderSignInInteraction, ProviderSignInInteraction>();
         services.TryAddSingleton<LogoutRequestStore>();
@@ -203,6 +187,9 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// </remarks>
     private static void AddInteractionCookies(IServiceCollection services)
     {
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, ReservedCookieNameActivator>());
+
         var authentication = services.AddAuthentication();
 
         authentication.AddCookie(ZeeKayDaCookies.Session, options =>

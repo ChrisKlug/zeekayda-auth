@@ -22,10 +22,9 @@ is code. Accepted cost: aggregation is per phase, so a cheap failure and an acti
 restarts. Registering as `IStartupCheck` fails startup; MS.DI never enumerates a base service type, so
 it would silently never run.
 
-**Order within a phase is not a guarantee, and a check needing another's work asks for it.**
-`ISigningKeyRing.EnsureInitializedAsync` is idempotent for exactly this reason: the client-repository
-activator validates against the advertised algorithms, so it calls it rather than assuming it runs
-second — "make the dependency structural", the answer to any request for an ordering knob.
+**Order within a phase is not a guarantee; a check needing another's work asks for it.**
+`ISigningKeyRing.EnsureInitializedAsync` is idempotent so the client-repository activator can call it
+rather than assume it runs second — the answer to any request for an ordering knob.
 
 **Gates are `internal` and the collection is closed; there are two, in this order.**
 `SanitizingLoggerRegistrationGate` proves nothing has shadowed the open-generic `ISanitizingLogger<>`;
@@ -65,15 +64,14 @@ outside the verifier call's `try` — becomes `startup.warning_log_failed` rathe
 `StartAsync` unattributed and discarding the run's genuine failures.
 
 **These seams complement `IValidateOptions<T>`; they do not replace it.** Anything decidable
-synchronously from options values stays an options validator. These exist for the three things that
-structurally cannot live there: async I/O, a check needing a DI scope, and a check whose whole
-purpose is a side effect. Not a second front door for options validation.
+synchronously from options values stays an options validator. These exist for what structurally
+cannot live there: async I/O, a check needing a DI scope, a check whose purpose is a side effect.
 
 **A mutable accumulator, not a returned result.** An implementer calls `AddFailure` or `AddWarning`
-in whichever branch they are already in; a pass-through check has an empty method body. Real checks
-warn *and* fail, or warn twice, from one dependency resolution, which a result record needs a
-composite type to express. The context is fresh per invocation, so findings are attributable and no
-check can read, mutate, or clear another's.
+in whichever branch they are in; a pass-through check has an empty body. Real checks warn *and*
+fail from one dependency resolution, which a result record needs a composite type to express. The
+context is fresh per invocation, so findings are attributable and no check can read, mutate, or
+clear another's.
 
 **Every invocation gets its own `AsyncServiceScope`, supplied by the runner.** "Constructor-inject
 only genuine singletons; resolve anything scoped from `scopedServices`" is the shape of the interface
@@ -105,11 +103,10 @@ check the wrong argument. It binds first-party code only (`IsPackable=false`, re
 by-key redaction never applies to it. The runner's own call composes a constant prefix with the
 check's already-unformatted template and carries the single scoped suppression.
 
-**Failure `Code` strings are public API contract.** They cannot change without a major bump.
+**Failure `Code` strings are public API contract**, changeable only in a major bump.
 
-**No per-check timeout.** A hung check hangs a host not yet serving traffic, which fails closed.
-Every in-tree check is in-memory work or a call whose transport imposes its own timeout, and
-`VerifyAsync` already takes a `CancellationToken`, so adding a deadline would not change the contract.
+**No per-check timeout.** A hung check hangs a host not yet serving traffic, which fails closed;
+in-tree checks are in-memory or bounded by their transport, and `VerifyAsync` takes a token anyway.
 
 **Startup verification is not a health check.** `IHealthCheck` answers "healthy right now,
 repeatedly," and reports `Unhealthy`; this subsystem answers "configured correctly at all," and
@@ -125,9 +122,12 @@ capability interface to skip past: the self-test is inside the ring, and `ISigni
 framework-sealed, so no registered ring can be missing it. A host serving the protocol endpoints must
 have one at all; `SigningKeyRingPresenceVerifier` is the cheap-phase check that says so.
 
-**A check's type name ends in its phase and it lives with the feature it checks.** `*Verifier` is an
-`IStartupVerifier`, `*Activator` an `IStartupActivator`, a gate `*Gate`; each sits in its feature's
-folder and namespace, and the public seams live in `ZeeKayDa.Auth.StartupVerification`.
+**A check's type name ends in its phase, and it lives and registers with the feature it checks.**
+`*Verifier` is an `IStartupVerifier`, `*Activator` an `IStartupActivator`, a gate `*Gate`. Each sits
+in its feature's folder and is registered by that feature's call (`WithProviders` the provider
+checks, each store call its store's), so a new feature never edits a central list. Exception: a
+**presence check** catches that call never being made, so it registers with the defaults in
+`AddZeeKayDaAuthCore(configure)` — or `AddZeeKayDaAuth` for the HTTP-side `LoginDispatchVerifier`.
 
 **Two instances of one check type register with plain `AddSingleton`.** `TryAddEnumerable`
 deduplicates by implementation type and would silently drop the second, so the per-store checks (one

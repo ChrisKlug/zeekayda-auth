@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
+using ZeeKayDa.Auth.StartupVerification;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -101,6 +102,11 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
         // pinned member fails startup rather than being silently overridden.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton(typeof(IPostConfigureOptions<>), typeof(HandlerOptionsPin<>)));
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, HandlerOptionsActivator>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, ProviderSchemeCollisionActivator>());
 
         if (options is not null)
             services.Configure(options);
