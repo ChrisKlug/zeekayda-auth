@@ -219,15 +219,25 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
         // The key created by whoever held the lock must be found, not replaced: checking before
         // taking the lock is the check-then-rename race the lock exists to close.
         var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var published = false;
+        var sut = new LocalSigningKeyFileSystem
+        {
+            PublishPending = (pending, target) =>
+            {
+                published = true;
+                return LocalSigningKeyFileSystem.Publish(pending, target);
+            },
+        };
         var otherHostsLock = new FileStream(keyPath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
 
-        var write = _sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken).AsTask();
+        var write = sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken).AsTask();
         var finishedFirst = await Task.WhenAny(write, Task.Delay(TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken));
         await File.WriteAllTextAsync(keyPath, SamplePem, TestContext.Current.CancellationToken);
         await otherHostsLock.DisposeAsync();
 
         finishedFirst.Should().NotBeSameAs(write, "a host must wait while another holds the lock");
         (await write).Should().BeFalse();
+        published.Should().BeFalse("a host that finds the key under the lock never tries to publish its own");
         File.ReadAllText(keyPath).Should().Be(SamplePem);
     }
 
