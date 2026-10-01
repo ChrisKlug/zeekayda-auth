@@ -3,6 +3,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
@@ -254,7 +255,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
         new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetServices<IStartupActivator>().Should().ContainSingle(v => v is SigningKeyRingStartupVerifier);
+        provider.GetServices<IStartupActivator>().Should().ContainSingle(v => v is SigningKeyRingActivator);
         provider.GetServices<IStartupVerifier>().Should().BeEmpty(
             "reading the source is real work and belongs in the activator phase");
     }
@@ -461,6 +462,6 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
 
         services.Should().Contain(
             d => d.ServiceType == typeof(IStartupActivator)
-                 && d.ImplementationType == typeof(SigningKeyRingStartupVerifier));
+                 && d.ImplementationType == typeof(SigningKeyRingActivator));
     }
 }

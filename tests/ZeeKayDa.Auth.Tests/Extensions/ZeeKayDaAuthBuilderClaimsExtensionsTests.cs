@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Claims;
+using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
 
@@ -39,7 +40,7 @@ public sealed class ZeeKayDaAuthBuilderClaimsExtensionsTests
 
         services.AddZeeKayDaAuthCore(options => options.Issuer = "https://test.example.com");
 
-        services.Should().ContainSingle(d => d.ImplementationType == typeof(ClaimsProviderPresenceValidator))
+        services.Should().ContainSingle(d => d.ImplementationType == typeof(ClaimsProviderPresenceActivator))
             .Which.ServiceType.Should().Be(typeof(IStartupActivator));
     }
 

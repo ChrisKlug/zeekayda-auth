@@ -540,7 +540,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
     {
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -552,7 +552,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             {
                 class MyVerifier
                 {
-                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext? context)
+                    void DoWork(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext? context)
                     {
                         string secret = "s3cr3t";
                         context?.AddWarning("x.code", $"leaked {secret}");
@@ -575,7 +575,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         // it must still be caught.
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -605,7 +605,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         // No_diagnostic_for_AddWarning_overloads_that_forward_into_a_private_AddWarningCore_helper).
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -632,7 +632,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         // forwarding exemption at all.
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -659,7 +659,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         // With the exemption removed entirely this is moot, but the case is kept as a tripwire.
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -691,7 +691,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         // anywhere outside these two overloads.
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -719,7 +719,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         // forwards it into AddWarning must still be flagged.
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -731,7 +731,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             {
                 class MyVerifier
                 {
-                    void Forward(ZeeKayDa.Auth.StartupVerificationContext context, string messageTemplate)
+                    void Forward(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext context, string messageTemplate)
                         => context.AddWarning("x.code", messageTemplate);
                 }
             }
@@ -752,7 +752,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         // that name could launder an interpolated string through unflagged.
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -769,7 +769,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
                     void DoWork()
                     {
                         string secret = "s3cr3t";
-                        _ = new ZeeKayDa.Auth.StartupVerificationContext($"leaked {secret}");
+                        _ = new ZeeKayDa.Auth.StartupVerification.StartupVerificationContext($"leaked {secret}");
                     }
                 }
             }
@@ -786,7 +786,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
     {
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -815,7 +815,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         var source = """
             using System;
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -1032,7 +1032,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
     {
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -1044,7 +1044,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             {
                 class MyVerifier
                 {
-                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context)
+                    void DoWork(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext context)
                     {
                         string secret = "s3cr3t";
                         context.AddWarning("x.code", $"leaked {secret}");
@@ -1064,7 +1064,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
     {
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -1076,7 +1076,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             {
                 class MyVerifier
                 {
-                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context)
+                    void DoWork(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext context)
                     {
                         string secret = "s3cr3t";
                         context.AddWarning("x.code", $"leaked {secret}", LogLevel.Warning);
@@ -1096,7 +1096,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
     {
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -1108,7 +1108,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             {
                 class MyVerifier
                 {
-                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context)
+                    void DoWork(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext context)
                     {
                         string secret = "s3cr3t";
                         context.AddWarning("x.code", "leaked {Secret}", secret);
@@ -1129,7 +1129,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         // parameter this analyzer constrains — only "messageTemplate" is checked by name/ordinal.
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -1141,7 +1141,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             {
                 class MyVerifier
                 {
-                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context, string dynamicCode)
+                    void DoWork(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext context, string dynamicCode)
                     {
                         context.AddWarning(dynamicCode, "a constant template");
                     }
@@ -1189,7 +1189,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         // by a positional messageTemplate — the operation-based lookup used here must not be.
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -1201,7 +1201,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             {
                 class MyVerifier
                 {
-                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context)
+                    void DoWork(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext context)
                     {
                         string secret = "s3cr3t";
                         context.AddWarning(code: "x.code", $"leaked {secret}");
@@ -1221,7 +1221,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
     {
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -1233,7 +1233,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             {
                 class MyVerifier
                 {
-                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context)
+                    void DoWork(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext context)
                     {
                         string secret = "s3cr3t";
                         context.AddWarning(messageTemplate: $"leaked {secret}", code: "x.code");
@@ -1256,7 +1256,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         // analyzed even though the target type still lives in a "ZeeKayDa.Auth"-named namespace.
         var source = """
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -1268,7 +1268,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             {
                 class MyVerifier
                 {
-                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext context)
+                    void DoWork(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext context)
                     {
                         string secret = "s3cr3t";
                         context.AddWarning("x.code", $"leaked {secret}");
@@ -1286,16 +1286,16 @@ public sealed class InterpolatedStringLogAnalyzerTests
     public void The_real_StartupVerificationContext_AddWarning_still_matches_the_analyzer_s_hardcoded_names()
     {
         // AnalyzeAddWarningInvocation matches by hardcoded strings ("StartupVerificationContext",
-        // "ZeeKayDa.Auth", "messageTemplate") against a FAKE type declared in this test file's own
+        // "ZeeKayDa.Auth.StartupVerification", "messageTemplate") against a FAKE type declared in this test file's own
         // source above — not against the real production type. A rename of the real type/method/
         // parameter would silently disable the rule while every test above stayed green. This test
         // is the tripwire: it fails the moment the real symbol and the analyzer's hardcoded match
         // drift apart, forcing both to be updated together.
-        var contextType = typeof(ZeeKayDa.Auth.StartupVerificationContext);
-        contextType.Namespace.Should().Be("ZeeKayDa.Auth");
+        var contextType = typeof(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext);
+        contextType.Namespace.Should().Be("ZeeKayDa.Auth.StartupVerification");
 
         var addWarningMethods = contextType.GetMethods().Where(m => m.Name == "AddWarning").ToList();
-        addWarningMethods.Should().NotBeEmpty("the analyzer matches ZeeKayDa.Auth.StartupVerificationContext.AddWarning by name");
+        addWarningMethods.Should().NotBeEmpty("the analyzer matches ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.AddWarning by name");
 
         addWarningMethods.Should().OnlyContain(
             m => m.GetParameters().Any(p => p.Name == "messageTemplate"),
@@ -1753,7 +1753,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
         var source = """
             using System;
             using Microsoft.Extensions.Logging;
-            namespace ZeeKayDa.Auth
+            namespace ZeeKayDa.Auth.StartupVerification
             {
                 public sealed class StartupVerificationContext
                 {
@@ -1766,7 +1766,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
                 {
                     private Action<string, string, object?[]> _warn = null!;
 
-                    void DoWork(ZeeKayDa.Auth.StartupVerificationContext warningsCollector)
+                    void DoWork(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext warningsCollector)
                     {
                         _warn = warningsCollector.AddWarning;
                     }
@@ -1947,7 +1947,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
             .Split(Path.PathSeparator);
 
         // Exclude ZeeKayDa's own assemblies: the fake types these test snippets declare (e.g. a
-        // stand-in "ZeeKayDa.Auth.StartupVerificationContext") deliberately shadow the real
+        // stand-in "ZeeKayDa.Auth.StartupVerification.StartupVerificationContext") deliberately shadow the real
         // production types, and referencing both would collide on assembly identity.
         var references = trustedAssemblies
             .Where(path => !Path.GetFileNameWithoutExtension(path).StartsWith("ZeeKayDa.", StringComparison.Ordinal))

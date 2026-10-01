@@ -1,3 +1,5 @@
+using ZeeKayDa.Auth.StartupVerification;
+
 namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>

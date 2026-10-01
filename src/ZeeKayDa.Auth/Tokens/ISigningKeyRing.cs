@@ -58,7 +58,7 @@ public interface ISigningKeyRing
     /// </summary>
     /// <remarks>
     /// Idempotent by design, and that is what lets a startup check depending on the key set ask for
-    /// it rather than rely on running after <see cref="SigningKeyRingStartupVerifier"/>. A second
+    /// it rather than rely on running after <see cref="SigningKeyRingActivator"/>. A second
     /// call performs no second source read and opens no second signer; concurrent callers await the
     /// same work and observe the same outcome, including the same failure. A failed initialization
     /// stays failed: it runs at startup, where a failure aborts the host.

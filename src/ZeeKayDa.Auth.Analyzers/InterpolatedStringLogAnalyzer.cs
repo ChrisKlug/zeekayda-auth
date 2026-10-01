@@ -164,7 +164,7 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
     private static bool IsStartupVerificationContextMethod(IMethodSymbol method)
     {
         return method.ContainingType is { Name: "StartupVerificationContext" } containingType
-            && containingType.ContainingNamespace?.ToDisplayString() == "ZeeKayDa.Auth";
+            && containingType.ContainingNamespace?.ToDisplayString() == "ZeeKayDa.Auth.StartupVerification";
     }
 
     // Flags `Action<string, object?[]> log = logger.LogInformation;` and

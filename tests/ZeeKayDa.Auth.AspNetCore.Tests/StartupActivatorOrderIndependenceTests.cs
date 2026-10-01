@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
@@ -44,10 +45,10 @@ public sealed class StartupActivatorOrderIndependenceTests
             .Select(d => d.ImplementationType)
             .ToList();
 
-        activators.Should().Contain(typeof(SigningKeyRingStartupVerifier));
-        activators.Should().Contain(typeof(ClientRepositoryStartupActivator));
+        activators.Should().Contain(typeof(SigningKeyRingActivator));
+        activators.Should().Contain(typeof(ClientRepositoryActivator));
         services.Should().NotContain(
-            d => d.ServiceType == typeof(IStartupVerifier) && d.ImplementationType == typeof(SigningKeyRingStartupVerifier),
+            d => d.ServiceType == typeof(IStartupVerifier) && d.ImplementationType == typeof(SigningKeyRingActivator),
             "reading a signing key source is real work and belongs in the activator phase");
     }
 

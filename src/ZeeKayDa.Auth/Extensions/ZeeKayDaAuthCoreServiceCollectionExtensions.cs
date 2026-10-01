@@ -9,6 +9,7 @@ using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
@@ -122,35 +123,35 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // through AddSigningKeySource, and without this that ring would never be initialized or
         // self-tested. A silent no-op when no ring is registered at all.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, SigningKeyRingStartupVerifier>());
+            ServiceDescriptor.Singleton<IStartupActivator, SigningKeyRingActivator>());
 
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, InsecureIssuerWarningService>());
+            ServiceDescriptor.Singleton<IStartupVerifier, InsecureIssuerVerifier>());
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, ExceptionSanitizingDisabledWarningService>());
+            ServiceDescriptor.Singleton<IStartupVerifier, ExceptionSanitizingDisabledVerifier>());
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, AbsoluteFamilyLifetimeUnboundedWarningService>());
+            ServiceDescriptor.Singleton<IStartupVerifier, AbsoluteFamilyLifetimeUnboundedVerifier>());
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, TokenLifetimeCeilingWarningService>());
+            ServiceDescriptor.Singleton<IStartupVerifier, TokenLifetimeCeilingVerifier>());
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, TokenStorePresenceValidator>());
+            ServiceDescriptor.Singleton<IStartupVerifier, TokenStorePresenceVerifier>());
 
         // Tokens are signed with the ring, so a server without one must not start.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, SigningKeyRingPresenceValidator>());
+            ServiceDescriptor.Singleton<IStartupVerifier, SigningKeyRingPresenceVerifier>());
 
         // The claims seam is mandatory with no default: a host that forgot it must not start and
         // silently issue tokens with no subject claims. An activator, since on a container without
         // IServiceProviderIsService it resolves the caller's provider to prove it is there.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ClaimsProviderPresenceValidator>());
+            ServiceDescriptor.Singleton<IStartupActivator, ClaimsProviderPresenceActivator>());
 
         // Both wrapped repositories are held by singletons, so a host registering one as scoped
         // would have it captured. The scanner keeps the collection reference so the check sees
         // registrations added after this call too.
         services.TryAddSingleton(_ => new RepositoryLifetimeScanner(services));
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, WrappedRepositoryLifetimeValidator>());
+            ServiceDescriptor.Singleton<IStartupVerifier, WrappedRepositoryLifetimeVerifier>());
     }
 
     /// <summary>
@@ -185,12 +186,12 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
             sp.GetRequiredService<ISanitizingLogger<ValidatedClientResolver>>()));
 
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, ClientRepositoryPresenceValidator>());
+            ServiceDescriptor.Singleton<IStartupVerifier, ClientRepositoryPresenceVerifier>());
 
         // Resolves IClientRepository at startup so its construction-time validation fails fast
         // rather than at first request.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ClientRepositoryStartupActivator>());
+            ServiceDescriptor.Singleton<IStartupActivator, ClientRepositoryActivator>());
     }
 
     /// <summary>
@@ -209,6 +210,6 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // without risking a deadlock on synchronous, blocking async I/O. An activator because it
         // calls a caller-supplied IScopeRepository.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ScopePresenceStartupValidator>());
+            ServiceDescriptor.Singleton<IStartupActivator, ScopePresenceActivator>());
     }
 }

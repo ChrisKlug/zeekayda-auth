@@ -25,8 +25,7 @@ it would silently never run.
 **Order within a phase is not a guarantee, and a check needing another's work asks for it.**
 `ISigningKeyRing.EnsureInitializedAsync` is idempotent for exactly this reason: the client-repository
 activator validates against the advertised algorithms, so it calls it rather than assuming it runs
-second. That is what "make the dependency structural" means here, and it answers any future request
-for an ordering knob.
+second — "make the dependency structural", the answer to any request for an ordering knob.
 
 **Gates are `internal` and the collection is closed; there are two, in this order.**
 `SanitizingLoggerRegistrationGate` proves nothing has shadowed the open-generic `ISanitizingLogger<>`;
@@ -106,12 +105,11 @@ check the wrong argument. It binds first-party code only (`IsPackable=false`, re
 by-key redaction never applies to it. The runner's own call composes a constant prefix with the
 check's already-unformatted template and carries the single scoped suppression.
 
-**Failure `Code` strings are public API contract.** Preserved verbatim when every hand-rolled check
-migrated; they cannot change without a major bump.
+**Failure `Code` strings are public API contract.** They cannot change without a major bump.
 
 **No per-check timeout.** A hung check hangs a host not yet serving traffic, which fails closed.
-Every in-tree check is microsecond-scale in-memory work or a call whose transport imposes its own
-timeout. `CancellationToken` is on `VerifyAsync`, so a deadline can be added without touching it.
+Every in-tree check is in-memory work or a call whose transport imposes its own timeout, and
+`VerifyAsync` already takes a `CancellationToken`, so adding a deadline would not change the contract.
 
 **Startup verification is not a health check.** `IHealthCheck` answers "healthy right now,
 repeatedly," and reports `Unhealthy`; this subsystem answers "configured correctly at all," and
@@ -119,19 +117,22 @@ refuses to start before Kestrel accepts a connection. Re-running activators — 
 a real vault sign — is actively wrong. A check wanting a health entry implements both interfaces.
 
 **The signing key ring activator resolves its ring lazily and no-ops when there is none.**
-`SigningKeyRingStartupVerifier` resolves `ISigningKeyRing` from `scopedServices` and returns silently
+`SigningKeyRingActivator` resolves `ISigningKeyRing` from `scopedServices` and returns silently
 when absent, so a host registering only the signing-key health check still starts. When a ring *is*
 registered it forces `EnsureInitializedAsync` — the one-time source read, set build, and signer
 self-test — so a misconfigured key fails the host rather than the first request. There is no optional
 capability interface to skip past: the self-test is inside the ring, and `ISigningKeyRing` is
 framework-sealed, so no registered ring can be missing it. A host serving the protocol endpoints must
-have one at all; `SigningKeyRingPresenceValidator` is the cheap-phase check that says so.
+have one at all; `SigningKeyRingPresenceVerifier` is the cheap-phase check that says so.
+
+**A check's type name ends in its phase and it lives with the feature it checks.** `*Verifier` is an
+`IStartupVerifier`, `*Activator` an `IStartupActivator`, a gate `*Gate`; each sits in its feature's
+folder and namespace, and the public seams live in `ZeeKayDa.Auth.StartupVerification`.
 
 **Two instances of one check type register with plain `AddSingleton`.** `TryAddEnumerable`
-deduplicates by implementation type and would silently drop the second, which is why the per-store
-checks — one per registration call, each capturing its own store name and opt-out — are added
-directly. The log category is the shared
-type, so the instance `Name` tells them apart. Gating is in `token-stores.md`.
+deduplicates by implementation type and would silently drop the second, so the per-store checks (one
+per registration call, each capturing its own store name and opt-out) are added directly. The log
+category is the shared type; the instance `Name` tells them apart. Gating is in `token-stores.md`.
 
 **No check's warning is suppressed because another check failed.** Warnings log inline during a
 phase; failures surface only in the exception thrown after it, so a warning can appear *ahead of* the

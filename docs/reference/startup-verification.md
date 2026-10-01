@@ -24,6 +24,8 @@ The rule is about *whose code runs*, not about how slow you expect it to be: res
 
 ## `IStartupCheck`, `IStartupVerifier`, and `IStartupActivator`
 
+Every type on this page lives in the `ZeeKayDa.Auth.StartupVerification` namespace.
+
 ```csharp
 public interface IStartupCheck
 {
@@ -304,7 +306,7 @@ internal sealed class ClientRepositoryActivator : IStartupActivator
 }
 ```
 
-It is an `IStartupActivator` because it resolves `IClientRepository`, which the host registers — the framework's own `ClientRepositoryStartupActivator` is one for the same reason. The per-check scope is what makes forcing construction safe here, and letting an unexpected exception propagate rather than catching it is the correct behaviour.
+It is an `IStartupActivator` because it resolves `IClientRepository`, which the host registers — the framework's own `ClientRepositoryActivator` is one for the same reason. The per-check scope is what makes forcing construction safe here, and letting an unexpected exception propagate rather than catching it is the correct behaviour.
 
 ## Related pages
 

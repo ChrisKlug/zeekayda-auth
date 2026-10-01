@@ -13,7 +13,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// Not suitable for production; registered via <c>AddInMemoryDevelopmentSigning()</c> or
 /// <c>AddPersistedDevelopmentSigning()</c>. The environment gate is enforced here via
 /// <see cref="DevelopmentSigningKeyGate.Enforce"/> so the hard fail holds even when
-/// <c>DevelopmentSigningKeyWarningService</c> is not running, and it refuses when the environment
+/// <c>DevelopmentSigningKeyVerifier</c> is not running, and it refuses when the environment
 /// is unknown.
 /// </remarks>
 internal sealed class DevelopmentSigningKeySource(

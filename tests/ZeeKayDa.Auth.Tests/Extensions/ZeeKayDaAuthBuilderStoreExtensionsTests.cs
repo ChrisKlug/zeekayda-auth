@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
@@ -21,7 +22,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
-    private static ServiceCollection CreateServicesWithWarningServiceDependencies(
+    private static ServiceCollection CreateServicesWithStoreVerifierDependencies(
         string environmentName = "Development")
     {
         var services = new ServiceCollection();
@@ -211,7 +212,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public void AddInMemoryAuthorizationCodeStore_registers_InMemoryStoreVerifier_as_IStartupVerifier()
     {
-        var services = CreateServicesWithWarningServiceDependencies();
+        var services = CreateServicesWithStoreVerifierDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryAuthorizationCodeStore();
@@ -271,7 +272,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public void AddInMemoryRefreshTokenStore_registers_InMemoryStoreVerifier_as_IStartupVerifier()
     {
-        var services = CreateServicesWithWarningServiceDependencies();
+        var services = CreateServicesWithStoreVerifierDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryRefreshTokenStore();
@@ -335,7 +336,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public void AddInMemoryStores_registers_InMemoryStoreVerifier_once_per_store()
     {
-        var services = CreateServicesWithWarningServiceDependencies();
+        var services = CreateServicesWithStoreVerifierDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryStores();
@@ -348,7 +349,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public void Calling_AddInMemoryAuthorizationCodeStore_and_AddInMemoryRefreshTokenStore_separately_registers_InMemoryStoreVerifier_once_per_store()
     {
-        var services = CreateServicesWithWarningServiceDependencies();
+        var services = CreateServicesWithStoreVerifierDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryAuthorizationCodeStore();
@@ -362,7 +363,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public async Task AddInMemoryStores_produces_a_distinctly_worded_warning_per_store_not_the_same_warning_repeated()
     {
-        var services = CreateServicesWithWarningServiceDependencies();
+        var services = CreateServicesWithStoreVerifierDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryStores();
@@ -389,7 +390,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public async Task AddInMemoryStores_passes_allowOutsideDevelopment_through_to_both_underlying_registrations()
     {
-        var services = CreateServicesWithWarningServiceDependencies(Environments.Production);
+        var services = CreateServicesWithStoreVerifierDependencies(Environments.Production);
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryStores(allowOutsideDevelopment: true);
@@ -411,7 +412,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         // Each of the three in-memory registration methods carries its own
         // allowOutsideDevelopment parameter and gates independently on it. Mixing granular calls
         // with different values must not let one call's override leak into the other's gate.
-        var services = CreateServicesWithWarningServiceDependencies(Environments.Production);
+        var services = CreateServicesWithStoreVerifierDependencies(Environments.Production);
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true);
@@ -489,7 +490,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     {
         // Control-presence: the gate on a per-process store outside Development is only a control
         // if the registration that creates the store also registers it.
-        var services = CreateServicesWithWarningServiceDependencies();
+        var services = CreateServicesWithStoreVerifierDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddInMemoryInteractionStore();
@@ -521,7 +522,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     [Fact]
     public void AddDistributedCacheInteractionStore_registers_the_cache_backed_store_and_its_gate()
     {
-        var services = CreateServicesWithWarningServiceDependencies();
+        var services = CreateServicesWithStoreVerifierDependencies();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddDistributedCacheInteractionStore();
@@ -532,20 +533,20 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
             sd.Lifetime == ServiceLifetime.Singleton);
         using var provider = services.BuildServiceProvider();
         provider.GetServices<IStartupActivator>()
-            .Should().ContainSingle(activator => activator is DistributedCacheInteractionStoreStartupValidator);
+            .Should().ContainSingle(activator => activator is DistributedCacheInteractionStoreActivator);
     }
 
     [Fact]
     public async Task AddDistributedCacheInteractionStore_passes_the_memory_cache_override_through_to_its_gate()
     {
-        var services = CreateServicesWithWarningServiceDependencies(Environments.Production);
+        var services = CreateServicesWithStoreVerifierDependencies(Environments.Production);
         services.AddDistributedMemoryCache();
         var builder = new ZeeKayDaAuthBuilder(services);
 
         builder.AddDistributedCacheInteractionStore(allowMemoryCacheOutsideDevelopment: true);
 
         using var provider = services.BuildServiceProvider();
-        var gate = provider.GetServices<IStartupActivator>().OfType<DistributedCacheInteractionStoreStartupValidator>().Single();
+        var gate = provider.GetServices<IStartupActivator>().OfType<DistributedCacheInteractionStoreActivator>().Single();
         var context = new StartupVerificationContext();
         await gate.VerifyAsync(context, provider, CancellationToken.None);
         context.Failures.Should().BeEmpty();

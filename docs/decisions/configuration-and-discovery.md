@@ -124,7 +124,7 @@ the ID token's protocol claims, never configured.
 **What a custom `IScopeRepository` serves is validated wherever it is read.** `ValidatedScopeCatalog` is the
 sole path to a definition and the sole rule authority, so `InMemoryScopeRepository` validates nothing itself
 (`extension-surface.md`). It refuses under the codes `GetScopesAsync` documents, all at once;
-`ScopePresenceStartupValidator` surfaces them at startup, and a later breach fails that request as
+`ScopePresenceActivator` surfaces them at startup, and a later breach fails that request as
 `server_error`. An `Audience` is checked against RFC 3986 directly, not by whether `Uri` parses it, which
 rewrites a raw space while the original reaches `aud`.
 

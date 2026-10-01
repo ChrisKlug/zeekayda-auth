@@ -546,6 +546,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Startup checks are named by their phase and live with the feature they check** (#770). Every
+  `IStartupVerifier` now ends in `Verifier` and every `IStartupActivator` in `Activator`, replacing six
+  suffixes that hid the phase (`*Validator`, `*StartupValidator`, `*Verifier`, `*StartupVerifier`,
+  `*WarningService`, `*StartupActivator`); `SigningKeyRingStartupVerifier`, for one, was an activator. Each moved into the folder and
+  namespace of its feature, and the public startup-check interfaces and types (`IStartupCheck`,
+  `IStartupVerifier`, `IStartupActivator`, `StartupVerificationContext`, `StartupVerificationWarning`)
+  moved to the `ZeeKayDa.Auth.StartupVerification` namespace; add a `using` for it. Failure codes and
+  check names are unchanged.
 - **Everything that does not need an HTTP request moved from `ZeeKayDa.Auth.AspNetCore` to
   `ZeeKayDa.Auth`** (#768). `AddZeeKayDaAuthCore(configure)` now takes the same
   `Action<AuthorizationServerOptions>` as `AddZeeKayDaAuth`, returns the `ZeeKayDaAuthBuilder`, lives

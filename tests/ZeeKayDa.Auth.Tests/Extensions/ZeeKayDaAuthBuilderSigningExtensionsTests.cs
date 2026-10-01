@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
@@ -135,7 +136,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     private sealed class StubTimeProvider : TimeProvider;
 
     [Fact]
-    public void AddInMemoryDevelopmentSigning_registers_DevelopmentSigningKeyWarningService_as_IStartupVerifier()
+    public void AddInMemoryDevelopmentSigning_registers_DevelopmentSigningKeyVerifier_as_IStartupVerifier()
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
@@ -147,7 +148,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
             .Where(d => d.ServiceType == typeof(IStartupVerifier))
             .ToList();
         registrations.Should().ContainSingle(d =>
-            d.ImplementationType == typeof(DevelopmentSigningKeyWarningService));
+            d.ImplementationType == typeof(DevelopmentSigningKeyVerifier));
     }
 
     [Fact]

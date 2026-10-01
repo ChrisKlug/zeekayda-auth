@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -64,7 +65,7 @@ public static class ZeeKayDaAuthBuilderSigningKeySourceExtensions
             return new StaticSigningKeyRing(ActivatorUtilities.CreateInstance<TSource>(sp), timeProvider);
         });
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, SigningKeyRingStartupVerifier>());
+            ServiceDescriptor.Singleton<IStartupActivator, SigningKeyRingActivator>());
 
         return builder;
     }

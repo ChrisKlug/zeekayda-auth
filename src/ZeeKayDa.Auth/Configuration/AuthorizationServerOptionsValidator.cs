@@ -94,7 +94,7 @@ internal sealed class AuthorizationServerOptionsValidator : ZeeKayDaOptionsValid
     /// Validates the <c>IdToken</c> options group. Null is the default and means "advertise the
     /// whole published key set"; an empty filter would advertise nothing at all, which is never
     /// what an operator means. A filter that excludes the signing key's own algorithm is caught
-    /// at startup by <c>SigningKeyRingStartupVerifier</c>, the first point at which the key set exists.
+    /// at startup by <c>SigningKeyRingActivator</c>, the first point at which the key set exists.
     /// </summary>
     private static void ValidateIdToken(AuthorizationServerOptions options, ICollection<ZeeKayDaConfigurationFailure> failures)
     {

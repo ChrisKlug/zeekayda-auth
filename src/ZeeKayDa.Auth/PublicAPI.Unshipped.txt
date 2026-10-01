@@ -230,11 +230,11 @@ ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.AuthorizationCode = 0 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.ClientCredentials = 2 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.RefreshToken = 1 -> ZeeKayDa.Auth.GrantType
-ZeeKayDa.Auth.IStartupActivator
-ZeeKayDa.Auth.IStartupCheck
-ZeeKayDa.Auth.IStartupCheck.Name.get -> string!
-ZeeKayDa.Auth.IStartupCheck.VerifyAsync(ZeeKayDa.Auth.StartupVerificationContext! context, System.IServiceProvider! scopedServices, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.IStartupVerifier
+ZeeKayDa.Auth.StartupVerification.IStartupActivator
+ZeeKayDa.Auth.StartupVerification.IStartupCheck
+ZeeKayDa.Auth.StartupVerification.IStartupCheck.Name.get -> string!
+ZeeKayDa.Auth.StartupVerification.IStartupCheck.VerifyAsync(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext! context, System.IServiceProvider! scopedServices, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.StartupVerification.IStartupVerifier
 ZeeKayDa.Auth.Logging.ISanitizingLogger<T>
 ZeeKayDa.Auth.Logging.LoggingOptions
 ZeeKayDa.Auth.Logging.LoggingOptions.DisableExceptionSanitizing.get -> bool
@@ -275,26 +275,26 @@ ZeeKayDa.Auth.Security.SecurityHeadersOptions.CrossOriginResourcePolicy.set -> v
 ZeeKayDa.Auth.Security.SecurityHeadersOptions.ReferrerPolicy.get -> ZeeKayDa.Auth.Security.ReferrerPolicy
 ZeeKayDa.Auth.Security.SecurityHeadersOptions.ReferrerPolicy.set -> void
 ZeeKayDa.Auth.Security.SecurityHeadersOptions.SecurityHeadersOptions() -> void
-ZeeKayDa.Auth.StartupVerificationContext
-ZeeKayDa.Auth.StartupVerificationContext.AddFailure(string! code, string! message) -> void
-ZeeKayDa.Auth.StartupVerificationContext.AddWarning(string! code, string! messageTemplate, Microsoft.Extensions.Logging.LogLevel level, params object?[]! args) -> void
-ZeeKayDa.Auth.StartupVerificationContext.AddWarning(string! code, string! messageTemplate, params object?[]! args) -> void
-ZeeKayDa.Auth.StartupVerificationContext.Failures.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
-ZeeKayDa.Auth.StartupVerificationContext.StartupVerificationContext() -> void
-ZeeKayDa.Auth.StartupVerificationContext.Warnings.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.StartupVerificationWarning!>!
-ZeeKayDa.Auth.StartupVerificationWarning
-ZeeKayDa.Auth.StartupVerificationWarning.<Clone>$() -> ZeeKayDa.Auth.StartupVerificationWarning!
-ZeeKayDa.Auth.StartupVerificationWarning.Args.get -> System.Collections.Generic.IReadOnlyList<object?>!
-ZeeKayDa.Auth.StartupVerificationWarning.Args.init -> void
-ZeeKayDa.Auth.StartupVerificationWarning.Code.get -> string!
-ZeeKayDa.Auth.StartupVerificationWarning.Code.init -> void
-ZeeKayDa.Auth.StartupVerificationWarning.Deconstruct(out string! Code, out string! MessageTemplate, out Microsoft.Extensions.Logging.LogLevel Level, out System.Collections.Generic.IReadOnlyList<object?>! Args) -> void
-ZeeKayDa.Auth.StartupVerificationWarning.Equals(ZeeKayDa.Auth.StartupVerificationWarning? other) -> bool
-ZeeKayDa.Auth.StartupVerificationWarning.Level.get -> Microsoft.Extensions.Logging.LogLevel
-ZeeKayDa.Auth.StartupVerificationWarning.Level.init -> void
-ZeeKayDa.Auth.StartupVerificationWarning.MessageTemplate.get -> string!
-ZeeKayDa.Auth.StartupVerificationWarning.MessageTemplate.init -> void
-ZeeKayDa.Auth.StartupVerificationWarning.StartupVerificationWarning(string! Code, string! MessageTemplate, Microsoft.Extensions.Logging.LogLevel Level, System.Collections.Generic.IReadOnlyList<object?>! Args) -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.AddFailure(string! code, string! message) -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.AddWarning(string! code, string! messageTemplate, Microsoft.Extensions.Logging.LogLevel level, params object?[]! args) -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.AddWarning(string! code, string! messageTemplate, params object?[]! args) -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.Failures.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.StartupVerificationContext() -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.Warnings.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning!>!
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.<Clone>$() -> ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning!
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Args.get -> System.Collections.Generic.IReadOnlyList<object?>!
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Args.init -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Code.get -> string!
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Code.init -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Deconstruct(out string! Code, out string! MessageTemplate, out Microsoft.Extensions.Logging.LogLevel Level, out System.Collections.Generic.IReadOnlyList<object?>! Args) -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Equals(ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning? other) -> bool
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Level.get -> Microsoft.Extensions.Logging.LogLevel
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Level.init -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.MessageTemplate.get -> string!
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.MessageTemplate.init -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.StartupVerificationWarning(string! Code, string! MessageTemplate, Microsoft.Extensions.Logging.LogLevel Level, System.Collections.Generic.IReadOnlyList<object?>! Args) -> void
 ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore
 ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.GetAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.ReadOnlyMemory<byte>?>!
 ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.RemoveAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
@@ -556,9 +556,9 @@ override ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.ToString() -> strin
 override ZeeKayDa.Auth.Scopes.ScopeDefinition.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.Scopes.ScopeDefinition.GetHashCode() -> int
 override ZeeKayDa.Auth.Scopes.ScopeDefinition.ToString() -> string!
-override ZeeKayDa.Auth.StartupVerificationWarning.Equals(object? obj) -> bool
-override ZeeKayDa.Auth.StartupVerificationWarning.GetHashCode() -> int
-override ZeeKayDa.Auth.StartupVerificationWarning.ToString() -> string!
+override ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.GetHashCode() -> int
+override ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.ToString() -> string!
 override ZeeKayDa.Auth.Stores.RefreshTokenGrant.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.Stores.RefreshTokenGrant.GetHashCode() -> int
 override ZeeKayDa.Auth.Stores.RefreshTokenGrant.ToString() -> string!
@@ -607,8 +607,8 @@ static ZeeKayDa.Auth.Scopes.StandardScopes.Email.get -> ZeeKayDa.Auth.Scopes.Sco
 static ZeeKayDa.Auth.Scopes.StandardScopes.OpenId.get -> ZeeKayDa.Auth.Scopes.ScopeDefinition!
 static ZeeKayDa.Auth.Scopes.StandardScopes.Phone.get -> ZeeKayDa.Auth.Scopes.ScopeDefinition!
 static ZeeKayDa.Auth.Scopes.StandardScopes.Profile.get -> ZeeKayDa.Auth.Scopes.ScopeDefinition!
-static ZeeKayDa.Auth.StartupVerificationWarning.operator !=(ZeeKayDa.Auth.StartupVerificationWarning? left, ZeeKayDa.Auth.StartupVerificationWarning? right) -> bool
-static ZeeKayDa.Auth.StartupVerificationWarning.operator ==(ZeeKayDa.Auth.StartupVerificationWarning? left, ZeeKayDa.Auth.StartupVerificationWarning? right) -> bool
+static ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.operator !=(ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning? left, ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning? right) -> bool
+static ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.operator ==(ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning? left, ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning? right) -> bool
 static ZeeKayDa.Auth.Stores.RefreshTokenGrant.operator !=(ZeeKayDa.Auth.Stores.RefreshTokenGrant? left, ZeeKayDa.Auth.Stores.RefreshTokenGrant? right) -> bool
 static ZeeKayDa.Auth.Stores.RefreshTokenGrant.operator ==(ZeeKayDa.Auth.Stores.RefreshTokenGrant? left, ZeeKayDa.Auth.Stores.RefreshTokenGrant? right) -> bool
 static ZeeKayDa.Auth.Stores.StoreKey.operator !=(ZeeKayDa.Auth.Stores.StoreKey left, ZeeKayDa.Auth.Stores.StoreKey right) -> bool

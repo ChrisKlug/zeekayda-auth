@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>
 /// Accumulates the failures and warnings produced by a single <see cref="IStartupVerifier"/> (or
