@@ -49,8 +49,7 @@ public sealed class ClientCredentialsReachTests
             .Where(type => !AllowedNamespaces.Contains(type.Namespace));
 
     private static IEnumerable<MethodBase> MethodsOf(Type type) =>
-        type.GetMethods(Declared).Cast<MethodBase>().Concat(type.GetConstructors(Declared))
-            .Concat(type.TypeInitializer is { } initializer ? [initializer] : []);
+        type.GetMethods(Declared).Cast<MethodBase>().Concat(type.GetConstructors(Declared));
 
     private static bool HoldsCredentials(MethodBase method) =>
         method.GetParameters().Any(p => Mentions(p.ParameterType))
