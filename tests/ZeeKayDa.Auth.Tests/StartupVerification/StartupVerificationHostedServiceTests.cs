@@ -700,4 +700,15 @@ public sealed class StartupVerificationHostedServiceTests
             .Which.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("configuration.options_invalid");
         verifierConstructed.Should().BeFalse("no check can be trusted against options that do not validate");
     }
+
+    [Fact]
+    public async Task StopAsync_completes_without_doing_anything()
+    {
+        using var provider = BuildProviderWithSanitizingLogging(out var sink);
+        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        await sut.StopAsync(TestContext.Current.CancellationToken);
+
+        sink.Entries.Should().BeEmpty();
+    }
 }
