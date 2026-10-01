@@ -23,7 +23,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// </remarks>
 internal sealed class InMemoryClientRepository : IClientRepository
 {
-    private readonly IReadOnlyDictionary<string, IClientRegistration> _clients;
+    private readonly IReadOnlyDictionary<string, IClientWithCredentials> _clients;
 
     public InMemoryClientRepository(
         IOptions<InMemoryClientRegistrationOptions> options,
@@ -33,7 +33,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
         ISanitizingLogger<InMemoryClientRepository> logger)
     {
         var opts = options.Value;
-        var allRegistrations = new List<IClientRegistration>(opts.PreBuilt.Count + opts.Pending.Count);
+        var allRegistrations = new List<IClientWithCredentials>(opts.PreBuilt.Count + opts.Pending.Count);
 
         // Collect all failures: secret hashing + duplicates + per-client validation, so operators
         // see every problem in one pass rather than the first hashing failure aborting the rest.
@@ -110,7 +110,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
     private static void AddPending(
         IEnumerable<PendingConfidentialClientSpec> pending,
         CompositeClientSecretHasher hasher,
-        List<IClientRegistration> registrations,
+        List<IClientWithCredentials> registrations,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         foreach (var spec in pending)
@@ -154,10 +154,10 @@ internal sealed class InMemoryClientRepository : IClientRepository
     }
 
     /// <summary>Every registration this repository serves, for the startup checks that read them all.</summary>
-    internal IEnumerable<IClientRegistration> Registrations => _clients.Values;
+    internal IEnumerable<IClientWithCredentials> Registrations => _clients.Values;
 
     /// <inheritdoc/>
-    public Task<IClientRegistration?> FindByClientIdAsync(
+    public Task<IClientWithCredentials?> FindByClientIdAsync(
         string clientId,
         CancellationToken cancellationToken = default)
     {
@@ -165,7 +165,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
         // IClientRepository contract requires returning null for an unknown or malformed
         // client_id — never throwing.
         if (clientId is null)
-            return Task.FromResult<IClientRegistration?>(null);
+            return Task.FromResult<IClientWithCredentials?>(null);
 
         _clients.TryGetValue(clientId, out var reg);
         return Task.FromResult(reg);

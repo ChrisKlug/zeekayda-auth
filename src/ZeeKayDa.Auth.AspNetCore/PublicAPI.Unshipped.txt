@@ -11,7 +11,7 @@ Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAuthenticatorExtensi
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderProviderExtensions
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthServiceCollectionExtensions
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationContext
-ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationContext.Client.get -> ZeeKayDa.Auth.Clients.IClientRegistration!
+ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationContext.Client.get -> ZeeKayDa.Auth.Clients.IClientWithCredentials!
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationContext.Client.init -> void
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationContext.ClientAuthenticationContext() -> void
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult

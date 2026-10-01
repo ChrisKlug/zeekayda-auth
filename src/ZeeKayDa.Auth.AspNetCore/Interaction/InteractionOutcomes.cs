@@ -266,7 +266,7 @@ internal sealed class InteractionOutcomes(
     public async Task CompleteConsentAsync(
         HttpContext context,
         AuthorizationRequestContext requestContext,
-        IClientMetadata client,
+        IClient client,
         IReadOnlyList<string> grantedScopes)
     {
         ArgumentNullException.ThrowIfNull(context);

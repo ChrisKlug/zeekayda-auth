@@ -78,7 +78,7 @@ internal sealed class CompositeClientAuthenticator(
 
         // Repository lookup deferred past the early-reject check above so ambiguous or
         // conflicting requests never incur unnecessary I/O.
-        var client = await clientResolver.FindByClientIdAsync(clientId, cancellationToken);
+        var client = await clientResolver.FindClientWithCredentialsAsync(clientId, cancellationToken);
 
         // No mechanism → none fallback.
         if (matches.Count == 0)
@@ -142,7 +142,7 @@ internal sealed class CompositeClientAuthenticator(
         }
     }
 
-    private AuthenticatedClient AuthenticateNone(IClientRegistration? client)
+    private AuthenticatedClient AuthenticateNone(IClientWithCredentials? client)
     {
         // A public client has no credentials and allows exactly { "none" }: the resolver serves only
         // registrations that passed the validator, which enforces that three-way rule.

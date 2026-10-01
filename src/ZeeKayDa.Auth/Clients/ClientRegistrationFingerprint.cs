@@ -6,13 +6,13 @@ using System.Text;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Produces a stable content fingerprint of an <see cref="IClientRegistration"/>, used by
+/// Produces a stable content fingerprint of an <see cref="IClientWithCredentials"/>, used by
 /// <see cref="ValidatedClientResolver"/> as the memoization key for a validation verdict.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Every security-relevant member of <see cref="IClientRegistration"/> and
-/// <see cref="IClientMetadata"/> MUST be represented here.</strong> A member the fingerprint
+/// <strong>Every security-relevant member of <see cref="IClientWithCredentials"/> and
+/// <see cref="IClient"/> MUST be represented here.</strong> A member the fingerprint
 /// omits can be changed without invalidating a cached verdict, which means a registration that
 /// validation would now reject keeps being served as valid. When adding a member to either
 /// interface, add it to <see cref="Compute"/> in the same change —
@@ -41,7 +41,7 @@ internal static class ClientRegistrationFingerprint
     /// fingerprints regardless of instance identity; any change to a covered value produces a
     /// different fingerprint.
     /// </summary>
-    public static Fingerprint Compute(IClientRegistration client)
+    public static Fingerprint Compute(IClientWithCredentials client)
     {
         var builder = new StringBuilder();
 

@@ -85,8 +85,8 @@ public sealed class TokenEndpointClaimsTests : IDisposable
                 builder.Services.AddSingleton<IScopeRepository>(_scopes);
                 builder.Services.AddSingleton<IClaimsProvider>(_provider);
                 builder.AddInMemoryClients(clients => clients
-                    .Add(ClientRegistration.CreatePublic(App, [Redirect], [], ["openid", "profile", "email", "address", "orders.read", "orders.write", "reports.read"]) with { RequireConsent = false })
-                    .Add(ClientRegistration.CreatePublic(TenantApp, [Redirect], [], ["openid", "profile"]) with
+                    .Add(Client.CreatePublic(App, [Redirect], [], ["openid", "profile", "email", "address", "orders.read", "orders.write", "reports.read"]) with { RequireConsent = false })
+                    .Add(Client.CreatePublic(TenantApp, [Redirect], [], ["openid", "profile"]) with
                     {
                         RequireConsent = false,
                         AdditionalIdTokenClaims = ["tenant"],
@@ -219,7 +219,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     {
         using var host = new EndpointHost(
             configureBuilder: builder => builder.AddInMemoryClients(clients => clients.Add(
-                ClientRegistration.CreatePublic("bad", [Redirect], [], ["openid"]) with { AdditionalAccessTokenClaims = ["email"] })));
+                Client.CreatePublic("bad", [Redirect], [], ["openid"]) with { AdditionalAccessTokenClaims = ["email"] })));
 
         var failure = await host.StartupFailureAsync();
 
@@ -535,7 +535,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
                 builder.Services.AddLogging(logging => logging.AddProvider(_logs));
                 builder.AddClaimsProvider<UnconstructibleClaimsProvider>();
                 builder.AddInMemoryClients(clients => clients.Add(
-                    ClientRegistration.CreatePublic(App, [Redirect], [], ["openid", "profile"]) with { RequireConsent = false }));
+                    Client.CreatePublic(App, [Redirect], [], ["openid", "profile"]) with { RequireConsent = false }));
             });
         var code = await SeedCodeWithAsync(host, App, "openid profile");
 
@@ -747,8 +747,8 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     /// <summary>A repository registered under the wrong lifetime; its answers are never read.</summary>
     private sealed class ScopedClientRepository : IClientRepository
     {
-        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IClientRegistration?>(null);
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientWithCredentials?>(null);
     }
 
     /// <summary>A scope repository whose definitions a test can change between requests.</summary>

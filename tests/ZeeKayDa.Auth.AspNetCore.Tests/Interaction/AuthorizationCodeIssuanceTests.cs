@@ -87,13 +87,13 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
         },
         mapEndpoints: MapHostPages);
 
-    internal static ClientRegistration ConsentingRegistration() =>
-        ClientRegistration.CreatePublic(ConsentingClient, [RegisteredRedirect], [], ["openid", "profile", "email"]);
+    internal static Client ConsentingRegistration() =>
+        Client.CreatePublic(ConsentingClient, [RegisteredRedirect], [], ["openid", "profile", "email"]);
 
     /// <summary>A first-party client the operator chose to exempt from consent.</summary>
-    internal static ClientRegistration TrustedRegistration()
+    internal static Client TrustedRegistration()
     {
-        var client = ClientRegistration.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid", "profile"]);
+        var client = Client.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid", "profile"]);
         return client with { RequireConsent = false };
     }
 
@@ -973,12 +973,12 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
     }
 
     /// <summary>A repository holding one registration an operator can change mid-flow.</summary>
-    private sealed class MutableClientRepository(IClientRegistration initial) : IClientRepository
+    private sealed class MutableClientRepository(IClientWithCredentials initial) : IClientRepository
     {
-        public IClientRegistration? Current { get; set; } = initial;
+        public IClientWithCredentials? Current { get; set; } = initial;
 
-        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IClientRegistration?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientWithCredentials?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
     }
 
     /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>

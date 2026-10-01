@@ -75,7 +75,7 @@ internal sealed class AuthorizationCodeIssuer(
     public async Task<IResult> IssueAsync(
         HttpContext context,
         AuthorizationRequestContext requestContext,
-        IClientMetadata client)
+        IClient client)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
@@ -165,7 +165,7 @@ internal sealed class AuthorizationCodeIssuer(
     /// The scopes the code carries: those the request asked for that the registration still
     /// allows, narrowed further by the user's decision when consent was asked.
     /// </summary>
-    private static string[] ResolveScopes(AuthorizationRequestContext requestContext, IClientMetadata client)
+    private static string[] ResolveScopes(AuthorizationRequestContext requestContext, IClient client)
     {
         var granted = requestContext.GrantedScopes;
 
@@ -183,6 +183,6 @@ internal sealed class AuthorizationCodeIssuer(
     }
 
     /// <summary>Whether this request had to go through the consent page: the registration says so, or the request asked.</summary>
-    private static bool ConsentWasRequired(AuthorizationRequestContext requestContext, IClientMetadata client) =>
+    private static bool ConsentWasRequired(AuthorizationRequestContext requestContext, IClient client) =>
         client.RequireConsent || requestContext.Prompts.Contains(PromptValue.Consent);
 }

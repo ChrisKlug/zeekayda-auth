@@ -128,8 +128,8 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
 
     private sealed class EmptyClientRepository : IClientRepository
     {
-        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IClientRegistration?>(null);
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IClientWithCredentials?>(null);
     }
 
     [Fact]

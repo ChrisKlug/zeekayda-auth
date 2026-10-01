@@ -48,7 +48,7 @@ public sealed class IdTokenProtocolClaimsTests
         // Everything optional is present, so the token carries every name the set claims it may.
         var payload = new CodeGrantTokenPayloads(
             Issuer,
-            ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]),
+            Client.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]),
             Entry(),
             Now,
             SelectedClaims.None,
@@ -56,7 +56,7 @@ public sealed class IdTokenProtocolClaimsTests
 
         var idToken = await new JwtTokenIssuer(ring).IssueAsync(
             new IdTokenIssuanceContext(
-                ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]),
+                Client.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]),
                 new IssuedToken("header.payload.signature", TokenKind.AccessToken)),
             payload,
             TestContext.Current.CancellationToken);

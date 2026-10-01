@@ -63,7 +63,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     {
         // The none path trusts IsPublic because the resolver enforces public <=> no credentials.
         // A host's own IClientRegistrationValidator, however lax, must not replace that check.
-        var corrupt = ClientRegistration.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"])
+        var corrupt = Client.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"])
             with
         { Credentials = [new Pbkdf2ClientSecret(600_000, new byte[16], new byte[32])] };
         var services = new ServiceCollection();
@@ -78,7 +78,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
 
         var served = await provider.GetRequiredService<ValidatedClientResolver>()
-            .FindByClientIdAsync("public-client", TestContext.Current.CancellationToken);
+            .FindClientWithCredentialsAsync("public-client", TestContext.Current.CancellationToken);
 
         served.Should().BeNull();
         provider.GetRequiredService<IClientRegistrationValidator>().Should().BeOfType<AcceptEverythingValidator>(
@@ -88,7 +88,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     [Fact]
     public async Task ValidatedClientResolver_also_runs_the_hosts_own_validator_on_what_it_serves()
     {
-        var valid = ClientRegistration.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"]);
+        var valid = Client.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"]);
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IClientRegistrationValidator, RejectEverythingValidator>();
@@ -101,26 +101,26 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
 
         var served = await provider.GetRequiredService<ValidatedClientResolver>()
-            .FindByClientIdAsync("public-client", TestContext.Current.CancellationToken);
+            .FindClientWithCredentialsAsync("public-client", TestContext.Current.CancellationToken);
 
         served.Should().BeNull("a host's stricter rule applies to what is served, on top of the framework's");
     }
 
     private sealed class RejectEverythingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientRegistration client) =>
+        public void Validate(IClientWithCredentials client) =>
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure("host.tenant_rule", "Redirect URIs must be on the tenant domain."));
     }
 
     private sealed class AcceptEverythingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientRegistration client) { }
+        public void Validate(IClientWithCredentials client) { }
     }
 
-    private sealed class SingleClientRepository(IClientRegistration client) : IClientRepository
+    private sealed class SingleClientRepository(IClientWithCredentials client) : IClientRepository
     {
-        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
             => Task.FromResult(clientId == client.ClientId ? client : null);
     }
 

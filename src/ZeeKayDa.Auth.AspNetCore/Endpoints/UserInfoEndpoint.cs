@@ -124,7 +124,7 @@ internal sealed class UserInfoEndpoint(IOptions<AuthorizationServerOptions> opti
 
         // The client the token was issued to decides its own claim additions. A registration that
         // is gone, or no longer validates, means the grant behind the token is gone with it.
-        var client = await clients.FindByClientIdAsync(token.ClientId, context.RequestAborted).ConfigureAwait(false);
+        var client = await clients.FindClientAsync(token.ClientId, context.RequestAborted).ConfigureAwait(false);
 
         return client is null
             ? new Authorization.Refused(UserInfoResponses.InvalidToken)
@@ -264,7 +264,7 @@ internal sealed class UserInfoEndpoint(IOptions<AuthorizationServerOptions> opti
         }
 
         /// <summary>The token the request proved, and the client registration it names.</summary>
-        public sealed record Caller(ValidatedAccessToken Token, IClientRegistration Client) : Authorization;
+        public sealed record Caller(ValidatedAccessToken Token, IClient Client) : Authorization;
 
         /// <summary>The refusal to answer with, already chosen.</summary>
         public sealed record Refused(Func<HttpContext, IResult> Response) : Authorization;

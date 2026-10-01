@@ -91,7 +91,7 @@ internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, ISanitiz
     /// ValidatedScopeCatalog refuses the repository before a definition reaches this method.
     /// </summary>
     private bool TryResolveAudience(
-        IClientMetadata client,
+        IClient client,
         IReadOnlyList<ScopeDefinition> granted,
         ClaimsDestination destination,
         out string? resourceAudience)
@@ -119,7 +119,7 @@ internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, ISanitiz
     /// </summary>
     private async Task<ClaimsResolutionResult?> ResolvePoolAsync(
         HttpContext context,
-        IClientMetadata client,
+        IClient client,
         ClaimsProviderContext providerContext,
         CancellationToken cancellationToken)
     {
@@ -145,7 +145,7 @@ internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, ISanitiz
         ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested;
 
     private GrantClaimsOutcome Select(
-        IClientMetadata client,
+        IClient client,
         ClaimsResolutionResult.Resolved resolved,
         ClaimSelectionPlan plan,
         string? resourceAudience,
@@ -178,7 +178,7 @@ internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, ISanitiz
         }
     }
 
-    private GrantClaimsOutcome SubjectInvalid(IClientMetadata client)
+    private GrantClaimsOutcome SubjectInvalid(IClient client)
     {
         logger.LogWarning("The claims provider reported the subject of a grant to client {ClientId} invalid; nothing was issued.", client.ClientId);
         return GrantClaimsOutcome.SubjectInvalid.Instance;
@@ -200,13 +200,13 @@ internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, ISanitiz
 /// <exception cref="ArgumentException">Thrown when <paramref name="Sub"/> is null or empty.</exception>
 /// <exception cref="ArgumentNullException">Thrown when <paramref name="Client"/> or <paramref name="Scope"/> is null.</exception>
 internal sealed record ClaimsRequest(
-    IClientMetadata Client,
+    IClient Client,
     string Sub,
     IReadOnlyList<string> Scope,
     string? FamilyId,
     ClaimsDestination Destination)
 {
-    public IClientMetadata Client { get; } = Client ?? throw new ArgumentNullException(nameof(Client));
+    public IClient Client { get; } = Client ?? throw new ArgumentNullException(nameof(Client));
 
     public string Sub { get; } = !string.IsNullOrEmpty(Sub)
         ? Sub

@@ -14,7 +14,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </remarks>
 public abstract class TokenIssuanceContext
 {
-    private protected TokenIssuanceContext(IClientMetadata client)
+    private protected TokenIssuanceContext(IClient client)
     {
         ArgumentNullException.ThrowIfNull(client);
         Client = client;
@@ -27,10 +27,10 @@ public abstract class TokenIssuanceContext
         $"{GetType().Name} {{ {nameof(Client)} = {Client.ClientId} }}";
 
     /// <summary>
-    /// Gets the client the token is issued for. Carried as <see cref="IClientMetadata"/>, not
+    /// Gets the client the token is issued for. Carried as <see cref="IClient"/>, not
     /// the full registration, so the issuance path never holds the client's credentials.
     /// </summary>
-    public IClientMetadata Client { get; }
+    public IClient Client { get; }
 }
 
 /// <summary>The issuance of an access token to a client.</summary>
@@ -41,7 +41,7 @@ public sealed class AccessTokenIssuanceContext : TokenIssuanceContext
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="client"/> is <see langword="null"/>.
     /// </exception>
-    public AccessTokenIssuanceContext(IClientMetadata client)
+    public AccessTokenIssuanceContext(IClient client)
         : base(client)
     {
     }
@@ -70,7 +70,7 @@ public sealed class IdTokenIssuanceContext : TokenIssuanceContext
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="accessToken"/> is not an access token.
     /// </exception>
-    public IdTokenIssuanceContext(IClientMetadata client, IssuedToken accessToken)
+    public IdTokenIssuanceContext(IClient client, IssuedToken accessToken)
         : base(client)
     {
         ArgumentNullException.ThrowIfNull(accessToken);

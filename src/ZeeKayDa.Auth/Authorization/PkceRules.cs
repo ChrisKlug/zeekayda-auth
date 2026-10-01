@@ -11,7 +11,7 @@ internal static class PkceRules
     /// client's PKCE is the only thing binding the redemption to the party that started the flow,
     /// so it is required whatever the registration says.
     /// </summary>
-    public static bool MayOmitChallenge(IClientMetadata client)
+    public static bool MayOmitChallenge(IClient client)
     {
         ArgumentNullException.ThrowIfNull(client);
         return !client.RequirePkce && !client.IsPublic;

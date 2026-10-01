@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>IClientRegistration.AllowedTokenEndpointAuthMethods</c> is
+/// <c>IClient.AllowedTokenEndpointAuthMethods</c> is
 /// <c>IReadOnlySet&lt;string&gt;</c> rather than an enum because token endpoint authentication is
 /// an open extension point: custom <c>IClientAuthenticator</c> implementations can introduce new
 /// methods (such as <c>tls_client_auth</c>) without any framework change. Extension authors should
@@ -14,7 +14,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// instead of adding values here.
 /// </para>
 /// <para>
-/// All membership checks against <c>IClientRegistration.AllowedTokenEndpointAuthMethods</c>
+/// All membership checks against <c>IClient.AllowedTokenEndpointAuthMethods</c>
 /// MUST use <see cref="System.StringComparer.Ordinal"/> semantics — do not rely on the set's own
 /// comparer.
 /// </para>
