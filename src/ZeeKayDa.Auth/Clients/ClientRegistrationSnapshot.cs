@@ -76,9 +76,9 @@ internal sealed class ClientRegistrationSnapshot : IClientWithCredentials
             : null;
         AccessTokenLifetime = client.AccessTokenLifetime;
         IdTokenLifetime = client.IdTokenLifetime;
-        AdditionalIdTokenClaims = Copy(client.AdditionalIdTokenClaims);
-        AdditionalUserInfoClaims = Copy(client.AdditionalUserInfoClaims);
-        AdditionalAccessTokenClaims = Copy(client.AdditionalAccessTokenClaims);
+        AdditionalIdTokenClaims = OrdinalCopy(client.AdditionalIdTokenClaims);
+        AdditionalUserInfoClaims = OrdinalCopy(client.AdditionalUserInfoClaims);
+        AdditionalAccessTokenClaims = OrdinalCopy(client.AdditionalAccessTokenClaims);
         Credentials = new ReadOnlyCollection<IClientCredential>(
             [.. client.Credentials.Select(credential => CopyOf(ClientId, credential))]);
     }
@@ -141,13 +141,13 @@ internal sealed class ClientRegistrationSnapshot : IClientWithCredentials
     public TimeSpan? IdTokenLifetime { get; }
 
     /// <inheritdoc/>
-    public IReadOnlyCollection<string> AdditionalIdTokenClaims { get; }
+    public IReadOnlySet<string> AdditionalIdTokenClaims { get; }
 
     /// <inheritdoc/>
-    public IReadOnlyCollection<string> AdditionalUserInfoClaims { get; }
+    public IReadOnlySet<string> AdditionalUserInfoClaims { get; }
 
     /// <inheritdoc/>
-    public IReadOnlyCollection<string> AdditionalAccessTokenClaims { get; }
+    public IReadOnlySet<string> AdditionalAccessTokenClaims { get; }
 
     /// <inheritdoc/>
     public IReadOnlyList<IClientCredential> Credentials { get; }
@@ -167,17 +167,14 @@ internal sealed class ClientRegistrationSnapshot : IClientWithCredentials
     // Every copy is wrapped, never handed over bare. An IReadOnlySet<string> whose runtime type is
     // HashSet<string> is read-only only by convention: TokenIssuanceContext.Client hands this
     // registration to the host's own ITokenIssuer, which can downcast the set and add to it. That
-    // would reopen this type's whole reason for existing one layer further down. ReadOnlySet and
-    // ReadOnlyCollection wrap a collection nothing else holds a reference to, so a downcast reaches
-    // a type with no mutators rather than the backing store.
+    // would reopen this type's whole reason for existing one layer further down. ReadOnlySet wraps a
+    // collection nothing else holds a reference to, so a downcast reaches no mutators.
     private static IReadOnlySet<string> OrdinalCopy(IReadOnlySet<string> values) =>
         new ReadOnlySet<string>(new HashSet<string>(values, StringComparer.Ordinal));
 
     private static IReadOnlySet<T> Copy<T>(IReadOnlySet<T> values) =>
         new ReadOnlySet<T>(new HashSet<T>(values));
 
-    private static IReadOnlyCollection<string> Copy(IReadOnlyCollection<string> values) =>
-        new ReadOnlyCollection<string>([.. values]);
 
     // The one Snapshot() call per credential, checked on the spot. Throws rather than keeping the
     // store's instance: the resolver turns this exception into an unknown client whose log entry

@@ -9,10 +9,9 @@ namespace ZeeKayDa.Auth.Clients;
 /// </summary>
 public sealed class ConfidentialClientOptions : ClientOptions
 {
-    internal ConfidentialClientOptions(Client defaults)
-        : base(defaults)
+    internal ConfidentialClientOptions()
     {
-        RequirePkce = defaults.RequirePkce;
+        RequirePkce = ClientDefaults.RequirePkce;
         AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal);
     }
 

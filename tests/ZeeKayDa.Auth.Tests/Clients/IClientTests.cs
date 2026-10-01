@@ -55,4 +55,37 @@ public sealed class IClientTests
         public IReadOnlySet<string> AllowedTokenEndpointAuthMethods => new HashSet<string>();
         public bool EnableZkdErrorCodes => false;
     }
+    [Theory]
+    [InlineData(typeof(Client))]
+    [InlineData(typeof(ClientRegistrationSnapshot))]
+    public void Every_IClient_member_is_implemented_and_never_left_to_the_interface_default(Type implementation)
+    {
+        // A property whose type no longer matches the interface's compiles fine and silently
+        // serves the default instead: this is what catches it.
+        var map = implementation.GetInterfaceMap(typeof(IClient));
+
+        map.TargetMethods.Where(method => method.DeclaringType == typeof(IClient))
+            .Select(method => method.Name)
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public void The_interface_the_record_and_the_options_default_every_member_alike()
+    {
+        IClient fromInterface = new IdOnly();
+        IClient fromRecord = new Client { ClientId = "id-only" };
+        IClient fromOptions = new ConfidentialClientOptions().ApplyTo(new Client { ClientId = "id-only" });
+
+        foreach (var property in typeof(IClient).GetProperties().Where(p => p.Name != nameof(IClient.ClientId)))
+        {
+            var expected = property.GetValue(fromInterface);
+            property.GetValue(fromRecord).Should().BeEquivalentTo(expected, property.Name);
+            property.GetValue(fromOptions).Should().BeEquivalentTo(expected, property.Name);
+        }
+    }
+
+    private sealed class IdOnly : IClient
+    {
+        public string ClientId => "id-only";
+    }
 }
