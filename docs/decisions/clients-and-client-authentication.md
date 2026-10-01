@@ -64,7 +64,7 @@ validation as `client.credentials.not_copied`; one still sharing a buffer is the
 **Verification is always fixed-time and never throws.** A hasher returns `false` on internal error
 rather than propagating, so an exception cannot become a timing or behavioural oracle.
 PBKDF2-HMAC-SHA256 is always registered and creates new secrets unless the host marks its own hasher
-`isDefault: true` (`A_host_hasher_marked_default_starts_creates_new_secrets_and_PBKDF2_secrets_still_verify`).
+`isDefault: true` (`A_host_hasher_marked_default_creates_new_secrets_while_PBKDF2_secrets_still_verify`).
 Its 600,000-iteration floor (OWASP) and 2,000,000 cap are enforced where a credential is created
 (startup fails, never clamps) and where a pre-hashed one is imported, the only check a credential
 migrated from another IdP meets. At most two active shared secrets per client; both are tried.

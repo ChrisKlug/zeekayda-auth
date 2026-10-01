@@ -77,7 +77,7 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
     // ── Default hasher ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void A_host_hasher_marked_default_starts_creates_new_secrets_and_PBKDF2_secrets_still_verify()
+    public void A_host_hasher_marked_default_creates_new_secrets_while_PBKDF2_secrets_still_verify()
     {
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));

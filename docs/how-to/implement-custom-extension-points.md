@@ -264,6 +264,9 @@ auth.AddClientSecretHasher<BcryptClientSecretHasher>();                  // veri
 auth.AddClientSecretHasher<Argon2ClientSecretHasher>(isDefault: true);   // creates new secrets
 ```
 
+Every registered hasher's `Create` runs once at startup to build its timing decoy, so a hasher that
+only verifies legacy secrets must still create one for a random value.
+
 ### Security contract for `VerifyCore` implementors
 
 | Requirement | Reason |

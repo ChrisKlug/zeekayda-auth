@@ -179,6 +179,71 @@ public sealed class CompositeClientSecretHasherTests
             .Should().Be((CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient, CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient));
     }
 
+    [Fact]
+    public void Verify_of_a_credential_no_hasher_handles_spends_a_full_slot()
+    {
+        var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite();
+
+        composite.Verify(new UnhandledSecret(), "presented".AsSpan()).Should().BeFalse();
+
+        (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((1, 1));
+    }
+
+    [Fact]
+    public void Empty_secret_probe_runs_only_the_credentials_own_hasher()
+    {
+        var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite();
+
+        composite.AcceptsEmptySecret(new AltSecret()).Should().BeFalse();
+
+        (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((0, 1));
+    }
+
+    [Fact]
+    public void A_hasher_whose_Create_throws_fails_startup_with_a_configuration_failure()
+    {
+        var regOptions = new ClientSecretHasherRegistrationOptions();
+        regOptions.Registrations.Add(new(typeof(FakeHasher<DefaultSecret>), IsDefault: true));
+
+        var act = () => new CompositeClientSecretHasher(
+            [new FakeHasher<DefaultSecret>(), new VerifyOnlyHasher()],
+            Options.Create(regOptions));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Should().Match<ZeeKayDaConfigurationFailure>(f =>
+                f.Code == "configuration.hashers.timing_decoy_unhandled"
+                && f.Message.Contains(nameof(NotSupportedException))
+                && !f.Message.Contains(VerifyOnlyHasher.CreateMessage));
+    }
+
+    [Fact]
+    public void Composite_refuses_two_marked_defaults_without_the_validator()
+    {
+        var regOptions = new ClientSecretHasherRegistrationOptions();
+        regOptions.Registrations.Add(new(typeof(FakeHasher<DefaultSecret>), IsDefault: true));
+        regOptions.Registrations.Add(new(typeof(FakeHasher<AltSecret>), IsDefault: true));
+
+        var act = () => new CompositeClientSecretHasher(
+            [new FakeHasher<DefaultSecret>(), new FakeHasher<AltSecret>()],
+            Options.Create(regOptions));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.hashers.multiple_defaults");
+    }
+
+    private sealed class UnhandledSecret : IClientSecret { public IClientCredential Snapshot() => new UnhandledSecret(); }
+
+    private sealed class VerifyOnlyHasher : IClientSecretHasher
+    {
+        public const string CreateMessage = "this hasher only verifies legacy secrets";
+
+        public bool CanHandle(IClientSecret secret) => secret is AltSecret;
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => throw new NotSupportedException(CreateMessage);
+    }
+
     // ── Timing decoy ──────────────────────────────────────────────────────────────────────────────
 
     /// <summary>

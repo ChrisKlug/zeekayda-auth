@@ -53,7 +53,10 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
     {
         var matched = _hashers.FirstOrDefault(h => h.CanHandle(stored));
         if (matched is null)
+        {
+            FinishFailedCredentialSlot(alreadyVerifiedBy: null);
             return false;
+        }
 
         var result = matched.Verify(stored, presented);
 
@@ -62,6 +65,13 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
 
         return result;
     }
+
+    /// <summary>
+    /// Whether the stored credential's own hasher verifies an empty presented secret. A registration
+    /// check, not an authentication, so it spends no failed credential slot.
+    /// </summary>
+    internal bool AcceptsEmptySecret(IClientSecret stored) =>
+        _hashers.FirstOrDefault(h => h.CanHandle(stored))?.Verify(stored, ReadOnlySpan<char>.Empty) ?? false;
 
     /// <summary>
     /// Creates a new hashed credential using the default hasher.
@@ -141,7 +151,23 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
     /// </summary>
     private static IClientSecret CreateTimingDecoy(IClientSecretHasher hasher)
     {
-        var decoy = hasher.CreateTimingDecoy();
+        IClientSecret? decoy;
+        try
+        {
+            decoy = hasher.CreateTimingDecoy();
+        }
+        catch (Exception ex)
+        {
+            // Never ex.Message: it is the hasher's text, and failure messages are logged verbatim.
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "configuration.hashers.timing_decoy_unhandled",
+                    $"The IClientSecretHasher '{hasher.GetType().FullName}' threw {ex.GetType().FullName} " +
+                    "building its timing decoy. Every registered hasher's Create runs once at startup, " +
+                    "a verify-only hasher included, so it must succeed for a random value."),
+                ex);
+        }
+
         if (decoy is not null && hasher.CanHandle(decoy))
             return decoy;
 
@@ -167,6 +193,14 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
                     "configuration.hashers.none_registered",
                     "No IClientSecretHasher implementations are registered. " +
                     "Call AddClientSecretHasher<T>() on the ZeeKayDa.Auth builder."));
+
+        var markedDefaults = options.Registrations.Count(r => r.IsDefault);
+        if (markedDefaults > 1)
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "configuration.hashers.multiple_defaults",
+                    $"{markedDefaults} IClientSecretHasher implementations are marked as default. " +
+                    "At most one hasher may have isDefault: true; with none, PBKDF2 is the default."));
 
         if (hashers.Count == 1)
             return hashers[0];
