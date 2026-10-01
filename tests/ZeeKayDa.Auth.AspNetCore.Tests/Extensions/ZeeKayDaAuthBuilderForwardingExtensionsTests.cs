@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Claims;
@@ -15,7 +17,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 public sealed class ZeeKayDaAuthBuilderForwardingExtensionsTests
 {
     [Fact]
-    public void A_chain_from_AddZeeKayDaAuth_keeps_the_ASP_NET_Core_builder_through_every_core_extension()
+    public void A_chain_from_AddZeeKayDaAuth_keeps_the_ASP_NET_Core_builder_through_every_forwarding_overload()
     {
         var services = new ServiceCollection();
 
@@ -53,6 +55,30 @@ public sealed class ZeeKayDaAuthBuilderForwardingExtensionsTests
         HasherRegistrations(services).Should().Contain(new ClientSecretHasherRegistrationOptions.HasherRegistration(typeof(TestHasher), true));
         services.Should().Contain(d => d.ServiceType == typeof(IAuthorizationCodeBackingStore) && d.ImplementationType == typeof(InMemoryAuthorizationCodeBackingStore));
         services.Should().Contain(d => d.ServiceType == typeof(IRefreshTokenBackingStore) && d.ImplementationType == typeof(InMemoryRefreshTokenBackingStore));
+    }
+
+    [Fact]
+    public void Every_core_extension_taking_the_core_builder_has_a_forwarding_overload()
+    {
+        static IEnumerable<MethodInfo> ExtensionsOn(Assembly assembly, Type builderType) =>
+            assembly.GetExportedTypes()
+                .Where(type => type.IsAbstract && type.IsSealed)
+                .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Static))
+                .Where(method => method.IsDefined(typeof(ExtensionAttribute), false)
+                    && method.GetParameters()[0].ParameterType == builderType);
+
+        static string Shape(MethodInfo method) =>
+            $"{method.Name}`{method.GetGenericArguments().Length}(" + string.Join(", ", method.GetParameters().Skip(1)
+                .Select(parameter => parameter.ParameterType.IsGenericParameter
+                    ? $"!!{parameter.ParameterType.GenericParameterPosition}"
+                    : parameter.ParameterType.FullName)) + ")";
+
+        var core = ExtensionsOn(typeof(ZeeKayDaAuthCoreBuilder).Assembly, typeof(ZeeKayDaAuthCoreBuilder)).Select(Shape);
+        var forwarded = ExtensionsOn(typeof(ZeeKayDaAuthBuilder).Assembly, typeof(ZeeKayDaAuthBuilder))
+            .Where(method => method.ReturnType == typeof(ZeeKayDaAuthBuilder))
+            .Select(Shape);
+
+        core.Should().NotBeEmpty().And.BeSubsetOf(forwarded);
     }
 
     // Applies the configure actions directly: two default hashers would fail the options validator,

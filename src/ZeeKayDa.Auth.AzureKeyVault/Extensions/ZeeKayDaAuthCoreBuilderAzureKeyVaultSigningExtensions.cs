@@ -112,7 +112,6 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
     /// private key must never leave the vault.
     /// </para>
     /// <para>
-    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <paramref name="certificateIdentifier"/> must name a Key Vault <b>certificate</b> created
     /// with an exportable key policy. Key-only <c>KeyClient.GetKeyAsync</c> never returns private
     /// key material, so this provider downloads the certificate's linked secret instead, which
@@ -136,6 +135,7 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
     /// needed for one version and a published-only version's private key never enters the process.
     /// </para>
     /// </remarks>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="certificateIdentifier">
     /// The Key Vault certificate to sign with. Must have been created with an exportable key

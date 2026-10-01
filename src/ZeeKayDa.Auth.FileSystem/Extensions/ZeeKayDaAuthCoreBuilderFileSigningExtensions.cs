@@ -26,7 +26,6 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// <para>
     /// When <paramref name="keyPath"/> is <see langword="null"/> (the default), <paramref name="path"/>
     /// must contain both the certificate and its private key (RFC 7468 PEM blocks). When
-    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <paramref name="keyPath"/> is supplied, <paramref name="path"/> is certificate-only and
     /// <paramref name="keyPath"/> holds the private key — the convention used by Let's
     /// Encrypt/certbot (<c>fullchain.pem</c> + <c>privkey.pem</c>) and cert-manager.
@@ -45,6 +44,7 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// signs.
     /// </para>
     /// </remarks>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="path">
     /// The path to the PEM file that signs — a combined cert+key file when

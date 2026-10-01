@@ -12,8 +12,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// </summary>
 /// <remarks>
 /// C# cannot infer a builder type argument while the caller supplies the other one, so these cannot
-/// be generic over the builder the way the rest of the core extensions are. Each forwards to its
-/// core counterpart; a new core extension with its own type argument needs its twin here.
+/// be generic over the builder the way the rest of the core extensions are.
 /// </remarks>
 public static class ZeeKayDaAuthBuilderForwardingExtensions
 {
