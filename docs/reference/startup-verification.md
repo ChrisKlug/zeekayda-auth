@@ -24,7 +24,7 @@ The rule is about *whose code runs*, not about how slow you expect it to be: res
 
 ## `IStartupCheck`, `IStartupVerifier`, and `IStartupActivator`
 
-These types, and `StartupVerificationContext`, live in the `ZeeKayDa.Auth.StartupVerification` namespace.
+Every type on this page lives in the `ZeeKayDa.Auth.StartupVerification` namespace.
 
 ```csharp
 public interface IStartupCheck
