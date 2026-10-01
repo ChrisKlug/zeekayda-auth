@@ -45,10 +45,6 @@ public abstract class ClientOptions
     {
         var grantTypes = OrDefault(AllowedGrantTypes, registration.AllowedGrantTypes);
 
-        // Response types and modes serve the authorization endpoint only, so a client without the
-        // code grant never uses them and gets none by default.
-        var usesAuthorizationEndpoint = grantTypes.Contains(GrantType.AuthorizationCode);
-
         return registration with
         {
             DisplayName = DisplayName,
@@ -57,8 +53,8 @@ public abstract class ClientOptions
             SkipLogoutConfirmation = SkipLogoutConfirmation,
             EnableZkdErrorCodes = EnableZkdErrorCodes,
             AllowedGrantTypes = grantTypes,
-            AllowedResponseTypes = OrDefault(AllowedResponseTypes, usesAuthorizationEndpoint ? registration.AllowedResponseTypes : []),
-            AllowedResponseModes = OrDefault(AllowedResponseModes, usesAuthorizationEndpoint ? registration.AllowedResponseModes : []),
+            AllowedResponseTypes = OrDefault(AllowedResponseTypes, registration.AllowedResponseTypes),
+            AllowedResponseModes = OrDefault(AllowedResponseModes, registration.AllowedResponseModes),
             AllowedPromptValues = new HashSet<PromptValue>(AllowedPromptValues),
             AllowedSigningAlgorithms = AllowedSigningAlgorithms.Count == 0
                 ? null

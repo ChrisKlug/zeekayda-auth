@@ -38,9 +38,9 @@ internal `ClientDefaults` the interface, the `Client` record and `ClientOptions`
 implements only what it means (`A_custom_entity_implementing_only_its_id_credentials_redirect_URIs_and_scopes_is_a_valid_confidential_client`).
 `IsPublic` defaults to `false` and is never computed from the credentials: a public client that
 forgets to say so has no secret and fails the three-way rule, enforced at registration — public ⇔ no
-credentials ⇔ auth methods exactly `{ "none" }`; auth methods default from `IsPublic`. Redirect
-URIs, scopes and claim additions default empty; grant, response type and mode to the code flow;
-`RequireConsent` and `RequirePkce` to `true`; the rest to `null` or off. A type mismatch on an
+credentials ⇔ auth methods exactly `{ "none" }`; auth methods default from `IsPublic`. Redirect,
+post-logout and prompt sets, scopes and claim additions default empty (an empty prompt set permits
+every value); grant, response type and mode to the code flow; consent and PKCE on; the rest `null`. A type mismatch on an
 implementation compiles and serves the default, so `Client` and the snapshot are checked to
 implement every member (`Every_IClient_member_is_implemented_and_never_left_to_the_interface_default`).
 Every member is in the registration fingerprint; a test fails when one is added and not to it.

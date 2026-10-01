@@ -153,7 +153,6 @@ public sealed record Client : IClientWithCredentials
         new()
         {
             ClientId = clientId,
-            Credentials = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(redirectUris, StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(postLogoutRedirectUris, StringComparer.Ordinal),
@@ -171,7 +170,6 @@ public sealed record Client : IClientWithCredentials
         new()
         {
             ClientId = clientId,
-            Credentials = [],
             IsPublic = false,
             RedirectUris = new HashSet<string>(redirectUris, StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(postLogoutRedirectUris, StringComparer.Ordinal),

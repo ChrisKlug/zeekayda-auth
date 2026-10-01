@@ -175,7 +175,6 @@ internal sealed class ClientRegistrationSnapshot : IClientWithCredentials
     private static IReadOnlySet<T> Copy<T>(IReadOnlySet<T> values) =>
         new ReadOnlySet<T>(new HashSet<T>(values));
 
-
     // The one Snapshot() call per credential, checked on the spot. Throws rather than keeping the
     // store's instance: the resolver turns this exception into an unknown client whose log entry
     // carries the failure.

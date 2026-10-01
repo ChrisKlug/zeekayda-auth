@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Tokens;
