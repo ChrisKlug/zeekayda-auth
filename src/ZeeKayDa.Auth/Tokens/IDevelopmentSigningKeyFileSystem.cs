@@ -29,8 +29,12 @@ internal interface IDevelopmentSigningKeyFileSystem
 
     /// <summary>
     /// Writes <paramref name="pem"/> to <paramref name="keyPath"/> with restrictive permissions
-    /// so that only the current user can read the file.
+    /// so that only the current user can read the file, unless a file is already there.
     /// </summary>
+    /// <remarks>
+    /// The file appears whole or not at all, so a host reading it never sees a partial key. Two
+    /// hosts racing to create it both succeed: one writes it, the other is told it lost.
+    /// </remarks>
     /// <param name="keyPath">The file path to write.</param>
     /// <param name="pem">
     /// The PEM-encoded key material as a char buffer. Callers should rent a <c>char[]</c>
@@ -38,7 +42,11 @@ internal interface IDevelopmentSigningKeyFileSystem
     /// then zero and return the array so that private key material does not linger on the heap.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken);
+    /// <returns>
+    /// <see langword="true"/> when this call created the file; <see langword="false"/> when a key
+    /// file already existed, which is left untouched.
+    /// </returns>
+    ValueTask<bool> WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken);
 
     /// <summary>
     /// Reads the PEM content from <paramref name="keyPath"/> as a UTF-8 byte array.

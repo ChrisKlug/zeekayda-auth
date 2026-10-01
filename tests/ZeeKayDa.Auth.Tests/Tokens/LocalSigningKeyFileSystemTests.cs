@@ -179,6 +179,68 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
         AssertOwnerOnlyProtectedAcl(keyPath);
     }
 
+    [Fact]
+    public async Task WriteKeyFileAsync_reports_that_it_created_the_file()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+
+        var written = await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        written.Should().BeTrue();
+        File.ReadAllText(keyPath).Should().Be(SamplePem);
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_leaves_an_existing_key_file_untouched_and_reports_it_lost()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        var written = await _sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken);
+
+        written.Should().BeFalse();
+        File.ReadAllText(keyPath).Should().Be(SamplePem);
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_leaves_no_pending_file_behind_whether_it_won_or_lost()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+
+        await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+        await _sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken);
+
+        Directory.GetFiles(_tempDirectory).Should().Equal(keyPath);
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_racers_publish_exactly_one_whole_key()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var pems = Enumerable.Range(0, 8).Select(i => SamplePem + i).ToArray();
+
+        var results = await Task.WhenAll(pems.Select(pem => Task.Run(
+            async () => await _sut.WriteKeyFileAsync(keyPath, pem.AsMemory(), TestContext.Current.CancellationToken),
+            TestContext.Current.CancellationToken)));
+
+        results.Count(written => written).Should().Be(1);
+        File.ReadAllText(keyPath).Should().Be(pems[Array.IndexOf(results, true)]);
+    }
+
+    [Fact]
+    public void Publish_keeps_the_existing_key_when_another_host_got_there_first()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var pending = Path.Join(_tempDirectory, "pending");
+        File.WriteAllText(keyPath, SamplePem);
+        File.WriteAllText(pending, "another key");
+
+        var published = LocalSigningKeyFileSystem.Publish(pending, keyPath);
+
+        published.Should().BeFalse();
+        File.ReadAllText(keyPath).Should().Be(SamplePem);
+    }
+
     // ── ReadKeyFileAsync ─────────────────────────────────────────────────────────────────────────
 
     [Fact]

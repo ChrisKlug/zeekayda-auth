@@ -32,12 +32,42 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     }
 
     /// <inheritdoc/>
-    public async ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
+    public async ValueTask<bool> WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            await WriteKeyFileWindowsAsync(keyPath, pem, cancellationToken).ConfigureAwait(false);
-        else
-            await WriteKeyFileUnixAsync(keyPath, pem, cancellationToken).ConfigureAwait(false);
+        // Written beside the key and renamed into place: two hosts starting together both find no
+        // key, and a rename is atomic, so neither ever reads a half-written file and the loser keeps
+        // the winner's key rather than replacing it.
+        var pending = Path.Join(
+            Path.GetDirectoryName(Path.GetFullPath(keyPath)),
+            $"{Path.GetFileName(keyPath)}.{Path.GetRandomFileName()}.pending");
+        try
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                await WriteKeyFileWindowsAsync(pending, pem, cancellationToken).ConfigureAwait(false);
+            else
+                await WriteKeyFileUnixAsync(pending, pem, cancellationToken).ConfigureAwait(false);
+
+            return Publish(pending, keyPath);
+        }
+        finally
+        {
+            File.Delete(pending);
+        }
+    }
+
+    // Internal rather than private so the losing half of the race can be driven directly,
+    // without depending on thread scheduling to produce it.
+    internal static bool Publish(string pending, string keyPath)
+    {
+        try
+        {
+            File.Move(pending, keyPath, overwrite: false);
+            return true;
+        }
+        catch (IOException) when (File.Exists(keyPath))
+        {
+            return false;
+        }
     }
 
     /// <inheritdoc/>
@@ -131,7 +161,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     [SupportedOSPlatform("windows")]
     private static async ValueTask WriteKeyFileWindowsAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
-        await using var stream = new FileStream(keyPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
+        await using var stream = new FileStream(keyPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
         await using var writer = new StreamWriter(stream);
         await writer.WriteAsync(pem, cancellationToken).ConfigureAwait(false);
         ApplyRestrictiveFileAclWindows(keyPath);

@@ -139,6 +139,7 @@ internal sealed class DevelopmentSigningKeySource(
             return await LoadKeyFromFileAsync(keyPath, cancellationToken).ConfigureAwait(false);
 
         var rsa = RSA.Create(MinimumRsaKeySize);
+        bool written;
         try
         {
             // A 3072-bit RSA PKCS#1 PEM is at most ~3500 chars; 4096 is a safe upper bound.
@@ -146,9 +147,9 @@ internal sealed class DevelopmentSigningKeySource(
             var pemBuffer = ArrayPool<char>.Shared.Rent(MaxPemChars);
             try
             {
-                if (!rsa.TryExportRSAPrivateKeyPem(pemBuffer, out var written))
+                if (!rsa.TryExportRSAPrivateKeyPem(pemBuffer, out var pemLength))
                     throw new InvalidOperationException("Failed to export RSA private key as PEM.");
-                await fileSystem.WriteKeyFileAsync(keyPath, pemBuffer.AsMemory(0, written), cancellationToken)
+                written = await fileSystem.WriteKeyFileAsync(keyPath, pemBuffer.AsMemory(0, pemLength), cancellationToken)
                     .ConfigureAwait(false);
             }
             finally
@@ -156,14 +157,20 @@ internal sealed class DevelopmentSigningKeySource(
                 pemBuffer.AsSpan().Clear();
                 ArrayPool<char>.Shared.Return(pemBuffer);
             }
-
-            return rsa;
         }
         catch
         {
             rsa.Dispose();
             throw;
         }
+
+        if (written)
+            return rsa;
+
+        // Another host created the key between the existence check and this write. Its key is the
+        // one on disk, so it is the one used: every host sharing the folder signs with the same key.
+        rsa.Dispose();
+        return await LoadKeyFromFileAsync(keyPath, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<RSA> LoadKeyFromFileAsync(string keyPath, CancellationToken cancellationToken)
