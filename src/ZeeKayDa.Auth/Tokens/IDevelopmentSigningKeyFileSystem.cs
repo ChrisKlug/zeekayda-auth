@@ -32,8 +32,8 @@ internal interface IDevelopmentSigningKeyFileSystem
     /// so that only the current user can read the file, unless a file is already there.
     /// </summary>
     /// <remarks>
-    /// The file appears whole or not at all, so a host reading it never sees a partial key. Two
-    /// hosts racing to create it both succeed: one writes it, the other is told it lost.
+    /// The file appears whole or not at all, so a host reading it never sees a partial key. Of hosts
+    /// racing to create it, exactly one writes it and the rest are told they lost.
     /// </remarks>
     /// <param name="keyPath">The file path to write.</param>
     /// <param name="pem">

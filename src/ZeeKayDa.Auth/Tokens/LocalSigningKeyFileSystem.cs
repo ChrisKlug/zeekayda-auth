@@ -18,6 +18,12 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </remarks>
 internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSystem
 {
+    // Generating and writing one key takes well under a second; a lock held this long is not a
+    // host taking its turn, and failing beats waiting forever.
+    private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(30);
+
+    private static readonly TimeSpan LockRetryInterval = TimeSpan.FromMilliseconds(50);
+
     private const UnixFileMode GroupOrOtherBits =
         UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
         | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
@@ -34,9 +40,15 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// <inheritdoc/>
     public async ValueTask<bool> WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
-        // Written beside the key and renamed into place: two hosts starting together both find no
-        // key, and a rename is atomic, so neither ever reads a half-written file and the loser keeps
-        // the winner's key rather than replacing it.
+        // Hosts sharing the folder take turns on a lock file beside the key, and check for a key
+        // under it, so exactly one creates the key: on Unix File.Move's no-overwrite is a check then
+        // a rename, which two hosts can both pass.
+        await using var turn = await TakeTurnAsync(keyPath + ".lock", cancellationToken).ConfigureAwait(false);
+        if (File.Exists(keyPath))
+            return false;
+
+        // Written beside the key and renamed into place, so a host loading the key never reads a
+        // half-written file.
         var pending = Path.Join(
             Path.GetDirectoryName(Path.GetFullPath(keyPath)),
             $"{Path.GetFileName(keyPath)}.{Path.GetRandomFileName()}.pending");
@@ -60,6 +72,28 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// so they can see the pending file at the instant it is published rather than after the fact.
     /// </summary>
     internal Func<string, string, bool> PublishPending { get; init; } = Publish;
+
+    /// <summary>
+    /// Opens <paramref name="lockPath"/> exclusively, waiting while another host holds it. An
+    /// exclusive open is an <c>flock</c> on Unix and a share mode on Windows, so it excludes other
+    /// processes as well as other threads. The file is never deleted: a host deleting it while
+    /// another waits would let a third open a fresh one alongside.
+    /// </summary>
+    private static async Task<FileStream> TakeTurnAsync(string lockPath, CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow + LockTimeout;
+        while (true)
+        {
+            try
+            {
+                return new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException) when (DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(LockRetryInterval, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
 
     // Internal rather than private so the losing half of the race can be driven directly,
     // without depending on thread scheduling to produce it.

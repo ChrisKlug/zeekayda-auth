@@ -210,7 +210,25 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
         await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
         await _sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken);
 
-        Directory.GetFiles(_tempDirectory).Should().Equal(keyPath);
+        Directory.GetFiles(_tempDirectory, "*.pending").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_checks_for_an_existing_key_only_once_it_holds_the_lock()
+    {
+        // The key created by whoever held the lock must be found, not replaced: checking before
+        // taking the lock is the check-then-rename race the lock exists to close.
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var otherHostsLock = new FileStream(keyPath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+        var write = _sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken).AsTask();
+        var finishedFirst = await Task.WhenAny(write, Task.Delay(TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken));
+        await File.WriteAllTextAsync(keyPath, SamplePem, TestContext.Current.CancellationToken);
+        await otherHostsLock.DisposeAsync();
+
+        finishedFirst.Should().NotBeSameAs(write, "a host must wait while another holds the lock");
+        (await write).Should().BeFalse();
+        File.ReadAllText(keyPath).Should().Be(SamplePem);
     }
 
     [Fact]

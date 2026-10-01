@@ -69,9 +69,9 @@ name, never a `null` argument. `AllowedEnvironments` is set in the registration 
 framework never binds it, so `appsettings.json` alone cannot widen it; `Production` is always rejected, a host
 running in an allowed non-`Development` environment logs `Critical` on every start, and an unknown one fails closed.
 Persisted keys are plain PEM, owner-only from creation (`0700`/`0600` POSIX, a non-inherited ACL on Windows)
-through .NET's own file APIs, renamed into place so hosts racing to create one all load the winner's, and
-loading fails closed on a broader mode or a symlinked key file. Ancestor directories are not walked: that
-only matters on a shared machine, and the environment gate is what keeps a development key out of production.
+via .NET's file APIs, created by one host at a time under a lock file and renamed into place (racers load the
+winner's), and loading fails closed on a broader mode or a symlinked key file. Ancestor directories are not
+walked: that matters only on a shared machine, and the environment gate keeps a development key out of production.
 
 **Extension contracts are public in core; ZeeKayDa's own crypto and redaction stay internal.**
 `InternalsVisibleTo` can only name first-party assemblies at build time, so it structurally cannot serve a

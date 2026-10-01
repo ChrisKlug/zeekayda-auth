@@ -737,9 +737,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Hosts starting together no longer race on creating the persisted development key** (#853).
   `AddPersistedDevelopmentSigning()` checked for the key file and then created it, so two hosts
   sharing a key folder could both find none: on Unix the slower one failed to start, and on Windows
-  it overwrote the file the other may have been reading. The key is now written beside its final
-  name and renamed into place, so a host that loses the race loads the winner's key, and no host
-  ever reads a half-written file.
+  it overwrote the file the other may have been reading. Hosts now take turns on a lock file beside
+  the key, so exactly one creates it and the rest load that key, and the key is written beside its
+  final name and renamed into place, so no host ever reads a half-written file.
 
 - **A client registration that cannot be read is logged once, not on every request** (#698). A
   registration whose property getter throws — a lazy-loaded navigation property read outside its
