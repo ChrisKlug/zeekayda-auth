@@ -228,12 +228,14 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
                 return LocalSigningKeyFileSystem.Publish(pending, target);
             },
         };
-        var otherHostsLock = new FileStream(keyPath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-
-        var write = sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken).AsTask();
-        var finishedFirst = await Task.WhenAny(write, Task.Delay(TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken));
-        await File.WriteAllTextAsync(keyPath, SamplePem, TestContext.Current.CancellationToken);
-        await otherHostsLock.DisposeAsync();
+        Task<bool> write;
+        Task finishedFirst;
+        await using (new FileStream(keyPath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+        {
+            write = sut.WriteKeyFileAsync(keyPath, "another key".AsMemory(), TestContext.Current.CancellationToken).AsTask();
+            finishedFirst = await Task.WhenAny(write, Task.Delay(TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken));
+            await File.WriteAllTextAsync(keyPath, SamplePem, TestContext.Current.CancellationToken);
+        }
 
         finishedFirst.Should().NotBeSameAs(write, "a host must wait while another holds the lock");
         (await write).Should().BeFalse();
