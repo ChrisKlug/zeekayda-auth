@@ -16,7 +16,7 @@ namespace ZeeKayDa.Auth.ConformanceHost.Tests;
 /// and drive it as the suite's browser and clients would: they fail if a registration the suite
 /// depends on stops behaving the way its plans expect, before a full suite run would say so.
 /// </summary>
-public sealed partial class ConformanceHostTests : IClassFixture<ConformanceHostTests.ConformanceHostFactory>
+public sealed partial class ConformanceHostTests : IDisposable
 {
     // The Conformance environment issues on a hostname rather than localhost, so that the suite's
     // containers and a browser on the same machine can both reach one issuer URL. The framework
@@ -33,9 +33,11 @@ public sealed partial class ConformanceHostTests : IClassFixture<ConformanceHost
     private const string ConformancePostClientSecret = "conformance-client-post-secret";
     private const string ConformanceRedirectUri = "https://localhost.emobix.co.uk:8443/test/a/zeekayda/callback";
 
-    private readonly ConformanceHostFactory _factory;
+    // A field rather than a class fixture: the host's entry point is internal, and a public test
+    // class cannot name an internal fixture type.
+    private readonly ConformanceHostFactory _factory = new();
 
-    public ConformanceHostTests(ConformanceHostFactory factory) => _factory = factory;
+    public void Dispose() => _factory.Dispose();
 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
@@ -46,7 +48,7 @@ public sealed partial class ConformanceHostTests : IClassFixture<ConformanceHost
         HandleCookies = true,
     });
 
-    public sealed class ConformanceHostFactory : WebApplicationFactory<Program>
+    private sealed class ConformanceHostFactory : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder) => builder.UseEnvironment("Conformance");
     }

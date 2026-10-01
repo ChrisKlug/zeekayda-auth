@@ -92,6 +92,3 @@ app.MapZeeKayDaAuth();
 app.MapRazorPages();
 
 app.Run();
-
-/// <summary>The host's entry point, public so its tests can host it.</summary>
-public partial class Program;
