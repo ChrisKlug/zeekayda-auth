@@ -117,13 +117,13 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void Verify_dispatches_to_correct_hasher()
     {
-        // Use altVerifyResult: true so PadTiming does not fire, keeping the assertion clean.
+        // Use altVerifyResult: true so no failed credential slot is spent, keeping the assertion clean.
         var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite(altVerifyResult: true);
 
         composite.Verify(new AltSecret(), "presented".AsSpan());
 
         altHasher.VerifyCallCount.Should().Be(1);
-        defaultHasher.VerifyCallCount.Should().Be(0, "PadTiming must not fire on a successful non-default verification");
+        defaultHasher.VerifyCallCount.Should().Be(0, "a successful verification spends no failed credential slot");
     }
 
     // ── Failed credential slots ──────────────────────────────────────────────────────────────────
