@@ -11,9 +11,8 @@ namespace ZeeKayDa.Auth.Clients;
 /// Registered as the concrete type <see cref="CompositeClientSecretHasher"/> — NOT as
 /// <see cref="IClientSecretHasher"/> — to prevent self-injection through
 /// <see cref="IEnumerable{T}"/>, which would cause infinite recursion on first verify.
-/// <c>PadTiming()</c> fires on failure when the matched hasher is not the default hasher, so a
-/// faster custom hasher cannot reopen a timing oracle. Every padding verification runs against
-/// <c>_timingDecoy</c>, which the default hasher builds once, in the constructor; see
+/// Every failure is padded in failed credential slots of one verification per registered hasher, each
+/// against a decoy that hasher builds once, in the constructor; see
 /// <see cref="IClientSecretHasher.CreateTimingDecoy"/> for what that costs.
 /// </remarks>
 internal sealed class CompositeClientSecretHasher : IClientSecretFactory
@@ -34,7 +33,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
 
     private readonly IReadOnlyList<IClientSecretHasher> _hashers;
     private readonly IClientSecretHasher _default;
-    private readonly IClientSecret _timingDecoy;
+    private readonly IReadOnlyList<(IClientSecretHasher Hasher, IClientSecret Decoy)> _timingDecoys;
 
     public CompositeClientSecretHasher(
         IEnumerable<IClientSecretHasher> hashers,
@@ -43,26 +42,36 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         var hasherList = hashers.ToList();
         _hashers = hasherList;
         _default = ResolveDefault(hasherList, registrationOptions.Value);
-        _timingDecoy = CreateTimingDecoy(_default);
+        _timingDecoys = hasherList.Select(hasher => (hasher, CreateTimingDecoy(hasher))).ToList();
     }
 
     /// <summary>
     /// Verifies a presented plaintext secret against a stored credential, dispatching to the
-    /// matching registered hasher. Pads timing on failure when the matched hasher is not the default.
+    /// matching registered hasher. A failure spends a whole failed credential slot.
     /// </summary>
     public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented)
     {
         var matched = _hashers.FirstOrDefault(h => h.CanHandle(stored));
         if (matched is null)
+        {
+            FinishFailedCredentialSlot(alreadyVerifiedBy: null);
             return false;
+        }
 
         var result = matched.Verify(stored, presented);
 
-        if (!result && !ReferenceEquals(matched, _default))
-            PadTiming();
+        if (!result)
+            FinishFailedCredentialSlot(alreadyVerifiedBy: matched);
 
         return result;
     }
+
+    /// <summary>
+    /// Whether the stored credential's own hasher verifies an empty presented secret. A registration
+    /// check, not an authentication, so it spends no failed credential slot.
+    /// </summary>
+    internal bool AcceptsEmptySecret(IClientSecret stored) =>
+        _hashers.FirstOrDefault(h => h.CanHandle(stored))?.Verify(stored, ReadOnlySpan<char>.Empty) ?? false;
 
     /// <summary>
     /// Creates a new hashed credential using the default hasher.
@@ -96,8 +105,8 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
     }
 
     /// <summary>
-    /// Runs <see cref="MaxActiveSharedSecretsPerClient"/> default-hasher verifications against
-    /// the timing decoy using the non-empty <see cref="DummyPresented"/> constant.
+    /// Spends <see cref="MaxActiveSharedSecretsPerClient"/> failed credential slots, presenting the
+    /// non-empty <see cref="DummyPresented"/> constant.
     /// Called by paths that have no real credentials to verify (unknown client, disallowed method,
     /// <c>none</c> fallback rejection) to pad timing to match a known-client wrong-credential failure.
     /// </summary>
@@ -109,30 +118,56 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
     internal void PadToCredentialBudget()
     {
         for (var i = 0; i < MaxActiveSharedSecretsPerClient; i++)
-            _default.Verify(_timingDecoy, DummyPresented.AsSpan());
+            FinishFailedCredentialSlot(alreadyVerifiedBy: null);
     }
 
     /// <summary>
-    /// Pads up to <see cref="MaxActiveSharedSecretsPerClient"/> verification-equivalent
-    /// operations so that a client with fewer active credentials does not reveal its credential
-    /// count by timing. Pass the number of credentials actually attempted.
+    /// Spends the failed credential slots the client did not use, so a client with fewer active
+    /// credentials does not reveal its credential count by timing. Pass the number of credentials
+    /// actually attempted.
     /// </summary>
     internal void PadFailureToCredentialBudget(int attemptedCredentials)
     {
         for (var i = attemptedCredentials; i < MaxActiveSharedSecretsPerClient; i++)
-            _default.Verify(_timingDecoy, DummyPresented.AsSpan());
+            FinishFailedCredentialSlot(alreadyVerifiedBy: null);
     }
 
-    private void PadTiming()
-        => _default.Verify(_timingDecoy, DummyPresented.AsSpan());
+    /// <summary>
+    /// A failed credential slot is one verification by every registered hasher, so its cost is the
+    /// same whichever hasher's credential failed, or whether there was a credential at all.
+    /// </summary>
+    private void FinishFailedCredentialSlot(IClientSecretHasher? alreadyVerifiedBy)
+    {
+        foreach (var (hasher, decoy) in _timingDecoys)
+        {
+            if (!ReferenceEquals(hasher, alreadyVerifiedBy))
+                hasher.Verify(decoy, DummyPresented.AsSpan());
+        }
+    }
 
     /// <summary>
-    /// Takes the default hasher's timing decoy, refusing one the hasher cannot verify against: every
+    /// Takes a hasher's timing decoy, refusing one the hasher cannot verify against: every
     /// padding verification would then return at once, and the padding would pad nothing.
     /// </summary>
     private static IClientSecret CreateTimingDecoy(IClientSecretHasher hasher)
     {
-        var decoy = hasher.CreateTimingDecoy();
+        IClientSecret? decoy;
+        try
+        {
+            decoy = hasher.CreateTimingDecoy();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Never ex.Message: it is the hasher's text, and failure messages are logged verbatim.
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "configuration.hashers.timing_decoy_unhandled",
+                    $"The IClientSecretHasher '{hasher.GetType().FullName}' threw {ex.GetType().FullName} " +
+                    "building its timing decoy. Every registered hasher's Create runs once at startup, " +
+                    "a verify-only hasher included, so it must succeed for a random value."),
+                ex);
+        }
+
         if (decoy is not null && hasher.CanHandle(decoy))
             return decoy;
 
@@ -140,7 +175,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(
                 "configuration.hashers.timing_decoy_unhandled",
-                $"The default IClientSecretHasher '{hasher.GetType().FullName}' returned no timing decoy, " +
+                $"The IClientSecretHasher '{hasher.GetType().FullName}' returned no timing decoy, " +
                 "or one its own CanHandle rejects. For a hasher that does not build its own decoy, the " +
                 "decoy is what its Create returns for a random value. Failure-path timing padding " +
                 "verifies against that decoy, and against one the hasher cannot handle every padding " +
@@ -159,22 +194,24 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
                     "No IClientSecretHasher implementations are registered. " +
                     "Call AddClientSecretHasher<T>() on the ZeeKayDa.Auth builder."));
 
+        var markedDefaults = options.Registrations.Count(r => r.IsDefault);
+        if (markedDefaults > 1)
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "configuration.hashers.multiple_defaults",
+                    $"{markedDefaults} IClientSecretHasher implementations are marked as default. " +
+                    "At most one hasher may have isDefault: true; with none, PBKDF2 is the default."));
+
         if (hashers.Count == 1)
             return hashers[0];
 
-        var defaultReg = options.Registrations.FirstOrDefault(r => r.IsDefault);
-        if (defaultReg is null)
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "configuration.hashers.no_default",
-                    "Multiple IClientSecretHasher implementations are registered but none is marked as " +
-                    "default. Call AddClientSecretHasher<T>(isDefault: true) for exactly one hasher."));
-
-        return hashers.FirstOrDefault(h => h.GetType() == defaultReg.HasherType)
+        var defaultType = options.DefaultHasherType;
+        return hashers.FirstOrDefault(h => h.GetType() == defaultType)
             ?? throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "configuration.hashers.default_type_not_found",
-                    $"The default hasher type '{defaultReg.HasherType.FullName}' was not found in the " +
-                    "registered hasher list. This indicates a DI configuration inconsistency."));
+                    $"The default hasher type '{defaultType.FullName}' was not found in the " +
+                    "registered hasher list. With no hasher marked isDefault: true the default is PBKDF2, " +
+                    "so it must stay registered."));
     }
 }

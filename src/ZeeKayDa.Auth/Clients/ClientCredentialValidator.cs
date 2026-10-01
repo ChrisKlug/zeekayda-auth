@@ -137,7 +137,7 @@ internal static class ClientCredentialValidator
         CompositeClientSecretHasher hasher,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        foreach (var _ in secrets.Where(secret => hasher.Verify(secret, ReadOnlySpan<char>.Empty)))
+        foreach (var _ in secrets.Where(hasher.AcceptsEmptySecret))
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.credentials.empty_secret_accepted",

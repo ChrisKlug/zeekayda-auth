@@ -254,14 +254,19 @@ public sealed class BcryptClientSecretHasher : ClientSecretHasher<IBcryptClientS
 ### Step 4: Register with `AddClientSecretHasher<T>()`
 
 Register your hasher on the builder returned by `AddZeeKayDaAuth`. The composite verifier tries
-the matching hasher for each stored credential. The built-in PBKDF2 hasher is always registered and is the default, so it creates every new
-secret. To keep verifying secrets hashed with another algorithm, register that hasher alongside it:
+the matching hasher for each stored credential. The built-in PBKDF2 hasher is always registered and, unless you mark another hasher as the
+default, creates every new secret. To keep verifying secrets hashed with another algorithm,
+register that hasher alongside it; to make your own hasher create new secrets, mark it
+`isDefault: true` — PBKDF2 stays registered, so existing PBKDF2 secrets keep verifying:
 
 ```csharp
-auth.AddClientSecretHasher<BcryptClientSecretHasher>();   // verifies old bcrypt secrets
+auth.AddClientSecretHasher<BcryptClientSecretHasher>();                   // verifies old bcrypt secrets
+// or
+auth.AddClientSecretHasher<BcryptClientSecretHasher>(isDefault: true);   // also creates new secrets
 ```
 
-A host cannot yet make its own hasher the default in place of PBKDF2.
+Every registered hasher's `Create` runs once at startup to build its timing decoy, so a hasher that
+only verifies legacy secrets must still create one for a random value.
 
 ### Security contract for `VerifyCore` implementors
 

@@ -57,14 +57,13 @@ public sealed class ClientSecretHasherOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_when_multiple_hashers_and_none_is_default()
+    public void Validate_passes_when_multiple_hashers_and_none_is_default_since_PBKDF2_then_is()
     {
         var failures = Validate(BuildOptions(
             (typeof(HasherA), false),
             (typeof(HasherB), false)));
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.hashers.no_default")
-            .Which.Message.Should().Contain("isDefault: true");
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -75,7 +74,7 @@ public sealed class ClientSecretHasherOptionsValidatorTests
             (typeof(HasherB), true)));
 
         failures.Should().ContainSingle(f => f.Code == "configuration.hashers.multiple_defaults")
-            .Which.Message.Should().Contain("2");
+            .Which.Message.Should().Contain("2").And.Contain("At most one hasher").And.Contain("PBKDF2 is the default");
     }
 
     [Fact]

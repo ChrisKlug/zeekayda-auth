@@ -74,6 +74,45 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*FakeHasher*");
     }
 
+    // ── Default hasher ───────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A_host_hasher_marked_default_creates_new_secrets_while_PBKDF2_secrets_still_verify()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com")
+            .AddClientSecretHasher<FakeHasher>(isDefault: true);
+        services.AddSingleton<IClientRepository, EmptyClientRepository>();
+        using var provider = services.BuildServiceProvider();
+
+        var validate = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(provider);
+        validate.Should().NotThrow();
+
+        var composite = provider.GetRequiredService<CompositeClientSecretHasher>();
+        composite.Create("a-client-secret").Should().BeOfType<FakeSecret>();
+
+        var pbkdf2 = provider.GetServices<IClientSecretHasher>().OfType<Pbkdf2ClientSecretHasher>().Single();
+        composite.Verify(pbkdf2.Create("an-existing-secret"), "an-existing-secret").Should().BeTrue();
+    }
+
+    [Fact]
+    public void PBKDF2_is_the_default_when_the_host_marks_no_hasher_default()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com")
+            .AddClientSecretHasher<FakeHasher>();
+        services.AddSingleton<IClientRepository, EmptyClientRepository>();
+        using var provider = services.BuildServiceProvider();
+
+        var validate = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(provider);
+        validate.Should().NotThrow();
+
+        provider.GetRequiredService<CompositeClientSecretHasher>().Create("a-client-secret")
+            .Should().BeOfType<Pbkdf2ClientSecret>();
+    }
+
     // ── PBKDF2 iteration count ───────────────────────────────────────────────────────────────────
 
     private static ServiceProvider BuildWithPbkdf2Iterations(int iterations)

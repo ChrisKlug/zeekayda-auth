@@ -117,56 +117,131 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void Verify_dispatches_to_correct_hasher()
     {
-        // Use altVerifyResult: true so PadTiming does not fire, keeping the assertion clean.
+        // Use altVerifyResult: true so no failed credential slot is spent, keeping the assertion clean.
         var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite(altVerifyResult: true);
 
         composite.Verify(new AltSecret(), "presented".AsSpan());
 
         altHasher.VerifyCallCount.Should().Be(1);
-        defaultHasher.VerifyCallCount.Should().Be(0, "PadTiming must not fire on a successful non-default verification");
+        defaultHasher.VerifyCallCount.Should().Be(0, "a successful verification spends no failed credential slot");
     }
 
-    // ── PadTiming behaviour ───────────────────────────────────────────────────────────────────────
+    // ── Failed credential slots ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Verify_pads_timing_when_non_default_hasher_fails()
+    public void A_failed_verification_runs_one_verification_per_hasher_whichever_hasher_failed()
     {
-        // PadTiming fires on failure when matched hasher is not the default.
-        var (composite, defaultHasher, _) = CreateMultiHasherComposite(
-            defaultVerifyResult: false,
-            altVerifyResult: false);
+        var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite();
 
         composite.Verify(new AltSecret(), "presented".AsSpan());
-
-        defaultHasher.VerifyCallCount.Should().Be(1, "PadTiming() should invoke the default hasher once");
-    }
-
-    [Fact]
-    public void Verify_does_not_pad_timing_when_non_default_hasher_succeeds()
-    {
-        // PadTiming only fires on failure.
-        var (composite, defaultHasher, _) = CreateMultiHasherComposite(
-            defaultVerifyResult: false,
-            altVerifyResult: true);
-
-        composite.Verify(new AltSecret(), "presented".AsSpan());
-
-        defaultHasher.VerifyCallCount.Should().Be(0, "PadTiming must not fire on a successful verification");
-    }
-
-    [Fact]
-    public void Verify_does_not_pad_timing_when_default_hasher_fails()
-    {
-        // PadTiming only fires for non-default hashers.
-        var (composite, defaultHasher, _) = CreateMultiHasherComposite(
-            defaultVerifyResult: false,
-            altVerifyResult: false);
+        (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((1, 1));
 
         composite.Verify(new DefaultSecret(), "presented".AsSpan());
+        (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((2, 2));
+    }
 
-        // defaultHasher.VerifyCallCount == 1 from the real Verify call,
-        // but 0 extra calls from PadTiming.
-        defaultHasher.VerifyCallCount.Should().Be(1, "only the real verify; no PadTiming for the default hasher");
+    [Fact]
+    public void A_successful_verification_runs_no_other_hasher()
+    {
+        var (composite, defaultHasher, _) = CreateMultiHasherComposite(altVerifyResult: true);
+
+        composite.Verify(new AltSecret(), "presented".AsSpan());
+
+        defaultHasher.VerifyCallCount.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("unknown client")]
+    [InlineData("default-hasher credential")]
+    [InlineData("other-hasher credential")]
+    public void A_failed_authentication_under_two_hashers_runs_the_same_verifications_as_an_unknown_client(string path)
+    {
+        // A host migrating away from one hasher keeps both registered: a client still holding the old
+        // hasher's credential must fail in the same work as an unknown client.
+        var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite();
+
+        switch (path)
+        {
+            case "unknown client":
+                composite.PadToCredentialBudget();
+                break;
+            case "default-hasher credential":
+                composite.Verify(new DefaultSecret(), "presented".AsSpan());
+                composite.PadFailureToCredentialBudget(1);
+                break;
+            case "other-hasher credential":
+                composite.Verify(new AltSecret(), "presented".AsSpan());
+                composite.PadFailureToCredentialBudget(1);
+                break;
+        }
+
+        (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount)
+            .Should().Be((CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient, CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient));
+    }
+
+    [Fact]
+    public void Verify_of_a_credential_no_hasher_handles_spends_a_full_slot()
+    {
+        var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite();
+
+        composite.Verify(new UnhandledSecret(), "presented".AsSpan()).Should().BeFalse();
+
+        (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((1, 1));
+    }
+
+    [Fact]
+    public void Empty_secret_probe_runs_only_the_credentials_own_hasher()
+    {
+        var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite();
+
+        composite.AcceptsEmptySecret(new AltSecret()).Should().BeFalse();
+
+        (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((0, 1));
+    }
+
+    [Fact]
+    public void A_hasher_whose_Create_throws_fails_startup_with_a_configuration_failure()
+    {
+        var regOptions = new ClientSecretHasherRegistrationOptions();
+        regOptions.Registrations.Add(new(typeof(FakeHasher<DefaultSecret>), IsDefault: true));
+
+        var act = () => new CompositeClientSecretHasher(
+            [new FakeHasher<DefaultSecret>(), new VerifyOnlyHasher()],
+            Options.Create(regOptions));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Should().Match<ZeeKayDaConfigurationFailure>(f =>
+                f.Code == "configuration.hashers.timing_decoy_unhandled"
+                && f.Message.Contains(nameof(NotSupportedException))
+                && !f.Message.Contains(VerifyOnlyHasher.CreateMessage));
+    }
+
+    [Fact]
+    public void Composite_refuses_two_marked_defaults_without_the_validator()
+    {
+        var regOptions = new ClientSecretHasherRegistrationOptions();
+        regOptions.Registrations.Add(new(typeof(FakeHasher<DefaultSecret>), IsDefault: true));
+        regOptions.Registrations.Add(new(typeof(FakeHasher<AltSecret>), IsDefault: true));
+
+        var act = () => new CompositeClientSecretHasher(
+            [new FakeHasher<DefaultSecret>(), new FakeHasher<AltSecret>()],
+            Options.Create(regOptions));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.hashers.multiple_defaults");
+    }
+
+    private sealed class UnhandledSecret : IClientSecret { public IClientCredential Snapshot() => new UnhandledSecret(); }
+
+    private sealed class VerifyOnlyHasher : IClientSecretHasher
+    {
+        public const string CreateMessage = "this hasher only verifies legacy secrets";
+
+        public bool CanHandle(IClientSecret secret) => secret is AltSecret;
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => throw new NotSupportedException(CreateMessage);
     }
 
     // ── Timing decoy ──────────────────────────────────────────────────────────────────────────────
@@ -441,7 +516,7 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void Constructor_throws_ZeeKayDaConfigurationException_when_multiple_hashers_and_none_marked_default()
+    public void Constructor_throws_ZeeKayDaConfigurationException_when_none_is_marked_default_and_PBKDF2_is_not_registered()
     {
         var hasherA = new FakeHasher<DefaultSecret>();
         var hasherB = new FakeHasher<AltSecret>();
@@ -456,7 +531,8 @@ public sealed class CompositeClientSecretHasherTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle()
-            .Which.Code.Should().Be("configuration.hashers.no_default");
+            .Which.Should().Match<ZeeKayDaConfigurationFailure>(f =>
+                f.Code == "configuration.hashers.default_type_not_found" && f.Message.Contains("PBKDF2"));
     }
 
     [Fact]

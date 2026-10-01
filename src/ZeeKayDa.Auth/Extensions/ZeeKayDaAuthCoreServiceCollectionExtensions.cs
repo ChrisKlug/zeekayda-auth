@@ -93,7 +93,7 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // throwing on the hasher's one-registration-per-type rule.
         var builder = new ZeeKayDaAuthCoreBuilder(services);
         if (!services.Any(descriptor => descriptor.ImplementationType == typeof(Pbkdf2ClientSecretHasher)))
-            builder.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
+            builder.AddClientSecretHasher<Pbkdf2ClientSecretHasher>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IValidateOptions<Pbkdf2ClientSecretHasherOptions>,
@@ -163,6 +163,8 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // Registered unconditionally so using it without any IClientSecretHasher gives a clear
         // error instead of a generic "service not registered" DI failure.
         services.TryAddSingleton<CompositeClientSecretHasher>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, ClientSecretHasherActivator>());
 
         // Alias so repository authors can inject IClientSecretFactory without knowing about the
         // composite's internal structure.
