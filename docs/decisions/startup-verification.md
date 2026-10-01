@@ -108,7 +108,8 @@ check's already-unformatted template and carries the single scoped suppression.
 **Failure `Code` strings are public API contract.** They cannot change without a major bump.
 
 **No per-check timeout.** A hung check hangs a host not yet serving traffic, which fails closed.
-Every in-tree check is in-memory work or a call whose transport imposes its own timeout.
+Every in-tree check is in-memory work or a call whose transport imposes its own timeout, and
+`VerifyAsync` already takes a `CancellationToken`, so adding a deadline would not change the contract.
 
 **Startup verification is not a health check.** `IHealthCheck` answers "healthy right now,
 repeatedly," and reports `Unhealthy`; this subsystem answers "configured correctly at all," and
@@ -125,9 +126,8 @@ framework-sealed, so no registered ring can be missing it. A host serving the pr
 have one at all; `SigningKeyRingPresenceVerifier` is the cheap-phase check that says so.
 
 **A check's type name ends in its phase and it lives with the feature it checks.** `*Verifier` is an
-`IStartupVerifier`, `*Activator` an `IStartupActivator`, gates keep `*Gate`; the file sits in the
-folder and namespace of its feature (`Tokens`, `Clients`), and the public seams live in
-`ZeeKayDa.Auth.StartupVerification`.
+`IStartupVerifier`, `*Activator` an `IStartupActivator`, a gate `*Gate`; each sits in its feature's
+folder and namespace, and the public seams live in `ZeeKayDa.Auth.StartupVerification`.
 
 **Two instances of one check type register with plain `AddSingleton`.** `TryAddEnumerable`
 deduplicates by implementation type and would silently drop the second, so the per-store checks (one

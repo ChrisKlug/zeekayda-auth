@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;

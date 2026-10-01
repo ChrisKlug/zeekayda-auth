@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Logging;

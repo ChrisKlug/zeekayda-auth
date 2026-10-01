@@ -547,8 +547,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - **Startup checks are named by their phase and live with the feature they check** (#770). Every
-  `IStartupVerifier` now ends in `Verifier` and every `IStartupActivator` in `Activator`, replacing the
-  mix of `*Validator`, `*WarningService` and `*StartupActivator` names. Each moved into the folder and
+  `IStartupVerifier` now ends in `Verifier` and every `IStartupActivator` in `Activator`, replacing six
+  suffixes that hid the phase (`*Validator`, `*StartupValidator`, `*Verifier`, `*StartupVerifier`,
+  `*WarningService`, `*StartupActivator`); `SigningKeyRingStartupVerifier`, for one, was an activator. Each moved into the folder and
   namespace of its feature, and the public startup-check interfaces and types (`IStartupCheck`,
   `IStartupVerifier`, `IStartupActivator`, `StartupVerificationContext`, `StartupVerificationWarning`)
   moved to the `ZeeKayDa.Auth.StartupVerification` namespace; add a `using` for it. Failure codes and
