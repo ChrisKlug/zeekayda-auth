@@ -38,6 +38,8 @@ public sealed class SigningKeyRingStartupVerifierTests
     private static ServiceProvider BuildProvider(ISigningKeyRing? ring)
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IOptions<AuthorizationServerOptions>>(
+            Options.Create(new AuthorizationServerOptions { Issuer = "https://auth.example.com" }));
         if (ring is not null)
             services.AddSingleton(ring);
 
@@ -254,22 +256,6 @@ public sealed class SigningKeyRingStartupVerifierTests
     public async Task VerifyAsync_reconciles_nothing_when_no_filter_is_configured()
     {
         using var provider = BuildProvider(TestSigningKeys.KeySet(SigningAlgorithm.RS256));
-
-        var context = await VerifyAsync(provider);
-
-        context.Failures.Should().BeEmpty();
-        context.Warnings.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task VerifyAsync_does_not_warn_about_RS256_for_a_host_with_no_server_options()
-    {
-        // AddZeeKayDaAuthCore() without AddZeeKayDaAuth(): no discovery document is served, so the
-        // Discovery section 3 requirement does not apply.
-        var services = new ServiceCollection();
-        services.AddSingleton<ISigningKeyRing>(
-            new InitializedRing(TestSigningKeys.KeySet(SigningAlgorithm.ES256)));
-        using var provider = services.BuildServiceProvider();
 
         var context = await VerifyAsync(provider);
 

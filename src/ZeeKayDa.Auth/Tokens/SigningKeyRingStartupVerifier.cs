@@ -60,19 +60,14 @@ internal sealed class SigningKeyRingStartupVerifier : IStartupActivator
     private static void VerifyAdvertisedAlgorithms(
         StartupVerificationContext context, IServiceProvider scopedServices, ISigningKeyRing ring)
     {
-        var options = scopedServices.GetService<IOptions<AuthorizationServerOptions>>();
-        var filter = options?.Value.IdToken.AdvertisedSigningAlgorithms;
+        var filter = scopedServices.GetRequiredService<IOptions<AuthorizationServerOptions>>()
+            .Value.IdToken.AdvertisedSigningAlgorithms;
         var keySet = ring.Current;
 
         if (filter is not null)
             VerifyFilter(context, keySet, filter);
 
-        // Only for a host that serves a discovery document. A core-only host — one that called
-        // AddZeeKayDaAuthCore() without AddZeeKayDaAuth(), so no AuthorizationServerOptions are
-        // registered — publishes no metadata, and warning it about a Discovery §3 requirement it
-        // is not subject to is noise.
-        if (options is not null)
-            VerifyRs256IsAdvertised(context, AdvertisedSigningAlgorithms.Resolve(keySet, filter));
+        VerifyRs256IsAdvertised(context, AdvertisedSigningAlgorithms.Resolve(keySet, filter));
     }
 
     /// <summary>
