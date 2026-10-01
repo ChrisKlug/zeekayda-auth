@@ -6,14 +6,14 @@ using ZeeKayDa.Auth.Claims;
 namespace ZeeKayDa.Auth.ConformanceHost.Users;
 
 /// <summary>A user the sample knows: a subject, a login name and their claims. No password material.</summary>
-public sealed record SampleUser(string Subject, string Username, IReadOnlyList<ClaimRecord> Claims);
+internal sealed record SampleUser(string Subject, string Username, IReadOnlyList<ClaimRecord> Claims);
 
 /// <summary>
 /// The sample's user store: in memory, seeded at startup, so every run begins from the same state.
 /// The framework never reads it — the login page checks passwords against it, and the claims
 /// provider reads claims from it.
 /// </summary>
-public sealed class UserStore
+internal sealed class UserStore
 {
     // The same work factor the framework requires for client secrets (Pbkdf2ClientSecretHasherOptions).
     private const int Iterations = 600_000;

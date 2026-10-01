@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.ConformanceHost.Pages;
 /// Asks the user to confirm a sign-out the framework was asked for. Declining needs no call: the
 /// "Stay signed in" link leaves, and the unanswered sign-out expires on its own.
 /// </summary>
-public sealed class LogoutModel(UserStore users, ILogoutInteraction logout) : PageModel
+internal sealed class LogoutModel(UserStore users, ILogoutInteraction logout) : PageModel
 {
     public async Task OnGetAsync()
     {

@@ -7,7 +7,7 @@ namespace ZeeKayDa.Auth.ConformanceHost.Pages;
 /// Renders an authorization error the framework could not send back to the client — an unknown
 /// client or an unregistered redirect URI, where redirecting would be unsafe.
 /// </summary>
-public sealed class ErrorModel(IErrorInteraction errors) : PageModel
+internal sealed class ErrorModel(IErrorInteraction errors) : PageModel
 {
     public AuthorizationErrorDetails? Details { get; private set; }
 

@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.ConformanceHost;
 /// Makes sure a PEM signing key exists, generating one on first run. A real deployment provisions
 /// the file out of band; generating it here only keeps the host runnable without setup.
 /// </summary>
-public static class SigningKeyFile
+internal static class SigningKeyFile
 {
     public static string Ensure(string path)
     {

@@ -9,7 +9,7 @@ namespace ZeeKayDa.Auth.ConformanceHost.Pages;
 /// Adds a user to the in-memory store. Reached from the login page with its query string, and
 /// sends the browser back there with it — so a sign-in in progress continues after registering.
 /// </summary>
-public sealed class RegisterModel(UserStore users) : PageModel
+internal sealed class RegisterModel(UserStore users) : PageModel
 {
     [BindProperty]
     public string? Username { get; set; }

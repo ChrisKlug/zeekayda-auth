@@ -1,7 +1,7 @@
 namespace ZeeKayDa.Auth.ConformanceHost;
 
 /// <summary>The host's own configuration, bound from the <c>IdentityServer</c> section.</summary>
-public sealed class IdentityServerSettings
+internal sealed class IdentityServerSettings
 {
     public required string Issuer { get; init; }
 
@@ -11,7 +11,7 @@ public sealed class IdentityServerSettings
 }
 
 /// <summary>A client to register. A client with a secret is confidential; one without is public.</summary>
-public sealed class ClientSettings
+internal sealed class ClientSettings
 {
     public required string ClientId { get; init; }
 
