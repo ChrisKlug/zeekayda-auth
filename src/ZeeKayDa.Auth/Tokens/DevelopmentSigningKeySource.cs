@@ -138,27 +138,15 @@ internal sealed class DevelopmentSigningKeySource(
         if (fileSystem.FileExists(keyPath))
             return await LoadKeyFromFileAsync(keyPath, cancellationToken).ConfigureAwait(false);
 
-        RSA? rsa = RSA.Create(MinimumRsaKeySize);
-        try
-        {
-            if (await TryWriteKeyAsync(rsa, keyPath, cancellationToken).ConfigureAwait(false))
-            {
-                var created = rsa;
-                rsa = null;
-                return created;
-            }
-        }
-        finally
-        {
-            rsa?.Dispose();
-        }
+        using (var generated = RSA.Create(MinimumRsaKeySize))
+            await WriteKeyAsync(generated, keyPath, cancellationToken).ConfigureAwait(false);
 
-        // Another host created the key between the existence check and this write. Its key is the
-        // one on disk, so it is the one used: every host sharing the folder signs with the same key.
+        // Loaded back whether this host wrote the key or another got there first: the key on disk is
+        // the one every host sharing the folder signs with.
         return await LoadKeyFromFileAsync(keyPath, cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask<bool> TryWriteKeyAsync(RSA rsa, string keyPath, CancellationToken cancellationToken)
+    private async ValueTask WriteKeyAsync(RSA rsa, string keyPath, CancellationToken cancellationToken)
     {
         // A 3072-bit RSA PKCS#1 PEM is at most ~3500 chars; 4096 is a safe upper bound.
         const int MaxPemChars = 4096;
@@ -168,7 +156,7 @@ internal sealed class DevelopmentSigningKeySource(
             if (!rsa.TryExportRSAPrivateKeyPem(pemBuffer, out var pemLength))
                 throw new InvalidOperationException("Failed to export RSA private key as PEM.");
 
-            return await fileSystem.WriteKeyFileAsync(keyPath, pemBuffer.AsMemory(0, pemLength), cancellationToken)
+            await fileSystem.WriteKeyFileAsync(keyPath, pemBuffer.AsMemory(0, pemLength), cancellationToken)
                 .ConfigureAwait(false);
         }
         finally
