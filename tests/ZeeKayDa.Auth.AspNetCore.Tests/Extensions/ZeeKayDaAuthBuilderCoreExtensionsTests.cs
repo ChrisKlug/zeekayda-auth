@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
@@ -40,7 +42,7 @@ public sealed class ZeeKayDaAuthBuilderCoreExtensionsTests
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com")
             .AddSigningKeySource<TestSigningKeySource>()
             .AddClaimsProvider<NoClaimsProvider>()
-            .AddClientSecretHasher<TestHasher>()
+            .AddClientSecretHasher<TestHasher>(isDefault: true)
             .AddAuthorizationCodeStore<InMemoryAuthorizationCodeBackingStore>()
             .AddRefreshTokenStore<InMemoryRefreshTokenBackingStore>();
 
@@ -48,8 +50,20 @@ public sealed class ZeeKayDaAuthBuilderCoreExtensionsTests
             .Should().ContainSingle().Which.SourceType.Should().Be(typeof(TestSigningKeySource));
         services.Should().Contain(d => d.ServiceType == typeof(IClaimsProvider) && d.ImplementationType == typeof(NoClaimsProvider));
         services.Should().Contain(d => d.ServiceType == typeof(IClientSecretHasher) && d.ImplementationType == typeof(TestHasher));
+        HasherRegistrations(services).Should().Contain(new ClientSecretHasherRegistrationOptions.HasherRegistration(typeof(TestHasher), true));
         services.Should().Contain(d => d.ServiceType == typeof(IAuthorizationCodeBackingStore) && d.ImplementationType == typeof(InMemoryAuthorizationCodeBackingStore));
         services.Should().Contain(d => d.ServiceType == typeof(IRefreshTokenBackingStore) && d.ImplementationType == typeof(InMemoryRefreshTokenBackingStore));
+    }
+
+    // Applies the configure actions directly: two default hashers would fail the options validator,
+    // and only what the overload forwarded is under test here.
+    private static IList<ClientSecretHasherRegistrationOptions.HasherRegistration> HasherRegistrations(IServiceCollection services)
+    {
+        using var provider = services.BuildServiceProvider();
+        var options = new ClientSecretHasherRegistrationOptions();
+        foreach (var configure in provider.GetServices<IConfigureOptions<ClientSecretHasherRegistrationOptions>>())
+            configure.Configure(options);
+        return options.Registrations;
     }
 
     private sealed class TestSecret : IClientSecret { public IClientCredential Snapshot() => new TestSecret(); }
