@@ -85,7 +85,7 @@ public sealed class StartupVerificationHostedServiceTests
         using var provider = BuildProviderWithSanitizingLogging(
             out var sink, services => services.AddSingleton<IStartupVerifier>(verifier));
 
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -126,7 +126,7 @@ public sealed class StartupVerificationHostedServiceTests
                 services.AddSingleton<IStartupVerifier>(goodVerifier);
             });
 
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -162,7 +162,7 @@ public sealed class StartupVerificationHostedServiceTests
         services.AddSingleton<IStartupVerifier>(verifier2);
         using var provider = services.BuildServiceProvider();
 
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -182,7 +182,7 @@ public sealed class StartupVerificationHostedServiceTests
         services.AddSingleton<IStartupVerifier>(new DelegatingVerifier("V", _ => throw thrown));
         using var provider = services.BuildServiceProvider();
 
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -203,7 +203,7 @@ public sealed class StartupVerificationHostedServiceTests
         services.AddSingleton<IStartupVerifier>(new DelegatingVerifier("V", _ => throw thrown));
         using var provider = services.BuildServiceProvider();
 
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -221,7 +221,7 @@ public sealed class StartupVerificationHostedServiceTests
         services.AddSingleton<IStartupVerifier>(new DelegatingVerifier("V", _ => throw thrown));
         using var provider = services.BuildServiceProvider();
 
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -242,7 +242,7 @@ public sealed class StartupVerificationHostedServiceTests
         services.AddSingleton<IStartupVerifier>(new DelegatingVerifier("Unexpected", _ => throw unexpected));
         using var provider = services.BuildServiceProvider();
 
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -264,7 +264,7 @@ public sealed class StartupVerificationHostedServiceTests
         }));
         using var provider = services.BuildServiceProvider();
 
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(cts.Token);
 
@@ -280,7 +280,7 @@ public sealed class StartupVerificationHostedServiceTests
             "V", _ => throw new InvalidOperationException(secretLadenMessage)));
         using var provider = services.BuildServiceProvider();
 
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -315,7 +315,7 @@ public sealed class StartupVerificationHostedServiceTests
             services.AddSingleton<IStartupVerifier>(verifier);
             services.AddSingleton<IStartupActivator>(activator);
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -339,7 +339,7 @@ public sealed class StartupVerificationHostedServiceTests
             services.AddSingleton<IStartupVerifier>(verifier);
             services.AddSingleton<IStartupActivator>(activator);
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -364,7 +364,7 @@ public sealed class StartupVerificationHostedServiceTests
             services.AddSingleton<IStartupActivator>(first);
             services.AddSingleton<IStartupActivator>(second);
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -397,7 +397,7 @@ public sealed class StartupVerificationHostedServiceTests
             services.AddSingleton<IStartupVerifier>(throwing);
             services.AddSingleton<IStartupVerifier>(later);
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -421,7 +421,7 @@ public sealed class StartupVerificationHostedServiceTests
             services.AddSingleton<IStartupVerifier>(throwing);
             services.AddSingleton<IStartupVerifier>(failing);
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -439,7 +439,7 @@ public sealed class StartupVerificationHostedServiceTests
             services.AddSingleton<IStartupVerifier>(firstThrow);
             services.AddSingleton<IStartupVerifier>(secondThrow);
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -469,7 +469,7 @@ public sealed class StartupVerificationHostedServiceTests
             services.AddSingleton<IStartupActivator>(first);
             services.AddSingleton<IStartupActivator>(second);
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -496,7 +496,7 @@ public sealed class StartupVerificationHostedServiceTests
             services.AddSingleton<IStartupVerifier>(first);
             services.AddSingleton<IStartupVerifier>(second);
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -517,7 +517,7 @@ public sealed class StartupVerificationHostedServiceTests
             services.AddSingleton<IStartupActivator>(new DelegatingActivator(
                 "Second", _ => throw new ZeeKayDaConfigurationException(failure, secondCause)));
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -536,7 +536,7 @@ public sealed class StartupVerificationHostedServiceTests
                 context.AddWarning("bad.warning", "value {missing}");
                 return Task.CompletedTask;
             })));
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -561,7 +561,7 @@ public sealed class StartupVerificationHostedServiceTests
                 return Task.CompletedTask;
             }));
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -607,7 +607,7 @@ public sealed class StartupVerificationHostedServiceTests
             services.AddScoped<IStartupVerifier>(sp => new MarkerVerifier(sp.GetRequiredService<ScopedMarker>(), verifierScopes));
             services.AddScoped<IStartupActivator>(sp => new MarkerActivator(sp.GetRequiredService<ScopedMarker>(), activatorScopes));
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -632,7 +632,7 @@ public sealed class StartupVerificationHostedServiceTests
                 return new DelegatingActivator("Expensive", _ => Task.CompletedTask);
             });
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -647,7 +647,7 @@ public sealed class StartupVerificationHostedServiceTests
         var thrown = new InvalidOperationException(secretLadenMessage);
         using var provider = BuildProviderWithSanitizingLogging(out _, services =>
             services.AddScoped<IStartupActivator>(_ => throw thrown));
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -666,7 +666,7 @@ public sealed class StartupVerificationHostedServiceTests
         using var provider = BuildProviderWithSanitizingLogging(out _, services =>
             services.AddScoped<IStartupActivator>(_ => throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure("keyvault.read_failed", "See the inner exception."), rootCause)));
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -692,7 +692,7 @@ public sealed class StartupVerificationHostedServiceTests
                 return new DelegatingVerifier("V", _ => Task.CompletedTask);
             });
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
@@ -705,7 +705,7 @@ public sealed class StartupVerificationHostedServiceTests
     public async Task StopAsync_completes_without_doing_anything()
     {
         using var provider = BuildProviderWithSanitizingLogging(out var sink);
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         await sut.StopAsync(TestContext.Current.CancellationToken);
 
@@ -723,7 +723,7 @@ public sealed class StartupVerificationHostedServiceTests
             services.AddSingleton<IValidateOptions<ProbeOptions>>(
                 new ValidateOptions<ProbeOptions>(Options.DefaultName, _ => throw thrown, "unused"));
         });
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 

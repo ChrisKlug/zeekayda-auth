@@ -17,9 +17,7 @@ namespace ZeeKayDa.Auth.StartupVerification;
 /// ordering, and because the phases are disjoint collections rather than an ordering knob, no check
 /// can claim a position.
 /// </summary>
-internal sealed class StartupVerificationHostedService(
-    IServiceProvider rootServices,
-    IServiceScopeFactory scopeFactory) : IHostedService
+internal sealed class StartupVerificationHostedService(IServiceScopeFactory scopeFactory) : IHostedService
 {
     /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -96,7 +94,7 @@ internal sealed class StartupVerificationHostedService(
 
         foreach (var (check, warning) in warnings)
         {
-            if (TryLogWarning(check, warning) is { } logFailure)
+            if (TryLogWarning(scope.ServiceProvider, check, warning) is { } logFailure)
                 failures.Add(logFailure);
         }
 
@@ -152,11 +150,12 @@ internal sealed class StartupVerificationHostedService(
     /// problem. Malformed args throw from inside the logging framework's formatter, not from the
     /// check.
     /// </summary>
-    private ReportedFailure? TryLogWarning(Check check, StartupVerificationWarning warning)
+    private static ReportedFailure? TryLogWarning(
+        IServiceProvider services, Check check, StartupVerificationWarning warning)
     {
         try
         {
-            var logger = (ILogger)rootServices.GetRequiredService(
+            var logger = (ILogger)services.GetRequiredService(
                 typeof(SanitizingLogger<>).MakeGenericType(check.Instance.GetType()));
 
             // ZEEKAYDA0002 requires a compile-time-constant template, because a runtime-built one

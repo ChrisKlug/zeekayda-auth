@@ -15,7 +15,7 @@ public sealed class ClientSecretHasherActivatorTests
         services.AddScoped<IStartupActivator, ClientSecretHasherActivator>();
         services.AddScoped<IStartupActivator>(_ => new RecordingActivator(() => otherActivatorRan = true));
         using var provider = services.BuildServiceProvider();
-        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+        var sut = new StartupVerificationHostedService(provider.GetRequiredService<IServiceScopeFactory>());
 
         var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
 
