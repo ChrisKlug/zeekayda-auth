@@ -15,12 +15,14 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// An activator rather than a verifier, by the mechanical rule: it constructs every registered
 /// authenticator, and those are the host's own. It is deliberately not an
 /// <c>IValidateOptions&lt;AuthorizationServerOptions&gt;</c>, which would make the first read of
-/// the server options construct part of the service graph. An authenticator that fails to
-/// construct is not caught here: the runner reports it as a startup failure naming the exception.
+/// the server options construct part of the service graph. The authenticators are resolved in
+/// <see cref="VerifyAsync"/>, not injected, so one that fails to construct — the client-secret
+/// authenticator builds every registered hasher — is reported against this check while the rest of
+/// the phase still runs.
 /// </remarks>
 internal sealed class AuthenticatorCoverageActivator(
     IOptions<AuthorizationServerOptions> options,
-    IEnumerable<IClientAuthenticator> authenticators) : IStartupActivator
+    IServiceProvider services) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "AuthenticatorCoverage";
@@ -29,6 +31,8 @@ internal sealed class AuthenticatorCoverageActivator(
     public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
+
+        var authenticators = services.GetServices<IClientAuthenticator>();
 
         // Map method string → authenticator type name. Used to detect overlaps and uncovered methods.
         var declared = new Dictionary<string, string>(StringComparer.Ordinal);

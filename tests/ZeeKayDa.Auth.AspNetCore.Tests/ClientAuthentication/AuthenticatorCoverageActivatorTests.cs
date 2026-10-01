@@ -85,7 +85,7 @@ public sealed class AuthenticatorCoverageActivatorTests
         await using var provider = services.BuildServiceProvider();
         var context = new StartupVerificationContext();
 
-        await new AuthenticatorCoverageActivator(Options.Create(options), provider.GetServices<IClientAuthenticator>())
+        await new AuthenticatorCoverageActivator(Options.Create(options), provider)
             .VerifyAsync(context, TestContext.Current.CancellationToken);
 
         return context.Failures;
