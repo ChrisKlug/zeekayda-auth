@@ -214,17 +214,27 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     }
 
     [Fact]
-    public async Task WriteKeyFileAsync_racers_publish_exactly_one_whole_key()
+    public async Task WriteKeyFileAsync_racers_that_lose_immediately_read_the_winners_whole_key()
     {
+        // Each loser reads the moment it learns it lost, which is the earliest a host would load the
+        // winner's key. Large enough to span many write buffers, so a key published before it was
+        // fully written would be read short.
         var keyPath = Path.Join(_tempDirectory, KeyFileName);
-        var pems = Enumerable.Range(0, 8).Select(i => SamplePem + i).ToArray();
+        var ct = TestContext.Current.CancellationToken;
+        var pems = Enumerable.Range(0, 8).Select(i => new string((char)('a' + i), 256 * 1024)).ToArray();
 
-        var results = await Task.WhenAll(pems.Select(pem => Task.Run(
-            async () => await _sut.WriteKeyFileAsync(keyPath, pem.AsMemory(), TestContext.Current.CancellationToken),
-            TestContext.Current.CancellationToken)));
+        var outcomes = await Task.WhenAll(pems.Select(pem => Task.Run(async () =>
+        {
+            if (await _sut.WriteKeyFileAsync(keyPath, pem.AsMemory(), ct))
+                return (Won: true, Read: pem);
 
-        results.Count(written => written).Should().Be(1);
-        File.ReadAllText(keyPath).Should().Be(pems[Array.IndexOf(results, true)]);
+            using var content = await _sut.ReadKeyFileAsync(keyPath, ct);
+            return (Won: false, Read: Encoding.UTF8.GetString(content.Bytes));
+        }, ct)));
+
+        outcomes.Count(outcome => outcome.Won).Should().Be(1);
+        var winnersPem = outcomes.Single(outcome => outcome.Won).Read;
+        outcomes.Should().AllSatisfy(outcome => outcome.Read.Should().Be(winnersPem));
     }
 
     [Fact]
