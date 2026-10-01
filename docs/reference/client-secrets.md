@@ -247,15 +247,13 @@ public static ZeeKayDaAuthBuilder AddClientSecretHasher<THasher>(
 
 ### `isDefault` rules
 
-| Registered hashers | `isDefault` requirement |
-|---|---|
-| Exactly 1 | Auto-default — the flag is ignored |
-| 2 or more | Exactly one must have `isDefault: true`; zero or multiple defaults cause a startup failure |
+PBKDF2 is always registered. At most one hasher may have `isDefault: true`:
 
-Startup validation is enforced by `IValidateOptions<ClientSecretHasherRegistrationOptions>`. A
-misconfigured hasher registration prevents the host from starting with a
-`ZeeKayDaConfigurationException`: `configuration.hashers.no_default` when none is marked default,
-`configuration.hashers.multiple_defaults` when more than one is.
+| Hashers marked `isDefault: true` | Default hasher |
+|---|---|
+| None | PBKDF2 |
+| One | That hasher; PBKDF2 stays registered and keeps verifying existing PBKDF2 secrets |
+| Two or more | None — startup fails with `ZeeKayDaConfigurationException` `configuration.hashers.multiple_defaults` |
 
 ---
 

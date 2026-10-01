@@ -206,21 +206,21 @@ as the default — that is, which hasher creates new secrets and generates the t
 credential at startup. The `isDefault` parameter on `AddClientSecretHasher<T>()` controls this. The
 full selection matrix is:
 
-| Hashers registered | Explicit defaults (`isDefault: true`) | Outcome |
-|---|---|---|
-| 1 | 0 | That hasher is the default (auto-selected) |
-| 2 or more | 0 | **Startup failure** — ambiguous, cannot select a default |
-| 2 or more | 1 | The flagged hasher is the default |
-| 2 or more | 2 or more | **Startup failure** — multiple defaults conflict |
+| Explicit defaults (`isDefault: true`) | Outcome |
+|---|---|
+| 0 | PBKDF2 is the default |
+| 1 | The flagged hasher is the default |
+| 2 or more | **Startup failure** — `configuration.hashers.multiple_defaults` |
 
-The built-in PBKDF2 hasher is always registered and is the default, so it creates every new
-secret. To keep verifying secrets hashed with another algorithm, register that hasher alongside it:
+The built-in PBKDF2 hasher is always registered and, unless you mark another hasher as the
+default, creates every new secret. To keep verifying secrets hashed with another algorithm,
+register that hasher alongside it; to make your own hasher create new secrets, mark it
+`isDefault: true` — PBKDF2 stays registered, so existing PBKDF2 secrets keep verifying:
 
 ```csharp
-auth.AddClientSecretHasher<BcryptClientSecretHasher>();   // verifies old bcrypt secrets
+auth.AddClientSecretHasher<BcryptClientSecretHasher>();                  // verifies old bcrypt secrets
+auth.AddClientSecretHasher<Argon2ClientSecretHasher>(isDefault: true);   // creates new secrets
 ```
-
-A host cannot yet make its own hasher the default in place of PBKDF2.
 
 For the full `isDefault` rules and startup validation behaviour, see
 [Client secrets reference](../reference/client-secrets.md#isdefault-rules). To implement a

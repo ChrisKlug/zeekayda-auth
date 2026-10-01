@@ -456,7 +456,8 @@ public sealed class CompositeClientSecretHasherTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle()
-            .Which.Code.Should().Be("configuration.hashers.default_type_not_found");
+            .Which.Should().Match<ZeeKayDaConfigurationFailure>(f =>
+                f.Code == "configuration.hashers.default_type_not_found" && f.Message.Contains("PBKDF2"));
     }
 
     [Fact]

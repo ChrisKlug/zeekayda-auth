@@ -168,6 +168,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
                 new ZeeKayDaConfigurationFailure(
                     "configuration.hashers.default_type_not_found",
                     $"The default hasher type '{defaultType.FullName}' was not found in the " +
-                    "registered hasher list. This indicates a DI configuration inconsistency."));
+                    "registered hasher list. With no hasher marked isDefault: true the default is PBKDF2, " +
+                    "so it must stay registered."));
     }
 }

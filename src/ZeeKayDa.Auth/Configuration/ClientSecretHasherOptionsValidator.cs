@@ -22,6 +22,6 @@ internal sealed class ClientSecretHasherOptionsValidator
             failures.Add(new(
                 "configuration.hashers.multiple_defaults",
                 $"{defaultCount} IClientSecretHasher implementations are marked as default. " +
-                "Exactly one hasher must have isDefault: true."));
+                "At most one hasher may have isDefault: true; with none, PBKDF2 is the default."));
     }
 }

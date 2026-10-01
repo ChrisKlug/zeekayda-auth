@@ -74,7 +74,7 @@ public sealed class ClientSecretHasherOptionsValidatorTests
             (typeof(HasherB), true)));
 
         failures.Should().ContainSingle(f => f.Code == "configuration.hashers.multiple_defaults")
-            .Which.Message.Should().Contain("2");
+            .Which.Message.Should().Contain("2").And.Contain("At most one hasher").And.Contain("PBKDF2 is the default");
     }
 
     [Fact]
