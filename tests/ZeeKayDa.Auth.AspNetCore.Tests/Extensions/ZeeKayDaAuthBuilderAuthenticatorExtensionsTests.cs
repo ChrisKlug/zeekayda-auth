@@ -5,13 +5,15 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthBuilderAuthenticatorExtensionsTests
 {
+    private static ZeeKayDaAuthBuilder NewBuilder(IServiceCollection services) => new(new ZeeKayDaAuthCoreBuilder(services));
+
     // ── Registration ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void AddClientAuthenticator_registers_authenticator_as_IClientAuthenticator()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = NewBuilder(services);
 
         builder.AddClientAuthenticator<FakeAuthenticator>();
 
@@ -24,7 +26,7 @@ public sealed class ZeeKayDaAuthBuilderAuthenticatorExtensionsTests
     public void AddClientAuthenticator_registers_multiple_authenticators_when_called_multiple_times()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = NewBuilder(services);
 
         builder.AddClientAuthenticator<FakeAuthenticator>();
         builder.AddClientAuthenticator<AnotherFakeAuthenticator>();
@@ -38,7 +40,7 @@ public sealed class ZeeKayDaAuthBuilderAuthenticatorExtensionsTests
     public void AddClientAuthenticator_throws_InvalidOperationException_if_same_type_registered_twice()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = NewBuilder(services);
         builder.AddClientAuthenticator<FakeAuthenticator>();
 
         var act = () => builder.AddClientAuthenticator<FakeAuthenticator>();

@@ -36,7 +36,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     {
         // An extension method is callable on a null receiver, so the guard is the only thing between
         // a null builder and a NullReferenceException from builder.Services one line later.
-        ZeeKayDaAuthBuilder builder = null!;
+        ZeeKayDaAuthCoreBuilder builder = null!;
 
         var act = () => builder.AddAzureKeyVaultRemoteSigning(
             KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
@@ -47,7 +47,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     [Fact]
     public void AddAzureKeyVaultCachedSigning_throws_ArgumentNullException_when_builder_is_null()
     {
-        ZeeKayDaAuthBuilder builder = null!;
+        ZeeKayDaAuthCoreBuilder builder = null!;
 
         var act = () => builder.AddAzureKeyVaultCachedSigning(
             CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());

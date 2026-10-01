@@ -51,7 +51,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configure);
 
-        var builder = services.AddZeeKayDaAuthCore(configure);
+        var builder = new ZeeKayDaAuthBuilder(services.AddZeeKayDaAuthCore(configure));
 
         // A repeated call adds only its configure delegate: the cookie schemes below cannot be
         // registered twice, so the HTTP surface is registered by the first call alone.

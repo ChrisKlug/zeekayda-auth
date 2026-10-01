@@ -6,13 +6,14 @@ using ZeeKayDa.Auth.Clients;
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
-/// Extension methods for registering client repositories with <see cref="ZeeKayDaAuthBuilder"/>.
+/// Extension methods for registering client repositories with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
 public static class ZeeKayDaAuthBuilderClientExtensions
 {
     /// <summary>
     /// Registers an in-memory client repository populated by the given <paramref name="configure"/> callback.
     /// </summary>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="configure">
     /// A callback that receives an <see cref="IInMemoryClientRegistrationBuilder"/> to register
@@ -28,9 +29,10 @@ public static class ZeeKayDaAuthBuilderClientExtensions
     /// and constructed (including secret hashing) at host startup, so misconfiguration (duplicate
     /// client_id, invalid client, hashing failure) fails fast rather than at the first request.
     /// </remarks>
-    public static ZeeKayDaAuthBuilder AddInMemoryClients(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder AddInMemoryClients<TBuilder>(
+        this TBuilder builder,
         Action<IInMemoryClientRegistrationBuilder> configure)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);

@@ -29,11 +29,18 @@ though no signature names `HttpContext`); the typed interaction stores, which bi
 browser cookie; client authentication; and external providers. Options and their validation,
 clients, scopes, stores, token issuance and the startup checks on them are Core, registered by
 `AddZeeKayDaAuthCore(configure)`, which `AddZeeKayDaAuth(configure)` calls before adding the HTTP
-surface. `ZeeKayDaAuthBuilder` has no public constructor, so every builder comes from one of the two
-and Core is always registered (`A_core_only_host_validates_the_server_options_at_startup`). Core takes
-`Microsoft.Extensions.*` and one `Microsoft.AspNetCore.*` package, `Microsoft.AspNetCore.DataProtection`
-— host-agnostic despite its name, and what the Core token stores encrypt with. Any further one needs
-its own justification. This is a review rule, not a build rule — nothing in CI enforces it.
+surface. Neither builder has a public constructor, so Core is always registered
+(`A_core_only_host_validates_the_server_options_at_startup`). Core takes `Microsoft.Extensions.*` and
+`Microsoft.AspNetCore.DataProtection` — host-agnostic despite its name, and what the Core token
+stores encrypt with. Any further package needs its own justification. This is a review rule, not a build rule — nothing in CI enforces it.
+
+**Two builders, so an HTTP-only extension does not compile on a Core-only host.**
+`AddZeeKayDaAuthCore` returns `ZeeKayDaAuthCoreBuilder`; `AddZeeKayDaAuth` returns the sealed,
+derived `ZeeKayDa.Auth.AspNetCore.ZeeKayDaAuthBuilder`, which alone carries `WithProviders` and
+`AddClientAuthenticator`. Core extensions are generic over the builder (`where TBuilder :
+ZeeKayDaAuthCoreBuilder`) so a chain keeps its type; one with its own type argument cannot be, since C#
+infers none while the caller supplies one, so AspNetCore redeclares it as a forwarding overload — a
+new one needs its twin. A self-typed generic base was rejected: harder to read, same third-party gap.
 
 **Every ZeeKayDa route is mapped into one group carrying two filters.** The first rejects any
 request that is not HTTPS with `421 Misdirected Request`; the only exemption is a loopback remote

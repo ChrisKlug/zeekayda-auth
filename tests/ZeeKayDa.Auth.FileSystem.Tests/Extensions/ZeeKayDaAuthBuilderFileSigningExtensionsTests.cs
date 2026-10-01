@@ -1,5 +1,5 @@
 // These tests exercise the DI wiring for AddPemFileSigning/AddPfxFileSigning end to end — a real
-// ServiceCollection / ZeeKayDaAuthBuilder / ServiceProvider. Neither extension method ever calls
+// ServiceCollection / ZeeKayDaAuthCoreBuilder / ServiceProvider. Neither extension method ever calls
 // GetSigningKeysAsync during registration, so a real (but never-loaded) path is sufficient here;
 // the real-filesystem load path itself is covered by PemFileSigningJwtSigningServiceTests /
 // PfxFileSigningJwtSigningServiceTests and Integration/FileSigningIntegrationTests.
@@ -20,7 +20,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     private const string PemPath = "/etc/zeekayda/signing.pem";
     private const string PfxPath = "/etc/zeekayda/signing.pfx";
 
-    private static ZeeKayDaAuthBuilder NewBuilder()
+    private static ZeeKayDaAuthCoreBuilder NewBuilder()
     {
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
@@ -28,7 +28,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     }
 
     /// <summary>Runs the registered hosted services' startup, which is where startup validation runs.</summary>
-    private static async Task StartAsync(Action<ZeeKayDaAuthBuilder> configure)
+    private static async Task StartAsync(Action<ZeeKayDaAuthCoreBuilder> configure)
     {
         var builder = NewBuilder();
         builder.Services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
@@ -50,7 +50,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     [Fact]
     public void AddPemFileSigning_slots_overload_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
+        var act = () => ((ZeeKayDaAuthCoreBuilder)null!).AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }
@@ -70,7 +70,7 @@ public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
     [Fact]
     public void AddPfxFileSigning_slots_overload_throws_ArgumentNullException_when_builder_is_null()
     {
-        var act = () => ((ZeeKayDaAuthBuilder)null!).AddPfxFileSigning(SigningAlgorithm.RS256, _ => { });
+        var act = () => ((ZeeKayDaAuthCoreBuilder)null!).AddPfxFileSigning(SigningAlgorithm.RS256, _ => { });
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
     }

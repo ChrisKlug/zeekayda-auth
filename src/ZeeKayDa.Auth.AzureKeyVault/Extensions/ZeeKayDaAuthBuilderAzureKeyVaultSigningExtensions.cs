@@ -11,7 +11,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Extension methods for registering Azure Key Vault as a JWT signing key provider with
-/// <see cref="ZeeKayDaAuthBuilder"/>: either <see cref="AddAzureKeyVaultRemoteSigning"/> (signing
+/// <see cref="ZeeKayDaAuthCoreBuilder"/>: either <see cref="AddAzureKeyVaultRemoteSigning"/> (signing
 /// stays inside Key Vault) or <see cref="AddAzureKeyVaultCachedSigning"/> (the private key is
 /// downloaded once and cached in process memory for local signing).
 /// </summary>
@@ -45,6 +45,7 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// ineligible key.
     /// </para>
     /// </remarks>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="keyIdentifier">The Key Vault (or Managed HSM) key to sign with.</param>
     /// <param name="algorithm">The JWS algorithm to sign with.</param>
@@ -61,12 +62,13 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// Thrown when a signing key provider has already been registered. Only one is allowed.
     /// </exception>
     /// <seealso cref="AddAzureKeyVaultCachedSigning"/>
-    public static ZeeKayDaAuthBuilder AddAzureKeyVaultRemoteSigning(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder AddAzureKeyVaultRemoteSigning<TBuilder>(
+        this TBuilder builder,
         KeyVaultKeyIdentifier keyIdentifier,
         SigningAlgorithm algorithm,
         TokenCredential credential,
         Action<AzureKeyVaultRemoteSigningOptions>? configure = null)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(credential);
@@ -110,6 +112,7 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// private key must never leave the vault.
     /// </para>
     /// <para>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <paramref name="certificateIdentifier"/> must name a Key Vault <b>certificate</b> created
     /// with an exportable key policy. Key-only <c>KeyClient.GetKeyAsync</c> never returns private
     /// key material, so this provider downloads the certificate's linked secret instead, which
@@ -152,12 +155,13 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
     /// Thrown when a signing key provider has already been registered. Only one is allowed.
     /// </exception>
     /// <seealso cref="AddAzureKeyVaultRemoteSigning"/>
-    public static ZeeKayDaAuthBuilder AddAzureKeyVaultCachedSigning(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder AddAzureKeyVaultCachedSigning<TBuilder>(
+        this TBuilder builder,
         KeyVaultCertificateIdentifier certificateIdentifier,
         SigningAlgorithm algorithm,
         TokenCredential credential,
         Action<AzureKeyVaultCachedSigningOptions>? configure = null)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(credential);

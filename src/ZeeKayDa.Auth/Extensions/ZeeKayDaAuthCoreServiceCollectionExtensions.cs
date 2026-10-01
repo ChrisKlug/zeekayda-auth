@@ -31,7 +31,7 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
     /// <see cref="AuthorizationServerOptions.Issuer"/> must be set.
     /// </param>
     /// <returns>
-    /// A <see cref="ZeeKayDaAuthBuilder"/> that can be used to register optional features.
+    /// A <see cref="ZeeKayDaAuthCoreBuilder"/> that can be used to register optional features.
     /// </returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="services"/> or <paramref name="configure"/> is
@@ -43,7 +43,7 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
     /// host that does not serve the protocol over ASP.NET Core. A repeated call adds its
     /// <paramref name="configure"/> delegate and registers nothing twice.
     /// </remarks>
-    public static ZeeKayDaAuthBuilder AddZeeKayDaAuthCore(
+    public static ZeeKayDaAuthCoreBuilder AddZeeKayDaAuthCore(
         this IServiceCollection services,
         Action<AuthorizationServerOptions> configure)
     {
@@ -91,7 +91,7 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
 
         // Every other registration here is a TryAdd; this guard is what keeps a repeated call from
         // throwing on the hasher's one-registration-per-type rule.
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         if (!services.Any(descriptor => descriptor.ImplementationType == typeof(Pbkdf2ClientSecretHasher)))
             builder.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
         services.TryAddEnumerable(

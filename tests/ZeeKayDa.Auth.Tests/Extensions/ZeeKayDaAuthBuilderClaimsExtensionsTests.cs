@@ -12,7 +12,7 @@ public sealed class ZeeKayDaAuthBuilderClaimsExtensionsTests
     {
         var services = new ServiceCollection();
 
-        new ZeeKayDaAuthBuilder(services).AddClaimsProvider<NoClaimsProvider>();
+        new ZeeKayDaAuthCoreBuilder(services).AddClaimsProvider<NoClaimsProvider>();
 
         var descriptor = services.Should().ContainSingle(d => d.ServiceType == typeof(IClaimsProvider)).Subject;
         descriptor.ImplementationType.Should().Be(typeof(NoClaimsProvider));
@@ -23,7 +23,7 @@ public sealed class ZeeKayDaAuthBuilderClaimsExtensionsTests
     public void A_later_registration_replaces_an_earlier_one()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddClaimsProvider<NoClaimsProvider>().AddClaimsProvider<OtherClaimsProvider>();
 
@@ -47,7 +47,7 @@ public sealed class ZeeKayDaAuthBuilderClaimsExtensionsTests
     [Fact]
     public void AddClaimsProvider_returns_the_builder_for_chaining()
     {
-        var builder = new ZeeKayDaAuthBuilder(new ServiceCollection());
+        var builder = new ZeeKayDaAuthCoreBuilder(new ServiceCollection());
 
         builder.AddClaimsProvider<NoClaimsProvider>().Should().BeSameAs(builder);
     }

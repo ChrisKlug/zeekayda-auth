@@ -13,7 +13,7 @@ public sealed class TokenStorePresenceVerifierTests
     // interfaces via the public builder methods and let the provider's own
     // IServiceProviderIsService report on them truthfully.
 
-    private static ZeeKayDaAuthBuilder CreateBuilder(ServiceCollection services)
+    private static ZeeKayDaAuthCoreBuilder CreateBuilder(ServiceCollection services)
         => new(services);
 
     [Fact]

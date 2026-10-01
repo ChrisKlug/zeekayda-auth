@@ -37,7 +37,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     [Fact]
     public void AddInMemoryDevelopmentSigning_throws_ArgumentNullException_when_builder_is_null()
     {
-        ZeeKayDaAuthBuilder builder = null!;
+        ZeeKayDaAuthCoreBuilder builder = null!;
 
         var act = () => builder.AddInMemoryDevelopmentSigning();
 
@@ -47,7 +47,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     [Fact]
     public void AddPersistedDevelopmentSigning_throws_ArgumentNullException_when_builder_is_null()
     {
-        ZeeKayDaAuthBuilder builder = null!;
+        ZeeKayDaAuthCoreBuilder builder = null!;
 
         var act = () => builder.AddPersistedDevelopmentSigning();
 
@@ -62,7 +62,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryDevelopmentSigning();
 
@@ -78,7 +78,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryDevelopmentSigning();
 
@@ -92,7 +92,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryDevelopmentSigning();
 
@@ -106,7 +106,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryDevelopmentSigning();
 
@@ -125,7 +125,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
         var customTimeProvider = new StubTimeProvider();
         services.AddSingleton<TimeProvider>(customTimeProvider);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddInMemoryDevelopmentSigning();
 
         await using var provider = services.BuildServiceProvider();
@@ -140,7 +140,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryDevelopmentSigning();
 
@@ -156,7 +156,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         var returned = builder.AddInMemoryDevelopmentSigning();
 
@@ -168,7 +168,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryDevelopmentSigning(o =>
             o.AllowedEnvironments = ["Development", "IntegrationTesting"]);
@@ -184,7 +184,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryDevelopmentSigning(o =>
             o.AllowedEnvironments = ["Development", "IntegrationTesting"]);
@@ -201,7 +201,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddInMemoryDevelopmentSigning();
 
         var act = () => builder.AddInMemoryDevelopmentSigning();
@@ -217,7 +217,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddPersistedDevelopmentSigning();
 
@@ -233,7 +233,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddPersistedDevelopmentSigning(persistTo: null);
 
@@ -251,7 +251,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddPersistedDevelopmentSigning(persistTo: "/custom/keys");
 
@@ -265,7 +265,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddPersistedDevelopmentSigning(
             persistTo: "/custom/keys",
@@ -282,7 +282,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         var returned = builder.AddPersistedDevelopmentSigning();
 
@@ -296,7 +296,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddPersistedDevelopmentSigning();
 
         var act = () => builder.AddPersistedDevelopmentSigning();
@@ -310,7 +310,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddInMemoryDevelopmentSigning();
 
         try
@@ -333,7 +333,7 @@ public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddInMemoryDevelopmentSigning();
 
         var act = () => builder.AddPersistedDevelopmentSigning();

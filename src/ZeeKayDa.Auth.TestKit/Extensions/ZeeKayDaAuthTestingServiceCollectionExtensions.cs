@@ -19,13 +19,13 @@ public static class ZeeKayDaAuthTestingServiceCollectionExtensions
     /// <see cref="IHostEnvironment"/> when none is registered.
     /// </summary>
     /// <param name="services">The service collection to add services to.</param>
-    /// <returns>The <see cref="ZeeKayDaAuthBuilder"/>, for the package under test to register on.</returns>
+    /// <returns>The <see cref="ZeeKayDaAuthCoreBuilder"/>, for the package under test to register on.</returns>
     /// <remarks>
     /// Logging is not registered; add it the way the test wants it. Change the issuer or any other
     /// server option with <c>services.Configure&lt;AuthorizationServerOptions&gt;()</c>.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
-    public static ZeeKayDaAuthBuilder AddZeeKayDaAuthCoreForTesting(this IServiceCollection services)
+    public static ZeeKayDaAuthCoreBuilder AddZeeKayDaAuthCoreForTesting(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
 

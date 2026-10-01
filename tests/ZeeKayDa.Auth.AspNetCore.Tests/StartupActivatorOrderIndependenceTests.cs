@@ -89,7 +89,7 @@ public sealed class StartupActivatorOrderIndependenceTests
 
                 // What a provider package's sample looks like when signing comes first.
                 if (signingFirst)
-                    new ZeeKayDaAuthBuilder(services).AddSigningKeySource<TestSigningKeySource>();
+                    new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<TestSigningKeySource>();
 
                 var authBuilder = services.AddZeeKayDaAuth(options =>
                 {

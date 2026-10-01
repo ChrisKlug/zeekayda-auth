@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.StartupVerification;
@@ -77,14 +78,6 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
 
         try
         {
-            // What every provider package's handler needs at runtime, for a builder constructed
-            // outside AddZeeKayDaAuth. Guarded rather than relied on to be idempotent, since
-            // AddAuthentication adds a descriptor per call; inside the rollback, so a failed first
-            // call leaves nothing behind; and ahead of the window, so it is not mistaken for
-            // something the callback registered.
-            if (!services.Any(descriptor => descriptor.ServiceType == typeof(IAuthenticationSchemeProvider)))
-                services.AddAuthentication();
-
             var observed = ProviderRegistrationWindow.Observe(services, configure);
             var registry = ProviderRegistry.FindIn(services).Add(observed);
             ProviderRegistry.RegisterIn(services, registry);

@@ -23,7 +23,7 @@ public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsT
 
     private static CertificateLookup Certificate() => CertificateLookup.ByThumbprint(Thumbprint);
 
-    private static ZeeKayDaAuthBuilder NewBuilder()
+    private static ZeeKayDaAuthCoreBuilder NewBuilder()
     {
         var services = new ServiceCollection();
         services.AddSingleton<ICertificateStoreReader>(new FakeCertificateStoreReader());

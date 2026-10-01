@@ -1,5 +1,5 @@
 // These tests exercise the full DI wiring for AddAzureKeyVaultRemoteSigning end to end — a real
-// ServiceCollection / ZeeKayDaAuthBuilder / ServiceProvider, driven through the host's real startup
+// ServiceCollection / ZeeKayDaAuthCoreBuilder / ServiceProvider, driven through the host's real startup
 // path — with fakes substituted for the two Key Vault seams (IKeyVaultKeyReader / IKeyVaultSigner).
 // No real network calls are made and no live Azure Key Vault access is required or attempted.
 //

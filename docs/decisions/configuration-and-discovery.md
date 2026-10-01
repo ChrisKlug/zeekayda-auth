@@ -31,7 +31,7 @@ safety gate that is inert unless some other opt-in was also registered is not me
 does not license hoisting it onto the shared root. It co-locates with the feature that introduced it,
 usually as a parameter on the registration method rather than a bindable option.
 
-**Options carry data; the builder carries registrations.** `ZeeKayDaAuthBuilder` is the
+**Options carry data; the builder carries registrations.** The builders are the
 service-registration surface — stores, signing providers, hashers, authenticators — and options data
 never migrates onto it. Per-endpoint *behaviour* customisation goes through narrow, DI-resolved,
 single-purpose interfaces. Builder-extension configuration methods were rejected: they split

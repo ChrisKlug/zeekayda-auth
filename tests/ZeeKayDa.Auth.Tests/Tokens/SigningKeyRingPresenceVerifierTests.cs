@@ -37,7 +37,7 @@ public sealed class SigningKeyRingPresenceVerifierTests
     public async Task VerifyAsync_completes_without_failures_when_a_signing_key_source_is_registered()
     {
         var services = new ServiceCollection();
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<StubSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<StubSigningKeySource>();
         using var provider = services.BuildServiceProvider();
         var sut = new SigningKeyRingPresenceVerifier();
         var context = new StartupVerificationContext();
@@ -99,7 +99,7 @@ public sealed class SigningKeyRingPresenceVerifierTests
         // IServiceProviderIsService, because that is the only path that resolves the ring at all —
         // the default container answers without invoking the factory.
         var services = new ServiceCollection();
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<UnconstructableSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<UnconstructableSigningKeySource>();
         using var inner = services.BuildServiceProvider();
         var sut = new SigningKeyRingPresenceVerifier();
         var context = new StartupVerificationContext();

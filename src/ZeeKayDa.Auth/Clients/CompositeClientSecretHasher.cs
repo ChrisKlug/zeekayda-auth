@@ -157,7 +157,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
                 new ZeeKayDaConfigurationFailure(
                     "configuration.hashers.none_registered",
                     "No IClientSecretHasher implementations are registered. " +
-                    "Call AddClientSecretHasher<T>() on the ZeeKayDaAuthBuilder."));
+                    "Call AddClientSecretHasher<T>() on the ZeeKayDa.Auth builder."));
 
         if (hashers.Count == 1)
             return hashers[0];

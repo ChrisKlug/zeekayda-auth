@@ -3,16 +3,19 @@ using Microsoft.Extensions.DependencyInjection;
 namespace ZeeKayDa.Auth;
 
 /// <summary>
-/// A builder for configuring ZeeKayDa.Auth services.
+/// A builder for configuring the ZeeKayDa.Auth services that do not need HTTP.
 /// </summary>
 /// <remarks>
-/// Returned by <c>AddZeeKayDaAuth(configure)</c> and <c>AddZeeKayDaAuthCore(configure)</c>, the only
-/// ways to get one. Use extension methods on this builder to register optional features (signing
-/// keys, client stores, etc.) without adding properties to <see cref="AuthorizationServerOptions"/>.
+/// Returned by <c>AddZeeKayDaAuthCore(configure)</c>; <c>AddZeeKayDaAuth(configure)</c> returns the
+/// derived ASP.NET Core builder. Use extension methods on this builder to register optional features
+/// (signing keys, client stores, etc.) without adding properties to
+/// <see cref="AuthorizationServerOptions"/>. An extension that returns the builder is generic over
+/// it, <c>TBuilder AddX&lt;TBuilder&gt;(this TBuilder builder) where TBuilder : ZeeKayDaAuthCoreBuilder</c>,
+/// so a chain started on a derived builder keeps its type.
 /// </remarks>
-public sealed class ZeeKayDaAuthBuilder
+public class ZeeKayDaAuthCoreBuilder
 {
-    internal ZeeKayDaAuthBuilder(IServiceCollection services) => Services = services;
+    internal ZeeKayDaAuthCoreBuilder(IServiceCollection services) => Services = services;
 
     /// <summary>
     /// Throws <see cref="InvalidOperationException"/> if <paramref name="serviceType"/> is
