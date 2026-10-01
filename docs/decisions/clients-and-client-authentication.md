@@ -32,18 +32,18 @@ still compares explicitly and counts by enumerating: swapping such a loop for `.
 `.Contains` changes behaviour, and the `MiscountingSet` tests pin it. Framework code past the
 snapshot compares explicitly too, so a path that skips it stays safe.
 
-**`IsPublic` is declared, never derived, and the three-way consistency rule is enforced at
-registration:** public ⇔ no credentials ⇔ auth methods are exactly `{ "none" }`. A default
-interface method computing it would let a configuration omission quietly change security behaviour
-instead of failing a startup check. A default interface method is used only where the default is
-the safe or the forward-compatible answer, never to excuse an omission: the signing-algorithm
-allowlist (`null` inherits the server default), `AllowedPromptValues` (empty permits every value, so
-a new one needs no change), `DisplayName` and `InitiateLoginUri` (`null`: none), `RequireConsent` (`true`: an
-implementation that says nothing requires consent), `RequirePkce` (`true`: a
-registration that says nothing is held to PKCE), the two token lifetimes (`null`: the server's
-validated value) and the three claim additions (empty: a registration that says nothing widens
-nothing). Every one of them is in the registration fingerprint, because each changes what a
-client is issued; a test fails the build when a member is added to either interface and not to it.
+**Every `IClient` member but `ClientId` has a default, and each is the safe answer**, from one
+internal `ClientDefaults` the interface, the `Client` record and `ClientOptions` all read
+(`The_interface_the_record_and_the_options_default_every_member_alike`). So a store's entity
+implements only what it means (`A_custom_entity_implementing_only_its_id_credentials_redirect_URIs_and_scopes_is_a_valid_confidential_client`).
+`IsPublic` defaults to `false` and is never computed from the credentials: a public client that
+forgets to say so has no secret and fails the three-way rule, enforced at registration — public ⇔ no
+credentials ⇔ auth methods exactly `{ "none" }`, which default from `IsPublic`. Redirect, post-logout
+and prompt sets, scopes and claim additions are empty (an empty prompt set permits every value);
+grant, response type and mode the code flow; consent and PKCE on; logout confirmation shown, zkd
+error codes off; the rest `null`. A mistyped implementation compiles and serves the default, so
+`Client` and the snapshot must implement every member, as must the fingerprint
+(`Every_IClient_member_is_implemented_and_never_left_to_the_interface_default`).
 
 **A client's claim additions are selectors, never sources, and never remove.** `AdditionalIdTokenClaims`,
 `AdditionalUserInfoClaims` and `AdditionalAccessTokenClaims` widen what the granted scopes unlock for

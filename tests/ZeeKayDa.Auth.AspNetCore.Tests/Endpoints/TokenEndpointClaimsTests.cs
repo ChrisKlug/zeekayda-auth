@@ -89,8 +89,8 @@ public sealed class TokenEndpointClaimsTests : IDisposable
                     .Add(Client.CreatePublic(TenantApp, [Redirect], [], ["openid", "profile"]) with
                     {
                         RequireConsent = false,
-                        AdditionalIdTokenClaims = ["tenant"],
-                        AdditionalAccessTokenClaims = ["tenant"],
+                        AdditionalIdTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
+                        AdditionalAccessTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
                     }));
             });
     }
@@ -219,7 +219,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     {
         using var host = new EndpointHost(
             configureBuilder: builder => builder.AddInMemoryClients(clients => clients.Add(
-                Client.CreatePublic("bad", [Redirect], [], ["openid"]) with { AdditionalAccessTokenClaims = ["email"] })));
+                Client.CreatePublic("bad", [Redirect], [], ["openid"]) with { AdditionalAccessTokenClaims = new HashSet<string>(["email"], StringComparer.Ordinal) })));
 
         var failure = await host.StartupFailureAsync();
 

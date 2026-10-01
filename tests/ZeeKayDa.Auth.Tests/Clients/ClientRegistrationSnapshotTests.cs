@@ -282,9 +282,9 @@ public class ClientRegistrationSnapshotTests
         AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 },
         AccessTokenLifetime = TimeSpan.FromMinutes(10),
         IdTokenLifetime = TimeSpan.FromMinutes(5),
-        AdditionalIdTokenClaims = ["tenant"],
-        AdditionalUserInfoClaims = ["department"],
-        AdditionalAccessTokenClaims = ["region"],
+        AdditionalIdTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
+        AdditionalUserInfoClaims = new HashSet<string>(["department"], StringComparer.Ordinal),
+        AdditionalAccessTokenClaims = new HashSet<string>(["region"], StringComparer.Ordinal),
         // The framework's own type, because the snapshot serves every IPbkdf2ClientSecret as one and
         // the fingerprint includes the credential's type.
         Credentials = [new Pbkdf2ClientSecret(600_000, [9, 9, 9], [1, 2, 3])],
@@ -321,9 +321,9 @@ public class ClientRegistrationSnapshotTests
                 r.AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 },
             ["AccessTokenLifetime"] = r => r.AccessTokenLifetime = TimeSpan.FromMinutes(10),
             ["IdTokenLifetime"] = r => r.IdTokenLifetime = TimeSpan.FromMinutes(1),
-            ["AdditionalIdTokenClaims"] = r => r.AdditionalIdTokenClaims = ["tenant"],
-            ["AdditionalUserInfoClaims"] = r => r.AdditionalUserInfoClaims = ["tenant"],
-            ["AdditionalAccessTokenClaims"] = r => r.AdditionalAccessTokenClaims = ["tenant"],
+            ["AdditionalIdTokenClaims"] = r => r.AdditionalIdTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
+            ["AdditionalUserInfoClaims"] = r => r.AdditionalUserInfoClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
+            ["AdditionalAccessTokenClaims"] = r => r.AdditionalAccessTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
             ["Credentials"] = r => r.Credentials = [new StubPbkdf2Secret()],
         };
 
@@ -374,11 +374,11 @@ public class ClientRegistrationSnapshotTests
 
         public TimeSpan? IdTokenLifetime { get; set; }
 
-        public IReadOnlyCollection<string> AdditionalIdTokenClaims { get; set; } = [];
+        public IReadOnlySet<string> AdditionalIdTokenClaims { get; set; } = new HashSet<string>(StringComparer.Ordinal);
 
-        public IReadOnlyCollection<string> AdditionalUserInfoClaims { get; set; } = [];
+        public IReadOnlySet<string> AdditionalUserInfoClaims { get; set; } = new HashSet<string>(StringComparer.Ordinal);
 
-        public IReadOnlyCollection<string> AdditionalAccessTokenClaims { get; set; } = [];
+        public IReadOnlySet<string> AdditionalAccessTokenClaims { get; set; } = new HashSet<string>(StringComparer.Ordinal);
 
         public IReadOnlyList<IClientCredential> Credentials { get; set; } = [];
     }

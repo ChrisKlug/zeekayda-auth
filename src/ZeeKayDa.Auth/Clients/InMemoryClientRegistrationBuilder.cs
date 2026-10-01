@@ -18,7 +18,7 @@ internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistr
         Action<PublicClientOptions>? configure = null)
     {
         var registration = Client.CreatePublic(clientId, redirectUris, postLogoutRedirectUris, allowedScopes);
-        _options.PreBuilt.Add(Configure(registration, configure, defaults => new PublicClientOptions(defaults)));
+        _options.PreBuilt.Add(Configure(registration, configure, () => new PublicClientOptions()));
         return this;
     }
 
@@ -35,7 +35,7 @@ internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistr
         var registration = Client.CreateConfidentialWithoutCredential(
             clientId, redirectUris, postLogoutRedirectUris, allowedScopes);
         _options.Pending.Add(new PendingConfidentialClientSpec(
-            Configure(registration, configure, defaults => new ConfidentialClientOptions(defaults)),
+            Configure(registration, configure, () => new ConfidentialClientOptions()),
             clientSecret));
         return this;
     }
@@ -50,13 +50,13 @@ internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistr
     private static Client Configure<TOptions>(
         Client registration,
         Action<TOptions>? configure,
-        Func<Client, TOptions> createOptions)
+        Func<TOptions> createOptions)
         where TOptions : ClientOptions
     {
         if (configure is null)
             return registration;
 
-        var options = createOptions(registration);
+        var options = createOptions();
         configure(options);
         return options.ApplyTo(registration);
     }

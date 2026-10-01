@@ -26,76 +26,77 @@ public sealed record Client : IClientWithCredentials
     public required string ClientId { get; init; }
 
     /// <inheritdoc/>
-    public required IReadOnlyList<IClientCredential> Credentials { get; init; }
+    public IReadOnlyList<IClientCredential> Credentials { get; init; } = [];
 
     /// <inheritdoc/>
-    public required bool IsPublic { get; init; }
+    public bool IsPublic { get; init; } = ClientDefaults.IsPublic;
 
     /// <inheritdoc/>
-    public required IReadOnlySet<string> RedirectUris { get; init; }
+    public IReadOnlySet<string> RedirectUris { get; init; } = ClientDefaults.RedirectUris;
 
     /// <inheritdoc/>
-    public required IReadOnlySet<string> PostLogoutRedirectUris { get; init; }
+    public IReadOnlySet<string> PostLogoutRedirectUris { get; init; } = ClientDefaults.PostLogoutRedirectUris;
 
     /// <inheritdoc/>
-    public IReadOnlySet<string> AllowedScopes { get; init; }
-        = new HashSet<string>(StringComparer.Ordinal);
+    public IReadOnlySet<string> AllowedScopes { get; init; } = ClientDefaults.AllowedScopes;
 
     /// <inheritdoc/>
-    public IReadOnlySet<GrantType> AllowedGrantTypes { get; init; }
-        = new HashSet<GrantType> { GrantType.AuthorizationCode };
+    public IReadOnlySet<GrantType> AllowedGrantTypes { get; init; } = ClientDefaults.AllowedGrantTypes;
 
     /// <inheritdoc/>
-    public IReadOnlySet<ResponseType> AllowedResponseTypes { get; init; }
-        = new HashSet<ResponseType> { ResponseType.Code };
+    public IReadOnlySet<ResponseType> AllowedResponseTypes { get; init; } = ClientDefaults.AllowedResponseTypes;
 
     /// <inheritdoc/>
-    public IReadOnlySet<ResponseMode> AllowedResponseModes { get; init; }
-        = new HashSet<ResponseMode> { ResponseMode.Query };
+    public IReadOnlySet<ResponseMode> AllowedResponseModes { get; init; } = ClientDefaults.AllowedResponseModes;
+
+    // Unset, it follows IsPublic, whichever order the initialiser sets them in.
+    private readonly IReadOnlySet<string>? _allowedTokenEndpointAuthMethods;
 
     /// <inheritdoc/>
-    public IReadOnlySet<string> AllowedTokenEndpointAuthMethods { get; init; }
-        = new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.ClientSecretBasic };
+    public IReadOnlySet<string> AllowedTokenEndpointAuthMethods
+    {
+        get => _allowedTokenEndpointAuthMethods ?? ClientDefaults.AllowedTokenEndpointAuthMethods(IsPublic);
+        init => _allowedTokenEndpointAuthMethods = value;
+    }
 
     /// <inheritdoc/>
-    public IReadOnlySet<PromptValue> AllowedPromptValues { get; init; }
-        = new HashSet<PromptValue>();
+    public IReadOnlySet<PromptValue> AllowedPromptValues { get; init; } = ClientDefaults.AllowedPromptValues;
 
     /// <inheritdoc/>
-    public bool EnableZkdErrorCodes { get; init; }
+    public bool EnableZkdErrorCodes { get; init; } = ClientDefaults.EnableZkdErrorCodes;
 
     /// <inheritdoc/>
-    public string? DisplayName { get; init; }
+    public string? DisplayName { get; init; } = ClientDefaults.DisplayName;
 
     /// <inheritdoc/>
-    public string? InitiateLoginUri { get; init; }
+    public string? InitiateLoginUri { get; init; } = ClientDefaults.InitiateLoginUri;
 
     /// <inheritdoc/>
-    public bool RequireConsent { get; init; } = true;
+    public bool RequireConsent { get; init; } = ClientDefaults.RequireConsent;
 
     /// <inheritdoc/>
-    public bool SkipLogoutConfirmation { get; init; }
+    public bool SkipLogoutConfirmation { get; init; } = ClientDefaults.SkipLogoutConfirmation;
 
     /// <inheritdoc/>
-    public bool RequirePkce { get; init; } = true;
+    public bool RequirePkce { get; init; } = ClientDefaults.RequirePkce;
 
     /// <inheritdoc/>
-    public IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms { get; init; }
+    public IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms { get; init; } = ClientDefaults.AllowedSigningAlgorithms;
 
     /// <inheritdoc/>
-    public TimeSpan? AccessTokenLifetime { get; init; }
+    public TimeSpan? AccessTokenLifetime { get; init; } = ClientDefaults.AccessTokenLifetime;
 
     /// <inheritdoc/>
-    public TimeSpan? IdTokenLifetime { get; init; }
+    public TimeSpan? IdTokenLifetime { get; init; } = ClientDefaults.IdTokenLifetime;
 
     /// <inheritdoc/>
-    public IReadOnlyCollection<string> AdditionalIdTokenClaims { get; init; } = [];
+    public IReadOnlySet<string> AdditionalIdTokenClaims { get; init; } = ClientDefaults.AdditionalClaims;
 
     /// <inheritdoc/>
-    public IReadOnlyCollection<string> AdditionalUserInfoClaims { get; init; } = [];
+    public IReadOnlySet<string> AdditionalUserInfoClaims { get; init; } = ClientDefaults.AdditionalClaims;
 
     /// <inheritdoc/>
-    public IReadOnlyCollection<string> AdditionalAccessTokenClaims { get; init; } = [];
+    public IReadOnlySet<string> AdditionalAccessTokenClaims { get; init; } = ClientDefaults.AdditionalClaims;
 
     /// <summary>
     /// Creates a confidential client registration with the given pre-built credential.
@@ -152,13 +153,10 @@ public sealed record Client : IClientWithCredentials
         new()
         {
             ClientId = clientId,
-            Credentials = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(redirectUris, StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(postLogoutRedirectUris, StringComparer.Ordinal),
             AllowedScopes = new HashSet<string>(allowedScopes, StringComparer.Ordinal),
-            AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal)
-                { TokenEndpointAuthMethods.None },
         };
 
     // A confidential registration whose credential is added later — by the in-memory builder,
@@ -172,7 +170,6 @@ public sealed record Client : IClientWithCredentials
         new()
         {
             ClientId = clientId,
-            Credentials = [],
             IsPublic = false,
             RedirectUris = new HashSet<string>(redirectUris, StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(postLogoutRedirectUris, StringComparer.Ordinal),

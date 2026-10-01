@@ -9,8 +9,8 @@ namespace ZeeKayDa.Auth.Clients;
 /// scope the user can decline.
 /// </summary>
 /// <remarks>
-/// Checked across every destination on purpose. A per-destination check would let
-/// <c>AdditionalAccessTokenClaims = ["email"]</c> through, since no scope lists <c>email</c> for
+/// Checked across every destination on purpose. A per-destination check would let an access-token
+/// addition of <c>email</c> through, since no scope lists <c>email</c> for
 /// the access token, and an API would then read a claim the user never consented to. Compared
 /// ignoring case, because a consuming <c>ClaimsPrincipal</c> does: an addition of <c>Email</c>
 /// would otherwise deliver what a client's <c>FindFirst("email")</c> reads. Runs on every lookup
