@@ -63,13 +63,17 @@ public sealed class ClientCredentialsReachTests
             .Any(i => LooksUpCredentials(ResolveOrNull(method.Module, BitConverter.ToInt32(il, i + 1))));
     }
 
-    // The resolver's credentials lookup, or any repository's lookup, on the interface or a concrete store.
     private static bool LooksUpCredentials(MethodBase? called) =>
-        called is not null
-        && ((called.DeclaringType == typeof(ValidatedClientResolver)
-                && called.Name == nameof(ValidatedClientResolver.FindClientWithCredentialsAsync))
-            || (typeof(IClientRepository).IsAssignableFrom(called.DeclaringType)
-                && called.Name == nameof(IClientRepository.FindByClientIdAsync)));
+        called is not null && (IsResolverCredentialsLookup(called) || IsRepositoryLookup(called));
+
+    private static bool IsResolverCredentialsLookup(MethodBase called) =>
+        called.DeclaringType == typeof(ValidatedClientResolver)
+        && called.Name == nameof(ValidatedClientResolver.FindClientWithCredentialsAsync);
+
+    // On the interface or on any concrete store.
+    private static bool IsRepositoryLookup(MethodBase called) =>
+        typeof(IClientRepository).IsAssignableFrom(called.DeclaringType)
+        && called.Name == nameof(IClientRepository.FindByClientIdAsync);
 
     private static MethodBase? ResolveOrNull(Module module, int token)
     {
@@ -83,8 +87,9 @@ public sealed class ClientCredentialsReachTests
         }
     }
 
+    // Any type carrying credentials: the interface, the Client record, or another implementation.
     private static bool Mentions(Type type) =>
-        type == typeof(IClientWithCredentials)
+        typeof(IClientWithCredentials).IsAssignableFrom(type)
         || (type.HasElementType && Mentions(type.GetElementType()!))
         || (type.IsGenericType && type.GetGenericArguments().Any(Mentions));
 }

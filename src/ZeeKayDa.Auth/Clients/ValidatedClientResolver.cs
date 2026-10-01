@@ -83,7 +83,8 @@ internal sealed class ValidatedClientResolver(
     private const int MaxCachedVerdicts = 16_384;
 
     /// <summary>
-    /// Returns the validated client for <paramref name="clientId"/>, without its credentials, or
+    /// Returns the credential-free <see cref="IClient"/> view of the validated client for
+    /// <paramref name="clientId"/>, or
     /// <see langword="null"/> when the client is unknown <em>or</em> its registration fails
     /// validation. Callers cannot and must not distinguish the two.
     /// </summary>
@@ -111,7 +112,7 @@ internal sealed class ValidatedClientResolver(
 
         var (snapshot, verdict) = Resolve(client);
         if (snapshot is not null && verdict.IsValid)
-            return (TClient)(IClient)snapshot;
+            return snapshot as TClient;
 
         // Logged once per distinct failure, not per request — a known-bad client_id must not be
         // an unauthenticated log-amplification lever. The registration's own ClientId is what
