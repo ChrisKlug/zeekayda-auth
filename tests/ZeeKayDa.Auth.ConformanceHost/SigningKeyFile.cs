@@ -4,13 +4,13 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Principal;
 
-namespace ZeeKayDa.Auth.Samples.IdentityServer;
+namespace ZeeKayDa.Auth.ConformanceHost;
 
 /// <summary>
 /// Makes sure a PEM signing key exists, generating one on first run. A real deployment provisions
-/// the file out of band; generating it here only keeps the sample runnable without setup.
+/// the file out of band; generating it here only keeps the host runnable without setup.
 /// </summary>
-public static class SigningKeyFile
+internal static class SigningKeyFile
 {
     public static string Ensure(string path)
     {
@@ -48,7 +48,7 @@ public static class SigningKeyFile
     {
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest(
-            "CN=ZeeKayDa sample signing key", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            "CN=ZeeKayDa conformance host signing key", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
 
         var pem = certificate.ExportCertificatePem() + Environment.NewLine + rsa.ExportPkcs8PrivateKeyPem();

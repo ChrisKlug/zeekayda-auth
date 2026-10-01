@@ -826,6 +826,60 @@ EOF
 assert_exit "no-hatch: .editorconfig override with a justification comment still fails" 1 run_checker "${DIR}"
 
 # ===========================================================================
+# Test hosts — a tests/<Name>/ project beside tests/<Name>.Tests/ is checked like a
+# sample; its test project stays out of scope.
+# ===========================================================================
+
+new_test_host_fixture() {
+    local dir="$1"
+    new_fixture "${dir}"
+    write_trivial_source "${dir}"
+    write_file "${dir}/ZeeKayDa.Auth.slnx" <<'EOF'
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fixture/Fixture.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Host/Host.csproj" />
+    <Project Path="tests/Host.Tests/Host.Tests.csproj" />
+  </Folder>
+</Solution>
+EOF
+    write_file "${dir}/tests/Host/Host.cs" <<'EOF'
+class Host {}
+EOF
+}
+
+write_test_project() {
+    local path="$1"
+    local nowarn="$2"
+    write_file "${path}" <<EOF
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultItems>true</EnableDefaultItems>
+    <NoWarn>\$(NoWarn);${nowarn}</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Analyzer Include="${ANALYZER_DLL}" />
+  </ItemGroup>
+</Project>
+EOF
+}
+
+DIR="$(case_dir test_host_downgrade)"
+new_test_host_fixture "${DIR}"
+write_test_project "${DIR}/tests/Host/Host.csproj" "ZEEKAYDA0001"
+write_test_project "${DIR}/tests/Host.Tests/Host.Tests.csproj" ""
+assert_exit "test host: a downgrade in a host under tests/ fails" 1 run_checker "${DIR}"
+
+DIR="$(case_dir test_host_tests_project_out_of_scope)"
+new_test_host_fixture "${DIR}"
+write_test_project "${DIR}/tests/Host/Host.csproj" ""
+write_test_project "${DIR}/tests/Host.Tests/Host.Tests.csproj" "ZEEKAYDA0001"
+assert_exit "test host: its test project's downgrade is out of scope" 0 run_checker "${DIR}"
+
+# ===========================================================================
 # Summary
 # ===========================================================================
 echo
