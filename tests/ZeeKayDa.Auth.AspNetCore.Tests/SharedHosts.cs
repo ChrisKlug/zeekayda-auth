@@ -193,7 +193,7 @@ public sealed class EveryRouteHostFixture : SharedHostFixture
 }
 
 /// <summary>
-/// A loopback host with <c>AllowInsecureIssuer</c>, issuer <c>http://localhost:5000</c>, for the
+/// A loopback host with <c>AllowHttpLoopbackIssuer</c>, issuer <c>http://localhost:5000</c>, for the
 /// tests that prove plain HTTP is served to loopback and refused to anything else.
 /// </summary>
 public sealed class LoopbackHostFixture : SharedHostFixture

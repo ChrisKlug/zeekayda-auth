@@ -44,10 +44,10 @@ infers none while the caller supplies one — so AspNetCore redeclares it as a f
 
 **Every ZeeKayDa route is mapped into one group carrying two filters.** The first rejects any
 request that is not HTTPS with `421 Misdirected Request`; the only exemption is a loopback remote
-address *and* `AllowInsecureIssuer`, so plain HTTP on loopback is still refused by default. The
-second writes the configured security headers, and advertises `X-ZeeKayDa-Insecure-Issuer: true`
-whenever the insecure-issuer escape hatch is on. Grouping is what keeps both off the host's own
-routes. `AllowInsecureIssuer` is a loopback development hatch, never an assertion that the
+address *and* `Development.AllowHttpLoopbackIssuer`, so plain HTTP on loopback is still refused by
+default. The second writes the configured security headers, and advertises
+`X-ZeeKayDa-Insecure-Issuer: true` whenever that flag is on. Grouping is what keeps both off the host's own
+routes. `AllowHttpLoopbackIssuer` is a loopback development hatch, never an assertion that the
 deployment is safe.
 
 **Endpoint URIs must share the issuer's authority, and the issuer must be canonical.** Startup

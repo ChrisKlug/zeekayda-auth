@@ -10,7 +10,7 @@ internal sealed class CorsOrigin
     // The rules in evaluation order; the first that finds a problem wins, so at most one problem
     // is reported per entry. Scheme rules exist only for the error message — an entry is
     // canonicalizable on the structural rules alone, which is what lets canonicalization stay
-    // ignorant of AllowInsecureIssuer while validation enforces it.
+    // ignorant of AllowHttpLoopbackCorsOrigins while validation enforces it.
     private static readonly Func<CorsOrigin, string?>[] StructuralRules =
     [
         origin => origin.HasNullOrigin(),
@@ -33,13 +33,13 @@ internal sealed class CorsOrigin
     ];
 
     private readonly string? _origin;
-    private readonly bool _allowInsecureIssuer;
+    private readonly bool _allowHttpLoopback;
     private readonly Uri? _uri;
 
-    public CorsOrigin(string? origin, bool allowInsecureIssuer)
+    public CorsOrigin(string? origin, bool allowHttpLoopback)
     {
         _origin = origin;
-        _allowInsecureIssuer = allowInsecureIssuer;
+        _allowHttpLoopback = allowHttpLoopback;
         _uri = origin is not null && Uri.TryCreate(origin, UriKind.Absolute, out var parsed)
             ? parsed
             : null;
@@ -57,7 +57,7 @@ internal sealed class CorsOrigin
     /// </exception>
     public static string Canonicalize(string? origin) =>
         // The flag feeds only the scheme rules, which canonicalization ignores.
-        new CorsOrigin(origin, allowInsecureIssuer: true).Canonical
+        new CorsOrigin(origin, allowHttpLoopback: true).Canonical
             ?? throw new InvalidOperationException(
                 "A CORS origin has no canonical form; startup validation did not run.");
 
@@ -130,26 +130,24 @@ internal sealed class CorsOrigin
         }
     }
 
-    // CORS origins must use HTTPS in production. AllowInsecureIssuer permits HTTP only for
-    // loopback addresses (local development). This mirrors the issuer scheme rules.
     private string? HasForbiddenScheme()
     {
         if (IsHttps)
             return null;
-        if (IsHttp && _allowInsecureIssuer)
+        if (IsHttp && _allowHttpLoopback)
             return null;
 
         return $"CORS origin '{Shown}' uses scheme '{_uri!.Scheme}'. " +
-            "Only 'https' is permitted in production. Set AllowInsecureIssuer = true to " +
-            "permit HTTP CORS origins for local development and testing only.";
+            "Only 'https' is permitted in production. Set Development.AllowHttpLoopbackCorsOrigins = true to " +
+            "permit HTTP loopback CORS origins for local development and testing only.";
     }
 
     // Only reached when HasForbiddenScheme passed, so an HTTP scheme here implies
-    // AllowInsecureIssuer is set — what remains to check is the loopback restriction.
+    // AllowHttpLoopbackCorsOrigins is set — what remains to check is the loopback restriction.
     private string? HasHttpNonLoopbackHost()
         => IsHttp && !LoopbackHelper.IsLoopbackHost(_uri!.Host)
             ? $"CORS origin '{Shown}' uses HTTP for a non-loopback host. " +
-                "AllowInsecureIssuer only permits HTTP loopback CORS origins for local development and testing."
+                "Development.AllowHttpLoopbackCorsOrigins only permits HTTP loopback CORS origins for local development and testing."
             : null;
 
     // IdnHost, not Host: browsers serialize the Origin header with the punycode (A-label) form of
