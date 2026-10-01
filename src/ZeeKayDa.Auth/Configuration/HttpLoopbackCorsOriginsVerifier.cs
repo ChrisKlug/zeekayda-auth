@@ -37,7 +37,8 @@ internal sealed class HttpLoopbackCorsOriginsVerifier(
         if (!options.Value.Development.AllowHttpLoopbackCorsOrigins)
             return Task.CompletedTask;
 
-        if (environment.IsDevelopment())
+        // The flag is itself the opt-out, so the gate never answers Rejected.
+        if (EnvironmentGate.Evaluate(environment, allowOutsideDevelopment: true) == EnvironmentGate.Verdict.ExpectedInDevelopment)
             context.AddWarning("cors_origins.http_loopback_allowed", ActiveMessage, LogLevel.Information);
         else
             context.AddWarning("cors_origins.http_loopback_allowed_outside_development", NonDevelopmentCriticalMessage, LogLevel.Critical);

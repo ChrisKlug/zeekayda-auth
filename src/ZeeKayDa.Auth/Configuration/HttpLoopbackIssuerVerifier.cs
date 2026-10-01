@@ -57,7 +57,8 @@ internal sealed class HttpLoopbackIssuerVerifier(
         if (!options.Value.Development.AllowHttpLoopbackIssuer)
             return Task.CompletedTask;
 
-        if (environment.IsDevelopment())
+        // The flag is itself the opt-out, so the gate never answers Rejected.
+        if (EnvironmentGate.Evaluate(environment, allowOutsideDevelopment: true) == EnvironmentGate.Verdict.ExpectedInDevelopment)
         {
             context.AddWarning(
                 "issuer.insecure_allowed",
