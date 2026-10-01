@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Stores;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
@@ -37,11 +38,14 @@ public sealed class ZeeKayDaAuthBuilderCoreExtensionsTests
         var services = new ServiceCollection();
 
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com")
+            .AddSigningKeySource<TestSigningKeySource>()
             .AddClaimsProvider<NoClaimsProvider>()
             .AddClientSecretHasher<TestHasher>()
             .AddAuthorizationCodeStore<InMemoryAuthorizationCodeBackingStore>()
             .AddRefreshTokenStore<InMemoryRefreshTokenBackingStore>();
 
+        services.Select(d => d.ImplementationInstance).OfType<SigningKeySourceRegistration>()
+            .Should().ContainSingle().Which.SourceType.Should().Be(typeof(TestSigningKeySource));
         services.Should().Contain(d => d.ServiceType == typeof(IClaimsProvider) && d.ImplementationType == typeof(NoClaimsProvider));
         services.Should().Contain(d => d.ServiceType == typeof(IClientSecretHasher) && d.ImplementationType == typeof(TestHasher));
         services.Should().Contain(d => d.ServiceType == typeof(IAuthorizationCodeBackingStore) && d.ImplementationType == typeof(InMemoryAuthorizationCodeBackingStore));
