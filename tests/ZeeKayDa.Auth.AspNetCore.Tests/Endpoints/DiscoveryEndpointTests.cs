@@ -469,12 +469,12 @@ public sealed class DiscoveryEndpointTests
     }
 
     [Fact]
-    public async Task Startup_rejects_an_HTTP_Issuer_without_the_AllowInsecureIssuer_flag()
+    public async Task Startup_rejects_an_HTTP_Issuer_without_the_AllowHttpLoopbackIssuer_flag()
     {
         using var host = new EndpointHost(opts =>
         {
             opts.Issuer = "http://auth.example.com";
-            opts.AllowInsecureIssuer = false;
+            opts.Development.AllowHttpLoopbackIssuer = false;
         });
 
         var failure = await host.StartupFailureAsync();
@@ -574,7 +574,7 @@ public sealed class DiscoveryEndpointTests
     [InlineData("https://*.example.com", "wildcard")]
     [InlineData("null", "null literal")]
     [InlineData("https://example.com\r\n", "CRLF")]
-    [InlineData("http://app.example.com", "http scheme without AllowInsecureIssuer")]
+    [InlineData("http://app.example.com", "http scheme without AllowHttpLoopbackIssuer")]
     public async Task Startup_rejects_an_invalid_CORS_origin(string invalidOrigin, string reason)
     {
         using var host = new EndpointHost(opts => opts.CorsOrigins.Add(invalidOrigin));

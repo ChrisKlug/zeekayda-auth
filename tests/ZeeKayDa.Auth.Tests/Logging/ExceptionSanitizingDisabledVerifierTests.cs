@@ -1,55 +1,84 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Tests.Logging;
 
+/// <summary>
+/// The startup record of disabled exception sanitizing: absent unless the host opted in, and louder
+/// outside the environment where opting in is the expected thing to do.
+/// </summary>
 public sealed class ExceptionSanitizingDisabledVerifierTests
 {
     private static readonly IServiceProvider EmptyProvider = new ServiceCollection().BuildServiceProvider();
 
-    private static ExceptionSanitizingDisabledVerifier CreateSut(bool disableExceptionSanitizing)
+    private sealed class FakeHostEnvironment(string environmentName) : IHostEnvironment
     {
-        var opts = new AuthorizationServerOptions();
-        opts.Logging.DisableExceptionSanitizing = disableExceptionSanitizing;
-        return new(Options.Create(opts));
+        public string EnvironmentName { get; set; } = environmentName;
+        public string ApplicationName { get; set; } = "TestApp";
+        public string ContentRootPath { get; set; } = "/";
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
-    [Fact]
-    public async Task VerifyAsync_adds_a_warning_when_exception_sanitizing_is_disabled()
+    private static async Task<StartupVerificationContext> VerifyAsync(string environment, bool disableExceptionSanitizing)
     {
-        var sut = CreateSut(disableExceptionSanitizing: true);
+        var options = new AuthorizationServerOptions();
+        options.Development.DisableExceptionSanitizing = disableExceptionSanitizing;
+        var sut = new ExceptionSanitizingDisabledVerifier(Options.Create(options), new FakeHostEnvironment(environment));
         var context = new StartupVerificationContext();
 
         await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
 
-        context.Warnings.Should().ContainSingle();
+        return context;
     }
 
     [Fact]
-    public async Task VerifyAsync_does_not_add_a_warning_when_exception_sanitizing_is_enabled()
+    public async Task Disabled_sanitizing_in_Development_logs_at_Information()
     {
-        var sut = CreateSut(disableExceptionSanitizing: false);
-        var context = new StartupVerificationContext();
+        var context = await VerifyAsync(Environments.Development, disableExceptionSanitizing: true);
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        var warning = context.Warnings.Should().ContainSingle().Which;
+        warning.Code.Should().Be("logging.exception_sanitizing_disabled");
+        warning.Level.Should().Be(LogLevel.Information);
+        warning.MessageTemplate.Should().Be(ExceptionSanitizingDisabledVerifier.ActiveMessage);
+    }
+
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    public async Task Disabled_sanitizing_outside_Development_logs_at_Critical(string environment)
+    {
+        var context = await VerifyAsync(environment, disableExceptionSanitizing: true);
+
+        var warning = context.Warnings.Should().ContainSingle().Which;
+        warning.Code.Should().Be("logging.exception_sanitizing_disabled_outside_development");
+        warning.Level.Should().Be(LogLevel.Critical);
+        warning.MessageTemplate.Should().Be(ExceptionSanitizingDisabledVerifier.NonDevelopmentCriticalMessage);
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")]
+    public async Task Disabled_sanitizing_never_fails_startup(string environment)
+    {
+        var context = await VerifyAsync(environment, disableExceptionSanitizing: true);
+
+        context.Failures.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")]
+    public async Task With_sanitizing_on_nothing_is_recorded(string environment)
+    {
+        var context = await VerifyAsync(environment, disableExceptionSanitizing: false);
 
         context.Warnings.Should().BeEmpty();
+        context.Failures.Should().BeEmpty();
     }
-
-    [Fact]
-    public async Task VerifyAsync_adds_the_expected_warning_message_when_disabled()
-    {
-        var sut = CreateSut(disableExceptionSanitizing: true);
-        var context = new StartupVerificationContext();
-
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
-
-        context.Warnings.Should().ContainSingle()
-            .Which.MessageTemplate.Should().Be(ExceptionSanitizingDisabledVerifier.WarningMessage);
-    }
-
 }

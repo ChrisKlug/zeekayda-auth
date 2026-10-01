@@ -29,18 +29,21 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         host.Resolve<IOptions<AuthorizationServerOptions>>().Value.ClockSkewTolerance.Should().Be(TimeSpan.FromSeconds(10));
     }
 
-    [Fact]
-    public void AddZeeKayDaAuth_always_registers_ExceptionSanitizingDisabledVerifier_as_IStartupVerifier()
+    [Theory]
+    [InlineData(typeof(HttpLoopbackIssuerVerifier))]
+    [InlineData(typeof(HttpLoopbackCorsOriginsVerifier))]
+    [InlineData(typeof(ExceptionSanitizingDisabledVerifier))]
+    public void AddZeeKayDaAuth_always_registers_a_verifier_for_each_Development_switch(Type verifierType)
     {
-        // The warning verifier reads the flag at startup and emits a warning only when the flag
-        // is set. It is always registered (unconditionally) so no additional method call is needed.
+        // Each verifier reads its flag at startup and reports only when the flag is set, so it is
+        // registered unconditionally and no additional method call is needed.
         var services = new ServiceCollection();
 
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
 
         services.Should().Contain(sd =>
             sd.ServiceType == typeof(IStartupVerifier) &&
-            sd.ImplementationType == typeof(ExceptionSanitizingDisabledVerifier));
+            sd.ImplementationType == verifierType);
     }
 
     [Theory]
@@ -259,12 +262,9 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_binds_DisableExceptionSanitizing_from_configuration()
+    public void AddZeeKayDaAuth_binds_the_Development_switches_from_configuration()
     {
-        // Verify the documented appsettings.Development.json path actually works — i.e., that
-        // the JSON key "ZeeKayDaAuth:Logging:DisableExceptionSanitizing" binds to the correct
-        // property on AuthorizationServerOptions.
-        var json = """{"ZeeKayDaAuth":{"Logging":{"DisableExceptionSanitizing":true}}}""";
+        var json = """{"ZeeKayDaAuth":{"Development":{"AllowHttpLoopbackIssuer":true,"AllowHttpLoopbackCorsOrigins":true,"DisableExceptionSanitizing":true}}}""";
         var jsonBytes = System.Text.Encoding.UTF8.GetBytes(json);
         using var jsonStream = new System.IO.MemoryStream(jsonBytes);
         var configuration = new ConfigurationBuilder()
@@ -280,7 +280,9 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
         var opts = provider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
 
-        opts.Logging.DisableExceptionSanitizing.Should().BeTrue();
+        opts.Development.AllowHttpLoopbackIssuer.Should().BeTrue();
+        opts.Development.AllowHttpLoopbackCorsOrigins.Should().BeTrue();
+        opts.Development.DisableExceptionSanitizing.Should().BeTrue();
     }
 
     // ── Test doubles ─────────────────────────────────────────────────────────────────────────────

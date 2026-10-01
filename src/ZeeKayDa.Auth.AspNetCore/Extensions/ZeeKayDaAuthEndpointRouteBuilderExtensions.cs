@@ -49,7 +49,7 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
         var referrerPolicyValue = SecurityHeaderValues.ToHeaderValue(securityHeaders.ReferrerPolicy);
         var corpValue = SecurityHeaderValues.ToHeaderValue(securityHeaders.CrossOriginResourcePolicy);
         var noSniff = securityHeaders.ContentTypeOptionsNoSniff;
-        var allowInsecureIssuer = options.AllowInsecureIssuer;
+        var allowHttpLoopbackIssuer = options.Development.AllowHttpLoopbackIssuer;
 
         // All ZeeKayDa.Auth endpoints are grouped so that the security-headers filter applies
         // only to protocol endpoints and not to the host application's own routes.
@@ -63,7 +63,7 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
         group.AddEndpointFilter(async (context, next) =>
         {
             if (context.HttpContext.Request.IsHttps ||
-                (allowInsecureIssuer && LoopbackHelper.IsLoopbackAddress(context.HttpContext.Connection.RemoteIpAddress)))
+                (allowHttpLoopbackIssuer && LoopbackHelper.IsLoopbackAddress(context.HttpContext.Connection.RemoteIpAddress)))
             {
                 return await next(context);
             }
@@ -72,7 +72,7 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
                 statusCode: StatusCodes.Status421MisdirectedRequest,
                 title: "HTTPS required",
                 detail: "ZeeKayDa.Auth endpoints require HTTPS for non-loopback requests. " +
-                        "Configure TLS, or use AllowInsecureIssuer only for loopback development.");
+                        "Configure TLS, or use Development.AllowHttpLoopbackIssuer only for loopback development.");
         });
 
         group.AddEndpointFilter(async (context, next) =>
@@ -83,7 +83,7 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
             context.HttpContext.Response.Headers["Referrer-Policy"] = referrerPolicyValue;
             context.HttpContext.Response.Headers["Cross-Origin-Resource-Policy"] = corpValue;
 
-            if (allowInsecureIssuer)
+            if (allowHttpLoopbackIssuer)
                 context.HttpContext.Response.Headers["X-ZeeKayDa-Insecure-Issuer"] = "true";
 
             return await next(context);
