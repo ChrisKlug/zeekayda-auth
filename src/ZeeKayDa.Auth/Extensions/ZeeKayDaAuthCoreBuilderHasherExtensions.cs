@@ -21,8 +21,8 @@ public static class ZeeKayDaAuthCoreBuilderHasherExtensions
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="isDefault">
     /// When <see langword="true"/>, this hasher replaces PBKDF2 as the one that creates new hashed
-    /// secrets and builds the timing-pad decoy. PBKDF2 stays registered, so existing PBKDF2 secrets
-    /// keep verifying. At most one hasher may set it, or startup fails.
+    /// secrets. PBKDF2 stays registered, so existing PBKDF2 secrets keep verifying. At most one
+    /// hasher may set it, or startup fails. Every registered hasher builds its own timing decoy.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">

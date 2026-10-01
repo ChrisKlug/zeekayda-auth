@@ -118,7 +118,7 @@ public interface IClientSecretHasher
     /// </summary>
     /// <remarks>
     /// Internal on purpose. A third-party hasher inherits this default, which pays one real
-    /// <see cref="Create(string)"/> of a random value, once, when the default hasher is chosen. It
+    /// <see cref="Create(string)"/> of a random value, once, at startup, default or not. It
     /// cannot supply a cheaper decoy of its own: one that verified faster than a real credential
     /// would reopen the timing oracle the padding exists to close, and nothing would report it. A
     /// built-in hasher overrides this where it can build the decoy without the derivation.

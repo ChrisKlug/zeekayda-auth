@@ -202,8 +202,7 @@ Both clients will be present in the repository.
 ## Hasher selection when multiple hashers are registered
 
 When more than one `IClientSecretHasher` is registered, the framework must know which one to use
-as the default — that is, which hasher creates new secrets and generates the timing-pad dummy
-credential at startup. The `isDefault` parameter on `AddClientSecretHasher<T>()` controls this. The
+as the default — that is, which hasher creates new secrets. The `isDefault` parameter on `AddClientSecretHasher<T>()` controls this. The
 full selection matrix is:
 
 | Explicit defaults (`isDefault: true`) | Outcome |

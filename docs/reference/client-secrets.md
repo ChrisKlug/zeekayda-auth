@@ -241,7 +241,7 @@ public static ZeeKayDaAuthBuilder AddClientSecretHasher<THasher>(
 | Parameter | Type | Description |
 |---|---|---|
 | `builder` | `ZeeKayDaAuthBuilder` | The builder returned by `AddZeeKayDaAuth`. |
-| `isDefault` | `bool` | When `true`, this hasher creates new secrets and generates the timing-pad dummy credential at startup. See below. |
+| `isDefault` | `bool` | When `true`, this hasher creates new secrets instead of PBKDF2. See below. |
 
 **Return value:** The same `builder` for method chaining.
 
