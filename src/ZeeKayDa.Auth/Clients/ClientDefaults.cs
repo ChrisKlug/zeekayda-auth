@@ -41,6 +41,17 @@ internal static class ClientDefaults
 
     internal static readonly IReadOnlySet<string> AdditionalClaims = FrozenSet<string>.Empty;
 
+    internal const string? DisplayName = null;
+
+    internal const string? InitiateLoginUri = null;
+
+    // Null inherits the server's own allowlist and lifetimes.
+    internal static readonly IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms = null;
+
+    internal static readonly TimeSpan? AccessTokenLifetime = null;
+
+    internal static readonly TimeSpan? IdTokenLifetime = null;
+
     private static readonly IReadOnlySet<string> PublicAuthMethods =
         new[] { TokenEndpointAuthMethods.None }.ToFrozenSet(StringComparer.Ordinal);
 

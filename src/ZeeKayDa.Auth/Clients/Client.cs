@@ -66,10 +66,10 @@ public sealed record Client : IClientWithCredentials
     public bool EnableZkdErrorCodes { get; init; } = ClientDefaults.EnableZkdErrorCodes;
 
     /// <inheritdoc/>
-    public string? DisplayName { get; init; }
+    public string? DisplayName { get; init; } = ClientDefaults.DisplayName;
 
     /// <inheritdoc/>
-    public string? InitiateLoginUri { get; init; }
+    public string? InitiateLoginUri { get; init; } = ClientDefaults.InitiateLoginUri;
 
     /// <inheritdoc/>
     public bool RequireConsent { get; init; } = ClientDefaults.RequireConsent;
@@ -81,13 +81,13 @@ public sealed record Client : IClientWithCredentials
     public bool RequirePkce { get; init; } = ClientDefaults.RequirePkce;
 
     /// <inheritdoc/>
-    public IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms { get; init; }
+    public IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms { get; init; } = ClientDefaults.AllowedSigningAlgorithms;
 
     /// <inheritdoc/>
-    public TimeSpan? AccessTokenLifetime { get; init; }
+    public TimeSpan? AccessTokenLifetime { get; init; } = ClientDefaults.AccessTokenLifetime;
 
     /// <inheritdoc/>
-    public TimeSpan? IdTokenLifetime { get; init; }
+    public TimeSpan? IdTokenLifetime { get; init; } = ClientDefaults.IdTokenLifetime;
 
     /// <inheritdoc/>
     public IReadOnlySet<string> AdditionalIdTokenClaims { get; init; } = ClientDefaults.AdditionalClaims;

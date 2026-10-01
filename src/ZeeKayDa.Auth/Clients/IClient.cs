@@ -143,7 +143,7 @@ public interface IClient
     /// the consent page above all. <see langword="null"/> (the default) when the registration
     /// carries none; the page then falls back to <see cref="ClientId"/>.
     /// </summary>
-    string? DisplayName => null;
+    string? DisplayName => ClientDefaults.DisplayName;
 
     /// <summary>
     /// The client's <c>initiate_login_uri</c> (OpenID Connect Core §4): where the framework sends
@@ -157,7 +157,7 @@ public interface IClient
     /// client must treat a request to it only as a prompt to start a sign-in at the issuer named by
     /// <c>iss</c>, and only for an issuer it already trusts.
     /// </remarks>
-    string? InitiateLoginUri => null;
+    string? InitiateLoginUri => ClientDefaults.InitiateLoginUri;
 
     /// <summary>
     /// Whether the user must consent on the host's consent page before an authorization code is
@@ -218,7 +218,7 @@ public interface IClient
     /// non-null, this set MUST be non-empty and MUST be a subset of it. The framework's validator
     /// enforces this on every registration it serves; a repository may also check it on write.
     /// </remarks>
-    IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms => null;
+    IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms => ClientDefaults.AllowedSigningAlgorithms;
 
     /// <summary>
     /// The lifetime of access tokens issued to this client, or <see langword="null"/> (the
@@ -228,7 +228,7 @@ public interface IClient
     /// When non-null, MUST be greater than <see cref="TimeSpan.Zero"/>; the registration
     /// validator rejects it otherwise. No upper bound is enforced.
     /// </remarks>
-    TimeSpan? AccessTokenLifetime => null;
+    TimeSpan? AccessTokenLifetime => ClientDefaults.AccessTokenLifetime;
 
     /// <summary>
     /// The lifetime of ID tokens issued to this client, or <see langword="null"/> (the default)
@@ -238,7 +238,7 @@ public interface IClient
     /// When non-null, MUST be greater than <see cref="TimeSpan.Zero"/>; the registration
     /// validator rejects it otherwise. No upper bound is enforced.
     /// </remarks>
-    TimeSpan? IdTokenLifetime => null;
+    TimeSpan? IdTokenLifetime => ClientDefaults.IdTokenLifetime;
 
     /// <summary>
     /// Claim types added to the ID token of every grant to this client, beyond what the granted

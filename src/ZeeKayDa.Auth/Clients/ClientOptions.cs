@@ -21,6 +21,10 @@ public abstract class ClientOptions
 {
     private protected ClientOptions()
     {
+        DisplayName = ClientDefaults.DisplayName;
+        InitiateLoginUri = ClientDefaults.InitiateLoginUri;
+        AccessTokenLifetime = ClientDefaults.AccessTokenLifetime;
+        IdTokenLifetime = ClientDefaults.IdTokenLifetime;
         RequireConsent = ClientDefaults.RequireConsent;
         SkipLogoutConfirmation = ClientDefaults.SkipLogoutConfirmation;
         EnableZkdErrorCodes = ClientDefaults.EnableZkdErrorCodes;
@@ -28,7 +32,8 @@ public abstract class ClientOptions
         AllowedResponseTypes = new HashSet<ResponseType>();
         AllowedResponseModes = new HashSet<ResponseMode>();
         AllowedPromptValues = new HashSet<PromptValue>(ClientDefaults.AllowedPromptValues);
-        AllowedSigningAlgorithms = new HashSet<SigningAlgorithm>();
+        AllowedSigningAlgorithms = new HashSet<SigningAlgorithm>(
+            ClientDefaults.AllowedSigningAlgorithms ?? Enumerable.Empty<SigningAlgorithm>());
         AdditionalIdTokenClaims = new HashSet<string>(ClientDefaults.AdditionalClaims, StringComparer.Ordinal);
         AdditionalUserInfoClaims = new HashSet<string>(ClientDefaults.AdditionalClaims, StringComparer.Ordinal);
         AdditionalAccessTokenClaims = new HashSet<string>(ClientDefaults.AdditionalClaims, StringComparer.Ordinal);
