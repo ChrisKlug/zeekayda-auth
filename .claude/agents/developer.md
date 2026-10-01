@@ -7,7 +7,7 @@ mcpServers:
       type: stdio
       command: csharp-lsp-mcp
       args: []
-model: opus
+model: sonnet
 effort: medium
 skills:
   - test-standards
