@@ -1954,3 +1954,19 @@ verification; no Critical.
   rate limiting (RFC 9700 §2.1) bounds volume. No test.
 - **Accepted residual:** an imported PBKDF2 secret above the configured iteration count verifies
   slower than the decoy; inherent to importing. No test.
+
+## 2026-10-01 — two-phase startup runner; the sanitizing logger cannot be substituted (#771, code frozen at `1786e6a`)
+Reverses the sanitizing-logger gate and the `IStartupCheck` rejection check recorded in earlier entries.
+- No registration can supply a logger that skips redaction: `SanitizingLogger<T>` has only an internal
+  constructor and nothing overridable. Closed — `SanitizingLogger_has_no_constructor_another_assembly_can_call_or_chain_to`,
+  `SanitizingLogger_members_cannot_be_overridden`, `AddZeeKayDaAuthCore_registers_SanitizingLogger_open_generic`.
+- ZEEKAYDA0002's exemption is that one type only. Closed — `Diagnostic_fires_inside_a_friend_assembly_type_named_SanitizingLogger`.
+- No exception message reaches a failure, from a check, a constructor or an options validator. Closed —
+  `StartAsync_wraps_an_unexpected_exception_naming_only_the_exception_type_never_its_message`,
+  `StartAsync_reports_a_check_constructor_that_throws_as_a_failure_naming_only_its_type`,
+  `StartAsync_reports_an_options_validator_that_throws_unexpectedly_naming_only_the_exception_type`.
+- Options validate first; no activator is built after a verifier failed; checks must be scoped. Closed —
+  `StartAsync_validates_options_before_constructing_any_verifier`, `StartAsync_does_not_construct_activators_when_a_verifier_failed`,
+  `A_verifier_registered_as_a_singleton_fails_startup_naming_its_type`.
+- **Accepted residuals (maintainer):** a friend assembly could subclass the logger (first-party, not a boundary);
+  a scoped factory returning a singleton check passes the lifetime check. No test.
