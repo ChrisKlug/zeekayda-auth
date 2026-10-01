@@ -47,13 +47,19 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
             else
                 await WriteKeyFileUnixAsync(pending, pem, cancellationToken).ConfigureAwait(false);
 
-            return Publish(pending, keyPath);
+            return PublishPending(pending, keyPath);
         }
         finally
         {
             File.Delete(pending);
         }
     }
+
+    /// <summary>
+    /// The step that moves a fully written pending file to the key's name. Replaceable by tests only,
+    /// so they can see the pending file at the instant it is published rather than after the fact.
+    /// </summary>
+    internal Func<string, string, bool> PublishPending { get; init; } = Publish;
 
     // Internal rather than private so the losing half of the race can be driven directly,
     // without depending on thread scheduling to produce it.

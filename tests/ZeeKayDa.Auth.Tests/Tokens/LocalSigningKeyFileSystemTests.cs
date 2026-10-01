@@ -214,11 +214,30 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     }
 
     [Fact]
-    public async Task WriteKeyFileAsync_racers_that_lose_immediately_read_the_winners_whole_key()
+    public async Task WriteKeyFileAsync_publishes_the_key_only_once_it_is_fully_written()
     {
-        // Each loser reads the moment it learns it lost, which is the earliest a host would load the
-        // winner's key. Large enough to span many write buffers, so a key published before it was
-        // fully written would be read short.
+        // Large enough to span many write buffers, so a file published before its writer flushed
+        // and closed it would be seen short at the instant of publication.
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var pem = new string('k', 256 * 1024);
+        string? atPublication = null;
+        var sut = new LocalSigningKeyFileSystem
+        {
+            PublishPending = (pending, target) =>
+            {
+                atPublication = File.ReadAllText(pending);
+                return LocalSigningKeyFileSystem.Publish(pending, target);
+            },
+        };
+
+        await sut.WriteKeyFileAsync(keyPath, pem.AsMemory(), TestContext.Current.CancellationToken);
+
+        atPublication.Should().Be(pem);
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_racers_that_lose_read_the_winners_whole_key()
+    {
         var keyPath = Path.Join(_tempDirectory, KeyFileName);
         var ct = TestContext.Current.CancellationToken;
         var pems = Enumerable.Range(0, 8).Select(i => new string((char)('a' + i), 256 * 1024)).ToArray();
