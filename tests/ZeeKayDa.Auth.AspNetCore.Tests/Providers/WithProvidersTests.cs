@@ -7,7 +7,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
-using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Providers;
 
@@ -21,17 +20,20 @@ public sealed class WithProvidersTests
     private const string Issuer = "https://auth.example.com";
 
     /// <summary>
-    /// Deliberately without <c>AddAuthentication()</c>: a builder constructed outside
-    /// <c>AddZeeKayDaAuth</c> must still produce a provider that can resolve its options.
+    /// The services <c>AddZeeKayDaAuth</c> provides that a provider needs to resolve its options,
+    /// without the rest of the HTTP surface.
     /// </summary>
     private static IServiceCollection NewServices()
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddDataProtection();
+        services.AddAuthentication();
         services.Configure<AuthorizationServerOptions>(options => options.Issuer = Issuer);
         return services;
     }
+
+    private static ZeeKayDaAuthBuilder NewBuilder(IServiceCollection services) => new(new ZeeKayDaAuthCoreBuilder(services));
 
     private static void ConfigureAcme(OAuthOptions options)
     {
@@ -48,7 +50,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
 
-        new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth("acme", "Acme Corp", ConfigureAcme));
+        NewBuilder(services).WithProviders(auth => auth.AddOAuth("acme", "Acme Corp", ConfigureAcme));
 
         var registry = ProviderRegistry.FindIn(services);
         registry.Descriptors.Should().ContainSingle()
@@ -60,7 +62,7 @@ public sealed class WithProvidersTests
     public async Task A_provider_scheme_is_absent_from_the_host_scheme_map()
     {
         var services = NewServices();
-        new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+        NewBuilder(services).WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
         using var provider = services.BuildServiceProvider();
 
         var schemes = provider.GetRequiredService<IAuthenticationSchemeProvider>();
@@ -73,7 +75,7 @@ public sealed class WithProvidersTests
     public void The_handler_and_its_named_options_stay_registered_for_the_framework_to_use()
     {
         var services = NewServices();
-        new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+        NewBuilder(services).WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
         using var provider = services.BuildServiceProvider();
 
         provider.GetService<OAuthHandler<OAuthOptions>>().Should().NotBeNull();
@@ -85,7 +87,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
 
-        new ZeeKayDaAuthBuilder(services).WithProviders(auth =>
+        NewBuilder(services).WithProviders(auth =>
         {
             auth.AddOAuth("remote", ConfigureAcme);
             auth.AddScheme<AuthenticationSchemeOptions, PlainHandler>("plain", "Plain", _ => { });
@@ -101,7 +103,7 @@ public sealed class WithProvidersTests
     public void Repeated_calls_accumulate_in_registration_order()
     {
         var services = NewServices();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = NewBuilder(services);
 
         builder.WithProviders(auth => auth.AddOAuth("first", ConfigureAcme));
         builder.WithProviders(auth => auth.AddOAuth("second", ConfigureAcme));
@@ -121,7 +123,7 @@ public sealed class WithProvidersTests
             options.CallbackPath = "/signin-host";
         });
 
-        new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+        NewBuilder(services).WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
         using var provider = services.BuildServiceProvider();
 
         var hostOptions = provider.GetRequiredService<IOptionsMonitor<OAuthOptions>>().Get("host-oauth");
@@ -136,7 +138,7 @@ public sealed class WithProvidersTests
     public void The_framework_pins_every_member_it_owns_whatever_the_registration_set()
     {
         var services = NewServices();
-        new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth("acme", options =>
+        NewBuilder(services).WithProviders(auth => auth.AddOAuth("acme", options =>
         {
             ConfigureAcme(options);
             options.CallbackPath = "/signin-acme";
@@ -171,7 +173,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
         services.Configure<AuthorizationServerOptions>(options => options.Issuer = "https://auth.example.com/tenant");
-        new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+        NewBuilder(services).WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
         using var provider = services.BuildServiceProvider();
 
         provider.GetRequiredService<IOptionsMonitor<OAuthOptions>>().Get("acme").CallbackPath
@@ -184,7 +186,7 @@ public sealed class WithProvidersTests
         // A policy scheme is nothing but forwarding, so as a provider it becomes inert — which is
         // the point: its forward would have carried the challenge into a scheme the host can see.
         var services = NewServices();
-        new ZeeKayDaAuthBuilder(services).WithProviders(auth =>
+        NewBuilder(services).WithProviders(auth =>
             auth.AddPolicyScheme("policy", "Policy", options =>
             {
                 options.ForwardDefault = "host-cookie";
@@ -202,7 +204,7 @@ public sealed class WithProvidersTests
     public void The_pin_stays_where_the_first_window_left_it_so_a_later_post_configurer_still_wins_for_the_validator_to_catch()
     {
         var services = NewServices();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = NewBuilder(services);
         builder.WithProviders(auth => auth.AddOAuth("first", ConfigureAcme));
         services.PostConfigure<OAuthOptions>("first", options => options.CallbackPath = "/signin-first");
         builder.WithProviders(auth => auth.AddOAuth("second", ConfigureAcme));
@@ -221,7 +223,7 @@ public sealed class WithProvidersTests
     public void A_provider_registered_in_a_later_call_is_pinned_too()
     {
         var services = NewServices();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = NewBuilder(services);
         builder.WithProviders(auth => auth.AddOAuth("first", ConfigureAcme));
         builder.WithProviders(auth => auth.AddOAuth("second", options =>
         {
@@ -232,22 +234,6 @@ public sealed class WithProvidersTests
 
         provider.GetRequiredService<IOptionsMonitor<OAuthOptions>>().Get("second").SignInScheme
             .Should().Be(ZeeKayDaCookies.External);
-    }
-
-    // ── Startup checks ────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void On_a_host_without_AddZeeKayDaAuth_the_provider_startup_checks_resolve()
-    {
-        var services = NewServices();
-
-        services.AddZeeKayDaAuthCore(options => options.Issuer = Issuer)
-            .WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
-        using var provider = services.BuildServiceProvider();
-
-        provider.GetServices<IStartupActivator>()
-            .Should().Contain(activator => activator is HandlerOptionsActivator)
-            .And.Contain(activator => activator is ProviderSchemeCollisionActivator);
     }
 
     // ── Refused at registration ───────────────────────────────────────────────────────────────
@@ -264,7 +250,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
 
-        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth(name, ConfigureAcme));
+        var register = () => NewBuilder(services).WithProviders(auth => auth.AddOAuth(name, ConfigureAcme));
 
         register.Should().Throw<InvalidOperationException>().WithMessage("*not valid*");
     }
@@ -277,7 +263,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
 
-        new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth(name, ConfigureAcme));
+        NewBuilder(services).WithProviders(auth => auth.AddOAuth(name, ConfigureAcme));
 
         ProviderRegistry.FindIn(services).Contains(name).Should().BeTrue();
     }
@@ -292,7 +278,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
 
-        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth(name, ConfigureAcme));
+        var register = () => NewBuilder(services).WithProviders(auth => auth.AddOAuth(name, ConfigureAcme));
 
         register.Should().Throw<InvalidOperationException>().WithMessage("*reserved*");
     }
@@ -302,7 +288,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
 
-        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth =>
+        var register = () => NewBuilder(services).WithProviders(auth =>
             auth.Services.Configure<AuthenticationOptions>(options => options.SchemeMap.Remove("host-cookie")));
 
         register.Should().Throw<InvalidOperationException>().WithMessage("*without adding a scheme*");
@@ -313,7 +299,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
 
-        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth =>
+        var register = () => NewBuilder(services).WithProviders(auth =>
             auth.Services.AddSingleton(typeof(IConfigureOptions<>), typeof(OpenGenericConfigurer<>)));
 
         register.Should().Throw<InvalidOperationException>().WithMessage("*open-generic*");
@@ -323,7 +309,7 @@ public sealed class WithProvidersTests
     public void A_failed_call_leaves_the_service_collection_exactly_as_it_was()
     {
         var services = NewServices();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = NewBuilder(services);
         builder.WithProviders(auth => auth.AddOAuth("first", ConfigureAcme));
         var before = services.ToArray();
 
@@ -344,7 +330,7 @@ public sealed class WithProvidersTests
         var services = NewServices();
         var before = services.ToArray();
 
-        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth => auth.AddOAuth("a/b", ConfigureAcme));
+        var register = () => NewBuilder(services).WithProviders(auth => auth.AddOAuth("a/b", ConfigureAcme));
 
         register.Should().Throw<InvalidOperationException>();
         services.Should().Equal(before);
@@ -354,7 +340,7 @@ public sealed class WithProvidersTests
     public void A_provider_name_taken_by_an_earlier_call_is_refused_ignoring_case()
     {
         var services = NewServices();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = NewBuilder(services);
         builder.WithProviders(auth => auth.AddOAuth("Acme", ConfigureAcme));
 
         var register = () => builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
@@ -367,7 +353,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
 
-        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth =>
+        var register = () => NewBuilder(services).WithProviders(auth =>
         {
             auth.AddOAuth("acme", ConfigureAcme);
             auth.Services.AddAuthentication("acme");
@@ -381,7 +367,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
 
-        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth =>
+        var register = () => NewBuilder(services).WithProviders(auth =>
             auth.Services.AddSingleton<IConfigureOptions<AuthenticationOptions>, OpaqueSchemeConfigurer>());
 
         register.Should().Throw<InvalidOperationException>().WithMessage("*not an instance*");
@@ -392,7 +378,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
 
-        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth =>
+        var register = () => NewBuilder(services).WithProviders(auth =>
             auth.Services.PostConfigure<AuthenticationOptions>(_ => { }));
 
         register.Should().Throw<InvalidOperationException>().WithMessage("*IPostConfigureOptions<AuthenticationOptions>*");
@@ -403,7 +389,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
 
-        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth =>
+        var register = () => NewBuilder(services).WithProviders(auth =>
         {
             auth.AddOAuth("acme", ConfigureAcme);
             auth.Services.RemoveAt(0);
@@ -417,7 +403,7 @@ public sealed class WithProvidersTests
     {
         var services = NewServices();
 
-        var register = () => new ZeeKayDaAuthBuilder(services).WithProviders(auth =>
+        var register = () => NewBuilder(services).WithProviders(auth =>
             auth.Services.Insert(0, ServiceDescriptor.Singleton(new object())));
 
         register.Should().Throw<InvalidOperationException>().WithMessage("*existed before it ran*");

@@ -7,9 +7,9 @@ using ZeeKayDa.Auth.Configuration;
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
-/// Extension methods for registering client secret hashers with <see cref="ZeeKayDaAuthBuilder"/>.
+/// Extension methods for registering client secret hashers with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderHasherExtensions
+public static class ZeeKayDaAuthCoreBuilderHasherExtensions
 {
     /// <summary>
     /// Registers a client secret hasher with ZeeKayDa.Auth.
@@ -29,8 +29,8 @@ public static class ZeeKayDaAuthBuilderHasherExtensions
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddClientSecretHasher<THasher>(
-        this ZeeKayDaAuthBuilder builder,
+    public static ZeeKayDaAuthCoreBuilder AddClientSecretHasher<THasher>(
+        this ZeeKayDaAuthCoreBuilder builder,
         bool isDefault = false)
         where THasher : class, IClientSecretHasher
     {
@@ -63,6 +63,7 @@ public static class ZeeKayDaAuthBuilderHasherExtensions
     /// Configures the built-in PBKDF2-HMAC-SHA256 client secret hasher, which
     /// <c>AddZeeKayDaAuth</c> always registers.
     /// </summary>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="configure">Sets <see cref="Pbkdf2ClientSecretHasherOptions"/>.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
@@ -73,9 +74,10 @@ public static class ZeeKayDaAuthBuilderHasherExtensions
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> or <paramref name="configure"/> is <see langword="null"/>.
     /// </exception>
-    public static ZeeKayDaAuthBuilder ConfigurePbkdf2ClientSecretHasher(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder ConfigurePbkdf2ClientSecretHasher<TBuilder>(
+        this TBuilder builder,
         Action<Pbkdf2ClientSecretHasherOptions> configure)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);

@@ -16,7 +16,7 @@ public sealed class ClaimsProviderPresenceActivatorTests
     public async Task VerifyAsync_completes_without_failures_when_a_provider_is_registered()
     {
         var services = new ServiceCollection();
-        new ZeeKayDaAuthBuilder(services).AddClaimsProvider<NoClaimsProvider>();
+        new ZeeKayDaAuthCoreBuilder(services).AddClaimsProvider<NoClaimsProvider>();
         using var provider = services.BuildServiceProvider();
         var sut = new ClaimsProviderPresenceActivator();
         var context = new StartupVerificationContext();

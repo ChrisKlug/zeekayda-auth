@@ -1,5 +1,5 @@
 // These tests exercise the full DI wiring for AddAzureKeyVaultCachedSigning end to end — a real
-// ServiceCollection / ZeeKayDaAuthBuilder / ServiceProvider, driven through the host's real startup
+// ServiceCollection / ZeeKayDaAuthCoreBuilder / ServiceProvider, driven through the host's real startup
 // path — with a fake substituted for the IKeyVaultCertificateReader seam. No real network calls are
 // made and no live Azure Key Vault access is required or attempted. The same KNOWN GAP note as
 // AzureKeyVaultRemoteSigningIntegrationTests applies: recorded-session tests against real Key Vault

@@ -5,13 +5,14 @@ using ZeeKayDa.Auth.Scopes;
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
-/// Extension methods for registering scope repositories with <see cref="ZeeKayDaAuthBuilder"/>.
+/// Extension methods for registering scope repositories with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderScopeExtensions
+public static class ZeeKayDaAuthCoreBuilderScopeExtensions
 {
     /// <summary>
     /// Registers an in-memory scope repository.
     /// </summary>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="scopes">The scope definitions to register.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
@@ -19,9 +20,10 @@ public static class ZeeKayDaAuthBuilderScopeExtensions
     /// Thrown when <paramref name="builder"/> or <paramref name="scopes"/> is
     /// <see langword="null"/>.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddInMemoryScopes(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder AddInMemoryScopes<TBuilder>(
+        this TBuilder builder,
         IEnumerable<ScopeDefinition> scopes)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(scopes);

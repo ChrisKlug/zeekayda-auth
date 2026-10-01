@@ -1,5 +1,5 @@
 // These tests exercise the full DI wiring for AddPemFileSigning/AddPfxFileSigning end to end — a
-// real ServiceCollection / ZeeKayDaAuthBuilder / ServiceProvider — reading real temporary PEM/PFX
+// real ServiceCollection / ZeeKayDaAuthCoreBuilder / ServiceProvider — reading real temporary PEM/PFX
 // files from disk, exactly as a deployed host would. No fake is substituted for FileSigningKeyReader
 // or the filesystem: this provider's whole job is real file I/O and permission validation.
 //

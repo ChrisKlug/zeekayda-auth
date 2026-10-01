@@ -8,14 +8,14 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Extension methods for registering a filesystem-based (PEM or PFX) JWT signing key provider with
-/// <see cref="ZeeKayDaAuthBuilder"/>.
+/// <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
 /// <remarks>
 /// Unlike the Windows Certificate Store provider, neither method here is gated to a specific
 /// operating system — PEM/PFX loading is portable BCL functionality with no platform interop.
 /// This is the recommended provider for macOS, containers, headless CI, and Linux generally.
 /// </remarks>
-public static class ZeeKayDaAuthBuilderFileSigningExtensions
+public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
 {
     /// <summary>
     /// Registers a single PEM certificate as the JWT signing key, with no rotation staged. The
@@ -38,12 +38,13 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// </para>
     /// <para>
     /// To stage a rotation, use the
-    /// <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,SigningAlgorithm,Action{PemFileSigningOptions})"/>
+    /// <see cref="AddPemFileSigning{TBuilder}(TBuilder,SigningAlgorithm,Action{PemFileSigningOptions})"/>
     /// overload and fill the <c>Previous</c>/<c>Current</c>/<c>Next</c> slots. This overload takes no
     /// configuration callback precisely so that the file it names is unambiguously the one that
     /// signs.
     /// </para>
     /// </remarks>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="path">
     /// The path to the PEM file that signs — a combined cert+key file when
@@ -67,11 +68,12 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// Thrown when a signing key source has already been registered. Only one signing key provider
     /// is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddPemFileSigning(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder AddPemFileSigning<TBuilder>(
+        this TBuilder builder,
         string path,
         SigningAlgorithm algorithm,
         string? keyPath = null)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -97,7 +99,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// </para>
     /// <para>
     /// Filesystem permissions are enforced fail-closed on every loaded file, exactly as for
-    /// <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,string,SigningAlgorithm,string)"/>.
+    /// <see cref="AddPemFileSigning{TBuilder}(TBuilder,string,SigningAlgorithm,string)"/>.
     /// </para>
     /// <para>
     /// Rotation: stage the successor as <c>Next</c> so its public half is published ahead of time,
@@ -107,6 +109,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// <see cref="PemFileSigningOptions.Next"/>.
     /// </para>
     /// </remarks>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="algorithm">The JWS algorithm every configured slot is signed under.</param>
     /// <param name="configure">A callback that fills the signing key slots.</param>
@@ -119,10 +122,11 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// Thrown when a signing key source has already been registered. Only one signing key provider
     /// is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddPemFileSigning(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder AddPemFileSigning<TBuilder>(
+        this TBuilder builder,
         SigningAlgorithm algorithm,
         Action<PemFileSigningOptions> configure)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
@@ -152,19 +156,20 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// <remarks>
     /// <para>
     /// Filesystem permissions are enforced fail-closed exactly as for
-    /// <see cref="AddPemFileSigning(ZeeKayDaAuthBuilder,string,SigningAlgorithm,string)"/>. The PFX
+    /// <see cref="AddPemFileSigning{TBuilder}(TBuilder,string,SigningAlgorithm,string)"/>. The PFX
     /// password adds defense in depth on top of that — see
     /// <see cref="PfxFile.PasswordSource"/> for why it is an async delegate rather than a
     /// plain <see langword="string"/>.
     /// </para>
     /// <para>
     /// To stage a rotation, use the
-    /// <see cref="AddPfxFileSigning(ZeeKayDaAuthBuilder,SigningAlgorithm,Action{PfxFileSigningOptions})"/>
+    /// <see cref="AddPfxFileSigning{TBuilder}(TBuilder,SigningAlgorithm,Action{PfxFileSigningOptions})"/>
     /// overload and fill the <c>Previous</c>/<c>Current</c>/<c>Next</c> slots. This overload takes no
     /// configuration callback precisely so that the bundle it names is unambiguously the one that
     /// signs.
     /// </para>
     /// </remarks>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="path">The path to the PFX/PKCS#12 file that signs.</param>
     /// <param name="algorithm">The JWS algorithm to sign with.</param>
@@ -181,11 +186,12 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// Thrown when a signing key source has already been registered. Only one signing key provider
     /// is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddPfxFileSigning(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder AddPfxFileSigning<TBuilder>(
+        this TBuilder builder,
         string path,
         SigningAlgorithm algorithm,
         Func<CancellationToken, Task<string>> passwordSource)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -221,6 +227,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// <see cref="PfxFileSigningOptions.Next"/>.
     /// </para>
     /// </remarks>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="algorithm">The JWS algorithm every configured slot is signed under.</param>
     /// <param name="configure">A callback that fills the signing key slots.</param>
@@ -233,10 +240,11 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
     /// Thrown when a signing key source has already been registered. Only one signing key provider
     /// is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddPfxFileSigning(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder AddPfxFileSigning<TBuilder>(
+        this TBuilder builder,
         SigningAlgorithm algorithm,
         Action<PfxFileSigningOptions> configure)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
@@ -258,7 +266,7 @@ public static class ZeeKayDaAuthBuilderFileSigningExtensions
         return builder;
     }
 
-    private static void AddSharedFileSigningServices(ZeeKayDaAuthBuilder builder)
+    private static void AddSharedFileSigningServices(ZeeKayDaAuthCoreBuilder builder)
     {
         builder.Services.TryAddSingleton<FileSigningKeyReader>();
     }

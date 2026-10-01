@@ -11,7 +11,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
 {
     // ── Missing IClientRepository fails startup ───────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AzureKeyVault.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensionsTests
 {
     private static readonly Uri KeyIdentifierUri = new("https://fake-vault.vault.azure.net/keys/fake-key");
     private static readonly KeyVaultKeyIdentifier KeyIdentifier = new(KeyIdentifierUri);
@@ -36,7 +36,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     {
         // An extension method is callable on a null receiver, so the guard is the only thing between
         // a null builder and a NullReferenceException from builder.Services one line later.
-        ZeeKayDaAuthBuilder builder = null!;
+        ZeeKayDaAuthCoreBuilder builder = null!;
 
         var act = () => builder.AddAzureKeyVaultRemoteSigning(
             KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
@@ -47,7 +47,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
     [Fact]
     public void AddAzureKeyVaultCachedSigning_throws_ArgumentNullException_when_builder_is_null()
     {
-        ZeeKayDaAuthBuilder builder = null!;
+        ZeeKayDaAuthCoreBuilder builder = null!;
 
         var act = () => builder.AddAzureKeyVaultCachedSigning(
             CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
@@ -179,7 +179,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         var member = doc.Descendants("member")
             .FirstOrDefault(m => (string?)m.Attribute("name") is { } name &&
                 name.StartsWith(
-                    "M:Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions.AddAzureKeyVaultRemoteSigning",
+                    "M:Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions.AddAzureKeyVaultRemoteSigning",
                     StringComparison.Ordinal));
 
         member.Should().NotBeNull("the generated XML doc should contain an entry for AddAzureKeyVaultRemoteSigning");
@@ -326,7 +326,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         var member = doc.Descendants("member")
             .FirstOrDefault(m => (string?)m.Attribute("name") is { } name &&
                 name.StartsWith(
-                    "M:Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions.AddAzureKeyVaultCachedSigning",
+                    "M:Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions.AddAzureKeyVaultCachedSigning",
                     StringComparison.Ordinal));
 
         member.Should().NotBeNull("the generated XML doc should contain an entry for AddAzureKeyVaultCachedSigning");

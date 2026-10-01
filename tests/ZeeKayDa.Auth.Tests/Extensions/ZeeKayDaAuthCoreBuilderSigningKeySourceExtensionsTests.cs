@@ -17,7 +17,7 @@ namespace ZeeKayDa.Auth.Tests.Extensions;
 /// <c>ZeeKayDa.Auth.FileSystem.Tests</c>' <c>ThirdPartySigningKeySourceRegistrationTests</c> proves
 /// that from an assembly with no grant at all.
 /// </summary>
-public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
 {
     /// <summary>
     /// Models a signing key source defined by a third party from its own package: it implements
@@ -180,7 +180,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     {
         var services = new ServiceCollection();
 
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
@@ -191,7 +191,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     {
         var services = new ServiceCollection();
 
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
         services.Should().NotContain(d => d.ServiceType == typeof(ISigningKeySource));
     }
@@ -200,7 +200,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     public void AddSigningKeySource_leaves_ISigningKeySource_unreachable_by_any_resolution_means()
     {
         var services = new ServiceCollection();
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
         using var provider = services.BuildServiceProvider();
 
         provider.GetService<ISigningKeySource>().Should().BeNull();
@@ -215,9 +215,9 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
         // registers the source and configures its options beside it, so a second call that looked
         // like a no-op here would still have applied a second configuration callback.
         var services = new ServiceCollection();
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
-        var act = () => new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
+        var act = () => new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*already registered as the signing key source*");
@@ -227,9 +227,9 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     public void AddSigningKeySource_called_twice_leaves_the_first_registration_intact()
     {
         var services = new ServiceCollection();
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
-        var act = () => new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
+        var act = () => new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
         act.Should().Throw<InvalidOperationException>();
         services.Should().ContainSingle(d => d.ServiceType == typeof(ISigningKeyRing));
@@ -240,9 +240,9 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     public void AddSigningKeySource_called_with_a_different_source_throws_InvalidOperationException()
     {
         var services = new ServiceCollection();
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
-        var act = () => new ZeeKayDaAuthBuilder(services).AddSigningKeySource<OtherExternalSigningKeySource>();
+        var act = () => new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<OtherExternalSigningKeySource>();
 
         act.Should().Throw<InvalidOperationException>();
     }
@@ -252,7 +252,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     {
         var services = new ServiceCollection();
 
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
         using var provider = services.BuildServiceProvider();
         provider.GetServices<IStartupActivator>().Should().ContainSingle(v => v is SigningKeyRingActivator);
@@ -263,7 +263,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     [Fact]
     public void AddSigningKeySource_throws_ArgumentNullException_when_builder_is_null()
     {
-        ZeeKayDaAuthBuilder builder = null!;
+        ZeeKayDaAuthCoreBuilder builder = null!;
 
         var act = () => builder.AddSigningKeySource<ExternalSigningKeySource>();
 
@@ -274,7 +274,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     public void AddSigningKeySource_throws_ArgumentException_when_TSource_is_the_interface_itself()
     {
         var services = new ServiceCollection();
-        var act = () => new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ISigningKeySource>();
+        var act = () => new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ISigningKeySource>();
 
         act.Should().Throw<ArgumentException>().WithParameterName("TSource");
         services.Should().BeEmpty();
@@ -285,7 +285,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     {
         var services = new ServiceCollection();
 
-        var act = () => new ZeeKayDaAuthBuilder(services).AddSigningKeySource<AbstractSigningKeySource>();
+        var act = () => new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<AbstractSigningKeySource>();
 
         act.Should().Throw<ArgumentException>().WithParameterName("TSource");
         services.Should().BeEmpty();
@@ -296,7 +296,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     {
         var services = new ServiceCollection();
 
-        var act = () => new ZeeKayDaAuthBuilder(services).AddSigningKeySource<AsyncOnlySigningKeySource>();
+        var act = () => new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<AsyncOnlySigningKeySource>();
 
         act.Should().Throw<ArgumentException>().WithParameterName("TSource");
         services.Should().BeEmpty();
@@ -307,7 +307,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     {
         var log = new DisposalLog();
         var services = ServicesWithTestKey(log);
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<OrderRecordingSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<OrderRecordingSigningKeySource>();
         using (var provider = services.BuildServiceProvider())
         {
             await provider.GetRequiredService<ISigningKeyRing>().EnsureInitializedAsync(TestContext.Current.CancellationToken);
@@ -321,7 +321,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     {
         var log = new DisposalLog();
         var services = ServicesWithTestKey(log);
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<DualDisposableSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<DualDisposableSigningKeySource>();
         using (var provider = services.BuildServiceProvider())
         {
             await provider.GetRequiredService<ISigningKeyRing>().EnsureInitializedAsync(TestContext.Current.CancellationToken);
@@ -336,7 +336,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     {
         var log = new DisposalLog();
         var services = ServicesWithTestKey(log);
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<DualDisposableSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<DualDisposableSigningKeySource>();
         var provider = services.BuildServiceProvider();
         try
         {
@@ -354,7 +354,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
     [Fact]
     public void AddSigningKeySource_of_a_different_source_throws_naming_both_sources_and_the_registering_assembly()
     {
-        var builder = new ZeeKayDaAuthBuilder(new ServiceCollection());
+        var builder = new ZeeKayDaAuthCoreBuilder(new ServiceCollection());
         builder.AddSigningKeySource<ExternalSigningKeySource>();
 
         var act = () => builder.AddSigningKeySource<OtherExternalSigningKeySource>();
@@ -374,7 +374,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
         var services = new ServiceCollection();
         services.AddSingleton(log);
         services.AddSingleton<TimeProvider>(_ => throw new InvalidOperationException("No clock."));
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ConstructionRecordingSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ConstructionRecordingSigningKeySource>();
         using var provider = services.BuildServiceProvider();
 
         var act = () => provider.GetRequiredService<ISigningKeyRing>();
@@ -407,7 +407,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
         var services = new ServiceCollection();
         services.AddSingleton<ISigningKeyRing>(new FakeSigningKeyRing());
 
-        var act = () => new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
+        var act = () => new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
         act.Should().NotThrow();
         using var provider = services.BuildServiceProvider();
@@ -421,7 +421,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
         // replaces the framework's; nothing detects it.
         var manualRing = new FakeSigningKeyRing();
         var services = new ServiceCollection();
-        new ZeeKayDaAuthBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
+        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
         var act = () => services.AddSingleton<ISigningKeyRing>(manualRing);
 

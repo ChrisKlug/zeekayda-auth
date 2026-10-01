@@ -6,9 +6,9 @@ using ZeeKayDa.Auth.Tokens;
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
-/// Registers the application's signing key source with <see cref="ZeeKayDaAuthBuilder"/>.
+/// Registers the application's signing key source with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderSigningKeySourceExtensions
+public static class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions
 {
     /// <summary>
     /// Registers <typeparamref name="TSource"/> as the application's signing key source, a
@@ -40,7 +40,7 @@ public static class ZeeKayDaAuthBuilderSigningKeySourceExtensions
     /// no application code can resolve it.
     /// </para>
     /// </remarks>
-    public static ZeeKayDaAuthBuilder AddSigningKeySource<TSource>(this ZeeKayDaAuthBuilder builder)
+    public static ZeeKayDaAuthCoreBuilder AddSigningKeySource<TSource>(this ZeeKayDaAuthCoreBuilder builder)
         where TSource : class, ISigningKeySource
     {
         ArgumentNullException.ThrowIfNull(builder);

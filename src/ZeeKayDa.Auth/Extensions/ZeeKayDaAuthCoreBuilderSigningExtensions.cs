@@ -8,9 +8,9 @@ using ZeeKayDa.Auth.Tokens;
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
-/// Extension methods for registering JWT signing key providers with <see cref="ZeeKayDaAuthBuilder"/>.
+/// Extension methods for registering JWT signing key providers with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderSigningExtensions
+public static class ZeeKayDaAuthCoreBuilderSigningExtensions
 {
     /// <summary>
     /// Registers a development-only signing key provider that generates an ephemeral RSA key
@@ -25,6 +25,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// is always emitted at startup. To persist the key across restarts, use
     /// <see cref="AddPersistedDevelopmentSigning"/> instead.
     /// </remarks>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="configure">
     /// An optional callback to further configure <see cref="DevelopmentSigningOptions"/> (for
@@ -39,9 +40,10 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// Thrown when a signing key source has already been registered — including by the other
     /// development registration method. Only one signing key provider is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddInMemoryDevelopmentSigning(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder AddInMemoryDevelopmentSigning<TBuilder>(
+        this TBuilder builder,
         Action<DevelopmentSigningOptions>? configure = null)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
 
@@ -67,6 +69,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// treated as compromised and causes a hard failure at startup. For an ephemeral key with no
     /// persistence, call <see cref="AddInMemoryDevelopmentSigning"/> instead.
     /// </remarks>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="persistTo">
     /// The directory in which to store the key file. Pass <see langword="null"/> to use
@@ -85,10 +88,11 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     /// Thrown when a signing key source has already been registered — including by the other
     /// development registration method. Only one signing key provider is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddPersistedDevelopmentSigning(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder AddPersistedDevelopmentSigning<TBuilder>(
+        this TBuilder builder,
         string? persistTo = null,
         Action<DevelopmentSigningOptions>? configure = null)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
 
@@ -101,7 +105,7 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
     }
 
     private static void RegisterDevelopmentSigningKeys(
-        ZeeKayDaAuthBuilder builder,
+        ZeeKayDaAuthCoreBuilder builder,
         string? persistToDirectory,
         bool persist)
     {

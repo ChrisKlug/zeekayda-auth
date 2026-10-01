@@ -8,7 +8,7 @@ public sealed class ZeeKayDaAuthBuilderTests
     [Fact]
     public void ThrowIfAlreadyRegistered_does_not_throw_when_service_is_not_registered()
     {
-        var builder = new ZeeKayDaAuthBuilder(new ServiceCollection());
+        var builder = new ZeeKayDaAuthCoreBuilder(new ServiceCollection());
 
         var act = () => builder.ThrowIfAlreadyRegistered(typeof(IFakeService));
 
@@ -20,7 +20,7 @@ public sealed class ZeeKayDaAuthBuilderTests
     {
         var services = new ServiceCollection();
         services.AddSingleton<IFakeService, FakeService>();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         var act = () => builder.ThrowIfAlreadyRegistered(typeof(IFakeService));
 

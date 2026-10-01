@@ -9,7 +9,7 @@ using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
 {
     // ── Registration ─────────────────────────────────────────────────────────────────────────────
 
@@ -19,7 +19,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddOptions();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddClientSecretHasher<FakeHasher>();
 
@@ -34,7 +34,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddOptions();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddClientSecretHasher<FakeHasher>(isDefault: true);
         builder.AddClientSecretHasher<AnotherFakeHasher>(isDefault: false);
@@ -50,7 +50,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddOptions();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddClientSecretHasher<FakeHasher>(isDefault: true);
 
@@ -66,7 +66,7 @@ public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddOptions();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddClientSecretHasher<FakeHasher>();
 
         var act = () => builder.AddClientSecretHasher<FakeHasher>();

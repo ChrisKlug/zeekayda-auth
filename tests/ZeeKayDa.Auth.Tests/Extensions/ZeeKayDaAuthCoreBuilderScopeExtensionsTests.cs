@@ -3,7 +3,7 @@ using ZeeKayDa.Auth.Scopes;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthBuilderScopeExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderScopeExtensionsTests
 {
     [Fact]
     public async Task AddInMemoryScopes_replaces_the_default_scope_repository()

@@ -9,9 +9,9 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Extension methods for registering the Windows Certificate Store as a JWT signing key provider
-/// with <see cref="ZeeKayDaAuthBuilder"/>.
+/// with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
+public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensions
 {
     /// <summary>
     /// Registers a single certificate from a Windows Certificate Store as the JWT signing key, with
@@ -29,12 +29,13 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
     /// </para>
     /// <para>
     /// To stage a rotation, use the
-    /// <see cref="AddWindowsCertificateStoreSigning(ZeeKayDaAuthBuilder,SigningAlgorithm,StoreLocation,StoreName,Action{WindowsCertificateStoreSigningOptions})"/>
+    /// <see cref="AddWindowsCertificateStoreSigning{TBuilder}(TBuilder,SigningAlgorithm,StoreLocation,StoreName,Action{WindowsCertificateStoreSigningOptions})"/>
     /// overload and fill the <c>Previous</c>/<c>Current</c>/<c>Next</c> slots. This overload takes no
     /// configuration callback precisely so that the certificate it names is unambiguously the one
     /// that signs.
     /// </para>
     /// </remarks>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="certificate">Finds the certificate that signs.</param>
     /// <param name="algorithm">The JWS algorithm to sign with.</param>
@@ -51,12 +52,13 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
     /// <exception cref="InvalidOperationException">
     /// Thrown when a signing key provider has already been registered. Only one is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddWindowsCertificateStoreSigning(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder AddWindowsCertificateStoreSigning<TBuilder>(
+        this TBuilder builder,
         CertificateLookup certificate,
         SigningAlgorithm algorithm,
         StoreLocation storeLocation,
         StoreName storeName)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         // Platform gate first, before any argument validation: no argument combination makes this
         // method valid on a non-Windows OS, so this check must win over ArgumentNullException.
@@ -100,6 +102,7 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
     /// <see cref="WindowsCertificateStoreSigningOptions.Next"/>.
     /// </para>
     /// </remarks>
+    /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="algorithm">The JWS algorithm every configured slot is signed under.</param>
     /// <param name="storeLocation">The store location every slot is looked up in.</param>
@@ -116,12 +119,13 @@ public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
     /// <exception cref="InvalidOperationException">
     /// Thrown when a signing key provider has already been registered. Only one is allowed.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddWindowsCertificateStoreSigning(
-        this ZeeKayDaAuthBuilder builder,
+    public static TBuilder AddWindowsCertificateStoreSigning<TBuilder>(
+        this TBuilder builder,
         SigningAlgorithm algorithm,
         StoreLocation storeLocation,
         StoreName storeName,
         Action<WindowsCertificateStoreSigningOptions> configure)
+        where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ThrowIfNotWindows();
 

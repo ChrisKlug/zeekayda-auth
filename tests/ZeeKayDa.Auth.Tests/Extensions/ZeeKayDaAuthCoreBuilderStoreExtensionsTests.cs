@@ -10,7 +10,7 @@ using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderStoreExtensionsTests
 {
     // ── Fake infrastructure for InMemoryStoreVerifier resolution ─────────────────────────────────
 
@@ -36,7 +36,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddAuthorizationCodeStore_registers_T_as_IAuthorizationCodeBackingStore()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddAuthorizationCodeStore<StubAuthorizationCodeBackingStore>();
 
@@ -51,7 +51,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddAuthorizationCodeStore_registers_the_framework_AuthorizationCodeStore()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddAuthorizationCodeStore<StubAuthorizationCodeBackingStore>();
 
@@ -67,7 +67,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddAuthorizationCodeStore_throws_InvalidOperationException_on_second_call_with_same_type()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddAuthorizationCodeStore<StubAuthorizationCodeBackingStore>();
 
         var act = () => builder.AddAuthorizationCodeStore<StubAuthorizationCodeBackingStore>();
@@ -80,7 +80,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddAuthorizationCodeStore_throws_InvalidOperationException_on_second_call_with_different_type()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddAuthorizationCodeStore<StubAuthorizationCodeBackingStore>();
 
         var act = () => builder.AddAuthorizationCodeStore<AnotherStubAuthorizationCodeBackingStore>();
@@ -95,7 +95,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddRefreshTokenStore_registers_T_as_IRefreshTokenBackingStore()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddRefreshTokenStore<StubRefreshTokenBackingStore>();
 
@@ -110,7 +110,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddRefreshTokenStore_registers_the_framework_RefreshTokenStore()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddRefreshTokenStore<StubRefreshTokenBackingStore>();
 
@@ -126,7 +126,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddRefreshTokenStore_throws_InvalidOperationException_on_second_call_with_same_type()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddRefreshTokenStore<StubRefreshTokenBackingStore>();
 
         var act = () => builder.AddRefreshTokenStore<StubRefreshTokenBackingStore>();
@@ -139,7 +139,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddRefreshTokenStore_throws_InvalidOperationException_on_second_call_with_different_type()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddRefreshTokenStore<StubRefreshTokenBackingStore>();
 
         var act = () => builder.AddRefreshTokenStore<AnotherStubRefreshTokenBackingStore>();
@@ -154,7 +154,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void Registering_the_code_store_does_not_block_the_refresh_token_store_registration()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddAuthorizationCodeStore<StubAuthorizationCodeBackingStore>();
 
         var act = () => builder.AddRefreshTokenStore<StubRefreshTokenBackingStore>();
@@ -169,7 +169,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void Registering_the_refresh_token_store_does_not_block_the_code_store_registration()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddRefreshTokenStore<StubRefreshTokenBackingStore>();
 
         var act = () => builder.AddAuthorizationCodeStore<StubAuthorizationCodeBackingStore>();
@@ -186,7 +186,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryAuthorizationCodeStore_registers_IAuthorizationCodeBackingStore_as_singleton_with_InMemoryAuthorizationCodeBackingStore_implementation()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryAuthorizationCodeStore();
 
@@ -200,7 +200,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryAuthorizationCodeStore_registers_the_framework_AuthorizationCodeStore()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryAuthorizationCodeStore();
 
@@ -213,7 +213,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryAuthorizationCodeStore_registers_InMemoryStoreVerifier_as_IStartupVerifier()
     {
         var services = CreateServicesWithStoreVerifierDependencies();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryAuthorizationCodeStore();
 
@@ -228,7 +228,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryAuthorizationCodeStore_throws_InvalidOperationException_when_the_code_store_is_already_registered()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddInMemoryAuthorizationCodeStore();
 
         var act = () => builder.AddInMemoryAuthorizationCodeStore();
@@ -241,7 +241,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryAuthorizationCodeStore_throws_InvalidOperationException_when_generic_AddAuthorizationCodeStore_was_called_first()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddAuthorizationCodeStore<StubAuthorizationCodeBackingStore>();
 
         var act = () => builder.AddInMemoryAuthorizationCodeStore();
@@ -256,7 +256,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryRefreshTokenStore_registers_the_framework_RefreshTokenStore()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryRefreshTokenStore();
 
@@ -273,7 +273,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryRefreshTokenStore_registers_InMemoryStoreVerifier_as_IStartupVerifier()
     {
         var services = CreateServicesWithStoreVerifierDependencies();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryRefreshTokenStore();
 
@@ -288,7 +288,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryRefreshTokenStore_throws_InvalidOperationException_when_the_refresh_token_store_is_already_registered()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddInMemoryRefreshTokenStore();
 
         var act = () => builder.AddInMemoryRefreshTokenStore();
@@ -301,7 +301,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryRefreshTokenStore_throws_InvalidOperationException_when_generic_AddRefreshTokenStore_was_called_first()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddRefreshTokenStore<StubRefreshTokenBackingStore>();
 
         var act = () => builder.AddInMemoryRefreshTokenStore();
@@ -316,7 +316,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryStores_registers_the_code_refresh_token_and_interaction_stores()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryStores();
 
@@ -337,7 +337,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryStores_registers_InMemoryStoreVerifier_once_per_store()
     {
         var services = CreateServicesWithStoreVerifierDependencies();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryStores();
 
@@ -350,7 +350,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void Calling_AddInMemoryAuthorizationCodeStore_and_AddInMemoryRefreshTokenStore_separately_registers_InMemoryStoreVerifier_once_per_store()
     {
         var services = CreateServicesWithStoreVerifierDependencies();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryAuthorizationCodeStore();
         builder.AddInMemoryRefreshTokenStore();
@@ -364,7 +364,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public async Task AddInMemoryStores_produces_a_distinctly_worded_warning_per_store_not_the_same_warning_repeated()
     {
         var services = CreateServicesWithStoreVerifierDependencies();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryStores();
 
@@ -391,7 +391,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public async Task AddInMemoryStores_passes_allowOutsideDevelopment_through_to_both_underlying_registrations()
     {
         var services = CreateServicesWithStoreVerifierDependencies(Environments.Production);
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryStores(allowOutsideDevelopment: true);
 
@@ -413,7 +413,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         // allowOutsideDevelopment parameter and gates independently on it. Mixing granular calls
         // with different values must not let one call's override leak into the other's gate.
         var services = CreateServicesWithStoreVerifierDependencies(Environments.Production);
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true);
         builder.AddInMemoryRefreshTokenStore(allowOutsideDevelopment: false);
@@ -446,7 +446,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryStores_throws_InvalidOperationException_when_the_code_store_is_already_registered_even_if_the_refresh_token_store_is_not()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddInMemoryAuthorizationCodeStore();
 
         var act = () => builder.AddInMemoryStores();
@@ -459,7 +459,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryStores_throws_InvalidOperationException_when_the_refresh_token_store_is_already_registered_even_if_the_code_store_is_not()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddInMemoryRefreshTokenStore();
 
         // AddInMemoryStores calls AddInMemoryAuthorizationCodeStore first, which succeeds,
@@ -474,7 +474,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryStores_throws_InvalidOperationException_when_an_interaction_store_is_already_registered()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddDistributedCacheInteractionStore();
 
         var act = () => builder.AddInMemoryStores();
@@ -491,7 +491,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
         // Control-presence: the gate on a per-process store outside Development is only a control
         // if the registration that creates the store also registers it.
         var services = CreateServicesWithStoreVerifierDependencies();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddInMemoryInteractionStore();
 
@@ -508,7 +508,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddInMemoryInteractionStore_throws_InvalidOperationException_when_an_interaction_store_is_already_registered()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddInMemoryInteractionStore();
 
         var act = () => builder.AddInMemoryInteractionStore();
@@ -523,7 +523,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddDistributedCacheInteractionStore_registers_the_cache_backed_store_and_its_gate()
     {
         var services = CreateServicesWithStoreVerifierDependencies();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddDistributedCacheInteractionStore();
 
@@ -541,7 +541,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     {
         var services = CreateServicesWithStoreVerifierDependencies(Environments.Production);
         services.AddDistributedMemoryCache();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
 
         builder.AddDistributedCacheInteractionStore(allowMemoryCacheOutsideDevelopment: true);
 
@@ -557,7 +557,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void AddDistributedCacheInteractionStore_throws_InvalidOperationException_when_an_interaction_store_is_already_registered()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddInMemoryInteractionStore();
 
         var act = () => builder.AddDistributedCacheInteractionStore();
@@ -570,7 +570,7 @@ public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
     public void Registering_an_interaction_store_does_not_block_the_token_store_registrations()
     {
         var services = new ServiceCollection();
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = new ZeeKayDaAuthCoreBuilder(services);
         builder.AddDistributedCacheInteractionStore();
 
         var act = () => builder

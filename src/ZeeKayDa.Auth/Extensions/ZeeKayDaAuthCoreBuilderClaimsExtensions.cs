@@ -5,9 +5,9 @@ using ZeeKayDa.Auth.Claims;
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
-/// Extension methods for registering the claims provider with <see cref="ZeeKayDaAuthBuilder"/>.
+/// Extension methods for registering the claims provider with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderClaimsExtensions
+public static class ZeeKayDaAuthCoreBuilderClaimsExtensions
 {
     /// <summary>
     /// Registers <typeparamref name="TProvider"/> as the host's <see cref="IClaimsProvider"/>,
@@ -24,7 +24,7 @@ public static class ZeeKayDaAuthBuilderClaimsExtensions
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
-    public static ZeeKayDaAuthBuilder AddClaimsProvider<TProvider>(this ZeeKayDaAuthBuilder builder)
+    public static ZeeKayDaAuthCoreBuilder AddClaimsProvider<TProvider>(this ZeeKayDaAuthCoreBuilder builder)
         where TProvider : class, IClaimsProvider
     {
         ArgumentNullException.ThrowIfNull(builder);
