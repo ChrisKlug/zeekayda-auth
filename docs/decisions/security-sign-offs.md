@@ -1037,7 +1037,8 @@ each was a control silently removed rather than a bug introduced. Dropping the r
 closed, proven by `AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring`.
 The gate-warning flush justified itself from the sanitizing-logger gate's registration position, so a
 gate inserted ahead of it would have logged through a logger proved shadowed — now tracked explicitly,
-proven by a test retired with the gate phase itself (#771).
+proven by StartAsync_discards_warnings_buffered_before_the_logger_gate_fails. [Retired with the gate
+phase in #771: the logger can no longer be shadowed — `SanitizingLogger_has_no_constructor_another_assembly_can_call_or_chain_to`.]
 
 Residual: "cheap" is a claim an implementation makes by choosing an interface. A third-party check
 doing I/O from `IStartupVerifier` defeats the phase for its own host. Not a security boundary — the
@@ -1921,7 +1922,8 @@ security lenses and the security agent, one round plus fix-diff verification; no
 Every non-HTTP service and startup check registers from AddZeeKayDaAuthCore(configure);
 AddZeeKayDaAuth(configure) calls it and adds only the HTTP surface. Closed — proven by
 `A_core_only_host_validates_the_server_options_at_startup`,
-a gate-order test retired with the gate phase (#771),
+AddZeeKayDaAuthCore_registers_the_sanitizing_logger_gate_first_and_the_options_gate_second [retired with
+the gate phase in #771; options still validate first — `StartAsync_validates_options_before_constructing_any_verifier`],
 `AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring`.
 The startup runner and its gates have one registration site, AddZeeKayDaAuthCore(configure);
 ValidateWithZeeKayDa() registers none, and every ZeeKayDaAuthBuilder comes from Core (internal
