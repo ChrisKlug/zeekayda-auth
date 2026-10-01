@@ -6,9 +6,9 @@ namespace ZeeKayDa.Auth;
 /// A builder for configuring ZeeKayDa.Auth services.
 /// </summary>
 /// <remarks>
-/// Returned by <c>AddZeeKayDaAuth()</c> and <c>AddZeeKayDaAuthCore()</c>. Use extension methods on this builder to register
-/// optional features (signing keys, client stores, etc.) without adding properties to
-/// <see cref="AuthorizationServerOptions"/>.
+/// Returned by <c>AddZeeKayDaAuth(configure)</c> and <c>AddZeeKayDaAuthCore(configure)</c>, the only
+/// ways to get one. Use extension methods on this builder to register optional features (signing
+/// keys, client stores, etc.) without adding properties to <see cref="AuthorizationServerOptions"/>.
 /// </remarks>
 public sealed class ZeeKayDaAuthBuilder
 {

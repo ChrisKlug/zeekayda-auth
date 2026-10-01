@@ -36,7 +36,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// <see langword="null"/>.
     /// </exception>
     /// <remarks>
-    /// Calls <c>AddZeeKayDaAuthCore()</c>, which registers and validates
+    /// Calls <c>AddZeeKayDaAuthCore(configure)</c>, which registers and validates
     /// <see cref="AuthorizationServerOptions"/> so a misconfigured server fails loudly at startup
     /// rather than at the first request, and adds the endpoints, cookies, interaction and external
     /// providers on top. Call
@@ -87,7 +87,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
 
     /// <summary>
     /// Registers the startup checks on the HTTP surface. The rest are registered by
-    /// <c>AddZeeKayDaAuthCore()</c>, together with the runner that drives them all.
+    /// <c>AddZeeKayDaAuthCore(configure)</c>, together with the runner that drives them all.
     /// </summary>
     private static void AddStartupChecks(IServiceCollection services)
     {

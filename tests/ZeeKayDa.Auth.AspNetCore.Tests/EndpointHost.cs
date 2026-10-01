@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.Clients;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 

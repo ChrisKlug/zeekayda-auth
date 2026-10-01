@@ -7,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;

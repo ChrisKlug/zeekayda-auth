@@ -11,7 +11,6 @@ using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tokens;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 

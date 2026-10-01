@@ -13,7 +13,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ZeeKayDaAuthTestingServiceCollectionExtensions
 {
     /// <summary>
-    /// Calls <c>AddZeeKayDaAuthCore()</c> with a valid issuer and registers everything its startup
+    /// Calls <c>AddZeeKayDaAuthCore(configure)</c> with a valid issuer and registers everything its startup
     /// checks demand except a signing key source: an empty in-memory client set, a claims provider
     /// that returns no claims, the in-memory stores, and a <c>Development</c>
     /// <see cref="IHostEnvironment"/> when none is registered.

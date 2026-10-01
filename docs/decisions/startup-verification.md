@@ -35,7 +35,7 @@ parties structurally cannot register into is what makes "nothing logs through an
 sanitizing logger" true rather than advised, and no check runs against invalid options.
 
 **The gates ship from the same registration call as the runner.** Both come only from
-`AddZeeKayDaAuthCore()`, and every builder comes from it, so no host gets a runner whose gate
+`AddZeeKayDaAuthCore(configure)`, and every builder comes from it, so no host gets a runner whose gate
 collection is empty and whose phase 1 passes vacuously. `ValidateWithZeeKayDa()` registers no runner:
 a host without a ZeeKayDa server is not supported.
 

@@ -559,7 +559,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   now ship in `ZeeKayDa.Auth`, in the same namespace. `ZeeKayDaAuthBuilder`'s constructor is no
   longer public, and the signing packages no longer call `AddZeeKayDaAuthCore()` themselves.
   `ZeeKayDa.Auth` references `Microsoft.AspNetCore.DataProtection`, which has no ASP.NET Core
-  dependency, in place of its abstractions package.
+  dependency, in place of its abstractions package. A package's tests get a Core-only host that
+  passes every startup check from `services.AddZeeKayDaAuthCoreForTesting()` in
+  `ZeeKayDa.Auth.TestKit`. `AddZeeKayDaOptions<T>()` and `ValidateWithZeeKayDa()` no longer register
+  the startup runner; only `AddZeeKayDaAuthCore` does. `AddZeeKayDaSigningKeys()` moved to namespace
+  `Microsoft.Extensions.DependencyInjection`. A Core-only host whose signing keys do not advertise
+  RS256 now gets the same OpenID Connect Discovery 1.0 §3 warning as an ASP.NET Core host.
 
 - **Every public async member returns `Task` or `Task<T>`; none returns `ValueTask`** (#784). The
   public API mixed the two with no rule. A `ValueTask` must be awaited exactly once and never stored,
