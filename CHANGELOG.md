@@ -754,7 +754,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   it overwrote the file the other may have been reading. Hosts now take turns on a lock file beside
   the key, so exactly one creates it and the rest load that key, and the key is written beside its
   final name and renamed into place, so no host ever reads a half-written file. A host that cannot
-  take the lock within 30 seconds fails with `signing.dev_keys.lock_timeout`.
+  take the lock within 30 seconds fails with `signing.dev_keys.lock_timeout`, and a key path that
+  is a directory or a dangling symlink fails with `signing.dev_keys.key_path_not_a_file` before
+  anything is written.
 
 - **A client registration that cannot be read is logged once, not on every request** (#698). A
   registration whose property getter throws — a lazy-loaded navigation property read outside its

@@ -240,6 +240,48 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteKeyFileAsync_refuses_a_key_path_that_is_a_directory()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        Directory.CreateDirectory(keyPath);
+
+        var act = async () => await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("signing.dev_keys.key_path_not_a_file");
+        Directory.EnumerateFileSystemEntries(keyPath).Should().BeEmpty();
+        Directory.GetFiles(_tempDirectory, "*.pending").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task WriteKeyFileAsync_refuses_a_dangling_symlink_at_the_key_path_without_writing_through_it()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symlink on Windows requires elevation.");
+
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var target = Path.Join(_tempDirectory, "elsewhere.pem");
+        File.CreateSymbolicLink(keyPath, target);
+
+        var act = async () => await _sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("signing.dev_keys.key_path_not_a_file");
+        File.Exists(target).Should().BeFalse("nothing may be written through the link");
+        Directory.GetFiles(_tempDirectory, "*.pending").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FileExists_reports_a_dangling_symlink_as_absent()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symlink on Windows requires elevation.");
+
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        File.CreateSymbolicLink(keyPath, Path.Join(_tempDirectory, "elsewhere.pem"));
+
+        _sut.FileExists(keyPath).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task WriteKeyFileAsync_checks_for_an_existing_key_only_once_it_holds_the_lock()
     {
         // The key created by whoever held the lock must be found, not replaced: checking before

@@ -47,6 +47,18 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         // under it, so exactly one creates the key: on Unix File.Move's no-overwrite is a check then
         // a rename, which two hosts can both pass.
         await using var turn = await TakeTurnAsync(keyPath + ".lock", cancellationToken).ConfigureAwait(false);
+
+        // Refused before anything is written: File.Exists reports a dangling symlink as present on
+        // Unix and a directory as absent, so neither would otherwise get a useful error.
+        if (Directory.Exists(keyPath) || new FileInfo(keyPath).LinkTarget is not null)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.dev_keys.key_path_not_a_file",
+                    $"Signing key path '{keyPath}' is a directory or a symlink, not a key file. " +
+                    "Remove it and restart the application to generate a new key."));
+        }
+
         if (File.Exists(keyPath))
             return false;
 
@@ -163,8 +175,11 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         return new KeyFileContent(bytes);
     }
 
+    // File.Exists alone reports a dangling symlink as present on Unix, which would send the caller to
+    // load a key that is not there instead of to the write that refuses the link by name.
     /// <inheritdoc/>
-    public bool FileExists(string path) => File.Exists(path);
+    public bool FileExists(string path) =>
+        File.Exists(path) && new FileInfo(path).ResolveLinkTarget(returnFinalTarget: true) is null or { Exists: true };
 
     [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. LocalSigningKeyFileSystemTests covers this on the windows-latest runner.")]
     [SupportedOSPlatform("windows")]
