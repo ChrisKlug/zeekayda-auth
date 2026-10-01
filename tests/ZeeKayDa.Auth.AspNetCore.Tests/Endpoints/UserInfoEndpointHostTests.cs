@@ -120,7 +120,7 @@ public sealed class UserInfoEndpointHostTests(
         // authorize redirect and the login post, so it cannot move to the host-free harness.
         using var factory = new TestWebAppFactory(
             configureBuilder: builder => builder.AddInMemoryClients(clients => clients
-                .Add(ClientRegistration.CreatePublic(App, [Redirect], [], ["openid", "profile"]) with { RequireConsent = false })),
+                .Add(Client.CreatePublic(App, [Redirect], [], ["openid", "profile"]) with { RequireConsent = false })),
             mapEndpoints: MapLoginPage);
         using var client = factory.CreateClient(new() { BaseAddress = new Uri(Issuer), AllowAutoRedirect = false, HandleCookies = true });
 

@@ -52,10 +52,10 @@ public sealed class InMemoryClientRepositoryTests
 
     // A caller-supplied validator is an extension point, so it can throw a configuration exception
     // that carries a root cause of its own.
-    private sealed class DelegatingValidator(Func<IClientRegistration, Exception?> onValidate)
+    private sealed class DelegatingValidator(Func<IClientWithCredentials, Exception?> onValidate)
         : IClientRegistrationValidator
     {
-        public void Validate(IClientRegistration client)
+        public void Validate(IClientWithCredentials client)
         {
             if (onValidate(client) is { } ex)
                 throw ex;
@@ -109,8 +109,8 @@ public sealed class InMemoryClientRepositoryTests
             NullSanitizingLogger<InMemoryClientRepository>.Instance);
     }
 
-    private static ClientRegistration ValidPublicClient(string clientId = "test-client") =>
-        ClientRegistration.CreatePublic(
+    private static Client ValidPublicClient(string clientId = "test-client") =>
+        Client.CreatePublic(
             clientId,
             ["https://app.example.com/cb"],
             [],
@@ -119,7 +119,7 @@ public sealed class InMemoryClientRepositoryTests
     private static PendingConfidentialClientSpec PendingSpec(
         string clientId, string plaintextSecret, bool requireConsent = true) =>
         new(
-            new ClientRegistration
+            new Client
             {
                 ClientId = clientId,
                 Credentials = [],
@@ -180,7 +180,7 @@ public sealed class InMemoryClientRepositoryTests
         opts.PreBuilt.Add(ValidPublicClient("known-client"));
         var repo = MakeRepository(opts);
 
-        IClientRegistration? found = null;
+        IClientWithCredentials? found = null;
         var act = async () => found = await repo.FindByClientIdAsync(null!, TestContext.Current.CancellationToken);
 
         await act.Should().NotThrowAsync();
@@ -234,7 +234,7 @@ public sealed class InMemoryClientRepositoryTests
     {
         var opts = new InMemoryClientRegistrationOptions();
         // A client with a fragment in its redirect URI
-        opts.PreBuilt.Add(new ClientRegistration
+        opts.PreBuilt.Add(new Client
         {
             ClientId = "bad-client",
             Credentials = [],
@@ -273,7 +273,7 @@ public sealed class InMemoryClientRepositoryTests
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(
-            ClientRegistration.CreateConfidential("web", new FakeSecret(), ["https://app.example.com/cb"], [], ["openid"])
+            Client.CreateConfidential("web", new FakeSecret(), ["https://app.example.com/cb"], [], ["openid"])
             with
             {
                 AllowedTokenEndpointAuthMethods = new HashSet<string>(
@@ -366,7 +366,7 @@ public sealed class InMemoryClientRepositoryTests
     public void Constructor_aggregates_all_failures_for_multiple_invalid_clients()
     {
         var opts = new InMemoryClientRegistrationOptions();
-        opts.PreBuilt.Add(new ClientRegistration
+        opts.PreBuilt.Add(new Client
         {
             ClientId = "bad-client-1",
             Credentials = [],
@@ -376,7 +376,7 @@ public sealed class InMemoryClientRepositoryTests
             AllowedTokenEndpointAuthMethods = new HashSet<string>(
                 [TokenEndpointAuthMethods.None], StringComparer.Ordinal)
         });
-        opts.PreBuilt.Add(new ClientRegistration
+        opts.PreBuilt.Add(new Client
         {
             ClientId = "bad-client-2",
             Credentials = [],
@@ -474,7 +474,7 @@ public sealed class InMemoryClientRepositoryTests
         // client's problems must still be reported in the same exception.
         var opts = new InMemoryClientRegistrationOptions();
         opts.Pending.Add(PendingSpec("empty-secret-client", "   "));
-        opts.PreBuilt.Add(new ClientRegistration
+        opts.PreBuilt.Add(new Client
         {
             ClientId = "fragment-client",
             Credentials = [],

@@ -101,7 +101,7 @@ public sealed class TokenEndpointOptions
     /// describes for a server that issues no refresh token. A browser that
     /// still holds its sign-in session is not asked to sign in again, but it is asked for consent
     /// again unless the client is registered with
-    /// <see cref="Clients.IClientMetadata.RequireConsent"/> off — consent is not remembered
+    /// <see cref="Clients.IClient.RequireConsent"/> off — consent is not remembered
     /// between requests, so a default registration prompts on every renewal. The refresh-token
     /// grant is not served yet, so putting
     /// <see cref="GrantType.RefreshToken"/> in
@@ -110,7 +110,7 @@ public sealed class TokenEndpointOptions
     /// </para>
     /// <para>
     /// A client registration may override it through
-    /// <see cref="Clients.IClientMetadata.AccessTokenLifetime"/>; a <see langword="null"/>
+    /// <see cref="Clients.IClient.AccessTokenLifetime"/>; a <see langword="null"/>
     /// override means this value. Must be greater than <see cref="TimeSpan.Zero"/>; rejected at
     /// startup otherwise. No upper bound is enforced — a value past
     /// <see cref="AbsoluteFamilyLifetime"/> warns at startup, since a token would then outlive
@@ -124,7 +124,7 @@ public sealed class TokenEndpointOptions
     /// </summary>
     /// <remarks>
     /// Short by design: an ID token is consumed once, by the client, on receipt. A client
-    /// registration may override it through <see cref="Clients.IClientMetadata.IdTokenLifetime"/>;
+    /// registration may override it through <see cref="Clients.IClient.IdTokenLifetime"/>;
     /// a <see langword="null"/> override means this value. Must be greater than
     /// <see cref="TimeSpan.Zero"/>; rejected at startup otherwise. No upper bound is enforced.
     /// </remarks>

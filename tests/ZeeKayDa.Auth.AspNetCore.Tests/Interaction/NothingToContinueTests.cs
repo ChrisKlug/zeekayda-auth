@@ -328,18 +328,18 @@ public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHost
         },
         mapEndpoints: MapHostPages);
 
-    internal static ClientRegistration RestartingRegistration() =>
-        ClientRegistration.CreatePublic(RestartingClient, [RegisteredRedirect], [], ["openid"]) with
+    internal static Client RestartingRegistration() =>
+        Client.CreatePublic(RestartingClient, [RegisteredRedirect], [], ["openid"]) with
         {
             InitiateLoginUri = InitiateLoginUri,
         };
 
-    internal static ClientRegistration PlainRegistration() =>
-        ClientRegistration.CreatePublic(PlainClient, [RegisteredRedirect], [], ["openid"]);
+    internal static Client PlainRegistration() =>
+        Client.CreatePublic(PlainClient, [RegisteredRedirect], [], ["openid"]);
 
     /// <summary>A first-party client the operator chose to exempt from consent.</summary>
-    internal static ClientRegistration TrustedRegistration() =>
-        ClientRegistration.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid"]) with { RequireConsent = false };
+    internal static Client TrustedRegistration() =>
+        Client.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid"]) with { RequireConsent = false };
 
     /// <summary>The host's pages, written as a host that renders its own "nothing here" would write them.</summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
@@ -443,12 +443,12 @@ public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHost
     }
 
     /// <summary>A repository holding one registration an operator can change or remove mid-flow.</summary>
-    private sealed class MutableClientRepository(IClientRegistration initial) : IClientRepository
+    private sealed class MutableClientRepository(IClientWithCredentials initial) : IClientRepository
     {
-        public IClientRegistration? Current { get; set; } = initial;
+        public IClientWithCredentials? Current { get; set; } = initial;
 
-        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IClientRegistration?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientWithCredentials?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
     }
 }
 

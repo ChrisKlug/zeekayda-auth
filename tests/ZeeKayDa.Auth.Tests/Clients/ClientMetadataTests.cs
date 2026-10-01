@@ -8,15 +8,15 @@ public sealed class ClientMetadataTests
     public void IClientMetadata_does_not_expose_credentials()
     {
         // The point of the split: code that only decides what to issue a client never sees its
-        // secrets. Moving Credentials up to IClientMetadata would silently undo that.
-        typeof(IClientMetadata).GetProperty(nameof(IClientRegistration.Credentials))
+        // secrets. Moving Credentials up to IClient would silently undo that.
+        typeof(IClient).GetProperty(nameof(IClientWithCredentials.Credentials))
             .Should().BeNull();
     }
 
     [Fact]
     public void IClientRegistration_is_an_IClientMetadata()
     {
-        typeof(IClientMetadata).IsAssignableFrom(typeof(IClientRegistration)).Should().BeTrue();
+        typeof(IClient).IsAssignableFrom(typeof(IClientWithCredentials)).Should().BeTrue();
     }
 
     [Fact]
@@ -25,7 +25,7 @@ public sealed class ClientMetadataTests
         // The default interface member is what keeps consent on for a third-party registration
         // written before the member existed: a silent opt-out would remove the one protection a
         // user has against an authorization request they never started.
-        IClientMetadata client = new BareClient();
+        IClient client = new BareClient();
 
         client.RequireConsent.Should().BeTrue();
         client.DisplayName.Should().BeNull();
@@ -37,12 +37,12 @@ public sealed class ClientMetadataTests
     {
         // Skipping the question is an opt-out a registration must state; one written before the
         // member existed keeps asking.
-        IClientMetadata client = new BareClient();
+        IClient client = new BareClient();
 
         client.SkipLogoutConfirmation.Should().BeFalse();
     }
 
-    private sealed class BareClient : IClientMetadata
+    private sealed class BareClient : IClient
     {
         public string ClientId => "bare";
         public bool IsPublic => true;

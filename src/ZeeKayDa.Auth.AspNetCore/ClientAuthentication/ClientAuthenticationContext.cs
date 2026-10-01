@@ -16,5 +16,5 @@ public sealed class ClientAuthenticationContext : TokenRequestContext
     /// Guaranteed non-null — the <see cref="CompositeClientAuthenticator"/> only creates this
     /// context when the client exists in the repository.
     /// </summary>
-    public required IClientRegistration Client { get; init; }
+    public required IClientWithCredentials Client { get; init; }
 }

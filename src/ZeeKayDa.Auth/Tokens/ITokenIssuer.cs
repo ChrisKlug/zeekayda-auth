@@ -20,7 +20,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// longer performs: writing <c>at_hash</c> over the <see cref="IdTokenIssuanceContext.AccessToken"/>
 /// with the hash function the token's own <c>alg</c> implies (OpenID Connect Core §3.1.3.6), and
 /// refusing to sign with an algorithm outside the client's
-/// <see cref="Clients.IClientMetadata.AllowedSigningAlgorithms"/>. Both belong inside the signing
+/// <see cref="Clients.IClient.AllowedSigningAlgorithms"/>. Both belong inside the signing
 /// callback, where the key that signs is known; nothing downstream verifies them after the fact.
 /// </para>
 /// </remarks>

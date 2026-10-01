@@ -65,7 +65,7 @@ public sealed class IdTokenHintValidatorTests
         }
     }
 
-    private sealed class HintClient : IClientMetadata
+    private sealed class HintClient : IClient
     {
         public string ClientId => IdTokenHintValidatorTests.ClientId;
         public bool IsPublic => true;

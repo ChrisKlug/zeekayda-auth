@@ -29,7 +29,7 @@ internal sealed class PostLogoutRedirect
     /// there is no client to vouch for it, none was asked for, or the one asked for is not among
     /// the client's registered URIs by exact ordinal comparison.
     /// </summary>
-    public static PostLogoutRedirect? For(IClientMetadata? client, string? postLogoutRedirectUri, string? state) =>
+    public static PostLogoutRedirect? For(IClient? client, string? postLogoutRedirectUri, string? state) =>
         client is not null
         && postLogoutRedirectUri is not null
         && client.PostLogoutRedirectUris.Contains(postLogoutRedirectUri, StringComparer.Ordinal)

@@ -83,15 +83,21 @@ internal sealed class ValidatedClientResolver(
     private const int MaxCachedVerdicts = 16_384;
 
     /// <summary>
-    /// Returns an immutable snapshot of the validated registration for <paramref name="clientId"/>,
-    /// or <see langword="null"/> when the client is unknown <em>or</em> its registration fails
+    /// Returns the validated client for <paramref name="clientId"/>, without its credentials, or
+    /// <see langword="null"/> when the client is unknown <em>or</em> its registration fails
     /// validation. Callers cannot and must not distinguish the two.
+    /// </summary>
+    public async ValueTask<IClient?> FindClientAsync(string clientId, CancellationToken cancellationToken) =>
+        await FindClientWithCredentialsAsync(clientId, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// <see cref="FindClientAsync"/> with the client's credentials, for client authentication only.
     /// </summary>
     /// <remarks>
     /// The returned instance is never the store's own, and neither are its credentials — see the
     /// snapshot's remarks for why.
     /// </remarks>
-    public async ValueTask<IClientRegistration?> FindByClientIdAsync(
+    public async ValueTask<IClientWithCredentials?> FindClientWithCredentialsAsync(
         string clientId,
         CancellationToken cancellationToken)
     {
@@ -214,7 +220,7 @@ internal sealed class ValidatedClientResolver(
     /// snapshot is <see langword="null"/> only when the registration could not be read at all,
     /// which the verdict then says.
     /// </summary>
-    private (ClientRegistrationSnapshot? Snapshot, Verdict Verdict) Resolve(IClientRegistration client)
+    private (ClientRegistrationSnapshot? Snapshot, Verdict Verdict) Resolve(IClientWithCredentials client)
     {
         ClientRegistrationSnapshot snapshot;
         ClientRegistrationFingerprint.Fingerprint fingerprint;
@@ -275,7 +281,7 @@ internal sealed class ValidatedClientResolver(
         return entry.Value;
     }
 
-    private Verdict Validate(IClientRegistration client)
+    private Verdict Validate(IClientWithCredentials client)
     {
         try
         {

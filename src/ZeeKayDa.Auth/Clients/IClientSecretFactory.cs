@@ -36,7 +36,7 @@ public interface IClientSecretFactory
     /// <param name="plaintext">
     /// The plaintext client secret. Must be non-null, non-empty, and non-whitespace.
     /// </param>
-    /// <returns>A hashed credential suitable for storage in an <see cref="IClientRegistration"/>.</returns>
+    /// <returns>A hashed credential suitable for storage in an <see cref="IClientWithCredentials"/>.</returns>
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="plaintext"/> is null, empty, or whitespace.
     /// </exception>

@@ -17,7 +17,7 @@ internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistr
         IEnumerable<string> allowedScopes,
         Action<PublicClientOptions>? configure = null)
     {
-        var registration = ClientRegistration.CreatePublic(clientId, redirectUris, postLogoutRedirectUris, allowedScopes);
+        var registration = Client.CreatePublic(clientId, redirectUris, postLogoutRedirectUris, allowedScopes);
         _options.PreBuilt.Add(Configure(registration, configure, defaults => new PublicClientOptions(defaults)));
         return this;
     }
@@ -32,7 +32,7 @@ internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistr
         Action<ConfidentialClientOptions>? configure = null)
     {
         // The credentials stay empty until the repository hashes the secret at startup.
-        var registration = ClientRegistration.CreateConfidentialWithoutCredential(
+        var registration = Client.CreateConfidentialWithoutCredential(
             clientId, redirectUris, postLogoutRedirectUris, allowedScopes);
         _options.Pending.Add(new PendingConfidentialClientSpec(
             Configure(registration, configure, defaults => new ConfidentialClientOptions(defaults)),
@@ -41,16 +41,16 @@ internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistr
     }
 
     /// <inheritdoc/>
-    public IInMemoryClientRegistrationBuilder Add(IClientRegistration registration)
+    public IInMemoryClientRegistrationBuilder Add(IClientWithCredentials registration)
     {
         _options.PreBuilt.Add(registration);
         return this;
     }
 
-    private static ClientRegistration Configure<TOptions>(
-        ClientRegistration registration,
+    private static Client Configure<TOptions>(
+        Client registration,
         Action<TOptions>? configure,
-        Func<ClientRegistration, TOptions> createOptions)
+        Func<Client, TOptions> createOptions)
         where TOptions : ClientOptions
     {
         if (configure is null)
