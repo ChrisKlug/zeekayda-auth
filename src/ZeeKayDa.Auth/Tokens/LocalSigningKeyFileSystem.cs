@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -34,8 +35,8 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     }
 
     /// <summary>
-    /// How long a host waits for the lock before failing. Generating and writing one key takes well
-    /// under a second; a lock held this long is not a host taking its turn. Shortened only by tests.
+    /// How long a host waits for the lock before failing. Writing one key under it takes well under a
+    /// second; a lock held this long is not a host taking its turn. Shortened only by tests.
     /// </summary>
     internal TimeSpan LockTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
@@ -83,7 +84,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// </summary>
     private async Task<FileStream> TakeTurnAsync(string lockPath, CancellationToken cancellationToken)
     {
-        var deadline = DateTime.UtcNow + LockTimeout;
+        var waited = Stopwatch.StartNew();
         while (true)
         {
             try
@@ -92,7 +93,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
                     ? new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None)
                     : OpenLockUnix(lockPath);
             }
-            catch (IOException ex) when (DateTime.UtcNow >= deadline)
+            catch (IOException ex) when (waited.Elapsed >= LockTimeout)
             {
                 throw new ZeeKayDaConfigurationException(
                     new ZeeKayDaConfigurationFailure(
