@@ -87,7 +87,7 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
                 // Fails a cheap verifier: no IDistributedCache is registered for the distributed
                 // store check to find. Nothing in the activator phase should run afterwards.
                 new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<RecordingSigningKeySource>();
-                services.AddSingleton<IStartupVerifier>(new AlwaysFailingVerifier());
+                services.AddScoped<IStartupVerifier>(_ => new AlwaysFailingVerifier());
             });
 
             builder.Configure(app =>

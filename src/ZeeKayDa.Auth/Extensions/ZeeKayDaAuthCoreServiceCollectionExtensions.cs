@@ -101,7 +101,7 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers the startup-verification runner, its gates, and every check that does not need
+    /// Registers the startup-verification runner and every check that does not need
     /// HTTP: an <see cref="IStartupVerifier"/> where the check is pure configuration, an
     /// <see cref="IStartupActivator"/> where it calls caller-supplied code or must be awaited.
     /// </summary>
@@ -109,6 +109,12 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
     {
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, StartupVerificationHostedService>());
+
+        // The scanner keeps the collection reference, so the lifetime checks see registrations a
+        // host adds after this call too.
+        services.TryAddSingleton(_ => new ServiceLifetimeScanner(services));
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IStartupVerifier, StartupCheckLifetimeVerifier>());
 
         // Registered here as well as by AddSigningKeySource for coverage: StaticSigningKeyRing has
         // a public constructor, so a host can register an ISigningKeyRing itself without going
@@ -139,9 +145,7 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
             ServiceDescriptor.Scoped<IStartupActivator, ClaimsProviderPresenceActivator>());
 
         // Both wrapped repositories are held by singletons, so a host registering one as scoped
-        // would have it captured. The scanner keeps the collection reference so the check sees
-        // registrations added after this call too.
-        services.TryAddSingleton(_ => new RepositoryLifetimeScanner(services));
+        // would have it captured.
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupVerifier, WrappedRepositoryLifetimeVerifier>());
     }

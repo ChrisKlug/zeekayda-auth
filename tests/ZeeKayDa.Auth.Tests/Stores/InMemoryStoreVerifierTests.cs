@@ -179,15 +179,15 @@ public sealed class InMemoryStoreVerifierTests
     [Fact]
     public async Task Two_factory_registered_instances_with_different_captured_state_produce_independent_outcomes()
     {
-        // Mirrors AddInMemoryStores(): AddSingleton<IStartupVerifier> called twice with the same
+        // Mirrors AddInMemoryStores(): AddScoped<IStartupVerifier> called twice with the same
         // implementation type but distinct captured storeName/allowOutsideDevelopment state.
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment(Environments.Production));
-        services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
+        services.AddScoped<IStartupVerifier>(sp => new InMemoryStoreVerifier(
             sp.GetRequiredService<IHostEnvironment>(),
             InMemoryStoreVerifier.AuthorizationCodeStoreName,
             allowOutsideDevelopment: false));
-        services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
+        services.AddScoped<IStartupVerifier>(sp => new InMemoryStoreVerifier(
             sp.GetRequiredService<IHostEnvironment>(),
             InMemoryStoreVerifier.RefreshTokenStoreName,
             allowOutsideDevelopment: true));

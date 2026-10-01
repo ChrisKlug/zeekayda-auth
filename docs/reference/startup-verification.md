@@ -45,7 +45,7 @@ public interface IStartupActivator  // phase 2 — does real work
 | `Name` | A stable name used for log attribution and diagnostics only. It is **not** an ordering or priority hint — execution order within a phase is DI registration order, and nothing a check returns can influence it. |
 | `VerifyAsync` | Runs the check. Report outcomes by calling `context.AddFailure(...)` and `context.AddWarning(...)` — never throw except for a genuinely unexpected failure (a DI resolution error, a third-party bug). |
 
-Register an implementation as scoped, and constructor-inject what it needs — scoped services included:
+Register an implementation as scoped, and constructor-inject what it needs — scoped services included. Any other lifetime fails startup with `startup.check_not_scoped`:
 
 ```csharp
 builder.Services.AddScoped<IStartupVerifier, MyCustomVerifier>();      // cheap

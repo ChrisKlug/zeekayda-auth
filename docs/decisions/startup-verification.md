@@ -32,8 +32,9 @@ closed-generic — can supply a logger that skips redaction. The framework regis
 subclass open-generic, because the DI container activates only public constructors. Accepted cost: a
 host cannot decorate it.
 
-**Checks are constructor-injected, resolved from one scope per phase.** Checks register as scoped. The
-runner creates one `AsyncServiceScope` per phase and resolves that phase's collection from it, so
+**Checks are constructor-injected, resolved from one scope per phase.** Checks register as scoped —
+any other lifetime fails startup (`startup.check_not_scoped`), since it would build the check outside
+the scope, silently so in Production. The runner creates one `AsyncServiceScope` per phase and resolves that phase's collection from it, so
 **the checks in a phase share a scope**, and no activator is constructed when a verifier failed. A
 check injects `IServiceProvider` only to resolve in `VerifyAsync` instead: a dependency that must
 wait for an awaited step (the client repository, validated against algorithms the ring reads first);
@@ -68,9 +69,8 @@ discarding the run's genuine failures.
 synchronously from options values stays an options validator. These exist for what structurally
 cannot live there: async I/O, a check needing a DI scope, a check whose purpose is a side effect.
 
-**A mutable accumulator, not a returned result.** Checks call `AddFailure` or `AddWarning` from
-whichever branch they are in, and real ones both warn and fail. The context is fresh per invocation,
-so findings are attributable and no check can read, mutate, or clear another's.
+**A mutable accumulator, not a returned result.** Checks call `AddFailure` or `AddWarning` from any
+branch; the context is fresh per invocation, so no check can read, mutate, or clear another's.
 
 **Execution order is DI registration order and is not expressible in the contract.** `Name` is log
 attribution only. There is no `Priority`, no `Order`, and no ordering attribute — a security refusal,

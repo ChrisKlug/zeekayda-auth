@@ -549,8 +549,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Startup checks are constructor-injected, and the sanitizing logger is a class** (#771).
   `IStartupVerifier` and `IStartupActivator` each declare `Name` and
   `VerifyAsync(StartupVerificationContext, CancellationToken)` directly; the `IServiceProvider`
-  parameter and the shared `IStartupCheck` base are gone. Register a check as scoped and
-  constructor-inject its dependencies: the runner resolves each phase's checks from one scope, so the
+  parameter and the shared `IStartupCheck` base are gone. Register a check as scoped — any other
+  lifetime fails startup with `startup.check_not_scoped` — and constructor-inject its dependencies: the runner resolves each phase's checks from one scope, so the
   checks in a phase share it, and no activator is constructed when a verifier failed.
   `ISanitizingLogger<T>` is replaced by the class `SanitizingLogger<T>`, which only the framework can
   construct, so no registration can substitute a logger that skips redaction; inject it as before.
