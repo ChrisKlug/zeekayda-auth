@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
+using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Providers;
 
@@ -231,6 +232,22 @@ public sealed class WithProvidersTests
 
         provider.GetRequiredService<IOptionsMonitor<OAuthOptions>>().Get("second").SignInScheme
             .Should().Be(ZeeKayDaCookies.External);
+    }
+
+    // ── Startup checks ────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void On_a_host_without_AddZeeKayDaAuth_the_provider_startup_checks_resolve()
+    {
+        var services = NewServices();
+
+        services.AddZeeKayDaAuthCore(options => options.Issuer = Issuer)
+            .WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetServices<IStartupActivator>()
+            .Should().Contain(activator => activator is HandlerOptionsActivator)
+            .And.Contain(activator => activator is ProviderSchemeCollisionActivator);
     }
 
     // ── Refused at registration ───────────────────────────────────────────────────────────────

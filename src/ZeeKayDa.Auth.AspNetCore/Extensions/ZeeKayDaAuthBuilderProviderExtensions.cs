@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
+using ZeeKayDa.Auth.StartupVerification;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -101,6 +102,19 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
         // pinned member fails startup rather than being silently overridden.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton(typeof(IPostConfigureOptions<>), typeof(HandlerOptionsPin<>)));
+
+        // Open generic, constrained to AuthenticationSchemeOptions: the container skips it for
+        // every other options type, and it skips itself for every name that is not a provider.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton(typeof(IValidateOptions<>), typeof(HandlerOptionsValidator<>)));
+
+        // Carries the validator's findings to HandlerOptionsActivator with their provenance intact.
+        services.TryAddSingleton<PinnedOptionDriftRecorder>();
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, HandlerOptionsActivator>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, ProviderSchemeCollisionActivator>());
 
         if (options is not null)
             services.Configure(options);
