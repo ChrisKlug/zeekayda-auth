@@ -163,6 +163,8 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // Registered unconditionally so using it without any IClientSecretHasher gives a clear
         // error instead of a generic "service not registered" DI failure.
         services.TryAddSingleton<CompositeClientSecretHasher>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupActivator, ClientSecretHasherActivator>());
 
         // Alias so repository authors can inject IClientSecretFactory without knowing about the
         // composite's internal structure.

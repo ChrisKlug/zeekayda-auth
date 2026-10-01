@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -98,6 +99,37 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .Which.AggregatedFailures.Should().Contain(failure => failure.Code == "configuration.issuer.invalid");
+    }
+
+    [Fact]
+    public async Task A_hasher_whose_Create_throws_fails_startup_on_a_host_with_its_own_client_repository()
+    {
+        var services = ServicesWithLogging();
+        services.AddZeeKayDaAuthCoreForTesting()
+            .AddInMemoryDevelopmentSigning()
+            .AddClientSecretHasher<VerifyOnlyHasher>();
+        services.Replace(ServiceDescriptor.Singleton<IClientRepository, EmptyClientRepository>());
+
+        await using var provider = services.BuildServiceProvider();
+        var act = () => StartAsync(provider);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().Contain(failure => failure.Code == "configuration.hashers.timing_decoy_unhandled");
+    }
+
+    private sealed class EmptyClientRepository : IClientRepository
+    {
+        public Task<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IClientRegistration?>(null);
+    }
+
+    private sealed class LegacySecret : IClientSecret { public IClientCredential Snapshot() => new LegacySecret(); }
+
+    private sealed class VerifyOnlyHasher : IClientSecretHasher
+    {
+        public bool CanHandle(IClientSecret secret) => secret is LegacySecret;
+        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public IClientSecret Create(ReadOnlySpan<char> plaintext) => throw new NotSupportedException();
     }
 
     // ── Issue #521: TokenKind-to-issuer dispatch via keyed DI ────────────────────────────────────

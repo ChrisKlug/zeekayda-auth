@@ -156,7 +156,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         {
             decoy = hasher.CreateTimingDecoy();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Never ex.Message: it is the hasher's text, and failure messages are logged verbatim.
             throw new ZeeKayDaConfigurationException(

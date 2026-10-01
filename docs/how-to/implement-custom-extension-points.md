@@ -260,8 +260,9 @@ register that hasher alongside it; to make your own hasher create new secrets, m
 `isDefault: true` — PBKDF2 stays registered, so existing PBKDF2 secrets keep verifying:
 
 ```csharp
-auth.AddClientSecretHasher<BcryptClientSecretHasher>();                  // verifies old bcrypt secrets
-auth.AddClientSecretHasher<Argon2ClientSecretHasher>(isDefault: true);   // creates new secrets
+auth.AddClientSecretHasher<BcryptClientSecretHasher>();                   // verifies old bcrypt secrets
+// or
+auth.AddClientSecretHasher<BcryptClientSecretHasher>(isDefault: true);   // also creates new secrets
 ```
 
 Every registered hasher's `Create` runs once at startup to build its timing decoy, so a hasher that
