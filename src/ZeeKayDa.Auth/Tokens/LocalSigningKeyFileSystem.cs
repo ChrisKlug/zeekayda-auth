@@ -18,10 +18,6 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </remarks>
 internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSystem
 {
-    // Generating and writing one key takes well under a second; a lock held this long is not a
-    // host taking its turn, and failing beats waiting forever.
-    private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(30);
-
     private static readonly TimeSpan LockRetryInterval = TimeSpan.FromMilliseconds(50);
 
     private const UnixFileMode GroupOrOtherBits =
@@ -36,6 +32,12 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         else
             EnsureDirectorySafeUnix(directory);
     }
+
+    /// <summary>
+    /// How long a host waits for the lock before failing. Generating and writing one key takes well
+    /// under a second; a lock held this long is not a host taking its turn. Shortened only by tests.
+    /// </summary>
+    internal TimeSpan LockTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <inheritdoc/>
     public async ValueTask<bool> WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
@@ -79,7 +81,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// processes as well as other threads. The file is never deleted: a host deleting it while
     /// another waits would let a third open a fresh one alongside.
     /// </summary>
-    private static async Task<FileStream> TakeTurnAsync(string lockPath, CancellationToken cancellationToken)
+    private async Task<FileStream> TakeTurnAsync(string lockPath, CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow + LockTimeout;
         while (true)
@@ -90,7 +92,17 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
                     ? new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None)
                     : OpenLockUnix(lockPath);
             }
-            catch (IOException) when (DateTime.UtcNow < deadline)
+            catch (IOException ex) when (DateTime.UtcNow >= deadline)
+            {
+                throw new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure(
+                        "signing.dev_keys.lock_timeout",
+                        $"Could not take the signing key lock '{lockPath}' within {LockTimeout.TotalSeconds:0} seconds. " +
+                        "Another process may be holding it, or the file cannot be opened. " +
+                        "Stop other hosts sharing the key folder, check the file's permissions, and restart."),
+                    ex);
+            }
+            catch (IOException)
             {
                 await Task.Delay(LockRetryInterval, cancellationToken).ConfigureAwait(false);
             }

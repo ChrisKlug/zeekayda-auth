@@ -278,6 +278,21 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteKeyFileAsync_fails_with_lock_timeout_when_the_lock_is_never_released()
+    {
+        var keyPath = Path.Join(_tempDirectory, KeyFileName);
+        var sut = new LocalSigningKeyFileSystem { LockTimeout = TimeSpan.FromMilliseconds(200) };
+        await using var otherHostsLock = new FileStream(keyPath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
+        var act = async () => await sut.WriteKeyFileAsync(keyPath, SamplePem.AsMemory(), TestContext.Current.CancellationToken);
+
+        var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        thrown.Which.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("signing.dev_keys.lock_timeout");
+        thrown.Which.InnerException.Should().BeAssignableTo<IOException>();
+        File.Exists(keyPath).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task WriteKeyFileAsync_racers_that_lose_read_the_winners_whole_key()
     {
         var keyPath = Path.Join(_tempDirectory, KeyFileName);

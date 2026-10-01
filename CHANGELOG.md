@@ -753,7 +753,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   sharing a key folder could both find none: on Unix the slower one failed to start, and on Windows
   it overwrote the file the other may have been reading. Hosts now take turns on a lock file beside
   the key, so exactly one creates it and the rest load that key, and the key is written beside its
-  final name and renamed into place, so no host ever reads a half-written file.
+  final name and renamed into place, so no host ever reads a half-written file. A host that cannot
+  take the lock within 30 seconds fails with `signing.dev_keys.lock_timeout`.
 
 - **A client registration that cannot be read is logged once, not on every request** (#698). A
   registration whose property getter throws — a lazy-loaded navigation property read outside its
