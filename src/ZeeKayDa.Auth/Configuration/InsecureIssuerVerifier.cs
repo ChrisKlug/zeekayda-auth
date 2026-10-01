@@ -49,10 +49,7 @@ internal sealed class InsecureIssuerVerifier(
     public string Name => "InsecureIssuer";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         if (!options.Value.AllowInsecureIssuer)
             return Task.CompletedTask;

@@ -14,18 +14,15 @@ namespace ZeeKayDa.Auth.Clients;
 /// to resolving, as <c>SigningKeyRingPresenceVerifier</c> does, so the check reports rather than
 /// skipping itself.
 /// </remarks>
-internal sealed class ClientRepositoryPresenceVerifier : IStartupVerifier
+internal sealed class ClientRepositoryPresenceVerifier(IServiceProvider services) : IStartupVerifier
 {
     /// <inheritdoc/>
     public string Name => "ClientRepositoryPresence";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
-        if (!IsClientRepositoryRegistered(scopedServices))
+        if (!IsClientRepositoryRegistered())
             context.AddFailure(
                 "client.repository.missing",
                 "No IClientRepository has been registered. " +
@@ -34,14 +31,14 @@ internal sealed class ClientRepositoryPresenceVerifier : IStartupVerifier
         return Task.CompletedTask;
     }
 
-    private static bool IsClientRepositoryRegistered(IServiceProvider scopedServices)
+    private bool IsClientRepositoryRegistered()
     {
-        if (scopedServices.GetService<IServiceProviderIsService>() is { } isService)
+        if (services.GetService<IServiceProviderIsService>() is { } isService)
             return isService.IsService(typeof(IClientRepository));
 
         try
         {
-            return scopedServices.GetService<IClientRepository>() is not null;
+            return services.GetService<IClientRepository>() is not null;
         }
         catch (ZeeKayDaConfigurationException)
         {

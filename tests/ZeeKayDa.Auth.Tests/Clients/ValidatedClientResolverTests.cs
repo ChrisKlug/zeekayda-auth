@@ -54,7 +54,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task A_registration_that_cannot_be_read_logs_critical_naming_the_client_id()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(new ThrowingRepository(), new PassingValidator(), logger);
 
         await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
@@ -67,7 +67,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task A_registration_that_cannot_be_read_logs_critical_once_however_many_lookups()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(new ThrowingRepository(), new PassingValidator(), logger);
 
         await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
@@ -82,7 +82,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task An_unreadable_registration_reached_under_many_client_ids_logs_critical_once()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(new ThrowingRepository(), new PassingValidator(), logger);
 
         await resolver.FindByClientIdAsync("client-1", TestContext.Current.CancellationToken);
@@ -98,7 +98,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task A_registration_validated_uncached_logs_critical_once_however_many_lookups()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
             new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
             new RejectingValidator(),
@@ -116,7 +116,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task A_registration_that_fails_a_second_different_way_is_logged_again()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
             new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
             new DifferentRuleEachTimeValidator(),
@@ -133,7 +133,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task A_failure_reworded_on_every_validation_logs_critical_once()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
             new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
             new RewordingValidator(),
@@ -152,7 +152,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task The_same_rules_reported_in_a_different_order_log_critical_once()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
             new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
             new ReorderingValidator(),
@@ -169,7 +169,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task Two_clients_whose_ids_and_rule_codes_run_together_are_both_logged()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
 
         // Length prefixes, not a separator: "ab" + "c_rule" and "a" + "bc_rule" concatenate to the
         // same string, so a key built by joining the two parts would collide and silence the
@@ -194,7 +194,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task Two_rule_code_sets_that_join_identically_are_both_logged()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
             new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
             new JoiningCodeSetsValidator(),
@@ -233,7 +233,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task Invalid_registration_logs_critical_for_the_operator()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
             new SingleClientRepository(Client()), new RejectingValidator(), logger);
 
@@ -314,7 +314,7 @@ public class ValidatedClientResolverTests
     [InlineData(true, "returned null")]
     public async Task A_credential_that_is_not_copied_is_named_in_the_critical_log(bool returnsNull, string problem)
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
             new SingleClientRepository(ConfidentialClient(new FirstCallUncopiedCredential(returnsNull))),
             new PassingValidator(),
@@ -331,7 +331,7 @@ public class ValidatedClientResolverTests
     {
         // Only a failure the snapshot raised itself is logged by name. A ZeeKayDaConfigurationException
         // thrown by the credential is the credential's text, which may carry its data.
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var credential = new ThrowingSnapshotCredential(new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("custom.credential.unreadable", "Cannot copy salt=0badc0de.")));
         var resolver = new ValidatedClientResolver(
@@ -347,7 +347,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task A_null_credential_is_served_as_unknown_and_named_in_the_critical_log()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
             new SingleClientRepository(Client() with { Credentials = [null!] }), new PassingValidator(), logger);
 
@@ -391,7 +391,7 @@ public class ValidatedClientResolverTests
         IClientRegistration client, IClientRegistrationValidator validator) =>
         new(new SingleClientRepository(client), validator, NullLogger());
 
-    private static ISanitizingLogger<ValidatedClientResolver> NullLogger() => new CapturingLogger();
+    private static SanitizingLogger<ValidatedClientResolver> NullLogger() => NullSanitizingLogger<ValidatedClientResolver>.Instance;
 
     private sealed class SingleClientRepository(IClientRegistration client) : IClientRepository
     {
@@ -585,15 +585,4 @@ public class ValidatedClientResolverTests
         public void Validate(IClientRegistration client) => Calls++;
     }
 
-    private sealed class CapturingLogger : ISanitizingLogger<ValidatedClientResolver>
-    {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => true;
-        public void Log<TState>(
-            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) =>
-            Entries.Add((logLevel, formatter(state, exception)));
-    }
 }

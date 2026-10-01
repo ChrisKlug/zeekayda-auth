@@ -19,7 +19,7 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// <strong>exactly once</strong> per read call and every check runs against that single open
 /// handle rather than the path string, closing the TOCTOU window between validation and read.
 /// </remarks>
-internal sealed class FileSigningKeyReader(ISanitizingLogger<FileSigningKeyReader> logger)
+internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader> logger)
 {
     // Broader than 0600 (owner read/write only) is a hard failure.
     private const UnixFileMode DisallowedUnixModeBits =

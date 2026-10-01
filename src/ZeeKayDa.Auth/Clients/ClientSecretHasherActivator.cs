@@ -1,4 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Clients;
@@ -14,16 +13,13 @@ namespace ZeeKayDa.Auth.Clients;
 /// </remarks>
 internal sealed class ClientSecretHasherActivator : IStartupActivator
 {
+    // Building the composite is the whole check, done when the runner resolves this activator.
+    public ClientSecretHasherActivator(CompositeClientSecretHasher hasher) => ArgumentNullException.ThrowIfNull(hasher);
+
     /// <inheritdoc/>
     public string Name => "ClientSecretHasherActivation";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
-    {
-        scopedServices.GetRequiredService<CompositeClientSecretHasher>();
-        return Task.CompletedTask;
-    }
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken) =>
+         Task.CompletedTask;
 }

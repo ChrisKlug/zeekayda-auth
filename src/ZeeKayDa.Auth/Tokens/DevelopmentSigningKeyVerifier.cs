@@ -37,10 +37,7 @@ internal sealed class DevelopmentSigningKeyVerifier(
     public string Name => "DevelopmentSigningKey";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         var currentEnvironment = environment.EnvironmentName;
 

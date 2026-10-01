@@ -11,8 +11,6 @@ namespace ZeeKayDa.Auth.Tests.Configuration;
 /// </summary>
 public sealed class TokenLifetimeCeilingVerifierTests
 {
-    private static readonly IServiceProvider EmptyProvider = new ServiceCollection().BuildServiceProvider();
-
     private static TokenLifetimeCeilingVerifier BuildSut(
         TimeSpan? accessTokenLifetime = null,
         TimeSpan? idTokenLifetime = null,
@@ -33,7 +31,7 @@ public sealed class TokenLifetimeCeilingVerifierTests
     {
         var context = new StartupVerificationContext();
 
-        await BuildSut().VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await BuildSut().VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().BeEmpty();
     }
@@ -44,7 +42,7 @@ public sealed class TokenLifetimeCeilingVerifierTests
         var context = new StartupVerificationContext();
 
         await BuildSut(accessTokenLifetime: TimeSpan.FromDays(91))
-            .VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+            .VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.Code.Should().Be("tokens.access_token_lifetime_exceeds_family_ceiling");
@@ -56,7 +54,7 @@ public sealed class TokenLifetimeCeilingVerifierTests
         var context = new StartupVerificationContext();
 
         await BuildSut(idTokenLifetime: TimeSpan.FromDays(91))
-            .VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+            .VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.Code.Should().Be("tokens.id_token_lifetime_exceeds_family_ceiling");
@@ -68,7 +66,7 @@ public sealed class TokenLifetimeCeilingVerifierTests
         var context = new StartupVerificationContext();
 
         await BuildSut(accessTokenLifetime: TimeSpan.FromDays(90), idTokenLifetime: TimeSpan.FromDays(90))
-            .VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+            .VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().BeEmpty("the token expires with the family, not after it");
     }
@@ -79,7 +77,7 @@ public sealed class TokenLifetimeCeilingVerifierTests
         var context = new StartupVerificationContext();
 
         await BuildSut(accessTokenLifetime: TimeSpan.FromDays(3650), absoluteFamilyLifetime: TimeSpan.MaxValue)
-            .VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+            .VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().BeEmpty();
     }

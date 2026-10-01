@@ -164,7 +164,7 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
                     "of 'get' and 'sign' key permissions) on this vault.")),
             // The exception TYPE is named, never ex.Message. RequestFailedException.Message carries
             // the response content and headers, and ZeeKayDaConfigurationFailure.Message is a plain
-            // string on public API surface that SecretSanitizingLogger cannot redact. The status and
+            // string on public API surface that SanitizingLogger cannot redact. The status and
             // ErrorCode above are the safe, operator-actionable parts; the root cause stays available
             // as InnerException.
             _ => new ZeeKayDaConfigurationException(
@@ -178,7 +178,7 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
 
     // The exception TYPE is named, never ex.Message. An arbitrary underlying provider exception may
     // carry credential material, and ZeeKayDaConfigurationFailure.Message is a plain string on public
-    // API surface that SecretSanitizingLogger cannot redact. The root cause stays available to
+    // API surface that SanitizingLogger cannot redact. The root cause stays available to
     // operators as InnerException.
     private ZeeKayDaConfigurationException MapUnexpectedFailure(Exception ex) =>
         new(

@@ -31,24 +31,21 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// </remarks>
 internal sealed class ProviderSchemeCollisionActivator(
     ProviderRegistry registry,
-    IOptions<AuthorizationServerOptions> options) : IStartupActivator
+    IOptions<AuthorizationServerOptions> options,
+    IServiceProvider services,
+    IAuthenticationSchemeProvider? schemeProvider = null) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "ProviderSchemeCollisions";
 
     /// <inheritdoc/>
-    public async Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public async Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(scopedServices);
 
         if (registry.Count == 0)
             return;
 
-        var schemeProvider = scopedServices.GetService<IAuthenticationSchemeProvider>();
         if (schemeProvider is null)
             return;
 
@@ -79,14 +76,11 @@ internal sealed class ProviderSchemeCollisionActivator(
         foreach (var scheme in hostSchemes.Where(scheme => !providerNames.Contains(scheme.Name)))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            ReportCallbackPathCollision(context, scopedServices, scheme);
+            ReportCallbackPathCollision(context, scheme);
         }
     }
 
-    private void ReportCallbackPathCollision(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        AuthenticationScheme scheme)
+    private void ReportCallbackPathCollision(StartupVerificationContext context, AuthenticationScheme scheme)
     {
         if (HandlerOptions.TypeOf(scheme.HandlerType) is not { } optionsType
             || !typeof(RemoteAuthenticationOptions).IsAssignableFrom(optionsType))
@@ -97,7 +91,7 @@ internal sealed class ProviderSchemeCollisionActivator(
         PathString callbackPath;
         try
         {
-            callbackPath = ((RemoteAuthenticationOptions)HandlerOptions.Resolve(scopedServices, optionsType, scheme.Name))
+            callbackPath = ((RemoteAuthenticationOptions)HandlerOptions.Resolve(services, optionsType, scheme.Name))
                 .CallbackPath;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

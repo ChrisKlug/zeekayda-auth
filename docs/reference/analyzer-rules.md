@@ -44,8 +44,7 @@ suppression vector that names neither rule ID anywhere in the diff.
 ### What it enforces
 
 `ILogger<T>` must not be injected directly into a ZeeKayDa.Auth service. All internal services
-must accept `ISanitizingLogger<T>` instead. `ISanitizingLogger<T>` wraps the underlying logger
-with `SecretSanitizingLogger`, which redacts known-sensitive OAuth parameters before any log entry
+must accept `SanitizingLogger<T>` instead. `SanitizingLogger<T>` wraps the underlying logger and redacts known-sensitive OAuth parameters before any log entry
 reaches the log sink.
 
 Bypassing this wrapper by injecting `ILogger<T>` directly creates a path through which sensitive
@@ -70,7 +69,7 @@ public sealed class TokenEndpointHandler
 ### Compliant alternative
 
 ```csharp
-// Correct: ISanitizingLogger<T> used instead.
+// Correct: SanitizingLogger<T> used instead.
 public sealed class TokenEndpointHandler
 {
     private readonly ISanitizingLogger<TokenEndpointHandler> _logger;
@@ -82,7 +81,7 @@ public sealed class TokenEndpointHandler
 }
 ```
 
-> ⚠️ **Warning:** `ISanitizingLogger<T>` only redacts values passed via named structured-logging
+> ⚠️ **Warning:** `SanitizingLogger<T>` only redacts values passed via named structured-logging
 > placeholders. Log calls that embed sensitive values through string interpolation bypass the
 > redaction layer entirely. See [ZEEKAYDA0002](#zeekayda0002--non-constant-string-in-log-call)
 > for the rule that catches this.
@@ -131,17 +130,17 @@ rule to assert analyzer behaviour, and test code does not ship.
   ZEEKAYDA0001/ZEEKAYDA0002 themselves) is out of scope for this checker — it verifies severity
   resolution, not analyzer correctness. Covered by `tests/ZeeKayDa.Auth.Analyzers.Tests`.
 - IL-patched or post-build-rewritten assemblies are outside any source-level check; the runtime
-  `SecretSanitizingLogger` is the compensating control.
+  `SanitizingLogger` is the compensating control.
 
 ```csharp
-#pragma warning disable ZEEKAYDA0001 // log-hygiene-ok: legacy adapter predates ISanitizingLogger<T>, migration tracked (#123)
+#pragma warning disable ZEEKAYDA0001 // log-hygiene-ok: legacy adapter predates SanitizingLogger<T>, migration tracked (#123)
 private readonly ILogger<TokenEndpointHandler> _logger;
 #pragma warning restore ZEEKAYDA0001
 ```
 
 > ⚠️ **Warning:** Suppressing this rule removes the compile-time safety net for the affected
 > type. Any suppression must be reviewed and justified in a code comment explaining why the
-> `ISanitizingLogger<T>` wrapper is not applicable. A `.editorconfig`/`.globalconfig` severity
+> `SanitizingLogger<T>` wrapper is not applicable. A `.editorconfig`/`.globalconfig` severity
 > override is **not** a valid suppression route for this rule — see the no-hatch rule above.
 
 ---
@@ -167,7 +166,7 @@ arguments are passed by name or out of declaration order.
 The rule also constrains one specific non-`Log*` method by symbol rather than by name/receiver
 heuristic: `StartupVerificationContext.AddWarning`'s `messageTemplate` parameter, whether the call
 is receiver-qualified or (from inside `StartupVerificationContext` itself) unqualified. `AddWarning`
-is how an `IStartupVerifier`/`IStartupVerificationGate` implementation reports a warning for the
+is how an `IStartupVerifier`/`IStartupActivator` implementation reports a warning for the
 startup-verification runner to log on its behalf (see [ADR
 0016](../decisions/0016-unified-startup-verification.md) §3, §9) — its template flows into the same
 redaction-sensitive log call the `Log*` branch above protects, so it needs the same constant-string
@@ -190,7 +189,7 @@ consistent with this rule's existing low-severity framing for non-idiomatic bypa
 
 ### Rationale
 
-`SecretSanitizingLogger` redacts sensitive values by inspecting the structured-logging message
+`SanitizingLogger` redacts sensitive values by inspecting the structured-logging message
 template and its named arguments at the point the log entry is written. An interpolated string is
 fully expanded by the C# compiler before it is passed to the logger — the logger receives a
 plain `string` with the sensitive value already embedded. The message template is gone; there

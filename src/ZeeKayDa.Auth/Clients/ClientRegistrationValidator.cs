@@ -23,7 +23,7 @@ namespace ZeeKayDa.Auth.Clients;
 internal sealed class ClientRegistrationValidator(
     IOptions<AuthorizationServerOptions> options,
     CompositeClientSecretHasher hasher,
-    ISanitizingLogger<ClientRegistrationValidator> logger,
+    SanitizingLogger<ClientRegistrationValidator> logger,
     ISigningKeyRing? keyRing) : IClientRegistrationValidator
 {
     private static readonly Regex ClientIdPattern =

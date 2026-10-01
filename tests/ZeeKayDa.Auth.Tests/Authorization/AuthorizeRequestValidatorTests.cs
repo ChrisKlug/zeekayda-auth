@@ -768,19 +768,4 @@ public class AuthorizeRequestValidatorTests
         }
     }
 
-    private sealed class NullSanitizingLogger<T> : ISanitizingLogger<T>
-    {
-        public static readonly NullSanitizingLogger<T> Instance = new();
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => false;
-        public void Log<TState>(
-            Microsoft.Extensions.Logging.LogLevel logLevel,
-            Microsoft.Extensions.Logging.EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-        {
-        }
-    }
 }

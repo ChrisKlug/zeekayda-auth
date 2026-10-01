@@ -18,21 +18,17 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// the server options construct part of the service graph. An authenticator that fails to
 /// construct is not caught here: the runner reports it as a startup failure naming the exception.
 /// </remarks>
-internal sealed class AuthenticatorCoverageActivator(IOptions<AuthorizationServerOptions> options) : IStartupActivator
+internal sealed class AuthenticatorCoverageActivator(
+    IOptions<AuthorizationServerOptions> options,
+    IEnumerable<IClientAuthenticator> authenticators) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "AuthenticatorCoverage";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(scopedServices);
-
-        var authenticators = scopedServices.GetServices<IClientAuthenticator>().ToList();
 
         // Map method string → authenticator type name. Used to detect overlaps and uncovered methods.
         var declared = new Dictionary<string, string>(StringComparer.Ordinal);

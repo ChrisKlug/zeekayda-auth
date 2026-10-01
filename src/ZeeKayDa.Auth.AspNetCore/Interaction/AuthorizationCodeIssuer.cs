@@ -44,7 +44,7 @@ internal sealed class AuthorizationCodeIssuer(
     AuthorizationFlow flow,
     AuthorizationResponses responses,
     IOptions<AuthorizationServerOptions> options,
-    ISanitizingLogger<AuthorizationCodeIssuer> logger)
+    SanitizingLogger<AuthorizationCodeIssuer> logger)
 {
     /// <summary>
     /// What a registration that changed underneath the request tells the user. The same text

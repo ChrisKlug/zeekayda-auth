@@ -57,10 +57,7 @@ internal sealed class InMemoryStoreVerifier(
     public string Name => $"InMemoryStore({storeName})";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         switch (EnvironmentGate.Evaluate(environment, allowOutsideDevelopment))
         {

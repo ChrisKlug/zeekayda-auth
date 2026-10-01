@@ -173,7 +173,6 @@ public sealed class ValidatedOptionsCheckTests
         services.AddZeeKayDaOptions<FirstOptions>();
 
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IHostedService));
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IStartupVerificationGate));
     }
 
     private sealed class FirstOptions

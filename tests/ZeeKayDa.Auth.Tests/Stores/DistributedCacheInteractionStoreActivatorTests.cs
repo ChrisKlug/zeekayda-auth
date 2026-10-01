@@ -43,10 +43,11 @@ public sealed class DistributedCacheInteractionStoreActivatorTests
         var services = new ServiceCollection();
         configure(services);
         using var provider = services.BuildServiceProvider();
-        var sut = new DistributedCacheInteractionStoreActivator(new FakeHostEnvironment(environment), allowMemoryCacheOutsideDevelopment);
+        var sut = new DistributedCacheInteractionStoreActivator(
+            new FakeHostEnvironment(environment), allowMemoryCacheOutsideDevelopment, provider.GetService<IDistributedCache>());
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         return context;
     }

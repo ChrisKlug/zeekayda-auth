@@ -22,22 +22,18 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// the host's own configuration callback for that scheme.
 /// </para>
 /// </remarks>
-internal sealed class ReservedCookieNameActivator : IStartupActivator
+internal sealed class ReservedCookieNameActivator(
+    IAuthenticationSchemeProvider? schemeProvider = null,
+    IOptionsMonitor<CookieAuthenticationOptions>? cookieOptions = null) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "ReservedCookieNames";
 
     /// <inheritdoc/>
-    public async Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public async Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(scopedServices);
 
-        var schemeProvider = scopedServices.GetService<IAuthenticationSchemeProvider>();
-        var cookieOptions = scopedServices.GetService<IOptionsMonitor<CookieAuthenticationOptions>>();
         if (schemeProvider is null || cookieOptions is null)
             return;
 

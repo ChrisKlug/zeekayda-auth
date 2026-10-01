@@ -32,7 +32,7 @@ internal sealed class ResumeEndpoint(
     ProviderRegistry providers,
     AuthorizationFlow flow,
     InteractionOutcomes outcomes,
-    ISanitizingLogger<ResumeEndpoint> logger) : IZeeKayDaEndpoint
+    SanitizingLogger<ResumeEndpoint> logger) : IZeeKayDaEndpoint
 {
     private const string NothingToResume =
         "There is no external sign-in to resume. Return to the application and try again.";

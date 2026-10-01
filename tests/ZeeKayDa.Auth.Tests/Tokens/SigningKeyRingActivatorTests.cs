@@ -52,10 +52,9 @@ public sealed class SigningKeyRingActivatorTests
     {
         var ring = new FakeSigningKeyRing(_ => Task.CompletedTask);
         using var provider = BuildProvider(ring);
-        var sut = new SigningKeyRingActivator();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await ActivatorUtilities.CreateInstance<SigningKeyRingActivator>(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         ring.InitializeAsyncCallCount.Should().Be(1);
     }
@@ -66,10 +65,9 @@ public sealed class SigningKeyRingActivatorTests
         var ring = new FakeSigningKeyRing(_ => throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("signing.no_current_key", "Simulated failure.")));
         using var provider = BuildProvider(ring);
-        var sut = new SigningKeyRingActivator();
         var context = new StartupVerificationContext();
 
-        var act = async () => await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        var act = async () => await ActivatorUtilities.CreateInstance<SigningKeyRingActivator>(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*no_current_key*");
@@ -79,10 +77,9 @@ public sealed class SigningKeyRingActivatorTests
     public async Task VerifyAsync_is_a_no_op_when_no_ISigningKeyRing_is_registered()
     {
         using var provider = BuildProvider(ring: null);
-        var sut = new SigningKeyRingActivator();
         var context = new StartupVerificationContext();
 
-        var act = async () => await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        var act = async () => await ActivatorUtilities.CreateInstance<SigningKeyRingActivator>(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         await act.Should().NotThrowAsync();
         context.Failures.Should().BeEmpty();
@@ -119,8 +116,8 @@ public sealed class SigningKeyRingActivatorTests
     private static async Task<StartupVerificationContext> VerifyAsync(ServiceProvider provider)
     {
         var context = new StartupVerificationContext();
-        await new SigningKeyRingActivator()
-            .VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await ActivatorUtilities.CreateInstance<SigningKeyRingActivator>(provider)
+            .VerifyAsync(context, TestContext.Current.CancellationToken);
         return context;
     }
 

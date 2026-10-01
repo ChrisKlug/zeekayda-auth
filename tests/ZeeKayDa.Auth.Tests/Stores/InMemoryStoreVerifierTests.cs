@@ -22,8 +22,6 @@ public sealed class InMemoryStoreVerifierTests
 
     private const string TestStoreName = InMemoryStoreVerifier.AuthorizationCodeStoreName;
 
-    private static readonly IServiceProvider EmptyProvider = new ServiceCollection().BuildServiceProvider();
-
     private static InMemoryStoreVerifier BuildSut(
         string environmentName,
         bool allowOutsideDevelopment = false,
@@ -42,7 +40,7 @@ public sealed class InMemoryStoreVerifierTests
         var sut = BuildSut(Environments.Development);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.Level.Should().Be(LogLevel.Information);
@@ -55,7 +53,7 @@ public sealed class InMemoryStoreVerifierTests
         var sut = BuildSut(Environments.Development);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.Code.Should().Be("stores.inmemory.active");
@@ -70,7 +68,7 @@ public sealed class InMemoryStoreVerifierTests
         var sut = BuildSut(Environments.Development, storeName: storeName);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.Args.Should().Contain(storeName);
@@ -87,7 +85,7 @@ public sealed class InMemoryStoreVerifierTests
         var sut = BuildSut(environmentName, allowOutsideDevelopment: false);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle();
         context.Warnings.Should().BeEmpty();
@@ -102,7 +100,7 @@ public sealed class InMemoryStoreVerifierTests
         var sut = BuildSut(environmentName, allowOutsideDevelopment: false);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle()
             .Which.Code.Should().Be("stores.inmemory.non_development");
@@ -114,7 +112,7 @@ public sealed class InMemoryStoreVerifierTests
         var sut = BuildSut(Environments.Production, allowOutsideDevelopment: false);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Single().Message.Should().Contain("allowOutsideDevelopment");
     }
@@ -130,7 +128,7 @@ public sealed class InMemoryStoreVerifierTests
         var sut = BuildSut(environmentName, allowOutsideDevelopment: true);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }
@@ -143,7 +141,7 @@ public sealed class InMemoryStoreVerifierTests
         var sut = BuildSut(environmentName, allowOutsideDevelopment: true);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.Level.Should().Be(LogLevel.Critical);
@@ -155,7 +153,7 @@ public sealed class InMemoryStoreVerifierTests
         var sut = BuildSut(Environments.Production, allowOutsideDevelopment: true);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.Code.Should().Be("stores.inmemory.non_development_override");
@@ -170,7 +168,7 @@ public sealed class InMemoryStoreVerifierTests
         var sut = BuildSut(Environments.Production, allowOutsideDevelopment: true, storeName: storeName);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.Args.Should().Contain(storeName);
@@ -202,8 +200,8 @@ public sealed class InMemoryStoreVerifierTests
         var authCodeContext = new StartupVerificationContext();
         var refreshTokenContext = new StartupVerificationContext();
 
-        await verifiers[0].VerifyAsync(authCodeContext, provider, TestContext.Current.CancellationToken);
-        await verifiers[1].VerifyAsync(refreshTokenContext, provider, TestContext.Current.CancellationToken);
+        await verifiers[0].VerifyAsync(authCodeContext, TestContext.Current.CancellationToken);
+        await verifiers[1].VerifyAsync(refreshTokenContext, TestContext.Current.CancellationToken);
 
         // The authorization-code registration (allowOutsideDevelopment: false) fails closed outside Development.
         authCodeContext.Failures.Should().ContainSingle()
@@ -231,8 +229,8 @@ public sealed class InMemoryStoreVerifierTests
         var first = new StartupVerificationContext();
         var second = new StartupVerificationContext();
 
-        await authorizationCodes.VerifyAsync(first, provider, TestContext.Current.CancellationToken);
-        await refreshTokens.VerifyAsync(second, provider, TestContext.Current.CancellationToken);
+        await authorizationCodes.VerifyAsync(first, TestContext.Current.CancellationToken);
+        await refreshTokens.VerifyAsync(second, TestContext.Current.CancellationToken);
 
         first.Failures.Single().Message.Should().Contain("authorization code store");
         second.Failures.Single().Message.Should().Contain("refresh token store");

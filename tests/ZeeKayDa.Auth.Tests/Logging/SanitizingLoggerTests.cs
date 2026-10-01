@@ -6,11 +6,11 @@ using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests.Logging;
 
-public sealed class SecretSanitizingLoggerTests
+public sealed class SanitizingLoggerTests
 {
     // ── Fake infrastructure ───────────────────────────────────────────────────────────────────────
 
-    private static SecretSanitizingLogger<T> CreateSut<T>(
+    private static SanitizingLogger<T> CreateSut<T>(
         ILogger<T> inner,
         bool disableExceptionSanitizing = false)
     {
@@ -83,7 +83,7 @@ public sealed class SecretSanitizingLoggerTests
     [Fact]
     public void SensitiveKeys_contains_expected_keys()
     {
-        SecretSanitizingLogger<object>.SensitiveKeys.Should().BeEquivalentTo(
+        SanitizingLogger<object>.SensitiveKeys.Should().BeEquivalentTo(
             ["client_secret",
             "code_verifier",
             "Authorization",

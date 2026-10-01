@@ -21,10 +21,7 @@ internal sealed class ExceptionSanitizingDisabledVerifier(
     public string Name => "ExceptionSanitizingDisabled";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         if (options.Value.Logging.DisableExceptionSanitizing)
         {

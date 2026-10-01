@@ -10,9 +10,9 @@ both a protocol to enforce and a genuinely variable part, the variable part gets
 and the protocol gets a type a third party structurally cannot join. It shows up four times, arrived
 at independently:
 
-- **Gate versus verifier.** `IStartupVerifier` is public and third parties register into it; the gate
-  collection ahead of it is `internal`, so no verifier can claim the position ahead of the
-  sanitizing-logger check (`startup-verification.md`).
+- **The sanitizing logger.** `SanitizingLogger<T>` is a public class every package can inject, but its
+  only constructor is `internal`, so no third party can supply or derive one that skips redaction
+  (`startup-verification.md`).
 - **Coordinator versus backing store.** The store coordinators are `public` so the ASP.NET Core
   package can inject them, but each carries an `internal` member only a friend assembly can satisfy.
   Publicly consumable, not third-party implementable — the asymmetry actually needed
@@ -73,13 +73,10 @@ breaks that compiles cleanly and fails intermittently; a `Task` has no such rule
 moves to `ValueTask` only with a measurement showing the allocation matters. Internal code may use
 either, and a member whose type a BCL contract fixes (`IAsyncDisposable.DisposeAsync`) keeps it.
 
-**The sanitizing logger is inject-only by convention, backed by a startup gate.** The interface is
-public so provider packages can constructor-inject it, and it is a marker over `ILogger<T>` with no
-members of its own. A host registering its own implementation before the framework's would shadow
-redaction for every framework service, which is why a hard-failing gate runs ahead of every other
-startup check and rejects an unexpected open-generic implementation or any closed-generic override.
-Making the concrete wrapper public and sealed would turn "do not implement this" into something the
-type system enforces, and remains available as a later hardening step.
+**The sanitizing logger is inject-only, enforced by the type system.** `SanitizingLogger<T>` is a
+public class so provider packages can constructor-inject it, with an `internal` constructor so nothing
+outside the framework can construct or derive one; any registration of it is therefore the framework's
+redacting logger. Accepted cost: a host cannot decorate it.
 
 **Coordinator interfaces grow by adding members outright, not by splitting into capability
 interfaces.** Capability splitting is refused: it multiplies the interfaces a backend must discover,

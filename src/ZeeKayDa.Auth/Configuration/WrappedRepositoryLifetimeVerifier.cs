@@ -29,8 +29,7 @@ namespace ZeeKayDa.Auth.Configuration;
 /// <para>
 /// The <see cref="IServiceCollection"/> is read rather than the built provider, because a
 /// provider can report that a service exists but not the lifetime it was registered under. The
-/// scanner captures the collection at registration, the same way
-/// <c>SanitizingLoggerClosedOverrideScanner</c> does, so this sees every registration a host added
+/// scanner captures the collection at registration, so this sees every registration a host added
 /// — including ones added after <c>AddZeeKayDaAuth</c>.
 /// </para>
 /// </remarks>
@@ -40,10 +39,7 @@ internal sealed class WrappedRepositoryLifetimeVerifier(RepositoryLifetimeScanne
     public string Name => "WrappedRepositoryLifetime";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         Check<IScopeRepository>(context, "scopes.repository.lifetime", "ValidatedScopeCatalog");
         Check<IClientRepository>(context, "clients.repository.lifetime", "ValidatedClientResolver");
@@ -78,9 +74,8 @@ internal sealed class WrappedRepositoryLifetimeVerifier(RepositoryLifetimeScanne
 /// </summary>
 /// <remarks>
 /// The constructor captures the collection reference, so the lifetime reported is the one in force
-/// when it is asked, not the one at registration. See <c>SanitizingLoggerClosedOverrideScanner</c>,
-/// which reads the same collection the same way and for the same reason: a built
-/// <see cref="IServiceProvider"/> can say whether a service exists but not how it was registered.
+/// when it is asked, not the one at registration: a built <see cref="IServiceProvider"/> can say
+/// whether a service exists but not how it was registered.
 /// </remarks>
 internal sealed class RepositoryLifetimeScanner(IServiceCollection services)
 {

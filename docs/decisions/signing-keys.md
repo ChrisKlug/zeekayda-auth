@@ -75,9 +75,8 @@ matters on a shared machine, and the environment gate is what keeps a developmen
 
 **Extension contracts are public in core; ZeeKayDa's own crypto and redaction stay internal.**
 `InternalsVisibleTo` can only name first-party assemblies at build time, so it structurally cannot serve a
-third-party provider package. Making `ISanitizingLogger<T>` nameable creates a host-shadowing risk, closed
-by a hard-failing startup gate that runs first and rejects an unexpected open-generic implementation or any
-closed-generic override. The two narrow grants that do exist — `ZeeKayDa.Auth.FileSystem` and `ZeeKayDa.Auth.Windows`, both for
+third-party provider package. `SanitizingLogger<T>` is nameable for that reason, and cannot be substituted:
+its only constructor is internal. The two narrow grants that do exist — `ZeeKayDa.Auth.FileSystem` and `ZeeKayDa.Auth.Windows`, both for
 the process-identity helper their access-denied messages share — are reviewed exceptions for assemblies
 shipping in lockstep with core, not a pattern. Core has no native interop: the `lstat` owner check lives in
 `ZeeKayDa.Auth.FileSystem`, the one package that protects production keys with it.

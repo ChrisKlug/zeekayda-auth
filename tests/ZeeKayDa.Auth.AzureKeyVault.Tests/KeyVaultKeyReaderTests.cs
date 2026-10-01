@@ -402,7 +402,7 @@ public sealed class KeyVaultKeyReaderTests
     }
 
     // ZeeKayDaConfigurationFailure.Message is a plain string on public API surface that
-    // SecretSanitizingLogger cannot redact, so no caught exception's own Message may reach it.
+    // SanitizingLogger cannot redact, so no caught exception's own Message may reach it.
     // RequestFailedException.Message carries the response content and headers; a cryptographic
     // exception can echo the input it failed to parse. The type is named instead, and the original
     // travels as InnerException. See docs/decisions and .claude/agents/developer.md.

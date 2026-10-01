@@ -59,7 +59,7 @@ internal sealed class PendingPrincipalStore(
     InteractionBindingCookie binding,
     IDataProtectionProvider dataProtectionProvider,
     TimeProvider timeProvider,
-    ISanitizingLogger<PendingPrincipalStore> logger)
+    SanitizingLogger<PendingPrincipalStore> logger)
 {
     /// <summary>
     /// How long a host page has to finish with a parked principal. Not sliding, and never past

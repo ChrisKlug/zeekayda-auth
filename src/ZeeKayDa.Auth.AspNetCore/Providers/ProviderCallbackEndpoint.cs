@@ -39,7 +39,7 @@ internal sealed class ProviderCallbackEndpoint(
     ProviderHandlerActivator activator,
     AuthorizationFlow flow,
     InteractionOutcomes outcomes,
-    ISanitizingLogger<ProviderCallbackEndpoint> logger) : IZeeKayDaEndpoint
+    SanitizingLogger<ProviderCallbackEndpoint> logger) : IZeeKayDaEndpoint
 {
     private const string DeclinedAtProvider =
         "The user declined to sign in at the external identity provider.";

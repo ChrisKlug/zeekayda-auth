@@ -18,10 +18,9 @@ public sealed class ClaimsProviderPresenceActivatorTests
         var services = new ServiceCollection();
         new ZeeKayDaAuthCoreBuilder(services).AddClaimsProvider<NoClaimsProvider>();
         using var provider = services.BuildServiceProvider();
-        var sut = new ClaimsProviderPresenceActivator();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await new ClaimsProviderPresenceActivator(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }
@@ -31,10 +30,9 @@ public sealed class ClaimsProviderPresenceActivatorTests
     {
         var services = new ServiceCollection();
         using var provider = services.BuildServiceProvider();
-        var sut = new ClaimsProviderPresenceActivator();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await new ClaimsProviderPresenceActivator(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         var failure = context.Failures.Should().ContainSingle().Subject;
         failure.Code.Should().Be("claims.provider.missing");
@@ -46,10 +44,9 @@ public sealed class ClaimsProviderPresenceActivatorTests
     {
         // A third-party container without IServiceProviderIsService must not be the one place the
         // mandatory seam can be skipped.
-        var sut = new ClaimsProviderPresenceActivator();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, new ResolvingOnlyServiceProvider(provider: null), TestContext.Current.CancellationToken);
+        await new ClaimsProviderPresenceActivator(new ResolvingOnlyServiceProvider(provider: null)).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle().Which.Code.Should().Be("claims.provider.missing");
     }
@@ -57,10 +54,9 @@ public sealed class ClaimsProviderPresenceActivatorTests
     [Fact]
     public async Task A_container_that_cannot_answer_IsService_passes_when_it_resolves_a_provider()
     {
-        var sut = new ClaimsProviderPresenceActivator();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, new ResolvingOnlyServiceProvider(new NoClaimsProvider()), TestContext.Current.CancellationToken);
+        await new ClaimsProviderPresenceActivator(new ResolvingOnlyServiceProvider(new NoClaimsProvider())).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }

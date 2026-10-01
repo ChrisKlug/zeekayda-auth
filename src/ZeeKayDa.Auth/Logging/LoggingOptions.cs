@@ -15,7 +15,7 @@ public sealed class LoggingOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// When <see langword="false"/> (the default), <c>SecretSanitizingLogger</c> wraps every
+    /// When <see langword="false"/> (the default), <c>SanitizingLogger</c> wraps every
     /// logged exception in a <c>RedactedExceptionWrapper</c> whose message is a fixed placeholder.
     /// This prevents exception messages — which may contain credential material — from reaching
     /// log sinks.

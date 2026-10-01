@@ -35,7 +35,7 @@ internal sealed class AuthorizationRequestContextStore(
     InteractionBindingCookie binding,
     IDataProtectionProvider dataProtectionProvider,
     TimeProvider timeProvider,
-    ISanitizingLogger<AuthorizationRequestContextStore> logger)
+    SanitizingLogger<AuthorizationRequestContextStore> logger)
 {
     /// <summary>
     /// The hard lifetime of an interaction. Not sliding: a request gets one window to complete,

@@ -24,19 +24,14 @@ namespace ZeeKayDa.Auth.Scopes;
 /// breach at once instead of one per restart.
 /// </para>
 /// </remarks>
-internal sealed class ScopePresenceActivator : IStartupActivator
+internal sealed class ScopePresenceActivator(ValidatedScopeCatalog catalog) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "ScopePresence";
 
     /// <inheritdoc/>
-    public async Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public async Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
-        var catalog = scopedServices.GetRequiredService<ValidatedScopeCatalog>();
-
         try
         {
             await catalog.GetScopesAsync(cancellationToken).ConfigureAwait(false);

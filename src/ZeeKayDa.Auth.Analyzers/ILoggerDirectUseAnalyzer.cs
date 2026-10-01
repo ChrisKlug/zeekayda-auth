@@ -9,7 +9,7 @@ namespace ZeeKayDa.Auth.Analyzers;
 
 /// <summary>
 /// Enforces log hygiene at compile time: ZeeKayDa services must inject
-/// <c>ISanitizingLogger&lt;T&gt;</c> rather than <c>ILogger&lt;T&gt;</c> directly.
+/// <c>SanitizingLogger&lt;T&gt;</c> rather than <c>ILogger&lt;T&gt;</c> directly.
 /// Diagnostic ID: ZEEKAYDA0001, category: LogHygiene, severity: Error.
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -21,7 +21,7 @@ public sealed class ILoggerDirectUseAnalyzer : DiagnosticAnalyzer
     private static readonly DiagnosticDescriptor Rule = new(
         DiagnosticId,
         title: "Direct ILogger<T> use in ZeeKayDa service",
-        messageFormat: "Inject ISanitizingLogger<T> instead of ILogger<T> in ZeeKayDa services",
+        messageFormat: "Inject SanitizingLogger<T> instead of ILogger<T> in ZeeKayDa services",
         category: "LogHygiene",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -70,7 +70,7 @@ public sealed class ILoggerDirectUseAnalyzer : DiagnosticAnalyzer
 
     /// <summary>
     /// Returns true when the containing type itself implements <c>ILogger&lt;T&gt;</c> — i.e. it
-    /// IS a logger wrapper (like <c>SecretSanitizingLogger&lt;T&gt;</c>) and therefore legitimately
+    /// IS a logger wrapper (like <c>SanitizingLogger&lt;T&gt;</c>) and therefore legitimately
     /// accepts a raw <c>ILogger&lt;T&gt;</c> as its inner target.
     /// </summary>
     private static bool IsInLoggerImplementation(SyntaxNodeAnalysisContext context, SyntaxNode node)

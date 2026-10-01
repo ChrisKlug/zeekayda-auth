@@ -34,7 +34,7 @@ namespace ZeeKayDa.Auth.Clients;
 // signature — GetRegistrationFailures — is silently not an implementation of them.
 internal sealed class Pbkdf2ClientSecretHasher(
     IOptionsMonitor<Pbkdf2ClientSecretHasherOptions> options,
-    ISanitizingLogger<Pbkdf2ClientSecretHasher> logger)
+    SanitizingLogger<Pbkdf2ClientSecretHasher> logger)
     : ClientSecretHasher<IPbkdf2ClientSecret>, IClientSecretHasher
 {
     /// <summary>

@@ -34,7 +34,7 @@ internal sealed class EndSessionEndpoint(
     SsoSession session,
     LogoutRequestStore requests,
     EndSessionResponses responses,
-    ISanitizingLogger<EndSessionEndpoint> logger) : IZeeKayDaEndpoint
+    SanitizingLogger<EndSessionEndpoint> logger) : IZeeKayDaEndpoint
 {
     /// <summary>
     /// The longest <c>state</c> echoed to a client — far above what a relying party sends. A

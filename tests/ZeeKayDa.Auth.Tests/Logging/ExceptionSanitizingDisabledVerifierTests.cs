@@ -9,8 +9,6 @@ namespace ZeeKayDa.Auth.Tests.Logging;
 
 public sealed class ExceptionSanitizingDisabledVerifierTests
 {
-    private static readonly IServiceProvider EmptyProvider = new ServiceCollection().BuildServiceProvider();
-
     private static ExceptionSanitizingDisabledVerifier CreateSut(bool disableExceptionSanitizing)
     {
         var opts = new AuthorizationServerOptions();
@@ -24,7 +22,7 @@ public sealed class ExceptionSanitizingDisabledVerifierTests
         var sut = CreateSut(disableExceptionSanitizing: true);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle();
     }
@@ -35,7 +33,7 @@ public sealed class ExceptionSanitizingDisabledVerifierTests
         var sut = CreateSut(disableExceptionSanitizing: false);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().BeEmpty();
     }
@@ -46,7 +44,7 @@ public sealed class ExceptionSanitizingDisabledVerifierTests
         var sut = CreateSut(disableExceptionSanitizing: true);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.MessageTemplate.Should().Be(ExceptionSanitizingDisabledVerifier.WarningMessage);

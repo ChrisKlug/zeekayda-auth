@@ -17,18 +17,15 @@ namespace ZeeKayDa.Auth.Claims;
 /// allowed to skip. An activator rather than a verifier because that fallback constructs a
 /// caller-supplied service.
 /// </remarks>
-internal sealed class ClaimsProviderPresenceActivator : IStartupActivator
+internal sealed class ClaimsProviderPresenceActivator(IServiceProvider services) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "ClaimsProviderPresence";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
-        if (!IsProviderRegistered(scopedServices))
+        if (!IsProviderRegistered())
         {
             context.AddFailure(
                 "claims.provider.missing",
@@ -40,8 +37,8 @@ internal sealed class ClaimsProviderPresenceActivator : IStartupActivator
         return Task.CompletedTask;
     }
 
-    private static bool IsProviderRegistered(IServiceProvider scopedServices) =>
-        scopedServices.GetService<IServiceProviderIsService>() is { } isService
+    private bool IsProviderRegistered() =>
+        services.GetService<IServiceProviderIsService>() is { } isService
             ? isService.IsService(typeof(IClaimsProvider))
-            : scopedServices.GetService<IClaimsProvider>() is not null;
+            : services.GetService<IClaimsProvider>() is not null;
 }

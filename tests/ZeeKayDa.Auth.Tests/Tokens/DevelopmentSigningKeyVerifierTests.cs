@@ -21,8 +21,6 @@ public sealed class DevelopmentSigningKeyVerifierTests
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
-    private static readonly IServiceProvider EmptyProvider = new ServiceCollection().BuildServiceProvider();
-
     private static DevelopmentSigningKeyVerifier BuildSut(
         string environmentName,
         IReadOnlyList<string>? allowedEnvironments = null)
@@ -47,7 +45,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut(Environments.Development);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         var warning = context.Warnings.Should().ContainSingle().Which;
         warning.Code.Should().Be("signing.dev_keys.active");
@@ -60,7 +58,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut(Environments.Development);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.MessageTemplate.Should().Be(DevelopmentSigningKeyVerifier.WarningMessage);
@@ -72,7 +70,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut(Environments.Development);
         var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken))
+        await sut.Awaiting(s => s.VerifyAsync(context, TestContext.Current.CancellationToken))
             .Should().NotThrowAsync();
     }
 
@@ -85,7 +83,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut(Environments.Production);
         var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken))
+        await sut.Awaiting(s => s.VerifyAsync(context, TestContext.Current.CancellationToken))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
     }
 
@@ -95,7 +93,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut(environmentName: null!);
         var context = new StartupVerificationContext();
 
-        var ex = await sut.Awaiting(s => s.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken))
+        var ex = await sut.Awaiting(s => s.VerifyAsync(context, TestContext.Current.CancellationToken))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
 
         ex.Which.AggregatedFailures.Should().ContainSingle()
@@ -108,7 +106,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut(Environments.Production);
         var context = new StartupVerificationContext();
 
-        var ex = await sut.Awaiting(s => s.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken))
+        var ex = await sut.Awaiting(s => s.VerifyAsync(context, TestContext.Current.CancellationToken))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
 
         ex.Which.AggregatedFailures.Should().ContainSingle()
@@ -124,7 +122,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
             allowedEnvironments: ["Development", Environments.Production]);
         var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken))
+        await sut.Awaiting(s => s.VerifyAsync(context, TestContext.Current.CancellationToken))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>()
             .WithMessage("*production*");
     }
@@ -135,7 +133,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut(Environments.Production);
         var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken))
+        await sut.Awaiting(s => s.VerifyAsync(context, TestContext.Current.CancellationToken))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
 
         context.Warnings.Should().BeEmpty("exception is thrown before any warning is recorded");
@@ -153,7 +151,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut(environmentName);
         var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken))
+        await sut.Awaiting(s => s.VerifyAsync(context, TestContext.Current.CancellationToken))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
     }
 
@@ -163,7 +161,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut("Staging");
         var context = new StartupVerificationContext();
 
-        var ex = await sut.Awaiting(s => s.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken))
+        var ex = await sut.Awaiting(s => s.VerifyAsync(context, TestContext.Current.CancellationToken))
             .Should().ThrowAsync<ZeeKayDaConfigurationException>();
 
         ex.Which.AggregatedFailures.Should().ContainSingle()
@@ -177,7 +175,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
             allowedEnvironments: ["Development", "IntegrationTesting"]);
         var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken))
+        await sut.Awaiting(s => s.VerifyAsync(context, TestContext.Current.CancellationToken))
             .Should().NotThrowAsync();
     }
 
@@ -188,7 +186,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut("development");
         var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken))
+        await sut.Awaiting(s => s.VerifyAsync(context, TestContext.Current.CancellationToken))
             .Should().NotThrowAsync();
     }
 
@@ -203,7 +201,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut(environmentName, allowedEnvironments: ["Development", environmentName]);
         var context = new StartupVerificationContext();
 
-        await sut.Awaiting(s => s.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken))
+        await sut.Awaiting(s => s.VerifyAsync(context, TestContext.Current.CancellationToken))
             .Should().NotThrowAsync();
     }
 
@@ -216,7 +214,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut(environmentName, allowedEnvironments: ["Development", environmentName]);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.Level.Should().Be(LogLevel.Critical);
@@ -228,7 +226,7 @@ public sealed class DevelopmentSigningKeyVerifierTests
         var sut = BuildSut("Staging", allowedEnvironments: ["Development", "Staging"]);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.MessageTemplate.Should().Be(DevelopmentSigningKeyVerifier.NonDevelopmentCriticalMessage);

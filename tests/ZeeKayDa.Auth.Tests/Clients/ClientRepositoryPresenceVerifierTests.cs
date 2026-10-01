@@ -34,8 +34,8 @@ public sealed class ClientRepositoryPresenceVerifierTests
     private static async Task<StartupVerificationContext> VerifyAsync(IServiceProvider services)
     {
         var context = new StartupVerificationContext();
-        await new ClientRepositoryPresenceVerifier().VerifyAsync(
-            context, services, TestContext.Current.CancellationToken);
+        await new ClientRepositoryPresenceVerifier(services).VerifyAsync(
+            context, TestContext.Current.CancellationToken);
         return context;
     }
 

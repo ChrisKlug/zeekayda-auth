@@ -373,7 +373,7 @@ public sealed class ZeeKayDaAuthCoreBuilderStoreExtensionsTests
         foreach (var verifier in provider.GetServices<IStartupVerifier>().OfType<InMemoryStoreVerifier>())
         {
             var context = new StartupVerificationContext();
-            await verifier.VerifyAsync(context, provider, CancellationToken.None);
+            await verifier.VerifyAsync(context, CancellationToken.None);
             contexts.Add(context);
         }
 
@@ -401,7 +401,7 @@ public sealed class ZeeKayDaAuthCoreBuilderStoreExtensionsTests
         foreach (var verifier in verifiers)
         {
             var context = new StartupVerificationContext();
-            await verifier.VerifyAsync(context, provider, CancellationToken.None);
+            await verifier.VerifyAsync(context, CancellationToken.None);
             context.Failures.Should().BeEmpty();
         }
     }
@@ -429,7 +429,7 @@ public sealed class ZeeKayDaAuthCoreBuilderStoreExtensionsTests
         foreach (var verifier in verifiers)
         {
             var context = new StartupVerificationContext();
-            await verifier.VerifyAsync(context, provider, CancellationToken.None);
+            await verifier.VerifyAsync(context, CancellationToken.None);
             outcomes.Add(context.Failures.Count > 0);
         }
 
@@ -548,7 +548,7 @@ public sealed class ZeeKayDaAuthCoreBuilderStoreExtensionsTests
         using var provider = services.BuildServiceProvider();
         var gate = provider.GetServices<IStartupActivator>().OfType<DistributedCacheInteractionStoreActivator>().Single();
         var context = new StartupVerificationContext();
-        await gate.VerifyAsync(context, provider, CancellationToken.None);
+        await gate.VerifyAsync(context, CancellationToken.None);
         context.Failures.Should().BeEmpty();
         context.Warnings.Should().ContainSingle().Which.Code.Should().Be("stores.interaction.per_process_cache_override");
     }

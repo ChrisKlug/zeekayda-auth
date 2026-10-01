@@ -13,8 +13,6 @@ namespace ZeeKayDa.Auth.Tests.Configuration;
 /// </summary>
 public sealed class AbsoluteFamilyLifetimeUnboundedVerifierTests
 {
-    private static readonly IServiceProvider EmptyProvider = new ServiceCollection().BuildServiceProvider();
-
     private static AbsoluteFamilyLifetimeUnboundedVerifier BuildSut(TimeSpan absoluteFamilyLifetime)
     {
         var options = new AuthorizationServerOptions
@@ -34,7 +32,7 @@ public sealed class AbsoluteFamilyLifetimeUnboundedVerifierTests
         var sut = BuildSut(TimeSpan.MaxValue);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle();
     }
@@ -45,7 +43,7 @@ public sealed class AbsoluteFamilyLifetimeUnboundedVerifierTests
         var sut = BuildSut(TimeSpan.MaxValue);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.Code.Should().Be("tokens.absolute_family_lifetime_unbounded");
@@ -57,7 +55,7 @@ public sealed class AbsoluteFamilyLifetimeUnboundedVerifierTests
         var sut = BuildSut(TimeSpan.MaxValue);
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.MessageTemplate.Should().Contain("AbsoluteFamilyLifetime");
@@ -74,7 +72,7 @@ public sealed class AbsoluteFamilyLifetimeUnboundedVerifierTests
         var sut = BuildSut(TimeSpan.FromDays(days));
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().BeEmpty();
     }

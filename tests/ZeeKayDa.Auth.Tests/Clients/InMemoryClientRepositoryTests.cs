@@ -14,27 +14,6 @@ public sealed class InMemoryClientRepositoryTests
 
     private sealed class FakeSecret : IClientSecret { public IClientCredential Snapshot() => new FakeSecret(); }
 
-    private sealed class CapturingLogger : ISanitizingLogger<InMemoryClientRepository>
-    {
-        private readonly List<string> _warnings = new();
-
-        public IReadOnlyList<string> Warnings => _warnings;
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-        {
-            if (logLevel == LogLevel.Warning)
-                _warnings.Add(formatter(state, exception));
-        }
-    }
-
     private sealed class FakeHasher : IClientSecretHasher
     {
         public bool CanHandle(IClientSecret secret) => secret is FakeSecret;
@@ -86,7 +65,7 @@ public sealed class InMemoryClientRepositoryTests
     private static InMemoryClientRepository MakeRepository(
         InMemoryClientRegistrationOptions opts,
         AuthorizationServerOptions? serverOptions = null,
-        ISanitizingLogger<InMemoryClientRepository>? logger = null)
+        SanitizingLogger<InMemoryClientRepository>? logger = null)
     {
         var so = serverOptions ?? DefaultServerOptions();
         return new InMemoryClientRepository(
@@ -499,25 +478,25 @@ public sealed class InMemoryClientRepositoryTests
     public void Constructor_logs_warning_when_none_is_advertised_but_no_public_clients_are_registered()
     {
         // Server advertises "none" but only confidential clients are registered → warning
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<InMemoryClientRepository>();
         var opts = new InMemoryClientRegistrationOptions();
         opts.Pending.Add(PendingSpec("confidential-only", "super-secret"));
 
         MakeRepository(opts, logger: logger);
 
-        logger.Warnings.Should().ContainSingle(w => w.Contains("none"));
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.Contains("none"));
     }
 
     [Fact]
     public void Constructor_does_not_log_warning_when_none_is_advertised_and_public_client_is_present()
     {
         // Server advertises "none" and at least one public client is registered → no warning
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<InMemoryClientRepository>();
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(ValidPublicClient("public-client"));
 
         MakeRepository(opts, logger: logger);
 
-        logger.Warnings.Should().NotContain(w => w.Contains("none"));
+        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning && e.Message.Contains("none"));
     }
 }

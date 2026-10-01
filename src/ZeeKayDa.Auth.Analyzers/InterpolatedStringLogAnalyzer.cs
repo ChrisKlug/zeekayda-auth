@@ -13,7 +13,7 @@ namespace ZeeKayDa.Auth.Analyzers;
 /// conditional-access, or static extension-method form) inside ZeeKayDa.Auth's own assemblies, and
 /// non-constant <c>messageTemplate</c> arguments passed to
 /// <c>StartupVerificationContext.AddWarning</c> (qualified or unqualified). The message template must be a
-/// compile-time constant so that <c>SecretSanitizingLogger</c> can inspect the template and its
+/// compile-time constant so that <c>SanitizingLogger</c> can inspect the template and its
 /// structured arguments — a non-constant string (interpolated, concatenated with a variable, or a
 /// local variable) is already fully expanded and cannot be redacted. <c>AddWarning</c> needs its
 /// own symbol-based check rather than the <c>Log*</c>-name-plus-<c>ILogger</c>-receiver heuristic:
@@ -233,19 +233,10 @@ public sealed class InterpolatedStringLogAnalyzer : DiagnosticAnalyzer
         var typeSymbol = context.SemanticModel.GetDeclaredSymbol(typeDecl);
         if (typeSymbol is null) return false;
 
-        // Only exempt types that live in ZeeKayDa.Auth itself.
-        // Friend assemblies (InternalsVisibleTo) can implement ISanitizingLogger<T> but must
-        // not self-exempt — the exemption is reserved for the wrapper defined in this assembly.
-        if (typeSymbol.ContainingAssembly?.Name != "ZeeKayDa.Auth") return false;
-
-        // Primary: exempt the concrete sanitizing-logger wrapper by name.
-        if (typeSymbol is INamedTypeSymbol { Name: "SecretSanitizingLogger", TypeParameters.Length: 1 })
-            return true;
-
-        // Fallback: exempt any other ISanitizingLogger<T> implementation defined in this assembly.
-        return typeSymbol.AllInterfaces.Any(i =>
-            i.Name == "ISanitizingLogger" &&
-            i.TypeParameters.Length == 1 &&
-            i.ContainingNamespace?.ToDisplayString() == "ZeeKayDa.Auth.Logging");
+        // Only the sanitizing logger itself, in ZeeKayDa.Auth: a same-named type in a friend
+        // assembly (InternalsVisibleTo) or another namespace must not self-exempt.
+        return typeSymbol.ContainingAssembly?.Name == "ZeeKayDa.Auth"
+            && typeSymbol is INamedTypeSymbol { Name: "SanitizingLogger", TypeParameters.Length: 1 }
+            && typeSymbol.ContainingNamespace?.ToDisplayString() == "ZeeKayDa.Auth.Logging";
     }
 }

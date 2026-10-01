@@ -26,7 +26,7 @@ internal sealed class AuthorizationCodeGrant(
     IOptions<AuthorizationServerOptions> options,
     TimeProvider time,
     GrantClaimsResolver claims,
-    ISanitizingLogger<AuthorizationCodeGrant> logger)
+    SanitizingLogger<AuthorizationCodeGrant> logger)
 {
     private readonly GrantClaimsResolver _claims = claims;
 

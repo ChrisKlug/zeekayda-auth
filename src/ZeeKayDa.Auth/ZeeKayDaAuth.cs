@@ -6,6 +6,8 @@ using System.Runtime.CompilerServices;
 // ZeeKayDa.Auth.FileSystem reuses ProcessIdentityHelper (ProcessIdentityHelper.cs) for its
 // access-denied diagnostic messages, as ZeeKayDa.Auth.Windows does below.
 [assembly: InternalsVisibleTo("ZeeKayDa.Auth.FileSystem")]
+// Its tests construct the SanitizingLogger the file reader injects, whose constructor is internal.
+[assembly: InternalsVisibleTo("ZeeKayDa.Auth.FileSystem.Tests")]
 // ZeeKayDa.Auth.Windows reuses ProcessIdentityHelper (ProcessIdentityHelper.cs) for its
 // access-denied diagnostic messages, so the best-effort process-identity resolution and
 // formatting logic is implemented once rather than duplicated verbatim across the two signing
