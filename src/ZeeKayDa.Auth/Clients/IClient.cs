@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Tokens;
@@ -50,15 +49,15 @@ public interface IClient
     /// endpoint).
     /// </summary>
     /// <remarks>
-    /// Declared (non-default interface member) because a silent default value would convert a
-    /// configuration omission into a security-relevant runtime behaviour change. Three-way
-    /// consistency rule: a client is public if and only if it has no entries in
+    /// Defaults to <see langword="false"/>, and stays declared, never computed from the
+    /// credentials: a public client that forgets to say so has no secret and fails validation
+    /// loudly. Three-way consistency rule: a client is public if and only if it has no entries in
     /// <see cref="IClientWithCredentials.Credentials"/>, and if and only if
     /// <see cref="AllowedTokenEndpointAuthMethods"/> is exactly <c>{ "none" }</c>. Enforced by
     /// <see cref="IClientRegistrationValidator"/> on every registration the framework serves.
     /// See <see href="https://www.rfc-editor.org/rfc/rfc6749#section-2.1">RFC 6749 §2.1</see>.
     /// </remarks>
-    bool IsPublic { get; }
+    bool IsPublic => ClientDefaults.IsPublic;
 
     /// <summary>
     /// Permitted redirect URIs for the authorization code flow.
@@ -69,26 +68,26 @@ public interface IClient
     /// matching is required by
     /// <see href="https://www.rfc-editor.org/rfc/rfc9700#section-2.1">RFC 9700 §2.1</see>.
     /// </remarks>
-    IReadOnlySet<string> RedirectUris { get; }
+    IReadOnlySet<string> RedirectUris => ClientDefaults.RedirectUris;
 
     /// <summary>
     /// Permitted post-logout redirect URIs. May be empty.
     /// </summary>
     /// <remarks>See <see cref="IClient"/>'s string-set comparison invariant.</remarks>
-    IReadOnlySet<string> PostLogoutRedirectUris { get; }
+    IReadOnlySet<string> PostLogoutRedirectUris => ClientDefaults.PostLogoutRedirectUris;
 
     /// <summary>
     /// Scopes this client is permitted to request.
     /// </summary>
     /// <remarks>See <see cref="IClient"/>'s string-set comparison invariant.</remarks>
-    IReadOnlySet<string> AllowedScopes { get; }
+    IReadOnlySet<string> AllowedScopes => ClientDefaults.AllowedScopes;
 
     /// <summary>OAuth 2.0 grant types this client is permitted to use.</summary>
     /// <remarks>
     /// Must be non-empty and a subset of the server's
     /// <see cref="AuthorizationServerOptions.GrantTypesSupported"/>; registration fails otherwise.
     /// </remarks>
-    IReadOnlySet<GrantType> AllowedGrantTypes { get; }
+    IReadOnlySet<GrantType> AllowedGrantTypes => ClientDefaults.AllowedGrantTypes;
 
     /// <summary>Response types this client is permitted to request.</summary>
     /// <remarks>
@@ -96,7 +95,7 @@ public interface IClient
     /// when <see cref="AllowedGrantTypes"/> contains <see cref="GrantType.AuthorizationCode"/>;
     /// registration fails otherwise.
     /// </remarks>
-    IReadOnlySet<ResponseType> AllowedResponseTypes { get; }
+    IReadOnlySet<ResponseType> AllowedResponseTypes => ClientDefaults.AllowedResponseTypes;
 
     /// <summary>Response modes this client is permitted to request.</summary>
     /// <remarks>
@@ -104,7 +103,7 @@ public interface IClient
     /// when <see cref="AllowedGrantTypes"/> contains <see cref="GrantType.AuthorizationCode"/>;
     /// registration fails otherwise.
     /// </remarks>
-    IReadOnlySet<ResponseMode> AllowedResponseModes { get; }
+    IReadOnlySet<ResponseMode> AllowedResponseModes => ClientDefaults.AllowedResponseModes;
 
     /// <summary>
     /// Token endpoint authentication methods this client is permitted to use.
@@ -114,7 +113,7 @@ public interface IClient
     /// <c>"none"</c> (see <see cref="TokenEndpointAuthMethods.None"/>) is only valid for public
     /// clients (<see cref="IsPublic"/> == <see langword="true"/>).
     /// </remarks>
-    IReadOnlySet<string> AllowedTokenEndpointAuthMethods { get; }
+    IReadOnlySet<string> AllowedTokenEndpointAuthMethods => ClientDefaults.AllowedTokenEndpointAuthMethods(IsPublic);
 
     /// <summary>
     /// OpenID Connect <c>prompt</c> values this client is permitted to request.
@@ -125,7 +124,7 @@ public interface IClient
     /// which is forward-compatible when new <see cref="PromptValue"/> members are added.
     /// An explicit full-set default would be a forward-compatibility trap.
     /// </remarks>
-    IReadOnlySet<PromptValue> AllowedPromptValues => FrozenSet<PromptValue>.Empty;
+    IReadOnlySet<PromptValue> AllowedPromptValues => ClientDefaults.AllowedPromptValues;
 
     /// <summary>
     /// When <see langword="true"/>, the framework may include ZeeKayDa-specific extended error
@@ -136,14 +135,14 @@ public interface IClient
     /// <c>invalid_client</c> MUST NOT distinguish an unknown <c>client_id</c> from a wrong
     /// credential (client enumeration non-disclosure constraint).
     /// </remarks>
-    bool EnableZkdErrorCodes { get; }
+    bool EnableZkdErrorCodes => ClientDefaults.EnableZkdErrorCodes;
 
     /// <summary>
     /// The name shown to the user where the framework hands a host page the client's identity —
     /// the consent page above all. <see langword="null"/> (the default) when the registration
     /// carries none; the page then falls back to <see cref="ClientId"/>.
     /// </summary>
-    string? DisplayName => null;
+    string? DisplayName => ClientDefaults.DisplayName;
 
     /// <summary>
     /// The client's <c>initiate_login_uri</c> (OpenID Connect Core §4): where the framework sends
@@ -157,7 +156,7 @@ public interface IClient
     /// client must treat a request to it only as a prompt to start a sign-in at the issuer named by
     /// <c>iss</c>, and only for an issuer it already trusts.
     /// </remarks>
-    string? InitiateLoginUri => null;
+    string? InitiateLoginUri => ClientDefaults.InitiateLoginUri;
 
     /// <summary>
     /// Whether the user must consent on the host's consent page before an authorization code is
@@ -172,7 +171,7 @@ public interface IClient
     /// first-party applications and nothing else. It is a default interface member because
     /// requiring consent is what a registration means unless it says otherwise.
     /// </remarks>
-    bool RequireConsent => true;
+    bool RequireConsent => ClientDefaults.RequireConsent;
 
     /// <summary>
     /// Whether a sign-out this client starts may end the user's session without asking them
@@ -187,7 +186,7 @@ public interface IClient
     /// applications. It is a default interface member because asking is what a registration
     /// means unless it says otherwise.
     /// </remarks>
-    bool SkipLogoutConfirmation => false;
+    bool SkipLogoutConfirmation => ClientDefaults.SkipLogoutConfirmation;
 
     /// <summary>
     /// Whether this client must send a PKCE <c>code_challenge</c> with every authorization request.
@@ -205,7 +204,7 @@ public interface IClient
     /// by the authorize endpoint. It is a default interface member because requiring PKCE is what a
     /// registration means unless it says otherwise.
     /// </remarks>
-    bool RequirePkce => true;
+    bool RequirePkce => ClientDefaults.RequirePkce;
 
     /// <summary>
     /// JWS signing algorithms permitted for ID tokens issued to this client.
@@ -218,7 +217,7 @@ public interface IClient
     /// non-null, this set MUST be non-empty and MUST be a subset of it. The framework's validator
     /// enforces this on every registration it serves; a repository may also check it on write.
     /// </remarks>
-    IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms => null;
+    IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms => ClientDefaults.AllowedSigningAlgorithms;
 
     /// <summary>
     /// The lifetime of access tokens issued to this client, or <see langword="null"/> (the
@@ -228,7 +227,7 @@ public interface IClient
     /// When non-null, MUST be greater than <see cref="TimeSpan.Zero"/>; the registration
     /// validator rejects it otherwise. No upper bound is enforced.
     /// </remarks>
-    TimeSpan? AccessTokenLifetime => null;
+    TimeSpan? AccessTokenLifetime => ClientDefaults.AccessTokenLifetime;
 
     /// <summary>
     /// The lifetime of ID tokens issued to this client, or <see langword="null"/> (the default)
@@ -238,7 +237,7 @@ public interface IClient
     /// When non-null, MUST be greater than <see cref="TimeSpan.Zero"/>; the registration
     /// validator rejects it otherwise. No upper bound is enforced.
     /// </remarks>
-    TimeSpan? IdTokenLifetime => null;
+    TimeSpan? IdTokenLifetime => ClientDefaults.IdTokenLifetime;
 
     /// <summary>
     /// Claim types added to the ID token of every grant to this client, beyond what the granted
@@ -255,17 +254,17 @@ public interface IClient
     /// <see cref="System.StringComparer.Ordinal"/>, whatever the collection's own comparer.
     /// </para>
     /// </remarks>
-    IReadOnlyCollection<string> AdditionalIdTokenClaims => [];
+    IReadOnlySet<string> AdditionalIdTokenClaims => ClientDefaults.AdditionalClaims;
 
     /// <summary>
     /// Claim types added to the userinfo response of every grant to this client, beyond what the
     /// granted scopes unlock. Empty by default; the rules of <see cref="AdditionalIdTokenClaims"/> apply.
     /// </summary>
-    IReadOnlyCollection<string> AdditionalUserInfoClaims => [];
+    IReadOnlySet<string> AdditionalUserInfoClaims => ClientDefaults.AdditionalClaims;
 
     /// <summary>
     /// Claim types added to the access token of every grant to this client, beyond what the
     /// granted scopes unlock. Empty by default; the rules of <see cref="AdditionalIdTokenClaims"/> apply.
     /// </summary>
-    IReadOnlyCollection<string> AdditionalAccessTokenClaims => [];
+    IReadOnlySet<string> AdditionalAccessTokenClaims => ClientDefaults.AdditionalClaims;
 }

@@ -129,9 +129,9 @@ public class ClientRegistrationFingerprintTests
         ["AllowedSigningAlgorithms"] = NewClient() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } },
         ["AccessTokenLifetime"] = NewClient() with { AccessTokenLifetime = TimeSpan.FromMinutes(10) },
         ["IdTokenLifetime"] = NewClient() with { IdTokenLifetime = TimeSpan.FromMinutes(1) },
-        ["AdditionalIdTokenClaims"] = NewClient() with { AdditionalIdTokenClaims = ["tenant"] },
-        ["AdditionalUserInfoClaims"] = NewClient() with { AdditionalUserInfoClaims = ["tenant"] },
-        ["AdditionalAccessTokenClaims"] = NewClient() with { AdditionalAccessTokenClaims = ["tenant"] },
+        ["AdditionalIdTokenClaims"] = NewClient() with { AdditionalIdTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal) },
+        ["AdditionalUserInfoClaims"] = NewClient() with { AdditionalUserInfoClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal) },
+        ["AdditionalAccessTokenClaims"] = NewClient() with { AdditionalAccessTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal) },
     };
 
     public static TheoryData<string, Client> MutatedRegistrations()

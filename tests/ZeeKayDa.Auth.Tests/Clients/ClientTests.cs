@@ -156,20 +156,14 @@ public sealed class ClientTests
         client.AllowedResponseModes.Should().BeEquivalentTo(new[] { ResponseMode.Query });
     }
 
-    [Fact]
-    public void DefaultProperties_AllowedTokenEndpointAuthMethods_defaults_to_ClientSecretBasic()
+    [Theory]
+    [InlineData(false, TokenEndpointAuthMethods.ClientSecretBasic)]
+    [InlineData(true, TokenEndpointAuthMethods.None)]
+    public void DefaultProperties_AllowedTokenEndpointAuthMethods_follows_IsPublic(bool isPublic, string expected)
     {
-        var client = new Client
-        {
-            ClientId = "test",
-            Credentials = [],
-            IsPublic = true,
-            RedirectUris = new HashSet<string>(),
-            PostLogoutRedirectUris = new HashSet<string>(),
-        };
+        var client = new Client { ClientId = "test", IsPublic = isPublic };
 
-        client.AllowedTokenEndpointAuthMethods
-            .Should().BeEquivalentTo(new[] { TokenEndpointAuthMethods.ClientSecretBasic });
+        client.AllowedTokenEndpointAuthMethods.Should().BeEquivalentTo([expected]);
     }
 
     [Fact]

@@ -22,9 +22,9 @@ public sealed class ClientClaimAdditionsTests
         IReadOnlyCollection<string>? accessToken = null) =>
         Client.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]) with
         {
-            AdditionalIdTokenClaims = idToken ?? [],
-            AdditionalUserInfoClaims = userInfo ?? [],
-            AdditionalAccessTokenClaims = accessToken ?? [],
+            AdditionalIdTokenClaims = new HashSet<string>(idToken ?? [], StringComparer.Ordinal),
+            AdditionalUserInfoClaims = new HashSet<string>(userInfo ?? [], StringComparer.Ordinal),
+            AdditionalAccessTokenClaims = new HashSet<string>(accessToken ?? [], StringComparer.Ordinal),
         };
 
     [Fact]

@@ -155,15 +155,16 @@ public sealed class InMemoryClientRegistrationBuilderTests
     }
 
     [Fact]
-    public void A_client_credentials_only_client_gets_no_response_types_or_modes()
+    public void A_client_credentials_only_client_gets_the_same_response_types_and_modes_as_through_the_record()
     {
         _builder.AddConfidential("service", "very-secret", [], [], Scopes,
             options => options.AllowedGrantTypes.Add(GrantType.ClientCredentials));
 
         var registration = SinglePending().Registration;
+        var throughRecord = new Client { ClientId = "service", AllowedGrantTypes = registration.AllowedGrantTypes };
         registration.AllowedGrantTypes.Should().Equal(GrantType.ClientCredentials);
-        registration.AllowedResponseTypes.Should().BeEmpty();
-        registration.AllowedResponseModes.Should().BeEmpty();
+        registration.AllowedResponseTypes.Should().BeEquivalentTo(throughRecord.AllowedResponseTypes);
+        registration.AllowedResponseModes.Should().BeEquivalentTo(throughRecord.AllowedResponseModes);
     }
 
     [Fact]
