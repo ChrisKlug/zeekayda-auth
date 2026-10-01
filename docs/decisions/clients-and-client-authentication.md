@@ -69,16 +69,16 @@ Its 600,000-iteration floor (OWASP) and 2,000,000 cap are enforced where a crede
 (startup fails, never clamps) and where a pre-hashed one is imported, the only check a credential
 migrated from another IdP meets. At most two active shared secrets per client; both are tried.
 
-**Failure paths are padded to a fixed two-credential budget; the success path is not.** Padding
-verifies against a decoy the default hasher builds once at startup: it costs a full verification, and
-no known value verifies it. The built-in PBKDF2 decoy is random bytes, free to build; a custom default
-hasher pays one `Create` and cannot supply a cheaper decoy. The budget is burned on every path with
-nothing real to verify: unknown client, a method outside the server's or the client's allowlist, an
-empty secret, and every `none` rejection. A non-default hasher's failure is padded too, so a faster
-custom hasher cannot reopen the oracle. A client mid-rotation is thus not timing-distinguishable from
-an unknown one, nor "public client rejected" from "no such client". Successful `none` authentication
-is deliberately *not* padded: the outcome is visible in the HTTP response and `client_id` is not an
-OAuth secret. Enumeration by request volume is left to rate limiting (RFC 9700 §2.1).
+**Failure paths cost two failed credential slots; the success path is not padded.** A slot is one
+verification by *every* registered hasher, the real one plus the others against decoys each builds
+once at startup (PBKDF2's is random bytes; a custom hasher pays one `Create`). So a client still
+holding an older hasher's secret fails in the same work as an unknown one
+(`A_failed_authentication_under_two_hashers_runs_the_same_verifications_as_an_unknown_client`); the
+price is every hasher's cost on each failure. Paths with nothing real to verify (unknown client, a
+disallowed method, an empty secret, every `none` rejection) spend both slots, so a client mid-rotation
+looks like an unknown one, and "public client rejected" like "no such client". Successful `none`
+authentication is not padded: its outcome is visible in the response and `client_id` is not an OAuth
+secret. Enumeration by request volume is left to rate limiting (RFC 9700 §2.1).
 
 **The composite hasher is registered as its own concrete type, never as the hasher interface.**
 Registering it under the interface would let it be injected into its own `IEnumerable<>` dependency
