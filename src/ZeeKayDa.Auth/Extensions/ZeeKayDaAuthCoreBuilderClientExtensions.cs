@@ -8,7 +8,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary>
 /// Extension methods for registering client repositories with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderClientExtensions
+public static class ZeeKayDaAuthCoreBuilderClientExtensions
 {
     /// <summary>
     /// Registers an in-memory client repository populated by the given <paramref name="configure"/> callback.

@@ -1,5 +1,5 @@
 #nullable enable
-Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensions
 ZeeKayDa.Auth.Windows.CertificateLookup
 ZeeKayDa.Auth.Windows.CertificateLookup.Equals(ZeeKayDa.Auth.Windows.CertificateLookup? other) -> bool
 ZeeKayDa.Auth.Windows.ThumbprintCertificateLookup
@@ -21,5 +21,5 @@ override sealed ZeeKayDa.Auth.Windows.CertificateLookup.GetHashCode() -> int
 static ZeeKayDa.Auth.Windows.CertificateLookup.ByThumbprint(string! thumbprint) -> ZeeKayDa.Auth.Windows.CertificateLookup!
 static ZeeKayDa.Auth.Windows.CertificateLookup.operator !=(ZeeKayDa.Auth.Windows.CertificateLookup? left, ZeeKayDa.Auth.Windows.CertificateLookup? right) -> bool
 static ZeeKayDa.Auth.Windows.CertificateLookup.operator ==(ZeeKayDa.Auth.Windows.CertificateLookup? left, ZeeKayDa.Auth.Windows.CertificateLookup? right) -> bool
-static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions.AddWindowsCertificateStoreSigning<TBuilder>(this TBuilder! builder, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.X509Certificates.StoreLocation storeLocation, System.Security.Cryptography.X509Certificates.StoreName storeName, System.Action<ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions!>! configure) -> TBuilder!
-static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions.AddWindowsCertificateStoreSigning<TBuilder>(this TBuilder! builder, ZeeKayDa.Auth.Windows.CertificateLookup! certificate, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.X509Certificates.StoreLocation storeLocation, System.Security.Cryptography.X509Certificates.StoreName storeName) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensions.AddWindowsCertificateStoreSigning<TBuilder>(this TBuilder! builder, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.X509Certificates.StoreLocation storeLocation, System.Security.Cryptography.X509Certificates.StoreName storeName, System.Action<ZeeKayDa.Auth.Windows.WindowsCertificateStoreSigningOptions!>! configure) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensions.AddWindowsCertificateStoreSigning<TBuilder>(this TBuilder! builder, ZeeKayDa.Auth.Windows.CertificateLookup! certificate, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.X509Certificates.StoreLocation storeLocation, System.Security.Cryptography.X509Certificates.StoreName storeName) -> TBuilder!

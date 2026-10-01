@@ -7,7 +7,7 @@
 // unlike WindowsCertificateStoreSigningKeySourceTests, which constructs the source directly and runs
 // on any OS — every test here can only run on Windows. Each test is individually skip-guarded rather
 // than the whole class, matching the pattern in
-// Extensions/ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsTests.cs.
+// Extensions/ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensionsTests.cs.
 //
 // KNOWN GAP: a real ACL-denied X509Store.Open() (the store_inaccessible failure) is not practically
 // provokable in CI, so it is only simulated here via the fake's ExceptionToThrow. The genuinely

@@ -10,18 +10,18 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthBuilderSigningExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderSigningExtensionsTests
 {
     // ── Configure surface: only the environment list is reachable ─────────────────────────────────
 
     [Theory]
-    [InlineData(nameof(ZeeKayDaAuthBuilderSigningExtensions.AddInMemoryDevelopmentSigning))]
-    [InlineData(nameof(ZeeKayDaAuthBuilderSigningExtensions.AddPersistedDevelopmentSigning))]
+    [InlineData(nameof(ZeeKayDaAuthCoreBuilderSigningExtensions.AddInMemoryDevelopmentSigning))]
+    [InlineData(nameof(ZeeKayDaAuthCoreBuilderSigningExtensions.AddPersistedDevelopmentSigning))]
     public void The_configure_callback_can_set_only_AllowedEnvironments(string methodName)
     {
         // Reflects on the public signature, which is what a caller's lambda compiles against: no
         // host can spoof the environment or give the in-memory registration a directory.
-        var method = typeof(ZeeKayDaAuthBuilderSigningExtensions).GetMethod(methodName);
+        var method = typeof(ZeeKayDaAuthCoreBuilderSigningExtensions).GetMethod(methodName);
         var callbackTargetType = method!.GetParameters()
             .Single(p => p.Name == "configure").ParameterType
             .GetGenericArguments().Single();

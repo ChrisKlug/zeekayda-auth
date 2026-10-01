@@ -11,7 +11,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AzureKeyVault.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensionsTests
 {
     private static readonly Uri KeyIdentifierUri = new("https://fake-vault.vault.azure.net/keys/fake-key");
     private static readonly KeyVaultKeyIdentifier KeyIdentifier = new(KeyIdentifierUri);
@@ -179,7 +179,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         var member = doc.Descendants("member")
             .FirstOrDefault(m => (string?)m.Attribute("name") is { } name &&
                 name.StartsWith(
-                    "M:Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions.AddAzureKeyVaultRemoteSigning",
+                    "M:Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions.AddAzureKeyVaultRemoteSigning",
                     StringComparison.Ordinal));
 
         member.Should().NotBeNull("the generated XML doc should contain an entry for AddAzureKeyVaultRemoteSigning");
@@ -326,7 +326,7 @@ public sealed class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensionsTests
         var member = doc.Descendants("member")
             .FirstOrDefault(m => (string?)m.Attribute("name") is { } name &&
                 name.StartsWith(
-                    "M:Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions.AddAzureKeyVaultCachedSigning",
+                    "M:Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions.AddAzureKeyVaultCachedSigning",
                     StringComparison.Ordinal));
 
         member.Should().NotBeNull("the generated XML doc should contain an entry for AddAzureKeyVaultCachedSigning");

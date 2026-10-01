@@ -11,7 +11,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// Extension methods for registering the Windows Certificate Store as a JWT signing key provider
 /// with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensions
+public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensions
 {
     /// <summary>
     /// Registers a single certificate from a Windows Certificate Store as the JWT signing key, with

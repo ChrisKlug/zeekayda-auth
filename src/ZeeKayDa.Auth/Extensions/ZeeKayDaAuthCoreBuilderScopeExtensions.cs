@@ -7,7 +7,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary>
 /// Extension methods for registering scope repositories with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderScopeExtensions
+public static class ZeeKayDaAuthCoreBuilderScopeExtensions
 {
     /// <summary>
     /// Registers an in-memory scope repository.

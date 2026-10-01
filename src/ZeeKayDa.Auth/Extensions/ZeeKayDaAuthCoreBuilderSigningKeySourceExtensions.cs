@@ -8,7 +8,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary>
 /// Registers the application's signing key source with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderSigningKeySourceExtensions
+public static class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions
 {
     /// <summary>
     /// Registers <typeparamref name="TSource"/> as the application's signing key source, a

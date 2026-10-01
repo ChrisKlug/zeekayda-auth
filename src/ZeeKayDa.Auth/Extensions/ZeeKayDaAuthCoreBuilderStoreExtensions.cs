@@ -11,7 +11,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// Extension methods for registering the token stores and the interaction store with
 /// <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderStoreExtensions
+public static class ZeeKayDaAuthCoreBuilderStoreExtensions
 {
     /// <summary>
     /// Registers a per-process interaction store for development and testing only. An

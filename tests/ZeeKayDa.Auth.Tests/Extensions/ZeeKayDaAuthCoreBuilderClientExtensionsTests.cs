@@ -7,7 +7,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
 {
     private static ServiceCollection ServicesWithLogging()
     {

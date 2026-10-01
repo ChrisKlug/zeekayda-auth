@@ -16,7 +16,7 @@ namespace ZeeKayDa.Auth.Windows.Tests.Extensions;
 /// anything else and would otherwise be the only thing these tests ever observed. The one exception
 /// is the gate's own test, which is inverted on purpose.
 /// </remarks>
-public sealed class ZeeKayDaAuthBuilderWindowsCertificateStoreSigningExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensionsTests
 {
     private const string Thumbprint = "AABBCCDDEEFF00112233445566778899AABBCCD";
     private const string OtherThumbprint = "1111111111111111111111111111111111111A";

@@ -17,7 +17,7 @@ namespace ZeeKayDa.Auth.Tests.Extensions;
 /// <c>ZeeKayDa.Auth.FileSystem.Tests</c>' <c>ThirdPartySigningKeySourceRegistrationTests</c> proves
 /// that from an assembly with no grant at all.
 /// </summary>
-public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
 {
     /// <summary>
     /// Models a signing key source defined by a third party from its own package: it implements

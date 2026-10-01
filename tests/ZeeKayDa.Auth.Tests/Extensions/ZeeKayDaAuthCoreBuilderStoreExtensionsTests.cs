@@ -10,7 +10,7 @@ using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthBuilderStoreExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderStoreExtensionsTests
 {
     // ── Fake infrastructure for InMemoryStoreVerifier resolution ─────────────────────────────────
 

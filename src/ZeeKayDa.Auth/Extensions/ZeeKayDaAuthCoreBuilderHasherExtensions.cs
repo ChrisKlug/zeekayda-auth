@@ -9,7 +9,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary>
 /// Extension methods for registering client secret hashers with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderHasherExtensions
+public static class ZeeKayDaAuthCoreBuilderHasherExtensions
 {
     /// <summary>
     /// Registers a client secret hasher with ZeeKayDa.Auth.

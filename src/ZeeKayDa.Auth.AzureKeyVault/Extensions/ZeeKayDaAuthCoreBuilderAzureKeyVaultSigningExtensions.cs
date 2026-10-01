@@ -15,7 +15,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// stays inside Key Vault) or <see cref="AddAzureKeyVaultCachedSigning"/> (the private key is
 /// downloaded once and cached in process memory for local signing).
 /// </summary>
-public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
+public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
 {
     /// <summary>
     /// Registers Azure Key Vault as the JWT signing key provider. Every signature is produced by a

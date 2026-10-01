@@ -12,7 +12,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 /// A chain started by <c>AddZeeKayDaAuth</c> stays a <see cref="ZeeKayDaAuthBuilder"/> through the
 /// core extensions, so an HTTP-only extension can follow any of them.
 /// </summary>
-public sealed class ZeeKayDaAuthBuilderCoreExtensionsTests
+public sealed class ZeeKayDaAuthBuilderForwardingExtensionsTests
 {
     [Fact]
     public void A_chain_from_AddZeeKayDaAuth_keeps_the_ASP_NET_Core_builder_through_every_core_extension()

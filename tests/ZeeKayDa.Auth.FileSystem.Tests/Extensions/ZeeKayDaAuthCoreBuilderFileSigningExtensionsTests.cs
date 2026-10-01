@@ -15,7 +15,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthBuilderFileSigningExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
 {
     private const string PemPath = "/etc/zeekayda/signing.pem";
     private const string PfxPath = "/etc/zeekayda/signing.pfx";

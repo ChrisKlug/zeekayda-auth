@@ -15,7 +15,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// operating system — PEM/PFX loading is portable BCL functionality with no platform interop.
 /// This is the recommended provider for macOS, containers, headless CI, and Linux generally.
 /// </remarks>
-public static class ZeeKayDaAuthBuilderFileSigningExtensions
+public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
 {
     /// <summary>
     /// Registers a single PEM certificate as the JWT signing key, with no rotation staged. The

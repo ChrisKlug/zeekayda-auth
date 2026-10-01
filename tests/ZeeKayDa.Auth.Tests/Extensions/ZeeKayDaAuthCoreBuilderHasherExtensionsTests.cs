@@ -9,7 +9,7 @@ using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthBuilderHasherExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
 {
     // ── Registration ─────────────────────────────────────────────────────────────────────────────
 

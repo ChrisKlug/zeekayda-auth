@@ -5,7 +5,7 @@ using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
 
-public sealed class ZeeKayDaAuthBuilderClaimsExtensionsTests
+public sealed class ZeeKayDaAuthCoreBuilderClaimsExtensionsTests
 {
     [Fact]
     public void AddClaimsProvider_registers_the_provider_scoped_so_it_can_take_a_per_request_context()

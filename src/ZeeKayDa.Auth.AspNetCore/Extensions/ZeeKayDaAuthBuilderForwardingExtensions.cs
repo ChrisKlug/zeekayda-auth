@@ -15,45 +15,45 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// be generic over the builder the way the rest of the core extensions are. Each forwards to its
 /// core counterpart; a new core extension with its own type argument needs its twin here.
 /// </remarks>
-public static class ZeeKayDaAuthBuilderCoreExtensions
+public static class ZeeKayDaAuthBuilderForwardingExtensions
 {
-    /// <inheritdoc cref="ZeeKayDaAuthBuilderSigningKeySourceExtensions.AddSigningKeySource{TSource}(ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder)"/>
+    /// <inheritdoc cref="ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions.AddSigningKeySource{TSource}(ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder)"/>
     public static ZeeKayDaAuthBuilder AddSigningKeySource<TSource>(this ZeeKayDaAuthBuilder builder)
         where TSource : class, ISigningKeySource
     {
-        ZeeKayDaAuthBuilderSigningKeySourceExtensions.AddSigningKeySource<TSource>(builder);
+        ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions.AddSigningKeySource<TSource>(builder);
         return builder;
     }
 
-    /// <inheritdoc cref="ZeeKayDaAuthBuilderClaimsExtensions.AddClaimsProvider{TProvider}(ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder)"/>
+    /// <inheritdoc cref="ZeeKayDaAuthCoreBuilderClaimsExtensions.AddClaimsProvider{TProvider}(ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder)"/>
     public static ZeeKayDaAuthBuilder AddClaimsProvider<TProvider>(this ZeeKayDaAuthBuilder builder)
         where TProvider : class, IClaimsProvider
     {
-        ZeeKayDaAuthBuilderClaimsExtensions.AddClaimsProvider<TProvider>(builder);
+        ZeeKayDaAuthCoreBuilderClaimsExtensions.AddClaimsProvider<TProvider>(builder);
         return builder;
     }
 
-    /// <inheritdoc cref="ZeeKayDaAuthBuilderHasherExtensions.AddClientSecretHasher{THasher}(ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder, bool)"/>
+    /// <inheritdoc cref="ZeeKayDaAuthCoreBuilderHasherExtensions.AddClientSecretHasher{THasher}(ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder, bool)"/>
     public static ZeeKayDaAuthBuilder AddClientSecretHasher<THasher>(this ZeeKayDaAuthBuilder builder, bool isDefault = false)
         where THasher : class, IClientSecretHasher
     {
-        ZeeKayDaAuthBuilderHasherExtensions.AddClientSecretHasher<THasher>(builder, isDefault);
+        ZeeKayDaAuthCoreBuilderHasherExtensions.AddClientSecretHasher<THasher>(builder, isDefault);
         return builder;
     }
 
-    /// <inheritdoc cref="ZeeKayDaAuthBuilderStoreExtensions.AddAuthorizationCodeStore{T}(ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder)"/>
+    /// <inheritdoc cref="ZeeKayDaAuthCoreBuilderStoreExtensions.AddAuthorizationCodeStore{T}(ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder)"/>
     public static ZeeKayDaAuthBuilder AddAuthorizationCodeStore<T>(this ZeeKayDaAuthBuilder builder)
         where T : class, IAuthorizationCodeBackingStore
     {
-        ZeeKayDaAuthBuilderStoreExtensions.AddAuthorizationCodeStore<T>(builder);
+        ZeeKayDaAuthCoreBuilderStoreExtensions.AddAuthorizationCodeStore<T>(builder);
         return builder;
     }
 
-    /// <inheritdoc cref="ZeeKayDaAuthBuilderStoreExtensions.AddRefreshTokenStore{T}(ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder)"/>
+    /// <inheritdoc cref="ZeeKayDaAuthCoreBuilderStoreExtensions.AddRefreshTokenStore{T}(ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder)"/>
     public static ZeeKayDaAuthBuilder AddRefreshTokenStore<T>(this ZeeKayDaAuthBuilder builder)
         where T : class, IRefreshTokenBackingStore
     {
-        ZeeKayDaAuthBuilderStoreExtensions.AddRefreshTokenStore<T>(builder);
+        ZeeKayDaAuthCoreBuilderStoreExtensions.AddRefreshTokenStore<T>(builder);
         return builder;
     }
 }

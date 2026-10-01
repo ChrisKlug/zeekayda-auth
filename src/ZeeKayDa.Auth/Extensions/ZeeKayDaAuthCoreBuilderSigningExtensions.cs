@@ -10,7 +10,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary>
 /// Extension methods for registering JWT signing key providers with <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
-public static class ZeeKayDaAuthBuilderSigningExtensions
+public static class ZeeKayDaAuthCoreBuilderSigningExtensions
 {
     /// <summary>
     /// Registers a development-only signing key provider that generates an ephemeral RSA key
