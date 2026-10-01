@@ -333,6 +333,25 @@ public sealed class DiscoveryEndpointHostTests(
         response.StatusCode.Should().Be(expectedStatusCode);
     }
 
+    [Fact]
+    public async Task HttpRequests_are_rejected_for_loopback_with_only_the_AllowHttpLoopbackCorsOrigins_flag()
+    {
+        // The two loopback flags were one switch; the CORS one must not reopen plain HTTP serving.
+        using var factory = new TestWebAppFactoryWithRemoteIp(IPAddress.Loopback, opts =>
+        {
+            opts.Issuer = "https://localhost:5001";
+            opts.Development.AllowHttpLoopbackIssuer = false;
+            opts.Development.AllowHttpLoopbackCorsOrigins = true;
+            opts.CorsOrigins.Add("http://localhost:3000");
+        });
+        using var client = CreateClient(factory, "http://localhost:5001");
+
+        var response = await client.GetAsync(DiscoveryPath, Cancellation);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MisdirectedRequest);
+        response.Headers.TryGetValues("X-ZeeKayDa-Insecure-Issuer", out _).Should().BeFalse();
+    }
+
     // ── Defensive security headers ────────────────────────────────────────────────────────────────
     //
     // Added by the endpoint group's convention in MapZeeKayDaAuth, not by the handler, so these
