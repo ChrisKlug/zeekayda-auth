@@ -2,17 +2,17 @@ using System.Security.AccessControl;
 using System.Security.Cryptography.X509Certificates;
 using System.Security.Principal;
 
-namespace ZeeKayDa.Auth.Samples.IdentityServer.Tests;
+namespace ZeeKayDa.Auth.ConformanceHost.Tests;
 
 /// <summary>
-/// The sample generates its signing key on first run, and more than one host can be starting at
-/// the same time — the test suite alone runs two sample assemblies in parallel, each hosting the
-/// sample. These prove the key is published whole and owner-only however many hosts race for it.
+/// The conformance host generates its signing key on first run, and more than one host can be
+/// starting at the same time. These prove the key is published whole and owner-only however many
+/// hosts race for it.
 /// </summary>
 public sealed class SigningKeyFileTests : IDisposable
 {
     // Enough to lose the race reliably, few enough that generating a key on each does not
-    // starve the sample's own smoke tests of CPU while they run alongside these.
+    // starve the host's own smoke tests of CPU while they run alongside these.
     private const int Racers = 8;
 
     private const string RequiresUnixReason = "Unix file modes do not exist on Windows.";
@@ -179,7 +179,7 @@ public sealed class SigningKeyFileTests : IDisposable
         // private key is the certificate's own. Parsing them separately would accept this
         // certificate carrying somebody else's key, which the framework could not sign with.
         using var certificate = X509Certificate2.CreateFromPem(pem, pem);
-        certificate.Subject.Should().Be("CN=ZeeKayDa sample signing key");
+        certificate.Subject.Should().Be("CN=ZeeKayDa conformance host signing key");
         certificate.HasPrivateKey.Should().BeTrue();
 
         return pem;

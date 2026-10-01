@@ -1,7 +1,6 @@
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Samples.IdentityServer;
 using ZeeKayDa.Auth.Samples.IdentityServer.Users;
-using ZeeKayDa.Auth.Scopes;
 using ZeeKayDa.Auth.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -27,17 +26,7 @@ var auth = builder.Services.AddZeeKayDaAuth(options =>
     // Public clients authenticate with nothing at the token endpoint, so "none" must be advertised
     // for them to be registrable.
     options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-
-    // client_secret_basic is advertised by default. client_secret_post is added because the
-    // conformance suite's oidcc-server-client-secret-post module needs a client that authenticates
-    // that way, and this setting is server-wide: it appears in the discovery document of every
-    // environment, not only the Conformance one. The sample accepts that rather than deriving the
-    // set from the registered clients — the framework supports the method, and the sample exists to
-    // show the framework.
-    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.ClientSecretPost);
 });
-
-auth.AddInMemoryScopes(StandardScopes.All);
 
 auth.AddInMemoryClients(clients =>
 {
@@ -46,16 +35,7 @@ auth.AddInMemoryClients(clients =>
         if (client.Secret is { } secret)
         {
             clients.AddConfidential(client.ClientId, secret, client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes,
-                options =>
-                {
-                    Configure(options, client);
-                    options.RequirePkce = client.RequirePkce;
-
-                    foreach (var method in client.TokenEndpointAuthMethods)
-                    {
-                        options.AllowedTokenEndpointAuthMethods.Add(method);
-                    }
-                });
+                options => Configure(options, client));
         }
         else
         {
@@ -71,19 +51,11 @@ auth.AddInMemoryClients(clients =>
     }
 });
 
-// In-memory stores are deliberate: every restart starts from the same state, so there is nothing
-// to reset between conformance runs. They refuse to start outside Development — a production
-// deployment needs stores that survive restarts and span instances — so only the Conformance test
-// profile is let through, and a copy of this sample keeps the guard everywhere else.
-auth.AddInMemoryStores(allowOutsideDevelopment: builder.Environment.IsEnvironment("Conformance"));
-
-// A relative path resolves against the app's own folder rather than the working directory, so the
-// default lands in the gitignored keys/ folder however the app is started. An absolute path — an
-// operator placing the key elsewhere — is used as given.
-var signingKeyPath = Path.IsPathFullyQualified(settings.SigningKeyPath)
-    ? settings.SigningKeyPath
-    : Path.Join(builder.Environment.ContentRootPath, settings.SigningKeyPath);
-auth.AddPemFileSigning(SigningKeyFile.Ensure(signingKeyPath), SigningAlgorithm.RS256);
+// In-memory stores and a development signing key keep the sample runnable with no setup. Both
+// refuse to start outside Development: a deployment needs stores that survive restarts and span
+// instances, and a signing key it provisions itself.
+auth.AddInMemoryStores();
+auth.AddPersistedDevelopmentSigning();
 
 auth.AddClaimsProvider<UserClaimsProvider>();
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Generates a throwaway CA and a server certificate for the sample identity server, so that the
+# Generates a throwaway CA and a server certificate for the conformance host, so that the
 # conformance suite's Java server — which has no reason to trust the ASP.NET development
 # certificate — can call it over HTTPS.
 #

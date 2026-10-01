@@ -1,8 +1,11 @@
 # Conformance testing
 
 Runs the [OpenID Foundation conformance suite](https://gitlab.com/openid/conformance-suite) against
-the [sample identity server](../samples/IdentityServer/README.md), which exists to be this suite's
-target. Everything here is internal verification infrastructure — nothing in this folder ships in a
+the conformance host in [`tests/ZeeKayDa.Auth.ConformanceHost`](../tests/ZeeKayDa.Auth.ConformanceHost),
+an identity server that exists only to be this suite's target: the conformance clients, their
+switches and its own PEM signing key live there, so the
+[sample identity server](../samples/IdentityServer/README.md) stays the minimum a host writes.
+Everything here is internal verification infrastructure — nothing in this folder ships in a
 package.
 
 `RESULTS.md` records what the suite found, and is rewritten by whoever runs it next.
@@ -24,7 +27,7 @@ whole machine, but the clone (about 360 MB) is per checkout: with several worktr
 once and reuses it. Only one run at a time per machine: the ports and the Compose project name are
 fixed, so the script takes a lock at `/tmp/zeekayda-conformance.lock` and refuses to start while
 another run holds it. Output lands in
-`results/<timestamp>/`: the suite's own signed export zip, the run log, the identity server's log,
+`results/<timestamp>/`: the suite's own signed export zip, the run log, the conformance host's log,
 the suite server's log, and the discovery document as served.
 
 A non-zero exit means the run produced a failure, warning or skip that the manifests in `expected/`
@@ -36,7 +39,7 @@ The suite's Java server runs in a container, a browser driving the suite runs on
 the issuer has to be one URL both agree on, because the suite checks that the issuer it configured
 is the issuer that came back. So:
 
-- The sample runs on **`https://zeekayda.localtest.me:5443`**. `localtest.me` is public DNS
+- The conformance host runs on **`https://zeekayda.localtest.me:5443`**. `localtest.me` is public DNS
   pointing at 127.0.0.1, so the machine resolves it with no hosts-file entry and no sudo, and
   `docker-compose.override.yml` maps the same name to `host-gateway` inside the suite's container.
   Kestrel binds `*:5443` rather than that hostname — the suite reaches this machine over the Docker
@@ -46,7 +49,7 @@ is the issuer that came back. So:
   development certificate will not do: the Java server has no reason to trust it.
 - `Dockerfile.runner` runs the suite's own `scripts/run-test-plan.py`, so a run needs nothing on the
   machine but Docker — no Python, no pip install.
-- Login is driven by the suite, through the `browser` block in `config/zeekayda.json`: the sample's
+- Login is driven by the suite, through the `browser` block in `config/zeekayda.json`: the host's
   login page has stable ids (`username`, `password`, `login-submit`), and the conformance clients
   are registered with `RequireConsent` false, so there is no consent page to script. Deleting that
   block makes the same config run interactively, for confirming a suspicious failure by hand.
@@ -61,12 +64,12 @@ is the issuer that came back. So:
   OAuth 2.1 §7.5.1.1 opt-out every module is refused at the authorization endpoint.
 - Three clients are registered, not two. `oidcc-server-client-secret-post` copies the config's
   top-level `client_secret_post` block over `client` before it runs, so that block needs only an id
-  and a secret — it names `conformance-client-post`, which the sample registers with
+  and a secret — it names `conformance-client-post`, which the host registers with
   `client_secret_post` as its only permitted token endpoint authentication method. A separate client
   rather than a second method on `conformance-client` keeps the other modules exercising
   `client_secret_basic` and nothing else, which is how the suite's own comment says most servers are
-  set up. `client_secret_post` is advertised server-wide in the sample, so it appears in the
-  discovery document of every environment, not only this one.
+  set up. `client_secret_post` is advertised server-wide by the host; the sample does not advertise
+  it.
 
 The suite's scripts and its published images have to agree, so `SUITE_REF` in `run-conformance.sh`
 pins both to one release. Moving to a newer suite is a deliberate edit there, with a re-run.
@@ -109,7 +112,7 @@ whether the run passed or failed.
 **Why every PR rather than nightly.** Measured on a developer machine with the images and the
 suite clone already present, both plans together take **2 min 11 s** wall clock end to end — suite
 boot to teardown. The config plan alone is 46 s, almost all of it fixed cost: waiting for the Java
-server, building and starting the sample, teardown. The basic plan's 35 modules add about 90 s, a
+server, building and starting the conformance host, teardown. The basic plan's 35 modules add about 90 s, a
 third of which is one module's deliberate 30 s wait before replaying a code. The full breakdown is
 in `RESULTS.md`. Two and a bit minutes is cheap enough for every PR, and the login flow is exactly
 the kind of thing a PR breaks by accident; a nightly-only basic plan would find that a day late.
@@ -123,13 +126,13 @@ with the clone cached takes the same 3 min 05 s as one without it, and breaks do
 | job setup, checkout, .NET, cache restore | 8 s |
 | pull nginx and mongo, build the suite-server image | 19 s |
 | suite boots until it answers | 12 s |
-| sample builds and starts until discovery answers | 39 s |
+| conformance host builds and starts until discovery answers | 39 s |
 | both plans | 93 s |
 | teardown | 11 s |
 
 The images are 19 s of that. Caching them means `docker save`/`docker load` of roughly 600-700 MB,
 which is not obviously faster than the pull, costs that much again on every miss, and competes for
 the repository's 10 GB Actions cache with the NuGet caches every other job depends on. If this job
-ever needs to be faster, the two rows worth attacking are the sample's 39 s — it is built serially
+ever needs to be faster, the two rows worth attacking are the host's 39 s — it is built serially
 after the suite is already up, and could be built while the suite boots — and the plans' 93 s, of
 which about 31 s is `oidcc-codereuse-30seconds` deliberately sleeping and therefore fixed.

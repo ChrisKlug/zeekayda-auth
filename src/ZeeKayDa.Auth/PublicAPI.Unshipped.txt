@@ -687,15 +687,9 @@ ZeeKayDa.Auth.Claims.ClaimsResolutionResult.SubjectInvalid
 ZeeKayDa.Auth.Claims.ClaimsResolutionResult.SubjectInvalid.SubjectInvalid() -> void
 ZeeKayDa.Auth.Claims.IClaimsProvider
 ZeeKayDa.Auth.Claims.IClaimsProvider.GetClaimsAsync(ZeeKayDa.Auth.Claims.ClaimsProviderContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Claims.ClaimsResolutionResult!>!
-ZeeKayDa.Auth.Clients.Client.AdditionalAccessTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 ZeeKayDa.Auth.Clients.Client.AdditionalAccessTokenClaims.init -> void
-ZeeKayDa.Auth.Clients.Client.AdditionalIdTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 ZeeKayDa.Auth.Clients.Client.AdditionalIdTokenClaims.init -> void
-ZeeKayDa.Auth.Clients.Client.AdditionalUserInfoClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 ZeeKayDa.Auth.Clients.Client.AdditionalUserInfoClaims.init -> void
-ZeeKayDa.Auth.Clients.IClient.AdditionalAccessTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-ZeeKayDa.Auth.Clients.IClient.AdditionalIdTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-ZeeKayDa.Auth.Clients.IClient.AdditionalUserInfoClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 ZeeKayDa.Auth.Scopes.ScopeDefinition.AccessTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 ZeeKayDa.Auth.Scopes.ScopeDefinition.AccessTokenClaims.init -> void
 ZeeKayDa.Auth.Scopes.ScopeDefinition.Audience.get -> string?
@@ -801,3 +795,9 @@ static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderStoreExte
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderStoreExtensions.AddInMemoryStores<TBuilder>(this TBuilder! builder, bool allowOutsideDevelopment = false) -> TBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderStoreExtensions.AddRefreshTokenStore<T>(this ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder! builder) -> ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreServiceCollectionExtensions.AddZeeKayDaAuthCore(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<ZeeKayDa.Auth.AuthorizationServerOptions!>! configure) -> ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder!
+ZeeKayDa.Auth.Clients.Client.AdditionalAccessTokenClaims.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.Client.AdditionalIdTokenClaims.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.Client.AdditionalUserInfoClaims.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClient.AdditionalAccessTokenClaims.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClient.AdditionalIdTokenClaims.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClient.AdditionalUserInfoClaims.get -> System.Collections.Generic.IReadOnlySet<string!>!

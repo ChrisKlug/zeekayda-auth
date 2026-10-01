@@ -30,7 +30,9 @@
 // today, so including it costs nothing, and excluding it would need a special case that
 // would go untested until the day it grows one. tests/ is intentionally out of scope:
 // test projects legitimately suppress these rules to assert analyzer behaviour, and test
-// code does not ship.
+// code does not ship. The exception is a host that only tests drive (tests/<Name>/ beside
+// tests/<Name>.Tests/, the pairing discover_coverage_projects.cs also uses): it is an
+// application with its own logging, not a test project, so it is checked like a sample.
 //
 // Usage: dotnet run check_log_hygiene.cs -- <repo-root>
 // Exit codes: 0 pass, 1 violation(s) found, 2 usage/internal error.
@@ -122,6 +124,18 @@ static IReadOnlyList<string> DiscoverProjects(string repoRoot)
 
     AssertNoUnlistedSrcProjects(repoRoot, srcProjects);
 
+    var testsPaths = root.Descendants("Project")
+        .Select(element => element.Attribute("Path")?.Value)
+        .Where(path => !string.IsNullOrWhiteSpace(path))
+        .Cast<string>()
+        .Select(static path => path.Replace('\\', '/'))
+        .Where(static path => path.StartsWith("tests/", StringComparison.Ordinal))
+        .ToArray();
+    var testsNames = testsPaths.Select(static path => Path.GetFileNameWithoutExtension(path)).ToHashSet(StringComparer.Ordinal);
+    var testHostProjects = testsPaths
+        .Where(path => testsNames.Contains(Path.GetFileNameWithoutExtension(path) + ".Tests"))
+        .Select(path => Path.Combine(repoRoot, path.Replace('/', Path.DirectorySeparatorChar)));
+
     var samplesDir = Path.Combine(repoRoot, "samples");
     var sampleProjects = Directory.Exists(samplesDir)
         ? Directory.EnumerateFiles(samplesDir, "*.csproj", SearchOption.AllDirectories)
@@ -129,6 +143,7 @@ static IReadOnlyList<string> DiscoverProjects(string repoRoot)
 
     var allProjects = srcProjects
         .Concat(sampleProjects)
+        .Concat(testHostProjects)
         .OrderBy(static path => path, StringComparer.Ordinal)
         .ToArray();
 

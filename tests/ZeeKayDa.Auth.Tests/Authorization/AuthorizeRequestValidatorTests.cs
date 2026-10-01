@@ -330,7 +330,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase2_a_client_addition_naming_a_scope_claim_is_server_error_with_a_generic_description()
     {
-        var client = NewClient() with { AdditionalAccessTokenClaims = ["email"] };
+        var client = NewClient() with { AdditionalAccessTokenClaims = new HashSet<string>(["email"], StringComparer.Ordinal) };
 
         var result = await Validate(ValidParameters(), client);
 
@@ -342,7 +342,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase2_a_client_addition_no_scope_unlocks_is_valid()
     {
-        var client = NewClient() with { AdditionalIdTokenClaims = ["tenant"] };
+        var client = NewClient() with { AdditionalIdTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal) };
 
         var result = await Validate(ValidParameters(), client);
 

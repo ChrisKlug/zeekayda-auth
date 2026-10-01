@@ -1955,6 +1955,25 @@ verification; no Critical.
 - **Accepted residual:** an imported PBKDF2 secret above the configured iteration count verifies
   slower than the decoy; inherent to importing. No test.
 
+## 2026-10-01 — hosts sharing a persisted development key create it once (#853, code frozen at `6df985d`)
+
+Copilot code and security lenses, the security agent and the PR's Copilot and CodeQL review, plus
+fix-diff verification of each round; no Critical.
+
+- Exactly one host creates the key: the existence check and the publish run under an exclusive lock
+  file (`flock` on Unix), and every host then loads the key on disk. Closed —
+  `WriteKeyFileAsync_checks_for_an_existing_key_only_once_it_holds_the_lock`,
+  `WriteKeyFileAsync_racers_all_read_one_whole_key`, `A_host_that_loses_the_race_to_create_the_key_file_uses_the_winners_key`.
+- No host reads a partial key, and nothing lingers or is written through a link. Closed —
+  `WriteKeyFileAsync_publishes_the_key_only_once_it_is_fully_written`,
+  `WriteKeyFileAsync_leaves_neither_a_pending_file_nor_a_key_when_cancelled`,
+  `WriteKeyFileAsync_refuses_a_dangling_symlink_at_the_key_path_without_writing_through_it`,
+  `WriteKeyFileAsync_creates_the_lock_file_readable_only_by_the_owner_on_Unix`.
+- **Accepted residual (maintainer):** with file locking disabled (the DOTNET_SYSTEM_IO_DISABLEFILELOCKING variable
+  or a filesystem without locks) the race returns; the lock test above fails in that configuration.
+- **Accepted residual:** a crash between write and rename leaves an owner-only `.pending` file; a
+  directory at the `.lock` path fails only after the 30 s `lock_timeout`. No test.
+
 ## 2026-10-01 — two-phase startup runner; the sanitizing logger cannot be substituted (#771, code frozen at `1786e6a`)
 Reverses the sanitizing-logger gate and the `IStartupCheck` rejection check recorded in earlier entries.
 - No registration can supply a logger that skips redaction: `SanitizingLogger<T>` has only an internal

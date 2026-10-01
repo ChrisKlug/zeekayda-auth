@@ -19,24 +19,24 @@ namespace ZeeKayDa.Auth.Clients;
 /// </remarks>
 public abstract class ClientOptions
 {
-    private protected ClientOptions(Client defaults)
+    private protected ClientOptions()
     {
-        DisplayName = defaults.DisplayName;
-        InitiateLoginUri = defaults.InitiateLoginUri;
-        RequireConsent = defaults.RequireConsent;
-        SkipLogoutConfirmation = defaults.SkipLogoutConfirmation;
-        EnableZkdErrorCodes = defaults.EnableZkdErrorCodes;
+        DisplayName = ClientDefaults.DisplayName;
+        InitiateLoginUri = ClientDefaults.InitiateLoginUri;
+        AccessTokenLifetime = ClientDefaults.AccessTokenLifetime;
+        IdTokenLifetime = ClientDefaults.IdTokenLifetime;
+        RequireConsent = ClientDefaults.RequireConsent;
+        SkipLogoutConfirmation = ClientDefaults.SkipLogoutConfirmation;
+        EnableZkdErrorCodes = ClientDefaults.EnableZkdErrorCodes;
         AllowedGrantTypes = new HashSet<GrantType>();
         AllowedResponseTypes = new HashSet<ResponseType>();
         AllowedResponseModes = new HashSet<ResponseMode>();
-        AllowedPromptValues = new HashSet<PromptValue>(defaults.AllowedPromptValues);
+        AllowedPromptValues = new HashSet<PromptValue>(ClientDefaults.AllowedPromptValues);
         AllowedSigningAlgorithms = new HashSet<SigningAlgorithm>(
-            defaults.AllowedSigningAlgorithms ?? Enumerable.Empty<SigningAlgorithm>());
-        AccessTokenLifetime = defaults.AccessTokenLifetime;
-        IdTokenLifetime = defaults.IdTokenLifetime;
-        AdditionalIdTokenClaims = new HashSet<string>(defaults.AdditionalIdTokenClaims, StringComparer.Ordinal);
-        AdditionalUserInfoClaims = new HashSet<string>(defaults.AdditionalUserInfoClaims, StringComparer.Ordinal);
-        AdditionalAccessTokenClaims = new HashSet<string>(defaults.AdditionalAccessTokenClaims, StringComparer.Ordinal);
+            ClientDefaults.AllowedSigningAlgorithms ?? Enumerable.Empty<SigningAlgorithm>());
+        AdditionalIdTokenClaims = new HashSet<string>(ClientDefaults.AdditionalClaims, StringComparer.Ordinal);
+        AdditionalUserInfoClaims = new HashSet<string>(ClientDefaults.AdditionalClaims, StringComparer.Ordinal);
+        AdditionalAccessTokenClaims = new HashSet<string>(ClientDefaults.AdditionalClaims, StringComparer.Ordinal);
     }
 
     // Copies every collection, so a caller holding on to this instance cannot change the
@@ -44,10 +44,6 @@ public abstract class ClientOptions
     internal virtual Client ApplyTo(Client registration)
     {
         var grantTypes = OrDefault(AllowedGrantTypes, registration.AllowedGrantTypes);
-
-        // Response types and modes serve the authorization endpoint only, so a client without the
-        // code grant never uses them and gets none by default.
-        var usesAuthorizationEndpoint = grantTypes.Contains(GrantType.AuthorizationCode);
 
         return registration with
         {
@@ -57,17 +53,17 @@ public abstract class ClientOptions
             SkipLogoutConfirmation = SkipLogoutConfirmation,
             EnableZkdErrorCodes = EnableZkdErrorCodes,
             AllowedGrantTypes = grantTypes,
-            AllowedResponseTypes = OrDefault(AllowedResponseTypes, usesAuthorizationEndpoint ? registration.AllowedResponseTypes : []),
-            AllowedResponseModes = OrDefault(AllowedResponseModes, usesAuthorizationEndpoint ? registration.AllowedResponseModes : []),
+            AllowedResponseTypes = OrDefault(AllowedResponseTypes, registration.AllowedResponseTypes),
+            AllowedResponseModes = OrDefault(AllowedResponseModes, registration.AllowedResponseModes),
             AllowedPromptValues = new HashSet<PromptValue>(AllowedPromptValues),
             AllowedSigningAlgorithms = AllowedSigningAlgorithms.Count == 0
                 ? null
                 : new HashSet<SigningAlgorithm>(AllowedSigningAlgorithms),
             AccessTokenLifetime = AccessTokenLifetime,
             IdTokenLifetime = IdTokenLifetime,
-            AdditionalIdTokenClaims = [.. AdditionalIdTokenClaims],
-            AdditionalUserInfoClaims = [.. AdditionalUserInfoClaims],
-            AdditionalAccessTokenClaims = [.. AdditionalAccessTokenClaims],
+            AdditionalIdTokenClaims = new HashSet<string>(AdditionalIdTokenClaims, StringComparer.Ordinal),
+            AdditionalUserInfoClaims = new HashSet<string>(AdditionalUserInfoClaims, StringComparer.Ordinal),
+            AdditionalAccessTokenClaims = new HashSet<string>(AdditionalAccessTokenClaims, StringComparer.Ordinal),
         };
     }
 
@@ -107,15 +103,14 @@ public abstract class ClientOptions
 
     /// <summary>
     /// Response types this client is permitted to request. Starts empty; left empty, the client gets
-    /// <see cref="ResponseType.Code"/> if it is allowed <see cref="GrantType.AuthorizationCode"/>,
-    /// and none otherwise.
+    /// <see cref="ResponseType.Code"/>, whatever its grant types.
     /// </summary>
     public ISet<ResponseType> AllowedResponseTypes { get; }
 
     /// <summary>
     /// Response modes this client is permitted to request. Starts empty; left empty, the client gets
     /// <see cref="ResponseMode.Query"/>, the one mode the server's authorization endpoint answers
-    /// with, if it is allowed <see cref="GrantType.AuthorizationCode"/>, and none otherwise.
+    /// with, whatever its grant types.
     /// </summary>
     public ISet<ResponseMode> AllowedResponseModes { get; }
 

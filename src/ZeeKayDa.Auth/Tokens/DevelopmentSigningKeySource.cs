@@ -138,31 +138,31 @@ internal sealed class DevelopmentSigningKeySource(
         if (fileSystem.FileExists(keyPath))
             return await LoadKeyFromFileAsync(keyPath, cancellationToken).ConfigureAwait(false);
 
-        var rsa = RSA.Create(MinimumRsaKeySize);
+        using (var generated = RSA.Create(MinimumRsaKeySize))
+            await WriteKeyAsync(generated, keyPath, cancellationToken).ConfigureAwait(false);
+
+        // Loaded back whether this host wrote the key or another got there first: the key on disk is
+        // the one every host sharing the folder signs with.
+        return await LoadKeyFromFileAsync(keyPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask WriteKeyAsync(RSA rsa, string keyPath, CancellationToken cancellationToken)
+    {
+        // A 3072-bit RSA PKCS#1 PEM is at most ~3500 chars; 4096 is a safe upper bound.
+        const int MaxPemChars = 4096;
+        var pemBuffer = ArrayPool<char>.Shared.Rent(MaxPemChars);
         try
         {
-            // A 3072-bit RSA PKCS#1 PEM is at most ~3500 chars; 4096 is a safe upper bound.
-            const int MaxPemChars = 4096;
-            var pemBuffer = ArrayPool<char>.Shared.Rent(MaxPemChars);
-            try
-            {
-                if (!rsa.TryExportRSAPrivateKeyPem(pemBuffer, out var written))
-                    throw new InvalidOperationException("Failed to export RSA private key as PEM.");
-                await fileSystem.WriteKeyFileAsync(keyPath, pemBuffer.AsMemory(0, written), cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            finally
-            {
-                pemBuffer.AsSpan().Clear();
-                ArrayPool<char>.Shared.Return(pemBuffer);
-            }
+            if (!rsa.TryExportRSAPrivateKeyPem(pemBuffer, out var pemLength))
+                throw new InvalidOperationException("Failed to export RSA private key as PEM.");
 
-            return rsa;
+            await fileSystem.WriteKeyFileAsync(keyPath, pemBuffer.AsMemory(0, pemLength), cancellationToken)
+                .ConfigureAwait(false);
         }
-        catch
+        finally
         {
-            rsa.Dispose();
-            throw;
+            pemBuffer.AsSpan().Clear();
+            ArrayPool<char>.Shared.Return(pemBuffer);
         }
     }
 

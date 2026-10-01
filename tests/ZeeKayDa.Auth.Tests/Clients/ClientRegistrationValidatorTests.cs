@@ -232,6 +232,25 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
+    public void A_custom_entity_implementing_only_its_id_credentials_redirect_URIs_and_scopes_is_a_valid_confidential_client()
+    {
+        var validator = MakeValidator();
+
+        var act = () => validator.Validate(new MinimalEntity());
+
+        act.Should().NotThrow();
+    }
+
+    /// <summary>A store's own entity that leaves every other member to the interface default.</summary>
+    private sealed class MinimalEntity : IClientWithCredentials
+    {
+        public string ClientId => "minimal";
+        public IReadOnlyList<IClientCredential> Credentials { get; } = [new FakeSecret()];
+        public IReadOnlySet<string> RedirectUris { get; } = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/callback" };
+        public IReadOnlySet<string> AllowedScopes { get; } = new HashSet<string>(StringComparer.Ordinal) { "openid" };
+    }
+
+    [Fact]
     public void Validate_does_not_throw_for_valid_confidential_client()
     {
         var validator = MakeValidator();
@@ -1315,9 +1334,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with
         {
-            AdditionalIdTokenClaims = ["tenant"],
-            AdditionalUserInfoClaims = ["tenant"],
-            AdditionalAccessTokenClaims = ["tenant", "department"],
+            AdditionalIdTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
+            AdditionalUserInfoClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
+            AdditionalAccessTokenClaims = new HashSet<string>(["tenant", "department"], StringComparer.Ordinal),
         };
 
         var act = () => validator.Validate(client);
@@ -1331,7 +1350,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_fails_with_blank_entry_code_if_a_claim_addition_is_blank(string entry)
     {
         var validator = MakeValidator();
-        var client = MakeValidPublicClient() with { AdditionalUserInfoClaims = ["tenant", entry] };
+        var client = MakeValidPublicClient() with { AdditionalUserInfoClaims = new HashSet<string>(["tenant", entry], StringComparer.Ordinal) };
 
         var act = () => validator.Validate(client);
 
@@ -1346,7 +1365,7 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_fails_with_reserved_code_if_a_claim_addition_names_a_protocol_claim(string entry)
     {
         var validator = MakeValidator();
-        var client = MakeValidPublicClient() with { AdditionalAccessTokenClaims = [entry] };
+        var client = MakeValidPublicClient() with { AdditionalAccessTokenClaims = new HashSet<string>([entry], StringComparer.Ordinal) };
 
         var act = () => validator.Validate(client);
 

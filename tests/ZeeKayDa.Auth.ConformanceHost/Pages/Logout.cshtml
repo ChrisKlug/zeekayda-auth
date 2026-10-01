@@ -1,0 +1,25 @@
+@page "/logout"
+@model LogoutModel
+@{
+    ViewData["Title"] = "Sign out";
+}
+@if (!Model.HasRequest)
+{
+    <h1>Nothing to confirm</h1>
+    <p>This sign-out has expired or was already answered. Return to the application and sign out again.</p>
+    return;
+}
+<h1>Sign out @Model.Username?</h1>
+
+@if (Model.ClientName is not null)
+{
+    <p><strong>@Model.ClientName</strong> asked to sign you out.</p>
+}
+
+@* No action attribute: the form posts back to this URL, which keeps the zkd_i parameter the
+   framework added. *@
+<form method="post">
+    <button id="logout-submit" type="submit">Sign out</button>
+</form>
+
+<p><a href="/">Stay signed in</a></p>
