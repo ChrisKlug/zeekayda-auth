@@ -1916,3 +1916,18 @@ security lenses and the security agent, one round plus fix-diff verification; no
   `EnsureDirectorySafe_accepts_a_directory_under_a_group_writable_ancestor`.
 - **Accepted residual:** the symlink check on read re-reads the path, so a link swapped in after
   open can pass; the BCL has no O_NOFOLLOW. No test: the window needs a race the host cannot stage.
+
+## 2026-10-01 — #768 Core/AspNetCore split
+Every non-HTTP service and startup check registers from AddZeeKayDaAuthCore(configure);
+AddZeeKayDaAuth(configure) calls it and adds only the HTTP surface. Closed — proven by
+`A_core_only_host_validates_the_server_options_at_startup`,
+`AddZeeKayDaAuthCore_registers_the_sanitizing_logger_gate_first_and_the_options_gate_second`,
+`AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring`.
+The startup runner and its gates have one registration site, AddZeeKayDaAuthCore(configure);
+ValidateWithZeeKayDa() registers none, and every ZeeKayDaAuthBuilder comes from Core (internal
+constructor), so no supported host has an empty gate collection — proven by
+`AddZeeKayDaOptions_leaves_startup_verification_to_AddZeeKayDaAuthCore`.
+Every host, Core-only included, gets the Discovery §3 RS256 warning — proven by
+`VerifyAsync_warns_when_the_advertised_set_omits_RS256`.
+Residual: a host that calls only AddZeeKayDaSigningKeys() without Core has those options
+unvalidated at start; unsupported by decision, and it cannot issue tokens. No test.
