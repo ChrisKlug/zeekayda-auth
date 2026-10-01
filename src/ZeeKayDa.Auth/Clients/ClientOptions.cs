@@ -103,15 +103,14 @@ public abstract class ClientOptions
 
     /// <summary>
     /// Response types this client is permitted to request. Starts empty; left empty, the client gets
-    /// <see cref="ResponseType.Code"/> if it is allowed <see cref="GrantType.AuthorizationCode"/>,
-    /// and none otherwise.
+    /// <see cref="ResponseType.Code"/>, whatever its grant types.
     /// </summary>
     public ISet<ResponseType> AllowedResponseTypes { get; }
 
     /// <summary>
     /// Response modes this client is permitted to request. Starts empty; left empty, the client gets
     /// <see cref="ResponseMode.Query"/>, the one mode the server's authorization endpoint answers
-    /// with, if it is allowed <see cref="GrantType.AuthorizationCode"/>, and none otherwise.
+    /// with, whatever its grant types.
     /// </summary>
     public ISet<ResponseMode> AllowedResponseModes { get; }
 
