@@ -244,7 +244,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_records_Pbkdf2ClientSecretHasher_registration_in_options()
+    public void AddZeeKayDaAuth_registers_PBKDF2_unmarked_and_it_is_the_default()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -254,7 +254,8 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         var opts = provider.GetRequiredService<IOptions<ClientSecretHasherRegistrationOptions>>().Value;
 
         opts.Registrations.Should().ContainSingle(r =>
-            r.HasherType == typeof(Pbkdf2ClientSecretHasher) && r.IsDefault);
+            r.HasherType == typeof(Pbkdf2ClientSecretHasher) && !r.IsDefault);
+        opts.DefaultHasherType.Should().Be(typeof(Pbkdf2ClientSecretHasher));
     }
 
     [Fact]

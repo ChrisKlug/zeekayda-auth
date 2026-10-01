@@ -93,7 +93,7 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // throwing on the hasher's one-registration-per-type rule.
         var builder = new ZeeKayDaAuthCoreBuilder(services);
         if (!services.Any(descriptor => descriptor.ImplementationType == typeof(Pbkdf2ClientSecretHasher)))
-            builder.AddClientSecretHasher<Pbkdf2ClientSecretHasher>(isDefault: true);
+            builder.AddClientSecretHasher<Pbkdf2ClientSecretHasher>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<
                 IValidateOptions<Pbkdf2ClientSecretHasherOptions>,

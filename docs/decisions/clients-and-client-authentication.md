@@ -62,12 +62,12 @@ the framework's own type is not special-cased. A `Snapshot()` returning itself o
 validation as `client.credentials.not_copied`; one still sharing a buffer is the implementer's bug.
 
 **Verification is always fixed-time and never throws.** A hasher returns `false` on internal error
-rather than propagating, so an exception cannot become a timing or behavioural oracle. The shipped
-default is PBKDF2-HMAC-SHA256 with a 600,000-iteration floor (current OWASP guidance) and a
-2,000,000 cap, enforced where a credential is created (startup fails, never clamps) and where a
-pre-hashed one is imported — a credential migrated from another IdP never passes through the
-options, so the import check is all that stands between a weak stored hash and production. At most two active shared secrets per client, to make rotation
-possible; authenticators try both before failing.
+rather than propagating, so an exception cannot become a timing or behavioural oracle.
+PBKDF2-HMAC-SHA256 is always registered and creates new secrets unless the host marks its own hasher
+`isDefault: true` (`A_host_hasher_marked_default_starts_creates_new_secrets_and_PBKDF2_secrets_still_verify`).
+Its 600,000-iteration floor (OWASP) and 2,000,000 cap are enforced where a credential is created
+(startup fails, never clamps) and where a pre-hashed one is imported, the only check a credential
+migrated from another IdP meets. At most two active shared secrets per client; both are tried.
 
 **Failure paths are padded to a fixed two-credential budget; the success path is not.** Padding
 verifies against a decoy the default hasher builds once at startup: it costs a full verification, and

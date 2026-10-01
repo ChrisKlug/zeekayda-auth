@@ -162,19 +162,12 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         if (hashers.Count == 1)
             return hashers[0];
 
-        var defaultReg = options.Registrations.FirstOrDefault(r => r.IsDefault);
-        if (defaultReg is null)
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "configuration.hashers.no_default",
-                    "Multiple IClientSecretHasher implementations are registered but none is marked as " +
-                    "default. Call AddClientSecretHasher<T>(isDefault: true) for exactly one hasher."));
-
-        return hashers.FirstOrDefault(h => h.GetType() == defaultReg.HasherType)
+        var defaultType = options.DefaultHasherType;
+        return hashers.FirstOrDefault(h => h.GetType() == defaultType)
             ?? throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "configuration.hashers.default_type_not_found",
-                    $"The default hasher type '{defaultReg.HasherType.FullName}' was not found in the " +
+                    $"The default hasher type '{defaultType.FullName}' was not found in the " +
                     "registered hasher list. This indicates a DI configuration inconsistency."));
     }
 }

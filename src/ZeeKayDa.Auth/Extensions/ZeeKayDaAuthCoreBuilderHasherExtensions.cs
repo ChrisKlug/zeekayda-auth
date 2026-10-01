@@ -20,10 +20,9 @@ public static class ZeeKayDaAuthCoreBuilderHasherExtensions
     /// </typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="isDefault">
-    /// When <see langword="true"/>, this hasher is used for creating new hashed secrets and for
-    /// the timing-pad dummy credential. A single registered hasher is always the default
-    /// regardless of this value; with multiple hashers, exactly one must set it to
-    /// <see langword="true"/> or startup fails.
+    /// When <see langword="true"/>, this hasher replaces PBKDF2 as the one that creates new hashed
+    /// secrets and builds the timing-pad decoy. PBKDF2 stays registered, so existing PBKDF2 secrets
+    /// keep verifying. At most one hasher may set it, or startup fails.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">

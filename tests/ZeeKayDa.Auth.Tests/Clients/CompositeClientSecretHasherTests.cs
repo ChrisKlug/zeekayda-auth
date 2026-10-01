@@ -441,7 +441,7 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void Constructor_throws_ZeeKayDaConfigurationException_when_multiple_hashers_and_none_marked_default()
+    public void Constructor_throws_ZeeKayDaConfigurationException_when_none_is_marked_default_and_PBKDF2_is_not_registered()
     {
         var hasherA = new FakeHasher<DefaultSecret>();
         var hasherB = new FakeHasher<AltSecret>();
@@ -456,7 +456,7 @@ public sealed class CompositeClientSecretHasherTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle()
-            .Which.Code.Should().Be("configuration.hashers.no_default");
+            .Which.Code.Should().Be("configuration.hashers.default_type_not_found");
     }
 
     [Fact]

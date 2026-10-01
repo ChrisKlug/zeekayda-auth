@@ -15,19 +15,8 @@ internal sealed class ClientSecretHasherOptionsValidator
         ClientSecretHasherRegistrationOptions options,
         ICollection<ZeeKayDaConfigurationFailure> failures)
     {
-        // The validator is only registered by AddClientSecretHasher<T>(), which always adds an entry
-        // before the options are ever validated. The 0-hashers case is therefore unreachable here;
-        // CompositeClientSecretHasher.ResolveDefault is the runtime guard for that path.
-        if (options.Registrations.Count == 1)
-            return;
-
+        // None marked is valid: PBKDF2 is then the default.
         var defaultCount = options.Registrations.Count(r => r.IsDefault);
-
-        if (defaultCount == 0)
-            failures.Add(new(
-                "configuration.hashers.no_default",
-                "Multiple IClientSecretHasher implementations are registered but none is marked as default. " +
-                "Call AddClientSecretHasher<T>(isDefault: true) for exactly one hasher."));
 
         if (defaultCount > 1)
             failures.Add(new(
