@@ -15,7 +15,7 @@ own ORM entity implement them directly, so lookup on the token endpoint's hot pa
 mapping object. The safe view gets the plain name: `IClient` carries everything but the credentials,
 and `IClientWithCredentials` adds them. The resolver's `FindClientAsync` returns `IClient` to every
 caller; only client authentication calls `FindClientWithCredentialsAsync`
-(`Only_client_storage_and_client_authentication_hold_IClientWithCredentials`). A downcast still
+(`Only_client_storage_and_client_authentication_look_up_credentials`). A downcast still
 reaches the secrets: a guardrail against accidental use, not a boundary against a determined caller,
 who could resolve the repository anyway. The shipped record `Client` is validated by a separate
 validator, not its constructor, so a test can build an invalid registration deliberately.

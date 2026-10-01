@@ -20,8 +20,6 @@ public sealed class ClientCredentialsReachTests
         typeof(CompositeClientAuthenticator).Namespace!,
     ];
 
-    private static readonly MethodInfo CredentialsLookup =
-        typeof(ValidatedClientResolver).GetMethod(nameof(ValidatedClientResolver.FindClientWithCredentialsAsync))!;
 
     [Fact]
     public void Only_client_storage_and_client_authentication_hold_IClientWithCredentials()
@@ -35,7 +33,7 @@ public sealed class ClientCredentialsReachTests
     }
 
     [Fact]
-    public void Only_client_authentication_calls_the_credentials_lookup()
+    public void Only_client_storage_and_client_authentication_look_up_credentials()
     {
         var callers = TypesOutsideTheAllowedNamespaces()
             .SelectMany(type => MethodsOf(type).Where(Calls).Select(m => $"{type.FullName}.{m.Name}"));
@@ -62,8 +60,16 @@ public sealed class ClientCredentialsReachTests
         var il = method.GetMethodBody()?.GetILAsByteArray() ?? [];
         return Enumerable.Range(0, Math.Max(0, il.Length - 4))
             .Where(i => il[i] == OpCodes.Call.Value || il[i] == OpCodes.Callvirt.Value)
-            .Any(i => ResolveOrNull(method.Module, BitConverter.ToInt32(il, i + 1)) == CredentialsLookup);
+            .Any(i => LooksUpCredentials(ResolveOrNull(method.Module, BitConverter.ToInt32(il, i + 1))));
     }
+
+    // The resolver's credentials lookup, or any repository's lookup, on the interface or a concrete store.
+    private static bool LooksUpCredentials(MethodBase? called) =>
+        called is not null
+        && ((called.DeclaringType == typeof(ValidatedClientResolver)
+                && called.Name == nameof(ValidatedClientResolver.FindClientWithCredentialsAsync))
+            || (typeof(IClientRepository).IsAssignableFrom(called.DeclaringType)
+                && called.Name == nameof(IClientRepository.FindByClientIdAsync)));
 
     private static MethodBase? ResolveOrNull(Module module, int token)
     {

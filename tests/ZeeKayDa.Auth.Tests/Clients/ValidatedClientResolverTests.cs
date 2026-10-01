@@ -220,6 +220,26 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
+    public async Task FindClientAsync_returns_the_validated_client()
+    {
+        var resolver = Resolver(NewClient(), new PassingValidator());
+
+        var result = await resolver.FindClientAsync("client-1", TestContext.Current.CancellationToken);
+
+        result.Should().NotBeNull().And.Subject.As<IClient>().ClientId.Should().Be("client-1");
+    }
+
+    [Fact]
+    public async Task FindClientAsync_serves_an_invalid_registration_as_unknown()
+    {
+        var resolver = Resolver(NewClient(), new RejectingValidator());
+
+        var result = await resolver.FindClientAsync("client-1", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Invalid_registration_is_served_as_unknown_client()
     {
         var resolver = Resolver(NewClient(), new RejectingValidator());

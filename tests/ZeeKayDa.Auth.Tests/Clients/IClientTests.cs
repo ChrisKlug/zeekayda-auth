@@ -2,10 +2,10 @@ using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
 
-public sealed class ClientMetadataTests
+public sealed class IClientTests
 {
     [Fact]
-    public void IClientMetadata_does_not_expose_credentials()
+    public void IClient_does_not_expose_credentials()
     {
         // The point of the split: code that only decides what to issue a client never sees its
         // secrets. Moving Credentials up to IClient would silently undo that.
@@ -14,7 +14,7 @@ public sealed class ClientMetadataTests
     }
 
     [Fact]
-    public void IClientRegistration_is_an_IClientMetadata()
+    public void IClientWithCredentials_is_an_IClient()
     {
         typeof(IClient).IsAssignableFrom(typeof(IClientWithCredentials)).Should().BeTrue();
     }

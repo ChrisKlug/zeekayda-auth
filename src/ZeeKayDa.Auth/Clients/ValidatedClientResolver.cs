@@ -87,19 +87,21 @@ internal sealed class ValidatedClientResolver(
     /// <see langword="null"/> when the client is unknown <em>or</em> its registration fails
     /// validation. Callers cannot and must not distinguish the two.
     /// </summary>
-    public async ValueTask<IClient?> FindClientAsync(string clientId, CancellationToken cancellationToken) =>
-        await FindClientWithCredentialsAsync(clientId, cancellationToken).ConfigureAwait(false);
-
-    /// <summary>
-    /// <see cref="FindClientAsync"/> with the client's credentials, for client authentication only.
-    /// </summary>
     /// <remarks>
     /// The returned instance is never the store's own, and neither are its credentials — see the
     /// snapshot's remarks for why.
     /// </remarks>
-    public async ValueTask<IClientWithCredentials?> FindClientWithCredentialsAsync(
-        string clientId,
-        CancellationToken cancellationToken)
+    public ValueTask<IClient?> FindClientAsync(string clientId, CancellationToken cancellationToken) =>
+        FindAsync<IClient>(clientId, cancellationToken);
+
+    /// <summary>
+    /// <see cref="FindClientAsync"/> with the client's credentials, for client authentication only.
+    /// </summary>
+    public ValueTask<IClientWithCredentials?> FindClientWithCredentialsAsync(string clientId, CancellationToken cancellationToken) =>
+        FindAsync<IClientWithCredentials>(clientId, cancellationToken);
+
+    private async ValueTask<TClient?> FindAsync<TClient>(string clientId, CancellationToken cancellationToken)
+        where TClient : class, IClient
     {
         ArgumentNullException.ThrowIfNull(clientId);
 
@@ -109,7 +111,7 @@ internal sealed class ValidatedClientResolver(
 
         var (snapshot, verdict) = Resolve(client);
         if (snapshot is not null && verdict.IsValid)
-            return snapshot;
+            return (TClient)(IClient)snapshot;
 
         // Logged once per distinct failure, not per request — a known-bad client_id must not be
         // an unauthenticated log-amplification lever. The registration's own ClientId is what
