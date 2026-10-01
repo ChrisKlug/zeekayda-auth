@@ -26,7 +26,16 @@ internal sealed class StartupVerificationHostedService(
     {
         // Every check reads options, and none can be trusted against options that do not validate.
         await using (var scope = scopeFactory.CreateAsyncScope())
-            ValidatedOptionsCheck.ThrowIfAnyInvalid(scope.ServiceProvider);
+        {
+            try
+            {
+                ValidatedOptionsCheck.ThrowIfAnyInvalid(scope.ServiceProvider);
+            }
+            catch (Exception ex) when (ex is not ZeeKayDaConfigurationException && !IsShutdown(ex, cancellationToken))
+            {
+                throw Aggregate([.. Translate(ex, "Validating the options")]);
+            }
+        }
 
         await RunPhaseAsync(
             "verifiers",
@@ -92,10 +101,13 @@ internal sealed class StartupVerificationHostedService(
         }
 
         if (failures.Count > 0)
-            throw ZeeKayDaConfigurationException.WithRootCauses(
-                ReportEachProblemOnce(failures),
-                [.. failures.Select(failure => failure.RootCause).OfType<Exception>().Distinct()]);
+            throw Aggregate(failures);
     }
+
+    private static ZeeKayDaConfigurationException Aggregate(List<ReportedFailure> failures) =>
+        ZeeKayDaConfigurationException.WithRootCauses(
+            ReportEachProblemOnce(failures),
+            [.. failures.Select(failure => failure.RootCause).OfType<Exception>().Distinct()]);
 
     /// <summary>
     /// Collapses failures with the same code and message. Two checks can surface the same broken

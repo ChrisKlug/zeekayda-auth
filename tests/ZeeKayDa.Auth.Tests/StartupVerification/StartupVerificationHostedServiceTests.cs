@@ -711,4 +711,26 @@ public sealed class StartupVerificationHostedServiceTests
 
         sink.Entries.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task StartAsync_reports_an_options_validator_that_throws_unexpectedly_naming_only_the_exception_type()
+    {
+        const string secretLadenMessage = "connection string contains password=hunter2";
+        var thrown = new InvalidOperationException(secretLadenMessage);
+        using var provider = BuildProviderWithSanitizingLogging(out _, services =>
+        {
+            services.AddZeeKayDaOptions<ProbeOptions>();
+            services.AddSingleton<IValidateOptions<ProbeOptions>>(
+                new ValidateOptions<ProbeOptions>(Options.DefaultName, _ => throw thrown, "unused"));
+        });
+        var sut = new StartupVerificationHostedService(provider, provider.GetRequiredService<IServiceScopeFactory>());
+
+        var act = async () => await sut.StartAsync(TestContext.Current.CancellationToken);
+
+        var ex = (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).Which;
+        var failure = ex.AggregatedFailures.Should().ContainSingle().Subject;
+        failure.Code.Should().Be("startup.verifier_failed");
+        failure.Message.Should().Contain(typeof(InvalidOperationException).FullName!).And.NotContain(secretLadenMessage);
+        ex.InnerException.Should().BeSameAs(thrown);
+    }
 }
