@@ -6,8 +6,8 @@ using ZeeKayDa.Auth.Logging;
 namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>
-/// The single <see cref="IHostedService"/> that runs every framework startup check. Validates every
-/// registered options type, then runs two phases in one <see cref="StartAsync"/>: every
+/// The single <see cref="IHostedService"/> that runs every framework startup check. Checks that every
+/// check is registered as scoped and validates every registered options type, then runs two phases in one <see cref="StartAsync"/>: every
 /// <see cref="IStartupVerifier"/>, then every <see cref="IStartupActivator"/>. Each phase runs all of
 /// its members and aggregates every failure into one <see cref="ZeeKayDaConfigurationException"/>
 /// thrown once — but <strong>the activator phase does not run at all if the verifier phase produced
@@ -17,11 +17,15 @@ namespace ZeeKayDa.Auth.StartupVerification;
 /// ordering, and because the phases are disjoint collections rather than an ordering knob, no check
 /// can claim a position.
 /// </summary>
-internal sealed class StartupVerificationHostedService(IServiceScopeFactory scopeFactory) : IHostedService
+internal sealed class StartupVerificationHostedService(
+    IServiceScopeFactory scopeFactory,
+    ServiceLifetimeScanner registrations) : IHostedService
 {
     /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        StartupCheckLifetimes.ThrowIfAnyNotScoped(registrations);
+
         // Every check reads options, and none can be trusted against options that do not validate.
         await using (var scope = scopeFactory.CreateAsyncScope())
         {

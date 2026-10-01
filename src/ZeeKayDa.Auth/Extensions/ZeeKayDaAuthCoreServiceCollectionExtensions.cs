@@ -113,8 +113,6 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // The scanner keeps the collection reference, so the lifetime checks see registrations a
         // host adds after this call too.
         services.TryAddSingleton(_ => new ServiceLifetimeScanner(services));
-        services.TryAddEnumerable(
-            ServiceDescriptor.Scoped<IStartupVerifier, StartupCheckLifetimeVerifier>());
 
         // Registered here as well as by AddSigningKeySource for coverage: StaticSigningKeyRing has
         // a public constructor, so a host can register an ISigningKeyRing itself without going

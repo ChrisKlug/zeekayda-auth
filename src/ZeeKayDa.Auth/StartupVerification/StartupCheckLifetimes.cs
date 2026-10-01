@@ -9,35 +9,36 @@ namespace ZeeKayDa.Auth.StartupVerification;
 /// <remarks>
 /// The runner resolves each phase's checks from one scope. A singleton or transient check is built
 /// from the root provider instead, so a scoped dependency it injects outlives the phase — silently in
-/// Production, where scope validation is off. A misregistered activator is reported here, in the
-/// verifier phase, before any activator is constructed.
+/// Production, where scope validation is off. This runs before any check is resolved: with scope
+/// validation on, resolving such a check throws, and the operator would see that instead of this.
 /// </remarks>
-internal sealed class StartupCheckLifetimeVerifier(ServiceLifetimeScanner scanner) : IStartupVerifier
+internal static class StartupCheckLifetimes
 {
-    /// <inheritdoc/>
-    public string Name => "StartupCheckLifetime";
-
-    /// <inheritdoc/>
-    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
+    /// <summary>
+    /// Throws one <see cref="ZeeKayDaConfigurationException"/> naming every non-scoped check, or
+    /// returns when they are all scoped.
+    /// </summary>
+    public static void ThrowIfAnyNotScoped(ServiceLifetimeScanner scanner)
     {
-        Check<IStartupVerifier>(context);
-        Check<IStartupActivator>(context);
-        return Task.CompletedTask;
+        ZeeKayDaConfigurationFailure[] failures =
+        [
+            .. NotScoped<IStartupVerifier>(scanner),
+            .. NotScoped<IStartupActivator>(scanner),
+        ];
+
+        if (failures.Length > 0)
+            throw new ZeeKayDaConfigurationException(failures);
     }
 
-    private void Check<TCheck>(StartupVerificationContext context)
-    {
-        foreach (var registration in scanner.RegistrationsOf(typeof(TCheck))
-                     .Where(registration => registration.Lifetime != ServiceLifetime.Scoped))
-        {
-            context.AddFailure(
+    private static IEnumerable<ZeeKayDaConfigurationFailure> NotScoped<TCheck>(ServiceLifetimeScanner scanner) =>
+        scanner.RegistrationsOf(typeof(TCheck))
+            .Where(registration => registration.Lifetime != ServiceLifetime.Scoped)
+            .Select(registration => new ZeeKayDaConfigurationFailure(
                 "startup.check_not_scoped",
                 $"'{Describe(registration)}' is registered as {typeof(TCheck).Name} with a " +
                 $"{registration.Lifetime} lifetime. Register it with AddScoped: the runner resolves each " +
                 "phase's checks from one scope, and any other lifetime builds the check, and the scoped " +
-                "services it injects, outside that scope.");
-        }
-    }
+                "services it injects, outside that scope."));
 
     private static string Describe(ServiceDescriptor registration) =>
         (registration.ImplementationType
