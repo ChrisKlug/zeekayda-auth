@@ -21,11 +21,19 @@ Customisation is options plus the named service seams in `extension-surface.md`.
 the set is only discoverable by finding implementations rather than reading one call site —
 acceptable while it is internal, finite and auditable.
 
-**Core has zero ASP.NET Core knowledge, and the dependency never reverses.** `ZeeKayDa.Auth`
-takes all of `Microsoft.Extensions.*` (host-agnostic, no transitive web stack) and exactly one
-`Microsoft.AspNetCore.*` package: `Microsoft.AspNetCore.DataProtection.Abstractions`, which is
-host-agnostic despite its name. Any further `Microsoft.AspNetCore.*` reference in core needs its
-own justification. This is a review rule, not a build rule — nothing in CI enforces it.
+**Core holds everything with meaning outside an HTTP request; the dependency never reverses.** A
+type lives in `ZeeKayDa.Auth` unless it only means something inside a request. `ZeeKayDa.Auth.AspNetCore`
+keeps the endpoints and their wire types; the cookie, scheme and security-header names; the
+interaction flow and its contracts (`ILoginInteraction` and its siblings act on the current request
+though no signature names `HttpContext`); the typed interaction stores, which bind an entry to a
+browser cookie; client authentication; and external providers. Options and their validation,
+clients, scopes, stores, token issuance and the startup checks on them are Core, registered by
+`AddZeeKayDaAuthCore(configure)`, which `AddZeeKayDaAuth(configure)` calls before adding the HTTP
+surface. `ZeeKayDaAuthBuilder` has no public constructor, so every builder comes from one of the two
+and Core is always registered (`A_core_only_host_validates_the_server_options_at_startup`). Core takes
+`Microsoft.Extensions.*` and one `Microsoft.AspNetCore.*` package, `Microsoft.AspNetCore.DataProtection`
+— host-agnostic despite its name, and what the Core token stores encrypt with. Any further one needs
+its own justification. This is a review rule, not a build rule — nothing in CI enforces it.
 
 **Every ZeeKayDa route is mapped into one group carrying two filters.** The first rejects any
 request that is not HTTPS with `421 Misdirected Request`; the only exemption is a loopback remote

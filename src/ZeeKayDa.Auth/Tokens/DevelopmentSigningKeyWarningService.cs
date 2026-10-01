@@ -1,0 +1,70 @@
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Tokens;
+
+namespace ZeeKayDa.Auth.Tokens;
+
+/// <summary>
+/// Emits a startup warning when development signing keys are active, and enforces the environment
+/// gate.
+/// </summary>
+/// <remarks>
+/// When the host environment name is not in
+/// <see cref="DevelopmentSigningOptions.AllowedEnvironments"/>,
+/// startup fails so that an accidental development-key configuration is never silently deployed
+/// to a non-permitted host.
+/// </remarks>
+internal sealed class DevelopmentSigningKeyWarningService(
+    IHostEnvironment environment,
+    IOptions<DevelopmentSigningOptions> devOptions) : IStartupVerifier
+{
+    internal const string WarningMessage =
+        "ZeeKayDa.Auth: development signing keys are active. The signing key is ephemeral or " +
+        "stored in a local file and is not suitable for production. Do not use this " +
+        "configuration outside a local development environment.";
+
+    internal const string NonDevelopmentCriticalMessage =
+        "ZeeKayDa.Auth: development signing keys are active outside a Development environment. " +
+        "AllowedEnvironments has been widened — this is a CRITICAL " +
+        "misconfiguration. An ephemeral or local signing key in production breaks signature " +
+        "validation for every relying party on restart. Replace " +
+        "AddInMemoryDevelopmentSigning()/AddPersistedDevelopmentSigning() with a " +
+        "production key provider immediately.";
+
+    /// <inheritdoc/>
+    public string Name => "DevelopmentSigningKey";
+
+    /// <inheritdoc/>
+    public Task VerifyAsync(
+        StartupVerificationContext context,
+        IServiceProvider scopedServices,
+        CancellationToken cancellationToken)
+    {
+        var currentEnvironment = environment.EnvironmentName;
+
+        // Production is always a hard fail; non-allowed environments also throw. The runner
+        // absorbs a thrown ZeeKayDaConfigurationException, preserving its Code verbatim.
+        DevelopmentSigningKeyGate.Enforce(
+            currentEnvironment,
+            devOptions.Value.AllowedEnvironments);
+
+        var isDevelopment = string.Equals(currentEnvironment, "Development", StringComparison.OrdinalIgnoreCase);
+        if (!isDevelopment)
+        {
+            context.AddWarning(
+                "signing.dev_keys.active_outside_development",
+                NonDevelopmentCriticalMessage,
+                LogLevel.Critical);
+        }
+        else
+        {
+            // Information, not Warning: in Development a development signing key is the expected
+            // choice, and a Warning an operator sees on every local start is one they learn to
+            // scroll past — which is what a real Warning then hides behind.
+            context.AddWarning("signing.dev_keys.active", WarningMessage, LogLevel.Information);
+        }
+
+        return Task.CompletedTask;
+    }
+}

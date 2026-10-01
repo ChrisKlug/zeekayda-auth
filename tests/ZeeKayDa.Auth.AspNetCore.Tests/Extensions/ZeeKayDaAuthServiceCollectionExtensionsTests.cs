@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -13,6 +14,19 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 {
+    [Fact]
+    public async Task AddZeeKayDaAuth_called_twice_starts_with_each_cookie_scheme_registered_once()
+    {
+        using var host = new EndpointHost(configureBuilder: builder =>
+            builder.Services.AddZeeKayDaAuth(options => options.ClockSkewTolerance = TimeSpan.FromSeconds(10)));
+
+        await host.EnsureStartedAsync();
+
+        var schemes = await host.Resolve<IAuthenticationSchemeProvider>().GetAllSchemesAsync();
+        schemes.Select(scheme => scheme.Name).Should().OnlyHaveUniqueItems().And.Contain(["zkd.session", "zkd.external"]);
+        host.Resolve<IOptions<AuthorizationServerOptions>>().Value.ClockSkewTolerance.Should().Be(TimeSpan.FromSeconds(10));
+    }
+
     [Fact]
     public void AddZeeKayDaAuth_always_registers_ExceptionSanitizingDisabledWarningService_as_IStartupVerifier()
     {

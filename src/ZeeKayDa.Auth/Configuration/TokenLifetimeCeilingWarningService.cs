@@ -1,0 +1,44 @@
+using Microsoft.Extensions.Options;
+
+namespace ZeeKayDa.Auth.Configuration;
+
+/// <summary>
+/// Emits a startup warning when a server-wide access-token or ID-token lifetime is longer than
+/// <c>TokenEndpoint.AbsoluteFamilyLifetime</c>: such a token outlives the grant family that
+/// produced it, which is rarely what an operator meant.
+/// </summary>
+internal sealed class TokenLifetimeCeilingWarningService(
+    IOptions<AuthorizationServerOptions> options) : IStartupVerifier
+{
+    /// <inheritdoc/>
+    public string Name => "TokenLifetimeCeiling";
+
+    /// <inheritdoc/>
+    public Task VerifyAsync(
+        StartupVerificationContext context,
+        IServiceProvider scopedServices,
+        CancellationToken cancellationToken)
+    {
+        var tokens = options.Value.TokenEndpoint;
+
+        if (tokens.AccessTokenLifetime > tokens.AbsoluteFamilyLifetime)
+        {
+            context.AddWarning(
+                "tokens.access_token_lifetime_exceeds_family_ceiling",
+                "AuthorizationServerOptions.TokenEndpoint.AccessTokenLifetime is longer than " +
+                "AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime, so an access token issued " +
+                "at the end of a grant family's life outlives the family. Ensure this is an intentional choice.");
+        }
+
+        if (tokens.IdTokenLifetime > tokens.AbsoluteFamilyLifetime)
+        {
+            context.AddWarning(
+                "tokens.id_token_lifetime_exceeds_family_ceiling",
+                "AuthorizationServerOptions.TokenEndpoint.IdTokenLifetime is longer than " +
+                "AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime, so an ID token issued " +
+                "at the end of a grant family's life outlives the family. Ensure this is an intentional choice.");
+        }
+
+        return Task.CompletedTask;
+    }
+}

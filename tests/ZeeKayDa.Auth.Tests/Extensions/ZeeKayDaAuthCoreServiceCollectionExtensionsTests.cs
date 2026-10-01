@@ -2,8 +2,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.Extensions;
+using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
@@ -11,13 +12,27 @@ namespace ZeeKayDa.Auth.Tests.Extensions;
 
 public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
 {
-    [Fact]
-    public void AddZeeKayDaAuthCore_registers_ISanitizingLogger_as_SecretSanitizingLogger()
+    private static void ValidIssuer(AuthorizationServerOptions options) => options.Issuer = "https://issuer.test";
+
+    private static ServiceCollection ServicesWithLogging()
     {
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        return services;
+    }
 
-        services.AddZeeKayDaAuthCore();
+    private static async Task StartAsync(IServiceProvider provider)
+    {
+        foreach (var hostedService in provider.GetServices<IHostedService>())
+            await hostedService.StartAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public void AddZeeKayDaAuthCore_registers_ISanitizingLogger_as_SecretSanitizingLogger()
+    {
+        var services = ServicesWithLogging();
+
+        services.AddZeeKayDaAuthCore(ValidIssuer);
 
         using var provider = services.BuildServiceProvider();
         var resolved = provider.GetRequiredService<ISanitizingLogger<object>>();
@@ -26,23 +41,62 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuthCore_is_idempotent()
+    public void AddZeeKayDaAuthCore_called_twice_registers_everything_once_and_applies_both_delegates()
     {
-        var services = new ServiceCollection();
+        var services = ServicesWithLogging();
 
-        services.AddZeeKayDaAuthCore();
-        services.AddZeeKayDaAuthCore();
+        services.AddZeeKayDaAuthCore(ValidIssuer);
+        services.AddZeeKayDaAuthCore(options => options.ClockSkewTolerance = TimeSpan.FromSeconds(10));
 
-        services.Should().ContainSingle(sd => sd.ServiceType == typeof(ISanitizingLogger<>));
+        services.Should().ContainSingle(descriptor => descriptor.ServiceType == typeof(ISanitizingLogger<>));
+        services.Should().ContainSingle(descriptor => descriptor.ImplementationType == typeof(Pbkdf2ClientSecretHasher));
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
+        options.Issuer.Should().Be("https://issuer.test");
+        options.ClockSkewTolerance.Should().Be(TimeSpan.FromSeconds(10));
     }
 
     [Fact]
     public void AddZeeKayDaAuthCore_throws_ArgumentNullException_if_services_is_null()
     {
         IServiceCollection services = null!;
-        var act = () => services.AddZeeKayDaAuthCore();
+        var act = () => services.AddZeeKayDaAuthCore(ValidIssuer);
 
         act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void AddZeeKayDaAuthCore_throws_ArgumentNullException_if_configure_is_null()
+    {
+        var act = () => new ServiceCollection().AddZeeKayDaAuthCore(null!);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task A_core_only_host_with_every_mandatory_seam_starts()
+    {
+        var services = ServicesWithLogging();
+        services.AddZeeKayDaAuthCoreForTesting().AddInMemoryDevelopmentSigning();
+
+        await using var provider = services.BuildServiceProvider();
+        var act = () => StartAsync(provider);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task A_core_only_host_validates_the_server_options_at_startup()
+    {
+        var services = ServicesWithLogging();
+        services.AddZeeKayDaAuthCoreForTesting().AddInMemoryDevelopmentSigning();
+        services.Configure<AuthorizationServerOptions>(options => options.Issuer = "not-a-uri");
+
+        await using var provider = services.BuildServiceProvider();
+        var act = () => StartAsync(provider);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().Contain(failure => failure.Code == "configuration.issuer.invalid");
     }
 
     // ── Issue #521: TokenKind-to-issuer dispatch via keyed DI ────────────────────────────────────
@@ -71,28 +125,26 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     [Theory]
     [InlineData(TokenKind.AccessToken)]
     [InlineData(TokenKind.IdToken)]
-    public void AddDefaultTokenIssuers_registers_JwtTokenIssuer_for_each_TokenKind(TokenKind kind)
+    public void AddZeeKayDaAuthCore_registers_JwtTokenIssuer_for_each_TokenKind(TokenKind kind)
     {
-        var services = new ServiceCollection();
+        var services = ServicesWithLogging();
         services.AddSingleton<ISigningKeyRing>(new StubRing());
 
-        services.AddZeeKayDaAuthCore();
-        services.AddDefaultTokenIssuers();
+        services.AddZeeKayDaAuthCore(ValidIssuer);
 
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredKeyedService<ITokenIssuer>(kind).Should().BeOfType<JwtTokenIssuer>();
     }
 
     [Fact]
-    public void AddDefaultTokenIssuers_keeps_a_hosts_own_issuer_registration_for_a_kind()
+    public void AddZeeKayDaAuthCore_keeps_a_hosts_own_issuer_registration_for_a_kind()
     {
-        var services = new ServiceCollection();
+        var services = ServicesWithLogging();
         services.AddSingleton<ISigningKeyRing>(new StubRing());
         var hostIssuer = new StubIssuer();
         services.AddKeyedSingleton<ITokenIssuer>(TokenKind.AccessToken, hostIssuer);
 
-        services.AddZeeKayDaAuthCore();
-        services.AddDefaultTokenIssuers();
+        services.AddZeeKayDaAuthCore(ValidIssuer);
 
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredKeyedService<ITokenIssuer>(TokenKind.AccessToken).Should().BeSameAs(hostIssuer);
@@ -100,48 +152,17 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
             "overriding one kind must not affect the other");
     }
 
-    [Fact]
-    public void AddZeeKayDaAuthCore_registers_no_token_issuer()
-    {
-        // Token issuance is the token subsystem's registration, not core infrastructure.
-        var services = new ServiceCollection();
-
-        services.AddZeeKayDaAuthCore();
-
-        services.Should().NotContain(d => d.ServiceType == typeof(ITokenIssuer));
-    }
-
-    // ── Issue #437: framework-owned startup self-test wiring ───────────────────────────────────────
-
-
-
     // ── Issue #444: unified startup verification wiring ─────────────────────────────────────────────
 
     [Fact]
     public void AddZeeKayDaAuthCore_registers_StartupVerificationHostedService_as_a_hosted_service()
     {
-        var services = new ServiceCollection();
-        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        var services = ServicesWithLogging();
 
-        services.AddZeeKayDaAuthCore();
+        services.AddZeeKayDaAuthCore(ValidIssuer);
 
         using var provider = services.BuildServiceProvider();
         provider.GetServices<IHostedService>().OfType<StartupVerificationHostedService>().Should().ContainSingle();
-    }
-
-    [Fact]
-    public void AddZeeKayDaAuthCore_registers_a_non_empty_gate_collection_even_without_AddZeeKayDaAuth()
-    {
-        // A host wiring only AddZeeKayDaAuthCore() (e.g. a signing-provider package such as
-        // .AzureKeyVault/.FileSystem/.Windows without AddZeeKayDaAuth()) must still get the
-        // sanitizing-logger shadow gate — otherwise the runner's gate phase passes vacuously.
-        var services = new ServiceCollection();
-        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-
-        services.AddZeeKayDaAuthCore();
-
-        using var provider = services.BuildServiceProvider();
-        provider.GetServices<IStartupVerificationGate>().Should().NotBeEmpty();
     }
 
     [Fact]
@@ -149,7 +170,7 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     {
         var services = new ServiceCollection();
 
-        services.AddZeeKayDaAuthCore();
+        services.AddZeeKayDaAuthCore(ValidIssuer);
 
         services.Where(descriptor => descriptor.ServiceType == typeof(IStartupVerificationGate))
             .Select(descriptor => descriptor.ImplementationType)

@@ -546,6 +546,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Everything that does not need an HTTP request moved from `ZeeKayDa.Auth.AspNetCore` to
+  `ZeeKayDa.Auth`** (#768). `AddZeeKayDaAuthCore(configure)` now takes the same
+  `Action<AuthorizationServerOptions>` as `AddZeeKayDaAuth`, returns the `ZeeKayDaAuthBuilder`, lives
+  in `Microsoft.Extensions.DependencyInjection` like every other registration method, and
+  registers and validates the server options, clients, scopes, stores, token issuance, Data
+  Protection, and every startup check that does not need HTTP. Before this, a host that called only
+  `AddZeeKayDaAuthCore()` got server options that were never validated. `AddZeeKayDaAuth(configure)`
+  calls it and adds the endpoints, cookies, interaction and external providers. The client options
+  and in-memory client builder moved from `ZeeKayDa.Auth.AspNetCore.Clients` to
+  `ZeeKayDa.Auth.Clients`. The claims, client, hasher, scope, signing and store builder extensions
+  now ship in `ZeeKayDa.Auth`, in the same namespace. `ZeeKayDaAuthBuilder`'s constructor is no
+  longer public, and the signing packages no longer call `AddZeeKayDaAuthCore()` themselves.
+  `ZeeKayDa.Auth` references `Microsoft.AspNetCore.DataProtection`, which has no ASP.NET Core
+  dependency, in place of its abstractions package. A package's tests get a Core-only host that
+  passes every startup check from `services.AddZeeKayDaAuthCoreForTesting()` in
+  `ZeeKayDa.Auth.TestKit`. `AddZeeKayDaOptions<T>()` and `ValidateWithZeeKayDa()` no longer register
+  the startup runner; only `AddZeeKayDaAuthCore` does. `AddZeeKayDaSigningKeys()` moved to namespace
+  `Microsoft.Extensions.DependencyInjection`. A Core-only host whose signing keys do not advertise
+  RS256 now gets the same OpenID Connect Discovery 1.0 §3 warning as an ASP.NET Core host. Both
+  `AddZeeKayDaAuth` and `AddZeeKayDaAuthCore` can now be called more than once: a repeated call adds
+  its `configure` delegate and registers nothing twice, where before it threw.
+
 - **Every public async member returns `Task` or `Task<T>`; none returns `ValueTask`** (#784). The
   public API mixed the two with no rule. A `ValueTask` must be awaited exactly once and never stored,
   which is easy to get wrong when implementing or calling an interface, so the public surface now uses

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Configuration;
 
@@ -161,6 +162,17 @@ public sealed class ValidatedOptionsCheckTests
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void AddZeeKayDaOptions_leaves_startup_verification_to_AddZeeKayDaAuthCore()
+    {
+        var services = new ServiceCollection();
+
+        services.AddZeeKayDaOptions<FirstOptions>();
+
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IHostedService));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IStartupVerificationGate));
     }
 
     private sealed class FirstOptions

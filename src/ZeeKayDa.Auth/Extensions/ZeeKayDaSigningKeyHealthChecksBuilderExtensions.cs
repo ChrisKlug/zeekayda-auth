@@ -1,10 +1,10 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Tokens;
 
-namespace ZeeKayDa.Auth.Extensions;
+namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
 /// Extension methods for registering <see cref="SigningKeyExpiryHealthCheck"/> against an

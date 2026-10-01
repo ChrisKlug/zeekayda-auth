@@ -76,7 +76,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         reader.AddCertificate(CurrentThumbprint, certificate);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddWindowsCertificateStoreSigning(Lookup(CurrentThumbprint), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
@@ -111,7 +111,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         reader.AddCertificate(CurrentThumbprint, current);
         reader.AddCertificate(NextThumbprint, next);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddWindowsCertificateStoreSigning(SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My, options =>
         {
             options.Previous = Lookup(PreviousThumbprint);
@@ -141,7 +141,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         reader.AddCertificate(CurrentThumbprint, current);
         reader.AddCertificate(NextThumbprint, next);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddWindowsCertificateStoreSigning(SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My, options =>
         {
             options.Current = Lookup(CurrentThumbprint);
@@ -179,7 +179,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("future", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
         reader.AddCertificate(CurrentThumbprint, certificate);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddWindowsCertificateStoreSigning(Lookup(CurrentThumbprint), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
@@ -199,7 +199,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("expired", T0 - TimeSpan.FromDays(400), T0 - TimeSpan.FromDays(1));
         reader.AddCertificate(CurrentThumbprint, certificate);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddWindowsCertificateStoreSigning(Lookup(CurrentThumbprint), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
@@ -219,7 +219,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
         reader.AddCertificate(NextThumbprint, certificate);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddWindowsCertificateStoreSigning(SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My,
             options => options.Next = Lookup(NextThumbprint));
 
@@ -239,7 +239,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         reader.AddCertificate(CurrentThumbprint, certificate);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddWindowsCertificateStoreSigning(SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My, options =>
         {
             options.Current = Lookup(CurrentThumbprint);
@@ -260,7 +260,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         var ct = TestContext.Current.CancellationToken;
         var (services, _, _) = BuildServices(T0); // No certificate registered -> certificate_not_found.
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddWindowsCertificateStoreSigning(Lookup(CurrentThumbprint), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
@@ -280,7 +280,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
             "test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365), withPrivateKey: false);
         reader.AddCertificate(CurrentThumbprint, certificate);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddWindowsCertificateStoreSigning(Lookup(CurrentThumbprint), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
@@ -302,7 +302,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         reader.ExceptionToThrow = new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
             "signing.windows_certificate_store.store_inaccessible", "Simulated store-access failure."));
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddWindowsCertificateStoreSigning(Lookup(CurrentThumbprint), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
@@ -324,7 +324,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         reader.AddCertificate(CurrentThumbprint, certificate);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddWindowsCertificateStoreSigning(Lookup(CurrentThumbprint), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();

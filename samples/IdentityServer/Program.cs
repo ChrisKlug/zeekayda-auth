@@ -1,4 +1,4 @@
-using ZeeKayDa.Auth.AspNetCore.Clients;
+using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Samples.IdentityServer;
 using ZeeKayDa.Auth.Samples.IdentityServer.Users;
 using ZeeKayDa.Auth.Scopes;

@@ -34,10 +34,10 @@ for an ordering knob.
 parties structurally cannot register into is what makes "nothing logs through an unverified
 sanitizing logger" true rather than advised, and no check runs against invalid options.
 
-**The gates ship from the same registration call as the runner.** All come from
-`AddZeeKayDaAuthCore()`, which is public and which provider packages call directly — a host can reach
-a fully-wired signing configuration without ever calling `AddZeeKayDaAuth()`, and registering the
-gates there is what stops phase 1 passing vacuously in that configuration.
+**The gates ship from the same registration call as the runner.** Both come only from
+`AddZeeKayDaAuthCore(configure)`, and every builder comes from it, so no host gets a runner whose gate
+collection is empty and whose phase 1 passes vacuously. `ValidateWithZeeKayDa()` registers no runner:
+a host without a ZeeKayDa server is not supported.
 
 **Nothing is logged, and no check is constructed, until every gate has passed.** The runner holds no
 logger of its own; gates report through the context and never log; gate warnings are buffered until

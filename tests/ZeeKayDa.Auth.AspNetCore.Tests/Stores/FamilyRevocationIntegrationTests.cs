@@ -2,7 +2,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth.Authorization;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Stores;
@@ -22,11 +21,9 @@ public sealed class FamilyRevocationIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddMemoryCache();
-        services.AddDataProtection();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment(Environments.Development));
-        services.AddZeeKayDaAuthCore();
-        new ZeeKayDaAuthBuilder(services).AddInMemoryStores();
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://issuer.test").AddInMemoryStores();
         return services.BuildServiceProvider();
     }
 

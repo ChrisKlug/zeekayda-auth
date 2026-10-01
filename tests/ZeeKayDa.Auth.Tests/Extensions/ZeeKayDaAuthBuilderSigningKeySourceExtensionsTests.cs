@@ -3,7 +3,6 @@ using System.Linq;
 using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
@@ -458,7 +457,7 @@ public sealed class ZeeKayDaAuthBuilderSigningKeySourceExtensionsTests
         // initialized or self-tested, and the host would start with an uninitialized ring.
         var services = new ServiceCollection();
 
-        services.AddZeeKayDaAuthCore();
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://issuer.test");
 
         services.Should().Contain(
             d => d.ServiceType == typeof(IStartupActivator)

@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AzureKeyVault;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Tokens;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -72,15 +71,10 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(credential);
 
-
         // Registered first so a second signing key source is rejected before this method applies any
         // of its own configuration — a caller that catches the rejection must not be left with this
         // call's options callbacks applied to the surviving registration.
         builder.AddSigningKeySource<AzureKeyVaultRemoteSigningKeySource>();
-
-        // Defensive/idempotent: guarantees the core services are resolvable even when this package is
-        // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
-        builder.Services.AddZeeKayDaAuthCore();
 
         builder.Services.AddZeeKayDaOptions<AzureKeyVaultRemoteSigningOptions>()
             .Configure(options =>
@@ -168,15 +162,10 @@ public static class ZeeKayDaAuthBuilderAzureKeyVaultSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(credential);
 
-
         // Registered first so a second signing key source is rejected before this method applies any
         // of its own configuration — a caller that catches the rejection must not be left with this
         // call's options callbacks applied to the surviving registration.
         builder.AddSigningKeySource<AzureKeyVaultCachedSigningKeySource>();
-
-        // Defensive/idempotent: guarantees the core services are resolvable even when this package is
-        // used standalone, without ZeeKayDa.Auth.AspNetCore's AddZeeKayDaAuth().
-        builder.Services.AddZeeKayDaAuthCore();
 
         builder.Services.AddZeeKayDaOptions<AzureKeyVaultCachedSigningOptions>()
             .Configure(options =>

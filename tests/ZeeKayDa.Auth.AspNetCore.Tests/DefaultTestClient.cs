@@ -1,4 +1,4 @@
-using ZeeKayDa.Auth.AspNetCore.Clients;
+using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 
