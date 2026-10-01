@@ -19,6 +19,7 @@ using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.FileSystem;
 using ZeeKayDa.Auth.FileSystem.Tests.Fixtures;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem.Tests.Integration;

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Stores;
 

@@ -35,7 +35,7 @@ namespace ZeeKayDa.Auth.Scopes;
 /// A broken repository throws rather than degrading. There is no safe reduced answer: serving no
 /// scopes would fail the client's request with <c>invalid_scope</c> for what is the operator's
 /// bug, and serving the scopes that happen to be well-formed would issue tokens against half a
-/// configuration. At startup <c>ScopePresenceStartupValidator</c> turns the same failures into
+/// configuration. At startup <c>ScopePresenceActivator</c> turns the same failures into
 /// named startup failures, so a misconfigured host does not reach a request at all.
 /// </para>
 /// </remarks>

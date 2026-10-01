@@ -12,6 +12,7 @@ using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.AspNetCore.Tokens;
+using ZeeKayDa.Auth.StartupVerification;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -98,19 +99,19 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IStartupVerifier, LoginDispatchVerifier>());
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ReservedCookieNameValidator>());
+            ServiceDescriptor.Singleton<IStartupActivator, ReservedCookieNameActivator>());
 
         // Both read what the host's own configuration code produces — a provider's options, the
         // resolved scheme map — so both are activators.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, HandlerOptionsStartupActivator>());
+            ServiceDescriptor.Singleton<IStartupActivator, HandlerOptionsActivator>());
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ProviderSchemeCollisionValidator>());
+            ServiceDescriptor.Singleton<IStartupActivator, ProviderSchemeCollisionActivator>());
 
         // An activator because it constructs every registered IClientAuthenticator, the host's own
         // included.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, AuthenticatorCoverageValidator>());
+            ServiceDescriptor.Singleton<IStartupActivator, AuthenticatorCoverageActivator>());
     }
 
     /// <summary>

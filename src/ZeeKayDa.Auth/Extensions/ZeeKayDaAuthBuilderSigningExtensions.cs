@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -132,6 +133,6 @@ public static class ZeeKayDaAuthBuilderSigningExtensions
 
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, DevelopmentSigningKeyWarningService>());
+            ServiceDescriptor.Singleton<IStartupVerifier, DevelopmentSigningKeyVerifier>());
     }
 }

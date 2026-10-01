@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>
 /// A single structured warning produced by an <see cref="IStartupVerifier"/> or internal startup

@@ -3,6 +3,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Stores;
 
 namespace ZeeKayDa.Auth.Tests.Stores;

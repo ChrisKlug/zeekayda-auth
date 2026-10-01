@@ -23,7 +23,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
         Func<Task> act = async () => await factory.CreateClient().GetAsync("/");
 
         // The presence check is a verifier, so it fails in the phase before the activators run —
-        // before ClientRepositoryStartupActivator could hit a raw DI resolution error.
+        // before ClientRepositoryActivator could hit a raw DI resolution error.
         var thrown = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
         thrown.Which.AggregatedFailures.Should().Contain(f => f.Code == "client.repository.missing");
     }
@@ -32,7 +32,7 @@ public sealed class ZeeKayDaAuthBuilderClientExtensionsTests
     public async Task MisconfiguredClientSet_causes_host_start_to_fail()
     {
         // A duplicate client_id is detected in InMemoryClientRepository's constructor. Because the
-        // repository is a singleton, ClientRepositoryStartupActivator forces it to be resolved at
+        // repository is a singleton, ClientRepositoryActivator forces it to be resolved at
         // startup so construction-time validation fails at host start rather than first request.
         using var factory = new DuplicateClientFactory();
 

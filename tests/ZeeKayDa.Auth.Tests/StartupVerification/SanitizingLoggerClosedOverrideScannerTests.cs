@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.Logging;
+using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Tests.StartupVerification;
 

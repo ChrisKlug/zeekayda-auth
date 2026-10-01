@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Tests.Configuration;
 

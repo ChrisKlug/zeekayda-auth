@@ -185,7 +185,7 @@ public sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactory>
             // it makes are visible before we decide whether to fall back to in-memory stores.
             _configureBuilder?.Invoke(authBuilder);
 
-            // Register in-memory stores so the TokenStorePresenceValidator passes at startup,
+            // Register in-memory stores so the TokenStorePresenceVerifier passes at startup,
             // but only when _configureBuilder has not already registered stores. This avoids
             // a ThrowIfAlreadyRegistered exception when the caller brings its own stores.
             // Integration test hosts run as "Production" by default; allow in-memory stores so

@@ -1,0 +1,94 @@
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.StartupVerification;
+
+namespace ZeeKayDa.Auth.Stores;
+
+/// <summary>
+/// Verifies at startup that the distributed-cache interaction store has an
+/// <see cref="IDistributedCache"/> to run on, and that outside Development it is not the
+/// per-process <see cref="MemoryDistributedCache"/>.
+/// </summary>
+/// <remarks>
+/// Despite its name, <see cref="MemoryDistributedCache"/> is shared with nothing. Behind a load
+/// balancer an authorization request started on one instance cannot be completed by another, and
+/// the failure looks like an intermittent bug in the host's login page. Startup is the only place
+/// to catch it; the host opts out for an intentional non-Development test host, and is reminded
+/// on every start. In Development, where the per-process cache is the expected choice, it is
+/// logged at <see cref="LogLevel.Information"/>, as the in-memory interaction store is.
+/// </remarks>
+internal sealed class DistributedCacheInteractionStoreActivator(
+    IHostEnvironment environment,
+    bool allowMemoryCacheOutsideDevelopment) : IStartupActivator
+{
+    internal const string MissingCacheMessage =
+        "IDistributedCache is not registered. Call services.AddDistributedMemoryCache() " +
+        "(development) or register a shared distributed cache before adding the " +
+        "distributed-cache interaction store.";
+
+    internal const string PerProcessCacheActiveMessage =
+        "ZeeKayDa.Auth: the distributed-cache interaction store is running on the per-process " +
+        "MemoryDistributedCache. Despite its name, that cache is shared with nothing: an " +
+        "authorization request started on one instance cannot be completed by another. Register a " +
+        "shared IDistributedCache before deploying to more than one instance.";
+
+    internal const string PerProcessCacheOverrideWarningMessage =
+        "ZeeKayDa.Auth: the distributed-cache interaction store is running on the per-process " +
+        "MemoryDistributedCache outside a Development environment. allowMemoryCacheOutsideDevelopment " +
+        "has been set to true — ensure this is intentional (e.g. an integration test host). An " +
+        "authorization request started on one instance cannot be completed by another.";
+
+    /// <inheritdoc/>
+    public string Name => "DistributedCacheInteractionStore";
+
+    /// <inheritdoc/>
+    public Task VerifyAsync(
+        StartupVerificationContext context,
+        IServiceProvider scopedServices,
+        CancellationToken cancellationToken)
+    {
+        var cache = scopedServices.GetService<IDistributedCache>();
+
+        if (cache is null)
+        {
+            context.AddFailure("stores.idistributedcache.missing", MissingCacheMessage);
+            return Task.CompletedTask;
+        }
+
+        if (cache is not MemoryDistributedCache)
+            return Task.CompletedTask;
+
+        switch (EnvironmentGate.Evaluate(environment, allowMemoryCacheOutsideDevelopment))
+        {
+            case EnvironmentGate.Verdict.ExpectedInDevelopment:
+                context.AddWarning(
+                    "stores.interaction.per_process_cache_active",
+                    PerProcessCacheActiveMessage,
+                    LogLevel.Information);
+                break;
+
+            case EnvironmentGate.Verdict.AllowedByOptOut:
+                context.AddWarning(
+                    "stores.interaction.per_process_cache_override",
+                    PerProcessCacheOverrideWarningMessage,
+                    LogLevel.Critical);
+                break;
+
+            default:
+                context.AddFailure(
+                    "stores.interaction.per_process_cache",
+                    "The distributed-cache interaction store resolves IDistributedCache to MemoryDistributedCache " +
+                    "outside a Development environment. Despite its name, that cache is shared with nothing: an " +
+                    "authorization request started on one instance cannot be completed by another. Register a " +
+                    "shared IDistributedCache (Redis, SQL Server, ...) or pass allowMemoryCacheOutsideDevelopment: " +
+                    "true if this host is an intentional non-Development test host.");
+                break;
+        }
+
+        return Task.CompletedTask;
+    }
+}

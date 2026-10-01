@@ -108,7 +108,7 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                 {
                     options.Issuer = "https://test.example.com";
                     // Only client_secret_basic is in AuthMethodsSupported.
-                    // The ClientSecretAuthenticator covers it, satisfying AuthenticatorCoverageValidator.
+                    // The ClientSecretAuthenticator covers it, satisfying AuthenticatorCoverageActivator.
                 })
                 .AddInMemoryClients(clients =>
                     clients.Add(

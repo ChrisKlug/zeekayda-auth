@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
 

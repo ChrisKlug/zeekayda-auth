@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.Configuration;
 
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>
 /// Validates every <see cref="IValidatedOptions"/> and reports their failures in one

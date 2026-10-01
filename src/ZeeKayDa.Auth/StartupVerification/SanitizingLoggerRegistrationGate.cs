@@ -1,6 +1,6 @@
 using ZeeKayDa.Auth.Logging;
 
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>
 /// Verifies at startup that <see cref="ISanitizingLogger{T}"/> has not been shadowed by a host

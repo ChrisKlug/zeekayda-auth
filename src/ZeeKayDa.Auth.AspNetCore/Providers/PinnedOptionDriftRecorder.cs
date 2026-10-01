@@ -4,7 +4,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
 /// The side channel <see cref="HandlerOptionsValidator{TOptions}"/> writes its structured pin
-/// findings to, and <see cref="HandlerOptionsStartupActivator"/> reads them back from.
+/// findings to, and <see cref="HandlerOptionsActivator"/> reads them back from.
 /// </summary>
 /// <remarks>
 /// <para>

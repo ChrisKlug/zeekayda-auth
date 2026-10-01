@@ -46,7 +46,7 @@ public sealed class StaticSigningKeyRing : ISigningKeyRing, IDisposable, IAsyncD
     /// <summary>
     /// Initialises a <see cref="StaticSigningKeyRing"/> over <paramref name="source"/>. Call
     /// <see cref="ISigningKeyRing.EnsureInitializedAsync"/> (done automatically at host startup by
-    /// <see cref="SigningKeyRingStartupVerifier"/>) before using <see cref="Current"/> or
+    /// <see cref="SigningKeyRingActivator"/>) before using <see cref="Current"/> or
     /// <see cref="SignAsync{TState}"/>.
     /// </summary>
     /// <param name="source">

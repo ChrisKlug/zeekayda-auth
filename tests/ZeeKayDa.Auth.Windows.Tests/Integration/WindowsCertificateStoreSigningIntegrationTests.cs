@@ -25,6 +25,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 using ZeeKayDa.Auth.Windows.Tests.Fakes;
 using ZeeKayDa.Auth.Windows.Tests.Fixtures;

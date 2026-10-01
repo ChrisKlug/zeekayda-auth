@@ -1,4 +1,4 @@
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>
 /// An internal, framework-only startup check run by <c>StartupVerificationHostedService</c>

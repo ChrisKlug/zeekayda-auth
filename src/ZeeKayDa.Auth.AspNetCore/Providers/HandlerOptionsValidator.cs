@@ -15,7 +15,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// Without this, a <c>PostConfigure</c> for the same scheme registered later by the host or a
 /// library would win silently, and the provider would sign into the wrong cookie or call back to
 /// a path nothing serves. The failure surfaces at startup because
-/// <see cref="HandlerOptionsStartupActivator"/> resolves each provider's options once.
+/// <see cref="HandlerOptionsActivator"/> resolves each provider's options once.
 /// </remarks>
 internal sealed class HandlerOptionsValidator<TOptions>(
     ProviderRegistry registry,

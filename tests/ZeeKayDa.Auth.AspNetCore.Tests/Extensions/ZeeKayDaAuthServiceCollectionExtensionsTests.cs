@@ -7,7 +7,9 @@ using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
@@ -28,7 +30,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_always_registers_ExceptionSanitizingDisabledWarningService_as_IStartupVerifier()
+    public void AddZeeKayDaAuth_always_registers_ExceptionSanitizingDisabledVerifier_as_IStartupVerifier()
     {
         // The warning verifier reads the flag at startup and emits a warning only when the flag
         // is set. It is always registered (unconditionally) so no additional method call is needed.
@@ -38,7 +40,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 
         services.Should().Contain(sd =>
             sd.ServiceType == typeof(IStartupVerifier) &&
-            sd.ImplementationType == typeof(ExceptionSanitizingDisabledWarningService));
+            sd.ImplementationType == typeof(ExceptionSanitizingDisabledVerifier));
     }
 
     [Theory]

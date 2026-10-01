@@ -2,7 +2,7 @@ using System.Reflection;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Configuration;
 
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>What the validators of every <see cref="IValidatedOptions"/> reported.</summary>
 internal sealed class OptionsFailures

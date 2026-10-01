@@ -2,6 +2,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Stores;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -78,7 +79,7 @@ public static class ZeeKayDaAuthBuilderStoreExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         return builder.AddInteractionStore<DistributedCacheInteractionBackingStore>(services =>
-            services.AddSingleton<IStartupActivator>(sp => new DistributedCacheInteractionStoreStartupValidator(
+            services.AddSingleton<IStartupActivator>(sp => new DistributedCacheInteractionStoreActivator(
                 sp.GetRequiredService<IHostEnvironment>(),
                 allowMemoryCacheOutsideDevelopment)));
     }
