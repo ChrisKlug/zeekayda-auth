@@ -138,16 +138,16 @@ delegated — every hop costs tokens and latency, and each spawn starts from zer
 At the moment building starts — right after the `### Agreed shape` comment, or at the start of a
 mechanical change with no design gate — check the model named in your system prompt. If it is Fable,
 say in one line that the shape is agreed and the build needs Opus, then end the turn so the switch
-lands before the first edit. This holds *whatever the code touches*: the reviewers run on Fable and
-are the safety net for the subject matter. Stay on Opus through the review round, the maintainer's
-read of the diff, and the merge. If the maintainer declines for an issue, build on Fable and do not
-raise it again for that issue.
+lands before the first edit; the reviewers on Fable are the safety net whatever the code touches.
+Stay on Opus through review, the diff read and the merge. If the maintainer declines, build on Fable
+and do not raise it again for that issue. Sonnet builds the `developer` agent's fully specified work,
+and the main session's mechanical builds when the maintainer switches the session to it.
 
 | Task | Route |
 |---|---|
 | Designing an API shape | main session, in conversation with the maintainer |
 | Writing or changing C# (features, fixes, refactors, review fixes) | main session, directly, on Opus |
-| Large, mechanical, fully-specified implementation | `developer` agent (foreground) |
+| Large, mechanical, fully-specified implementation | `developer` agent (foreground, on Sonnet) |
 | Reviewing a change | the table in Development Workflow — `security` and/or `architect`, one round |
 | Writing or verifying tests on demand | `tester` agent, or main session |
 | User-facing documentation | **dormant until the walking skeleton ships** — `docs` agent on explicit request only |
