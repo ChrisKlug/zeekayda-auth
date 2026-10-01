@@ -142,7 +142,7 @@ internal sealed class AuthorizationServerOptionsValidator : ZeeKayDaOptionsValid
         }
 
         var problems = options.CorsOrigins
-            .Select((origin, index) => (index, new CorsOrigin(origin, options.AllowInsecureIssuer).ErrorMessage))
+            .Select((origin, index) => (index, new CorsOrigin(origin, options.Development.AllowHttpLoopbackCorsOrigins).ErrorMessage))
             .Where(entry => entry.ErrorMessage is not null);
 
         foreach (var (index, problem) in problems)

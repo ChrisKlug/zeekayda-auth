@@ -44,7 +44,9 @@ internal static class EnvironmentGate
     /// <summary>
     /// Applies the rule. <paramref name="allowOutsideDevelopment"/> is the value the registration
     /// call captured, never a bindable option — an opt-out is meaningless without the call it
-    /// qualifies, and one host-wide switch would turn off every gate at once.
+    /// qualifies, and one host-wide switch would turn off every gate at once. The one exception is a
+    /// <see cref="DevelopmentOptions"/> switch, which is both the resource and its own opt-out; its
+    /// verifier passes <see langword="true"/>.
     /// </summary>
     public static Verdict Evaluate(IHostEnvironment environment, bool allowOutsideDevelopment)
     {

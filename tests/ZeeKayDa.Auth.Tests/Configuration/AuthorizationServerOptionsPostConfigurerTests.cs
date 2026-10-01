@@ -205,6 +205,46 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
         });
     }
 
+    // ── Development switches ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Flipping_any_Development_switch_after_PostConfigure_fails_with_options_frozen()
+    {
+        // A switch flipped at runtime would weaken security after its startup verifier reported
+        // it off. Reflection, so a switch added later is covered without editing this test.
+        var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
+        var switches = typeof(DevelopmentOptions).GetProperties().Where(p => p.PropertyType == typeof(bool)).ToList();
+
+        switches.Should().HaveCount(3);
+        switches.Should().AllSatisfy(property =>
+        {
+            var act = () => property.SetValue(options.Development, true);
+
+            act.Should().Throw<TargetInvocationException>(property.Name)
+                .WithInnerException<ZeeKayDaConfigurationException>()
+                .Which.AggregatedFailures.Should().ContainSingle(f =>
+                    f.Code == "configuration.options_frozen" &&
+                    f.Message.Contains($"AuthorizationServerOptions.Development.{property.Name}", StringComparison.Ordinal));
+            property.GetValue(options.Development).Should().Be(false, property.Name);
+        });
+    }
+
+    [Fact]
+    public void PostConfigure_keeps_the_Development_switches_the_host_configured()
+    {
+        var options = new AuthorizationServerOptions
+        {
+            Issuer = "http://localhost:5000",
+            Development = { AllowHttpLoopbackIssuer = true, DisableExceptionSanitizing = true },
+        };
+
+        PostConfigure(options);
+
+        options.Development.AllowHttpLoopbackIssuer.Should().BeTrue();
+        options.Development.AllowHttpLoopbackCorsOrigins.Should().BeFalse();
+        options.Development.DisableExceptionSanitizing.Should().BeTrue();
+    }
+
     [Fact]
     public void PostConfigure_is_idempotent_on_repeated_calls()
     {

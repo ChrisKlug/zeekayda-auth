@@ -64,17 +64,17 @@ internal static class EndpointUriValidator
                 $"{codePrefix}.userinfo",
                 $"AuthorizationServerOptions.{propertyName} '{value}' must not contain user information.");
 
-        if (!ServerUriRules.IsSchemePermitted(uri, options.AllowInsecureIssuer))
+        if (!ServerUriRules.IsSchemePermitted(uri, options.Development.AllowHttpLoopbackIssuer))
             return new(
                 $"{codePrefix}.not_https",
                 $"AuthorizationServerOptions.{propertyName} '{value}' must use HTTPS. " +
-                "Set AllowInsecureIssuer = true to permit HTTP loopback endpoints for local development only.");
+                "Set Development.AllowHttpLoopbackIssuer = true to permit HTTP loopback endpoints for local development only.");
 
-        if (ServerUriRules.IsInsecureNonLoopback(uri, options.AllowInsecureIssuer))
+        if (ServerUriRules.IsInsecureNonLoopback(uri, options.Development.AllowHttpLoopbackIssuer))
             return new(
                 $"{codePrefix}.http_non_loopback",
                 $"AuthorizationServerOptions.{propertyName} '{value}' uses HTTP for a non-loopback host. " +
-                "AllowInsecureIssuer only permits HTTP loopback endpoints for local development and testing.");
+                "Development.AllowHttpLoopbackIssuer only permits HTTP loopback endpoints for local development and testing.");
 
         if (!HasSameAuthority(uri, issuerUri))
             return new(

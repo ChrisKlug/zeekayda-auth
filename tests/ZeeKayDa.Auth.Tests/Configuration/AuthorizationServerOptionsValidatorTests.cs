@@ -130,12 +130,12 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── HTTPS requirement ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_for_HTTP_Issuer_without_AllowInsecureIssuer_flag()
+    public void Validate_fails_for_HTTP_Issuer_without_AllowHttpLoopbackIssuer_flag()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "http://auth.example.com",
-            AllowInsecureIssuer = false,
+            Development = { AllowHttpLoopbackIssuer = false },
         });
 
         failures.Should().ContainSingle(f => f.Code == "configuration.issuer.not_https")
@@ -143,24 +143,24 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_succeeds_for_HTTP_Issuer_with_AllowInsecureIssuer_flag()
+    public void Validate_succeeds_for_HTTP_Issuer_with_AllowHttpLoopbackIssuer_flag()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "http://localhost:5000",
-            AllowInsecureIssuer = true,
+            Development = { AllowHttpLoopbackIssuer = true },
         });
 
         failures.Should().BeEmpty();
     }
 
     [Fact]
-    public void Validate_fails_for_HTTP_non_loopback_Issuer_with_AllowInsecureIssuer_flag()
+    public void Validate_fails_for_HTTP_non_loopback_Issuer_with_AllowHttpLoopbackIssuer_flag()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "http://auth.example.com",
-            AllowInsecureIssuer = true,
+            Development = { AllowHttpLoopbackIssuer = true },
         });
 
         failures.Should().ContainSingle(f => f.Code == "configuration.issuer.http_non_loopback")
@@ -176,7 +176,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = issuer,
-            AllowInsecureIssuer = allowInsecure,
+            Development = { AllowHttpLoopbackIssuer = allowInsecure },
         });
 
         failures.Should().ContainSingle(f => f.Code == "configuration.issuer.trailing_slash")
@@ -256,7 +256,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "http://localhost:80",
-            AllowInsecureIssuer = true,
+            Development = { AllowHttpLoopbackIssuer = true },
         });
 
         failures.Should().ContainSingle(f => f.Code == "configuration.issuer.not_canonical")
@@ -267,12 +267,12 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("ftp://localhost")]
     [InlineData("file:///tmp/auth")]
     [InlineData("custom://localhost")]
-    public void Validate_fails_for_non_HTTP_or_HTTPS_scheme_Issuer_even_with_AllowInsecureIssuer_flag(string issuer)
+    public void Validate_fails_for_non_HTTP_or_HTTPS_scheme_Issuer_even_with_AllowHttpLoopbackIssuer_flag(string issuer)
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = issuer,
-            AllowInsecureIssuer = true,
+            Development = { AllowHttpLoopbackIssuer = true },
         });
 
         failures.Should().ContainSingle(f => f.Code == "configuration.issuer.not_https")
@@ -844,7 +844,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("TokenEndpoint.Uri", "http://auth.example.com/connect/token", "configuration.token_endpoint.uri.not_https")]
     [InlineData("JwksEndpoint.Uri", "http://auth.example.com/connect/jwks", "configuration.jwks_endpoint.uri.not_https")]
     [InlineData("EndSessionEndpoint.Uri", "http://auth.example.com/connect/endsession", "configuration.end_session_endpoint.uri.not_https")]
-    public void Validate_fails_for_HTTP_endpoint_override_without_AllowInsecureIssuer_flag(string propertyPath, string value, string expectedCode)
+    public void Validate_fails_for_HTTP_endpoint_override_without_AllowHttpLoopbackIssuer_flag(string propertyPath, string value, string expectedCode)
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         SetGroupProperty(options, propertyPath, value);
@@ -948,12 +948,12 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [InlineData("AuthorizationEndpoint.Uri", "http://auth.example.com/connect/authorize", "configuration.authorization_endpoint.uri.http_non_loopback")]
     [InlineData("TokenEndpoint.Uri", "http://auth.example.com/connect/token", "configuration.token_endpoint.uri.http_non_loopback")]
     [InlineData("JwksEndpoint.Uri", "http://auth.example.com/connect/jwks", "configuration.jwks_endpoint.uri.http_non_loopback")]
-    public void Validate_fails_for_HTTP_non_loopback_endpoint_override_with_AllowInsecureIssuer_flag(string propertyPath, string value, string expectedCode)
+    public void Validate_fails_for_HTTP_non_loopback_endpoint_override_with_AllowHttpLoopbackIssuer_flag(string propertyPath, string value, string expectedCode)
     {
         var options = new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            AllowInsecureIssuer = true,
+            Development = { AllowHttpLoopbackIssuer = true },
         };
         SetGroupProperty(options, propertyPath, value);
 
@@ -1062,12 +1062,12 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_accepts_an_ipv6_loopback_origin_when_insecure_issuer_is_allowed()
+    public void Validate_accepts_an_ipv6_loopback_origin_when_http_loopback_cors_origins_are_allowed()
     {
         var options = new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            AllowInsecureIssuer = true,
+            Development = { AllowHttpLoopbackCorsOrigins = true },
         };
         options.CorsOrigins.Add("http://[::1]:5001");
 
@@ -1090,7 +1090,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_for_HTTP_CORS_origin_without_AllowInsecureIssuer_flag()
+    public void Validate_fails_for_HTTP_CORS_origin_without_AllowHttpLoopbackCorsOrigins_flag()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.CorsOrigins.Add("http://app.example.com");
@@ -1114,12 +1114,12 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_succeeds_for_HTTP_loopback_CORS_origin_with_AllowInsecureIssuer_flag()
+    public void Validate_succeeds_for_HTTP_loopback_CORS_origin_with_AllowHttpLoopbackCorsOrigins_flag()
     {
         var options = new AuthorizationServerOptions
         {
-            Issuer = "http://localhost",
-            AllowInsecureIssuer = true,
+            Issuer = "https://auth.example.com",
+            Development = { AllowHttpLoopbackCorsOrigins = true },
         };
         options.CorsOrigins.Add("http://localhost:3000");
 
@@ -1129,12 +1129,12 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_for_HTTP_non_loopback_CORS_origin_with_AllowInsecureIssuer_flag()
+    public void Validate_fails_for_HTTP_non_loopback_CORS_origin_with_AllowHttpLoopbackCorsOrigins_flag()
     {
         var options = new AuthorizationServerOptions
         {
-            Issuer = "http://localhost",
-            AllowInsecureIssuer = true,
+            Issuer = "https://auth.example.com",
+            Development = { AllowHttpLoopbackCorsOrigins = true },
         };
         options.CorsOrigins.Add("http://app.example.com");
 
@@ -1142,6 +1142,34 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
         failures.Should().ContainSingle(f => f.Code == "configuration.cors_origins.invalid")
             .Which.Message.Should().Contain("loopback");
+    }
+
+    [Fact]
+    public void Validate_fails_for_HTTP_loopback_CORS_origin_with_only_the_AllowHttpLoopbackIssuer_flag()
+    {
+        var options = new AuthorizationServerOptions
+        {
+            Issuer = "http://localhost",
+            Development = { AllowHttpLoopbackIssuer = true },
+        };
+        options.CorsOrigins.Add("http://localhost:3000");
+
+        var failures = Validate(options);
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.cors_origins.invalid")
+            .Which.Message.Should().Contain("AllowHttpLoopbackCorsOrigins");
+    }
+
+    [Fact]
+    public void Validate_fails_for_HTTP_loopback_Issuer_with_only_the_AllowHttpLoopbackCorsOrigins_flag()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "http://localhost",
+            Development = { AllowHttpLoopbackCorsOrigins = true },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.issuer.not_https");
     }
 
     [Theory]
@@ -1267,15 +1295,15 @@ public sealed class AuthorizationServerOptionsValidatorTests
             .Which.Message.Should().Contain("user information");
     }
 
-    // ── ValidateEndpointUri — HTTP scheme branch (no AllowInsecureIssuer) ────────────────────────
+    // ── ValidateEndpointUri — HTTP scheme branch (no AllowHttpLoopbackIssuer) ────────────────────────
 
     [Fact]
-    public void Validate_ValidateEndpointUri_returns_error_when_AuthorizationEndpoint_uses_HTTP_without_AllowInsecureIssuer()
+    public void Validate_ValidateEndpointUri_returns_error_when_AuthorizationEndpoint_uses_HTTP_without_AllowHttpLoopbackIssuer()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            AllowInsecureIssuer = false,
+            Development = { AllowHttpLoopbackIssuer = false },
             AuthorizationEndpoint = { Uri = "http://auth.example.com/connect/authorize" },
         });
 
@@ -1283,15 +1311,15 @@ public sealed class AuthorizationServerOptionsValidatorTests
             .Which.Message.Should().Contain("HTTPS");
     }
 
-    // ── ValidateEndpointUri — HTTP non-loopback with AllowInsecureIssuer ─────────────────────────
+    // ── ValidateEndpointUri — HTTP non-loopback with AllowHttpLoopbackIssuer ─────────────────────────
 
     [Fact]
-    public void Validate_ValidateEndpointUri_returns_error_when_AuthorizationEndpoint_uses_HTTP_non_loopback_with_AllowInsecureIssuer()
+    public void Validate_ValidateEndpointUri_returns_error_when_AuthorizationEndpoint_uses_HTTP_non_loopback_with_AllowHttpLoopbackIssuer()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            AllowInsecureIssuer = true,
+            Development = { AllowHttpLoopbackIssuer = true },
             AuthorizationEndpoint = { Uri = "http://auth.example.com/connect/authorize" },
         });
 
@@ -1799,15 +1827,15 @@ public sealed class AuthorizationServerOptionsValidatorTests
             .Which.Message.Should().Contain("AuthorizationServerOptions.EndSessionEndpoint.Uri").And.Contain(rule);
     }
 
-    // ── EndSessionEndpoint.Uri — HTTP non-loopback with AllowInsecureIssuer ──────────────────────
+    // ── EndSessionEndpoint.Uri — HTTP non-loopback with AllowHttpLoopbackIssuer ──────────────────────
 
     [Fact]
-    public void Validate_fails_for_HTTP_non_loopback_EndSessionEndpoint_override_with_AllowInsecureIssuer_flag()
+    public void Validate_fails_for_HTTP_non_loopback_EndSessionEndpoint_override_with_AllowHttpLoopbackIssuer_flag()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            AllowInsecureIssuer = true,
+            Development = { AllowHttpLoopbackIssuer = true },
             EndSessionEndpoint = { Uri = "http://auth.example.com/connect/endsession" },
         });
 
@@ -1844,7 +1872,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_for_HTTP_UserInfoEndpoint_override_without_AllowInsecureIssuer_flag()
+    public void Validate_fails_for_HTTP_UserInfoEndpoint_override_without_AllowHttpLoopbackIssuer_flag()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
@@ -1857,12 +1885,12 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_for_HTTP_non_loopback_UserInfoEndpoint_override_with_AllowInsecureIssuer_flag()
+    public void Validate_fails_for_HTTP_non_loopback_UserInfoEndpoint_override_with_AllowHttpLoopbackIssuer_flag()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            AllowInsecureIssuer = true,
+            Development = { AllowHttpLoopbackIssuer = true },
             UserInfoEndpoint = { Uri = "http://auth.example.com/connect/userinfo" },
         });
 
