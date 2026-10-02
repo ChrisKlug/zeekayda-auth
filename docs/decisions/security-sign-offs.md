@@ -1989,3 +1989,21 @@ Reverses the sanitizing-logger gate and the `IStartupCheck` rejection check reco
   `A_verifier_registered_as_a_singleton_fails_startup_naming_its_type`.
 - **Accepted residuals (maintainer):** a friend assembly could subclass the logger (first-party, not a boundary);
   a scoped factory returning a singleton check passes the lifetime check. No test.
+
+## 2026-10-02 — client secrets are self-describing PHC strings; hashers dispatch by algorithm id (#814, code frozen at `aca04ad`)
+Copilot code, security and architecture lenses, the security and architect agents, fix-diff verification of each round; no Critical.
+- A stored secret reaches only the hasher that declared its id, matched ordinally against the index built at startup; two
+  hashers declaring one id fail startup. Closed — `Two_hashers_declaring_the_same_algorithm_id_fail_startup`,
+  `Algorithm_ids_match_case_sensitively`, `Create_refuses_an_id_the_hasher_declared_only_after_startup`.
+- A hasher that throws cannot crash or bypass authentication: at request time the verification fails, logged once by type;
+  at registration the client is refused. Closed — `A_hasher_that_throws_from_Verify_produces_invalid_client_not_a_500`,
+  `A_Verify_that_throws_on_the_empty_secret_probe_is_a_named_failure_not_a_log_entry`.
+- A bad secret refuses its client, and a value its hasher refuses is never derived. Closed —
+  `One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid`, `A_secret_its_hasher_refuses_is_never_verified`.
+- No failure or log quotes a stored value beyond a well-formed id. Closed —
+  `A_first_segment_that_cannot_be_an_algorithm_id_is_malformed_and_never_quoted`,
+  `ValidateStoredSecret_reports_a_malformed_value_without_quoting_it`, `ClientSecret_ToString_does_not_reveal_the_stored_value`.
+- Failure timing is unchanged: a secret no hasher declared spends a full slot. Closed —
+  `Verify_of_a_credential_no_hasher_handles_spends_a_full_slot`.
+- **Accepted residual (maintainer):** `no_hasher` logs a valid-looking id, so plaintext pasted as `$abc$...` logs `abc`;
+  plaintext in the store is #806. No test.
