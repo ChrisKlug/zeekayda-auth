@@ -51,6 +51,10 @@ public sealed class ClientSecretHasherTests
     [InlineData("$argon2id$v=16$m=65536,t=3,p=1$gvJfb2maq7pkagaITSD2kQ$qAaUvaI9kD5x5sqbxTG8U5jMh4YoRYmS8jjmOr3bX3g")]
     [InlineData("$argon2id$v=19$m=65536,t=3,p=1$c2FsdA$qAaUvaI9kD5x5sqbxTG8U5jMh4YoRYmS8jjmOr3bX3g")]
     [InlineData("$argon2id$v=19$t=3,m=65536,p=1$gvJfb2maq7pkagaITSD2kQ$qAaUvaI9kD5x5sqbxTG8U5jMh4YoRYmS8jjmOr3bX3g")]
+    [InlineData("$argon2id$v=19$m=786432,t=1,p=1$gvJfb2maq7pkagaITSD2kQ$qAaUvaI9kD5x5sqbxTG8U5jMh4YoRYmS8jjmOr3bX3g")]
+    [InlineData("$argon2id$v=19$m=19456,t=1,p=1$gvJfb2maq7pkagaITSD2kQ$qAaUvaI9kD5x5sqbxTG8U5jMh4YoRYmS8jjmOr3bX3g")]
+    [InlineData("$argon2id$v=19$m=262144,t=10,p=1$gvJfb2maq7pkagaITSD2kQ$qAaUvaI9kD5x5sqbxTG8U5jMh4YoRYmS8jjmOr3bX3g")]
+    [InlineData("$argon2id$v=19$m=65536,t=3,p=1$gvJfb2maq7pkagaITSD2kQgvJfb2maq7pkagaITSD2kQ$qAaUvaI9kD5x5sqbxTG8U5jMh4YoRYmS8jjmOr3bX3g")]
     public void Argon2_refuses_a_stored_secret_that_is_malformed_or_outside_its_cost_bounds(string value)
     {
         var hasher = new Argon2ClientSecretHasher();

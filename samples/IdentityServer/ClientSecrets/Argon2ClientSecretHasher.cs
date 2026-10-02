@@ -14,14 +14,19 @@ public sealed class Argon2ClientSecretHasher : IClientSecretHasher
 {
     private const int Version = 19;
 
-    // Memory in KiB. The floor is OWASP's smallest Argon2id configuration; the ceilings keep one
-    // verification from costing the host gigabytes or seconds.
+    // Work is memory (KiB) times passes. The floor is OWASP's weakest Argon2id configuration
+    // (19 MiB, two passes); the ceiling is four times what Create writes, so one verification
+    // cannot cost the host gigabytes or seconds.
     private const int MinMemory = 19_456;
     private const int MaxMemory = 262_144;
-    private const int MaxPasses = 10;
+    private const long MinWork = 19_456L * 2;
+    private const long MaxWork = 65_536L * 3 * 4;
     private const int MaxParallelism = 4;
-    private const int MinSaltLength = 16;
-    private const int MinHashLength = 32;
+
+    // Exactly what Create writes, so a stored value cannot carry an oversized field.
+    private const int SaltLength = 16;
+    private const int HashLength = 32;
+    private const int MaxValueLength = 128;
 
     public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string>(["argon2id"], StringComparer.Ordinal);
 
@@ -39,7 +44,8 @@ public sealed class Argon2ClientSecretHasher : IClientSecretHasher
 
     private static string? Problem(ClientSecret stored)
     {
-        if (!PhcString.TryParse(stored.Value, out var phc)
+        if (stored.Value is not { Length: <= MaxValueLength }
+            || !PhcString.TryParse(stored.Value, out var phc)
             || phc.Version != Version
             || phc.Parameters is not [{ Key: "m", Value: var m }, { Key: "t", Value: var t }, { Key: "p", Value: var p }]
             || !TryReadInt(m, out var memory) || !TryReadInt(t, out var passes) || !TryReadInt(p, out var parallelism))
@@ -47,14 +53,15 @@ public sealed class Argon2ClientSecretHasher : IClientSecretHasher
             return $"An Argon2id secret is not $argon2id$v={Version}$m=<KiB>,t=<passes>,p=<lanes>$<salt>$<hash>.";
         }
 
-        if (memory is < MinMemory or > MaxMemory || passes is < 1 or > MaxPasses || parallelism is < 1 or > MaxParallelism)
+        var work = (long)memory * passes;
+        if (memory is < MinMemory or > MaxMemory || passes < 1 || work is < MinWork or > MaxWork || parallelism is < 1 or > MaxParallelism)
         {
-            return $"An Argon2id secret has m={memory}, t={passes}, p={parallelism}, outside " +
-                $"m={MinMemory}–{MaxMemory}, t=1–{MaxPasses}, p=1–{MaxParallelism}.";
+            return $"An Argon2id secret has m={memory}, t={passes}, p={parallelism}: memory must be " +
+                $"{MinMemory}–{MaxMemory} KiB, memory × passes {MinWork}–{MaxWork}, and lanes 1–{MaxParallelism}.";
         }
 
-        return phc.Salt.Length < MinSaltLength || phc.Hash.Length < MinHashLength
-            ? $"An Argon2id secret needs a salt of at least {MinSaltLength} bytes and a hash of at least {MinHashLength}."
+        return phc.Salt.Length != SaltLength || phc.Hash.Length != HashLength
+            ? $"An Argon2id secret needs a {SaltLength}-byte salt and a {HashLength}-byte hash."
             : null;
     }
 
