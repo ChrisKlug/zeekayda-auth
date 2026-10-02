@@ -456,6 +456,35 @@ public sealed class CompositeClientAuthenticatorTests
             "a failure vouches for its padding once; replayed, it checked no secret and is padded");
     }
 
+    [Fact]
+    public async Task A_failed_result_returned_again_is_padded_like_any_other_refusal()
+    {
+        var knownClient = CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method);
+        ClientAuthenticationResult? kept = null;
+
+        var calls = await HasherCallsToRefuse(knownClient, secrets => context =>
+            kept ??= ClientAuthenticationResult.From(secrets.Verify("wrong", context.Client.Secrets)));
+        var replayedCalls = await HasherCallsToRefuse(knownClient, _ => _ => kept!);
+
+        calls.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
+        replayedCalls.Should().Be(ClientSecrets.MaxActiveSecretsPerClient, "a result vouches for its padding once");
+    }
+
+    [Fact]
+    public async Task Building_a_result_twice_from_one_failed_verification_does_not_pad_twice()
+    {
+        var knownClient = CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method);
+
+        var calls = await HasherCallsToRefuse(knownClient, secrets => context =>
+        {
+            var verification = secrets.Verify("wrong", context.Client.Secrets);
+            _ = ClientAuthenticationResult.From(verification);
+            return ClientAuthenticationResult.From(verification);
+        });
+
+        calls.Should().Be(ClientSecrets.MaxActiveSecretsPerClient, "padding is claimed when the result is used, not built");
+    }
+
     // ── AC 21: multiple mechanisms ────────────────────────────────────────────────────────────────
 
     [Fact]

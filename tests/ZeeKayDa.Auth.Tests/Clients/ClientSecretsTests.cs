@@ -652,10 +652,12 @@ public sealed class ClientSecretsTests
     [Fact]
     public void Every_failed_verification_vouches_for_its_own_padding_once()
     {
-        var (secrets, _) = CreateSingleHasherSecrets(defaultVerifyResult: false);
+        var (secrets, hasher) = CreateSingleHasherSecrets(defaultVerifyResult: false);
 
         var first = secrets.Verify("wrong", [DefaultSecret]);
+        hasher.VerifyCallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient, "a failure pads before it vouches");
         var second = secrets.Verify("wrong", [DefaultSecret]);
+        hasher.VerifyCallCount.Should().Be(2 * ClientSecrets.MaxActiveSecretsPerClient);
 
         first.TryClaimPadding().Should().BeTrue();
         first.TryClaimPadding().Should().BeFalse("a failure kept and replayed spent no padding of its own");

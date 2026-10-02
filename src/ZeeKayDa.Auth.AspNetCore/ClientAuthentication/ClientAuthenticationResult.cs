@@ -20,8 +20,7 @@ public sealed class ClientAuthenticationResult
     /// </summary>
     public bool Authenticated { get; private init; }
 
-    /// <summary>Whether a failure already spent its timing padding inside <see cref="IClientSecrets.Verify"/>.</summary>
-    internal bool FailurePadded { get; private init; }
+    private SecretVerification? _verification;
 
     /// <summary>Returns a successful authentication result.</summary>
     public static ClientAuthenticationResult Valid() => new() { Authenticated = true };
@@ -37,6 +36,12 @@ public sealed class ClientAuthenticationResult
     public static ClientAuthenticationResult From(SecretVerification verification)
     {
         ArgumentNullException.ThrowIfNull(verification);
-        return new() { Authenticated = verification.Matched, FailurePadded = verification.TryClaimPadding() };
+        return new() { Authenticated = verification.Matched, _verification = verification };
     }
+
+    /// <summary>
+    /// Whether this failure already spent its timing padding, claimed when the token endpoint uses the
+    /// result, so a result or verification returned again is padded like any other refusal.
+    /// </summary>
+    internal bool TryClaimPadding() => _verification?.TryClaimPadding() ?? false;
 }

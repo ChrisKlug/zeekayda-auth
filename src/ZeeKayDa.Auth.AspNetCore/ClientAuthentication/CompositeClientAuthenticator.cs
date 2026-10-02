@@ -109,14 +109,20 @@ internal sealed class CompositeClientAuthenticator(
             Form = form,
             Headers = headers,
         };
-        // A null from a caller-supplied authenticator is a refusal, not a fault to surface.
-        return await matchedAuthenticator.AuthenticateAsync(context, cancellationToken) switch
+        return Conclude(await matchedAuthenticator.AuthenticateAsync(context, cancellationToken), client);
+    }
+
+    /// <summary>
+    /// Accepts, or refuses after padding unless a failed <see cref="IClientSecrets.Verify"/> already
+    /// paid for it. A null from a caller-supplied authenticator is a refusal, not a fault to surface.
+    /// </summary>
+    private AuthenticatedClient Conclude(ClientAuthenticationResult? outcome, IClientWithCredentials client) =>
+        outcome switch
         {
             { Authenticated: true } => AuthenticatedClient.Accepted(client),
-            { FailurePadded: true } => AuthenticatedClient.Refused,
+            not null when outcome.TryClaimPadding() => AuthenticatedClient.Refused,
             _ => RefuseAfterPadding(),
         };
-    }
 
     private bool TryCanHandle(IClientAuthenticator authenticator, TokenRequestContext context, out string? method)
     {
