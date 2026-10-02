@@ -62,10 +62,11 @@ public sealed class Pbkdf2Sha512ClientSecretHasher : IClientSecretHasher
         }
     }
 
-    private sealed record Parts(int? Iterations, ReadOnlyMemory<byte> Salt, ReadOnlyMemory<byte> Hash);
+    private sealed record Parts(int? Version, int? Iterations, ReadOnlyMemory<byte> Salt, ReadOnlyMemory<byte> Hash);
 
     private static readonly Func<Parts, bool>[] Rules =
     [
+        parts => parts.Version is null,
         parts => parts.Iterations is > 0,
         parts => parts.Salt.Length == SaltLength,
         parts => parts.Hash.Length == HashLength,
@@ -73,7 +74,7 @@ public sealed class Pbkdf2Sha512ClientSecretHasher : IClientSecretHasher
 
     private static Parts? Read(ClientSecret stored) =>
         PhcString.TryParse(stored.Value, out var phc)
-        && new Parts(IterationsOf(phc), phc.Salt, phc.Hash) is var parts
+        && new Parts(phc.Version, IterationsOf(phc), phc.Salt, phc.Hash) is var parts
         && Rules.All(rule => rule(parts))
             ? parts
             : null;

@@ -157,6 +157,34 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
+    public void A_hasher_that_throws_still_has_its_decoy_verified_in_the_failed_slot()
+    {
+        // A throw can come before any real work, so the thrower is not counted as having done its
+        // share of the slot: otherwise a known client with a broken hasher fails faster than an
+        // unknown one.
+        var thrower = new CountingThrowingHasher();
+        var other = new DefaultHasher();
+        var composite = Composite([thrower, other], DefaultIs<DefaultHasher>());
+
+        composite.Verify(new ClientSecret("$throws$x"), "presented".AsSpan()).Should().BeFalse();
+
+        (thrower.Calls, other.VerifyCallCount).Should().Be((2, 1), "the real attempt, then every hasher's decoy");
+    }
+
+    private sealed class CountingThrowingHasher : IClientSecretHasher
+    {
+        public int Calls { get; private set; }
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "throws" };
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$throws$created");
+
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
+        {
+            Calls++;
+            throw new InvalidOperationException();
+        }
+    }
+
+    [Fact]
     public void A_hasher_whose_Verify_throws_does_not_escape_from_padding()
     {
         var composite = Composite([new ThrowingVerifyHasher()]);

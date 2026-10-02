@@ -6,8 +6,9 @@ namespace ZeeKayDa.Auth.Clients;
 /// </summary>
 /// <remarks>
 /// One bad secret refuses the whole client, even when its other secret is fine: skipping it would
-/// hide a broken rotation until the good secret is retired. No message contains a stored value; the
-/// one exception is the algorithm id, which <c>client.credentials.no_hasher</c> names.
+/// hide a broken rotation until the good secret is retired. No message the framework writes contains a
+/// stored value, beyond the well-formed algorithm id <c>client.credentials.no_hasher</c> names. A
+/// hasher's own <c>ValidateStoredSecret</c> messages pass through as it wrote them.
 /// </remarks>
 internal static class ClientCredentialValidator
 {
@@ -30,17 +31,21 @@ internal static class ClientCredentialValidator
         CompositeClientSecretHasher hasher,
         List<ZeeKayDaConfigurationFailure> failures)
     {
+        // Counted by enumerating, never from Count: a store's own list can report fewer entries than
+        // it yields, and the cap bounds the timing work of every failed authentication.
+        var count = 0;
         foreach (var secret in client.Secrets)
         {
+            count++;
             var check = new SecretCheck(client.ClientId, secret, hasher);
             failures.AddRange(SecretRules.Select(rule => rule(check)).FirstOrDefault(found => found.Count > 0) ?? []);
         }
 
-        if (client.Secrets.Count > CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient)
+        if (count > CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient)
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.credentials.too_many_secrets",
-                $"Client '{client.ClientId}' has {client.Secrets.Count} secrets, which exceeds the " +
+                $"Client '{client.ClientId}' has {count} secrets, which exceeds the " +
                 $"maximum of {CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient}. " +
                 "The two-secret cap exists to support rotation while preserving timing-oracle defences."));
         }

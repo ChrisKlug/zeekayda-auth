@@ -110,8 +110,8 @@ than a native loopback redirect. Post-logout redirect URIs get the same treatmen
 
 **A malformed secret, one no hasher declared or its hasher refuses, or one whose `Verify` accepts or
 throws on an empty secret refuses the whole client**, even beside a valid one
-(`One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid`). The probe runs last, so a
-refused value is never verified. No message quotes a stored value; `no_hasher` names a valid id only.
+(`One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid`); the probe runs last. No
+framework message quotes a stored value (`no_hasher` names a valid id); a hasher's own text is unchecked.
 
 **The resolver serves a snapshot, never the store's instance.** A repository may return an entity
 still attached to a change tracker, so validating what it handed back validated nothing durable — one

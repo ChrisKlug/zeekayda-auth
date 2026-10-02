@@ -993,6 +993,30 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
+    public void The_two_secret_cap_counts_what_the_list_yields_not_what_it_reports()
+    {
+        var validator = MakeValidator();
+        var client = MakeValidConfidentialClient() with
+        {
+            Secrets = new MiscountingList<ClientSecret>([FakeSecret, FakeSecret, FakeSecret], reportedCount: 2),
+        };
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.too_many_secrets");
+    }
+
+    /// <summary>A store's own list that yields its items while reporting a different <c>Count</c>.</summary>
+    private sealed class MiscountingList<T>(IReadOnlyList<T> items, int reportedCount) : IReadOnlyList<T>
+    {
+        public int Count => reportedCount;
+        public T this[int index] => items[index];
+        public IEnumerator<T> GetEnumerator() => items.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    [Fact]
     public void One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid()
     {
         // Skipping the bad one would hide a broken rotation until the good secret is retired.

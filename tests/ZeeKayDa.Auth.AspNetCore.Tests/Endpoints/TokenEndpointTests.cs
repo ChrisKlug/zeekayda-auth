@@ -831,8 +831,13 @@ public sealed class TokenEndpointTests : IDisposable
     private sealed class ThrowingVerifyHasher : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "throws" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) =>
-            presented.IsEmpty ? false : throw new InvalidOperationException();
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
+        {
+            if (presented.IsEmpty)
+                return false;
+
+            throw new InvalidOperationException();
+        }
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$throws$x");
     }
 

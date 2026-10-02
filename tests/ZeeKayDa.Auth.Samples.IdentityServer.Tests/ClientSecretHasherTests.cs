@@ -74,6 +74,17 @@ public sealed class ClientSecretHasherTests
     }
 
     [Fact]
+    public void Pbkdf2Sha512_refuses_a_stored_secret_with_a_version_field()
+    {
+        var hasher = new Pbkdf2Sha512ClientSecretHasher();
+        var versioned = new PhcString(
+            "pbkdf2-sha512", new byte[16], new byte[64], [new("i", "210000")], version: 19).ToString();
+
+        hasher.ValidateStoredSecret(new ClientSecret(versioned)).Should().ContainSingle()
+            .Which.Code.Should().Be("sample.pbkdf2_sha512.malformed");
+    }
+
+    [Fact]
     public void Pbkdf2Sha512_refuses_a_stored_secret_with_a_salt_of_the_wrong_length()
     {
         var hasher = new Pbkdf2Sha512ClientSecretHasher();

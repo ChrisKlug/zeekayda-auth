@@ -77,9 +77,9 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
         (await ErrorOf(withWrongSecret)).Should().Be("invalid_client");
     }
 
-    private static Task<HttpResponseMessage> PostTokenWithBasicAsync(HttpClient browser, string clientId, string secret)
+    private static async Task<HttpResponseMessage> PostTokenWithBasicAsync(HttpClient browser, string clientId, string secret)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
         {
             Content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
@@ -91,7 +91,7 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
         };
         request.Headers.Authorization = new AuthenticationHeaderValue(
             "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{secret}")));
-        return browser.SendAsync(request, Cancellation);
+        return await browser.SendAsync(request, Cancellation);
     }
 
     private static async Task<string?> ErrorOf(HttpResponseMessage response) =>

@@ -79,12 +79,13 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
             return false;
         }
 
-        var result = SafeVerify(owner, stored, presented);
+        var outcome = SafeVerify(owner, stored, presented);
+        if (outcome is true)
+            return true;
 
-        if (!result)
-            FinishFailedCredentialSlot(alreadyVerifiedBy: owner);
-
-        return result;
+        // A hasher that threw may have stopped before doing its work, so its decoy is spent too.
+        FinishFailedCredentialSlot(alreadyVerifiedBy: outcome is false ? owner : null);
+        return false;
     }
 
     /// <summary>
@@ -248,17 +249,17 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         && ReferenceEquals(owner, hasher);
 
     /// <summary>
-    /// A hasher that throws fails the verification. Logged once per hasher type, by exception type
-    /// only: the trigger is a request, so logging every throw would be an unauthenticated
-    /// log-amplification lever.
+    /// The hasher's answer, or <see langword="null"/> when it threw, which fails the verification.
+    /// Logged once per hasher type, by exception type only: the trigger is a request, so logging
+    /// every throw would be an unauthenticated log-amplification lever.
     /// </summary>
-    private bool SafeVerify(IClientSecretHasher hasher, ClientSecret stored, ReadOnlySpan<char> presented)
+    private bool? SafeVerify(IClientSecretHasher hasher, ClientSecret stored, ReadOnlySpan<char> presented)
     {
         try
         {
             return hasher.Verify(stored, presented);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             if (_loggedThrowingHashers.TryAdd(hasher.GetType(), 0))
             {
@@ -269,7 +270,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
                     ex.GetType().FullName);
             }
 
-            return false;
+            return null;
         }
     }
 
