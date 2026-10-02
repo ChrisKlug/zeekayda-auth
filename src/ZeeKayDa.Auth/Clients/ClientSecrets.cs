@@ -54,19 +54,14 @@ internal sealed class ClientSecrets(ClientSecretHasherRegistry registry, Sanitiz
     /// <inheritdoc/>
     public bool Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored)
     {
-        ArgumentNullException.ThrowIfNull(stored);
-        if (stored.Count > MaxActiveSecretsPerClient)
-            throw new ArgumentException(
-                $"A client holds at most {MaxActiveSecretsPerClient} secrets; more would fail in more than the padded budget.",
-                nameof(stored));
+        var candidates = WithinBudget(stored);
 
         // An empty secret never verifies, and the built-in hasher returns without deriving for one,
         // so trying it against each stored secret would cost nothing and pad short.
         var attempted = 0;
         if (!presented.IsEmpty)
         {
-            // Take bounds the work even for a collection whose Count understates what it yields.
-            foreach (var secret in stored.Take(MaxActiveSecretsPerClient))
+            foreach (var secret in candidates)
             {
                 if (VerifyInFailedCredentialSlot(presented, secret))
                     return true;
@@ -77,6 +72,22 @@ internal sealed class ClientSecrets(ClientSecretHasherRegistry registry, Sanitiz
         for (var i = attempted; i < MaxActiveSecretsPerClient; i++)
             FinishFailedCredentialSlot(alreadyVerifiedBy: null);
         return false;
+    }
+
+    /// <summary>
+    /// The stored secrets, refused before any is verified when there are more than the budget pads
+    /// for. Counted by enumerating, never from <c>Count</c>, which a store's collection can misreport.
+    /// </summary>
+    private static List<ClientSecret> WithinBudget(IReadOnlyCollection<ClientSecret> stored)
+    {
+        ArgumentNullException.ThrowIfNull(stored);
+
+        var candidates = stored.Take(MaxActiveSecretsPerClient + 1).ToList();
+        return candidates.Count <= MaxActiveSecretsPerClient
+            ? candidates
+            : throw new ArgumentException(
+                $"A client holds at most {MaxActiveSecretsPerClient} secrets; more would fail in more than the padded budget.",
+                nameof(stored));
     }
 
     /// <summary>

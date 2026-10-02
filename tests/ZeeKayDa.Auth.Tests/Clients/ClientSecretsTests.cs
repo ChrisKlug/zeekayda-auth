@@ -611,19 +611,30 @@ public sealed class ClientSecretsTests
     }
 
     [Fact]
-    public void A_collection_understating_its_count_is_tried_no_further_than_the_budget()
+    public void A_collection_understating_its_count_is_refused_before_any_secret_is_verified()
+    {
+        // A match on one of the first two would otherwise authenticate a client holding three.
+        var (secrets, defaultHasher) = CreateSingleHasherSecrets(defaultVerifyResult: true);
+
+        var act = () => secrets.Verify("presented", new MiscountedCollection(1, [DefaultSecret, DefaultSecret, DefaultSecret]));
+
+        act.Should().Throw<ArgumentException>().WithParameterName("stored");
+        defaultHasher.VerifyCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void A_collection_overstating_its_count_is_verified_by_what_it_yields()
     {
         var (secrets, defaultHasher) = CreateSingleHasherSecrets();
 
-        secrets.Verify("presented", new UnderstatedCollection([DefaultSecret, DefaultSecret, DefaultSecret]))
-            .Should().BeFalse();
+        secrets.Verify("presented", new MiscountedCollection(3, [DefaultSecret])).Should().BeFalse();
 
         defaultHasher.VerifyCallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
     }
 
-    private sealed class UnderstatedCollection(IReadOnlyList<ClientSecret> items) : IReadOnlyCollection<ClientSecret>
+    private sealed class MiscountedCollection(int count, IReadOnlyList<ClientSecret> items) : IReadOnlyCollection<ClientSecret>
     {
-        public int Count => 1;
+        public int Count => count;
         public IEnumerator<ClientSecret> GetEnumerator() => items.GetEnumerator();
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
