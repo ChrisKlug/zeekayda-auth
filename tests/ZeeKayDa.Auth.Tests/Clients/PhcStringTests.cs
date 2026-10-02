@@ -38,6 +38,21 @@ public sealed class PhcStringTests
         phc.Salt.ToArray().Should().Equal(Salt);
     }
 
+    [Fact]
+    public void Salt_and_hash_cannot_be_changed_through_the_memory_they_return()
+    {
+        var phc = new PhcString("id", Salt, Hash);
+
+        System.Runtime.InteropServices.MemoryMarshal.TryGetArray(phc.Salt, out var salt).Should().BeTrue();
+        System.Runtime.InteropServices.MemoryMarshal.TryGetArray(phc.Hash, out var hash).Should().BeTrue();
+        salt.Array![0] ^= 0xff;
+        hash.Array![0] ^= 0xff;
+
+        phc.Salt.ToArray().Should().Equal(Salt);
+        phc.Hash.ToArray().Should().Equal(Hash);
+        phc.ToString().Should().Be("$id$AAECAwQFBgcICQoLDA0ODw$+/8AEA");
+    }
+
     // ── Constructor refusals ─────────────────────────────────────────────────────────────────────
 
     [Theory]

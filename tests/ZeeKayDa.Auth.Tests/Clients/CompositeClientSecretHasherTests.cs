@@ -600,6 +600,31 @@ public sealed class CompositeClientSecretHasherTests
             .WithMessage($"*{nameof(MisbehavingCreateHasher)}*");
     }
 
+    [Fact]
+    public void Create_refuses_an_id_the_hasher_declared_only_after_startup()
+    {
+        // Dispatch indexes the ids once, at startup. A secret under an id added later could never be
+        // routed back to its hasher, so Create must not hand one out.
+        var ids = new HashSet<string> { "default" };
+        var late = false;
+        var hasher = new LiveIdsHasher(ids, () => late ? new ClientSecret("$late$x") : DefaultSecret);
+        var composite = Composite([hasher]);
+        ids.Add("late");
+        late = true;
+
+        var act = () => composite.Create("new-secret");
+
+        act.Should().Throw<InvalidOperationException>();
+        composite.CanVerify(new ClientSecret("$late$x")).Should().BeFalse();
+    }
+
+    private sealed class LiveIdsHasher(HashSet<string> ids, Func<ClientSecret> create) : IClientSecretHasher
+    {
+        public IReadOnlySet<string> AlgorithmIds => ids;
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => create();
+    }
+
     // ── ValidateStoredSecret ─────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -627,6 +652,16 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
+    public void ValidateStoredSecret_keeps_the_codes_of_a_configuration_exception_the_hasher_throws()
+    {
+        var composite = Composite([new FailureReportingHasher(throwsConfiguration: true)]);
+
+        composite.ValidateStoredSecret(new ClientSecret("$reports$x"), "client-a")
+            .Should().ContainSingle()
+            .Which.Should().Be(new ZeeKayDaConfigurationFailure("hasher.thrown_code", "Client 'client-a': it is unreadable"));
+    }
+
+    [Fact]
     public void ValidateStoredSecret_yields_nothing_for_a_secret_no_hasher_declared()
     {
         var composite = Composite([new FailureReportingHasher()]);
@@ -634,7 +669,7 @@ public sealed class CompositeClientSecretHasherTests
         composite.ValidateStoredSecret(UnhandledSecret, "client-a").Should().BeEmpty();
     }
 
-    private sealed class FailureReportingHasher(bool throws = false) : IClientSecretHasher
+    private sealed class FailureReportingHasher(bool throws = false, bool throwsConfiguration = false) : IClientSecretHasher
     {
         public const string ThrowMessage = "$reports$x is unreadable";
 
@@ -643,9 +678,10 @@ public sealed class CompositeClientSecretHasherTests
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$reports$created");
 
         public IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored) =>
-            throws
-                ? throw new FormatException(ThrowMessage)
-                : [new ZeeKayDaConfigurationFailure("hasher.code", "it is weak")];
+            throws ? throw new FormatException(ThrowMessage)
+            : throwsConfiguration ? throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure("hasher.thrown_code", "it is unreadable"))
+            : [new ZeeKayDaConfigurationFailure("hasher.code", "it is weak")];
     }
 
     // ── Single-hasher auto-default ────────────────────────────────────────────────────────────────

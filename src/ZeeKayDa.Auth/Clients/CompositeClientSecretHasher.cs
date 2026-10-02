@@ -49,7 +49,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         _logger = logger;
         _default = ResolveDefault(hasherList, registrationOptions.Value);
         _hashersById = IndexByAlgorithmId(hasherList);
-        _timingDecoys = hasherList.Select(hasher => (hasher, CreateTimingDecoy(hasher))).ToList();
+        _timingDecoys = hasherList.Select(hasher => (hasher, CreateTimingDecoy(_hashersById, hasher))).ToList();
     }
 
     /// <summary>
@@ -108,7 +108,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
 
         var created = _default.Create(plaintext);
 
-        return IsOwnOutput(_default, created)
+        return IsOwnOutput(_hashersById, _default, created)
             ? created
             : throw new InvalidOperationException(
                 $"The IClientSecretHasher '{_default.GetType().FullName}' created a secret whose algorithm id " +
@@ -133,12 +133,12 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
 
         try
         {
-            return
-            [
-                .. owner.ValidateStoredSecret(stored)
-                    .OfType<ZeeKayDaConfigurationFailure>()
-                    .Select(failure => failure with { Message = $"Client '{clientId}': {failure.Message}" }),
-            ];
+            return PrefixedWith(clientId, owner.ValidateStoredSecret(stored));
+        }
+        catch (ZeeKayDaConfigurationException ex)
+        {
+            // The hasher's own coded failures, on the same terms as ones it returned.
+            return PrefixedWith(clientId, ex.AggregatedFailures);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -152,6 +152,14 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
             ];
         }
     }
+
+    private static IReadOnlyList<ZeeKayDaConfigurationFailure> PrefixedWith(
+        string clientId, IEnumerable<ZeeKayDaConfigurationFailure> failures) =>
+    [
+        .. failures
+            .OfType<ZeeKayDaConfigurationFailure>()
+            .Select(failure => failure with { Message = $"Client '{clientId}': {failure.Message}" }),
+    ];
 
     /// <summary>
     /// Spends <see cref="MaxActiveSharedSecretsPerClient"/> failed credential slots, presenting the
@@ -197,8 +205,13 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
     private IClientSecretHasher? OwnerOf(ClientSecret? stored) =>
         AlgorithmIdOf(stored?.Value) is { } id ? _hashersById.GetValueOrDefault(id) : null;
 
-    private static bool IsOwnOutput(IClientSecretHasher hasher, ClientSecret? created) =>
-        AlgorithmIdOf(created?.Value) is { } id && hasher.AlgorithmIds.Contains(id);
+    // Checked against the ids indexed at startup, never the hasher's live AlgorithmIds: a set that
+    // changed since would let through a secret dispatch can never route back to this hasher.
+    private static bool IsOwnOutput(
+        IReadOnlyDictionary<string, IClientSecretHasher> hashersById, IClientSecretHasher hasher, ClientSecret? created) =>
+        AlgorithmIdOf(created?.Value) is { } id
+        && hashersById.TryGetValue(id, out var owner)
+        && ReferenceEquals(owner, hasher);
 
     /// <summary>
     /// A hasher that throws fails the verification. Logged once per hasher type, by exception type
@@ -265,7 +278,8 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         return failures.Count > 0 ? throw new ZeeKayDaConfigurationException([.. failures]) : byId;
     }
 
-    private static ClientSecret CreateTimingDecoy(IClientSecretHasher hasher)
+    private static ClientSecret CreateTimingDecoy(
+        IReadOnlyDictionary<string, IClientSecretHasher> hashersById, IClientSecretHasher hasher)
     {
         ClientSecret? decoy;
         try
@@ -284,7 +298,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
                 ex);
         }
 
-        if (IsOwnOutput(hasher, decoy))
+        if (IsOwnOutput(hashersById, hasher, decoy))
             return decoy!;
 
         // Error codes below are stable API — do not rename without a semver-major bump.

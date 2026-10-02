@@ -25,6 +25,9 @@ public sealed class PhcString
     private const int MaxNameLength = 32;
     private const string VersionPrefix = "v=";
 
+    private readonly byte[] _salt;
+    private readonly byte[] _hash;
+
     /// <summary>
     /// Creates a PHC string from its parts.
     /// </summary>
@@ -62,8 +65,8 @@ public sealed class PhcString
         Id = id;
         Version = version;
         Parameters = parameterList.AsReadOnly();
-        Salt = salt.ToArray();
-        Hash = hash.ToArray();
+        _salt = salt.ToArray();
+        _hash = hash.ToArray();
     }
 
     /// <summary>The algorithm id, for example <c>pbkdf2-sha256</c>.</summary>
@@ -75,11 +78,13 @@ public sealed class PhcString
     /// <summary>The algorithm's parameters, in the order they appear. Values are left as strings.</summary>
     public IReadOnlyList<KeyValuePair<string, string>> Parameters { get; }
 
-    /// <summary>The decoded salt.</summary>
-    public ReadOnlyMemory<byte> Salt { get; }
+    /// <summary>The decoded salt, a copy on every read.</summary>
+    /// <remarks>A copy because <c>MemoryMarshal.TryGetArray</c> reaches the array behind it.</remarks>
+    public ReadOnlyMemory<byte> Salt => _salt.ToArray();
 
-    /// <summary>The decoded hash output.</summary>
-    public ReadOnlyMemory<byte> Hash { get; }
+    /// <summary>The decoded hash output, a copy on every read.</summary>
+    /// <remarks>A copy because <c>MemoryMarshal.TryGetArray</c> reaches the array behind it.</remarks>
+    public ReadOnlyMemory<byte> Hash => _hash.ToArray();
 
     /// <summary>Returns the <c>$...$</c> form.</summary>
     public override string ToString()
@@ -93,8 +98,8 @@ public sealed class PhcString
             builder.Append('$').AppendJoin(',', Parameters.Select(p => $"{p.Key}={p.Value}"));
 
         return builder
-            .Append('$').Append(ToUnpaddedBase64(Salt.Span))
-            .Append('$').Append(ToUnpaddedBase64(Hash.Span))
+            .Append('$').Append(ToUnpaddedBase64(_salt))
+            .Append('$').Append(ToUnpaddedBase64(_hash))
             .ToString();
     }
 
