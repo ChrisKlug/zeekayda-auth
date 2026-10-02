@@ -316,7 +316,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     {
         public ClientSecret Create(string plaintext) => throw new NotImplementedException();
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => throw new NotImplementedException();
-        public bool Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored) =>
+        public SecretVerification Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored) =>
             throw new NotImplementedException();
     }
 }

@@ -771,7 +771,7 @@ ZeeKayDa.Auth.Clients.ClientSecret.Value.get -> string!
 ZeeKayDa.Auth.Clients.ClientSecret.Value.init -> void
 ZeeKayDa.Auth.Clients.IClientSecrets.Create(System.ReadOnlySpan<char> plaintext) -> ZeeKayDa.Auth.Clients.ClientSecret!
 ZeeKayDa.Auth.Clients.IClientSecrets.Create(string! plaintext) -> ZeeKayDa.Auth.Clients.ClientSecret!
-ZeeKayDa.Auth.Clients.IClientSecrets.Verify(System.ReadOnlySpan<char> presented, System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Clients.ClientSecret!>! stored) -> bool
+ZeeKayDa.Auth.Clients.IClientSecrets.Verify(System.ReadOnlySpan<char> presented, System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Clients.ClientSecret!>! stored) -> ZeeKayDa.Auth.Clients.SecretVerification!
 ZeeKayDa.Auth.Clients.IClientSecretHasher.AlgorithmIds.get -> System.Collections.Generic.IReadOnlySet<string!>!
 ZeeKayDa.Auth.Clients.IClientSecretHasher.Create(System.ReadOnlySpan<char> plaintext) -> ZeeKayDa.Auth.Clients.ClientSecret!
 ZeeKayDa.Auth.Clients.IClientSecretHasher.ValidateStoredSecret(ZeeKayDa.Auth.Clients.ClientSecret! stored) -> System.Collections.Generic.IEnumerable<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
@@ -792,3 +792,5 @@ static ZeeKayDa.Auth.Clients.Client.CreateConfidential(string! clientId, ZeeKayD
 static ZeeKayDa.Auth.Clients.ClientSecret.operator !=(ZeeKayDa.Auth.Clients.ClientSecret? left, ZeeKayDa.Auth.Clients.ClientSecret? right) -> bool
 static ZeeKayDa.Auth.Clients.ClientSecret.operator ==(ZeeKayDa.Auth.Clients.ClientSecret? left, ZeeKayDa.Auth.Clients.ClientSecret? right) -> bool
 static ZeeKayDa.Auth.Clients.PhcString.TryParse(string? value, out ZeeKayDa.Auth.Clients.PhcString? result) -> bool
+ZeeKayDa.Auth.Clients.SecretVerification
+ZeeKayDa.Auth.Clients.SecretVerification.Matched.get -> bool

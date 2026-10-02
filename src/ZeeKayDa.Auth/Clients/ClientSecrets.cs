@@ -52,7 +52,7 @@ internal sealed class ClientSecrets(ClientSecretHasherRegistry registry, Sanitiz
     }
 
     /// <inheritdoc/>
-    public bool Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored)
+    public SecretVerification Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored)
     {
         var candidates = WithinBudget(stored);
 
@@ -64,14 +64,14 @@ internal sealed class ClientSecrets(ClientSecretHasherRegistry registry, Sanitiz
             foreach (var secret in candidates)
             {
                 if (VerifyInFailedCredentialSlot(presented, secret))
-                    return true;
+                    return SecretVerification.Match;
                 attempted++;
             }
         }
 
         for (var i = attempted; i < MaxActiveSecretsPerClient; i++)
             FinishFailedCredentialSlot(alreadyVerifiedBy: null);
-        return false;
+        return SecretVerification.Mismatch;
     }
 
     /// <summary>

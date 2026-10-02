@@ -93,7 +93,7 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
         secrets.Create("a-client-secret").Should().Be(FakeSecret);
 
         var pbkdf2 = provider.GetServices<IClientSecretHasher>().OfType<Pbkdf2ClientSecretHasher>().Single();
-        secrets.Verify("an-existing-secret", [pbkdf2.Create("an-existing-secret")]).Should().BeTrue();
+        secrets.Verify("an-existing-secret", [pbkdf2.Create("an-existing-secret")]).Matched.Should().BeTrue();
     }
 
     [Fact]

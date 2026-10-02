@@ -78,12 +78,12 @@ price is every hasher's cost on each failure. Paths with nothing real to verify 
 disallowed method, a malformed request, an empty secret, every `none` rejection) spend both slots, so
 a client mid-rotation looks like an unknown one. Request-volume enumeration is rate limiting's (RFC 9700 §2.1).
 
-**All padding is inside one public call; callers never count.** `IClientSecrets.Verify(presented,
-stored)` pads any failure itself. Malformed requests call it with nothing presented, and the
-composite's client-dependent refusals share one padded exit, so a third-party authenticator gets the
-same guarantee and no refusal path can forget it. A host registering its own `IClientSecrets` fails
-startup (`A_host_IClientSecrets_registered_after_the_framework_fails_startup`); hasher indexing,
-decoys and the registration checks sit apart, in an internal startup registry.
+**No caller counts padding.** `IClientSecrets.Verify` pads any failure and returns a
+`SecretVerification` only it can create, returned through `ClientAuthenticationResult.From`. Every
+other refusal (`NotValid()`, null, the composite's own) takes the composite's padded exit, so a cheap
+third-party refusal costs a wrong secret's time; the built-in authenticator uses the same public path.
+A host's own `IClientSecrets` fails startup (`A_host_IClientSecrets_registered_after_the_framework_fails_startup`);
+hasher indexing, decoys and the registration checks sit apart, in an internal startup registry.
 
 **Authenticators are self-describing; the composite has zero method-specific knowledge.** Each
 authenticator declares the method strings it owns and detects its own request shape, so adding mTLS

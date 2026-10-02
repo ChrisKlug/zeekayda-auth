@@ -9,8 +9,9 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// <c>client_secret_post</c> (client secret in the request body).
 /// </summary>
 /// <remarks>
-/// Delegates verification, and its timing padding, to <see cref="IClientSecrets.Verify"/> — the
-/// same call a third-party authenticator makes — and never compares secret strings directly.
+/// Uses only the public contract a third-party authenticator has: a malformed request is refused with
+/// <see cref="ClientAuthenticationResult.NotValid"/>, and a presented secret is checked by
+/// <see cref="IClientSecrets.Verify"/>, never compared directly.
 /// </remarks>
 internal sealed class ClientSecretAuthenticator(ClientSecrets secrets) : IClientAuthenticator
 {
@@ -63,23 +64,20 @@ internal sealed class ClientSecretAuthenticator(ClientSecrets secrets) : IClient
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        return Task.FromResult(secrets.Verify(PresentedSecret(context), context.Client.Secrets)
-            ? ClientAuthenticationResult.Valid()
+        return Task.FromResult(PresentedSecret(context) is { } presented
+            ? ClientAuthenticationResult.From(secrets.Verify(presented, context.Client.Secrets))
             : ClientAuthenticationResult.NotValid());
     }
 
-    /// <summary>
-    /// The secret the request presents, or an empty one when the request is malformed, so a malformed
-    /// request fails in the same time as a wrong secret.
-    /// </summary>
-    private static ReadOnlySpan<char> PresentedSecret(ClientAuthenticationContext context)
+    /// <summary>The secret the request presents, or <see langword="null"/> when the request is malformed.</summary>
+    private static string? PresentedSecret(ClientAuthenticationContext context)
     {
         var hasBasic = BasicAuthorizationHeader.IsPresent(context.Headers);
         var hasPost = context.Form.ContainsKey("client_secret");
 
         // RFC 6749 §2.3: a client MUST NOT use more than one authentication method per request.
         if (hasBasic && hasPost)
-            return [];
+            return null;
 
         if (!hasBasic)
             return context.Form["client_secret"].ToString();
@@ -87,13 +85,13 @@ internal sealed class ClientSecretAuthenticator(ClientSecrets secrets) : IClient
         // RFC 6749 §2.3.1: the Basic-auth username is the authoritative client_id.
         if (!BasicAuthorizationHeader.TryParse(context.Headers, out var username, out var password) ||
             !string.Equals(username, context.ClientId, StringComparison.Ordinal))
-            return [];
+            return null;
 
         // Two conflicting client_id values in one request is a protocol error, whichever one the
         // caller used to look up the client.
         var formClientId = context.Form["client_id"].ToString();
         return formClientId.Length > 0 && !string.Equals(formClientId, username, StringComparison.Ordinal)
-            ? []
+            ? null
             : password;
     }
 }

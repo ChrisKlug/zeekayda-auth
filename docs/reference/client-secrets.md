@@ -108,13 +108,15 @@ public interface IClientSecrets
 {
     ClientSecret Create(string plaintext);
     ClientSecret Create(ReadOnlySpan<char> plaintext);
-    bool Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored);
+    SecretVerification Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored);
 }
 ```
 
 `Verify` is what a custom `IClientAuthenticator` calls with `context.Client.Secrets`: it pads every
 failure to one fixed cost, so the response time reveals neither whether the client exists nor how
-many secrets it holds. Call it with an empty `presented` to refuse a malformed request in the same time.
+many secrets it holds. Return its outcome with `ClientAuthenticationResult.From(...)`; refuse a
+malformed request with `ClientAuthenticationResult.NotValid()`, which the token endpoint pads to the
+same cost.
 
 `IClientSecrets` is registered automatically by `AddZeeKayDaAuth` as a singleton via
 `TryAddSingleton`. You do not need to call `AddClientSecretHasher` before injecting it —

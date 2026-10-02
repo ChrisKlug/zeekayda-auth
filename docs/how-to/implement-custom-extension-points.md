@@ -510,7 +510,8 @@ builder.Services.AddZeeKayDaAuth(options =>
 | `AuthenticateAsync` MUST use timing-safe comparison | Prevents timing oracles from revealing credential validity |
 | Never compare secrets as plain strings | Always delegate to `IClientSecretHasher.Verify` or an equivalent constant-time function |
 | Be singleton-safe | Authenticators are registered as singletons and called concurrently |
-| Return `ClientAuthenticationResult.NotValid()` on failure — never throw | Throwing from `AuthenticateAsync` produces a 500 rather than a 401 |
+| Return `ClientAuthenticationResult.NotValid()` on failure — never throw | Throwing from `AuthenticateAsync` produces a 500 rather than a 401; the token endpoint pads a `NotValid()` refusal so it takes as long as a wrong secret |
+| A client secret is checked with `IClientSecrets.Verify` and returned with `ClientAuthenticationResult.From(...)` | `Verify` has already padded the failure; `From` tells the token endpoint not to pad it twice |
 
 > 💡 **Exception messages are now redacted by default.**
 > `SanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,
