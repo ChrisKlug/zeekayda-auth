@@ -4,7 +4,7 @@ namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
 /// Tracks the hasher types registered via <c>AddClientSecretHasher&lt;T&gt;()</c> so that
-/// <see cref="ClientSecretHasherOptionsValidator"/> and <c>CompositeClientSecretHasher</c>
+/// <see cref="ClientSecretHasherOptionsValidator"/> and <c>ClientSecretHasherRegistry</c>
 /// can determine which hasher is the default at startup.
 /// </summary>
 internal sealed class ClientSecretHasherRegistrationOptions

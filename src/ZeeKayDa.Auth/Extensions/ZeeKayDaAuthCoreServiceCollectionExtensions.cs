@@ -158,20 +158,16 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
     {
         // Registered unconditionally so using it without any IClientSecretHasher gives a clear
         // error instead of a generic "service not registered" DI failure.
-        services.TryAddSingleton<CompositeClientSecretHasher>();
+        services.TryAddSingleton<ClientSecretHasherRegistry>();
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupActivator, ClientSecretHasherActivator>());
-
-        // Alias so repository authors can inject IClientSecretFactory without knowing about the
-        // composite's internal structure.
-        services.TryAddSingleton<IClientSecretFactory>(sp =>
-            sp.GetRequiredService<CompositeClientSecretHasher>());
+        services.TryAddSingleton<IClientSecrets, ClientSecrets>();
 
         // A factory rather than type activation: the ISigningKeyRing parameter is optional, and DI
         // activation cannot supply a default for a service that is not registered.
         services.TryAddSingleton(sp => new ClientRegistrationValidator(
             sp.GetRequiredService<IOptions<AuthorizationServerOptions>>(),
-            sp.GetRequiredService<CompositeClientSecretHasher>(),
+            sp.GetRequiredService<ClientSecretHasherRegistry>(),
             sp.GetRequiredService<SanitizingLogger<ClientRegistrationValidator>>(),
             sp.GetService<ISigningKeyRing>()));
         services.TryAddSingleton<IClientRegistrationValidator>(sp => sp.GetRequiredService<ClientRegistrationValidator>());

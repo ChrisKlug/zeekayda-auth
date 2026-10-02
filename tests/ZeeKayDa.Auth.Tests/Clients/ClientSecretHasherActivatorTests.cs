@@ -11,7 +11,7 @@ public sealed class ClientSecretHasherActivatorTests
     {
         var otherActivatorRan = false;
         var services = new ServiceCollection();
-        services.AddSingleton<CompositeClientSecretHasher>(_ => throw new InvalidOperationException("no decoy"));
+        services.AddSingleton<ClientSecretHasherRegistry>(_ => throw new InvalidOperationException("no decoy"));
         services.AddScoped<IStartupActivator, ClientSecretHasherActivator>();
         services.AddScoped<IStartupActivator>(_ => new RecordingActivator(() => otherActivatorRan = true));
         using var provider = services.BuildServiceProvider();

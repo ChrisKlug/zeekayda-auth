@@ -17,7 +17,7 @@ public sealed class InMemoryClientRepositoryTests
     private sealed class FakeHasher : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake-secret" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
 
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
     }
@@ -34,11 +34,11 @@ public sealed class InMemoryClientRepositoryTests
         }
     }
 
-    private static CompositeClientSecretHasher MakeHasher()
-        => new CompositeClientSecretHasher(
-            [new FakeHasher()],
-            Options.Create(new ClientSecretHasherRegistrationOptions()),
-            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
+    private static ClientSecretHasherRegistry MakeRegistry()
+        => new([new FakeHasher()], Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+    private static ClientSecrets MakeSecrets()
+        => new(MakeRegistry(), NullSanitizingLogger<ClientSecrets>.Instance);
 
     private static AuthorizationServerOptions DefaultServerOptions()
     {
@@ -52,7 +52,7 @@ public sealed class InMemoryClientRepositoryTests
         AuthorizationServerOptions? serverOptions = null)
         => new ClientRegistrationValidator(
             Options.Create(serverOptions ?? DefaultServerOptions()),
-            MakeHasher(),
+            MakeRegistry(),
             NullSanitizingLogger<ClientRegistrationValidator>.Instance,
             keyRing: null);
 
@@ -64,7 +64,7 @@ public sealed class InMemoryClientRepositoryTests
         var so = serverOptions ?? DefaultServerOptions();
         return new InMemoryClientRepository(
             Options.Create(opts),
-            MakeHasher(),
+            MakeSecrets(),
             MakeValidator(so),
             Options.Create(so),
             logger ?? NullSanitizingLogger<InMemoryClientRepository>.Instance);
@@ -76,7 +76,7 @@ public sealed class InMemoryClientRepositoryTests
         var so = DefaultServerOptions();
         return new InMemoryClientRepository(
             Options.Create(opts),
-            MakeHasher(),
+            MakeSecrets(),
             validator,
             Options.Create(so),
             NullSanitizingLogger<InMemoryClientRepository>.Instance);

@@ -94,29 +94,29 @@ fallback string allocation.
 
 ---
 
-## `IClientSecretFactory`
+## `IClientSecrets`
 
 *Added in Unreleased.*
 
-`IClientSecretFactory` is the injectable seam for hashing new client secrets at runtime. It
+`IClientSecrets` is the injectable seam for hashing new client secrets at runtime. It
 delegates to the configured default `IClientSecretHasher` — whichever hasher was marked as
 default via `AddClientSecretHasher<T>(isDefault: true)` — so you never need to hard-code an
 algorithm in your repository or admin layer.
 
 ```csharp
-public interface IClientSecretFactory
+public interface IClientSecrets
 {
     IClientSecret Create(string plaintext);
 }
 ```
 
-`IClientSecretFactory` is registered automatically by `AddZeeKayDaAuth` as a singleton via
+`IClientSecrets` is registered automatically by `AddZeeKayDaAuth` as a singleton via
 `TryAddSingleton`. You do not need to call `AddClientSecretHasher` before injecting it —
 registration order does not matter as long as both calls occur before the host is built.
 
 ### Who should use this interface
 
-`IClientSecretFactory` is for custom `IClientRepository` implementations that need to hash
+`IClientSecrets` is for custom `IClientRepository` implementations that need to hash
 secrets at write time — for example:
 
 - An admin API endpoint that issues new client credentials
@@ -138,21 +138,21 @@ auth.AddInMemoryClients(clients =>
 });
 ```
 
-### Injecting `IClientSecretFactory`
+### Injecting `IClientSecrets`
 
 Inject the interface through the constructor of your custom `IClientRepository`:
 
 ```csharp
 public sealed class MyClientRepository : IClientRepository
 {
-    private readonly IClientSecretFactory _secretFactory;
+    private readonly IClientSecrets _secrets;
 
-    public MyClientRepository(IClientSecretFactory secretFactory)
-        => _secretFactory = secretFactory;
+    public MyClientRepository(IClientSecrets secrets)
+        => _secrets = secrets;
 
     public async Task RegisterClientAsync(string clientId, string plaintextSecret)
     {
-        IClientSecret credential = _secretFactory.Create(plaintextSecret);
+        IClientSecret credential = _secrets.Create(plaintextSecret);
         // persist credential to your store...
     }
 }
@@ -170,14 +170,14 @@ public sealed class MyClientRepository : IClientRepository
 
 ### Lifetime
 
-`IClientSecretFactory` is registered with `TryAddSingleton`. The `CompositeClientSecretHasher`
-that backs it is also a singleton. Injecting `IClientSecretFactory` into a singleton
+`IClientSecrets` is registered with `TryAddSingleton`. The registry
+of hashers behind it is also a singleton. Injecting `IClientSecrets` into a singleton
 `IClientRepository` is safe — no captive-dependency issue arises.
 
 ### See also
 
 - [Implement a custom client repository](../how-to/implement-custom-extension-points.md#5-implement-a-custom-client-repository) — full example with `IClientRegistrationValidator`
-- [`IClientSecretHasher`](#iclientsecrethashert) — the per-algorithm interface that `IClientSecretFactory` delegates to
+- [`IClientSecretHasher`](#iclientsecrethashert) — the per-algorithm interface that `IClientSecrets` delegates to
 
 ---
 

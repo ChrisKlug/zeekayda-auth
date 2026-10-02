@@ -37,14 +37,14 @@ public interface IClientSecretHasher
     /// Verifies a presented plaintext secret against a stored one whose algorithm id this hasher
     /// declared. Returns <see langword="false"/> on mismatch or on a stored value it cannot read.
     /// </summary>
-    bool Verify(ClientSecret stored, ReadOnlySpan<char> presented);
+    bool Verify(ReadOnlySpan<char> presented, ClientSecret stored);
 
     /// <summary>
     /// Hashes a plaintext secret. The framework has already refused empty and whitespace-only input.
     /// </summary>
     /// <remarks>
     /// A span, so a caller holding the plaintext in a <c>char[]</c> can zero it afterwards. Callers
-    /// go through <see cref="IClientSecretFactory"/>, never through a hasher directly.
+    /// go through <see cref="IClientSecrets"/>, never through a hasher directly.
     /// </remarks>
     ClientSecret Create(ReadOnlySpan<char> plaintext);
 

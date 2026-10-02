@@ -7,7 +7,7 @@ using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
 
-public sealed class CompositeClientSecretHasherTests
+public sealed class ClientSecretsTests
 {
     // ── Fake hasher infrastructure ────────────────────────────────────────────────────────────────
 
@@ -28,7 +28,7 @@ public sealed class CompositeClientSecretHasherTests
 
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { algorithmId };
 
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored)
         {
             Interlocked.Increment(ref _verifyCallCount);
             return verifyResult;
@@ -41,31 +41,33 @@ public sealed class CompositeClientSecretHasherTests
 
     private sealed class AltHasher(bool verifyResult = false) : FakeHasher("alt", verifyResult);
 
-    private static CompositeClientSecretHasher Composite(
+    private static ClientSecretHasherRegistry Registry(
+        IEnumerable<IClientSecretHasher> hashers,
+        ClientSecretHasherRegistrationOptions? registrations = null) =>
+        new(hashers, Options.Create(registrations ?? new ClientSecretHasherRegistrationOptions()));
+
+    private static ClientSecrets Secrets(
         IEnumerable<IClientSecretHasher> hashers,
         ClientSecretHasherRegistrationOptions? registrations = null,
-        SanitizingLogger<CompositeClientSecretHasher>? logger = null) =>
-        new(
-            hashers,
-            Options.Create(registrations ?? new ClientSecretHasherRegistrationOptions()),
-            logger ?? NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
+        SanitizingLogger<ClientSecrets>? logger = null) =>
+        new(Registry(hashers, registrations), logger ?? NullSanitizingLogger<ClientSecrets>.Instance);
 
-    // Creates a composite backed by a single (default) FakeHasher.
-    private static (CompositeClientSecretHasher Composite, DefaultHasher DefaultHasher)
-        CreateSingleHasherComposite(bool defaultVerifyResult = false)
+    // Creates a secrets backed by a single (default) FakeHasher.
+    private static (ClientSecrets Secrets, DefaultHasher DefaultHasher)
+        CreateSingleHasherSecrets(bool defaultVerifyResult = false)
     {
         var defaultHasher = new DefaultHasher(defaultVerifyResult);
-        return (Composite([defaultHasher]), defaultHasher);
+        return (Secrets([defaultHasher]), defaultHasher);
     }
 
-    // Creates a composite with a default FakeHasher and an alternative FakeHasher.
-    private static (CompositeClientSecretHasher Composite, DefaultHasher DefaultHasher, AltHasher AltHasher)
-        CreateMultiHasherComposite(bool defaultVerifyResult = false, bool altVerifyResult = false)
+    // Creates a secrets with a default FakeHasher and an alternative FakeHasher.
+    private static (ClientSecrets Secrets, DefaultHasher DefaultHasher, AltHasher AltHasher)
+        CreateMultiHasherSecrets(bool defaultVerifyResult = false, bool altVerifyResult = false)
     {
         var defaultHasher = new DefaultHasher(defaultVerifyResult);
         var altHasher = new AltHasher(altVerifyResult);
 
-        return (Composite([defaultHasher, altHasher], DefaultIs<DefaultHasher>()), defaultHasher, altHasher);
+        return (Secrets([defaultHasher, altHasher], DefaultIs<DefaultHasher>()), defaultHasher, altHasher);
     }
 
     private static ClientSecretHasherRegistrationOptions DefaultIs<THasher>()
@@ -91,24 +93,24 @@ public sealed class CompositeClientSecretHasherTests
     [InlineData(null, null)]
     public void AlgorithmIdOf_reads_the_text_between_the_first_two_dollar_signs(string? value, string? expected)
     {
-        CompositeClientSecretHasher.AlgorithmIdOf(value).Should().Be(expected);
+        ClientSecretHasherRegistry.AlgorithmIdOf(value).Should().Be(expected);
     }
 
     [Fact]
     public void CanVerify_is_true_when_any_registered_hasher_declared_the_id()
     {
-        var (composite, _, _) = CreateMultiHasherComposite();
+        var registry = Registry([new DefaultHasher(), new AltHasher()], DefaultIs<DefaultHasher>());
 
-        composite.CanVerify(AltSecret).Should().BeTrue();
-        composite.CanVerify(UnhandledSecret).Should().BeFalse();
+        registry.CanVerify(AltSecret).Should().BeTrue();
+        registry.CanVerify(UnhandledSecret).Should().BeFalse();
     }
 
     [Fact]
     public void Algorithm_ids_match_case_sensitively()
     {
-        var (composite, _) = CreateSingleHasherComposite();
+        var registry = Registry([new DefaultHasher()]);
 
-        composite.CanVerify(new ClientSecret("$DEFAULT$abc")).Should().BeFalse();
+        registry.CanVerify(new ClientSecret("$DEFAULT$abc")).Should().BeFalse();
     }
 
     // ── Dispatch ─────────────────────────────────────────────────────────────────────────────────
@@ -116,26 +118,26 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void Verify_returns_hasher_result_when_matching_hasher_is_found()
     {
-        var (composite, _) = CreateSingleHasherComposite(defaultVerifyResult: true);
+        var (secrets, _) = CreateSingleHasherSecrets(defaultVerifyResult: true);
 
-        composite.Verify(DefaultSecret, "presented".AsSpan()).Should().BeTrue();
+        secrets.Verify("presented", [DefaultSecret]).Should().BeTrue();
     }
 
     [Fact]
     public void Verify_returns_false_when_no_hasher_declared_the_id()
     {
-        var (composite, _) = CreateSingleHasherComposite(defaultVerifyResult: true);
+        var (secrets, _) = CreateSingleHasherSecrets(defaultVerifyResult: true);
 
-        composite.Verify(AltSecret, "presented".AsSpan()).Should().BeFalse();
+        secrets.Verify("presented", [AltSecret]).Should().BeFalse();
     }
 
     [Fact]
     public void Verify_dispatches_by_algorithm_id()
     {
         // altVerifyResult: true so no failed credential slot is spent, keeping the assertion clean.
-        var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite(altVerifyResult: true);
+        var (secrets, defaultHasher, altHasher) = CreateMultiHasherSecrets(altVerifyResult: true);
 
-        composite.Verify(AltSecret, "presented".AsSpan());
+        secrets.Verify("presented", [AltSecret]);
 
         altHasher.VerifyCallCount.Should().Be(1);
         defaultHasher.VerifyCallCount.Should().Be(0, "a successful verification spends no failed credential slot");
@@ -144,12 +146,12 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void A_hasher_whose_Verify_throws_fails_the_verification_and_is_logged_once_without_its_message()
     {
-        var logger = new CapturingSanitizingLogger<CompositeClientSecretHasher>();
+        var logger = new CapturingSanitizingLogger<ClientSecrets>();
         var hasher = new ThrowingVerifyHasher();
-        var composite = Composite([hasher], logger: logger);
+        var secrets = Secrets([hasher], logger: logger);
 
-        composite.Verify(new ClientSecret("$throws$abc"), "presented".AsSpan()).Should().BeFalse();
-        composite.Verify(new ClientSecret("$throws$abc"), "presented".AsSpan()).Should().BeFalse();
+        secrets.Verify("presented", [new ClientSecret("$throws$abc")]).Should().BeFalse();
+        secrets.Verify("presented", [new ClientSecret("$throws$abc")]).Should().BeFalse();
 
         logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error)
             .Which.Message.Should().Contain(nameof(InvalidOperationException))
@@ -164,11 +166,11 @@ public sealed class CompositeClientSecretHasherTests
         // unknown one.
         var thrower = new CountingThrowingHasher();
         var other = new DefaultHasher();
-        var composite = Composite([thrower, other], DefaultIs<DefaultHasher>());
+        var secrets = Secrets([thrower, other], DefaultIs<DefaultHasher>());
 
-        composite.Verify(new ClientSecret("$throws$x"), "presented".AsSpan()).Should().BeFalse();
+        secrets.Verify("presented", [new ClientSecret("$throws$x")]).Should().BeFalse();
 
-        (thrower.Calls, other.VerifyCallCount).Should().Be((2, 1), "the real attempt, then every hasher's decoy");
+        (thrower.Calls, other.VerifyCallCount).Should().Be((3, 2), "the real attempt, then every hasher's decoy in both slots");
     }
 
     private sealed class CountingThrowingHasher : IClientSecretHasher
@@ -177,7 +179,7 @@ public sealed class CompositeClientSecretHasherTests
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "throws" };
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$throws$created");
 
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored)
         {
             Calls++;
             throw new InvalidOperationException();
@@ -187,9 +189,9 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void A_hasher_whose_Verify_throws_does_not_escape_from_padding()
     {
-        var composite = Composite([new ThrowingVerifyHasher()]);
+        var secrets = Secrets([new ThrowingVerifyHasher()]);
 
-        var act = composite.PadToCredentialBudget;
+        var act = () => secrets.Verify([], []);
 
         act.Should().NotThrow();
     }
@@ -199,7 +201,7 @@ public sealed class CompositeClientSecretHasherTests
         public const string Message = "secret-bearing hasher message";
 
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "throws" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => throw new InvalidOperationException(Message);
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => throw new InvalidOperationException(Message);
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$throws$created");
     }
 
@@ -208,7 +210,7 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void Two_hashers_declaring_the_same_algorithm_id_fail_startup()
     {
-        var act = () => Composite([new DefaultHasher(), new SecondDefaultIdHasher()], DefaultIs<DefaultHasher>());
+        var act = () => Secrets([new DefaultHasher(), new SecondDefaultIdHasher()], DefaultIs<DefaultHasher>());
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle()
@@ -223,7 +225,7 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void A_hasher_declaring_no_algorithm_ids_fails_startup()
     {
-        var act = () => Composite([new IdsHasher()]);
+        var act = () => Secrets([new IdsHasher()]);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "configuration.hashers.no_algorithm_ids");
@@ -236,7 +238,7 @@ public sealed class CompositeClientSecretHasherTests
     [InlineData("an-id-that-is-thirty-three-chars-")]
     public void A_hasher_declaring_an_algorithm_id_outside_the_PHC_alphabet_fails_startup(string id)
     {
-        var act = () => Composite([new IdsHasher(id)]);
+        var act = () => Secrets([new IdsHasher(id)]);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "configuration.hashers.invalid_algorithm_id");
@@ -245,7 +247,7 @@ public sealed class CompositeClientSecretHasherTests
     private sealed class IdsHasher(params string[] ids) : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string>(ids);
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => new($"${ids.FirstOrDefault()}$x");
     }
 
@@ -254,21 +256,21 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void A_failed_verification_runs_one_verification_per_hasher_whichever_hasher_failed()
     {
-        var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite();
+        var (secrets, defaultHasher, altHasher) = CreateMultiHasherSecrets();
 
-        composite.Verify(AltSecret, "presented".AsSpan());
-        (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((1, 1));
-
-        composite.Verify(DefaultSecret, "presented".AsSpan());
+        secrets.Verify("presented", [AltSecret]);
         (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((2, 2));
+
+        secrets.Verify("presented", [DefaultSecret]);
+        (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((4, 4));
     }
 
     [Fact]
     public void A_successful_verification_runs_no_other_hasher()
     {
-        var (composite, defaultHasher, _) = CreateMultiHasherComposite(altVerifyResult: true);
+        var (secrets, defaultHasher, _) = CreateMultiHasherSecrets(altVerifyResult: true);
 
-        composite.Verify(AltSecret, "presented".AsSpan());
+        secrets.Verify("presented", [AltSecret]);
 
         defaultHasher.VerifyCallCount.Should().Be(0);
     }
@@ -277,47 +279,55 @@ public sealed class CompositeClientSecretHasherTests
     [InlineData("unknown client")]
     [InlineData("default-hasher secret")]
     [InlineData("other-hasher secret")]
+    [InlineData("one secret under each hasher")]
+    [InlineData("empty presented secret")]
     public void A_failed_authentication_under_two_hashers_runs_the_same_verifications_as_an_unknown_client(string path)
     {
         // A host migrating away from one hasher keeps both registered: a client still holding the old
         // hasher's secret must fail in the same work as an unknown client.
-        var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite();
+        var (secrets, defaultHasher, altHasher) = CreateMultiHasherSecrets();
 
         switch (path)
         {
             case "unknown client":
-                composite.PadToCredentialBudget();
+                secrets.Verify("presented", []);
                 break;
             case "default-hasher secret":
-                composite.Verify(DefaultSecret, "presented".AsSpan());
-                composite.PadFailureToCredentialBudget(1);
+                secrets.Verify("presented", [DefaultSecret]);
                 break;
             case "other-hasher secret":
-                composite.Verify(AltSecret, "presented".AsSpan());
-                composite.PadFailureToCredentialBudget(1);
+                secrets.Verify("presented", [AltSecret]);
+                break;
+            case "one secret under each hasher":
+                secrets.Verify("presented", [DefaultSecret, AltSecret]);
+                break;
+            case "empty presented secret":
+                secrets.Verify("", [DefaultSecret, AltSecret]);
                 break;
         }
 
         (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount)
-            .Should().Be((CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient, CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient));
+            .Should().Be((ClientSecrets.MaxActiveSecretsPerClient, ClientSecrets.MaxActiveSecretsPerClient));
     }
 
     [Fact]
     public void Verify_of_a_credential_no_hasher_handles_spends_a_full_slot()
     {
-        var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite();
+        var (secrets, defaultHasher, altHasher) = CreateMultiHasherSecrets();
 
-        composite.Verify(UnhandledSecret, "presented".AsSpan()).Should().BeFalse();
+        secrets.Verify("presented", [UnhandledSecret]).Should().BeFalse();
 
-        (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((1, 1));
+        (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount)
+            .Should().Be((ClientSecrets.MaxActiveSecretsPerClient, ClientSecrets.MaxActiveSecretsPerClient));
     }
 
     [Fact]
     public void Empty_secret_probe_runs_only_the_secrets_own_hasher()
     {
-        var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite();
+        var (defaultHasher, altHasher) = (new DefaultHasher(), new AltHasher());
+        var registry = Registry([defaultHasher, altHasher], DefaultIs<DefaultHasher>());
 
-        composite.EmptySecretProblem(AltSecret, "client-a").Should().BeNull();
+        registry.EmptySecretProblem(AltSecret, "client-a").Should().BeNull();
 
         (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((0, 1));
     }
@@ -325,7 +335,7 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void A_hasher_whose_Create_throws_fails_startup_with_a_configuration_failure()
     {
-        var act = () => Composite([new DefaultHasher(), new VerifyOnlyHasher()], DefaultIs<DefaultHasher>());
+        var act = () => Secrets([new DefaultHasher(), new VerifyOnlyHasher()], DefaultIs<DefaultHasher>());
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle()
@@ -341,7 +351,7 @@ public sealed class CompositeClientSecretHasherTests
         var registrations = DefaultIs<DefaultHasher>();
         registrations.Registrations.Add(new(typeof(AltHasher), IsDefault: true));
 
-        var act = () => Composite([new DefaultHasher(), new AltHasher()], registrations);
+        var act = () => Secrets([new DefaultHasher(), new AltHasher()], registrations);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle()
@@ -353,7 +363,7 @@ public sealed class CompositeClientSecretHasherTests
         public const string CreateMessage = "this hasher only verifies legacy secrets";
 
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "legacy" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => throw new NotSupportedException(CreateMessage);
     }
 
@@ -369,7 +379,7 @@ public sealed class CompositeClientSecretHasherTests
 
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "default" };
 
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
 
         public ClientSecret Create(ReadOnlySpan<char> plaintext)
         {
@@ -398,7 +408,7 @@ public sealed class CompositeClientSecretHasherTests
         hasher.CreateTimingDecoy();
         hasher.CreateTimingDecoy();
 
-        recorder.CreatedFrom.Should().NotContain(CompositeClientSecretHasher.DummyPresented,
+        recorder.CreatedFrom.Should().NotContain(ClientSecrets.DummyPresented,
             "a decoy created from the value every padding verification presents would verify");
         recorder.CreatedFrom.Should().OnlyHaveUniqueItems();
     }
@@ -416,7 +426,7 @@ public sealed class CompositeClientSecretHasherTests
 
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "default" };
 
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored)
         {
             VerifiedAgainst.Add(stored);
             return false;
@@ -429,24 +439,24 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void Composite_pads_against_the_decoy_the_default_hasher_supplies_without_deriving_one()
+    public void Padding_runs_against_the_decoy_the_default_hasher_supplies_without_deriving_one()
     {
         var hasher = new DecoySupplyingHasher();
 
-        var composite = Composite([hasher]);
-        composite.PadToCredentialBudget();
+        var secrets = Secrets([hasher]);
+        secrets.Verify([], []);
 
-        hasher.VerifiedAgainst.Should().HaveCount(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient)
+        hasher.VerifiedAgainst.Should().HaveCount(ClientSecrets.MaxActiveSecretsPerClient)
             .And.AllSatisfy(stored => stored.Should().BeSameAs(hasher.Decoy));
     }
 
     [Fact]
-    public void Composite_builds_its_timing_decoy_once_through_the_default_hasher()
+    public void The_timing_decoy_is_built_once_through_the_default_hasher()
     {
         var recorder = new PlaintextRecordingHasher();
 
-        var composite = Composite([recorder]);
-        composite.PadToCredentialBudget();
+        var secrets = Secrets([recorder]);
+        secrets.Verify([], []);
 
         recorder.CreatedFrom.Should().ContainSingle(
             "the decoy is built once, in the constructor, and every padding verification reuses it");
@@ -469,7 +479,7 @@ public sealed class CompositeClientSecretHasherTests
     private sealed class MisbehavingCreateHasher(Func<ClientSecret> create) : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "default" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => create();
     }
 
@@ -477,7 +487,7 @@ public sealed class CompositeClientSecretHasherTests
     public void Constructor_throws_when_the_timing_decoy_has_an_id_the_hasher_did_not_declare()
     {
         // Every padding verification against such a decoy would go to another hasher, or nowhere.
-        var act = () => Composite([new MisbehavingCreateHasher(() => AltSecret)]);
+        var act = () => Secrets([new MisbehavingCreateHasher(() => AltSecret)]);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle()
@@ -487,14 +497,14 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void Constructor_throws_when_the_default_hasher_creates_a_null_timing_decoy()
     {
-        var act = () => Composite([new MisbehavingCreateHasher(() => null!)]);
+        var act = () => Secrets([new MisbehavingCreateHasher(() => null!)]);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle()
             .Which.Code.Should().Be("configuration.hashers.timing_decoy_unhandled");
     }
 
-    // ── PadToCredentialBudget ─────────────────────────────────────────────────────────────────────
+    // ── Padding ──────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Hasher variant that tracks whether any Verify call received an empty span.</summary>
     private sealed class EmptySpanTrackingHasher : IClientSecretHasher
@@ -507,7 +517,7 @@ public sealed class CompositeClientSecretHasherTests
 
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "default" };
 
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored)
         {
             Interlocked.Increment(ref _verifyCallCount);
             if (presented.IsEmpty)
@@ -519,62 +529,83 @@ public sealed class CompositeClientSecretHasherTests
     }
 
     [Fact]
-    public void PadToCredentialBudget_invokes_default_hasher_max_times()
+    public void A_refusal_with_nothing_to_verify_spends_the_full_budget()
     {
         var trackingHasher = new EmptySpanTrackingHasher();
-        var composite = Composite([trackingHasher]);
+        var secrets = Secrets([trackingHasher]);
 
-        composite.PadToCredentialBudget();
+        secrets.Verify([], []).Should().BeFalse();
 
-        trackingHasher.VerifyCallCount.Should().Be(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
+        trackingHasher.VerifyCallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
     }
 
     [Fact]
-    public void PadToCredentialBudget_never_passes_empty_span_to_hasher()
+    public void Padding_never_presents_an_empty_secret_to_a_hasher()
     {
-        // Regression: Pbkdf2ClientSecretHasher.Verify short-circuits on presented.IsEmpty,
-        // so passing string.Empty makes the timing padding a no-op.
+        // Pbkdf2ClientSecretHasher.Verify returns at once on an empty span, so padding that presented
+        // one would cost nothing.
         var trackingHasher = new EmptySpanTrackingHasher();
-        var composite = Composite([trackingHasher]);
+        var secrets = Secrets([trackingHasher]);
 
-        composite.PadToCredentialBudget();
+        secrets.Verify([], [DefaultSecret]);
+        secrets.Verify([], []);
 
-        trackingHasher.EmptySpanCallCount.Should().Be(0,
-            "PadToCredentialBudget must not pass an empty span — Pbkdf2ClientSecretHasher.Verify " +
-            "returns immediately on IsEmpty, making the timing padding a no-op");
-    }
-
-    // ── PadFailureToCredentialBudget ──────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void PadFailureToCredentialBudget_pads_to_max_when_zero_credentials_attempted()
-    {
-        var (composite, defaultHasher) = CreateSingleHasherComposite();
-
-        composite.PadFailureToCredentialBudget(0);
-
-        defaultHasher.VerifyCallCount.Should()
-            .Be(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
+        trackingHasher.EmptySpanCallCount.Should().Be(0);
     }
 
     [Fact]
-    public void PadFailureToCredentialBudget_pads_one_more_when_one_credential_attempted()
+    public void An_empty_presented_secret_is_never_tried_against_the_stored_secrets()
     {
-        var (composite, defaultHasher) = CreateSingleHasherComposite();
+        // Counted as attempts, verifications the built-in hasher skips would pad short, and timing
+        // would tell a known client from an unknown one.
+        var hasher = new DecoySupplyingHasher();
+        var secrets = Secrets([hasher]);
 
-        composite.PadFailureToCredentialBudget(1);
+        secrets.Verify([], [DefaultSecret]).Should().BeFalse();
+
+        hasher.VerifiedAgainst.Should().HaveCount(ClientSecrets.MaxActiveSecretsPerClient)
+            .And.AllSatisfy(stored => stored.Should().BeSameAs(hasher.Decoy));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void A_failure_costs_the_full_budget_however_many_secrets_the_client_holds(int storedCount)
+    {
+        var (secrets, defaultHasher) = CreateSingleHasherSecrets();
+
+        secrets.Verify("presented", [.. Enumerable.Repeat(DefaultSecret, storedCount)]).Should().BeFalse();
+
+        defaultHasher.VerifyCallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
+    }
+
+    [Fact]
+    public void A_match_on_the_first_secret_returns_without_trying_the_second_or_padding()
+    {
+        var (secrets, defaultHasher) = CreateSingleHasherSecrets(defaultVerifyResult: true);
+
+        secrets.Verify("presented", [DefaultSecret, DefaultSecret]).Should().BeTrue();
 
         defaultHasher.VerifyCallCount.Should().Be(1);
     }
 
     [Fact]
-    public void PadFailureToCredentialBudget_pads_nothing_when_already_at_max()
+    public void A_match_on_the_second_secret_is_found()
     {
-        var (composite, defaultHasher) = CreateSingleHasherComposite();
+        var (secrets, _, _) = CreateMultiHasherSecrets(altVerifyResult: true);
 
-        composite.PadFailureToCredentialBudget(CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient);
+        secrets.Verify("presented", [DefaultSecret, AltSecret]).Should().BeTrue();
+    }
 
-        defaultHasher.VerifyCallCount.Should().Be(0);
+    [Fact]
+    public void Verify_refuses_null_stored_secrets()
+    {
+        var (secrets, _) = CreateSingleHasherSecrets();
+
+        var act = () => secrets.Verify("presented", null!);
+
+        act.Should().Throw<ArgumentNullException>();
     }
 
     // ── Create ───────────────────────────────────────────────────────────────────────────────────
@@ -582,10 +613,10 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void Create_uses_default_hasher()
     {
-        var (composite, _, _) = CreateMultiHasherComposite();
+        var (secrets, _, _) = CreateMultiHasherSecrets();
 
-        composite.Create("new-secret").Should().Be(new ClientSecret("$default$created"));
-        composite.Create("new-secret".AsSpan()).Should().Be(new ClientSecret("$default$created"));
+        secrets.Create("new-secret").Should().Be(new ClientSecret("$default$created"));
+        secrets.Create("new-secret".AsSpan()).Should().Be(new ClientSecret("$default$created"));
     }
 
     [Theory]
@@ -595,11 +626,11 @@ public sealed class CompositeClientSecretHasherTests
     public void Create_refuses_empty_and_whitespace_plaintext_before_the_hasher_sees_it(string plaintext)
     {
         var recorder = new PlaintextRecordingHasher();
-        var composite = Composite([recorder]);
+        var secrets = Secrets([recorder]);
         recorder.CreatedFrom.Clear(); // the timing decoy
 
-        var fromString = () => composite.Create(plaintext);
-        var fromSpan = () => composite.Create(plaintext.AsSpan());
+        var fromString = () => secrets.Create(plaintext);
+        var fromSpan = () => secrets.Create(plaintext.AsSpan());
 
         fromString.Should().Throw<ArgumentException>();
         fromSpan.Should().Throw<ArgumentException>();
@@ -609,9 +640,9 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void Create_refuses_null_plaintext()
     {
-        var (composite, _) = CreateSingleHasherComposite();
+        var (secrets, _) = CreateSingleHasherSecrets();
 
-        var act = () => composite.Create((string)null!);
+        var act = () => secrets.Create((string)null!);
 
         act.Should().Throw<ArgumentNullException>();
     }
@@ -622,9 +653,9 @@ public sealed class CompositeClientSecretHasherTests
         var calls = 0;
         // The first Create is the timing decoy and must succeed; the next returns another hasher's id.
         var hasher = new MisbehavingCreateHasher(() => ++calls == 1 ? DefaultSecret : AltSecret);
-        var composite = Composite([hasher]);
+        var secrets = Secrets([hasher]);
 
-        var act = () => composite.Create("new-secret");
+        var act = () => secrets.Create("new-secret");
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage($"*{nameof(MisbehavingCreateHasher)}*");
@@ -638,20 +669,21 @@ public sealed class CompositeClientSecretHasherTests
         var ids = new HashSet<string> { "default" };
         var late = false;
         var hasher = new LiveIdsHasher(ids, () => late ? new ClientSecret("$late$x") : DefaultSecret);
-        var composite = Composite([hasher]);
+        var registry = Registry([hasher]);
+        var secrets = new ClientSecrets(registry, NullSanitizingLogger<ClientSecrets>.Instance);
         ids.Add("late");
         late = true;
 
-        var act = () => composite.Create("new-secret");
+        var act = () => secrets.Create("new-secret");
 
         act.Should().Throw<InvalidOperationException>();
-        composite.CanVerify(new ClientSecret("$late$x")).Should().BeFalse();
+        registry.CanVerify(new ClientSecret("$late$x")).Should().BeFalse();
     }
 
     private sealed class LiveIdsHasher(HashSet<string> ids, Func<ClientSecret> create) : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds => ids;
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => create();
     }
 
@@ -660,9 +692,9 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void ValidateStoredSecret_prefixes_each_failure_with_the_client_id()
     {
-        var composite = Composite([new FailureReportingHasher()]);
+        var registry = Registry([new FailureReportingHasher()]);
 
-        composite.ValidateStoredSecret(new ClientSecret("$reports$x"), "client-a")
+        registry.ValidateStoredSecret(new ClientSecret("$reports$x"), "client-a")
             .Should().ContainSingle()
             .Which.Should().Be(new ZeeKayDaConfigurationFailure("hasher.code", "Client 'client-a': it is weak"));
     }
@@ -670,9 +702,9 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void ValidateStoredSecret_reports_a_throwing_hasher_by_exception_type_only()
     {
-        var composite = Composite([new FailureReportingHasher(throws: true)]);
+        var registry = Registry([new FailureReportingHasher(throws: true)]);
 
-        composite.ValidateStoredSecret(new ClientSecret("$reports$x"), "client-a")
+        registry.ValidateStoredSecret(new ClientSecret("$reports$x"), "client-a")
             .Should().ContainSingle()
             .Which.Should().Match<ZeeKayDaConfigurationFailure>(f =>
                 f.Code == "client.credentials.validation_threw"
@@ -684,9 +716,9 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void ValidateStoredSecret_keeps_the_codes_of_a_configuration_exception_the_hasher_throws()
     {
-        var composite = Composite([new FailureReportingHasher(throwsConfiguration: true)]);
+        var registry = Registry([new FailureReportingHasher(throwsConfiguration: true)]);
 
-        composite.ValidateStoredSecret(new ClientSecret("$reports$x"), "client-a")
+        registry.ValidateStoredSecret(new ClientSecret("$reports$x"), "client-a")
             .Should().ContainSingle()
             .Which.Should().Be(new ZeeKayDaConfigurationFailure("hasher.thrown_code", "Client 'client-a': it is unreadable"));
     }
@@ -694,9 +726,9 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void ValidateStoredSecret_names_a_hasher_that_returns_null()
     {
-        var composite = Composite([new NullReturningHasher()]);
+        var registry = Registry([new NullReturningHasher()]);
 
-        composite.ValidateStoredSecret(new ClientSecret("$nulls$x"), "client-a")
+        registry.ValidateStoredSecret(new ClientSecret("$nulls$x"), "client-a")
             .Should().ContainSingle()
             .Which.Should().Match<ZeeKayDaConfigurationFailure>(f =>
                 f.Code == "client.credentials.validation_returned_null" && f.Message.Contains(nameof(NullReturningHasher)));
@@ -706,9 +738,9 @@ public sealed class CompositeClientSecretHasherTests
     public void Create_names_a_hasher_that_returns_null()
     {
         var calls = 0;
-        var composite = Composite([new MisbehavingCreateHasher(() => ++calls == 1 ? DefaultSecret : null!)]);
+        var secrets = Secrets([new MisbehavingCreateHasher(() => ++calls == 1 ? DefaultSecret : null!)]);
 
-        var act = () => composite.Create("new-secret");
+        var act = () => secrets.Create("new-secret");
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*returned null from Create*");
     }
@@ -718,21 +750,19 @@ public sealed class CompositeClientSecretHasherTests
     {
         // At registration the operator reads the failure; swallowed as a log entry instead, the
         // client would be served and fail every request with invalid_client.
-        var logger = new CapturingSanitizingLogger<CompositeClientSecretHasher>();
-        var composite = Composite([new ThrowingVerifyHasher()], logger: logger);
+        var registry = Registry([new ThrowingVerifyHasher()]);
 
-        composite.EmptySecretProblem(new ClientSecret("$throws$x"), "client-a")
+        registry.EmptySecretProblem(new ClientSecret("$throws$x"), "client-a")
             .Should().Match<ZeeKayDaConfigurationFailure>(f =>
                 f.Code == "client.credentials.verify_threw"
                 && f.Message.Contains(nameof(InvalidOperationException))
                 && !f.Message.Contains(ThrowingVerifyHasher.Message));
-        logger.Entries.Should().BeEmpty();
     }
 
     private sealed class NullReturningHasher : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "nulls" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$nulls$created");
         public IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored) => null!;
     }
@@ -740,9 +770,9 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void ValidateStoredSecret_yields_nothing_for_a_secret_no_hasher_declared()
     {
-        var composite = Composite([new FailureReportingHasher()]);
+        var registry = Registry([new FailureReportingHasher()]);
 
-        composite.ValidateStoredSecret(UnhandledSecret, "client-a").Should().BeEmpty();
+        registry.ValidateStoredSecret(UnhandledSecret, "client-a").Should().BeEmpty();
     }
 
     private sealed class FailureReportingHasher(bool throws = false, bool throwsConfiguration = false) : IClientSecretHasher
@@ -750,7 +780,7 @@ public sealed class CompositeClientSecretHasherTests
         public const string ThrowMessage = "$reports$x is unreadable";
 
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "reports" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$reports$created");
 
         public IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored) =>
@@ -766,7 +796,7 @@ public sealed class CompositeClientSecretHasherTests
     public void SingleHasher_constructs_without_error_when_auto_default_applies()
     {
         // When exactly one hasher is registered it is the default regardless of isDefault flag.
-        var act = () => CreateSingleHasherComposite();
+        var act = () => CreateSingleHasherSecrets();
 
         act.Should().NotThrow();
     }
@@ -776,7 +806,7 @@ public sealed class CompositeClientSecretHasherTests
     [Fact]
     public void Constructor_throws_ZeeKayDaConfigurationException_when_no_hashers_are_provided()
     {
-        var act = () => Composite([]);
+        var act = () => Secrets([]);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle()
@@ -790,7 +820,7 @@ public sealed class CompositeClientSecretHasherTests
         registrations.Registrations.Add(new(typeof(DefaultHasher), IsDefault: false));
         registrations.Registrations.Add(new(typeof(AltHasher), IsDefault: false));
 
-        var act = () => Composite([new DefaultHasher(), new AltHasher()], registrations);
+        var act = () => Secrets([new DefaultHasher(), new AltHasher()], registrations);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle()
@@ -807,7 +837,7 @@ public sealed class CompositeClientSecretHasherTests
         registrations.Registrations.Add(new(typeof(DefaultHasher), IsDefault: false));
         registrations.Registrations.Add(new(typeof(AbsentHasher), IsDefault: true));
 
-        var act = () => Composite([new DefaultHasher(), new AltHasher()], registrations);
+        var act = () => Secrets([new DefaultHasher(), new AltHasher()], registrations);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle()

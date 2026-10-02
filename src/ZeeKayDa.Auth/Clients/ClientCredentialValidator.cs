@@ -28,7 +28,7 @@ internal static class ClientCredentialValidator
 
     internal static void Validate(
         IClientWithCredentials client,
-        CompositeClientSecretHasher hasher,
+        ClientSecretHasherRegistry hasher,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         // Counted by enumerating, never from Count: a store's own list can report fewer entries than
@@ -41,17 +41,17 @@ internal static class ClientCredentialValidator
             failures.AddRange(SecretRules.Select(rule => rule(check)).FirstOrDefault(found => found.Count > 0) ?? []);
         }
 
-        if (count > CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient)
+        if (count > ClientSecrets.MaxActiveSecretsPerClient)
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.credentials.too_many_secrets",
                 $"Client '{client.ClientId}' has {count} secrets, which exceeds the " +
-                $"maximum of {CompositeClientSecretHasher.MaxActiveSharedSecretsPerClient}. " +
+                $"maximum of {ClientSecrets.MaxActiveSecretsPerClient}. " +
                 "The two-secret cap exists to support rotation while preserving timing-oracle defences."));
         }
     }
 
-    private sealed record SecretCheck(string ClientId, ClientSecret? Secret, CompositeClientSecretHasher Hasher)
+    private sealed record SecretCheck(string ClientId, ClientSecret? Secret, ClientSecretHasherRegistry Hasher)
     {
         // Every rule after HasNoValue runs only once it found a value.
         public ClientSecret Stored => Secret!;
@@ -69,14 +69,14 @@ internal static class ClientCredentialValidator
             : [];
 
     private static IReadOnlyList<ZeeKayDaConfigurationFailure> IsMalformed(SecretCheck check) =>
-        CompositeClientSecretHasher.AlgorithmIdOf(check.Stored.Value) is null
+        ClientSecretHasherRegistry.AlgorithmIdOf(check.Stored.Value) is null
             ?
             [
                 new(
                     "client.credentials.malformed_secret",
                     $"Client '{check.ClientId}' has a secret that does not start with $<algorithm id>$, an id of " +
                     "1–32 characters from [a-z0-9-]. A stored secret is a hash such as $pbkdf2-sha256$..., never " +
-                    "the plaintext; create one with IClientSecretFactory."),
+                    "the plaintext; create one with IClientSecrets."),
             ]
             : [];
 
@@ -88,7 +88,7 @@ internal static class ClientCredentialValidator
                 new(
                     "client.credentials.no_hasher",
                     $"Client '{check.ClientId}' has a secret with algorithm id " +
-                    $"'{CompositeClientSecretHasher.AlgorithmIdOf(check.Stored.Value)}', which no registered " +
+                    $"'{ClientSecretHasherRegistry.AlgorithmIdOf(check.Stored.Value)}', which no registered " +
                     "IClientSecretHasher declares. The secret can never be verified."),
             ];
 

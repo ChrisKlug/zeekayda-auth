@@ -27,7 +27,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
 
     public InMemoryClientRepository(
         IOptions<InMemoryClientRegistrationOptions> options,
-        CompositeClientSecretHasher hasher,
+        IClientSecrets secrets,
         IClientRegistrationValidator validator,
         IOptions<AuthorizationServerOptions> serverOptions,
         SanitizingLogger<InMemoryClientRepository> logger)
@@ -40,7 +40,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
         var allFailures = new List<ZeeKayDaConfigurationFailure>();
 
         // Build confidential clients from pending specs (hash plaintext secrets now)
-        AddPending(opts.Pending, hasher, allRegistrations, allFailures);
+        AddPending(opts.Pending, secrets, allRegistrations, allFailures);
 
         // All pending specs have been processed (hashed or converted to a failure). Clear the list
         // so the PendingConfidentialClientSpec objects — and the plaintext secrets they contain —
@@ -109,7 +109,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
     // validated, and reported in the same pass.
     private static void AddPending(
         IEnumerable<PendingConfidentialClientSpec> pending,
-        CompositeClientSecretHasher hasher,
+        IClientSecrets secrets,
         List<IClientWithCredentials> registrations,
         List<ZeeKayDaConfigurationFailure> failures)
     {
@@ -118,7 +118,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
             ClientSecret hashedSecret;
             try
             {
-                hashedSecret = hasher.Create(spec.PlaintextSecret);
+                hashedSecret = secrets.Create(spec.PlaintextSecret);
             }
             catch (ArgumentException)
             {

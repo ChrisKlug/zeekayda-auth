@@ -27,7 +27,7 @@ public sealed partial class BCryptClientSecretHasher : IClientSecretHasher
         new HashSet<string>(["2a", "2b", "2y"], StringComparer.Ordinal);
 
     // The library takes strings only, so the presented secret is copied into one.
-    public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) =>
+    public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) =>
         Encoding.UTF8.GetByteCount(presented) <= MaxSecretBytes
         && WorkFactorOf(stored) is >= MinWorkFactor and <= MaxWorkFactor
         && BCrypt.Net.BCrypt.Verify(presented.ToString(), stored.Value);

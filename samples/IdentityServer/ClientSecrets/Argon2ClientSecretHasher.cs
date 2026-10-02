@@ -31,7 +31,7 @@ public sealed class Argon2ClientSecretHasher : IClientSecretHasher
     public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string>(["argon2id"], StringComparer.Ordinal);
 
     // The library takes strings only, so the presented secret is copied into one.
-    public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) =>
+    public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) =>
         Problem(stored) is null && Argon2.Verify(stored.Value, presented.ToString());
 
     // 64 MiB and three passes, above OWASP's minimum Argon2id configurations.
