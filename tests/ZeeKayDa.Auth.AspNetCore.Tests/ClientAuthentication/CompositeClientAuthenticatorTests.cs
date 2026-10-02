@@ -437,6 +437,25 @@ public sealed class CompositeClientAuthenticatorTests
             "Verify already spent the failure budget; padding again would make a known client slower than an unknown one");
     }
 
+    [Fact]
+    public async Task A_failed_verification_kept_from_an_earlier_request_does_not_excuse_a_later_refusal_from_padding()
+    {
+        var knownClient = CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method);
+        SecretVerification? kept = null;
+
+        var calls = await HasherCallsToRefuse(knownClient, secrets => context =>
+        {
+            kept ??= secrets.Verify("wrong", context.Client.Secrets);
+            return ClientAuthenticationResult.From(kept);
+        });
+        var replayedCalls = await HasherCallsToRefuse(knownClient, _ => _ => ClientAuthenticationResult.From(kept!));
+
+        calls.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
+        replayedCalls.Should().Be(
+            ClientSecrets.MaxActiveSecretsPerClient,
+            "a failure vouches for its padding once; replayed, it checked no secret and is padded");
+    }
+
     // ── AC 21: multiple mechanisms ────────────────────────────────────────────────────────────────
 
     [Fact]

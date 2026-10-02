@@ -71,7 +71,7 @@ internal sealed class ClientSecrets(ClientSecretHasherRegistry registry, Sanitiz
 
         for (var i = attempted; i < MaxActiveSecretsPerClient; i++)
             FinishFailedCredentialSlot(alreadyVerifiedBy: null);
-        return SecretVerification.Mismatch;
+        return SecretVerification.Mismatch();
     }
 
     /// <summary>

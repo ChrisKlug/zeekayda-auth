@@ -37,6 +37,6 @@ public sealed class ClientAuthenticationResult
     public static ClientAuthenticationResult From(SecretVerification verification)
     {
         ArgumentNullException.ThrowIfNull(verification);
-        return new() { Authenticated = verification.Matched, FailurePadded = !verification.Matched };
+        return new() { Authenticated = verification.Matched, FailurePadded = verification.TryClaimPadding() };
     }
 }
