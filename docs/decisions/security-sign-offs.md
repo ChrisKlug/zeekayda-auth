@@ -2027,4 +2027,22 @@ Copilot code, security and architecture lenses, the security and architect agent
 - A host cannot replace verification or padding: framework code takes the concrete type, and a host `IClientSecrets`, keyed
   or not, fails startup. Closed — `A_host_registered_IClientSecrets_never_verifies_for_the_built_in_authenticator`,
   `A_host_registered_IClientSecrets_fails_startup`, `A_keyed_host_IClientSecrets_fails_startup`.
-- **Open residuals:** two Low findings, tracked as private security advisories.
+- **Accepted residual (maintainer):** a stored PBKDF2 secret at an iteration count other than the configured one fails in
+  a different time from an unknown client, revealing that the client id exists (client ids are not secret in OAuth);
+  re-hashing on successful authentication is #868. No test.
+- A third-party authenticator's cheap refusal went unpadded; closed by #869, in the entry below.
+
+## 2026-10-02 — the composite pads every client-authentication refusal that did not verify a secret (#869, code frozen at `74d8919`)
+Copilot code and security lenses, the security agent, fix-diff verification of each round, and the PR's Copilot review; no Critical.
+- A refusal that checked no secret (`NotValid()`, a null) costs what an unknown client costs. Closed —
+  `A_custom_authenticator_refusing_without_verifying_is_padded_like_an_unknown_client`,
+  `An_authenticator_returning_null_is_a_refusal_not_a_fault`.
+- A failed `IClientSecrets.Verify` is padded once, never twice, and only `Verify` can vouch for it. Closed —
+  `A_refusal_from_a_failed_verification_is_not_padded_again`, `Building_a_result_twice_from_one_failed_verification_does_not_pad_twice`,
+  `Only_Verify_can_create_a_SecretVerification_so_no_caller_can_claim_padding_it_did_not_spend`.
+- A failure or result kept and returned again is padded. Closed —
+  `A_failed_verification_kept_from_an_earlier_request_does_not_excuse_a_later_refusal_from_padding`,
+  `A_failed_result_returned_again_is_padded_like_any_other_refusal`, `Every_failed_verification_vouches_for_its_own_padding_once`.
+- **Accepted residuals (maintainer):** an authenticator that calls `Verify` then returns `NotValid()` pays twice; one that
+  shares a result across concurrent requests can let a request claim another's padding (contract stated on
+  `ClientAuthenticationResult.From`); a throw from `AuthenticateAsync` is an unpadded 500 (#870). No test.
