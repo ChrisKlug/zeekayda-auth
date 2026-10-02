@@ -15,6 +15,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Client-secret hashers from other libraries, registered beside the built-in PBKDF2 one. -->
+    <PackageReference Include="BCrypt.Net-Next" />
+    <PackageReference Include="Isopoh.Cryptography.Argon2" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The log-hygiene analyzers run on every project the CI check scans, samples included. -->
     <ProjectReference Include="../../src/ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj"
                       OutputItemType="Analyzer"

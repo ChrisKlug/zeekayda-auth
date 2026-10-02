@@ -29,6 +29,11 @@
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.10" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Samples: the identity server shows third-party client-secret hashers -->
+    <PackageVersion Include="BCrypt.Net-Next" Version="4.2.1" />
+    <PackageVersion Include="Isopoh.Cryptography.Argon2" Version="2.0.0" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Roslyn — used by the ZeeKayDa.Auth.Analyzers project and its test project -->
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" />
