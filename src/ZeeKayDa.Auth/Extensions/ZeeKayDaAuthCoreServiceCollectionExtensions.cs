@@ -161,7 +161,10 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         services.TryAddSingleton<ClientSecretHasherRegistry>();
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupActivator, ClientSecretHasherActivator>());
-        services.TryAddSingleton<IClientSecrets, ClientSecrets>();
+        // Framework code injects the concrete type, so a host's own IClientSecrets can never stand in
+        // for the verification and padding the built-in authenticators rely on.
+        services.TryAddSingleton<ClientSecrets>();
+        services.TryAddSingleton<IClientSecrets>(sp => sp.GetRequiredService<ClientSecrets>());
 
         // A factory rather than type activation: the ISigningKeyRing parameter is optional, and DI
         // activation cannot supply a default for a service that is not registered.

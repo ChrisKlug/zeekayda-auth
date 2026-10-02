@@ -12,7 +12,7 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// Delegates verification, and its timing padding, to <see cref="IClientSecrets.Verify"/> — the
 /// same call a third-party authenticator makes — and never compares secret strings directly.
 /// </remarks>
-internal sealed class ClientSecretAuthenticator(IClientSecrets secrets) : IClientAuthenticator
+internal sealed class ClientSecretAuthenticator(ClientSecrets secrets) : IClientAuthenticator
 {
     private static readonly IReadOnlySet<string> _authMethods =
         new HashSet<string>(StringComparer.Ordinal)

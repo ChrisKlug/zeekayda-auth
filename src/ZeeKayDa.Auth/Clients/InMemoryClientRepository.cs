@@ -27,7 +27,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
 
     public InMemoryClientRepository(
         IOptions<InMemoryClientRegistrationOptions> options,
-        IClientSecrets secrets,
+        ClientSecrets secrets,
         IClientRegistrationValidator validator,
         IOptions<AuthorizationServerOptions> serverOptions,
         SanitizingLogger<InMemoryClientRepository> logger)
@@ -109,7 +109,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
     // validated, and reported in the same pass.
     private static void AddPending(
         IEnumerable<PendingConfidentialClientSpec> pending,
-        IClientSecrets secrets,
+        ClientSecrets secrets,
         List<IClientWithCredentials> registrations,
         List<ZeeKayDaConfigurationFailure> failures)
     {

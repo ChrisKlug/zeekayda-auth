@@ -20,7 +20,7 @@ internal sealed class CompositeClientAuthenticator(
     IEnumerable<IClientAuthenticator> authenticators,
     ValidatedClientResolver clientResolver,
     IOptions<AuthorizationServerOptions> serverOptions,
-    IClientSecrets secrets,
+    ClientSecrets secrets,
     SanitizingLogger<CompositeClientAuthenticator> logger)
 {
     private readonly IReadOnlyList<IClientAuthenticator> _authenticators = authenticators.ToList().AsReadOnly();

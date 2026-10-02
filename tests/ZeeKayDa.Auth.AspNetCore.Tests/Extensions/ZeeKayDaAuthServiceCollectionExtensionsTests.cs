@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
+using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Logging;
@@ -177,6 +180,34 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 
         resolved.Should().BeSameAs(preRegistered,
             "TryAddSingleton must not replace the pre-registered IClientSecrets");
+    }
+
+    [Fact]
+    public async Task A_host_registered_IClientSecrets_never_verifies_for_the_built_in_authenticator()
+    {
+        // The host's replacement throws on every call: built-in authentication reaching it would throw.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IClientSecrets>(new FakeClientSecrets());
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+        using var provider = services.BuildServiceProvider();
+        var stored = provider.GetRequiredService<ClientSecrets>().Create("the-real-secret");
+        var authenticator = provider.GetServices<IClientAuthenticator>().OfType<ClientSecretAuthenticator>().Single();
+        var httpContext = new DefaultHttpContext();
+        var form = new FormCollection(new Dictionary<string, StringValues> { ["client_secret"] = "the-real-secret" });
+
+        var result = await authenticator.AuthenticateAsync(
+            new ClientAuthenticationContext
+            {
+                HttpContext = httpContext,
+                ClientId = "client-1",
+                Client = Client.CreateConfidential("client-1", stored, ["https://app.example.com/cb"], [], ["openid"]),
+                Form = form,
+                Headers = httpContext.Request.Headers,
+            },
+            TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeTrue();
     }
 
     [Theory]
