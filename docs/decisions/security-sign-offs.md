@@ -2016,7 +2016,8 @@ and fix-diff verification of each round; no Critical.
 Copilot code, security and architecture lenses, the security and architect agents, and the PR's Copilot review; no Critical.
 - Every failed verification costs two failed slots, however many secrets the client holds, none included; a match returns
   at once. Closed — `A_failure_costs_the_full_budget_however_many_secrets_the_client_holds`,
-  `A_refusal_with_nothing_to_verify_spends_the_full_budget`, `An_empty_secret_pads_the_full_budget_whatever_the_clients_secret_count`.
+  `A_refusal_with_nothing_to_verify_spends_the_full_budget`, `An_empty_secret_pads_the_full_budget_whatever_the_clients_secret_count`,
+  `A_match_on_the_first_secret_returns_without_trying_the_second_or_padding`.
 - A store cannot push a failure past the budget: more than two secrets is refused before any is verified, counted by what
   the collection yields. Closed — `Verify_refuses_more_stored_secrets_than_the_budget_pads_for`,
   `A_collection_understating_its_count_is_refused_before_any_secret_is_verified`, `The_timing_decoys_cannot_be_changed_after_startup`.
