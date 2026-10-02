@@ -149,7 +149,7 @@ ZeeKayDa.Auth.Clients.IClientRegistrationValidator
 ZeeKayDa.Auth.Clients.IClientRegistrationValidator.Validate(ZeeKayDa.Auth.Clients.IClientWithCredentials! client) -> void
 ZeeKayDa.Auth.Clients.IClientRepository
 ZeeKayDa.Auth.Clients.IClientRepository.FindByClientIdAsync(string! clientId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Clients.IClientWithCredentials?>!
-ZeeKayDa.Auth.Clients.IClientSecretFactory
+ZeeKayDa.Auth.Clients.IClientSecrets
 ZeeKayDa.Auth.Clients.IClientSecretHasher
 ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasherOptions
 ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasherOptions.Iterations.get -> int
@@ -769,12 +769,13 @@ ZeeKayDa.Auth.Clients.ClientSecret.Deconstruct(out string! Value) -> void
 ZeeKayDa.Auth.Clients.ClientSecret.Equals(ZeeKayDa.Auth.Clients.ClientSecret? other) -> bool
 ZeeKayDa.Auth.Clients.ClientSecret.Value.get -> string!
 ZeeKayDa.Auth.Clients.ClientSecret.Value.init -> void
-ZeeKayDa.Auth.Clients.IClientSecretFactory.Create(System.ReadOnlySpan<char> plaintext) -> ZeeKayDa.Auth.Clients.ClientSecret!
-ZeeKayDa.Auth.Clients.IClientSecretFactory.Create(string! plaintext) -> ZeeKayDa.Auth.Clients.ClientSecret!
+ZeeKayDa.Auth.Clients.IClientSecrets.Create(System.ReadOnlySpan<char> plaintext) -> ZeeKayDa.Auth.Clients.ClientSecret!
+ZeeKayDa.Auth.Clients.IClientSecrets.Create(string! plaintext) -> ZeeKayDa.Auth.Clients.ClientSecret!
+ZeeKayDa.Auth.Clients.IClientSecrets.Verify(System.ReadOnlySpan<char> presented, System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Clients.ClientSecret!>! stored) -> bool
 ZeeKayDa.Auth.Clients.IClientSecretHasher.AlgorithmIds.get -> System.Collections.Generic.IReadOnlySet<string!>!
 ZeeKayDa.Auth.Clients.IClientSecretHasher.Create(System.ReadOnlySpan<char> plaintext) -> ZeeKayDa.Auth.Clients.ClientSecret!
 ZeeKayDa.Auth.Clients.IClientSecretHasher.ValidateStoredSecret(ZeeKayDa.Auth.Clients.ClientSecret! stored) -> System.Collections.Generic.IEnumerable<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
-ZeeKayDa.Auth.Clients.IClientSecretHasher.Verify(ZeeKayDa.Auth.Clients.ClientSecret! stored, System.ReadOnlySpan<char> presented) -> bool
+ZeeKayDa.Auth.Clients.IClientSecretHasher.Verify(System.ReadOnlySpan<char> presented, ZeeKayDa.Auth.Clients.ClientSecret! stored) -> bool
 ZeeKayDa.Auth.Clients.IClientWithCredentials.Secrets.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Clients.ClientSecret!>!
 ZeeKayDa.Auth.Clients.PhcString
 ZeeKayDa.Auth.Clients.PhcString.Hash.get -> System.ReadOnlyMemory<byte>

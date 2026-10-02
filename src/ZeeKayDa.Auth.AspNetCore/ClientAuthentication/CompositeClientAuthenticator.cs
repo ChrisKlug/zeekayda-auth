@@ -20,7 +20,7 @@ internal sealed class CompositeClientAuthenticator(
     IEnumerable<IClientAuthenticator> authenticators,
     ValidatedClientResolver clientResolver,
     IOptions<AuthorizationServerOptions> serverOptions,
-    CompositeClientSecretHasher secretHasher,
+    ClientSecrets secrets,
     SanitizingLogger<CompositeClientAuthenticator> logger)
 {
     private readonly IReadOnlyList<IClientAuthenticator> _authenticators = authenticators.ToList().AsReadOnly();
@@ -96,21 +96,9 @@ internal sealed class CompositeClientAuthenticator(
         if (!IsMethodAllowedByServer(matchedMethod))
             return AuthenticatedClient.Refused;
 
-        // Unknown client → invalid_client with timing padding.
-        if (client is null)
-        {
-            secretHasher.PadToCredentialBudget();
-            return AuthenticatedClient.Refused;
-        }
-
-        // Method must be in the per-client allowlist (ordinal). Pad timing to match the
-        // unknown-client path so "client exists but wrong method" is not timing-distinguishable
-        // from "client does not exist".
-        if (!client.AllowedTokenEndpointAuthMethods.ContainsOrdinal(matchedMethod))
-        {
-            secretHasher.PadToCredentialBudget();
-            return AuthenticatedClient.Refused;
-        }
+        // Unknown client, or one that does not allow this method (ordinal): indistinguishable.
+        if (client is null || !client.AllowedTokenEndpointAuthMethods.ContainsOrdinal(matchedMethod))
+            return RefuseAfterPadding();
 
         // Delegate to the authenticator. Client is guaranteed non-null here.
         var context = new ClientAuthenticationContext
@@ -147,17 +135,22 @@ internal sealed class CompositeClientAuthenticator(
         // A public client has no credentials and allows exactly { "none" }: the resolver serves only
         // registrations that passed the validator, which enforces that three-way rule.
         if (!IsMethodAllowedByServer(TokenEndpointAuthMethods.None) || client is not { IsPublic: true })
-        {
-            PadNoneRejection();
-            return AuthenticatedClient.Refused;
-        }
+            return RefuseAfterPadding();
 
         // Success intentionally skips padding: it's already visible in the HTTP response, and
         // client_id is not a secret in OAuth.
         return AuthenticatedClient.Accepted(client);
     }
 
-    private void PadNoneRejection() => secretHasher.PadToCredentialBudget();
+    /// <summary>
+    /// A refusal that depends on the client, padded to the cost of a wrong secret so its timing does
+    /// not reveal whether the client exists or how it may authenticate.
+    /// </summary>
+    private AuthenticatedClient RefuseAfterPadding()
+    {
+        secrets.Verify(presented: [], stored: []);
+        return AuthenticatedClient.Refused;
+    }
 
     private bool IsMethodAllowedByServer(string method)
         => serverOptions.Value.TokenEndpoint.AuthMethodsSupported

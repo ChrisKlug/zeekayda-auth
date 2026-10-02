@@ -42,7 +42,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
 
         var stored = hasher.Create("super-secret-value");
 
-        hasher.Verify(stored, "super-secret-value".AsSpan()).Should().BeTrue();
+        hasher.Verify("super-secret-value".AsSpan(), stored).Should().BeTrue();
     }
 
     [Fact]
@@ -77,8 +77,8 @@ public sealed class Pbkdf2ClientSecretHasherTests
     {
         var hasher = CreateHasher();
 
-        hasher.Verify(new ClientSecret(IndependentVector), IndependentVectorPassword).Should().BeTrue();
-        hasher.Verify(new ClientSecret(IndependentVector), "wrong").Should().BeFalse();
+        hasher.Verify(IndependentVectorPassword, new ClientSecret(IndependentVector)).Should().BeTrue();
+        hasher.Verify("wrong", new ClientSecret(IndependentVector)).Should().BeFalse();
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
         var hasher = CreateHasher();
         var stored = hasher.Create("correct-secret");
 
-        hasher.Verify(stored, "wrong-secret".AsSpan()).Should().BeFalse();
+        hasher.Verify("wrong-secret".AsSpan(), stored).Should().BeFalse();
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
         var hasher = CreateHasher();
         var stored = hasher.Create("some-secret");
 
-        hasher.Verify(stored, ReadOnlySpan<char>.Empty).Should().BeFalse();
+        hasher.Verify(ReadOnlySpan<char>.Empty, stored).Should().BeFalse();
     }
 
     public static TheoryData<string?> MalformedValues() =>
@@ -130,7 +130,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     {
         var hasher = CreateHasher();
 
-        hasher.Verify(new ClientSecret(value!), IndependentVectorPassword).Should().BeFalse();
+        hasher.Verify(IndependentVectorPassword, new ClientSecret(value!)).Should().BeFalse();
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     {
         var hasher = CreateHasher();
 
-        hasher.Verify(Pbkdf2Secret(Pbkdf2ClientSecretHasher.MaxIterations + 1), "any-secret".AsSpan())
+        hasher.Verify("any-secret".AsSpan(), Pbkdf2Secret(Pbkdf2ClientSecretHasher.MaxIterations + 1))
             .Should().BeFalse();
     }
 
@@ -177,7 +177,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
         var stored = hasher.Create(chars.AsSpan());
         Array.Clear(chars);
 
-        hasher.Verify(stored, "zeroable-secret".AsSpan()).Should().BeTrue();
+        hasher.Verify("zeroable-secret".AsSpan(), stored).Should().BeTrue();
     }
 
     [Fact]
@@ -187,8 +187,8 @@ public sealed class Pbkdf2ClientSecretHasherTests
 
         var stored = hasher.Create("café 🔑 秘密".AsSpan());
 
-        hasher.Verify(stored, "café 🔑 秘密".AsSpan()).Should().BeTrue();
-        hasher.Verify(stored, "cafe key secret".AsSpan()).Should().BeFalse();
+        hasher.Verify("café 🔑 秘密".AsSpan(), stored).Should().BeTrue();
+        hasher.Verify("cafe key secret".AsSpan(), stored).Should().BeFalse();
     }
 
     // ── ValidateStoredSecret ─────────────────────────────────────────────────────────────────────
@@ -296,7 +296,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Theory]
-    [InlineData(CompositeClientSecretHasher.DummyPresented)]
+    [InlineData(ClientSecrets.DummyPresented)]
     [InlineData("s3cr3t-v4lu3")]
     public void Timing_decoy_verifies_no_presented_value(string presented)
     {
@@ -306,7 +306,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
 
         var decoy = hasher.CreateTimingDecoy();
 
-        hasher.Verify(decoy, presented).Should().BeFalse();
+        hasher.Verify(presented, decoy).Should().BeFalse();
     }
 
     [Theory]
@@ -315,10 +315,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     public void Registration_validation_reaches_the_iteration_bounds_through_the_composite(
         int iterations, string expectedCode)
     {
-        var composite = new CompositeClientSecretHasher(
-            [CreateHasher()],
-            Options.Create(new ClientSecretHasherRegistrationOptions()),
-            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
+        var composite = new ClientSecretHasherRegistry([CreateHasher()], Options.Create(new ClientSecretHasherRegistrationOptions()));
 
         var failures = composite.ValidateStoredSecret(Pbkdf2Secret(iterations), "my-client");
 

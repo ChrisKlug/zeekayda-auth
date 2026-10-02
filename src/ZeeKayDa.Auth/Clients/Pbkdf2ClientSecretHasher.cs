@@ -81,7 +81,7 @@ internal sealed class Pbkdf2ClientSecretHasher(IOptionsMonitor<Pbkdf2ClientSecre
     public IReadOnlySet<string> AlgorithmIds => Ids;
 
     /// <inheritdoc/>
-    public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
+    public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored)
     {
         // Defence-in-depth: reject an empty presented span to guard against a stored hash of "".
         if (presented.IsEmpty || Read(stored.Value, out _) is not { Iterations: { } iterations } parts)

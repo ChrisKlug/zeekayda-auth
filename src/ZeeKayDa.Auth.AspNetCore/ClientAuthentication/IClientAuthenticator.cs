@@ -5,9 +5,10 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Implementations MUST be singleton-safe. All credential comparisons MUST be delegated to
-/// <see cref="ZeeKayDa.Auth.Clients.IClientSecretHasher"/> implementations — never compare
-/// credential strings directly.
+/// Implementations MUST be singleton-safe. A secret-based authenticator verifies through
+/// <see cref="ZeeKayDa.Auth.Clients.IClientSecrets.Verify"/> with <c>context.Client.Secrets</c>,
+/// never by comparing strings or calling a hasher itself, and refuses a malformed request through
+/// the same call with an empty presented secret, so every refusal costs the same time.
 /// </para>
 /// <para>
 /// Custom implementations MUST NOT declare or return <see cref="ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods.None"/>

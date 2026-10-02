@@ -63,7 +63,8 @@ declaring one id fail startup (`Two_hashers_declaring_the_same_algorithm_id_fail
 `Verify` fails the verification (`A_hasher_that_throws_from_Verify_produces_invalid_client_not_a_500`),
 blank plaintext never reaches `Create`, and a created secret with an undeclared id is refused.
 PBKDF2-HMAC-SHA256 is always registered and creates new secrets unless the host marks its own hasher
-`isDefault: true` (`A_host_hasher_marked_default_creates_new_secrets_while_PBKDF2_secrets_still_verify`).
+`isDefault: true` (`A_host_hasher_marked_default_creates_new_secrets_while_PBKDF2_secrets_still_verify`);
+marking two is a startup failure, not a silent pick.
 Its 600,000-iteration floor (OWASP) and 2,000,000 cap are enforced where a credential is created
 (startup fails, never clamps) and where a pre-hashed one is imported, the only check a credential
 migrated from another IdP meets. At most two active shared secrets per client; both are tried.
@@ -74,15 +75,15 @@ once at startup (PBKDF2's is random bytes; a custom hasher pays one `Create`). S
 holding an older hasher's secret fails in the same work as an unknown one
 (`A_failed_authentication_under_two_hashers_runs_the_same_verifications_as_an_unknown_client`); the
 price is every hasher's cost on each failure. Paths with nothing real to verify (unknown client, a
-disallowed method, an empty secret, every `none` rejection) spend both slots, so a client mid-rotation
-looks like an unknown one, and "public client rejected" like "no such client". Successful `none`
-authentication is not padded: its outcome is visible in the response and `client_id` is not an OAuth
-secret. Enumeration by request volume is left to rate limiting (RFC 9700 §2.1).
+disallowed method, a malformed request, an empty secret, every `none` rejection) spend both slots, so
+a client mid-rotation looks like an unknown one. Request-volume enumeration is rate limiting's (RFC 9700 §2.1).
 
-**The composite hasher is registered as its own concrete type, never as the hasher interface.**
-Registering it under the interface would let it be injected into its own `IEnumerable<>` dependency
-and recurse on the first verification. At most one hasher may be marked default — two is a startup
-failure, not a silent pick — and with none marked, PBKDF2 is the default.
+**All padding is inside one public call; callers never count.** `IClientSecrets.Verify(presented,
+stored)` pads any failure itself. Malformed requests call it with nothing presented, and the
+composite's client-dependent refusals share one padded exit, so a third-party authenticator gets the
+same guarantee and no refusal path can forget it. A host registering its own `IClientSecrets` fails
+startup (`A_host_IClientSecrets_registered_after_the_framework_fails_startup`); hasher indexing,
+decoys and the registration checks sit apart, in an internal startup registry.
 
 **Authenticators are self-describing; the composite has zero method-specific knowledge.** Each
 authenticator declares the method strings it owns and detects its own request shape, so adding mTLS
@@ -136,8 +137,7 @@ client. A repository never validates its own output; it may still call the valid
 bad client when one is written, for example from an admin UI.
 
 **Client-facing types split on whether they need a request.** Registrations, credentials, hashers,
-the repository and the validator are core; the authenticator seam and its request context types live
-in the ASP.NET Core package.
+the repository and the validator are core; the authenticator seam is in the ASP.NET Core package.
 
 ## Tried, didn't work
 

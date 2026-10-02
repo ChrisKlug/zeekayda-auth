@@ -26,16 +26,13 @@ public sealed class ClientRegistrationValidatorTests
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake" };
 
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => verifyResult;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => verifyResult;
 
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
     }
 
-    private static CompositeClientSecretHasher MakeHasher(IClientSecretHasher hasher)
-        => new CompositeClientSecretHasher(
-            [hasher],
-            Options.Create(new ClientSecretHasherRegistrationOptions()),
-            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
+    private static ClientSecretHasherRegistry MakeHasher(IClientSecretHasher hasher)
+        => new ClientSecretHasherRegistry([hasher], Options.Create(new ClientSecretHasherRegistrationOptions()));
 
     private static ClientRegistrationValidator MakeValidator(
         IClientSecretHasher? hasher = null,
@@ -982,7 +979,7 @@ public sealed class ClientRegistrationValidatorTests
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake" };
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
 
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored)
         {
             VerifyCalls++;
             return false;
@@ -1935,7 +1932,7 @@ public sealed class ClientRegistrationValidatorTests
     private sealed class RegistrationFailingHasher : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
 
         public IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored)

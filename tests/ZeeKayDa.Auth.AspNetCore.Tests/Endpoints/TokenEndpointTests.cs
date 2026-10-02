@@ -831,7 +831,7 @@ public sealed class TokenEndpointTests : IDisposable
     private sealed class ThrowingVerifyHasher : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "throws" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored)
         {
             if (presented.IsEmpty)
                 return false;

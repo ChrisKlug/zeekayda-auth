@@ -97,7 +97,7 @@ public sealed class ZeeKayDaAuthBuilderForwardingExtensionsTests
     private sealed class TestHasher : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "test-secret" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => TestSecret;
     }
 }

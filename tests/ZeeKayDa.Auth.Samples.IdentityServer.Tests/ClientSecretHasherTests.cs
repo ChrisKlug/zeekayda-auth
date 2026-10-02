@@ -27,8 +27,8 @@ public sealed class ClientSecretHasherTests
         var hasher = new BCryptClientSecretHasher();
         var stored = new ClientSecret(BCryptHash);
 
-        hasher.Verify(stored, "bcrypt-client-secret" + new string('x', 60)).Should().BeFalse();
-        hasher.Verify(stored, "bcrypt-client-secret").Should().BeTrue();
+        hasher.Verify("bcrypt-client-secret" + new string('x', 60), stored).Should().BeFalse();
+        hasher.Verify("bcrypt-client-secret", stored).Should().BeTrue();
     }
 
     [Theory]
@@ -41,7 +41,7 @@ public sealed class ClientSecretHasherTests
         var hasher = new BCryptClientSecretHasher();
 
         hasher.ValidateStoredSecret(new ClientSecret(value)).Should().ContainSingle().Which.Code.Should().Be(code);
-        hasher.Verify(new ClientSecret(value), "bcrypt-client-secret").Should().BeFalse();
+        hasher.Verify("bcrypt-client-secret", new ClientSecret(value)).Should().BeFalse();
     }
 
     [Theory]
@@ -61,7 +61,7 @@ public sealed class ClientSecretHasherTests
 
         hasher.ValidateStoredSecret(new ClientSecret(value)).Should().ContainSingle()
             .Which.Code.Should().Be("sample.argon2.unacceptable");
-        hasher.Verify(new ClientSecret(value), "argon2-client-secret").Should().BeFalse();
+        hasher.Verify("argon2-client-secret", new ClientSecret(value)).Should().BeFalse();
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public sealed class ClientSecretHasherTests
         var hasher = new Argon2ClientSecretHasher();
 
         hasher.ValidateStoredSecret(new ClientSecret(Argon2Hash)).Should().BeEmpty();
-        hasher.Verify(new ClientSecret(Argon2Hash), "argon2-client-secret").Should().BeTrue();
+        hasher.Verify("argon2-client-secret", new ClientSecret(Argon2Hash)).Should().BeTrue();
     }
 
     [Fact]

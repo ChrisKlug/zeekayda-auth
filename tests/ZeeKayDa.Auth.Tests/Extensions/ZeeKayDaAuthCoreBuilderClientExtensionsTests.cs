@@ -73,8 +73,8 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
 
         var secret = client!.Secrets.Should().ContainSingle().Subject;
         secret.Value.Should().Be(stored);
-        provider.GetRequiredService<CompositeClientSecretHasher>()
-            .Verify(secret, "correct horse battery staple").Should().BeTrue();
+        provider.GetRequiredService<IClientSecrets>()
+            .Verify("correct horse battery staple", [secret]).Should().BeTrue();
     }
 
     // ── Multiple calls are additive ───────────────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
     private sealed class TestHasher : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "test-secret" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => TestSecret;
     }
 

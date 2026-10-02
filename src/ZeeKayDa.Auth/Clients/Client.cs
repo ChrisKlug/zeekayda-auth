@@ -103,7 +103,7 @@ public sealed record Client : IClientWithCredentials
     /// </summary>
     /// <param name="clientId">Unique client identifier.</param>
     /// <param name="secret">
-    /// An already hashed secret, for example from <see cref="IClientSecretFactory"/>.
+    /// An already hashed secret, for example from <see cref="IClientSecrets"/>.
     /// </param>
     /// <param name="redirectUris">Permitted redirect URIs.</param>
     /// <param name="postLogoutRedirectUris">Permitted post-logout redirect URIs.</param>

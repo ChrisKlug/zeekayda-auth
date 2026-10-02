@@ -26,7 +26,7 @@ public sealed class Pbkdf2Sha512ClientSecretHasher : IClientSecretHasher
 
     public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string>([Id], StringComparer.Ordinal);
 
-    public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
+    public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored)
     {
         if (Read(stored) is not { Iterations: { } iterations } parts || iterations > MaxIterations)
             return false;

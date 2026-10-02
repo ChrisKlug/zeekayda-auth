@@ -278,7 +278,7 @@ only verifies legacy secrets must still create one for a random value.
 | Be singleton-safe | Hashers are registered as singletons and called concurrently |
 
 > Warning: A hasher that does not use constant-time comparison undermines the timing protections
-> built into `CompositeClientSecretHasher`. Use `CryptographicOperations.FixedTimeEquals` for
+> built into the framework. Use `CryptographicOperations.FixedTimeEquals` for
 > raw byte comparisons, or your library's built-in constant-time verify function.
 
 > 💡 **Exception messages are now redacted by default.**
@@ -317,28 +317,28 @@ public interface IClientRepository
 | Scenario | Recommended approach |
 |---|---|
 | Clients known at startup | `AddInMemoryClients` — the builder hashes secrets automatically |
-| Clients created at runtime (admin API, credential rotation, future [RFC 7591 DCR](https://www.rfc-editor.org/rfc/rfc7591)) | Custom `IClientRepository` + inject `IClientSecretFactory` |
+| Clients created at runtime (admin API, credential rotation, future [RFC 7591 DCR](https://www.rfc-editor.org/rfc/rfc7591)) | Custom `IClientRepository` + inject `IClientSecrets` |
 
-### Using `IClientSecretFactory` to hash secrets at write time
+### Using `IClientSecrets` to hash secrets at write time
 
-Inject `IClientSecretFactory` into your repository to hash plaintext secrets at runtime using the
-same default hasher configured via `AddClientSecretHasher<T>`. `IClientSecretFactory` is registered
+Inject `IClientSecrets` into your repository to hash plaintext secrets at runtime using the
+same default hasher configured via `AddClientSecretHasher<T>`. `IClientSecrets` is registered
 automatically by `AddZeeKayDaAuth` as a singleton — no additional registration is required.
 
 ```csharp
 public sealed class DatabaseClientRepository : IClientRepository
 {
     private readonly IDbContextFactory<ClientDbContext> _factory;
-    private readonly IClientSecretFactory _secretFactory;
+    private readonly IClientSecrets _secrets;
     private readonly IClientRegistrationValidator _validator;
 
     public DatabaseClientRepository(
         IDbContextFactory<ClientDbContext> factory,
-        IClientSecretFactory secretFactory,
+        IClientSecrets secrets,
         IClientRegistrationValidator validator)
     {
         _factory = factory;
-        _secretFactory = secretFactory;
+        _secrets = secrets;
         _validator = validator;
     }
 
@@ -352,7 +352,7 @@ public sealed class DatabaseClientRepository : IClientRepository
 
     public async Task RegisterClientAsync(string clientId, string plaintextSecret)
     {
-        IClientSecret credential = _secretFactory.Create(plaintextSecret);
+        ClientSecret credential = _secrets.Create(plaintextSecret);
         // _validator.Validate(registration) before persisting...
     }
 }
@@ -368,13 +368,13 @@ protocol — the framework validates every registration it serves and refuses a 
 unknown client — but it does mean the bad row is stored, and is found on a live request, in a log
 entry the operator has to act on, rather than where it was written.
 
-> ⚠️ **Warning: `IClientSecretFactory.Create` is CPU-intensive and must not be called on a hot
+> ⚠️ **Warning: `IClientSecrets.Create` is CPU-intensive and must not be called on a hot
 > request path.**
 > At the default iteration count of 600,000 PBKDF2-HMAC-SHA256 rounds, a single call takes
 > approximately 600 ms on typical server hardware. Calling it from a token-endpoint handler or any
 > other frequently-hit path will degrade throughput for all clients on the server.
 >
-> Reserve `IClientSecretFactory.Create` for admin operations only. The endpoint that calls it
+> Reserve `IClientSecrets.Create` for admin operations only. The endpoint that calls it
 > MUST be protected by strong authentication, rate-limited to prevent brute-force amplification,
 > and logged for audit purposes.
 
@@ -384,8 +384,8 @@ entry the operator has to act on, rather than where it was written.
 builder.Services.AddSingleton<IClientRepository, DatabaseClientRepository>();
 ```
 
-For the full `IClientSecretFactory` API reference, including lifetime and security notes, see
-[Client secrets reference — `IClientSecretFactory`](../reference/client-secrets.md#iclientsecretfactory).
+For the full `IClientSecrets` API reference, including lifetime and security notes, see
+[Client secrets reference — `IClientSecrets`](../reference/client-secrets.md#iclientsecrets).
 
 ---
 
@@ -573,5 +573,5 @@ Security contract:
 - [Configure discovery](configure-discovery.md) — customise the discovery document with the built-in options.
 - [Configure host-level log hygiene](configure-host-log-hygiene.md) — prevent sensitive parameters from appearing in host-pipeline logs outside ZeeKayDa.Auth's redaction boundary.
 - [`AuthorizationServerOptions` reference](../reference/configuration.md) — full property list and validation rules.
-- [Client secrets reference](../reference/client-secrets.md) — `Pbkdf2ClientSecretHasherOptions` property reference and `IClientSecretFactory` API.
+- [Client secrets reference](../reference/client-secrets.md) — `Pbkdf2ClientSecretHasherOptions` property reference and `IClientSecrets` API.
 - [Cancellation in managed threads](https://learn.microsoft.com/dotnet/standard/threading/cancellation-in-managed-threads) — Microsoft's reference for the cancellation pattern this framework follows.

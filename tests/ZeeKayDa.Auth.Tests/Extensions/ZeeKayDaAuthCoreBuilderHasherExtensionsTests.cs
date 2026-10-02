@@ -89,11 +89,11 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
         var validate = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(provider);
         validate.Should().NotThrow();
 
-        var composite = provider.GetRequiredService<CompositeClientSecretHasher>();
-        composite.Create("a-client-secret").Should().Be(FakeSecret);
+        var secrets = provider.GetRequiredService<IClientSecrets>();
+        secrets.Create("a-client-secret").Should().Be(FakeSecret);
 
         var pbkdf2 = provider.GetServices<IClientSecretHasher>().OfType<Pbkdf2ClientSecretHasher>().Single();
-        composite.Verify(pbkdf2.Create("an-existing-secret"), "an-existing-secret").Should().BeTrue();
+        secrets.Verify("an-existing-secret", [pbkdf2.Create("an-existing-secret")]).Should().BeTrue();
     }
 
     [Fact]
@@ -109,7 +109,7 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
         var validate = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(provider);
         validate.Should().NotThrow();
 
-        provider.GetRequiredService<CompositeClientSecretHasher>().Create("a-client-secret").Value
+        provider.GetRequiredService<IClientSecrets>().Create("a-client-secret").Value
             .Should().StartWith("$pbkdf2-sha256$");
     }
 
@@ -137,7 +137,7 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
     {
         using var provider = BuildWithPbkdf2Iterations(1_200_000);
 
-        var created = provider.GetRequiredService<IClientSecretFactory>().Create("a-client-secret");
+        var created = provider.GetRequiredService<IClientSecrets>().Create("a-client-secret");
 
         created.Value.Should().StartWith("$pbkdf2-sha256$i=1200000$");
     }
@@ -180,7 +180,7 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
         services.Configure<Pbkdf2ClientSecretHasherOptions>(options => options.Iterations = 1_200_000);
         using var provider = services.BuildServiceProvider();
 
-        var created = provider.GetRequiredService<IClientSecretFactory>().Create("a-client-secret");
+        var created = provider.GetRequiredService<IClientSecrets>().Create("a-client-secret");
 
         created.Value.Should().StartWith("$pbkdf2-sha256$i=1200000$");
     }
@@ -221,7 +221,7 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
         services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com");
         using var provider = services.BuildServiceProvider();
 
-        var created = provider.GetRequiredService<IClientSecretFactory>().Create("a-client-secret");
+        var created = provider.GetRequiredService<IClientSecrets>().Create("a-client-secret");
 
         created.Value.Should().StartWith($"$pbkdf2-sha256$i={Pbkdf2ClientSecretHasherOptions.DefaultIterations}$");
     }
@@ -234,14 +234,14 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
     private sealed class FakeHasher : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake-secret" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
     }
 
     private sealed class AnotherFakeHasher : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "another-fake-secret" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => AnotherFakeSecret;
     }
 }
