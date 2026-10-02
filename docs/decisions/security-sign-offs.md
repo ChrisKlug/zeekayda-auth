@@ -2034,8 +2034,7 @@ Copilot code, security and architecture lenses, the security and architect agent
 
 ## 2026-10-02 — an authenticator's refusal that verified no secret is padded by the composite (#869, code frozen at `74d8919`)
 Copilot code and security lenses, the security agent, fix-diff verification of each round, and the PR's Copilot review; no Critical.
-- An authenticator's refusal that checked no secret (`NotValid()`, a null) costs what an unknown client costs; the composite's
-  refusals that depend only on the request's shape, before any client is involved, stay unpadded by design. Closed —
+- An authenticator's refusal that checked no secret (`NotValid()`, a null) costs what an unknown client costs. Closed —
   `A_custom_authenticator_refusing_without_verifying_is_padded_like_an_unknown_client`,
   `An_authenticator_returning_null_is_a_refusal_not_a_fault`.
 - A failed `IClientSecrets.Verify` is padded once, never twice, and only `Verify` can vouch for it. Closed —
