@@ -40,6 +40,7 @@ public sealed class TokenEndpointTests : IDisposable
     private const string NoCodeGrantSecret = "no-code-grant-secret";
     private const string PkceOptionalClient = "pkce-optional-client";
     private const string PkceOptionalSecret = "also-very-secret";
+    private const string ThrowingHasherClient = "throwing-hasher-client";
     private const string Nonce = "n-0S6_WzA2Mj";
     private const string Subject = "user-1";
 
@@ -69,7 +70,9 @@ public sealed class TokenEndpointTests : IDisposable
 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
-    private EndpointHost NewHost(Action<AuthorizationServerOptions>? configureOptions = null) => new(
+    private EndpointHost NewHost(
+        Action<AuthorizationServerOptions>? configureOptions = null,
+        bool withThrowingHasher = false) => new(
         configureOptions: options =>
         {
             // Served so the no-code-grant client, allowed only client_credentials, is a registration
@@ -87,6 +90,13 @@ public sealed class TokenEndpointTests : IDisposable
                 .AddConfidential(ConfidentialClient, ConfidentialSecret, [RegisteredRedirect], [], ["openid", "profile"])
                 .Add(PkceOptionalRegistration())
                 .AddPublic(OtherClient, ["https://other.example.com/callback"], [], ["openid"]));
+
+            if (withThrowingHasher)
+            {
+                builder.AddClientSecretHasher<ThrowingVerifyHasher>();
+                builder.AddInMemoryClients(clients => clients.Add(Client.CreateConfidential(
+                    ThrowingHasherClient, new ClientSecret("$throws$x"), [RegisteredRedirect], [], ["openid"])));
+            }
 
             // The interaction store is required by startup for a host serving the code grant, even
             // though these tests never drive an interaction: a code arrives here already seeded.
@@ -113,10 +123,11 @@ public sealed class TokenEndpointTests : IDisposable
             with
         { RequirePkce = false, RequireConsent = false };
 
-    private static Pbkdf2ClientSecret Pbkdf2(string secret)
+    private static ClientSecret Pbkdf2(string secret)
     {
         var salt = new byte[16];
-        return new Pbkdf2ClientSecret(600_000, salt, Rfc2898DeriveBytes.Pbkdf2(secret, salt, 600_000, HashAlgorithmName.SHA256, 32));
+        return Pbkdf2ClientSecretHasher.Format(
+            600_000, salt, Rfc2898DeriveBytes.Pbkdf2(secret, salt, 600_000, HashAlgorithmName.SHA256, 32));
     }
 
     // ── Seeding a code directly into the store ───────────────────────────────────────────────
@@ -799,6 +810,26 @@ public sealed class TokenEndpointTests : IDisposable
 
         await ShouldBeErrorAsync(response, "invalid_client");
         response.Headers.WwwAuthenticate.Should().BeEmpty("two headers is not an authentication attempt but a malformed one (RFC 7235 §4.2)");
+    }
+
+    [Fact]
+    public async Task A_hasher_that_throws_from_Verify_produces_invalid_client_not_a_500()
+    {
+        using var host = NewHost(withThrowingHasher: true);
+        var form = TokenForm(StoreKeyGenerator.Generate(), ThrowingHasherClient);
+        form.Remove("client_id");
+
+        var response = await PostTokenWithAsync(host, form, basic: (ThrowingHasherClient, "any-secret"));
+
+        await ShouldBeErrorAsync(response, "invalid_client", HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>Owns the <c>throws</c> algorithm id and throws from every verification.</summary>
+    private sealed class ThrowingVerifyHasher : IClientSecretHasher
+    {
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "throws" };
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => throw new InvalidOperationException();
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$throws$x");
     }
 
     [Fact]

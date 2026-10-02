@@ -3,126 +3,74 @@ using System.Security.Cryptography;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Creates and verifies hashed client secrets.
+/// Creates and verifies hashed client secrets for the algorithm ids it declares.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Implementations MUST use fixed-time comparison (e.g.
-/// <see cref="System.Security.Cryptography.CryptographicOperations.FixedTimeEquals"/>);
-/// MUST NOT throw from <c>Verify</c> (return <see langword="false"/> on internal error);
-/// MUST NOT log the presented secret; and MUST be safe for concurrent use (singleton-safe).
+/// The framework reads the algorithm id from a <see cref="ClientSecret.Value"/> — the text between
+/// its first two <c>$</c> — and calls the hasher whose <see cref="AlgorithmIds"/> contains it. The
+/// hasher receives the whole string and parses the rest itself; <see cref="PhcString"/> helps
+/// where the format is PHC.
 /// </para>
 /// <para>
-/// To add a new hashing algorithm, define a sub-interface of <see cref="IClientSecret"/>,
-/// a sealed record implementing it — including <see cref="IClientCredential.Snapshot"/> — and a
-/// class extending <c>ClientSecretHasher&lt;TSecret&gt;</c>. Register it with
-/// <c>AddClientSecretHasher&lt;T&gt;()</c>. A credential's snapshot is what gets verified, so it must be an
-/// <see cref="IClientSecret"/> a registered hasher handles.
+/// The framework enforces the rules around every call: a <see cref="Verify"/> that throws counts as
+/// a failed verification, empty and whitespace-only plaintext never reaches <see cref="Create"/>,
+/// and a <see cref="Create"/> result whose id this hasher did not declare is refused. What remains
+/// the implementation's job: compare in fixed time (e.g.
+/// <see cref="CryptographicOperations.FixedTimeEquals"/>), never log the presented secret, and be
+/// safe for concurrent use.
 /// </para>
 /// <para>
-/// <see cref="Create(System.ReadOnlySpan{char})"/> is the memory-safe primary overload — see its
-/// own remarks. <see cref="Create(string)"/> is a convenience overload for callers who already
-/// have a managed string.
+/// Register with <c>AddClientSecretHasher&lt;T&gt;()</c>. Two registered hashers declaring the same
+/// id fail startup.
 /// </para>
 /// </remarks>
 public interface IClientSecretHasher
 {
     /// <summary>
-    /// Returns <see langword="true"/> if this hasher can handle the given stored credential.
+    /// The algorithm ids this hasher owns, for example <c>{ "pbkdf2-sha256" }</c>, or bcrypt's
+    /// <c>{ "2a", "2b", "2y" }</c>. Compared ordinally; each is 1–32 characters from <c>[a-z0-9-]</c>.
     /// </summary>
-    bool CanHandle(IClientSecret secret);
+    IReadOnlySet<string> AlgorithmIds { get; }
 
     /// <summary>
-    /// Verifies a presented plaintext secret against a stored hashed credential.
-    /// Returns <see langword="false"/> on mismatch or internal error — never throws.
+    /// Verifies a presented plaintext secret against a stored one whose algorithm id this hasher
+    /// declared. Returns <see langword="false"/> on mismatch or on a stored value it cannot read.
     /// </summary>
-    /// <param name="stored">The stored hashed credential.</param>
-    /// <param name="presented">The plaintext secret presented by the client.</param>
-    bool Verify(IClientSecret stored, ReadOnlySpan<char> presented);
+    bool Verify(ClientSecret stored, ReadOnlySpan<char> presented);
 
     /// <summary>
-    /// Creates a new hashed credential from a plaintext secret held in a span.
-    /// Rejects empty and whitespace-only spans (throws <see cref="ArgumentException"/>).
-    /// Spans cannot be null, so no null check is performed.
+    /// Hashes a plaintext secret. The framework has already refused empty and whitespace-only input.
     /// </summary>
     /// <remarks>
-    /// This is the memory-safe primary overload. Callers who allocate the plaintext in a
-    /// mutable buffer should zero it immediately after this call:
-    /// <code>
-    /// char[] secret = /* decoded from buffer */;
-    /// IClientSecret stored;
-    /// try { stored = hasher.Create(secret.AsSpan()); }
-    /// finally { Array.Clear(secret); }
-    /// </code>
-    /// This guarantee holds only when the registered hasher overrides
-    /// <c>CreateCore(ReadOnlySpan&lt;char&gt;)</c> (the built-in PBKDF2 hasher does). A hasher that
-    /// only overrides <c>CreateCore(string)</c> will allocate an intermediate managed string via
-    /// the base-class fallback, defeating the zeroing benefit.
+    /// A span, so a caller holding the plaintext in a <c>char[]</c> can zero it afterwards. Callers
+    /// go through <see cref="IClientSecretFactory"/>, never through a hasher directly.
     /// </remarks>
-    /// <param name="plaintext">The plaintext secret to hash.</param>
-    /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="plaintext"/> is empty or contains only whitespace.
-    /// </exception>
-    IClientSecret Create(ReadOnlySpan<char> plaintext);
+    ClientSecret Create(ReadOnlySpan<char> plaintext);
 
     /// <summary>
-    /// Creates a new hashed credential from a plaintext secret string.
-    /// Convenience overload for callers who already hold a managed string.
-    /// Rejects null, empty, or whitespace-only input.
+    /// Returns what is wrong with a stored secret whose algorithm id this hasher declared — a value
+    /// it cannot parse, or a work factor below its floor. Empty when the secret is acceptable.
     /// </summary>
     /// <remarks>
-    /// This overload allocates a managed <see langword="string"/> that the .NET garbage
-    /// collector does not guarantee to erase promptly. Prefer
-    /// <see cref="Create(System.ReadOnlySpan{char})"/> when the secret is held in a mutable
-    /// buffer that can be zeroed after use.
+    /// Runs wherever a client registration is validated. The framework puts the client id in front
+    /// of each message. Every message reaches the operator's log verbatim, so it describes the
+    /// problem and never contains any part of the stored value, or a caught exception's message.
     /// </remarks>
-    /// <param name="plaintext">The plaintext secret to hash.</param>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="plaintext"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="plaintext"/> is empty or contains only whitespace.
-    /// </exception>
-    IClientSecret Create(string plaintext)
-    {
-        ArgumentNullException.ThrowIfNull(plaintext);
-        return Create(plaintext.AsSpan());
-    }
+    IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored) => [];
 
     /// <summary>
-    /// Returns any registration-time failures for the given stored credential.
-    /// Called during startup validation to enforce per-hasher constraints on stored credentials
-    /// (for example, a minimum iteration-count or work-factor floor).
-    /// Returns an empty sequence when the credential is acceptable.
-    /// </summary>
-    /// <remarks>
-    /// The default implementation returns no failures. Override to express startup constraints
-    /// specific to your credential type. The framework calls this only for credentials whose
-    /// hasher returns <see langword="true"/> from <see cref="CanHandle"/>, so
-    /// <paramref name="credential"/> is always a type this hasher owns.
-    /// The <paramref name="clientId"/> parameter is for diagnostic message formatting only.
-    /// </remarks>
-    /// <remarks>
-    /// Every failure returned here reaches the operator's log verbatim, so
-    /// <see cref="ZeeKayDaConfigurationFailure.Message"/>'s contract applies with particular force
-    /// on this method: describe what is wrong with the stored credential, and never put any part of
-    /// the credential itself — or a caught exception's message — into the text.
-    /// </remarks>
-    IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
-        IClientSecret credential, string clientId) => [];
-
-    /// <summary>
-    /// Creates the stored credential that failure-path timing padding verifies against: one that
-    /// costs this hasher exactly as much to verify as a real credential, and that no value a caller
-    /// can know will verify.
+    /// Creates the stored secret that failure-path timing padding verifies against: one that costs
+    /// this hasher exactly as much to verify as a real secret, and that no value a caller can know
+    /// will verify.
     /// </summary>
     /// <remarks>
     /// Internal on purpose. A third-party hasher inherits this default, which pays one real
-    /// <see cref="Create(string)"/> of a random value, once, at startup, default or not. It
-    /// cannot supply a cheaper decoy of its own: one that verified faster than a real credential
-    /// would reopen the timing oracle the padding exists to close, and nothing would report it. A
-    /// built-in hasher overrides this where it can build the decoy without the derivation.
+    /// <see cref="Create"/> of a random value, once, at startup. It cannot supply a cheaper decoy of
+    /// its own: one that verified faster than a real secret would reopen the timing oracle the
+    /// padding exists to close, and nothing would report it. A built-in hasher overrides this where
+    /// it can build the decoy without the derivation.
     /// </remarks>
-    internal IClientSecret CreateTimingDecoy() =>
+    internal ClientSecret CreateTimingDecoy() =>
         Create(Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)));
 }

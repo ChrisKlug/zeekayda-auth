@@ -10,8 +10,8 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// </summary>
 /// <remarks>
 /// Delegates stored-secret verification to <see cref="CompositeClientSecretHasher"/> — never
-/// compares secret strings directly. Tries all <see cref="IClientSecret"/> credentials before
-/// returning a failure to support credential rotation.
+/// compares secret strings directly. Tries every one of the client's secrets before returning a
+/// failure, to support rotation.
 /// </remarks>
 internal sealed class ClientSecretAuthenticator(CompositeClientSecretHasher hasher) : IClientAuthenticator
 {
@@ -103,7 +103,7 @@ internal sealed class ClientSecretAuthenticator(CompositeClientSecretHasher hash
             presented = context.Form["client_secret"].ToString();
         }
 
-        var secrets = context.Client.Credentials.OfType<IClientSecret>().ToList();
+        var secrets = context.Client.Secrets;
 
         // An empty secret can never verify, and the built-in hasher returns without deriving for
         // one, so trying it against each stored credential would cost nothing. Counted as attempts,

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -29,14 +30,21 @@ namespace ZeeKayDa.Auth.Clients;
 /// <see cref="IOptionsMonitor{TOptions}"/> that validation runs through, so it trusts the value.
 /// </para>
 /// </remarks>
-// IClientSecretHasher is re-listed on purpose. Inherited through ClientSecretHasher<T> alone, the
-// interface's default members stay bound to their defaults, and a public method here with the same
-// signature — GetRegistrationFailures — is silently not an implementation of them.
 internal sealed class Pbkdf2ClientSecretHasher(
     IOptionsMonitor<Pbkdf2ClientSecretHasherOptions> options,
     SanitizingLogger<Pbkdf2ClientSecretHasher> logger)
-    : ClientSecretHasher<IPbkdf2ClientSecret>, IClientSecretHasher
+    : IClientSecretHasher
 {
+    /// <summary>
+    /// The PHC algorithm id this hasher owns.
+    /// </summary>
+    internal const string AlgorithmId = "pbkdf2-sha256";
+
+    /// <summary>
+    /// The PHC parameter carrying the iteration count.
+    /// </summary>
+    internal const string IterationsParameter = "i";
+
     /// <summary>
     /// Minimum allowed iteration count (OWASP PBKDF2-HMAC-SHA256 minimum as of 2025).
     /// </summary>
@@ -48,8 +56,11 @@ internal sealed class Pbkdf2ClientSecretHasher(
     /// </summary>
     internal const int MaxIterations = 2_000_000;
 
-    private const int SaltLength = 16;
-    private const int HashLength = 32;
+    internal const int SaltLength = 16;
+    internal const int HashLength = 32;
+
+    private static readonly IReadOnlySet<string> Ids =
+        new HashSet<string>([AlgorithmId], StringComparer.Ordinal).AsReadOnly();
 
     // The monitor, not IOptions<T>: the framework's options check validates through the monitor, so
     // this reads exactly the value startup validated, even when a host registers IOptions<T> directly.
@@ -71,59 +82,66 @@ internal sealed class Pbkdf2ClientSecretHasher(
                 "Configure<Pbkdf2ClientSecretHasherOptions>, not by registering the options object directly."));
 
     /// <inheritdoc/>
-    protected override bool VerifyCore(IPbkdf2ClientSecret stored, ReadOnlySpan<char> presented)
+    public IReadOnlySet<string> AlgorithmIds => Ids;
+
+    /// <inheritdoc/>
+    public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
     {
         // Defence-in-depth: reject an empty presented span to guard against a stored hash of "".
-        if (presented.IsEmpty)
+        if (presented.IsEmpty || Read(stored.Value) is not { } parts)
             return false;
 
-        // Reject a stored credential whose iteration count exceeds the cap. A legitimately
-        // created credential can never exceed MaxIterations (the options validator refuses it), so
-        // a higher value indicates a corrupt or malicious record. Proceeding would risk a
-        // CPU-bound denial of service on every verification for that client.
-        if (stored.Iterations > MaxIterations)
+        // A legitimately created secret can never exceed MaxIterations (the options validator refuses
+        // it), so a higher value is a corrupt or malicious record. Deriving would risk a CPU-bound
+        // denial of service on every verification for that client.
+        if (parts.Iterations > MaxIterations)
         {
             logger.LogWarning(
-                "Pbkdf2ClientSecretHasher: stored credential has iteration count {Iterations} " +
+                "Pbkdf2ClientSecretHasher: stored secret has iteration count {Iterations} " +
                 "which exceeds the maximum of {MaxIterations}. Verification rejected.",
-                stored.Iterations, MaxIterations);
+                parts.Iterations, MaxIterations);
             return false;
         }
 
         var expected = Rfc2898DeriveBytes.Pbkdf2(
             presented,
-            stored.Salt,
-            stored.Iterations,
+            parts.Salt.Span,
+            parts.Iterations,
             HashAlgorithmName.SHA256,
             HashLength);
 
-        return CryptographicOperations.FixedTimeEquals(expected, stored.Hash);
+        return CryptographicOperations.FixedTimeEquals(expected, parts.Hash.Span);
     }
 
     /// <inheritdoc/>
-    public IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
-        IClientSecret credential, string clientId)
+    public IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored)
     {
-        if (credential is not IPbkdf2ClientSecret pbkdf2)
+        if (Read(stored.Value) is not { } parts)
+        {
+            yield return new ZeeKayDaConfigurationFailure(
+                "client.credentials.pbkdf2_malformed",
+                $"A PBKDF2 secret is not of the form $pbkdf2-sha256$i=<iterations>$<salt>$<hash> with a " +
+                $"{SaltLength}-byte salt and a {HashLength}-byte hash, in unpadded base64.");
             yield break;
+        }
 
-        if (pbkdf2.Iterations < MinIterations)
+        if (parts.Iterations < MinIterations)
             yield return new ZeeKayDaConfigurationFailure(
                 "client.credentials.pbkdf2_iterations_below_minimum",
-                $"Client '{clientId}' has a PBKDF2 credential with {pbkdf2.Iterations:N0} iterations, " +
+                $"A PBKDF2 secret has {parts.Iterations:N0} iterations, " +
                 $"which is below the minimum of {MinIterations:N0}. " +
-                "Credentials with insufficient iterations do not provide adequate brute-force resistance (NIST SP 800-132).");
+                "Secrets with insufficient iterations do not provide adequate brute-force resistance (NIST SP 800-132).");
 
-        if (pbkdf2.Iterations > MaxIterations)
+        if (parts.Iterations > MaxIterations)
             yield return new ZeeKayDaConfigurationFailure(
                 "client.credentials.pbkdf2_iterations_above_maximum",
-                $"Client '{clientId}' has a PBKDF2 credential with {pbkdf2.Iterations:N0} iterations, " +
+                $"A PBKDF2 secret has {parts.Iterations:N0} iterations, " +
                 $"which exceeds the maximum of {MaxIterations:N0}. " +
-                "VerifyCore rejects credentials above this threshold, so the credential can never authenticate.");
+                "Verify rejects secrets above this threshold, so the secret can never authenticate.");
     }
 
     /// <inheritdoc/>
-    protected override IPbkdf2ClientSecret CreateCore(ReadOnlySpan<char> plaintext)
+    public ClientSecret Create(ReadOnlySpan<char> plaintext)
     {
         var salt = RandomNumberGenerator.GetBytes(SaltLength);
         var hash = Rfc2898DeriveBytes.Pbkdf2(
@@ -133,33 +151,51 @@ internal sealed class Pbkdf2ClientSecretHasher(
             HashAlgorithmName.SHA256,
             HashLength);
 
-        return new Pbkdf2ClientSecret(_iterations, salt, hash);
-    }
-
-    /// <inheritdoc/>
-    protected override IPbkdf2ClientSecret CreateCore(string plaintext)
-    {
-        var salt = RandomNumberGenerator.GetBytes(SaltLength);
-        var hash = Rfc2898DeriveBytes.Pbkdf2(
-            plaintext,
-            salt,
-            _iterations,
-            HashAlgorithmName.SHA256,
-            HashLength);
-
-        return new Pbkdf2ClientSecret(_iterations, salt, hash);
+        return Format(_iterations, salt, hash);
     }
 
     /// <summary>
-    /// A random salt and a random hash at the configured iteration count. <see cref="VerifyCore"/>
+    /// A random salt and a random hash at the configured iteration count. <see cref="Verify"/>
     /// derives from the presented value with the stored salt and iterations and only then compares,
-    /// so verifying against this costs exactly what a real credential costs — and no presented value
+    /// so verifying against this costs exactly what a real secret costs — and no presented value
     /// derives a random hash. Building it costs nothing, where deriving one would cost a full
     /// derivation at host startup.
     /// </summary>
-    IClientSecret IClientSecretHasher.CreateTimingDecoy() =>
-        new Pbkdf2ClientSecret(
+    ClientSecret IClientSecretHasher.CreateTimingDecoy() =>
+        Format(
             _iterations,
             RandomNumberGenerator.GetBytes(SaltLength),
             RandomNumberGenerator.GetBytes(HashLength));
+
+    internal static ClientSecret Format(int iterations, ReadOnlySpan<byte> salt, ReadOnlySpan<byte> hash) =>
+        new(new PhcString(
+            AlgorithmId,
+            salt,
+            hash,
+            [new(IterationsParameter, iterations.ToString(CultureInfo.InvariantCulture))]).ToString());
+
+    /// <summary>
+    /// The parts of a well-formed PBKDF2 secret, or <see langword="null"/>. Well-formed means our id,
+    /// no version, exactly one parameter — a positive iteration count — and the salt and hash
+    /// lengths this hasher writes. Iteration bounds are not checked here: they have their own
+    /// failure codes.
+    /// </summary>
+    private static Pbkdf2Parts? Read(string? value)
+    {
+        if (!PhcString.TryParse(value, out var phc)
+            || phc.Id != AlgorithmId
+            || phc.Version is not null
+            || phc.Parameters is not [{ Key: IterationsParameter, Value: var iterationsText }]
+            || !int.TryParse(iterationsText, NumberStyles.None, CultureInfo.InvariantCulture, out var iterations)
+            || iterations <= 0
+            || phc.Salt.Length != SaltLength
+            || phc.Hash.Length != HashLength)
+        {
+            return null;
+        }
+
+        return new Pbkdf2Parts(iterations, phc.Salt, phc.Hash);
+    }
+
+    private sealed record Pbkdf2Parts(int Iterations, ReadOnlyMemory<byte> Salt, ReadOnlyMemory<byte> Hash);
 }

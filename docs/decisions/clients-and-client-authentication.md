@@ -53,16 +53,15 @@ a reserved protocol name; whether an addition names a claim a scope unlocks is c
 against the scope repository, which the validator's cached verdict cannot see
 (`token-issuance-and-claims.md`).
 
-**Credential type identity is the algorithm; there is no string discriminator and no
-`string? ClientSecret`.** A bare string is ambiguous about plaintext versus hash and pushes fixed-time
-comparison onto every implementer; an `Algorithm` discriminator grows a central switch without bound.
-Adding bcrypt means a credential sub-interface with its `IClientCredential.Snapshot()`, and a paired
-hasher — no framework change. `IPbkdf2ClientSecret` declares its copy as a default the same way, so
-the framework's own type is not special-cased. A `Snapshot()` returning itself or `null` fails
-validation as `client.credentials.not_copied`; one still sharing a buffer is the implementer's bug.
+**A stored secret is a sealed `ClientSecret` holding a PHC string, `$<algorithm id>$...`.** Any store
+persists any hasher's output, and a string cannot change after validation, so nothing is copied. The
+framework reads only the id (bcrypt is only PHC-like) and calls the hasher that declared it; two
+declaring one id fail startup (`Two_hashers_declaring_the_same_algorithm_id_fail_startup`).
+`PhcString` is optional. Another credential kind (`private_key_jwt`'s keys) gets its own member.
 
-**Verification is always fixed-time and never throws.** A hasher returns `false` on internal error
-rather than propagating, so an exception cannot become a timing or behavioural oracle.
+**Verification is fixed-time, and the framework enforces what a hasher must not do:** a throwing
+`Verify` fails the verification (`A_hasher_that_throws_from_Verify_produces_invalid_client_not_a_500`),
+blank plaintext never reaches `Create`, and a created secret with an undeclared id is refused.
 PBKDF2-HMAC-SHA256 is always registered and creates new secrets unless the host marks its own hasher
 `isDefault: true` (`A_host_hasher_marked_default_creates_new_secrets_while_PBKDF2_secrets_still_verify`).
 Its 600,000-iteration floor (OWASP) and 2,000,000 cap are enforced where a credential is created
@@ -109,10 +108,10 @@ without being told about it. An `http://localhost` URI logs an advisory warning 
 literal (RFC 8252 §8.3); `https://localhost` does not, being a web client on a dev certificate rather
 than a native loopback redirect. Post-logout redirect URIs get the same treatment.
 
-**A registration whose credential no registered hasher can handle is a startup failure, and so is one
-whose credential accepts an empty presented secret.** Both would otherwise surface at runtime as an
-ordinary `invalid_client`, indistinguishable from a wrong password — or, for the empty-secret case,
-as unauthenticated access.
+**A malformed secret, one no hasher declared or its hasher reports, or one accepting an empty secret
+refuses the whole client**, even beside a valid one, which would hide a broken rotation
+(`One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid`). No message quotes a
+stored value; `client.credentials.no_hasher` names the id only.
 
 **The resolver serves a snapshot, never the store's instance.** A repository may return an entity
 still attached to a change tracker, so validating what it handed back validated nothing durable — one
@@ -121,7 +120,7 @@ into a `ClientRegistrationSnapshot` before reading it twice, then fingerprints, 
 the copy. Collections are rebuilt *and* wrapped against a downcast, because `TokenIssuanceContext.Client`
 hands the registration to the host's own `ITokenIssuer`. An uncopied member is not a compile error, so
 `Snapshot_covers_every_IClientRegistration_member` and
-`A_snapshot_carries_every_value_of_the_registration_it_copied` enforce it. Credentials copy themselves.
+`A_snapshot_carries_every_value_of_the_registration_it_copied` enforce it.
 
 **Client lookup returns `null` for unknown or malformed ids and never throws.** Throwing changes
 timing and leaks a signal usable for client-ID enumeration. `invalid_client` covers both unknown
@@ -145,6 +144,7 @@ in the ASP.NET Core package.
 - **Composite-side request-shape sniffing.** An earlier draft hard-coded "Basic header means
   `client_secret_basic`" in the composite. Caught in review: it defeats the extension point, because
   adding a method would have meant editing the composite.
+- **Typed per-algorithm secret records.** A store cannot persist a type it has never heard of.
 - **A three-valued authentication outcome.** Needed only for chain-of-responsibility dispatch. Once
   the composite filters candidates first, at most one authenticator ever runs, and the outcome
   collapses to a binary flag.

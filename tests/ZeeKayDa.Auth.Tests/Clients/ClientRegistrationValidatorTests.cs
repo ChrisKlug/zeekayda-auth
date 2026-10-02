@@ -14,106 +14,28 @@ public sealed class ClientRegistrationValidatorTests
 {
     // ── Fake/helper infrastructure ────────────────────────────────────────────────────────────────
 
-    private sealed class FakeSecret : IClientSecret { public IClientCredential Snapshot() => new FakeSecret(); }
+    private static readonly ClientSecret FakeSecret = new("$fake$x");
 
-    private sealed class AnySecret : IClientSecret { public IClientCredential Snapshot() => new AnySecret(); }
-
-    // The credentials below are deliberately not secrets: the snapshot rule applies to every
-    // credential, including ones no hasher will ever see.
-
-    private sealed class SelfReturningCredential : IClientCredential
-    {
-        public IClientCredential Snapshot() => this;
-    }
-
-    private sealed class NullReturningCredential : IClientCredential
-    {
-        public IClientCredential Snapshot() => null!;
-    }
-
-    private sealed class ThrowingSnapshotCredential(Exception exception) : IClientCredential
-    {
-        public IClientCredential Snapshot() => throw exception;
-    }
-
-    private sealed class CopyingCredential : IClientCredential
-    {
-        public IClientCredential Snapshot() => new CopyingCredential();
-    }
-
-    /// <summary>A secret whose copy is a credential but no longer a secret.</summary>
-    private sealed class DemotingSecret : IClientSecret
-    {
-        public IClientCredential Snapshot() => new CopyingCredential();
-    }
-
-    /// <summary>A secret <see cref="RetypingHasher"/> handles, whose copy no hasher handles.</summary>
-    private sealed class RetypingSecret : IClientSecret
-    {
-        public IClientCredential Snapshot() => new AnySecret();
-    }
-
-    /// <summary>A stored secret whose copy accepts an empty secret, and whose copy's copy does not.</summary>
-    private sealed class StoredSecret : IClientSecret
-    {
-        public IClientCredential Snapshot() => new EmptyAcceptingCopy();
-    }
-
-    private sealed class EmptyAcceptingCopy : IClientSecret
-    {
-        public IClientCredential Snapshot() => new SafeCopy();
-    }
-
-    private sealed class SafeCopy : IClientSecret
-    {
-        public IClientCredential Snapshot() => new SafeCopy();
-    }
-
-    /// <summary>Handles all three generations; only <see cref="EmptyAcceptingCopy"/> verifies anything.</summary>
-    private sealed class GenerationHasher : IClientSecretHasher
-    {
-        public bool CanHandle(IClientSecret secret) => secret is StoredSecret or EmptyAcceptingCopy or SafeCopy;
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => stored is EmptyAcceptingCopy;
-        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new SafeCopy();
-    }
-
-    private sealed class RetypingHasher : IClientSecretHasher
-    {
-        public bool CanHandle(IClientSecret secret) => secret is RetypingSecret;
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new RetypingSecret();
-    }
+    private static readonly ClientSecret AnySecret = new("$any$x");
 
     /// <summary>
-    /// A hasher that accepts any credential of type <see cref="FakeSecret"/> and always returns
-    /// the configured <paramref name="verifyResult"/> from <c>Verify</c>.
+    /// A hasher that owns the <c>fake</c> id and always returns the configured
+    /// <paramref name="verifyResult"/> from <c>Verify</c>.
     /// </summary>
-    private sealed class FakeHasher : IClientSecretHasher
+    private sealed class FakeHasher(bool verifyResult = false) : IClientSecretHasher
     {
-        private readonly bool _verifyResult;
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake" };
 
-        public FakeHasher(bool verifyResult = false) => _verifyResult = verifyResult;
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => verifyResult;
 
-        public bool CanHandle(IClientSecret secret) => secret is FakeSecret;
-
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented)
-            => _verifyResult;
-
-        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new FakeSecret();
-    }
-
-    /// <summary>A hasher that handles <see cref="AnySecret"/> and always returns false.</summary>
-    private sealed class FallbackHasher : IClientSecretHasher
-    {
-        public bool CanHandle(IClientSecret secret) => secret is AnySecret;
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new AnySecret();
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
     }
 
     private static CompositeClientSecretHasher MakeHasher(IClientSecretHasher hasher)
         => new CompositeClientSecretHasher(
             [hasher],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
+            Options.Create(new ClientSecretHasherRegistrationOptions()),
+            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
 
     private static ClientRegistrationValidator MakeValidator(
         IClientSecretHasher? hasher = null,
@@ -210,10 +132,10 @@ public sealed class ClientRegistrationValidatorTests
 
     private static Client MakeValidConfidentialClient(
         string clientId = "test-client",
-        IClientSecret? secret = null) =>
+        ClientSecret? secret = null) =>
         Client.CreateConfidential(
             clientId,
-            secret ?? new FakeSecret(),
+            secret ?? FakeSecret,
             ["https://app.example.com/callback"],
             [],
             ["openid"]);
@@ -245,7 +167,7 @@ public sealed class ClientRegistrationValidatorTests
     private sealed class MinimalEntity : IClientWithCredentials
     {
         public string ClientId => "minimal";
-        public IReadOnlyList<IClientCredential> Credentials { get; } = [new FakeSecret()];
+        public IReadOnlyList<ClientSecret> Secrets { get; } = [FakeSecret];
         public IReadOnlySet<string> RedirectUris { get; } = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/callback" };
         public IReadOnlySet<string> AllowedScopes { get; } = new HashSet<string>(StringComparer.Ordinal) { "openid" };
     }
@@ -705,7 +627,7 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = Client.CreateConfidential(
             "client",
-            new FakeSecret(),
+            FakeSecret,
             ["https://app.example.com/cb"],
             [],
             ["openid"]);
@@ -739,7 +661,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new FakeSecret()],
+            Secrets = [FakeSecret],
             IsPublic = true,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -760,7 +682,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [],
+            Secrets = [],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -781,7 +703,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -802,7 +724,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [],
+            Secrets = [],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -841,7 +763,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new FakeSecret()],
+            Secrets = [FakeSecret],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -864,7 +786,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new FakeSecret()],
+            Secrets = [FakeSecret],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -889,7 +811,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new FakeSecret()],
+            Secrets = [FakeSecret],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -912,12 +834,11 @@ public sealed class ClientRegistrationValidatorTests
     {
         var validator = MakeValidator();
 
-        // We need a confidential client with exactly 2 IClientSecret credentials.
-        // Use object initialiser to bypass CreateConfidential (which only allows one credential).
+        // Object initialiser to bypass CreateConfidential, which takes one secret.
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new FakeSecret(), new FakeSecret()],
+            Secrets = [FakeSecret, FakeSecret],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -937,7 +858,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new FakeSecret(), new FakeSecret(), new FakeSecret()],
+            Secrets = [FakeSecret, FakeSecret, FakeSecret],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -952,7 +873,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_for_a_PBKDF2_credential_below_the_iteration_floor()
+    public void Validate_fails_for_a_PBKDF2_secret_below_the_iteration_floor()
     {
         // The real hasher, reached the way production reaches it: through the composite, as
         // IClientSecretHasher. A fake here would prove nothing about whether the bound is live.
@@ -961,7 +882,7 @@ public sealed class ClientRegistrationValidatorTests
             NullSanitizingLogger<Pbkdf2ClientSecretHasher>.Instance);
         var validator = MakeValidator(hasher);
         var client = MakeValidConfidentialClient(
-            secret: new Pbkdf2ClientSecret(Pbkdf2ClientSecretHasher.MinIterations - 1, new byte[16], new byte[32]));
+            secret: Pbkdf2ClientSecretHasher.Format(Pbkdf2ClientSecretHasher.MinIterations - 1, new byte[16], new byte[32]));
 
         var act = () => validator.Validate(client);
 
@@ -969,72 +890,13 @@ public sealed class ClientRegistrationValidatorTests
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.pbkdf2_iterations_below_minimum");
     }
 
-    // ── Credential snapshots ──────────────────────────────────────────────────────────────────────
-
-    // The resolver validates a copy of the registration and then authenticates the client against
-    // that copy. A credential whose Snapshot() hands back itself, or nothing, would leave the store's
-    // instance in the copy, where the store can still change it after the verdict. This rule catches
-    // it on the store's instance, at startup and at a custom store's write time; at request time the
-    // snapshot refuses such a credential itself (ValidatedClientResolverTests).
+    // ── Stored secret shape ───────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_with_not_copied_code_if_a_credential_s_Snapshot_returns_itself()
+    public void Validate_fails_with_null_entry_code_if_Secrets_holds_a_null()
     {
-        var failure = NotCopiedFailure(new SelfReturningCredential());
-
-        failure.Message.Should().Contain("SelfReturningCredential").And.Contain("returned the same instance");
-    }
-
-    [Fact]
-    public void Validate_fails_with_not_copied_code_if_a_credential_s_Snapshot_returns_null()
-    {
-        var failure = NotCopiedFailure(new NullReturningCredential());
-
-        failure.Message.Should().Contain("NullReturningCredential").And.Contain("returned null");
-    }
-
-    [Fact]
-    public void Validate_names_the_exception_but_not_its_message_if_a_credential_s_Snapshot_throws()
-    {
-        // A throw becomes a named startup failure rather than an unexplained exception, and the
-        // message is left out because a credential's own exception may carry the credential's data.
-        var credential = new ThrowingSnapshotCredential(new InvalidOperationException("salt=0badc0de"));
-
-        var failure = NotCopiedFailure(credential);
-
-        failure.Message.Should().Contain("threw InvalidOperationException").And.NotContain("0badc0de");
-    }
-
-    [Fact]
-    public void Validate_fails_with_not_copied_code_if_a_PBKDF2_credential_has_no_salt()
-    {
-        // The built-in copy cannot copy a missing array. Before credentials were copied, such a
-        // registration passed startup and then failed every request as an unknown client.
-        var failure = NotCopiedFailure(new Pbkdf2ClientSecret(600_000, null!, new byte[32]));
-
-        failure.Message.Should().Contain("Pbkdf2ClientSecret").And.Contain("threw");
-    }
-
-    [Fact]
-    public void Validate_reports_a_configuration_failure_thrown_by_Snapshot_by_its_type_only()
-    {
-        // Even the framework's own exception type is not trusted here: Snapshot() belongs to the
-        // credential, and a message it composed may carry the credential's data into the log.
-        var credential = new ThrowingSnapshotCredential(new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure("custom.credential.unreadable", "Cannot copy salt=0badc0de.")));
-
-        var failure = NotCopiedFailure(credential);
-
-        failure.Message.Should().Contain("threw ZeeKayDaConfigurationException").And.NotContain("0badc0de");
-    }
-
-    [Fact]
-    public void Validate_fails_with_null_entry_code_if_Credentials_holds_a_null()
-    {
-        // The other credential rules filter by type and skip a null, so without this the
-        // registration passed startup as confidential and then failed every lookup unexplained.
         var validator = MakeValidator();
-        var client = MakeValidConfidentialClient() with { Credentials = [new FakeSecret(), null!] };
+        var client = MakeValidConfidentialClient() with { Secrets = [FakeSecret, null!] };
 
         var act = () => validator.Validate(client);
 
@@ -1042,45 +904,60 @@ public sealed class ClientRegistrationValidatorTests
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.null_entry");
     }
 
-    [Fact]
-    public void Validate_fails_with_not_copied_code_if_a_secret_s_Snapshot_is_not_a_secret()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void Validate_fails_with_null_entry_code_if_a_secret_has_no_value(string? value)
     {
-        // The copy is what the client is authenticated against. A secret that copies into some other
-        // kind of credential would silently leave the client with no secret at all.
-        var failure = NotCopiedFailure(new DemotingSecret());
+        var validator = MakeValidator();
+        var client = MakeValidConfidentialClient(secret: new ClientSecret(value!));
 
-        failure.Message.Should().Contain("DemotingSecret").And.Contain("which is not an IClientSecret");
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.null_entry");
+    }
+
+    [Theory]
+    [InlineData("my-plaintext-secret")]
+    [InlineData("$my-plaintext-secret")]
+    [InlineData("$$fake$x")]
+    public void Validate_fails_with_malformed_secret_code_without_quoting_the_value(string value)
+    {
+        var validator = MakeValidator();
+        var client = MakeValidConfidentialClient(secret: new ClientSecret(value));
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.malformed_secret")
+            .Which.Message.Should().NotContain(value);
     }
 
     [Fact]
-    public void Validate_fails_with_no_hasher_code_if_a_secret_s_Snapshot_returns_a_type_no_hasher_handles()
+    public void Validate_names_the_algorithm_id_but_not_the_rest_of_the_value_when_no_hasher_declared_it()
     {
-        // The secret rules run on the copy, which is what the resolver serves. Run on the store's
-        // instance, this registration passed startup — its hasher handles the original — and then
-        // failed every lookup, because nothing handles the copy.
-        var validator = MakeValidator(hasher: new RetypingHasher());
-        var client = MakeValidConfidentialClient(secret: new RetypingSecret());
+        var validator = MakeValidator();
+        var client = MakeValidConfidentialClient(secret: new ClientSecret("$argon2id$v=19$m=1$c2FsdA$aGFzaA"));
 
         var act = () => validator.Validate(client);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.no_hasher")
-            .Which.Message.Should().Contain(nameof(AnySecret));
+            .Which.Message.Should().Contain("'argon2id'").And.NotContain("c2FsdA");
     }
 
     [Fact]
-    public void Validate_checks_the_resolver_s_copy_itself_rather_than_copying_it_again()
+    public void One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid()
     {
-        // The client is authenticated against the copy the snapshot holds. Copying that copy again
-        // and checking the result would approve a second copy while the first is served — here, a
-        // first copy that accepts an empty secret behind a second copy that does not.
-        var validator = MakeValidator(hasher: new GenerationHasher());
-        var client = MakeValidConfidentialClient(secret: new StoredSecret());
+        // Skipping the bad one would hide a broken rotation until the good secret is retired.
+        var validator = MakeValidator();
+        var client = MakeValidConfidentialClient() with { Secrets = [FakeSecret, AnySecret] };
 
-        var act = () => validator.Validate(ClientRegistrationSnapshot.Of(client));
+        var act = () => validator.Validate(client);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.empty_secret_accepted");
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.no_hasher");
     }
 
     [Fact]
@@ -1094,28 +971,16 @@ public sealed class ClientRegistrationValidatorTests
         act.Should().NotThrow();
     }
 
-    private static ZeeKayDaConfigurationFailure NotCopiedFailure(IClientCredential credential)
-    {
-        var validator = MakeValidator();
-        var client = MakeValidConfidentialClient() with { Credentials = [new FakeSecret(), credential] };
-
-        var act = () => validator.Validate(client);
-
-        return act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.not_copied")
-            .Subject;
-    }
-
     // ── Empty-secret probe ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_with_empty_secret_accepted_code_if_credential_accepts_empty_secret()
+    public void Validate_fails_with_empty_secret_accepted_code_if_a_secret_accepts_an_empty_secret()
     {
         // A hasher that accepts any presented value including empty
         var emptyAcceptingHasher = new FakeHasher(verifyResult: true);
         var validator = MakeValidator(hasher: emptyAcceptingHasher);
 
-        var client = MakeValidConfidentialClient(secret: new FakeSecret());
+        var client = MakeValidConfidentialClient(secret: FakeSecret);
 
         var act = () => validator.Validate(client);
 
@@ -1124,17 +989,17 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_with_no_hasher_code_if_credential_has_no_matching_hasher()
+    public void Validate_fails_with_no_hasher_code_if_no_hasher_declared_the_secret_s_id()
     {
-        // The validator's composite only has a FakeHasher (handles FakeSecret). A credential of type
-        // AnySecret is handled by no registered hasher, so it can never be verified — it must be
-        // rejected at registration rather than failing silently at runtime as invalid_client.
+        // The validator's composite only has a FakeHasher (owns "fake"). No registered hasher declared
+        // "any", so the secret can never be verified — it must be rejected at registration rather
+        // than failing silently at runtime as invalid_client.
         var validator = MakeValidator(hasher: new FakeHasher());
 
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new AnySecret()],
+            Secrets = [AnySecret],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -1395,7 +1260,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new FakeSecret()],
+            Secrets = [FakeSecret],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -1772,7 +1637,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "my client!", // invalid client_id
-            Credentials = [],
+            Secrets = [],
             IsPublic = false, // trinity violation: IsPublic=false, no credentials, auth methods empty
             RedirectUris = new HashSet<string>(
                 ["https://app.example.com/cb#frag"], StringComparer.Ordinal), // fragment
@@ -1854,7 +1719,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new FakeSecret()],
+            Secrets = [FakeSecret],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -1876,7 +1741,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new FakeSecret()],
+            Secrets = [FakeSecret],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -1901,7 +1766,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new FakeSecret()],
+            Secrets = [FakeSecret],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -1926,7 +1791,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new FakeSecret()],
+            Secrets = [FakeSecret],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -1954,7 +1819,7 @@ public sealed class ClientRegistrationValidatorTests
         var client = new Client
         {
             ClientId = "client",
-            Credentials = [new FakeSecret()],
+            Secrets = [FakeSecret],
             IsPublic = false,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -1994,27 +1859,24 @@ public sealed class ClientRegistrationValidatorTests
     // ── Credential registration constraints ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// A hasher that handles <see cref="FakeSecret"/> and returns a predictable failure from
-    /// <see cref="IClientSecretHasher.GetRegistrationFailures"/>. Used to verify the validator
-    /// delegates to the hasher rather than implementing its own type-specific checks.
+    /// A hasher that owns the <c>fake</c> id and returns a predictable failure from
+    /// <see cref="IClientSecretHasher.ValidateStoredSecret"/>. Used to verify the validator
+    /// delegates to the hasher rather than implementing its own algorithm-specific checks.
     /// </summary>
     private sealed class RegistrationFailingHasher : IClientSecretHasher
     {
-        public bool CanHandle(IClientSecret secret) => secret is FakeSecret;
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new FakeSecret();
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake" };
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
 
-        public IEnumerable<ZeeKayDaConfigurationFailure> GetRegistrationFailures(
-            IClientSecret credential, string clientId)
+        public IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored)
         {
-            yield return new ZeeKayDaConfigurationFailure(
-                "test.fake_constraint",
-                $"Client '{clientId}' failed fake constraint.");
+            yield return new ZeeKayDaConfigurationFailure("test.fake_constraint", "failed fake constraint.");
         }
     }
 
     [Fact]
-    public void Validate_aggregates_registration_failures_from_hasher_GetRegistrationFailures()
+    public void Validate_aggregates_failures_from_the_hasher_s_ValidateStoredSecret_with_the_client_id()
     {
         var validator = MakeValidator(new RegistrationFailingHasher());
         var client = MakeValidConfidentialClient();

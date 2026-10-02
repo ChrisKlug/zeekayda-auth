@@ -114,11 +114,8 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                     clients.Add(
                         Client.CreateConfidential(
                             "bad-method-client",
-                            // Structurally valid pre-hashed credential (fake bytes, not used for auth).
-                            new Pbkdf2ClientSecret(
-                                Iterations: 600_000,
-                                Salt: new byte[16],
-                                Hash: new byte[32]),
+                            // Structurally valid pre-hashed secret (fake bytes, not used for auth).
+                            Pbkdf2ClientSecretHasher.Format(600_000, new byte[16], new byte[32]),
                             ["https://test.example.com/callback"],
                             [],
                             ["openid"])
@@ -172,10 +169,7 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                     clients.Add(
                         Client.CreateConfidential(
                             "good-method-client",
-                            new Pbkdf2ClientSecret(
-                                Iterations: 600_000,
-                                Salt: new byte[16],
-                                Hash: new byte[32]),
+                            Pbkdf2ClientSecretHasher.Format(600_000, new byte[16], new byte[32]),
                             ["https://test.example.com/callback"],
                             [],
                             ["openid"])

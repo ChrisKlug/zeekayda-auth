@@ -90,7 +90,7 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
         validate.Should().NotThrow();
 
         var composite = provider.GetRequiredService<CompositeClientSecretHasher>();
-        composite.Create("a-client-secret").Should().BeOfType<FakeSecret>();
+        composite.Create("a-client-secret").Should().Be(FakeSecret);
 
         var pbkdf2 = provider.GetServices<IClientSecretHasher>().OfType<Pbkdf2ClientSecretHasher>().Single();
         composite.Verify(pbkdf2.Create("an-existing-secret"), "an-existing-secret").Should().BeTrue();
@@ -109,8 +109,8 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
         var validate = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(provider);
         validate.Should().NotThrow();
 
-        provider.GetRequiredService<CompositeClientSecretHasher>().Create("a-client-secret")
-            .Should().BeOfType<Pbkdf2ClientSecret>();
+        provider.GetRequiredService<CompositeClientSecretHasher>().Create("a-client-secret").Value
+            .Should().StartWith("$pbkdf2-sha256$");
     }
 
     // ── PBKDF2 iteration count ───────────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
 
         var created = provider.GetRequiredService<IClientSecretFactory>().Create("a-client-secret");
 
-        created.Should().BeOfType<Pbkdf2ClientSecret>().Which.Iterations.Should().Be(1_200_000);
+        created.Value.Should().StartWith("$pbkdf2-sha256$i=1200000$");
     }
 
     [Theory]
@@ -182,7 +182,7 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
 
         var created = provider.GetRequiredService<IClientSecretFactory>().Create("a-client-secret");
 
-        created.Should().BeOfType<Pbkdf2ClientSecret>().Which.Iterations.Should().Be(1_200_000);
+        created.Value.Should().StartWith("$pbkdf2-sha256$i=1200000$");
     }
 
     [Fact]
@@ -223,26 +223,25 @@ public sealed class ZeeKayDaAuthCoreBuilderHasherExtensionsTests
 
         var created = provider.GetRequiredService<IClientSecretFactory>().Create("a-client-secret");
 
-        created.Should().BeOfType<Pbkdf2ClientSecret>()
-            .Which.Iterations.Should().Be(Pbkdf2ClientSecretHasherOptions.DefaultIterations);
+        created.Value.Should().StartWith($"$pbkdf2-sha256$i={Pbkdf2ClientSecretHasherOptions.DefaultIterations}$");
     }
 
     // ── Fakes ─────────────────────────────────────────────────────────────────────────────────────
 
-    private sealed class FakeSecret : IClientSecret { public IClientCredential Snapshot() => new FakeSecret(); }
-    private sealed class AnotherFakeSecret : IClientSecret { public IClientCredential Snapshot() => new AnotherFakeSecret(); }
+    private static readonly ClientSecret FakeSecret = new("$fake-secret$x");
+    private static readonly ClientSecret AnotherFakeSecret = new("$another-fake-secret$x");
 
     private sealed class FakeHasher : IClientSecretHasher
     {
-        public bool CanHandle(IClientSecret secret) => secret is FakeSecret;
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new FakeSecret();
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake-secret" };
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
     }
 
     private sealed class AnotherFakeHasher : IClientSecretHasher
     {
-        public bool CanHandle(IClientSecret secret) => secret is AnotherFakeSecret;
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new AnotherFakeSecret();
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "another-fake-secret" };
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => AnotherFakeSecret;
     }
 }

@@ -68,7 +68,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         // A host's own IClientRegistrationValidator, however lax, must not replace that check.
         var corrupt = Client.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"])
             with
-        { Credentials = [new Pbkdf2ClientSecret(600_000, new byte[16], new byte[32])] };
+        { Secrets = [Pbkdf2ClientSecretHasher.Format(600_000, new byte[16], new byte[32])] };
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IClientRegistrationValidator, AcceptEverythingValidator>();
@@ -159,8 +159,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 
         var secret = factory.Create("s3cr3t-v4lu3");
 
-        secret.Should().NotBeNull();
-        secret.Should().BeAssignableTo<IClientSecret>();
+        secret.Value.Should().StartWith("$pbkdf2-sha256$");
     }
 
     [Fact]
@@ -293,6 +292,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     /// </summary>
     private sealed class FakeClientSecretFactory : IClientSecretFactory
     {
-        public IClientSecret Create(string plaintext) => throw new NotImplementedException();
+        public ClientSecret Create(string plaintext) => throw new NotImplementedException();
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => throw new NotImplementedException();
     }
 }

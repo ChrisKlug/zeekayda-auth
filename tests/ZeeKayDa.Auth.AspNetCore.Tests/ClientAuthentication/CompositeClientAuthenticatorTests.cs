@@ -18,18 +18,15 @@ public sealed class CompositeClientAuthenticatorTests
 {
     // ── Fake infrastructure ───────────────────────────────────────────────────────────────────────
 
-    private sealed record FakeSecret(string Name = "") : IClientSecret
-    {
-        public IClientCredential Snapshot() => this with { };
-    }
+    private static ClientSecret FakeSecret(string name = "x") => new($"$fake-secret${name}");
 
     /// <summary>
-    /// Trackable hasher that handles any <see cref="FakeSecret"/>.
+    /// Trackable hasher that owns the <c>fake-secret</c> id.
     /// Verify result is configurable per instance or per credential.
     /// </summary>
     private sealed class FakeHasher : IClientSecretHasher
     {
-        private readonly Func<IClientSecret, bool> _verifyResult;
+        private readonly Func<ClientSecret, bool> _verifyResult;
         private int _callCount;
         private int _derivationCount;
 
@@ -42,17 +39,17 @@ public sealed class CompositeClientAuthenticatorTests
         public int DerivationCount => _derivationCount;
 
         public FakeHasher(bool result = false) : this(_ => result) { }
-        public FakeHasher(Func<IClientSecret, bool> verifyResult) => _verifyResult = verifyResult;
+        public FakeHasher(Func<ClientSecret, bool> verifyResult) => _verifyResult = verifyResult;
 
-        public bool CanHandle(IClientSecret secret) => secret is FakeSecret;
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented)
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake-secret" };
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
         {
             Interlocked.Increment(ref _callCount);
             if (!presented.IsEmpty)
                 Interlocked.Increment(ref _derivationCount);
             return _verifyResult(stored);
         }
-        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new FakeSecret();
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret();
     }
 
     private sealed class PassingRegistrationValidator : IClientRegistrationValidator
@@ -101,7 +98,7 @@ public sealed class CompositeClientAuthenticatorTests
     private sealed class MinimalClient : IClientWithCredentials
     {
         public required string ClientId { get; init; }
-        public required IReadOnlyList<IClientCredential> Credentials { get; init; }
+        public required IReadOnlyList<ClientSecret> Secrets { get; init; }
         public required bool IsPublic { get; init; }
         public required IReadOnlySet<string> AllowedTokenEndpointAuthMethods { get; init; }
         public IReadOnlySet<string> RedirectUris { get; } = new HashSet<string>(StringComparer.Ordinal);
@@ -217,7 +214,8 @@ public sealed class CompositeClientAuthenticatorTests
     {
         var compositeHasher = new CompositeClientSecretHasher(
             [hasher],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
+            Options.Create(new ClientSecretHasherRegistrationOptions()),
+            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
 
         var authenticator = new ClientSecretAuthenticator(compositeHasher);
 
@@ -244,7 +242,8 @@ public sealed class CompositeClientAuthenticatorTests
     {
         var compositeHasher = new CompositeClientSecretHasher(
             [hasher],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
+            Options.Create(new ClientSecretHasherRegistrationOptions()),
+            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
         var serverOptions = CreateServerOptions(
             TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None);
         serverOptions.Value.Issuer = "https://auth.example.com";
@@ -281,17 +280,17 @@ public sealed class CompositeClientAuthenticatorTests
 
     private static MinimalClient CreateConfidentialClient(
         string clientId = "client-1",
-        IClientSecret? secret = null,
+        ClientSecret? secret = null,
         string allowedMethod = TokenEndpointAuthMethods.ClientSecretBasic)
     {
-        IReadOnlyList<IClientCredential> creds = secret is not null
-            ? new List<IClientCredential> { secret }
+        IReadOnlyList<ClientSecret> creds = secret is not null
+            ? new List<ClientSecret> { secret }
             : [];
 
         return new MinimalClient
         {
             ClientId = clientId,
-            Credentials = creds,
+            Secrets = creds,
             IsPublic = false,
             AllowedTokenEndpointAuthMethods =
                 new HashSet<string>(StringComparer.Ordinal) { allowedMethod },
@@ -302,7 +301,7 @@ public sealed class CompositeClientAuthenticatorTests
         => new()
         {
             ClientId = clientId,
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             AllowedTokenEndpointAuthMethods =
                 new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.None },
@@ -325,7 +324,7 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_true_for_valid_client_secret_basic()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var client = CreateConfidentialClient(secret: secret);
         var (composite, _) = CreateComposite(client, verifyResult: true);
 
@@ -341,7 +340,7 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_false_and_pads_timing_when_credential_is_wrong()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var client = CreateConfidentialClient(secret: secret);
         var (composite, hasher) = CreateComposite(client, verifyResult: false);
 
@@ -376,10 +375,11 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task An_authenticator_returning_null_is_a_refusal_not_a_fault()
     {
-        var client = CreateConfidentialClient(secret: new FakeSecret());
+        var client = CreateConfidentialClient(secret: FakeSecret());
         var compositeHasher = new CompositeClientSecretHasher(
             [new FakeHasher(true)],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
+            Options.Create(new ClientSecretHasherRegistrationOptions()),
+            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
         var composite = new CompositeClientAuthenticator(
             [new NullReturningAuthenticator()],
             Resolver(client),
@@ -401,12 +401,13 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_false_when_multiple_mechanisms_are_presented()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var client = CreateConfidentialClient(secret: secret);
         var hasher = new FakeHasher(true);
         var compositeHasher = new CompositeClientSecretHasher(
             [hasher],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
+            Options.Create(new ClientSecretHasherRegistrationOptions()),
+            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
 
         // Two authenticators both claiming the same request simulates multiple mechanisms.
         var composite = new CompositeClientAuthenticator(
@@ -459,7 +460,7 @@ public sealed class CompositeClientAuthenticatorTests
         var miscountingClient = new MinimalClient
         {
             ClientId = "public-client",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             AllowedTokenEndpointAuthMethods = new MiscountingSet(
                 [TokenEndpointAuthMethods.None, TokenEndpointAuthMethods.ClientSecretBasic],
@@ -483,7 +484,7 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_confidential_client_on_none_fallback()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var confidentialClient = CreateConfidentialClient(secret: secret);
         var hasher = new FakeHasher();
         var (composite, _) = CreateCompositeWithHasher(
@@ -530,16 +531,16 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_true_when_second_credential_is_correct()
     {
-        var wrongSecret = new FakeSecret("wrong");
-        var correctSecret = new FakeSecret("correct");
+        var wrongSecret = FakeSecret("wrong");
+        var correctSecret = FakeSecret("correct");
 
         // Hasher that accepts only correctSecret. It matches by name, not by reference: the client is
         // served as a snapshot, so the hasher is handed a copy of each credential, never the original.
-        var hasher = new FakeHasher(secret => secret is FakeSecret { Name: "correct" });
+        var hasher = new FakeHasher(secret => secret == FakeSecret("correct"));
         var client = new MinimalClient
         {
             ClientId = "client-1",
-            Credentials = [wrongSecret, correctSecret],
+            Secrets = [wrongSecret, correctSecret],
             IsPublic = false,
             AllowedTokenEndpointAuthMethods =
                 new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.ClientSecretBasic },
@@ -611,7 +612,7 @@ public sealed class CompositeClientAuthenticatorTests
         // A confidential client presents both Basic auth AND client_secret in the body.
         // ClientSecretAuthenticator.AuthenticateAsync detects the conflict and rejects
         // even though the credentials themselves would be valid (FakeHasher returns true).
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var client = CreateConfidentialClient(secret: secret);
         var (composite, _) = CreateCompositeWithHasher(
             client,
@@ -638,7 +639,7 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_false_and_pads_timing_when_method_is_not_in_client_allowlist()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         // Client is registered for client_secret_post only; request uses client_secret_basic.
         var client = CreateConfidentialClient(
             secret: secret,
@@ -664,7 +665,7 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_false_when_Basic_username_does_not_match_client_id()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var client = CreateConfidentialClient("client-1", secret: secret);
         // Hasher always accepts — so any success would come from bypassing the username check.
         var (composite, _) = CreateComposite(client, verifyResult: true);
@@ -687,7 +688,7 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_false_when_form_client_id_disagrees_with_Basic_username()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var client = CreateConfidentialClient("client-1", secret: secret);
         // Hasher always accepts — success would mean the consistency check was bypassed.
         var (composite, _) = CreateComposite(client, verifyResult: true);
@@ -713,7 +714,7 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_false_when_multiple_Authorization_headers_are_present()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var client = CreateConfidentialClient(secret: secret);
         var (composite, _) = CreateComposite(client, verifyResult: true);
 
@@ -739,12 +740,12 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_true_when_Basic_credentials_are_percent_encoded()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         // client_id contains a slash and secret contains @; both must be percent-encoded in Basic.
         var client = new MinimalClient
         {
             ClientId = "client/one",
-            Credentials = [secret],
+            Secrets = [secret],
             IsPublic = false,
             AllowedTokenEndpointAuthMethods =
                 new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.ClientSecretBasic },
@@ -771,7 +772,7 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_true_for_valid_client_secret_post()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var client = CreateConfidentialClient(
             secret: secret,
             allowedMethod: TokenEndpointAuthMethods.ClientSecretPost);
@@ -795,7 +796,7 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_wrong_client_secret_post_credential()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var client = CreateConfidentialClient(
             secret: secret,
             allowedMethod: TokenEndpointAuthMethods.ClientSecretPost);
@@ -823,7 +824,7 @@ public sealed class CompositeClientAuthenticatorTests
     {
         // client_secret= (empty value): ContainsKey is true, so CanHandle returns (true, client_secret_post).
         // AuthenticateAsync enters the post path and pads from zero — not the none fallback.
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var client = CreateConfidentialClient(
             secret: secret,
             allowedMethod: TokenEndpointAuthMethods.ClientSecretPost);
@@ -861,7 +862,7 @@ public sealed class CompositeClientAuthenticatorTests
         var client = new MinimalClient
         {
             ClientId = "client-1",
-            Credentials = [.. Enumerable.Range(0, secretCount).Select(_ => new FakeSecret())],
+            Secrets = [.. Enumerable.Range(0, secretCount).Select(_ => FakeSecret())],
             IsPublic = false,
             AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal) { method },
         };
@@ -896,7 +897,7 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_false_when_Basic_header_contains_invalid_base64()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var client = CreateConfidentialClient(secret: secret);
         var (composite, _) = CreateComposite(client, verifyResult: true);
 
@@ -916,7 +917,7 @@ public sealed class CompositeClientAuthenticatorTests
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_false_when_Basic_header_contains_no_colon_separator()
     {
-        var secret = new FakeSecret();
+        var secret = FakeSecret();
         var client = CreateConfidentialClient(secret: secret);
         var (composite, _) = CreateComposite(client, verifyResult: true);
 
@@ -942,7 +943,8 @@ public sealed class CompositeClientAuthenticatorTests
     {
         var compositeHasher = new CompositeClientSecretHasher(
             [new FakeHasher()],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
+            Options.Create(new ClientSecretHasherRegistrationOptions()),
+            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
 
         // ThrowingCanHandleAuthenticator is the only authenticator — after its CanHandle throws
         // and is suppressed, matches is empty → none fallback → rejected (none not in allowlist).
@@ -975,7 +977,8 @@ public sealed class CompositeClientAuthenticatorTests
     {
         var compositeHasher = new CompositeClientSecretHasher(
             [new FakeHasher()],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
+            Options.Create(new ClientSecretHasherRegistrationOptions()),
+            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
 
         var logger = new CapturingSanitizingLogger<CompositeClientAuthenticator>();
 
@@ -1013,7 +1016,8 @@ public sealed class CompositeClientAuthenticatorTests
 
         var compositeHasher = new CompositeClientSecretHasher(
             [new FakeHasher()],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
+            Options.Create(new ClientSecretHasherRegistrationOptions()),
+            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
 
         var client = CreateConfidentialClient(
             allowedMethod: "undeclared_method");
@@ -1047,12 +1051,13 @@ public sealed class CompositeClientAuthenticatorTests
 
         var compositeHasher = new CompositeClientSecretHasher(
             [new FakeHasher()],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
+            Options.Create(new ClientSecretHasherRegistrationOptions()),
+            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
 
         var client = new MinimalClient
         {
             ClientId = "client-1",
-            Credentials = [],
+            Secrets = [],
             IsPublic = false,
             AllowedTokenEndpointAuthMethods =
                 new HashSet<string>(StringComparer.Ordinal) { "custom_method" },
@@ -1084,7 +1089,8 @@ public sealed class CompositeClientAuthenticatorTests
         var hasher = new FakeHasher();
         var compositeHasher = new CompositeClientSecretHasher(
             [hasher],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
+            Options.Create(new ClientSecretHasherRegistrationOptions()),
+            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
 
         var composite = new CompositeClientAuthenticator(
             [new ClientSecretAuthenticator(compositeHasher)],
@@ -1111,7 +1117,7 @@ public sealed class CompositeClientAuthenticatorTests
         var corruptClient = new MinimalClient
         {
             ClientId = "corrupt-client",
-            Credentials = [new FakeSecret()],
+            Secrets = [FakeSecret()],
             IsPublic = true,
             AllowedTokenEndpointAuthMethods =
                 new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.None },
@@ -1140,7 +1146,7 @@ public sealed class CompositeClientAuthenticatorTests
         var corruptClient = new MinimalClient
         {
             ClientId = "corrupt-client",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             AllowedTokenEndpointAuthMethods =
                 new HashSet<string>(StringComparer.Ordinal)

@@ -56,6 +56,27 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
             .WithMessage("*unknown*");
     }
 
+    [Fact]
+    public async Task A_PBKDF2_secret_stored_as_a_string_round_trips_through_the_in_memory_repository_and_verifies()
+    {
+        // A hash produced elsewhere (Python's hashlib here) is stored as it is: any store persists
+        // any hasher's output as a string, and the framework hands it back unchanged.
+        const string stored =
+            "$pbkdf2-sha256$i=600000$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY";
+        var services = ServicesWithLogging();
+        services.AddZeeKayDaAuthCore(AllowPublicClients).AddInMemoryClients(clients => clients.Add(
+            Client.CreateConfidential("client", new ClientSecret(stored), ["https://app.example.com/cb"], [], ["openid"])));
+        using var provider = services.BuildServiceProvider();
+
+        var client = await provider.GetRequiredService<ValidatedClientResolver>()
+            .FindClientWithCredentialsAsync("client", TestContext.Current.CancellationToken);
+
+        var secret = client!.Secrets.Should().ContainSingle().Subject;
+        secret.Value.Should().Be(stored);
+        provider.GetRequiredService<CompositeClientSecretHasher>()
+            .Verify(secret, "correct horse battery staple").Should().BeTrue();
+    }
+
     // ── Multiple calls are additive ───────────────────────────────────────────────────────────────
 
     [Fact]
@@ -110,7 +131,7 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
 
         found.Should().NotBeNull();
         found!.IsPublic.Should().BeTrue();
-        found.Credentials.Should().BeEmpty();
+        found.Secrets.Should().BeEmpty();
     }
 
     [Fact]
@@ -138,7 +159,7 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
 
         found.Should().NotBeNull();
         found!.IsPublic.Should().BeFalse();
-        found.Credentials.Should().ContainSingle(c => c is IClientSecret);
+        found.Secrets.Should().ContainSingle();
     }
 
     [Fact]
@@ -168,13 +189,13 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
 
     // ── Fakes ─────────────────────────────────────────────────────────────────────────────────────
 
-    private sealed class TestSecret : IClientSecret { public IClientCredential Snapshot() => new TestSecret(); }
+    private static readonly ClientSecret TestSecret = new("$test-secret$x");
 
     private sealed class TestHasher : IClientSecretHasher
     {
-        public bool CanHandle(IClientSecret secret) => secret is TestSecret;
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new TestSecret();
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "test-secret" };
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => TestSecret;
     }
 
     private sealed class CustomClientRepository : IClientRepository

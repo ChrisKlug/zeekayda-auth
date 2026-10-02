@@ -46,11 +46,10 @@ namespace ZeeKayDa.Auth.Clients;
 /// selectively; at this size that is a rare event, and the cost is one revalidation per client.
 /// </para>
 /// <para>
-/// <strong>The critical log is suppressed separately from the verdict cache.</strong> Two paths
-/// answer without a cached verdict — a registration that could not be read at all, and one whose
-/// fingerprint is not content-addressable — so a verdict's own "already logged" flag left both
-/// writing a critical entry per request, which is an unauthenticated log-amplification lever
-/// aimed at the level that pages on-call. Suppression is therefore keyed by the failure's stable
+/// <strong>The critical log is suppressed separately from the verdict cache.</strong> A
+/// registration that could not be read at all answers without a cached verdict, so a verdict's own
+/// "already logged" flag would leave it writing a critical entry per request, which is an
+/// unauthenticated log-amplification lever aimed at the level that pages on-call. Suppression is therefore keyed by the failure's stable
 /// <em>identity</em> — <see cref="ZeeKayDaConfigurationFailure.Code"/> values, or a thrown type's
 /// name, never the free-form message — together with the <c>client_id</c> <em>the store
 /// returned</em>, never the one the request asked for. A registration that breaks a second,
@@ -67,7 +66,8 @@ internal sealed class ValidatedClientResolver(
     private readonly ConcurrentDictionary<string, Lazy<Verdict>> _verdicts = new(StringComparer.Ordinal);
 
     // Failures already written to the critical log, so a repeat of one is not written again. Held
-    // apart from _verdicts because the two paths that most need suppressing never reach that cache.
+    // apart from _verdicts because an unreadable registration, which most needs suppressing, never
+    // reaches that cache.
     // Bounded by the same cap: an entry is a short string, and the two sets are the same order of
     // magnitude because both are keyed by things the store resolves.
     private readonly ConcurrentDictionary<string, byte> _loggedFailures = new(StringComparer.Ordinal);
@@ -226,21 +226,13 @@ internal sealed class ValidatedClientResolver(
     private (ClientRegistrationSnapshot? Snapshot, Verdict Verdict) Resolve(IClientWithCredentials client)
     {
         ClientRegistrationSnapshot snapshot;
-        ClientRegistrationFingerprint.Fingerprint fingerprint;
+        string fingerprint;
         try
         {
             // Copied before it is fingerprinted, and never read through again: the values the
             // verdict is about are exactly the values the caller gets. See the snapshot's remarks.
             snapshot = ClientRegistrationSnapshot.Of(client);
             fingerprint = ClientRegistrationFingerprint.Compute(snapshot);
-        }
-        catch (ClientRegistrationSnapshot.UncopiedCredentialException ex)
-        {
-            // A registration the snapshot refused to copy — a null credential, or one whose
-            // Snapshot() handed back itself or null. The failure is the snapshot's own text, so it is
-            // named; anything
-            // else thrown here, a ZeeKayDaConfigurationException included, is reduced to its type.
-            return (null, new Verdict(ex.Failure.Message, FailureIdentity("snapshot", [ex.Failure.Code])));
         }
         catch (Exception ex)
         {
@@ -255,19 +247,12 @@ internal sealed class ValidatedClientResolver(
         return (snapshot, GetOrAddVerdict(snapshot, fingerprint));
     }
 
-    private Verdict GetOrAddVerdict(ClientRegistrationSnapshot client, ClientRegistrationFingerprint.Fingerprint fingerprint)
+    private Verdict GetOrAddVerdict(ClientRegistrationSnapshot client, string fingerprint)
     {
-        // An instance-identity fallback (a custom IClientCredential) produces a different key for
-        // every instance of the same registration. Caching under it would let request volume grow
-        // the cache — the one thing the bound must not depend on — so it is validated uncached.
-        // The cost lands only on that registration, not on every other client's cached verdict.
-        if (!fingerprint.IsContentAddressable)
-            return Validate(client);
-
         // Lazy with ExecutionAndPublication so a burst of concurrent first-requests for one
         // client runs the 600,000-iteration derivation once rather than once per request.
         var entry = _verdicts.GetOrAdd(
-            fingerprint.Value,
+            fingerprint,
             _ => new Lazy<Verdict>(() => Validate(client), LazyThreadSafetyMode.ExecutionAndPublication));
 
         if (_verdicts.Count >= MaxCachedVerdicts)

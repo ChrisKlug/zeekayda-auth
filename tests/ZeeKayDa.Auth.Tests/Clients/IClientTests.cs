@@ -8,8 +8,8 @@ public sealed class IClientTests
     public void IClient_does_not_expose_credentials()
     {
         // The point of the split: code that only decides what to issue a client never sees its
-        // secrets. Moving Credentials up to IClient would silently undo that.
-        typeof(IClient).GetProperty(nameof(IClientWithCredentials.Credentials))
+        // secrets. Moving Secrets up to IClient would silently undo that.
+        typeof(IClient).GetProperty(nameof(IClientWithCredentials.Secrets))
             .Should().BeNull();
     }
 

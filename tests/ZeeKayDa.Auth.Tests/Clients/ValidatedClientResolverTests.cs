@@ -96,20 +96,19 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
-    public async Task A_registration_validated_uncached_logs_critical_once_however_many_lookups()
+    public async Task A_registration_revalidated_on_every_lookup_logs_critical_once()
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new RevisingRepository(),
             new RejectingValidator(),
             logger);
 
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
-        // A custom IClientCredential has no content to fingerprint, so this registration is
-        // revalidated on every lookup by design — which also gave it a fresh verdict, and so a
-        // fresh Critical entry, every time.
+        // A registration whose content changes on every lookup misses the verdict cache every time,
+        // which also gives it a fresh verdict, and so would give it a fresh Critical entry.
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
     }
 
@@ -118,7 +117,7 @@ public class ValidatedClientResolverTests
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new RevisingRepository(),
             new DifferentRuleEachTimeValidator(),
             logger);
 
@@ -135,7 +134,7 @@ public class ValidatedClientResolverTests
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new RevisingRepository(),
             new RewordingValidator(),
             logger);
 
@@ -145,7 +144,7 @@ public class ValidatedClientResolverTests
 
         // Suppression keys on the rule code, never the message. A host validator free to put a
         // timestamp or an attempt counter in its message would otherwise mint a key and a Critical
-        // entry per request on the uncached path, and eventually clear the whole suppression set.
+        // entry per revalidation, and eventually clear the whole suppression set.
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
     }
 
@@ -154,7 +153,7 @@ public class ValidatedClientResolverTests
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new RevisingRepository(),
             new ReorderingValidator(),
             logger);
 
@@ -176,8 +175,8 @@ public class ValidatedClientResolverTests
         // second client's Critical entry — the operator would never hear about that registration.
         var resolver = new ValidatedClientResolver(
             new MultiClientRepository(
-                ConfidentialClient(new CopyingCredential(), "ab"),
-                ConfidentialClient(new CopyingCredential(), "a")),
+                ConfidentialClient("ab"),
+                ConfidentialClient("a")),
             new CodePerClientValidator(new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["ab"] = "c_rule",
@@ -196,7 +195,7 @@ public class ValidatedClientResolverTests
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(ConfidentialClient(new CopyingCredential())),
+            new RevisingRepository(),
             new JoiningCodeSetsValidator(),
             logger);
 
@@ -311,85 +310,6 @@ public class ValidatedClientResolverTests
         validator.Calls.Should().Be(2);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task A_credential_whose_first_Snapshot_is_not_a_copy_is_served_as_unknown_whatever_it_answers_later(
-        bool returnsNull)
-    {
-        // The snapshot asks each credential once and keeps that answer. A credential that hands back
-        // itself (or null) the first time and a real copy afterwards must not pass because something
-        // asked again — the validator here passes everything, so the snapshot's own check is all
-        // that stands between the store's instance and the protocol.
-        var resolver = Resolver(
-            ConfidentialClient(new FirstCallUncopiedCredential(returnsNull)), new PassingValidator());
-
-        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        result.Should().BeNull();
-    }
-
-    [Theory]
-    [InlineData(false, "returned the same instance")]
-    [InlineData(true, "returned null")]
-    public async Task A_credential_that_is_not_copied_is_named_in_the_critical_log(bool returnsNull, string problem)
-    {
-        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(ConfidentialClient(new FirstCallUncopiedCredential(returnsNull))),
-            new PassingValidator(),
-            logger);
-
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
-            .Which.Message.Should().Contain("FirstCallUncopiedCredential").And.Contain(problem);
-    }
-
-    [Fact]
-    public async Task A_configuration_failure_thrown_by_a_credential_s_Snapshot_is_logged_by_its_type_only()
-    {
-        // Only a failure the snapshot raised itself is logged by name. A ZeeKayDaConfigurationException
-        // thrown by the credential is the credential's text, which may carry its data.
-        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var credential = new ThrowingSnapshotCredential(new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure("custom.credential.unreadable", "Cannot copy salt=0badc0de.")));
-        var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(ConfidentialClient(credential)), new PassingValidator(), logger);
-
-        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        result.Should().BeNull();
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
-            .Which.Message.Should().Contain(nameof(ZeeKayDaConfigurationException)).And.NotContain("0badc0de");
-    }
-
-    [Fact]
-    public async Task A_null_credential_is_served_as_unknown_and_named_in_the_critical_log()
-    {
-        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(NewClient() with { Credentials = [null!] }), new PassingValidator(), logger);
-
-        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        result.Should().BeNull();
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
-            .Which.Message.Should().Contain("null entry in Credentials");
-    }
-
-    [Fact]
-    public async Task A_secret_whose_Snapshot_is_not_a_secret_is_served_as_unknown()
-    {
-        // Served, the client would hold no secret and fail every authentication as a wrong secret,
-        // with nothing in the log to say why.
-        var resolver = Resolver(NewClient() with { Credentials = [new DemotingSecret()] }, new PassingValidator());
-
-        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        result.Should().BeNull();
-    }
-
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
 
     private static Client NewClient() =>
@@ -399,10 +319,10 @@ public class ValidatedClientResolverTests
             postLogoutRedirectUris: [],
             allowedScopes: ["openid"]);
 
-    private static Client ConfidentialClient(IClientCredential credential, string clientId = "client-1") =>
+    private static Client ConfidentialClient(string clientId = "client-1") =>
         Client.CreateConfidential(
             clientId,
-            credential,
+            new ClientSecret("$fake$x"),
             redirectUris: ["https://app.example.com/callback"],
             postLogoutRedirectUris: [],
             allowedScopes: ["openid"]);
@@ -467,7 +387,7 @@ public class ValidatedClientResolverTests
 
         public IReadOnlySet<ResponseMode> AllowedResponseModes => new HashSet<ResponseMode>();
 
-        public IReadOnlyList<IClientCredential> Credentials => [];
+        public IReadOnlyList<ClientSecret> Secrets => [];
     }
 
     private sealed class FreshInstanceRepository : IClientRepository
@@ -478,35 +398,17 @@ public class ValidatedClientResolverTests
     }
 
     /// <summary>
-    /// Returns itself, or <see langword="null"/>, from its first <c>Snapshot()</c> and a real copy
-    /// from every later one.
+    /// Hands out a registration whose content differs on every lookup, so no lookup hits the
+    /// verdict cache.
     /// </summary>
-    private sealed class FirstCallUncopiedCredential(bool returnsNull) : IClientCredential
+    private sealed class RevisingRepository : IClientRepository
     {
-        private int _calls;
+        private int _revision;
 
-        public IClientCredential Snapshot()
-        {
-            if (Interlocked.Increment(ref _calls) > 1)
-                return new FirstCallUncopiedCredential(returnsNull);
-
-            return returnsNull ? null! : this;
-        }
-    }
-
-    private sealed class ThrowingSnapshotCredential(Exception exception) : IClientCredential
-    {
-        public IClientCredential Snapshot() => throw exception;
-    }
-
-    private sealed class CopyingCredential : IClientCredential
-    {
-        public IClientCredential Snapshot() => new CopyingCredential();
-    }
-
-    private sealed class DemotingSecret : IClientSecret
-    {
-        public IClientCredential Snapshot() => new CopyingCredential();
+        public Task<IClientWithCredentials?> FindByClientIdAsync(
+            string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientWithCredentials?>(
+                ConfidentialClient() with { DisplayName = $"revision {Interlocked.Increment(ref _revision)}" });
     }
 
     private sealed class PassingValidator : IClientRegistrationValidator

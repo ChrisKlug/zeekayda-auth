@@ -115,14 +115,14 @@ internal sealed class InMemoryClientRepository : IClientRepository
     {
         foreach (var spec in pending)
         {
-            IClientSecret hashedSecret;
+            ClientSecret hashedSecret;
             try
             {
                 hashedSecret = hasher.Create(spec.PlaintextSecret);
             }
             catch (ArgumentException)
             {
-                // ClientSecretHasher<T>.Create throws on a null/empty/whitespace secret. Convert it
+                // The factory throws on a null/empty/whitespace secret. Convert it
                 // to an aggregated failure and skip this spec so the remaining clients are still
                 // validated and reported.
                 failures.Add(new ZeeKayDaConfigurationFailure(
@@ -132,7 +132,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
                 continue;
             }
 
-            registrations.Add(spec.Registration with { Credentials = [hashedSecret] });
+            registrations.Add(spec.Registration with { Secrets = [hashedSecret] });
         }
     }
 
