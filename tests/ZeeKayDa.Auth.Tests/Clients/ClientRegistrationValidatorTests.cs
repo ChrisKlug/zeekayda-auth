@@ -946,6 +946,52 @@ public sealed class ClientRegistrationValidatorTests
             .Which.Message.Should().Contain("'argon2id'").And.NotContain("c2FsdA");
     }
 
+    [Theory]
+    [InlineData("$My Secret Password$x")]
+    [InlineData("$an-id-that-is-far-longer-than-thirty-two-characters$x")]
+    public void A_first_segment_that_cannot_be_an_algorithm_id_is_malformed_and_never_quoted(string value)
+    {
+        var validator = MakeValidator();
+        var client = MakeValidConfidentialClient(secret: new ClientSecret(value));
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.malformed_secret")
+            .Which.Message.Should().NotContain(value[1..value.IndexOf('$', 1)]);
+    }
+
+    [Fact]
+    public void A_secret_its_hasher_refuses_is_never_verified()
+    {
+        // A refused value can carry a work factor that would cost the host dearly to derive.
+        var hasher = new RefusingCountingHasher();
+        var validator = MakeValidator(hasher);
+        var client = MakeValidConfidentialClient();
+
+        var act = () => validator.Validate(client);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "test.refused");
+        hasher.VerifyCalls.Should().Be(0);
+    }
+
+    private sealed class RefusingCountingHasher : IClientSecretHasher
+    {
+        public int VerifyCalls { get; private set; }
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake" };
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
+
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
+        {
+            VerifyCalls++;
+            return false;
+        }
+
+        public IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored) =>
+            [new("test.refused", "refused.")];
+    }
+
     [Fact]
     public void One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid()
     {

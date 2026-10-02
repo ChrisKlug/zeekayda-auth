@@ -40,6 +40,8 @@ public sealed class PhcString
     /// <c>[a-zA-Z0-9/+.-]</c>.
     /// </param>
     /// <param name="version">The algorithm version, written as <c>$v=&lt;version&gt;</c>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="id"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="version"/> is negative.</exception>
     /// <exception cref="ArgumentException">A part is empty or holds a character the format forbids.</exception>
     public PhcString(
         string id,

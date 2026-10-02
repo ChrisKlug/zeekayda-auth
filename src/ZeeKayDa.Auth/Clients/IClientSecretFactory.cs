@@ -20,9 +20,8 @@ namespace ZeeKayDa.Auth.Clients;
 public interface IClientSecretFactory
 {
     /// <summary>Hashes <paramref name="plaintext"/> with the default hasher.</summary>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="plaintext"/> is null, empty, or whitespace.
-    /// </exception>
+    /// <exception cref="ArgumentNullException"><paramref name="plaintext"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="plaintext"/> is empty or whitespace.</exception>
     ClientSecret Create(string plaintext);
 
     /// <summary>Hashes <paramref name="plaintext"/> with the default hasher.</summary>

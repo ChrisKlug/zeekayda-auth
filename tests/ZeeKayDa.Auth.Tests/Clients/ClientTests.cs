@@ -337,6 +337,14 @@ public sealed class ClientTests
         TokenEndpointAuthMethods.None.Should().Be("none");
     }
 
+    [Fact]
+    public void CreateConfidential_refuses_a_null_secret()
+    {
+        var act = () => Client.CreateConfidential("c", null!, [], [], []);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("secret");
+    }
+
     // Gap 9 — a secret never prints its value
 
     [Fact]

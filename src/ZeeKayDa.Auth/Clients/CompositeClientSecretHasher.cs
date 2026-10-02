@@ -54,7 +54,8 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
 
     /// <summary>
     /// The algorithm id of a stored value: the text between its first two <c>$</c>, or
-    /// <see langword="null"/> when the value does not start with <c>$&lt;id&gt;$</c>.
+    /// <see langword="null"/> when the value does not start with <c>$&lt;id&gt;$</c> or that text could
+    /// not be an id. Only an id this returns is ever written to a log.
     /// </summary>
     internal static string? AlgorithmIdOf(string? value)
     {
@@ -62,7 +63,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
             return null;
 
         var end = value.IndexOf('$', 1);
-        return end > 1 ? value[1..end] : null;
+        return end > 1 && value[1..end] is var id && PhcString.IsName(id) ? id : null;
     }
 
     /// <summary>
@@ -87,11 +88,34 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
     }
 
     /// <summary>
-    /// Whether the stored secret's own hasher verifies an empty presented secret. A registration
-    /// check, not an authentication, so it spends no failed credential slot.
+    /// What is wrong if the stored secret's own hasher verifies an empty presented secret, or throws
+    /// trying. A registration check, not an authentication, so it spends no failed credential slot
+    /// and a throw is the operator's failure to read, not a request-time log entry.
     /// </summary>
-    internal bool AcceptsEmptySecret(ClientSecret stored) =>
-        OwnerOf(stored) is { } owner && SafeVerify(owner, stored, ReadOnlySpan<char>.Empty);
+    internal ZeeKayDaConfigurationFailure? EmptySecretProblem(ClientSecret stored, string clientId)
+    {
+        if (OwnerOf(stored) is not { } owner)
+            return null;
+
+        try
+        {
+            return owner.Verify(stored, ReadOnlySpan<char>.Empty)
+                ? new ZeeKayDaConfigurationFailure(
+                    "client.credentials.empty_secret_accepted",
+                    $"A secret for client '{clientId}' accepts an empty presented secret. " +
+                    "Secrets must not accept empty input — this would allow unauthenticated access " +
+                    "to the client. Review the stored secret and the associated hasher.")
+                : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Never ex.Message: it is the hasher's text, and failure messages are logged verbatim.
+            return new ZeeKayDaConfigurationFailure(
+                "client.credentials.verify_threw",
+                $"Client '{clientId}': the IClientSecretHasher '{owner.GetType().FullName}' threw " +
+                $"{ex.GetType().FullName} verifying a stored secret, so the client could never authenticate.");
+        }
+    }
 
     /// <inheritdoc/>
     public ClientSecret Create(string plaintext)
@@ -106,7 +130,9 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         if (plaintext.IsWhiteSpace())
             throw new ArgumentException("Secret must not be empty or whitespace.", nameof(plaintext));
 
-        var created = _default.Create(plaintext);
+        var created = _default.Create(plaintext)
+            ?? throw new InvalidOperationException(
+                $"The IClientSecretHasher '{_default.GetType().FullName}' returned null from Create.");
 
         return IsOwnOutput(_hashersById, _default, created)
             ? created
@@ -133,7 +159,15 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
 
         try
         {
-            return PrefixedWith(clientId, owner.ValidateStoredSecret(stored));
+            return owner.ValidateStoredSecret(stored) is { } failures
+                ? PrefixedWith(clientId, failures)
+                :
+                [
+                    new ZeeKayDaConfigurationFailure(
+                        "client.credentials.validation_returned_null",
+                        $"Client '{clientId}': the IClientSecretHasher '{owner.GetType().FullName}' returned null " +
+                        "from ValidateStoredSecret; it returns an empty sequence for an acceptable secret."),
+                ];
         }
         catch (ZeeKayDaConfigurationException ex)
         {

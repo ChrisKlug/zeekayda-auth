@@ -113,16 +113,21 @@ public sealed record Client : IClientWithCredentials
     /// <see cref="Secrets"/> with the supplied secret. All other properties use their
     /// default values and can be overridden using <c>with</c> expressions.
     /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="secret"/> is <see langword="null"/>.</exception>
     public static Client CreateConfidential(
         string clientId,
         ClientSecret secret,
         IEnumerable<string> redirectUris,
         IEnumerable<string> postLogoutRedirectUris,
-        IEnumerable<string> allowedScopes) =>
-        CreateConfidentialWithoutCredential(clientId, redirectUris, postLogoutRedirectUris, allowedScopes) with
+        IEnumerable<string> allowedScopes)
+    {
+        ArgumentNullException.ThrowIfNull(secret);
+
+        return CreateConfidentialWithoutCredential(clientId, redirectUris, postLogoutRedirectUris, allowedScopes) with
         {
             Secrets = [secret],
         };
+    }
 
     /// <summary>
     /// Creates a public client registration with no credentials.

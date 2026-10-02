@@ -85,6 +85,8 @@ public sealed class CompositeClientSecretHasherTests
     [InlineData("$", null)]
     [InlineData("$$abc", null)]
     [InlineData("$noend", null)]
+    [InlineData("$My Secret Password$x", null)]
+    [InlineData("$UPPER$x", null)]
     [InlineData("", null)]
     [InlineData(null, null)]
     public void AlgorithmIdOf_reads_the_text_between_the_first_two_dollar_signs(string? value, string? expected)
@@ -287,7 +289,7 @@ public sealed class CompositeClientSecretHasherTests
     {
         var (composite, defaultHasher, altHasher) = CreateMultiHasherComposite();
 
-        composite.AcceptsEmptySecret(AltSecret).Should().BeFalse();
+        composite.EmptySecretProblem(AltSecret, "client-a").Should().BeNull();
 
         (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((0, 1));
     }
@@ -659,6 +661,52 @@ public sealed class CompositeClientSecretHasherTests
         composite.ValidateStoredSecret(new ClientSecret("$reports$x"), "client-a")
             .Should().ContainSingle()
             .Which.Should().Be(new ZeeKayDaConfigurationFailure("hasher.thrown_code", "Client 'client-a': it is unreadable"));
+    }
+
+    [Fact]
+    public void ValidateStoredSecret_names_a_hasher_that_returns_null()
+    {
+        var composite = Composite([new NullReturningHasher()]);
+
+        composite.ValidateStoredSecret(new ClientSecret("$nulls$x"), "client-a")
+            .Should().ContainSingle()
+            .Which.Should().Match<ZeeKayDaConfigurationFailure>(f =>
+                f.Code == "client.credentials.validation_returned_null" && f.Message.Contains(nameof(NullReturningHasher)));
+    }
+
+    [Fact]
+    public void Create_names_a_hasher_that_returns_null()
+    {
+        var calls = 0;
+        var composite = Composite([new MisbehavingCreateHasher(() => ++calls == 1 ? DefaultSecret : null!)]);
+
+        var act = () => composite.Create("new-secret");
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*returned null from Create*");
+    }
+
+    [Fact]
+    public void A_Verify_that_throws_on_the_empty_secret_probe_is_a_named_failure_not_a_log_entry()
+    {
+        // At registration the operator reads the failure; swallowed as a log entry instead, the
+        // client would be served and fail every request with invalid_client.
+        var logger = new CapturingSanitizingLogger<CompositeClientSecretHasher>();
+        var composite = Composite([new ThrowingVerifyHasher()], logger: logger);
+
+        composite.EmptySecretProblem(new ClientSecret("$throws$x"), "client-a")
+            .Should().Match<ZeeKayDaConfigurationFailure>(f =>
+                f.Code == "client.credentials.verify_threw"
+                && f.Message.Contains(nameof(InvalidOperationException))
+                && !f.Message.Contains(ThrowingVerifyHasher.Message));
+        logger.Entries.Should().BeEmpty();
+    }
+
+    private sealed class NullReturningHasher : IClientSecretHasher
+    {
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "nulls" };
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$nulls$created");
+        public IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored) => null!;
     }
 
     [Fact]
