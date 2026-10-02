@@ -48,5 +48,8 @@ public interface IClientSecrets
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="stored"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="stored"/> holds more than two secrets, the most a registered client may hold.
+    /// </exception>
     bool Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored);
 }

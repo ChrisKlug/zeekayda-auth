@@ -55,13 +55,18 @@ internal sealed class ClientSecrets(ClientSecretHasherRegistry registry, Sanitiz
     public bool Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored)
     {
         ArgumentNullException.ThrowIfNull(stored);
+        if (stored.Count > MaxActiveSecretsPerClient)
+            throw new ArgumentException(
+                $"A client holds at most {MaxActiveSecretsPerClient} secrets; more would fail in more than the padded budget.",
+                nameof(stored));
 
         // An empty secret never verifies, and the built-in hasher returns without deriving for one,
         // so trying it against each stored secret would cost nothing and pad short.
         var attempted = 0;
         if (!presented.IsEmpty)
         {
-            foreach (var secret in stored)
+            // Take bounds the work even for a collection whose Count understates what it yields.
+            foreach (var secret in stored.Take(MaxActiveSecretsPerClient))
             {
                 if (VerifyInFailedCredentialSlot(presented, secret))
                     return true;

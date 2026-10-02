@@ -24,7 +24,7 @@ internal sealed class ClientSecretHasherRegistry
         var hasherList = hashers.ToList();
         Default = ResolveDefault(hasherList, registrationOptions.Value);
         _hashersById = IndexByAlgorithmId(hasherList);
-        TimingDecoys = hasherList.Select(hasher => (hasher, CreateTimingDecoy(hasher))).ToList();
+        TimingDecoys = hasherList.Select(hasher => (hasher, CreateTimingDecoy(hasher))).ToList().AsReadOnly();
     }
 
     /// <summary>The hasher that creates new secrets.</summary>

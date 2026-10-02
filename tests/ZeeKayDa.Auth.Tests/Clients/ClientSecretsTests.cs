@@ -599,6 +599,46 @@ public sealed class ClientSecretsTests
     }
 
     [Fact]
+    public void Verify_refuses_more_stored_secrets_than_the_budget_pads_for()
+    {
+        // Each would fail in its own slot, and a failure would cost more than the budget.
+        var (secrets, defaultHasher) = CreateSingleHasherSecrets();
+
+        var act = () => secrets.Verify("presented", [DefaultSecret, DefaultSecret, DefaultSecret]);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("stored");
+        defaultHasher.VerifyCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void A_collection_understating_its_count_is_tried_no_further_than_the_budget()
+    {
+        var (secrets, defaultHasher) = CreateSingleHasherSecrets();
+
+        secrets.Verify("presented", new UnderstatedCollection([DefaultSecret, DefaultSecret, DefaultSecret]))
+            .Should().BeFalse();
+
+        defaultHasher.VerifyCallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
+    }
+
+    private sealed class UnderstatedCollection(IReadOnlyList<ClientSecret> items) : IReadOnlyCollection<ClientSecret>
+    {
+        public int Count => 1;
+        public IEnumerator<ClientSecret> GetEnumerator() => items.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    [Fact]
+    public void The_timing_decoys_cannot_be_changed_after_startup()
+    {
+        var registry = Registry([new DefaultHasher()]);
+
+        var asList = registry.TimingDecoys as IList<(IClientSecretHasher Hasher, ClientSecret Decoy)>;
+
+        (asList is null || asList.IsReadOnly).Should().BeTrue("a downcast must not reach a mutable list");
+    }
+
+    [Fact]
     public void Verify_refuses_null_stored_secrets()
     {
         var (secrets, _) = CreateSingleHasherSecrets();
