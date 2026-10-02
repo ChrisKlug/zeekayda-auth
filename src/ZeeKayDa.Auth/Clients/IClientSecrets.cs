@@ -40,20 +40,16 @@ public interface IClientSecrets
     /// the hasher that declared its algorithm id.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// A failure always costs the same: two verifications by every registered hasher, whichever
     /// secrets failed and however many there were — none included. So the time a refusal takes tells
     /// neither whether the client exists nor whether it is mid-rotation. A match returns at once.
-    /// </para>
-    /// <para>
-    /// An authenticator that refuses a request before it has a secret to check — a malformed
-    /// request, an unknown client — calls this with an empty <paramref name="presented"/>, which
-    /// never matches and pays the full failure cost. A hasher that throws counts as a mismatch.
-    /// </para>
+    /// An authenticator returns the outcome through <c>ClientAuthenticationResult.From</c>, which
+    /// tells the token endpoint the failure is already padded. A hasher that throws counts as a
+    /// mismatch.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="stored"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="stored"/> holds more than two secrets, the most a registered client may hold.
     /// </exception>
-    bool Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored);
+    SecretVerification Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored);
 }

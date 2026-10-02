@@ -74,7 +74,7 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
         var secret = client!.Secrets.Should().ContainSingle().Subject;
         secret.Value.Should().Be(stored);
         provider.GetRequiredService<IClientSecrets>()
-            .Verify("correct horse battery staple", [secret]).Should().BeTrue();
+            .Verify("correct horse battery staple", [secret]).Matched.Should().BeTrue();
     }
 
     // ── Multiple calls are additive ───────────────────────────────────────────────────────────────

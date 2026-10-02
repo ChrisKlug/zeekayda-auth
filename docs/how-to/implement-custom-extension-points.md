@@ -508,9 +508,10 @@ builder.Services.AddZeeKayDaAuth(options =>
 |---|---|
 | `CanHandle` MUST be a cheap shape check — no crypto, no DB | Called on every token request for every authenticator; a slow check multiplies latency across all clients |
 | `AuthenticateAsync` MUST use timing-safe comparison | Prevents timing oracles from revealing credential validity |
-| Never compare secrets as plain strings | Always delegate to `IClientSecretHasher.Verify` or an equivalent constant-time function |
+| Never compare secrets as plain strings or call a hasher yourself | Check a client secret with `IClientSecrets.Verify`, which pads a failure so the response time reveals nothing; a hasher called directly does not |
 | Be singleton-safe | Authenticators are registered as singletons and called concurrently |
-| Return `ClientAuthenticationResult.NotValid()` on failure — never throw | Throwing from `AuthenticateAsync` produces a 500 rather than a 401 |
+| Refuse with `ClientAuthenticationResult.NotValid()` when no secret was checked — never throw | Throwing from `AuthenticateAsync` produces a 500 rather than a 401; the token endpoint pads a `NotValid()` refusal so it takes as long as a wrong secret |
+| A client secret is checked with `IClientSecrets.Verify` and returned with `ClientAuthenticationResult.From(...)` | `Verify` has already padded the failure; `From` tells the token endpoint not to pad it twice |
 
 > 💡 **Exception messages are now redacted by default.**
 > `SanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,

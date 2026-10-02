@@ -120,7 +120,7 @@ public sealed class ClientSecretsTests
     {
         var (secrets, _) = CreateSingleHasherSecrets(defaultVerifyResult: true);
 
-        secrets.Verify("presented", [DefaultSecret]).Should().BeTrue();
+        secrets.Verify("presented", [DefaultSecret]).Matched.Should().BeTrue();
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public sealed class ClientSecretsTests
     {
         var (secrets, _) = CreateSingleHasherSecrets(defaultVerifyResult: true);
 
-        secrets.Verify("presented", [AltSecret]).Should().BeFalse();
+        secrets.Verify("presented", [AltSecret]).Matched.Should().BeFalse();
     }
 
     [Fact]
@@ -150,8 +150,8 @@ public sealed class ClientSecretsTests
         var hasher = new ThrowingVerifyHasher();
         var secrets = Secrets([hasher], logger: logger);
 
-        secrets.Verify("presented", [new ClientSecret("$throws$abc")]).Should().BeFalse();
-        secrets.Verify("presented", [new ClientSecret("$throws$abc")]).Should().BeFalse();
+        secrets.Verify("presented", [new ClientSecret("$throws$abc")]).Matched.Should().BeFalse();
+        secrets.Verify("presented", [new ClientSecret("$throws$abc")]).Matched.Should().BeFalse();
 
         logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error)
             .Which.Message.Should().Contain(nameof(InvalidOperationException))
@@ -168,7 +168,7 @@ public sealed class ClientSecretsTests
         var other = new DefaultHasher();
         var secrets = Secrets([thrower, other], DefaultIs<DefaultHasher>());
 
-        secrets.Verify("presented", [new ClientSecret("$throws$x")]).Should().BeFalse();
+        secrets.Verify("presented", [new ClientSecret("$throws$x")]).Matched.Should().BeFalse();
 
         (thrower.Calls, other.VerifyCallCount).Should().Be((3, 2), "the real attempt, then every hasher's decoy in both slots");
     }
@@ -315,7 +315,7 @@ public sealed class ClientSecretsTests
     {
         var (secrets, defaultHasher, altHasher) = CreateMultiHasherSecrets();
 
-        secrets.Verify("presented", [UnhandledSecret]).Should().BeFalse();
+        secrets.Verify("presented", [UnhandledSecret]).Matched.Should().BeFalse();
 
         (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount)
             .Should().Be((ClientSecrets.MaxActiveSecretsPerClient, ClientSecrets.MaxActiveSecretsPerClient));
@@ -534,7 +534,7 @@ public sealed class ClientSecretsTests
         var trackingHasher = new EmptySpanTrackingHasher();
         var secrets = Secrets([trackingHasher]);
 
-        secrets.Verify([], []).Should().BeFalse();
+        secrets.Verify([], []).Matched.Should().BeFalse();
 
         trackingHasher.VerifyCallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
     }
@@ -561,7 +561,7 @@ public sealed class ClientSecretsTests
         var hasher = new DecoySupplyingHasher();
         var secrets = Secrets([hasher]);
 
-        secrets.Verify([], [DefaultSecret]).Should().BeFalse();
+        secrets.Verify([], [DefaultSecret]).Matched.Should().BeFalse();
 
         hasher.VerifiedAgainst.Should().HaveCount(ClientSecrets.MaxActiveSecretsPerClient)
             .And.AllSatisfy(stored => stored.Should().BeSameAs(hasher.Decoy));
@@ -575,7 +575,7 @@ public sealed class ClientSecretsTests
     {
         var (secrets, defaultHasher) = CreateSingleHasherSecrets();
 
-        secrets.Verify("presented", [.. Enumerable.Repeat(DefaultSecret, storedCount)]).Should().BeFalse();
+        secrets.Verify("presented", [.. Enumerable.Repeat(DefaultSecret, storedCount)]).Matched.Should().BeFalse();
 
         defaultHasher.VerifyCallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
     }
@@ -585,7 +585,7 @@ public sealed class ClientSecretsTests
     {
         var (secrets, defaultHasher) = CreateSingleHasherSecrets(defaultVerifyResult: true);
 
-        secrets.Verify("presented", [DefaultSecret, DefaultSecret]).Should().BeTrue();
+        secrets.Verify("presented", [DefaultSecret, DefaultSecret]).Matched.Should().BeTrue();
 
         defaultHasher.VerifyCallCount.Should().Be(1);
     }
@@ -595,7 +595,7 @@ public sealed class ClientSecretsTests
     {
         var (secrets, _, _) = CreateMultiHasherSecrets(altVerifyResult: true);
 
-        secrets.Verify("presented", [DefaultSecret, AltSecret]).Should().BeTrue();
+        secrets.Verify("presented", [DefaultSecret, AltSecret]).Matched.Should().BeTrue();
     }
 
     [Fact]
@@ -627,7 +627,7 @@ public sealed class ClientSecretsTests
     {
         var (secrets, defaultHasher) = CreateSingleHasherSecrets();
 
-        secrets.Verify("presented", new MiscountedCollection(3, [DefaultSecret])).Should().BeFalse();
+        secrets.Verify("presented", new MiscountedCollection(3, [DefaultSecret])).Matched.Should().BeFalse();
 
         defaultHasher.VerifyCallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
     }
@@ -647,6 +647,39 @@ public sealed class ClientSecretsTests
         var asList = registry.TimingDecoys as IList<(IClientSecretHasher Hasher, ClientSecret Decoy)>;
 
         (asList is null || asList.IsReadOnly).Should().BeTrue("a downcast must not reach a mutable list");
+    }
+
+    [Fact]
+    public void Every_failed_verification_vouches_for_its_own_padding_once()
+    {
+        var (secrets, hasher) = CreateSingleHasherSecrets(defaultVerifyResult: false);
+
+        var first = secrets.Verify("wrong", [DefaultSecret]);
+        hasher.VerifyCallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient, "a failure pads before it vouches");
+        var second = secrets.Verify("wrong", [DefaultSecret]);
+        hasher.VerifyCallCount.Should().Be(2 * ClientSecrets.MaxActiveSecretsPerClient);
+
+        first.TryClaimPadding().Should().BeTrue();
+        first.TryClaimPadding().Should().BeFalse("a failure kept and replayed spent no padding of its own");
+        second.TryClaimPadding().Should().BeTrue("a later failure padded itself and must not inherit an earlier claim");
+    }
+
+    [Fact]
+    public void A_match_never_vouches_for_padding()
+    {
+        var (secrets, _) = CreateSingleHasherSecrets(defaultVerifyResult: true);
+
+        secrets.Verify("presented", [DefaultSecret]).TryClaimPadding().Should().BeFalse();
+    }
+
+    [Fact]
+    public void Only_Verify_can_create_a_SecretVerification_so_no_caller_can_claim_padding_it_did_not_spend()
+    {
+        typeof(SecretVerification).IsValueType.Should().BeFalse("default(struct) would forge a padded failure");
+        typeof(SecretVerification)
+            .GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+            .Should().OnlyContain(ctor => ctor.IsPrivate);
+        typeof(SecretVerification).IsSealed.Should().BeTrue();
     }
 
     [Fact]

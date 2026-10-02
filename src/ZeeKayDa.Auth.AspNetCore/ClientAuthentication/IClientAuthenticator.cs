@@ -7,8 +7,10 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// <para>
 /// Implementations MUST be singleton-safe. A secret-based authenticator verifies through
 /// <see cref="ZeeKayDa.Auth.Clients.IClientSecrets.Verify"/> with <c>context.Client.Secrets</c>,
-/// never by comparing strings or calling a hasher itself, and refuses a malformed request through
-/// the same call with an empty presented secret, so every refusal costs the same time.
+/// never by comparing strings or calling a hasher itself, and returns the outcome through
+/// <see cref="ClientAuthenticationResult.From"/>. Any other refusal is
+/// <see cref="ClientAuthenticationResult.NotValid"/>, which the token endpoint pads, so every refusal
+/// costs the same time without the implementation counting anything.
 /// </para>
 /// <para>
 /// Custom implementations MUST NOT declare or return <see cref="ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods.None"/>

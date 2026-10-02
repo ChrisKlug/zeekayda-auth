@@ -131,6 +131,49 @@ public sealed class CompositeClientAuthenticatorTests
             => Task.FromResult(ClientAuthenticationResult.Valid());
     }
 
+    /// <summary>
+    /// A third-party authenticator for a method of its own, refusing however <paramref name="authenticate"/>
+    /// says: cheaply, or through <see cref="IClientSecrets.Verify"/>.
+    /// </summary>
+    private sealed class CustomAuthenticator(
+        Func<ClientAuthenticationContext, ClientAuthenticationResult> authenticate) : IClientAuthenticator
+    {
+        public const string Method = "private_key_jwt";
+
+        public IReadOnlySet<string> AuthenticationMethods { get; } =
+            new HashSet<string>(StringComparer.Ordinal) { Method };
+
+        public bool CanHandle(TokenRequestContext context, out string? method)
+        {
+            method = Method;
+            return true;
+        }
+
+        public Task<ClientAuthenticationResult> AuthenticateAsync(
+            ClientAuthenticationContext context, CancellationToken ct)
+            => Task.FromResult(authenticate(context));
+    }
+
+    private static async Task<int> HasherCallsToRefuse(
+        IClientWithCredentials? client,
+        Func<ClientSecrets, Func<ClientAuthenticationContext, ClientAuthenticationResult>> authenticate)
+    {
+        var hasher = new FakeHasher(false);
+        var secrets = new ClientSecrets(Registry([hasher]), NullSanitizingLogger<ClientSecrets>.Instance);
+        var composite = new CompositeClientAuthenticator(
+            [new CustomAuthenticator(authenticate(secrets))],
+            Resolver(client),
+            CreateServerOptions(CustomAuthenticator.Method),
+            secrets,
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
+
+        var result = await composite.AuthenticateAsync(
+            "client-1", new DefaultHttpContext(), TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        return hasher.CallCount;
+    }
+
     /// <summary>A caller-supplied authenticator that returns null despite its non-null contract.</summary>
     private sealed class NullReturningAuthenticator : IClientAuthenticator
     {
@@ -369,13 +412,87 @@ public sealed class CompositeClientAuthenticatorTests
             "an unknown client is padded once per credential-budget slot");
     }
 
+    [Fact]
+    public async Task A_custom_authenticator_refusing_without_verifying_is_padded_like_an_unknown_client()
+    {
+        var knownClient = CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method);
+
+        var known = await HasherCallsToRefuse(knownClient, _ => _ => ClientAuthenticationResult.NotValid());
+        var unknown = await HasherCallsToRefuse(client: null, _ => _ => ClientAuthenticationResult.NotValid());
+
+        known.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
+        known.Should().Be(unknown, "a refusal that checked no secret is padded by the composite");
+    }
+
+    [Fact]
+    public async Task A_refusal_from_a_failed_verification_is_not_padded_again()
+    {
+        var knownClient = CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method);
+
+        var calls = await HasherCallsToRefuse(knownClient, secrets => context =>
+            ClientAuthenticationResult.From(secrets.Verify("wrong", context.Client.Secrets)));
+
+        calls.Should().Be(
+            ClientSecrets.MaxActiveSecretsPerClient,
+            "Verify already spent the failure budget; padding again would make a known client slower than an unknown one");
+    }
+
+    [Fact]
+    public async Task A_failed_verification_kept_from_an_earlier_request_does_not_excuse_a_later_refusal_from_padding()
+    {
+        var knownClient = CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method);
+        SecretVerification? kept = null;
+
+        var calls = await HasherCallsToRefuse(knownClient, secrets => context =>
+        {
+            kept ??= secrets.Verify("wrong", context.Client.Secrets);
+            return ClientAuthenticationResult.From(kept);
+        });
+        var replayedCalls = await HasherCallsToRefuse(knownClient, _ => _ => ClientAuthenticationResult.From(kept!));
+
+        calls.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
+        replayedCalls.Should().Be(
+            ClientSecrets.MaxActiveSecretsPerClient,
+            "a failure vouches for its padding once; replayed, it checked no secret and is padded");
+    }
+
+    [Fact]
+    public async Task A_failed_result_returned_again_is_padded_like_any_other_refusal()
+    {
+        var knownClient = CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method);
+        ClientAuthenticationResult? kept = null;
+
+        var calls = await HasherCallsToRefuse(knownClient, secrets => context =>
+            kept ??= ClientAuthenticationResult.From(secrets.Verify("wrong", context.Client.Secrets)));
+        var replayedCalls = await HasherCallsToRefuse(knownClient, _ => _ => kept!);
+
+        calls.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
+        replayedCalls.Should().Be(ClientSecrets.MaxActiveSecretsPerClient, "a result vouches for its padding once");
+    }
+
+    [Fact]
+    public async Task Building_a_result_twice_from_one_failed_verification_does_not_pad_twice()
+    {
+        var knownClient = CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method);
+
+        var calls = await HasherCallsToRefuse(knownClient, secrets => context =>
+        {
+            var verification = secrets.Verify("wrong", context.Client.Secrets);
+            _ = ClientAuthenticationResult.From(verification);
+            return ClientAuthenticationResult.From(verification);
+        });
+
+        calls.Should().Be(ClientSecrets.MaxActiveSecretsPerClient, "padding is claimed when the result is used, not built");
+    }
+
     // ── AC 21: multiple mechanisms ────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task An_authenticator_returning_null_is_a_refusal_not_a_fault()
     {
         var client = CreateConfidentialClient(secret: FakeSecret());
-        var registry = Registry([new FakeHasher(true)]);
+        var hasher = new FakeHasher(true);
+        var registry = Registry([hasher]);
         var secrets = new ClientSecrets(registry, NullSanitizingLogger<ClientSecrets>.Instance);
         var composite = new CompositeClientAuthenticator(
             [new NullReturningAuthenticator()],
@@ -393,6 +510,7 @@ public sealed class CompositeClientAuthenticatorTests
 
         result.Authenticated.Should().BeFalse("an extension point returning null must fail closed, never throw");
         result.Client.Should().BeNull();
+        hasher.CallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient, "a null checked no secret, so it is padded");
     }
 
     [Fact]
