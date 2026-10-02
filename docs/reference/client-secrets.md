@@ -70,19 +70,19 @@ The interface all hasher implementations must satisfy.
 ```csharp
 public interface IClientSecretHasher
 {
-    bool CanHandle(IClientSecret secret);
-    bool Verify(ReadOnlySpan<char> presented, IClientSecret stored);
-    IClientSecret Create(ReadOnlySpan<char> plaintext);      // primary — memory-safe
-    IClientSecret Create(string plaintext);                    // convenience — delegates to span overload
+    IReadOnlySet<string> AlgorithmIds { get; }
+    bool Verify(ReadOnlySpan<char> presented, ClientSecret stored);
+    ClientSecret Create(ReadOnlySpan<char> plaintext);
+    IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored) => [];
 }
 ```
 
 | Member | Behaviour |
 |---|---|
-| `CanHandle` | Returns `true` when this hasher can verify or create credentials of the given type. |
-| `Verify` | Returns `false` on mismatch or internal error. Never throws. |
-| `Create(ReadOnlySpan<char>)` | Primary overload. Creates a new hashed credential from a span. Throws `ArgumentException` for empty or whitespace-only input. Spans cannot be null. |
-| `Create(string)` | Convenience overload. Delegates to the span overload after a null check. Throws `ArgumentNullException` for null input; throws `ArgumentException` for empty or whitespace-only input. |
+| `AlgorithmIds` | The PHC algorithm ids this hasher owns, for example `pbkdf2-sha256`. Each is 1–32 characters from `[a-z0-9-]`; two hashers declaring one id fail startup. |
+| `Verify` | Verifies a presented secret against a stored one whose id this hasher declared. Returns `false` on mismatch or on a value it cannot read; a throw counts as a failed verification. Compare in fixed time. |
+| `Create` | Hashes a new secret. The framework has already refused empty and whitespace-only input, and refuses a result whose id this hasher did not declare. |
+| `ValidateStoredSecret` | Optional. What is wrong with a stored secret this hasher owns — an unreadable value, a work factor below its floor. Runs wherever a client registration is validated. |
 
 ### `ClientSecretHasher<TSecret>` abstract base class
 
