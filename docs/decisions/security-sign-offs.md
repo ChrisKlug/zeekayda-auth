@@ -2011,3 +2011,38 @@ and fix-diff verification of each round; no Critical.
   `A_hasher_that_throws_still_has_its_decoy_verified_in_the_failed_slot`.
 - **Accepted residuals (maintainer):** `no_hasher` logs a valid-looking id, so plaintext pasted as `$abc$...` logs `abc`
   (plaintext in the store is #806); a hasher's own `ValidateStoredSecret` messages are forwarded unchecked. No test.
+
+## 2026-10-02 — all client-authentication padding is inside `IClientSecrets.Verify`, which the framework owns (#790, code frozen at `0f8110b`)
+Copilot code, security and architecture lenses, the security and architect agents, and the PR's Copilot review; no Critical.
+- Every failed verification costs two failed slots, however many secrets the client holds, none included; a match returns
+  at once. Closed — `A_failure_costs_the_full_budget_however_many_secrets_the_client_holds`,
+  `A_refusal_with_nothing_to_verify_spends_the_full_budget`, `An_empty_secret_pads_the_full_budget_whatever_the_clients_secret_count`.
+- A store cannot push a failure past the budget: more than two secrets is refused before any is verified, counted by what
+  the collection yields. Closed — `Verify_refuses_more_stored_secrets_than_the_budget_pads_for`,
+  `A_collection_understating_its_count_is_refused_before_any_secret_is_verified`, `The_timing_decoys_cannot_be_changed_after_startup`.
+- Every client-dependent refusal in the composite pads like an unknown client. Closed —
+  `AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_unknown_client`,
+  `AuthenticateAsync_returns_Authenticated_false_and_pads_timing_when_method_is_not_in_client_allowlist`,
+  `A_public_client_refused_because_the_server_disallows_none_is_padded_like_an_unknown_client`.
+- A host cannot replace verification or padding: framework code takes the concrete type, and a host `IClientSecrets`, keyed
+  or not, fails startup. Closed — `A_host_registered_IClientSecrets_never_verifies_for_the_built_in_authenticator`,
+  `A_host_registered_IClientSecrets_fails_startup`, `A_keyed_host_IClientSecrets_fails_startup`.
+- **Accepted residual (maintainer):** a stored PBKDF2 secret at an iteration count other than the configured one fails in
+  a different time from an unknown client, revealing that the client id exists (client ids are not secret in OAuth);
+  re-hashing on successful authentication is #868. No test.
+- A third-party authenticator's cheap refusal went unpadded; closed by #869, in the entry below.
+
+## 2026-10-02 — an authenticator's refusal that verified no secret is padded by the composite (#869, code frozen at `74d8919`)
+Copilot code and security lenses, the security agent, fix-diff verification of each round, and the PR's Copilot review; no Critical.
+- An authenticator's refusal that checked no secret (`NotValid()`, a null) costs what an unknown client costs. Closed —
+  `A_custom_authenticator_refusing_without_verifying_is_padded_like_an_unknown_client`,
+  `An_authenticator_returning_null_is_a_refusal_not_a_fault`.
+- A failed `IClientSecrets.Verify` is padded once, never twice, and only `Verify` can vouch for it. Closed —
+  `A_refusal_from_a_failed_verification_is_not_padded_again`, `Building_a_result_twice_from_one_failed_verification_does_not_pad_twice`,
+  `Only_Verify_can_create_a_SecretVerification_so_no_caller_can_claim_padding_it_did_not_spend`.
+- A failure or result kept and returned again is padded. Closed —
+  `A_failed_verification_kept_from_an_earlier_request_does_not_excuse_a_later_refusal_from_padding`,
+  `A_failed_result_returned_again_is_padded_like_any_other_refusal`, `Every_failed_verification_vouches_for_its_own_padding_once`.
+- **Accepted residuals (maintainer):** an authenticator that calls `Verify` then returns `NotValid()` pays twice; one that
+  shares a result across concurrent requests can let a request claim another's padding (contract stated on
+  `ClientAuthenticationResult.From`); a throw from `AuthenticateAsync` is an unpadded 500 (#870). No test.
