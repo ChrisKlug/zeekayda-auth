@@ -650,6 +650,27 @@ public sealed class ClientSecretsTests
     }
 
     [Fact]
+    public void Every_failed_verification_vouches_for_its_own_padding_once()
+    {
+        var (secrets, _) = CreateSingleHasherSecrets(defaultVerifyResult: false);
+
+        var first = secrets.Verify("wrong", [DefaultSecret]);
+        var second = secrets.Verify("wrong", [DefaultSecret]);
+
+        first.TryClaimPadding().Should().BeTrue();
+        first.TryClaimPadding().Should().BeFalse("a failure kept and replayed spent no padding of its own");
+        second.TryClaimPadding().Should().BeTrue("a later failure padded itself and must not inherit an earlier claim");
+    }
+
+    [Fact]
+    public void A_match_never_vouches_for_padding()
+    {
+        var (secrets, _) = CreateSingleHasherSecrets(defaultVerifyResult: true);
+
+        secrets.Verify("presented", [DefaultSecret]).TryClaimPadding().Should().BeFalse();
+    }
+
+    [Fact]
     public void Only_Verify_can_create_a_SecretVerification_so_no_caller_can_claim_padding_it_did_not_spend()
     {
         typeof(SecretVerification).IsValueType.Should().BeFalse("default(struct) would forge a padded failure");
