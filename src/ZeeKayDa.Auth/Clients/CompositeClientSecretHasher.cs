@@ -79,12 +79,11 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
             return false;
         }
 
-        var outcome = SafeVerify(owner, stored, presented);
-        if (outcome is true)
+        if (SafeVerify(owner, stored, presented, out var threw))
             return true;
 
         // A hasher that threw may have stopped before doing its work, so its decoy is spent too.
-        FinishFailedCredentialSlot(alreadyVerifiedBy: outcome is false ? owner : null);
+        FinishFailedCredentialSlot(alreadyVerifiedBy: threw ? null : owner);
         return false;
     }
 
@@ -233,7 +232,7 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         foreach (var (hasher, decoy) in _timingDecoys)
         {
             if (!ReferenceEquals(hasher, alreadyVerifiedBy))
-                SafeVerify(hasher, decoy, DummyPresented.AsSpan());
+                SafeVerify(hasher, decoy, DummyPresented.AsSpan(), out _);
         }
     }
 
@@ -249,12 +248,14 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
         && ReferenceEquals(owner, hasher);
 
     /// <summary>
-    /// The hasher's answer, or <see langword="null"/> when it threw, which fails the verification.
+    /// The hasher's answer; <see langword="false"/>, with <paramref name="threw"/> set, when it threw.
     /// Logged once per hasher type, by exception type only: the trigger is a request, so logging
     /// every throw would be an unauthenticated log-amplification lever.
     /// </summary>
-    private bool? SafeVerify(IClientSecretHasher hasher, ClientSecret stored, ReadOnlySpan<char> presented)
+    private bool SafeVerify(
+        IClientSecretHasher hasher, ClientSecret stored, ReadOnlySpan<char> presented, out bool threw)
     {
+        threw = false;
         try
         {
             return hasher.Verify(stored, presented);
@@ -270,7 +271,8 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
                     ex.GetType().FullName);
             }
 
-            return null;
+            threw = true;
+            return false;
         }
     }
 
