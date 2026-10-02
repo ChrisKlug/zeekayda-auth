@@ -15,18 +15,14 @@ namespace ZeeKayDa.Auth.Stores;
 /// DI container replacing the default provider), the check is skipped rather than failing with a
 /// confusing resolution error.
 /// </remarks>
-internal sealed class TokenStorePresenceVerifier : IStartupVerifier
+internal sealed class TokenStorePresenceVerifier(IServiceProviderIsService? isService = null) : IStartupVerifier
 {
     /// <inheritdoc/>
     public string Name => "TokenStorePresence";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
-        var isService = scopedServices.GetService<IServiceProviderIsService>();
         if (isService is null)
             return Task.CompletedTask;
 

@@ -237,11 +237,15 @@ ZeeKayDa.Auth.GrantType.AuthorizationCode = 0 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.ClientCredentials = 2 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.RefreshToken = 1 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.StartupVerification.IStartupActivator
-ZeeKayDa.Auth.StartupVerification.IStartupCheck
-ZeeKayDa.Auth.StartupVerification.IStartupCheck.Name.get -> string!
-ZeeKayDa.Auth.StartupVerification.IStartupCheck.VerifyAsync(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext! context, System.IServiceProvider! scopedServices, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.StartupVerification.IStartupActivator.Name.get -> string!
+ZeeKayDa.Auth.StartupVerification.IStartupActivator.VerifyAsync(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.StartupVerification.IStartupVerifier
-ZeeKayDa.Auth.Logging.ISanitizingLogger<T>
+ZeeKayDa.Auth.StartupVerification.IStartupVerifier.Name.get -> string!
+ZeeKayDa.Auth.StartupVerification.IStartupVerifier.VerifyAsync(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.Logging.SanitizingLogger<T>
+ZeeKayDa.Auth.Logging.SanitizingLogger<T>.BeginScope<TState>(TState state) -> System.IDisposable?
+ZeeKayDa.Auth.Logging.SanitizingLogger<T>.IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) -> bool
+ZeeKayDa.Auth.Logging.SanitizingLogger<T>.Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, System.Exception? exception, System.Func<TState, System.Exception?, string!>! formatter) -> void
 ZeeKayDa.Auth.Scopes.IScopeRepository
 ZeeKayDa.Auth.Scopes.IScopeRepository.GetScopesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Scopes.ScopeDefinition!>!>!
 ZeeKayDa.Auth.Scopes.InMemoryScopeRepository

@@ -13,7 +13,7 @@ public sealed class ScopePresenceActivatorTests
         services.AddSingleton(repository);
         services.AddSingleton<ValidatedScopeCatalog>();
         var provider = services.BuildServiceProvider();
-        return (new ScopePresenceActivator(), provider);
+        return (ActivatorUtilities.CreateInstance<ScopePresenceActivator>(provider), provider);
     }
 
     [Fact]
@@ -23,7 +23,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }
@@ -35,7 +35,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }
@@ -47,7 +47,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle();
     }
@@ -59,7 +59,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle()
             .Which.Code.Should().Be("scopes.openid_missing");
@@ -72,7 +72,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Single().Message.Should().Contain(StandardScopes.OpenId.Name);
     }
@@ -84,7 +84,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle();
     }
@@ -102,7 +102,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }
@@ -121,7 +121,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle().Which.Code.Should().Be("scopes.audience.invalid");
     }
@@ -138,7 +138,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().HaveCount(2);
     }
@@ -160,7 +160,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle().Which.Code.Should().Be("scopes.name.blank");
     }
@@ -179,7 +179,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle().Which.Code.Should().Be("scopes.claims.blank");
     }
@@ -197,7 +197,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle().Which.Code.Should().Be("scopes.claims.blank");
     }
@@ -215,7 +215,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().HaveCount(3).And.OnlyContain(f => f.Code == "scopes.claims.blank");
     }
@@ -227,7 +227,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().Contain(f => f.Code == "scopes.null");
     }
@@ -239,7 +239,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle().Which.Code.Should().Be("scopes.element.null");
     }
@@ -256,7 +256,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle().Which.Code.Should().Be("scopes.name.duplicate");
     }
@@ -273,7 +273,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Select(f => f.Code).Should().BeEquivalentTo(
             ["scopes.name.duplicate", "scopes.claims.reserved", "scopes.audience.invalid", "scopes.openid_missing"]);
@@ -291,7 +291,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        var act = async () => await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        var act = async () => await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).Which.Should().BeSameAs(thrownByRepository);
         context.Failures.Should().BeEmpty();
@@ -325,7 +325,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle().Which.Code.Should().Be("scopes.claims.reserved");
     }
@@ -338,7 +338,7 @@ public sealed class ScopePresenceActivatorTests
         using var _ = provider;
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }

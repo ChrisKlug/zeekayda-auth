@@ -29,21 +29,17 @@ namespace ZeeKayDa.Auth.Configuration;
 /// <para>
 /// The <see cref="IServiceCollection"/> is read rather than the built provider, because a
 /// provider can report that a service exists but not the lifetime it was registered under. The
-/// scanner captures the collection at registration, the same way
-/// <c>SanitizingLoggerClosedOverrideScanner</c> does, so this sees every registration a host added
+/// scanner captures the collection at registration, so this sees every registration a host added
 /// — including ones added after <c>AddZeeKayDaAuth</c>.
 /// </para>
 /// </remarks>
-internal sealed class WrappedRepositoryLifetimeVerifier(RepositoryLifetimeScanner scanner) : IStartupVerifier
+internal sealed class WrappedRepositoryLifetimeVerifier(ServiceLifetimeScanner scanner) : IStartupVerifier
 {
     /// <inheritdoc/>
     public string Name => "WrappedRepositoryLifetime";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         Check<IScopeRepository>(context, "scopes.repository.lifetime", "ValidatedScopeCatalog");
         Check<IClientRepository>(context, "clients.repository.lifetime", "ValidatedClientResolver");
@@ -70,34 +66,4 @@ internal sealed class WrappedRepositoryLifetimeVerifier(RepositoryLifetimeScanne
             $"request and shared by every later one. Register {typeof(TRepository).Name} as a singleton and " +
             "resolve per-request dependencies inside it from an injected IServiceScopeFactory.");
     }
-}
-
-/// <summary>
-/// Reports the lifetime a service type was registered under, by reading the
-/// <see cref="IServiceCollection"/> itself.
-/// </summary>
-/// <remarks>
-/// The constructor captures the collection reference, so the lifetime reported is the one in force
-/// when it is asked, not the one at registration. See <c>SanitizingLoggerClosedOverrideScanner</c>,
-/// which reads the same collection the same way and for the same reason: a built
-/// <see cref="IServiceProvider"/> can say whether a service exists but not how it was registered.
-/// </remarks>
-internal sealed class RepositoryLifetimeScanner(IServiceCollection services)
-{
-    /// <summary>
-    /// The lifetime of the registration that would win resolution for <paramref name="serviceType"/>
-    /// — the last unkeyed one added — or <see langword="null"/> when it is not registered at all,
-    /// which is a different check's failure to report.
-    /// </summary>
-    /// <remarks>
-    /// Keyed registrations are skipped, and skipping them is the point rather than tidiness. The
-    /// wrappers resolve <paramref name="serviceType"/> unkeyed, so a keyed registration is never
-    /// what they capture; counting one would let a host that registers an unkeyed scoped
-    /// repository and then a keyed singleton for some unrelated purpose pass this check while the
-    /// scoped instance is the one actually held.
-    /// </remarks>
-    public ServiceLifetime? EffectiveLifetimeOf(Type serviceType) =>
-        services
-            .LastOrDefault(descriptor => !descriptor.IsKeyedService && descriptor.ServiceType == serviceType)
-            ?.Lifetime;
 }

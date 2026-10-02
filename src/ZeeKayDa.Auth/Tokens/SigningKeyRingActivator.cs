@@ -26,7 +26,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>EnsureInitializedAsync</c> itself, which is idempotent.
 /// </para>
 /// </remarks>
-internal sealed class SigningKeyRingActivator : IStartupActivator
+internal sealed class SigningKeyRingActivator(
+    IOptions<AuthorizationServerOptions> options,
+    ISigningKeyRing? ring = null) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "SigningKeyRing";
@@ -38,18 +40,14 @@ internal sealed class SigningKeyRingActivator : IStartupActivator
     /// <see cref="ZeeKayDaConfigurationException.AggregatedFailures"/> had already been added to
     /// <paramref name="context"/>.
     /// </remarks>
-    public async Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public async Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
-        var ring = scopedServices.GetService<ISigningKeyRing>();
         if (ring is null)
             return;
 
         await ring.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
 
-        VerifyAdvertisedAlgorithms(context, scopedServices, ring);
+        VerifyAdvertisedAlgorithms(context, ring);
     }
 
     /// <summary>
@@ -58,11 +56,9 @@ internal sealed class SigningKeyRingActivator : IStartupActivator
     /// Runs after <c>EnsureInitializedAsync</c>, which is what makes <see cref="ISigningKeyRing.Current"/>
     /// safe to read here.
     /// </summary>
-    private static void VerifyAdvertisedAlgorithms(
-        StartupVerificationContext context, IServiceProvider scopedServices, ISigningKeyRing ring)
+    private void VerifyAdvertisedAlgorithms(StartupVerificationContext context, ISigningKeyRing ring)
     {
-        var filter = scopedServices.GetRequiredService<IOptions<AuthorizationServerOptions>>()
-            .Value.IdToken.AdvertisedSigningAlgorithms;
+        var filter = options.Value.IdToken.AdvertisedSigningAlgorithms;
         var keySet = ring.Current;
 
         if (filter is not null)

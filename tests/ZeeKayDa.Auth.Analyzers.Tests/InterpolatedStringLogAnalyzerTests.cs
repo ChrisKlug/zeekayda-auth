@@ -229,7 +229,8 @@ public sealed class InterpolatedStringLogAnalyzerTests
     [Fact]
     public async Task Diagnostic_still_fires_inside_class_implementing_only_ILogger()
     {
-        // A class that implements ILogger<T> but NOT ISanitizingLogger<T> must NOT be exempt.
+        // A class that implements ILogger<T> but is not the framework's SanitizingLogger<T> must
+        // NOT be exempt.
         var source = """
             using System;
             using Microsoft.Extensions.Logging;
@@ -258,20 +259,14 @@ public sealed class InterpolatedStringLogAnalyzerTests
     }
 
     [Fact]
-    public async Task No_exemption_for_non_generic_ISanitizingLogger()
+    public async Task No_exemption_for_a_non_generic_SanitizingLogger()
     {
-        // A non-generic ISanitizingLogger in the same namespace must NOT grant the exemption —
-        // only the genuine generic ISanitizingLogger<T> (TypeParameters.Length == 1) is trusted.
+        // Only the generic SanitizingLogger<T> (TypeParameters.Length == 1) is trusted.
         var source = """
             using Microsoft.Extensions.Logging;
             namespace ZeeKayDa.Auth.Logging
             {
-                internal interface ISanitizingLogger { }
-            }
-            namespace ZeeKayDa.Auth.Services
-            {
-                using ZeeKayDa.Auth.Logging;
-                internal sealed class FakeService : ISanitizingLogger
+                internal sealed class SanitizingLogger
                 {
                     void DoWork()
                     {
@@ -290,10 +285,38 @@ public sealed class InterpolatedStringLogAnalyzerTests
     }
 
     [Fact]
-    public async Task No_exemption_for_type_that_implements_neither_ILogger_nor_ISanitizingLogger()
+    public async Task No_exemption_for_a_SanitizingLogger_outside_the_Logging_namespace()
     {
-        // Documents the exemption boundary: a plain class that implements neither ILogger<T>
-        // nor ISanitizingLogger<T> must still trigger the diagnostic when it calls Log*.
+        var source = """
+            using System;
+            using Microsoft.Extensions.Logging;
+            namespace ZeeKayDa.Auth.Services
+            {
+                internal sealed class SanitizingLogger<T> : ILogger<T>
+                {
+                    private readonly ILogger<T> _inner = null!;
+                    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+                    public bool IsEnabled(LogLevel level) => false;
+                    public void Log<TState>(LogLevel level, EventId id, TState state, Exception? ex, Func<TState, Exception?, string> f)
+                    {
+                        string msg = "non-constant " + level.ToString();
+                        _inner.LogInformation(msg);
+                    }
+                }
+            }
+            """;
+
+        var diagnostics = await GetDiagnosticsAsync(source);
+
+        diagnostics.Should().ContainSingle()
+            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
+    }
+
+    [Fact]
+    public async Task No_exemption_for_type_that_is_not_a_logger()
+    {
+        // Documents the exemption boundary: a plain class that is not a logger must still trigger
+        // the diagnostic when it calls Log*.
         var source = """
             using Microsoft.Extensions.Logging;
             namespace ZeeKayDa.Auth.Services
@@ -317,74 +340,24 @@ public sealed class InterpolatedStringLogAnalyzerTests
     }
 
     [Fact]
-    public async Task Diagnostic_fires_inside_friend_assembly_class_implementing_ISanitizingLogger()
+    public async Task Diagnostic_fires_inside_a_friend_assembly_type_named_SanitizingLogger()
     {
-        // A type in a friend assembly (InternalsVisibleTo) that implements ISanitizingLogger<T>
-        // must NOT be exempt — only types defined in ZeeKayDa.Auth itself are trusted.
+        // A friend assembly (InternalsVisibleTo) can declare a type with the same name and
+        // namespace; only the one defined in ZeeKayDa.Auth itself is trusted.
         var coreSource = """
             using System.Runtime.CompilerServices;
-            using Microsoft.Extensions.Logging;
             [assembly: InternalsVisibleTo("ZeeKayDa.Auth.AspNetCore")]
-            namespace ZeeKayDa.Auth.Logging
-            {
-                internal interface ISanitizingLogger<T> : ILogger<T> { }
-            }
+            namespace ZeeKayDa.Auth { internal sealed class Marker { } }
             """;
 
         var aspNetCoreSource = """
             using Microsoft.Extensions.Logging;
-            using ZeeKayDa.Auth.Logging;
-            namespace ZeeKayDa.Auth.AspNetCore.Services
-            {
-                internal sealed class FriendService : ISanitizingLogger<FriendService>
-                {
-                    private readonly ILogger<FriendService> _inner;
-                    public FriendService(ILogger<FriendService> inner) { _inner = inner; }
-                    public System.IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-                    public bool IsEnabled(LogLevel level) => false;
-                    public void Log<TState>(LogLevel level, Microsoft.Extensions.Logging.EventId id, TState state, System.Exception? ex, System.Func<TState, System.Exception?, string> f) { }
-                    public void DoWork()
-                    {
-                        string secret = "s3cr3t";
-                        _inner.LogInformation($"secret={secret}"); // must be flagged
-                    }
-                }
-            }
-            """;
-
-        var diagnostics = await GetDiagnosticsFromFriendAssemblyAsync(coreSource, aspNetCoreSource);
-
-        diagnostics.Should().ContainSingle()
-            .Which.Id.Should().Be(InterpolatedStringLogAnalyzer.DiagnosticId);
-    }
-
-    [Fact]
-    public async Task Diagnostic_still_fires_inside_friend_assembly_class_implementing_a_PUBLIC_ISanitizingLogger()
-    {
-        // Regression coverage: the exemption is gated on
-        // `ContainingAssembly.Name == "ZeeKayDa.Auth"` alone (InterpolatedStringLogAnalyzer.
-        // IsInLoggerImplementation), not on ISanitizingLogger<T>'s visibility. Making the
-        // interface public must not open a new way for a friend (or third-party) assembly's own
-        // ISanitizingLogger<T> implementation to self-exempt from the constant-template rule.
-        // Identical to Diagnostic_fires_inside_friend_assembly_class_implementing_ISanitizingLogger
-        // except the interface is public here — the outcome must be the same either way.
-        var coreSource = """
-            using Microsoft.Extensions.Logging;
             namespace ZeeKayDa.Auth.Logging
             {
-                public interface ISanitizingLogger<T> : ILogger<T> { }
-            }
-            """;
-
-        var aspNetCoreSource = """
-            using Microsoft.Extensions.Logging;
-            using ZeeKayDa.Auth.Logging;
-            namespace ZeeKayDa.Auth.AspNetCore.Services
-            {
-                internal sealed class FriendService : ISanitizingLogger<FriendService>
+                internal sealed class SanitizingLogger<T> : ILogger<T>
                 {
-                    private readonly ILogger<FriendService> _inner;
-                    public FriendService(ILogger<FriendService> inner) { _inner = inner; }
+                    private readonly ILogger<T> _inner;
+                    public SanitizingLogger(ILogger<T> inner) { _inner = inner; }
                     public System.IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
                     public bool IsEnabled(LogLevel level) => false;
                     public void Log<TState>(LogLevel level, Microsoft.Extensions.Logging.EventId id, TState state, System.Exception? ex, System.Func<TState, System.Exception?, string> f) { }
@@ -1425,11 +1398,10 @@ public sealed class InterpolatedStringLogAnalyzerTests
             using Microsoft.Extensions.Logging;
             namespace ZeeKayDa.Auth.Logging
             {
-                internal interface ISanitizingLogger<T> : ILogger<T> { }
-                internal sealed class SecretSanitizingLogger<T> : ISanitizingLogger<T>
+                public class SanitizingLogger<T> : ILogger<T>
                 {
                     private readonly ILogger<T> _inner;
-                    public SecretSanitizingLogger(ILogger<T> inner) { _inner = inner; }
+                    internal SanitizingLogger(ILogger<T> inner) { _inner = inner; }
                     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
                     public bool IsEnabled(LogLevel level) => false;
                     public void Log<TState>(LogLevel level, EventId id, TState state, Exception? ex, Func<TState, Exception?, string> f)
@@ -1907,7 +1879,7 @@ public sealed class InterpolatedStringLogAnalyzerTests
     {
         var sharedReferences = BuildFullReferences();
 
-        // Compile the core assembly (ZeeKayDa.Auth) that defines ISanitizingLogger<T>
+        // Compile the core assembly (ZeeKayDa.Auth)
         var coreCompilation = CSharpCompilation.Create(
             "ZeeKayDa.Auth",
             new[] { CSharpSyntaxTree.ParseText(coreSource) },

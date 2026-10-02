@@ -13,29 +13,11 @@ public sealed class Pbkdf2ClientSecretHasherTests
 
     private static Pbkdf2ClientSecretHasher CreateHasher(
         int iterations = Pbkdf2ClientSecretHasherOptions.DefaultIterations,
-        ISanitizingLogger<Pbkdf2ClientSecretHasher>? logger = null)
+        SanitizingLogger<Pbkdf2ClientSecretHasher>? logger = null)
         => new(
             new FixedOptionsMonitor<Pbkdf2ClientSecretHasherOptions>(
                 new Pbkdf2ClientSecretHasherOptions { Iterations = iterations }),
             logger ?? NullSanitizingLogger<Pbkdf2ClientSecretHasher>.Instance);
-
-    private sealed class CapturingLogger<T> : ISanitizingLogger<T>
-    {
-        private readonly List<(LogLevel Level, string Message)> _entries = [];
-
-        public IReadOnlyList<(LogLevel Level, string Message)> Entries => _entries;
-
-        IDisposable? ILogger.BeginScope<TState>(TState state) => null;
-        bool ILogger.IsEnabled(LogLevel logLevel) => true;
-
-        void ILogger.Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-            => _entries.Add((logLevel, formatter(state, exception)));
-    }
 
     // ── Happy path ───────────────────────────────────────────────────────────────────────────────
 
@@ -139,7 +121,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
     [Fact]
     public void Verify_logs_warning_when_stored_iterations_are_above_max()
     {
-        var logger = new CapturingLogger<Pbkdf2ClientSecretHasher>();
+        var logger = new CapturingSanitizingLogger<Pbkdf2ClientSecretHasher>();
         var hasher = new Pbkdf2ClientSecretHasher(
             new FixedOptionsMonitor<Pbkdf2ClientSecretHasherOptions>(new Pbkdf2ClientSecretHasherOptions()),
             logger);

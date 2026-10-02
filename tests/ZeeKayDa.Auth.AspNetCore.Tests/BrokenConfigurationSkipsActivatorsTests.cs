@@ -87,7 +87,7 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
                 // Fails a cheap verifier: no IDistributedCache is registered for the distributed
                 // store check to find. Nothing in the activator phase should run afterwards.
                 new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<RecordingSigningKeySource>();
-                services.AddSingleton<IStartupVerifier>(new AlwaysFailingVerifier());
+                services.AddScoped<IStartupVerifier>(_ => new AlwaysFailingVerifier());
             });
 
             builder.Configure(app =>
@@ -102,8 +102,7 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
     {
         public string Name => "AlwaysFails";
 
-        public Task VerifyAsync(
-            StartupVerificationContext context, IServiceProvider scopedServices, CancellationToken cancellationToken)
+        public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
         {
             context.AddFailure("test.cheap_failure", "A cheap configuration check failed.");
             return Task.CompletedTask;

@@ -14,35 +14,35 @@ namespace ZeeKayDa.Auth.Clients;
 /// <see cref="InMemoryClientRepository"/> performs duplicate detection, per-client validation, and
 /// secret hashing in its constructor; since it's a singleton, nothing else forces construction
 /// before the first request needing it. Nothing here catches exceptions thrown while resolving
-/// <see cref="IClientRepository"/>; when none is registered at all, the friendlier
-/// <c>ClientRepositoryPresenceVerifier</c> options-validation message aborts startup before this
-/// verifier ever runs, otherwise the exception propagates unhandled from this method.
+/// <see cref="IClientRepository"/>; when none is registered at all, the
+/// <c>ClientRepositoryPresenceVerifier</c> failure aborts startup before this activator runs,
+/// otherwise the exception propagates to the runner.
 /// </remarks>
-internal sealed class ClientRepositoryActivator : IStartupActivator
+internal sealed class ClientRepositoryActivator(
+    IServiceProvider services,
+    ValidatedScopeCatalog scopeCatalog,
+    ISigningKeyRing? ring = null,
+    InMemoryClientRegistrationOptions? inMemoryOptions = null) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "ClientRepositoryActivation";
 
     /// <inheritdoc/>
-    public async Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public async Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         // Client registrations are validated against the algorithms the server advertises, which do
         // not exist until the signing key ring has read its source. Asking for that here, rather
         // than assuming this runs after the ring's own activator, is what keeps the check correct
         // whatever order the activator phase happens to run in. EnsureInitializedAsync is
         // idempotent, so whichever activator asks first does the work and the other observes it.
-        await EnsureSigningKeysReadAsync(scopedServices, cancellationToken).ConfigureAwait(false);
+        if (ring is not null)
+            await ring.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
 
-        // Resolving triggers construction-time validation: duplicate detection, per-client checks,
-        // secret hashing. Any exception flows out to the runner and aborts startup; nothing is
-        // caught here.
-        var repository = scopedServices.GetRequiredService<IClientRepository>();
+        // Resolved only now, not injected: its construction validates every registration against
+        // those algorithms. Any exception flows out to the runner and aborts startup.
+        var repository = services.GetRequiredService<IClientRepository>();
 
         // Warn if a custom IClientRepository has shadowed AddInMemoryClients' registration.
-        var inMemoryOptions = scopedServices.GetService<InMemoryClientRegistrationOptions>();
         if (inMemoryOptions is not null && repository is not InMemoryClientRepository)
         {
             context.AddWarning(
@@ -55,7 +55,7 @@ internal sealed class ClientRepositoryActivator : IStartupActivator
         }
 
         if (repository is InMemoryClientRepository inMemory)
-            await CheckAgainstScopesAsync(context, scopedServices, inMemory, cancellationToken).ConfigureAwait(false);
+            await CheckAgainstScopesAsync(context, inMemory, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -78,18 +78,15 @@ internal sealed class ClientRepositoryActivator : IStartupActivator
     /// allowing an undefined scope, burying the failure that actually matters.
     /// </para>
     /// </remarks>
-    private static async ValueTask CheckAgainstScopesAsync(
+    private async ValueTask CheckAgainstScopesAsync(
         StartupVerificationContext context,
-        IServiceProvider scopedServices,
         InMemoryClientRepository repository,
         CancellationToken cancellationToken)
     {
         IReadOnlyCollection<ScopeDefinition> scopes;
         try
         {
-            scopes = await scopedServices.GetRequiredService<ValidatedScopeCatalog>()
-                .GetScopesAsync(cancellationToken)
-                .ConfigureAwait(false);
+            scopes = await scopeCatalog.GetScopesAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (ScopeContractException ex)
         {
@@ -115,21 +112,5 @@ internal sealed class ClientRepositoryActivator : IStartupActivator
             if (ClientClaimAdditions.FindCollision(client, scopes) is { } collision)
                 context.AddFailure("client.claim_additions.scope_claim", collision.Describe(client.ClientId));
         }
-    }
-
-    /// <summary>
-    /// Initializes the signing key ring if one is registered, so client registrations are validated
-    /// against algorithms that exist.
-    /// </summary>
-    /// <remarks>
-    /// Failures are not caught. The ring's own activator reports the same failure, and the runner
-    /// collapses identical failures within a phase — which is a better place for that rule than a
-    /// <c>catch</c> here encoding an assumption about what another check will report.
-    /// </remarks>
-    private static async ValueTask EnsureSigningKeysReadAsync(
-        IServiceProvider scopedServices, CancellationToken cancellationToken)
-    {
-        if (scopedServices.GetService<ISigningKeyRing>() is { } ring)
-            await ring.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
     }
 }

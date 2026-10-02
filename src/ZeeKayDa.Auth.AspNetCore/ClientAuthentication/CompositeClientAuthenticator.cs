@@ -21,7 +21,7 @@ internal sealed class CompositeClientAuthenticator(
     ValidatedClientResolver clientResolver,
     IOptions<AuthorizationServerOptions> serverOptions,
     CompositeClientSecretHasher secretHasher,
-    ISanitizingLogger<CompositeClientAuthenticator> logger)
+    SanitizingLogger<CompositeClientAuthenticator> logger)
 {
     private readonly IReadOnlyList<IClientAuthenticator> _authenticators = authenticators.ToList().AsReadOnly();
 

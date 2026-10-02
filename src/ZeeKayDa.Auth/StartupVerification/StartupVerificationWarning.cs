@@ -3,15 +3,15 @@ using Microsoft.Extensions.Logging;
 namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>
-/// A single structured warning produced by an <see cref="IStartupVerifier"/> or internal startup
-/// gate, recorded on a <see cref="StartupVerificationContext"/> via
+/// A single structured warning produced by an <see cref="IStartupVerifier"/> or
+/// <see cref="IStartupActivator"/>, recorded on a <see cref="StartupVerificationContext"/> via
 /// <see cref="StartupVerificationContext.AddWarning(string, string, LogLevel, object?[])"/>.
 /// </summary>
 /// <param name="Code">A stable, versioned string identifier for this warning.</param>
 /// <param name="MessageTemplate">
 /// An <see cref="ILogger"/> named-placeholder template (e.g. <c>"{StoreName}"</c>), passed
 /// through to the sink unformatted so structured logging backends can index the fields and
-/// <c>SecretSanitizingLogger</c> can redact them by key.
+/// <c>SanitizingLogger</c> can redact them by key.
 /// </param>
 /// <param name="Level">The <see cref="LogLevel"/> the runner logs this warning at.</param>
 /// <param name="Args">

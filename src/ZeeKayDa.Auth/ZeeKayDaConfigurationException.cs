@@ -91,6 +91,19 @@ public class ZeeKayDaConfigurationException : ZeeKayDaException
         AggregatedFailures = [.. failures];
     }
 
+    /// <summary>
+    /// An exception for <paramref name="failures"/> whose inner exception is the one root cause, an
+    /// <see cref="AggregateException"/> over several, or absent when there are none.
+    /// </summary>
+    internal static ZeeKayDaConfigurationException WithRootCauses(
+        IReadOnlyList<ZeeKayDaConfigurationFailure> failures, IReadOnlyList<Exception> rootCauses) =>
+        rootCauses.Count switch
+        {
+            0 => new ZeeKayDaConfigurationException([.. failures]),
+            1 => new ZeeKayDaConfigurationException(failures, rootCauses[0]),
+            _ => new ZeeKayDaConfigurationException(failures, new AggregateException(rootCauses)),
+        };
+
     // ComposeMessage runs in the base constructor call, before any statement in this constructor
     // could guard it, so a null list would surface as a NullReferenceException from a collection
     // expression rather than the ArgumentNullException the params overload gives.

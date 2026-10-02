@@ -7,12 +7,12 @@ nav_order: 5
 
 *Added in Unreleased.*
 
-ZeeKayDa.Auth includes a `SecretSanitizingLogger` wrapper that intercepts every log call made by
+ZeeKayDa.Auth includes a `SanitizingLogger` wrapper that intercepts every log call made by
 the library's own services and redacts known-sensitive OAuth parameters — `client_secret`,
 `code_verifier`, `Authorization`, `access_token`, `refresh_token`, and others — before they reach
 the underlying log sink. In addition, all logged exceptions are unconditionally wrapped in
 `RedactedExceptionWrapper`, replacing the exception `Message` with the fixed placeholder
-`[exception message redacted by SecretSanitizingLogger]` before the exception reaches any log sink.
+`[exception message redacted by SanitizingLogger]` before the exception reaches any log sink.
 
 > ⚠️ **Warning: The library's redaction boundary covers only ZeeKayDa.Auth's own internal logging.**
 > ASP.NET Core's `UseHttpLogging()`, Kestrel's connection logging, W3CLogger, Application Insights
@@ -23,7 +23,7 @@ the underlying log sink. In addition, all logged exceptions are unconditionally 
 
 ## What ZeeKayDa.Auth does and does not cover
 
-| Logging surface | Covered by `SecretSanitizingLogger`? |
+| Logging surface | Covered by `SanitizingLogger`? |
 |---|---|
 | ZeeKayDa.Auth internal structured logs | Yes — values for sensitive keys are replaced with `[REDACTED]` |
 | Exception messages on logged exceptions | Yes — covered unconditionally; all logged exceptions are wrapped in `RedactedExceptionWrapper` and their `Message` is replaced with a fixed placeholder |
@@ -229,7 +229,7 @@ as a reminder that exception messages will not be redacted.
 
 In addition to the runtime steps above, ZeeKayDa.Auth ships Roslyn analyzer rules that enforce
 log-hygiene requirements at build time for code inside the `ZeeKayDa.*` namespace. `ZEEKAYDA0001`
-prevents `ILogger<T>` from being injected directly (bypassing `SecretSanitizingLogger`), and
+prevents `ILogger<T>` from being injected directly (bypassing `SanitizingLogger`), and
 `ZEEKAYDA0002` prevents interpolated strings containing sensitive identifiers from being passed to
 `Log*` methods (which would embed credential values before the redaction layer can act). See the
 [Analyzer rules reference](../reference/analyzer-rules.md) for the full rule definitions,

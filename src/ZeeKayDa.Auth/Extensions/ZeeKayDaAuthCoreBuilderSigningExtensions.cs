@@ -137,6 +137,6 @@ public static class ZeeKayDaAuthCoreBuilderSigningExtensions
 
         builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, DevelopmentSigningKeyVerifier>());
+            ServiceDescriptor.Scoped<IStartupVerifier, DevelopmentSigningKeyVerifier>());
     }
 }

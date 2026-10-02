@@ -120,7 +120,7 @@ public sealed class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensionsTests
         // TryAddSingleton-registers the real implementations, so a pre-registered fake wins.
         services.AddSingleton<IKeyVaultKeyReader>(new FakeKeyVaultKeyReader());
         services.AddSingleton<IKeyVaultSigner>(new FakeKeyVaultSigner());
-        // SecretSanitizingLogger<T> (registered by AddZeeKayDaAuthCore) needs a real ILogger<T> to
+        // SanitizingLogger<T> (registered by AddZeeKayDaAuthCore) needs a real ILogger<T> to
         // resolve; a plain ServiceCollection has no logging provider registered by default.
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         var builder = services.AddZeeKayDaAuthCoreForTesting();

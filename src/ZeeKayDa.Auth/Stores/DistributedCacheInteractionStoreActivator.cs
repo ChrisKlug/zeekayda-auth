@@ -23,7 +23,8 @@ namespace ZeeKayDa.Auth.Stores;
 /// </remarks>
 internal sealed class DistributedCacheInteractionStoreActivator(
     IHostEnvironment environment,
-    bool allowMemoryCacheOutsideDevelopment) : IStartupActivator
+    bool allowMemoryCacheOutsideDevelopment,
+    IDistributedCache? cache) : IStartupActivator
 {
     internal const string MissingCacheMessage =
         "IDistributedCache is not registered. Call services.AddDistributedMemoryCache() " +
@@ -46,13 +47,8 @@ internal sealed class DistributedCacheInteractionStoreActivator(
     public string Name => "DistributedCacheInteractionStore";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
-        var cache = scopedServices.GetService<IDistributedCache>();
-
         if (cache is null)
         {
             context.AddFailure("stores.idistributedcache.missing", MissingCacheMessage);

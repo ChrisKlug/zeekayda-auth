@@ -82,9 +82,10 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         AddInteractionStore<DistributedCacheInteractionBackingStore>(builder);
-        builder.Services.AddSingleton<IStartupActivator>(sp => new DistributedCacheInteractionStoreActivator(
+        builder.Services.AddScoped<IStartupActivator>(sp => new DistributedCacheInteractionStoreActivator(
             sp.GetRequiredService<IHostEnvironment>(),
-            allowMemoryCacheOutsideDevelopment));
+            allowMemoryCacheOutsideDevelopment,
+            sp.GetService<IDistributedCache>()));
         return builder;
     }
 
@@ -282,7 +283,7 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
         ArgumentNullException.ThrowIfNull(builder);
 
         addStore(builder);
-        builder.Services.AddSingleton<IStartupVerifier>(sp => new InMemoryStoreVerifier(
+        builder.Services.AddScoped<IStartupVerifier>(sp => new InMemoryStoreVerifier(
             sp.GetRequiredService<IHostEnvironment>(), storeName, allowOutsideDevelopment));
 
         return builder;

@@ -31,7 +31,7 @@ internal sealed class NothingToContinue(
     InteractionAnswers answers,
     SsoSession session,
     IOptions<AuthorizationServerOptions> options,
-    ISanitizingLogger<NothingToContinue> logger)
+    SanitizingLogger<NothingToContinue> logger)
 {
     /// <summary>The error code a host's error page receives for an interaction there is nothing left of.</summary>
     internal const string ErrorCode = "interaction_not_found";

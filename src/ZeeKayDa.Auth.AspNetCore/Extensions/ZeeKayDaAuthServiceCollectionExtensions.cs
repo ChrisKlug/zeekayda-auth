@@ -83,7 +83,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<CompositeClientAuthenticator>();
 
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, AuthenticatorCoverageActivator>());
+            ServiceDescriptor.Scoped<IStartupActivator, AuthenticatorCoverageActivator>());
 
         services.TryAddSingleton<GrantClaimsResolver>();
         services.TryAddSingleton<AuthorizationCodeGrant>();
@@ -118,7 +118,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // Registered whether or not WithProviders is called: its job is to catch a host with
         // neither a login page nor a provider, so nothing can sign a user in.
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupVerifier, LoginDispatchVerifier>());
+            ServiceDescriptor.Scoped<IStartupVerifier, LoginDispatchVerifier>());
 
         services.TryAddSingleton<IConsentInteraction, ConsentInteraction>();
         services.TryAddSingleton<IProviderSignInInteraction, ProviderSignInInteraction>();
@@ -177,7 +177,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     private static void AddInteractionCookies(IServiceCollection services)
     {
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ReservedCookieNameActivator>());
+            ServiceDescriptor.Scoped<IStartupActivator, ReservedCookieNameActivator>());
 
         var authentication = services.AddAuthentication();
 

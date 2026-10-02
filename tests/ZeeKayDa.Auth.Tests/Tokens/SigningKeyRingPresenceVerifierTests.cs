@@ -39,10 +39,9 @@ public sealed class SigningKeyRingPresenceVerifierTests
         var services = new ServiceCollection();
         new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<StubSigningKeySource>();
         using var provider = services.BuildServiceProvider();
-        var sut = new SigningKeyRingPresenceVerifier();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await new SigningKeyRingPresenceVerifier(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }
@@ -52,10 +51,9 @@ public sealed class SigningKeyRingPresenceVerifierTests
     {
         var services = new ServiceCollection();
         using var provider = services.BuildServiceProvider();
-        var sut = new SigningKeyRingPresenceVerifier();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await new SigningKeyRingPresenceVerifier(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle()
             .Which.Code.Should().Be("signing.key_ring.missing");
@@ -66,10 +64,9 @@ public sealed class SigningKeyRingPresenceVerifierTests
     {
         var services = new ServiceCollection();
         using var provider = services.BuildServiceProvider();
-        var sut = new SigningKeyRingPresenceVerifier();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await new SigningKeyRingPresenceVerifier(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Single().Message.Should().Contain("AddSigningKeySource");
         context.Failures.Single().Message.Should().Contain("AddInMemoryDevelopmentSigning");
@@ -81,11 +78,9 @@ public sealed class SigningKeyRingPresenceVerifierTests
         // A third-party DI container replacing the default one. The check resolves the ring rather
         // than asking IServiceProviderIsService about it, so it reports truthfully here instead of
         // skipping itself.
-        var sut = new SigningKeyRingPresenceVerifier();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(
-            context, new NoServiceProviderIsServiceProvider(), TestContext.Current.CancellationToken);
+        await new SigningKeyRingPresenceVerifier(new NoServiceProviderIsServiceProvider()).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle()
             .Which.Code.Should().Be("signing.key_ring.missing");
@@ -101,11 +96,9 @@ public sealed class SigningKeyRingPresenceVerifierTests
         var services = new ServiceCollection();
         new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<UnconstructableSigningKeySource>();
         using var inner = services.BuildServiceProvider();
-        var sut = new SigningKeyRingPresenceVerifier();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(
-            context, new ResolvingOnlyServiceProvider(inner), TestContext.Current.CancellationToken);
+        await new SigningKeyRingPresenceVerifier(new ResolvingOnlyServiceProvider(inner)).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }

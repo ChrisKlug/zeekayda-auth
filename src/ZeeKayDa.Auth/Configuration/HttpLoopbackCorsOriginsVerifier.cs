@@ -29,10 +29,7 @@ internal sealed class HttpLoopbackCorsOriginsVerifier(
     public string Name => "HttpLoopbackCorsOrigins";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         if (!options.Value.Development.AllowHttpLoopbackCorsOrigins)
             return Task.CompletedTask;

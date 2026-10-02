@@ -1037,7 +1037,8 @@ each was a control silently removed rather than a bug introduced. Dropping the r
 closed, proven by `AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring`.
 The gate-warning flush justified itself from the sanitizing-logger gate's registration position, so a
 gate inserted ahead of it would have logged through a logger proved shadowed — now tracked explicitly,
-proven by `StartAsync_discards_warnings_buffered_before_the_logger_gate_fails`.
+proven by StartAsync_discards_warnings_buffered_before_the_logger_gate_fails. [Retired with the gate
+phase in #771: the logger can no longer be shadowed — `SanitizingLogger_has_no_constructor_another_assembly_can_call_or_chain_to`.]
 
 Residual: "cheap" is a claim an implementation makes by choosing an interface. A third-party check
 doing I/O from `IStartupVerifier` defeats the phase for its own host. Not a security boundary — the
@@ -1921,7 +1922,8 @@ security lenses and the security agent, one round plus fix-diff verification; no
 Every non-HTTP service and startup check registers from AddZeeKayDaAuthCore(configure);
 AddZeeKayDaAuth(configure) calls it and adds only the HTTP surface. Closed — proven by
 `A_core_only_host_validates_the_server_options_at_startup`,
-`AddZeeKayDaAuthCore_registers_the_sanitizing_logger_gate_first_and_the_options_gate_second`,
+AddZeeKayDaAuthCore_registers_the_sanitizing_logger_gate_first_and_the_options_gate_second [retired with
+the gate phase in #771; options still validate first — `StartAsync_validates_options_before_constructing_any_verifier`],
 `AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring`.
 The startup runner and its gates have one registration site, AddZeeKayDaAuthCore(configure);
 ValidateWithZeeKayDa() registers none, and every ZeeKayDaAuthBuilder comes from Core (internal
@@ -1971,3 +1973,19 @@ fix-diff verification of each round; no Critical.
   or a filesystem without locks) the race returns; the lock test above fails in that configuration.
 - **Accepted residual:** a crash between write and rename leaves an owner-only `.pending` file; a
   directory at the `.lock` path fails only after the 30 s `lock_timeout`. No test.
+
+## 2026-10-01 — two-phase startup runner; the sanitizing logger cannot be substituted (#771, code frozen at `1786e6a`)
+Reverses the sanitizing-logger gate and the `IStartupCheck` rejection check recorded in earlier entries.
+- No registration can supply a logger that skips redaction: `SanitizingLogger<T>` has only an internal
+  constructor and nothing overridable. Closed — `SanitizingLogger_has_no_constructor_another_assembly_can_call_or_chain_to`,
+  `SanitizingLogger_members_cannot_be_overridden`, `AddZeeKayDaAuthCore_registers_SanitizingLogger_open_generic`.
+- ZEEKAYDA0002's exemption is that one type only. Closed — `Diagnostic_fires_inside_a_friend_assembly_type_named_SanitizingLogger`.
+- No exception message reaches a failure, from a check, a constructor or an options validator. Closed —
+  `StartAsync_wraps_an_unexpected_exception_naming_only_the_exception_type_never_its_message`,
+  `StartAsync_reports_a_check_constructor_that_throws_as_a_failure_naming_only_its_type`,
+  `StartAsync_reports_an_options_validator_that_throws_unexpectedly_naming_only_the_exception_type`.
+- Options validate first; no activator is built after a verifier failed; checks must be scoped. Closed —
+  `StartAsync_validates_options_before_constructing_any_verifier`, `StartAsync_does_not_construct_activators_when_a_verifier_failed`,
+  `A_verifier_registered_as_a_singleton_fails_startup_naming_its_type`.
+- **Accepted residuals (maintainer):** a friend assembly could subclass the logger (first-party, not a boundary);
+  a scoped factory returning a singleton check passes the lifetime check. No test.

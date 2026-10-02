@@ -22,7 +22,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tokens;
 /// claim value reaches a log line from this type; a provider's exception is logged through the
 /// sanitizing logger, which redacts its message and keeps its type and stack.
 /// </remarks>
-internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, ISanitizingLogger<GrantClaimsResolver> logger)
+internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, SanitizingLogger<GrantClaimsResolver> logger)
 {
     /// <summary>Resolves the subject claims a destination carries, or says why it could not.</summary>
     /// <param name="context">The request, whose services supply the provider.</param>

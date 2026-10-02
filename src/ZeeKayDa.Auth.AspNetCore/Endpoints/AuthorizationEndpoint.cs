@@ -29,14 +29,14 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
     private readonly AuthorizationFlow _flow;
     private readonly InteractionOutcomes _outcomes;
     private readonly ProviderRegistry _providers;
-    private readonly ISanitizingLogger<AuthorizationEndpoint> _logger;
+    private readonly SanitizingLogger<AuthorizationEndpoint> _logger;
 
     public AuthorizationEndpoint(
         IOptions<AuthorizationServerOptions> options,
         AuthorizationFlow flow,
         InteractionOutcomes outcomes,
         ProviderRegistry providers,
-        ISanitizingLogger<AuthorizationEndpoint> logger)
+        SanitizingLogger<AuthorizationEndpoint> logger)
     {
         _options = options;
         _flow = flow;

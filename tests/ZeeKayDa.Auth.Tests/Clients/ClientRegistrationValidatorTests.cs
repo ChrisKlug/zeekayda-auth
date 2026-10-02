@@ -110,30 +110,6 @@ public sealed class ClientRegistrationValidatorTests
         public IClientSecret Create(ReadOnlySpan<char> plaintext) => new AnySecret();
     }
 
-    /// <summary>
-    /// A logger that records LogWarning calls for assertion.
-    /// </summary>
-    private sealed class CapturingLogger : ISanitizingLogger<ClientRegistrationValidator>
-    {
-        private readonly List<string> _warnings = new();
-
-        public IReadOnlyList<string> Warnings => _warnings;
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-        {
-            if (logLevel == LogLevel.Warning)
-                _warnings.Add(formatter(state, exception));
-        }
-    }
-
     private static CompositeClientSecretHasher MakeHasher(IClientSecretHasher hasher)
         => new CompositeClientSecretHasher(
             [hasher],
@@ -141,7 +117,7 @@ public sealed class ClientRegistrationValidatorTests
 
     private static ClientRegistrationValidator MakeValidator(
         IClientSecretHasher? hasher = null,
-        ISanitizingLogger<ClientRegistrationValidator>? logger = null,
+        SanitizingLogger<ClientRegistrationValidator>? logger = null,
         AuthorizationServerOptions? serverOptions = null,
         SigningKeySet? keySet = null,
         bool withKeyRing = true)
@@ -431,7 +407,7 @@ public sealed class ClientRegistrationValidatorTests
     [Fact]
     public void Validate_emits_log_warning_for_localhost_redirect_uri()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
         var validator = MakeValidator(logger: logger);
         var client = MakeValidPublicClient() with
         {
@@ -449,7 +425,7 @@ public sealed class ClientRegistrationValidatorTests
         // The localhost advisory warning is noise when the URI is already being rejected for another
         // reason. A localhost URI carrying a fragment must produce the fragment failure but NOT the
         // localhost warning.
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
         var validator = MakeValidator(logger: logger);
         var client = MakeValidPublicClient() with
         {
@@ -517,7 +493,7 @@ public sealed class ClientRegistrationValidatorTests
         // The localhost advisory warning (RFC 8252 §8.3) is for native apps' http loopback
         // redirects. https://localhost is a web client on a dev certificate, where TLS already
         // rules out the name-resolution risk the advice is about.
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
         var validator = MakeValidator(logger: logger);
         var client = MakeValidPublicClient() with
         {
@@ -533,7 +509,7 @@ public sealed class ClientRegistrationValidatorTests
     [Fact]
     public void Validate_emits_log_warning_for_HTTP_localhost_post_logout_redirect_uri_but_not_HTTPS()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
         var validator = MakeValidator(logger: logger);
         var client = MakeValidPublicClient() with
         {
@@ -1288,7 +1264,7 @@ public sealed class ClientRegistrationValidatorTests
         // passed over in silence.
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
         var validator = MakeValidator(logger: logger, serverOptions: opts, keySet: null);
 
         var client = MakeValidPublicClient() with
@@ -1547,7 +1523,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         var options = BuildDefaultServerOptions();
         options.GrantTypesSupported.Add(GrantType.RefreshToken);
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
         var validator = MakeValidator(logger: logger, serverOptions: options);
         var client = MakeValidPublicClient() with
         {
@@ -1567,7 +1543,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         var options = BuildDefaultServerOptions();
         options.GrantTypesSupported.Add(GrantType.RefreshToken);
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
         var validator = MakeValidator(logger: logger, serverOptions: options);
         var client = MakeValidPublicClient() with
         {
@@ -2140,7 +2116,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         var opts = BuildDefaultServerOptions();
         opts.TokenEndpoint.AbsoluteFamilyLifetime = TimeSpan.FromDays(30);
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
         var client = MakeValidPublicClient() with { AccessTokenLifetime = TimeSpan.FromDays(31) };
 
         var act = () => MakeValidator(logger: logger, serverOptions: opts).Validate(client);
@@ -2152,7 +2128,7 @@ public sealed class ClientRegistrationValidatorTests
     [Fact]
     public void Validate_does_not_warn_when_a_token_lifetime_override_is_within_the_family_ceiling()
     {
-        var logger = new CapturingLogger();
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
         var client = MakeValidPublicClient() with { AccessTokenLifetime = TimeSpan.FromHours(2), IdTokenLifetime = TimeSpan.FromHours(2) };
 
         MakeValidator(logger: logger).Validate(client);

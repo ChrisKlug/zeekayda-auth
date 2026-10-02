@@ -254,9 +254,9 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
 
         new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
-        using var provider = services.BuildServiceProvider();
-        provider.GetServices<IStartupActivator>().Should().ContainSingle(v => v is SigningKeyRingActivator);
-        provider.GetServices<IStartupVerifier>().Should().BeEmpty(
+        services.Should().ContainSingle(descriptor => descriptor.ServiceType == typeof(IStartupActivator)
+            && descriptor.ImplementationType == typeof(SigningKeyRingActivator));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IStartupVerifier),
             "reading the source is real work and belongs in the activator phase");
     }
 

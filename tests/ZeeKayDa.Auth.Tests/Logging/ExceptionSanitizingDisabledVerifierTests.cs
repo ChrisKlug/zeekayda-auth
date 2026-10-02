@@ -15,8 +15,6 @@ namespace ZeeKayDa.Auth.Tests.Logging;
 /// </summary>
 public sealed class ExceptionSanitizingDisabledVerifierTests
 {
-    private static readonly IServiceProvider EmptyProvider = new ServiceCollection().BuildServiceProvider();
-
     private sealed class FakeHostEnvironment(string environmentName) : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = environmentName;
@@ -32,7 +30,7 @@ public sealed class ExceptionSanitizingDisabledVerifierTests
         var sut = new ExceptionSanitizingDisabledVerifier(Options.Create(options), new FakeHostEnvironment(environment));
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         return context;
     }

@@ -28,7 +28,7 @@ namespace ZeeKayDa.Auth.Authorization;
 internal sealed partial class AuthorizeRequestValidator(
     ValidatedClientResolver clientResolver,
     ValidatedScopeCatalog scopes,
-    ISanitizingLogger<AuthorizeRequestValidator> logger)
+    SanitizingLogger<AuthorizeRequestValidator> logger)
 {
     private const string LocalErrorDescription =
         "The client_id or redirect_uri of this request is missing, unknown, or not registered.";

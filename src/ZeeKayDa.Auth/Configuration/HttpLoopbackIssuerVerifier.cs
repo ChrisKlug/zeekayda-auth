@@ -49,10 +49,7 @@ internal sealed class HttpLoopbackIssuerVerifier(
     public string Name => "HttpLoopbackIssuer";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         if (!options.Value.Development.AllowHttpLoopbackIssuer)
             return Task.CompletedTask;

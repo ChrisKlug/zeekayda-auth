@@ -48,15 +48,24 @@ namespace ZeeKayDa.Auth.Logging;
 /// to <see langword="true"/> to opt out (development environments only).
 /// </para>
 /// <para>
-/// This is a defence-in-depth backstop. The Roslyn analyzer (<c>ZEEKAYDA0001</c>) is the primary
-/// preventive control, enforcing at compile time that every ZeeKayDa service injects
-/// <see cref="ISanitizingLogger{T}"/> rather than <see cref="ILogger{T}"/> directly.
+/// Inject this type wherever a ZeeKayDa service logs; the <c>ZEEKAYDA0001</c> analyzer enforces it
+/// over a direct <see cref="ILogger{T}"/>. It is public so a provider package referencing only core
+/// ZeeKayDa.Auth can inject it, and its only constructor is internal, so no other assembly can
+/// construct or derive from it: a registration can never substitute a logger that skips redaction.
 /// </para>
 /// </remarks>
-internal sealed class SecretSanitizingLogger<T>(
-    ILogger<T> inner,
-    IOptions<AuthorizationServerOptions> options) : ISanitizingLogger<T>
+/// <typeparam name="T">The type whose name is used for the logger category.</typeparam>
+public class SanitizingLogger<T> : ILogger<T>
 {
+    private readonly ILogger<T> _inner;
+    private readonly IOptions<AuthorizationServerOptions> _options;
+
+    internal SanitizingLogger(ILogger<T> inner, IOptions<AuthorizationServerOptions> options)
+    {
+        _inner = inner;
+        _options = options;
+    }
+
     internal static readonly IReadOnlySet<string> SensitiveKeys =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -76,6 +85,7 @@ internal sealed class SecretSanitizingLogger<T>(
             "DPoP"
         };
 
+    /// <inheritdoc/>
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull
     {
         if (state is IEnumerable<KeyValuePair<string, object?>> pairs)
@@ -88,16 +98,18 @@ internal sealed class SecretSanitizingLogger<T>(
                         ? new KeyValuePair<string, object?>(kv.Key, "[REDACTED]")
                         : kv)
                     .ToList();
-                return inner.BeginScope(redacted);
+                return _inner.BeginScope(redacted);
             }
         }
 
-        return inner.BeginScope(state);
+        return _inner.BeginScope(state);
     }
 
+    /// <inheritdoc/>
     public bool IsEnabled(LogLevel logLevel)
-        => inner.IsEnabled(logLevel);
+        => _inner.IsEnabled(logLevel);
 
+    /// <inheritdoc/>
     public void Log<TState>(
         LogLevel logLevel,
         EventId eventId,
@@ -107,7 +119,7 @@ internal sealed class SecretSanitizingLogger<T>(
     {
         // Guard before allocating: if the inner logger would discard this entry anyway, skip all
         // redaction work including the RedactedExceptionWrapper allocation.
-        if (!inner.IsEnabled(logLevel))
+        if (!_inner.IsEnabled(logLevel))
             return;
 
         var wrappedException = WrapException(exception);
@@ -122,7 +134,7 @@ internal sealed class SecretSanitizingLogger<T>(
                         ? new KeyValuePair<string, object?>(kv.Key, "[REDACTED]")
                         : kv)
                     .ToList();
-                inner.Log(logLevel, eventId, new RedactedLogValues(redacted), wrappedException, (s, ex) => s.ToString());
+                _inner.Log(logLevel, eventId, new RedactedLogValues(redacted), wrappedException, (s, ex) => s.ToString());
                 return;
             }
         }
@@ -131,16 +143,16 @@ internal sealed class SecretSanitizingLogger<T>(
             // Truly opaque custom state (not string, not IEnumerable<KVP>) cannot be inspected for
             // sensitive key-value pairs, so substitute a safe placeholder rather than risk leaking it.
             const string blocked = "[ZeeKayDa: unscrubbable log state blocked]";
-            inner.Log(logLevel, eventId, blocked, wrappedException, static (s, _) => s);
+            _inner.Log(logLevel, eventId, blocked, wrappedException, static (s, _) => s);
             return;
         }
 
-        inner.Log(logLevel, eventId, state, wrappedException, formatter);
+        _inner.Log(logLevel, eventId, state, wrappedException, formatter);
     }
 
     private Exception? WrapException(Exception? exception)
     {
-        if (exception is null || options.Value.Development.DisableExceptionSanitizing)
+        if (exception is null || _options.Value.Development.DisableExceptionSanitizing)
             return exception;
 
         return new RedactedExceptionWrapper(exception);
@@ -222,3 +234,11 @@ internal sealed class SecretSanitizingLogger<T>(
         }
     }
 }
+
+/// <summary>
+/// The <see cref="SanitizingLogger{T}"/> the framework registers. The dependency-injection
+/// container activates only public constructors, which <see cref="SanitizingLogger{T}"/> must not
+/// have.
+/// </summary>
+internal sealed class RegisteredSanitizingLogger<T>(ILogger<T> inner, IOptions<AuthorizationServerOptions> options)
+    : SanitizingLogger<T>(inner, options);

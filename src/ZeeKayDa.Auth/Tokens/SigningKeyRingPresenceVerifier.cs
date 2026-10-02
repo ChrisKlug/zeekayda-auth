@@ -29,18 +29,15 @@ namespace ZeeKayDa.Auth.Tokens;
 /// cache a failed factory invocation, so re-throwing it here would report it twice.
 /// </para>
 /// </remarks>
-internal sealed class SigningKeyRingPresenceVerifier : IStartupVerifier
+internal sealed class SigningKeyRingPresenceVerifier(IServiceProvider services) : IStartupVerifier
 {
     /// <inheritdoc/>
     public string Name => "SigningKeyRingPresence";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
-        if (!IsSigningKeyRingRegistered(scopedServices))
+        if (!IsSigningKeyRingRegistered())
             context.AddFailure(
                 "signing.key_ring.missing",
                 "No signing key source has been registered, so no token can be signed and " +
@@ -68,14 +65,14 @@ internal sealed class SigningKeyRingPresenceVerifier : IStartupVerifier
     /// framework's own "this composition is wrong" signal, already aggregated by the runner. Any
     /// other exception is a genuine surprise and still aborts startup here.
     /// </remarks>
-    private static bool IsSigningKeyRingRegistered(IServiceProvider scopedServices)
+    private bool IsSigningKeyRingRegistered()
     {
-        if (scopedServices.GetService<IServiceProviderIsService>() is { } isService)
+        if (services.GetService<IServiceProviderIsService>() is { } isService)
             return isService.IsService(typeof(ISigningKeyRing));
 
         try
         {
-            return scopedServices.GetService<ISigningKeyRing>() is not null;
+            return services.GetService<ISigningKeyRing>() is not null;
         }
         catch (ZeeKayDaConfigurationException)
         {

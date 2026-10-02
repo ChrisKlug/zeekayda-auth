@@ -22,10 +22,9 @@ public sealed class TokenStorePresenceVerifierTests
         var services = new ServiceCollection();
         CreateBuilder(services).AddInMemoryStores(allowOutsideDevelopment: true);
         using var provider = services.BuildServiceProvider();
-        var sut = new TokenStorePresenceVerifier();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await new TokenStorePresenceVerifier(provider.GetService<IServiceProviderIsService>()).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }
@@ -38,10 +37,9 @@ public sealed class TokenStorePresenceVerifierTests
             .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true)
             .AddInMemoryInteractionStore(allowOutsideDevelopment: true);
         using var provider = services.BuildServiceProvider();
-        var sut = new TokenStorePresenceVerifier();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await new TokenStorePresenceVerifier(provider.GetService<IServiceProviderIsService>()).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle()
             .Which.Code.Should().Be("stores.authorization_code_store.missing");
@@ -57,10 +55,9 @@ public sealed class TokenStorePresenceVerifierTests
             .AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)
             .AddInMemoryInteractionStore(allowOutsideDevelopment: true);
         using var provider = services.BuildServiceProvider();
-        var sut = new TokenStorePresenceVerifier();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await new TokenStorePresenceVerifier(provider.GetService<IServiceProviderIsService>()).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle()
             .Which.Code.Should().Be("stores.refresh_token_store.missing");
@@ -78,10 +75,9 @@ public sealed class TokenStorePresenceVerifierTests
             .AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)
             .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
         using var provider = services.BuildServiceProvider();
-        var sut = new TokenStorePresenceVerifier();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await new TokenStorePresenceVerifier(provider.GetService<IServiceProviderIsService>()).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().ContainSingle()
             .Which.Code.Should().Be("stores.interaction_store.missing");
@@ -94,10 +90,9 @@ public sealed class TokenStorePresenceVerifierTests
     {
         var services = new ServiceCollection();
         using var provider = services.BuildServiceProvider();
-        var sut = new TokenStorePresenceVerifier();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await new TokenStorePresenceVerifier(provider.GetService<IServiceProviderIsService>()).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().HaveCount(3);
         context.Failures.Should().Contain(f => f.Code == "stores.authorization_code_store.missing");
@@ -111,10 +106,9 @@ public sealed class TokenStorePresenceVerifierTests
         // Neither store is registered, but the provider has no IServiceProviderIsService at all
         // (e.g. a third-party DI container replacing the default one) — the check is skipped
         // rather than failing with a confusing resolution error.
-        var sut = new TokenStorePresenceVerifier();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, new NoServiceProviderIsServiceProvider(), TestContext.Current.CancellationToken);
+        await new TokenStorePresenceVerifier(new NoServiceProviderIsServiceProvider().GetService<IServiceProviderIsService>()).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Failures.Should().BeEmpty();
     }

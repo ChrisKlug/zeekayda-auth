@@ -105,9 +105,9 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
         services.TryAddSingleton<PinnedOptionDriftRecorder>();
 
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, HandlerOptionsActivator>());
+            ServiceDescriptor.Scoped<IStartupActivator, HandlerOptionsActivator>());
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, ProviderSchemeCollisionActivator>());
+            ServiceDescriptor.Scoped<IStartupActivator, ProviderSchemeCollisionActivator>());
 
         if (options is not null)
             services.Configure(options);

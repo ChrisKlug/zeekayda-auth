@@ -68,7 +68,7 @@ public sealed class CompositeClientAuthenticatorTests
     private static ValidatedClientResolver Resolver(IClientWithCredentials? client) => new(
         new FakeClientRepository(client),
         new PassingRegistrationValidator(),
-        NullSanitizingLogger<ValidatedClientResolver>());
+        NullSanitizingLogger<ValidatedClientResolver>.Instance);
 
     private sealed class FakeClientRepository : IClientRepository
     {
@@ -193,21 +193,6 @@ public sealed class CompositeClientAuthenticatorTests
             => throw new NotSupportedException("Should not be reached");
     }
 
-    private sealed class CapturingLogger<T> : ISanitizingLogger<T>
-    {
-        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
-            Exception? exception, Func<TState, Exception?, string> formatter)
-            => Entries.Add((logLevel, formatter(state, exception), exception));
-    }
-
-    private static ISanitizingLogger<T> NullSanitizingLogger<T>()
-        => new SecretSanitizingLogger<T>(NullLogger<T>.Instance, Microsoft.Extensions.Options.Options.Create(new ZeeKayDa.Auth.AuthorizationServerOptions()));
-
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
     private static (
@@ -244,7 +229,7 @@ public sealed class CompositeClientAuthenticatorTests
             Resolver(client),
             serverOptions,
             compositeHasher,
-            NullSanitizingLogger<CompositeClientAuthenticator>());
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
         return (composite, hasher);
     }
@@ -254,7 +239,7 @@ public sealed class CompositeClientAuthenticatorTests
     /// <see cref="IClient.IsPublic"/> because the resolver guarantees public ⇔ no credentials
     /// ⇔ methods exactly <c>{ "none" }</c>; these tests prove that guarantee end to end.
     /// </summary>
-    private static (CompositeClientAuthenticator Composite, CapturingLogger<ValidatedClientResolver> ResolverLogger)
+    private static (CompositeClientAuthenticator Composite, CapturingSanitizingLogger<ValidatedClientResolver> ResolverLogger)
         CreateValidatingComposite(IClientWithCredentials client, FakeHasher hasher)
     {
         var compositeHasher = new CompositeClientSecretHasher(
@@ -263,13 +248,13 @@ public sealed class CompositeClientAuthenticatorTests
         var serverOptions = CreateServerOptions(
             TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None);
         serverOptions.Value.Issuer = "https://auth.example.com";
-        var resolverLogger = new CapturingLogger<ValidatedClientResolver>();
+        var resolverLogger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
             new FakeClientRepository(client),
             new ClientRegistrationValidator(
                 serverOptions,
                 compositeHasher,
-                NullSanitizingLogger<ClientRegistrationValidator>(),
+                NullSanitizingLogger<ClientRegistrationValidator>.Instance,
                 keyRing: null),
             resolverLogger);
         var composite = new CompositeClientAuthenticator(
@@ -277,7 +262,7 @@ public sealed class CompositeClientAuthenticatorTests
             resolver,
             serverOptions,
             compositeHasher,
-            NullSanitizingLogger<CompositeClientAuthenticator>());
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
         return (composite, resolverLogger);
     }
 
@@ -400,7 +385,7 @@ public sealed class CompositeClientAuthenticatorTests
             Resolver(client),
             CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
             compositeHasher,
-            NullSanitizingLogger<CompositeClientAuthenticator>());
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
         {
@@ -432,7 +417,7 @@ public sealed class CompositeClientAuthenticatorTests
             Resolver(client),
             CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
             compositeHasher,
-            NullSanitizingLogger<CompositeClientAuthenticator>());
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -966,7 +951,7 @@ public sealed class CompositeClientAuthenticatorTests
             Resolver(CreatePublicClient()),
             CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
             compositeHasher,
-            NullSanitizingLogger<CompositeClientAuthenticator>());
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -992,7 +977,7 @@ public sealed class CompositeClientAuthenticatorTests
             [new FakeHasher()],
             Options.Create(new ClientSecretHasherRegistrationOptions()));
 
-        var logger = new CapturingLogger<CompositeClientAuthenticator>();
+        var logger = new CapturingSanitizingLogger<CompositeClientAuthenticator>();
 
         var composite = new CompositeClientAuthenticator(
             [new ThrowingCanHandleAuthenticator()],
@@ -1011,7 +996,8 @@ public sealed class CompositeClientAuthenticatorTests
 
         logger.Entries.Should().ContainSingle()
             .Which.Level.Should().Be(LogLevel.Error);
-        logger.Entries[0].Exception.Should().BeOfType<InvalidOperationException>();
+        logger.Entries[0].Exception.Should().BeOfType<RedactedExceptionWrapper>()
+            .Which.OriginalExceptionType.Should().Be(typeof(InvalidOperationException).FullName);
     }
 
     // ── Security: CanHandle returns undeclared method → rejected ──────────────────────────────────
@@ -1037,7 +1023,7 @@ public sealed class CompositeClientAuthenticatorTests
             Resolver(client),
             CreateServerOptions("client_secret_basic", "undeclared_method"),
             compositeHasher,
-            NullSanitizingLogger<CompositeClientAuthenticator>());
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -1077,7 +1063,7 @@ public sealed class CompositeClientAuthenticatorTests
             Resolver(client),
             CreateServerOptions("client_secret_basic"),
             compositeHasher,
-            NullSanitizingLogger<CompositeClientAuthenticator>());
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
@@ -1105,7 +1091,7 @@ public sealed class CompositeClientAuthenticatorTests
             Resolver(null),
             CreateServerOptions(TokenEndpointAuthMethods.None),
             compositeHasher,
-            NullSanitizingLogger<CompositeClientAuthenticator>());
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
         var httpContext = new DefaultHttpContext();
 

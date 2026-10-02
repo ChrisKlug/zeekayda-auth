@@ -15,7 +15,7 @@ namespace ZeeKayDa.Auth;
 /// framework composes it into <see cref="ZeeKayDaConfigurationException"/>'s own message, and the
 /// startup runner copies it verbatim into the exception that aborts <c>StartAsync</c>, where the
 /// host's unhandled-exception logger — not a sanitizing one — writes it out. It is a plain string
-/// that neither <c>SecretSanitizingLogger</c>'s by-key redaction nor <c>RedactedExceptionWrapper</c>
+/// that neither <c>SanitizingLogger</c>'s by-key redaction nor <c>RedactedExceptionWrapper</c>
 /// can reach, so nothing removes a secret from it after the fact.
 /// </para>
 /// <para>

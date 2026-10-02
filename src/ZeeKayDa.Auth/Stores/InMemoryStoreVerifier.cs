@@ -16,7 +16,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// independently per store. Which of the three the host gets is <see cref="EnvironmentGate"/>'s
 /// decision, not this type's; what lives here is the wording an operator needs to fix an in-memory
 /// store specifically. The registrations share this
-/// implementation type but are added via plain <c>AddSingleton&lt;IStartupVerifier&gt;</c> rather
+/// implementation type but are added via plain <c>AddScoped&lt;IStartupVerifier&gt;</c> rather
 /// than <c>TryAddEnumerable</c>, which would otherwise deduplicate them away.
 /// </remarks>
 internal sealed class InMemoryStoreVerifier(
@@ -57,10 +57,7 @@ internal sealed class InMemoryStoreVerifier(
     public string Name => $"InMemoryStore({storeName})";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         switch (EnvironmentGate.Evaluate(environment, allowOutsideDevelopment))
         {

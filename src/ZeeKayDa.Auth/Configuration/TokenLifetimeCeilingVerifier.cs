@@ -15,10 +15,7 @@ internal sealed class TokenLifetimeCeilingVerifier(
     public string Name => "TokenLifetimeCeiling";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         var tokens = options.Value.TokenEndpoint;
 

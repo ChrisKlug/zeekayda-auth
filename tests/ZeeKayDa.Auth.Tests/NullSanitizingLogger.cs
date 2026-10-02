@@ -1,20 +1,15 @@
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests;
 
 /// <summary>
-/// A no-op <see cref="ISanitizingLogger{T}"/> for tests that need a logger instance but do not
-/// assert on log output. Equivalent to <see cref="NullLogger{T}"/> but satisfies the
-/// <c>ISanitizingLogger&lt;T&gt;</c> constraint.
+/// A <see cref="SanitizingLogger{T}"/> over <see cref="NullLogger{T}"/>, for tests that need a
+/// logger instance but do not assert on log output.
 /// </summary>
-internal sealed class NullSanitizingLogger<T> : ISanitizingLogger<T>
+internal static class NullSanitizingLogger<T>
 {
-    public static readonly NullSanitizingLogger<T> Instance = new();
-
-    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-    public bool IsEnabled(LogLevel logLevel) => false;
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
-        Exception? exception, Func<TState, Exception?, string> formatter)
-    { }
+    public static readonly SanitizingLogger<T> Instance =
+        new(NullLogger<T>.Instance, Options.Create(new AuthorizationServerOptions()));
 }

@@ -38,7 +38,7 @@ internal sealed class InteractionOutcomes(
     ProviderHandlerActivator activator,
     AuthorizationCodeIssuer issuer,
     IOptions<AuthorizationServerOptions> options,
-    ISanitizingLogger<InteractionOutcomes> logger)
+    SanitizingLogger<InteractionOutcomes> logger)
 {
     /// <summary>What the client is told when the interaction store refused to hold its request.</summary>
     internal const string CouldNotStoreRequest = "The authorization server could not store the authorization request.";

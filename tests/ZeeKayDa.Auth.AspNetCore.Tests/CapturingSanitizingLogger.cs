@@ -2,13 +2,11 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Logging;
 
-namespace ZeeKayDa.Auth.FileSystem.Tests;
+namespace ZeeKayDa.Auth.AspNetCore.Tests;
 
 /// <summary>
-/// Captures every log call's level and rendered message, so tests can assert on the presence and
-/// content of the per-file load lines (issue #291's informational log requirement), the
-/// too-soon-NotBefore warning, and the active-key expiry warning, without a third-party
-/// logging-test package.
+/// A <see cref="SanitizingLogger{T}"/> that records every entry it lets through, after redaction,
+/// so tests can assert on what a service logged.
 /// </summary>
 internal sealed class CapturingSanitizingLogger<T> : SanitizingLogger<T>
 {
@@ -22,16 +20,16 @@ internal sealed class CapturingSanitizingLogger<T> : SanitizingLogger<T>
     private CapturingSanitizingLogger(CapturingLogger capturing)
         : base(capturing, Options.Create(new AuthorizationServerOptions())) => _capturing = capturing;
 
-    public List<(LogLevel Level, string Message)> Entries => _capturing.Entries;
+    public List<(LogLevel Level, string Message, Exception? Exception)> Entries => _capturing.Entries;
 
     private sealed class CapturingLogger : ILogger<T>
     {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
         public bool IsEnabled(LogLevel logLevel) => true;
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
             Exception? exception, Func<TState, Exception?, string> formatter)
-            => Entries.Add((logLevel, formatter(state, exception)));
+            => Entries.Add((logLevel, formatter(state, exception), exception));
     }
 }

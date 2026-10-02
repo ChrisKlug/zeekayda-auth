@@ -72,7 +72,7 @@ internal sealed class DiscoveryEndpoint(IOptions<AuthorizationServerOptions> opt
     /// </remarks>
     internal async ValueTask<IResult> Handle(
         IDiscoveryDocumentProvider provider,
-        ISanitizingLogger<DiscoveryEndpoint> logger,
+        SanitizingLogger<DiscoveryEndpoint> logger,
         HttpContext context)
     {
         OpenIdConfigurationDocument document;

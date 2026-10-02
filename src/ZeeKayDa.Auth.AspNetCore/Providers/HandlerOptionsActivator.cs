@@ -26,19 +26,16 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// </remarks>
 internal sealed class HandlerOptionsActivator(
     ProviderRegistry registry,
-    PinnedOptionDriftRecorder recorder) : IStartupActivator
+    PinnedOptionDriftRecorder recorder,
+    IServiceProvider services) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "ProviderOptions";
 
     /// <inheritdoc/>
-    public Task VerifyAsync(
-        StartupVerificationContext context,
-        IServiceProvider scopedServices,
-        CancellationToken cancellationToken)
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(scopedServices);
 
         var failures = new List<ZeeKayDaConfigurationFailure>();
         var causes = new List<Exception>();
@@ -50,7 +47,7 @@ internal sealed class HandlerOptionsActivator(
             if (HandlerOptions.TypeOf(registration.HandlerType) is not { } optionsType)
                 continue;
 
-            if (Resolve(scopedServices, optionsType, registration.Name) is { } failed)
+            if (Resolve(optionsType, registration.Name) is { } failed)
             {
                 failures.AddRange(failed.Failures);
                 causes.Add(failed.Cause);
@@ -70,7 +67,6 @@ internal sealed class HandlerOptionsActivator(
     /// valid and otherwise the failures to report with the exception behind them.
     /// </summary>
     private (IReadOnlyList<ZeeKayDaConfigurationFailure> Failures, Exception Cause)? Resolve(
-        IServiceProvider services,
         Type optionsType,
         string name)
     {

@@ -173,7 +173,58 @@ public sealed class ValidatedOptionsCheckTests
         services.AddZeeKayDaOptions<FirstOptions>();
 
         services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IHostedService));
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IStartupVerificationGate));
+    }
+
+    [Fact]
+    public void ThrowIfAnyInvalid_carries_the_root_cause_of_a_coded_validation_exception()
+    {
+        var rootCause = new UnauthorizedAccessException("denied");
+        var services = new ServiceCollection();
+        services.AddZeeKayDaOptions<FirstOptions>();
+        services.AddSingleton<IValidateOptions<FirstOptions>>(new ThrowingValidator(
+            new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure("test.first", "Invalid."), rootCause)));
+
+        var act = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(services.BuildServiceProvider());
+
+        var exception = act.Should().Throw<ZeeKayDaConfigurationException>().Which;
+        exception.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("test.first");
+        exception.InnerException.Should().BeSameAs(rootCause);
+    }
+
+    [Fact]
+    public void ThrowIfAnyInvalid_reports_a_thrown_OptionsValidationException_as_options_invalid()
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaOptions<FirstOptions>();
+        services.AddSingleton<IValidateOptions<FirstOptions>>(new ThrowingValidator(
+            new OptionsValidationException(Options.DefaultName, typeof(FirstOptions), ["secret-looking text"])));
+
+        var act = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(services.BuildServiceProvider());
+
+        var exception = act.Should().Throw<ZeeKayDaConfigurationException>().Which;
+        exception.AggregatedFailures.Should().ContainSingle()
+            .Which.Message.Should().NotContain("secret-looking text");
+        exception.InnerException.Should().BeOfType<OptionsValidationException>();
+    }
+
+    [Fact]
+    public void ThrowIfAnyInvalid_keeps_the_codes_of_a_validation_exception_a_reflection_call_wrapped()
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaOptions<FirstOptions>();
+        services.AddSingleton<IValidateOptions<FirstOptions>>(new ThrowingValidator(
+            new System.Reflection.TargetInvocationException(
+                new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure("test.first", "Invalid.")))));
+
+        var act = () => ValidatedOptionsCheck.ThrowIfAnyInvalid(services.BuildServiceProvider());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("test.first");
+    }
+
+    private sealed class ThrowingValidator(Exception exception) : IValidateOptions<FirstOptions>
+    {
+        public ValidateOptionsResult Validate(string? name, FirstOptions options) => throw exception;
     }
 
     private sealed class FirstOptions

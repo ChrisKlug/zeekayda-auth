@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Scopes;
 using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
@@ -18,10 +19,9 @@ public sealed class ClientRepositoryActivatorTests
         services.AddSingleton<IClientRepository, CustomClientRepository>();
 
         using var provider = services.BuildServiceProvider();
-        var sut = new ClientRepositoryActivator();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await CreateSut(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.Args.Should().Contain(typeof(CustomClientRepository).FullName);
@@ -35,10 +35,9 @@ public sealed class ClientRepositoryActivatorTests
         services.AddSingleton<IClientRepository, CustomClientRepository>();
 
         using var provider = services.BuildServiceProvider();
-        var sut = new ClientRepositoryActivator();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await CreateSut(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle()
             .Which.Code.Should().Be("clients.inmemory_shadowed");
@@ -54,10 +53,9 @@ public sealed class ClientRepositoryActivatorTests
         services.AddSingleton<IClientRepository, CustomClientRepository>();
 
         using var provider = services.BuildServiceProvider();
-        var sut = new ClientRepositoryActivator();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await CreateSut(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().BeEmpty();
     }
@@ -69,10 +67,9 @@ public sealed class ClientRepositoryActivatorTests
         // IClientRepository is not registered — GetRequiredService must throw and the exception
         // must flow out of VerifyAsync unmodified; nothing here catches it.
         using var provider = services.BuildServiceProvider();
-        var sut = new ClientRepositoryActivator();
         var context = new StartupVerificationContext();
 
-        var act = async () => await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        var act = async () => await CreateSut(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
@@ -97,10 +94,9 @@ public sealed class ClientRepositoryActivatorTests
         services.AddSingleton<IClientRepository, CustomClientRepository>();
         services.AddSingleton<ISigningKeyRing>(ring);
         using var provider = services.BuildServiceProvider();
-        var sut = new ClientRepositoryActivator();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await CreateSut(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         ring.EnsureInitializedCallCount.Should().Be(1);
     }
@@ -117,10 +113,9 @@ public sealed class ClientRepositoryActivatorTests
         services.AddSingleton<IClientRepository, CustomClientRepository>();
         services.AddSingleton<ISigningKeyRing>(ring);
         using var provider = services.BuildServiceProvider();
-        var sut = new ClientRepositoryActivator();
         var context = new StartupVerificationContext();
 
-        var act = async () => await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        var act = async () => await CreateSut(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*source_unavailable*");
@@ -134,10 +129,9 @@ public sealed class ClientRepositoryActivatorTests
         services.AddSingleton(new InMemoryClientRegistrationOptions());
         services.AddSingleton<IClientRepository, CustomClientRepository>();
         using var provider = services.BuildServiceProvider();
-        var sut = new ClientRepositoryActivator();
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await CreateSut(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle().Which.Code.Should().Be("clients.inmemory_shadowed");
     }
@@ -165,4 +159,8 @@ public sealed class ClientRepositoryActivatorTests
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => null;
     }
+
+    private static ClientRepositoryActivator CreateSut(IServiceProvider provider) =>
+        ActivatorUtilities.CreateInstance<ClientRepositoryActivator>(
+            provider, new ValidatedScopeCatalog(new InMemoryScopeRepository([StandardScopes.OpenId])));
 }

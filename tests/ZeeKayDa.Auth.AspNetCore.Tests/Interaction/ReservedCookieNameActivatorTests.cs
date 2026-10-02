@@ -22,8 +22,8 @@ public sealed class ReservedCookieNameActivatorTests
         using var provider = services.BuildServiceProvider();
         var context = new StartupVerificationContext();
 
-        await new ReservedCookieNameActivator()
-            .VerifyAsync(context, provider, TestContext.Current.CancellationToken);
+        await ActivatorUtilities.CreateInstance<ReservedCookieNameActivator>(provider)
+            .VerifyAsync(context, TestContext.Current.CancellationToken);
 
         return context;
     }

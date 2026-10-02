@@ -65,7 +65,7 @@ public static class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions
             return new StaticSigningKeyRing(ActivatorUtilities.CreateInstance<TSource>(sp), timeProvider);
         });
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IStartupActivator, SigningKeyRingActivator>());
+            ServiceDescriptor.Scoped<IStartupActivator, SigningKeyRingActivator>());
 
         return builder;
     }

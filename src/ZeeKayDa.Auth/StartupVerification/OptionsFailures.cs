@@ -64,12 +64,7 @@ internal sealed class OptionsFailures
         if (_failures.Count == 0)
             return;
 
-        throw _rootCauses.Count switch
-        {
-            0 => new ZeeKayDaConfigurationException([.. _failures]),
-            1 => new ZeeKayDaConfigurationException(_failures, _rootCauses[0]),
-            _ => new ZeeKayDaConfigurationException(_failures, new AggregateException(_rootCauses)),
-        };
+        throw ZeeKayDaConfigurationException.WithRootCauses(_failures, _rootCauses);
     }
 
     /// <summary>

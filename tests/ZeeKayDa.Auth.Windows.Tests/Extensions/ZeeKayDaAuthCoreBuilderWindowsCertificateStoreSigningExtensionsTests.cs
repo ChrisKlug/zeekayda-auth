@@ -27,7 +27,7 @@ public sealed class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
     {
         var services = new ServiceCollection();
         services.AddSingleton<ICertificateStoreReader>(new FakeCertificateStoreReader());
-        // SecretSanitizingLogger<T> (registered by AddZeeKayDaAuthCore) needs a real ILogger<T> to
+        // SanitizingLogger<T> (registered by AddZeeKayDaAuthCore) needs a real ILogger<T> to
         // resolve; a plain ServiceCollection has no logging provider registered by default.
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         return services.AddZeeKayDaAuthCoreForTesting();

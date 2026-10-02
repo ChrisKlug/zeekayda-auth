@@ -30,7 +30,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
         CompositeClientSecretHasher hasher,
         IClientRegistrationValidator validator,
         IOptions<AuthorizationServerOptions> serverOptions,
-        ISanitizingLogger<InMemoryClientRepository> logger)
+        SanitizingLogger<InMemoryClientRepository> logger)
     {
         var opts = options.Value;
         var allRegistrations = new List<IClientWithCredentials>(opts.PreBuilt.Count + opts.Pending.Count);

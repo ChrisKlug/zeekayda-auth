@@ -16,7 +16,7 @@ namespace ZeeKayDa.Auth.Logging;
 internal sealed class RedactedExceptionWrapper : Exception
 {
     internal const string RedactedMessage =
-        "[exception message redacted by SecretSanitizingLogger]";
+        "[exception message redacted by SanitizingLogger]";
 
     private const int MaxDepth = 50;
 

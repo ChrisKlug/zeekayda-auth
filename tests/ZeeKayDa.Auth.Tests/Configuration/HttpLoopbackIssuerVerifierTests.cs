@@ -14,8 +14,6 @@ namespace ZeeKayDa.Auth.Tests.Configuration;
 /// </summary>
 public sealed class HttpLoopbackIssuerVerifierTests
 {
-    private static readonly IServiceProvider EmptyProvider = new ServiceCollection().BuildServiceProvider();
-
     private sealed class FakeHostEnvironment(string environmentName) : IHostEnvironment
     {
         public string EnvironmentName { get; set; } = environmentName;
@@ -35,7 +33,7 @@ public sealed class HttpLoopbackIssuerVerifierTests
             new FakeHostEnvironment(environment));
         var context = new StartupVerificationContext();
 
-        await sut.VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         return context;
     }

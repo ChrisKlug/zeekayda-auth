@@ -30,16 +30,16 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuthCore_registers_ISanitizingLogger_as_SecretSanitizingLogger()
+    public void AddZeeKayDaAuthCore_registers_SanitizingLogger_open_generic()
     {
         var services = ServicesWithLogging();
 
         services.AddZeeKayDaAuthCore(ValidIssuer);
 
         using var provider = services.BuildServiceProvider();
-        var resolved = provider.GetRequiredService<ISanitizingLogger<object>>();
+        var resolved = provider.GetRequiredService<SanitizingLogger<object>>();
 
-        resolved.Should().BeOfType<SecretSanitizingLogger<object>>();
+        resolved.Should().BeOfType<RegisteredSanitizingLogger<object>>();
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
         services.AddZeeKayDaAuthCore(ValidIssuer);
         services.AddZeeKayDaAuthCore(options => options.ClockSkewTolerance = TimeSpan.FromSeconds(10));
 
-        services.Should().ContainSingle(descriptor => descriptor.ServiceType == typeof(ISanitizingLogger<>));
+        services.Should().ContainSingle(descriptor => descriptor.ServiceType == typeof(SanitizingLogger<>));
         services.Should().ContainSingle(descriptor => descriptor.ImplementationType == typeof(Pbkdf2ClientSecretHasher));
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
@@ -196,17 +196,5 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
 
         using var provider = services.BuildServiceProvider();
         provider.GetServices<IHostedService>().OfType<StartupVerificationHostedService>().Should().ContainSingle();
-    }
-
-    [Fact]
-    public void AddZeeKayDaAuthCore_registers_the_sanitizing_logger_gate_first_and_the_options_gate_second()
-    {
-        var services = new ServiceCollection();
-
-        services.AddZeeKayDaAuthCore(ValidIssuer);
-
-        services.Where(descriptor => descriptor.ServiceType == typeof(IStartupVerificationGate))
-            .Select(descriptor => descriptor.ImplementationType)
-            .Should().Equal(typeof(SanitizingLoggerRegistrationGate), typeof(ValidatedOptionsGate));
     }
 }

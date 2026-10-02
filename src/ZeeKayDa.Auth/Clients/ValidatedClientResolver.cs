@@ -62,7 +62,7 @@ namespace ZeeKayDa.Auth.Clients;
 internal sealed class ValidatedClientResolver(
     IClientRepository repository,
     IClientRegistrationValidator validator,
-    ISanitizingLogger<ValidatedClientResolver> logger)
+    SanitizingLogger<ValidatedClientResolver> logger)
 {
     private readonly ConcurrentDictionary<string, Lazy<Verdict>> _verdicts = new(StringComparer.Ordinal);
 

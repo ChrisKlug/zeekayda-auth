@@ -14,8 +14,6 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 /// </summary>
 public sealed class LoginDispatchVerifierTests
 {
-    private static readonly IServiceProvider EmptyProvider = new ServiceCollection().BuildServiceProvider();
-
     private static async Task<StartupVerificationContext> VerifyAsync(
         string? loginPath,
         bool supportsLocalSignIn = true,
@@ -33,7 +31,7 @@ public sealed class LoginDispatchVerifierTests
 
         var context = new StartupVerificationContext();
         await new LoginDispatchVerifier(Options.Create(options), registry)
-            .VerifyAsync(context, EmptyProvider, TestContext.Current.CancellationToken);
+            .VerifyAsync(context, TestContext.Current.CancellationToken);
 
         return context;
     }

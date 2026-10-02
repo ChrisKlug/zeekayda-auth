@@ -144,7 +144,7 @@ app.Run();
 > 💡 **Development opt-out for exception message sanitization:** Set
 > `AuthorizationServerOptions.Logging.DisableExceptionSanitizing` to `true` in
 > `appsettings.Development.json` to turn off the unconditional exception message redaction
-> performed by `SecretSanitizingLogger`. This is a development-only setting — never enable it
+> performed by `SanitizingLogger`. This is a development-only setting — never enable it
 > in production. See [Configure host-level log hygiene](configure-host-log-hygiene.md)
 > for full guidance.
 

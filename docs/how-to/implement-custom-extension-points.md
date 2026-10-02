@@ -282,14 +282,14 @@ only verifies legacy secrets must still create one for a random value.
 > raw byte comparisons, or your library's built-in constant-time verify function.
 
 > 💡 **Exception messages are now redacted by default.**
-> `SecretSanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,
+> `SanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,
 > replacing the exception `Message` with a fixed placeholder before it reaches any log sink. You no
 > longer need to avoid putting credential material in exception messages as a workaround — though
 > doing so remains good practice. To restore original exception messages in a development
 > environment, call `DisableExceptionSanitizing()` on the builder. See
 > [Configure host-level log hygiene](configure-host-log-hygiene.md) for details.
 
-> ⚠️ **Warning: `SecretSanitizingLogger` covers ZeeKayDa.Auth's own logs only.**
+> ⚠️ **Warning: `SanitizingLogger` covers ZeeKayDa.Auth's own logs only.**
 > The redaction wrapper intercepts log calls made by ZeeKayDa.Auth's internal services. It has no
 > effect on ASP.NET Core's `UseHttpLogging()`, Kestrel connection logging, W3CLogger, Application
 > Insights telemetry, or exception-handling middleware — all of which can capture the `Authorization`
@@ -513,14 +513,14 @@ builder.Services.AddZeeKayDaAuth(options =>
 | Return `ClientAuthenticationResult.NotValid()` on failure — never throw | Throwing from `AuthenticateAsync` produces a 500 rather than a 401 |
 
 > 💡 **Exception messages are now redacted by default.**
-> `SecretSanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,
+> `SanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,
 > replacing the exception `Message` with a fixed placeholder before it reaches any log sink. You no
 > longer need to avoid putting credential material in exception messages as a workaround — though
 > doing so remains good practice. To restore original exception messages in a development
 > environment, call `DisableExceptionSanitizing()` on the builder. See
 > [Configure host-level log hygiene](configure-host-log-hygiene.md) for details.
 
-> ⚠️ **Warning: `SecretSanitizingLogger` covers ZeeKayDa.Auth's own logs only.**
+> ⚠️ **Warning: `SanitizingLogger` covers ZeeKayDa.Auth's own logs only.**
 > The redaction wrapper intercepts log calls made by ZeeKayDa.Auth's internal services. It has no
 > effect on ASP.NET Core's `UseHttpLogging()`, Kestrel connection logging, W3CLogger, Application
 > Insights telemetry, or exception-handling middleware — all of which can capture the `Authorization`

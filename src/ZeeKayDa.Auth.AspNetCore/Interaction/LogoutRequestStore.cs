@@ -59,7 +59,7 @@ internal sealed class LogoutRequestStore(
     InteractionBindingCookie binding,
     IDataProtectionProvider dataProtectionProvider,
     TimeProvider timeProvider,
-    ISanitizingLogger<LogoutRequestStore> logger)
+    SanitizingLogger<LogoutRequestStore> logger)
 {
     /// <summary>How long the user has to confirm. Not sliding.</summary>
     internal static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(10);

@@ -546,6 +546,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Startup checks are constructor-injected, and the sanitizing logger is a class** (#771).
+  `IStartupVerifier` and `IStartupActivator` each declare `Name` and
+  `VerifyAsync(StartupVerificationContext, CancellationToken)` directly; the `IServiceProvider`
+  parameter and the shared `IStartupCheck` base are gone. Register a check as scoped — any other
+  lifetime fails startup with `startup.check_not_scoped` — and constructor-inject its dependencies: the runner resolves each phase's checks from one scope, so the
+  checks in a phase share it, and no activator is constructed when a verifier failed.
+  `ISanitizingLogger<T>` is replaced by the class `SanitizingLogger<T>`, which only the framework can
+  construct, so no registration can substitute a logger that skips redaction; inject it as before.
+  The startup gate that detected such a substitution, and its failure codes
+  `logging.sanitizing_logger_shadowed`, `logging.sanitizing_logger_closed_override` and
+  `startup.check_registered_as_base_interface`, are removed. A warning that fails to log now carries
+  its root cause as the aggregate's inner exception.
 - **Every bindable not-for-production switch lives in one `Development` options group, one flag per effect**
   (#773). `AuthorizationServerOptions.AllowInsecureIssuer` is replaced by
   `Development.AllowHttpLoopbackIssuer` (HTTP loopback issuer, endpoint URIs and requests) and
