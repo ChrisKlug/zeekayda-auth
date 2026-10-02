@@ -7,8 +7,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// <remarks>
 /// <para>
 /// Implemented by the framework, to be consumed, never replaced: a new algorithm is an
-/// <see cref="IClientSecretHasher"/>. The built-in authenticators use the framework's own instance
-/// whatever is registered under this interface.
+/// <see cref="IClientSecretHasher"/>. A host that registers its own fails startup.
 /// </para>
 /// <para>
 /// <strong>This is CPU-intensive.</strong> The default PBKDF2 hasher performs 600,000 iterations per

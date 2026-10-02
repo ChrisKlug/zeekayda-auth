@@ -164,25 +164,6 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_does_not_override_pre_registered_IClientSecrets()
-    {
-        // AC4 (runtime): a pre-registered IClientSecrets must survive AddZeeKayDaAuth.
-        // This verifies TryAddSingleton semantics — the first registration always wins.
-        var services = new ServiceCollection();
-        services.AddLogging();
-        var preRegistered = new FakeClientSecrets();
-        services.AddSingleton<IClientSecrets>(preRegistered);
-
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
-        using var provider = services.BuildServiceProvider();
-
-        var resolved = provider.GetRequiredService<IClientSecrets>();
-
-        resolved.Should().BeSameAs(preRegistered,
-            "TryAddSingleton must not replace the pre-registered IClientSecrets");
-    }
-
-    [Fact]
     public async Task A_host_registered_IClientSecrets_never_verifies_for_the_built_in_authenticator()
     {
         // The host's replacement throws on every call: built-in authentication reaching it would throw.
