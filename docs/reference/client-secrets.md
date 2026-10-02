@@ -71,7 +71,7 @@ The interface all hasher implementations must satisfy.
 public interface IClientSecretHasher
 {
     bool CanHandle(IClientSecret secret);
-    bool Verify(IClientSecret stored, ReadOnlySpan<char> presented);
+    bool Verify(ReadOnlySpan<char> presented, IClientSecret stored);
     IClientSecret Create(ReadOnlySpan<char> plaintext);      // primary — memory-safe
     IClientSecret Create(string plaintext);                    // convenience — delegates to span overload
 }
@@ -106,9 +106,15 @@ algorithm in your repository or admin layer.
 ```csharp
 public interface IClientSecrets
 {
-    IClientSecret Create(string plaintext);
+    ClientSecret Create(string plaintext);
+    ClientSecret Create(ReadOnlySpan<char> plaintext);
+    bool Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored);
 }
 ```
+
+`Verify` is what a custom `IClientAuthenticator` calls with `context.Client.Secrets`: it pads every
+failure to one fixed cost, so the response time reveals neither whether the client exists nor how
+many secrets it holds. Call it with an empty `presented` to refuse a malformed request in the same time.
 
 `IClientSecrets` is registered automatically by `AddZeeKayDaAuth` as a singleton via
 `TryAddSingleton`. You do not need to call `AddClientSecretHasher` before injecting it —
@@ -152,7 +158,7 @@ public sealed class MyClientRepository : IClientRepository
 
     public async Task RegisterClientAsync(string clientId, string plaintextSecret)
     {
-        IClientSecret credential = _secrets.Create(plaintextSecret);
+        ClientSecret credential = _secrets.Create(plaintextSecret);
         // persist credential to your store...
     }
 }
@@ -213,7 +219,7 @@ char[] presented = /* read from network buffer */;
 bool valid;
 try
 {
-    valid = hasher.Verify(storedSecret, presented.AsSpan());
+    valid = hasher.Verify(presented.AsSpan(), storedSecret);
 }
 finally
 {

@@ -28,7 +28,7 @@ internal static class ClientCredentialValidator
 
     internal static void Validate(
         IClientWithCredentials client,
-        ClientSecretHasherRegistry hasher,
+        ClientSecretHasherRegistry registry,
         List<ZeeKayDaConfigurationFailure> failures)
     {
         // Counted by enumerating, never from Count: a store's own list can report fewer entries than
@@ -37,7 +37,7 @@ internal static class ClientCredentialValidator
         foreach (var secret in client.Secrets)
         {
             count++;
-            var check = new SecretCheck(client.ClientId, secret, hasher);
+            var check = new SecretCheck(client.ClientId, secret, registry);
             failures.AddRange(SecretRules.Select(rule => rule(check)).FirstOrDefault(found => found.Count > 0) ?? []);
         }
 
@@ -51,7 +51,7 @@ internal static class ClientCredentialValidator
         }
     }
 
-    private sealed record SecretCheck(string ClientId, ClientSecret? Secret, ClientSecretHasherRegistry Hasher)
+    private sealed record SecretCheck(string ClientId, ClientSecret? Secret, ClientSecretHasherRegistry Registry)
     {
         // Every rule after HasNoValue runs only once it found a value.
         public ClientSecret Stored => Secret!;
@@ -81,7 +81,7 @@ internal static class ClientCredentialValidator
             : [];
 
     private static IReadOnlyList<ZeeKayDaConfigurationFailure> HasNoHasher(SecretCheck check) =>
-        check.Hasher.CanVerify(check.Stored)
+        check.Registry.CanVerify(check.Stored)
             ? []
             :
             [
@@ -93,8 +93,8 @@ internal static class ClientCredentialValidator
             ];
 
     private static IReadOnlyList<ZeeKayDaConfigurationFailure> IsRefusedByItsHasher(SecretCheck check) =>
-        check.Hasher.ValidateStoredSecret(check.Stored, check.ClientId);
+        check.Registry.ValidateStoredSecret(check.Stored, check.ClientId);
 
     private static IReadOnlyList<ZeeKayDaConfigurationFailure> FailsTheEmptySecretProbe(SecretCheck check) =>
-        check.Hasher.EmptySecretProblem(check.Stored, check.ClientId) is { } problem ? [problem] : [];
+        check.Registry.EmptySecretProblem(check.Stored, check.ClientId) is { } problem ? [problem] : [];
 }

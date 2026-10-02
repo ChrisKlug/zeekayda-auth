@@ -22,7 +22,7 @@ namespace ZeeKayDa.Auth.Clients;
 // silently weaken the check that a client's AllowedSigningAlgorithms are ones the ring signs with.
 internal sealed class ClientRegistrationValidator(
     IOptions<AuthorizationServerOptions> options,
-    ClientSecretHasherRegistry hasher,
+    ClientSecretHasherRegistry registry,
     SanitizingLogger<ClientRegistrationValidator> logger,
     ISigningKeyRing? keyRing) : IClientRegistrationValidator
 {
@@ -43,7 +43,7 @@ internal sealed class ClientRegistrationValidator(
         InitiateLoginUriValidator.Validate(client, failures);
         ValidateAllowedTokenEndpointAuthMethods(client, failures);
         ValidatePkceOptOut(client, failures);
-        ClientCredentialValidator.Validate(client, hasher, failures);
+        ClientCredentialValidator.Validate(client, registry, failures);
         ValidateAllowedSigningAlgorithms(client, failures);
         ValidateTokenLifetimes(client, failures);
         ValidateAllowedScopes(client, failures);

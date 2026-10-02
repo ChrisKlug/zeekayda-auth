@@ -352,7 +352,7 @@ public sealed class DatabaseClientRepository : IClientRepository
 
     public async Task RegisterClientAsync(string clientId, string plaintextSecret)
     {
-        IClientSecret credential = _secrets.Create(plaintextSecret);
+        ClientSecret credential = _secrets.Create(plaintextSecret);
         // _validator.Validate(registration) before persisting...
     }
 }

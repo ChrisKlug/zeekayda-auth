@@ -148,7 +148,7 @@ internal sealed class CompositeClientAuthenticator(
     /// </summary>
     private AuthenticatedClient RefuseAfterPadding()
     {
-        secrets.Verify([], []);
+        secrets.Verify(presented: [], stored: []);
         return AuthenticatedClient.Refused;
     }
 

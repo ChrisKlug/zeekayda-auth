@@ -346,7 +346,7 @@ public sealed class ClientSecretsTests
     }
 
     [Fact]
-    public void Composite_refuses_two_marked_defaults_without_the_validator()
+    public void The_registry_refuses_two_marked_defaults_without_the_validator()
     {
         var registrations = DefaultIs<DefaultHasher>();
         registrations.Registrations.Add(new(typeof(AltHasher), IsDefault: true));

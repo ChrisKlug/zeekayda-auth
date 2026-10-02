@@ -1941,7 +1941,8 @@ verification; no Critical.
 
 - A host's `isDefault: true` hasher creates new secrets and PBKDF2 keeps verifying its own; two
   marked defaults fail closed. Closed — `A_host_hasher_marked_default_creates_new_secrets_while_PBKDF2_secrets_still_verify`,
-  `Composite_refuses_two_marked_defaults_without_the_validator`.
+  `The_registry_refuses_two_marked_defaults_without_the_validator`
+  [renamed by #790 from Composite_refuses_two_marked_defaults_without_the_validator].
 - Every failure costs two slots of one verification per registered hasher, so a client still holding
   an older hasher's secret is not timing-distinguishable from an unknown one. Closed —
   `A_failed_authentication_under_two_hashers_runs_the_same_verifications_as_an_unknown_client`,
