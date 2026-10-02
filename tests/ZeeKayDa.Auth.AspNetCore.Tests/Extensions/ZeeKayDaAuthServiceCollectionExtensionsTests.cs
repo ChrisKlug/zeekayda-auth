@@ -164,6 +164,18 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
+    public async Task A_host_registered_IClientSecrets_fails_startup()
+    {
+        using var host = new EndpointHost(configureBuilder: builder =>
+            builder.Services.AddSingleton<IClientSecrets>(new FakeClientSecrets()));
+
+        var act = async () => await host.EnsureStartedAsync();
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(failure => failure.Code == "clients.secrets.replaced");
+    }
+
+    [Fact]
     public async Task A_host_registered_IClientSecrets_never_verifies_for_the_built_in_authenticator()
     {
         // The host's replacement throws on every call: built-in authentication reaching it would throw.
