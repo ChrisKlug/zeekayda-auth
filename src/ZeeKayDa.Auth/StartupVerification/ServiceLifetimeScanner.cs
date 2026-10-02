@@ -33,4 +33,8 @@ internal sealed class ServiceLifetimeScanner(IServiceCollection services)
     /// <summary>Every unkeyed registration of <paramref name="serviceType"/>, in registration order.</summary>
     public IEnumerable<ServiceDescriptor> RegistrationsOf(Type serviceType) =>
         services.Where(descriptor => !descriptor.IsKeyedService && descriptor.ServiceType == serviceType);
+
+    /// <summary>Every registration of <paramref name="serviceType"/>, keyed ones included.</summary>
+    public IEnumerable<ServiceDescriptor> AllRegistrationsOf(Type serviceType) =>
+        services.Where(descriptor => descriptor.ServiceType == serviceType);
 }

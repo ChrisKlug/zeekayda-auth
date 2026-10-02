@@ -37,6 +37,17 @@ public sealed class ClientSecretsRegistrationVerifierTests
             .Which.Code.Should().Be("clients.secrets.replaced");
     }
 
+    [Fact]
+    public async Task A_keyed_host_IClientSecrets_fails_startup()
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com");
+        services.AddKeyedSingleton<IClientSecrets, HostClientSecrets>("custom");
+
+        (await FailuresFor(services)).Should().ContainSingle()
+            .Which.Code.Should().Be("clients.secrets.replaced");
+    }
+
     private static async Task<IReadOnlyList<ZeeKayDaConfigurationFailure>> FailuresFor(ServiceCollection services)
     {
         var context = new StartupVerificationContext();

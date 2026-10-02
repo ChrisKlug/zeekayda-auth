@@ -5,7 +5,7 @@ namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
 /// Fails startup when <see cref="IClientSecrets"/> is registered as anything but the framework's own
-/// <see cref="ClientSecrets"/>, before or after <c>AddZeeKayDaAuth</c>.
+/// <see cref="ClientSecrets"/>, keyed or not, before or after <c>AddZeeKayDaAuth</c>.
 /// </summary>
 /// <remarks>
 /// A third-party authenticator verifies, and pads its refusals, through whatever resolves as
@@ -24,7 +24,7 @@ internal sealed class ClientSecretsRegistrationVerifier(ServiceLifetimeScanner s
     /// <inheritdoc/>
     public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
-        if (scanner.RegistrationsOf(typeof(IClientSecrets)).Any(IsNotTheFrameworks))
+        if (scanner.AllRegistrationsOf(typeof(IClientSecrets)).Any(IsNotTheFrameworks))
         {
             context.AddFailure(
                 "clients.secrets.replaced",
@@ -37,6 +37,7 @@ internal sealed class ClientSecretsRegistrationVerifier(ServiceLifetimeScanner s
         return Task.CompletedTask;
     }
 
+    // The framework registers no keyed IClientSecrets, so every keyed one is the host's.
     private static bool IsNotTheFrameworks(ServiceDescriptor descriptor) =>
-        !ReferenceEquals(descriptor.ImplementationFactory, FrameworkInstance);
+        descriptor.IsKeyedService || !ReferenceEquals(descriptor.ImplementationFactory, FrameworkInstance);
 }
