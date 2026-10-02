@@ -58,6 +58,45 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
             .Should().BeEquivalentTo(["client_secret_basic", "none"]);
     }
 
+    [Theory]
+    [InlineData("sample-bcrypt-client", "bcrypt-client-secret")]
+    [InlineData("sample-argon2-client", "argon2-client-secret")]
+    [InlineData("sample-pbkdf2-sha512-client", "pbkdf2-sha512-client-secret")]
+    public async Task A_client_registered_with_another_library_s_hash_authenticates_with_its_secret(
+        string clientId, string secret)
+    {
+        using var browser = NewBrowser();
+
+        // An unknown code: the client authenticates first, so the right secret gets as far as the
+        // grant (invalid_grant) and a wrong one stops at the client (invalid_client).
+        var withSecret = await PostTokenWithBasicAsync(browser, clientId, secret);
+        var withWrongSecret = await PostTokenWithBasicAsync(browser, clientId, "not-the-secret");
+
+        (await ErrorOf(withSecret)).Should().Be("invalid_grant");
+        withWrongSecret.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await ErrorOf(withWrongSecret)).Should().Be("invalid_client");
+    }
+
+    private static async Task<HttpResponseMessage> PostTokenWithBasicAsync(HttpClient browser, string clientId, string secret)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "authorization_code",
+                ["code"] = "no-such-code",
+                ["redirect_uri"] = RedirectUri,
+                ["code_verifier"] = NewPkcePair().Verifier,
+            }),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{secret}")));
+        return await browser.SendAsync(request, Cancellation);
+    }
+
+    private static async Task<string?> ErrorOf(HttpResponseMessage response) =>
+        (await response.Content.ReadFromJsonAsync<JsonElement>(Cancellation)).GetProperty("error").GetString();
+
     [Fact]
     public async Task Alice_signs_in_through_login_and_consent_and_gets_an_id_token_plus_her_claims_from_userinfo()
     {

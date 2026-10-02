@@ -714,7 +714,7 @@ public class AuthorizeRequestValidatorTests
     private static Client ConfidentialClientPermittedToOmitPkce() =>
         Client.CreateConfidential(
             ClientId,
-            new Pbkdf2ClientSecret(Iterations: 600_000, Salt: new byte[16], Hash: new byte[32]),
+            Pbkdf2ClientSecretHasher.Format(600_000, new byte[16], new byte[32]),
             redirectUris: [RedirectUri],
             postLogoutRedirectUris: [],
             allowedScopes: ["openid", "profile"])

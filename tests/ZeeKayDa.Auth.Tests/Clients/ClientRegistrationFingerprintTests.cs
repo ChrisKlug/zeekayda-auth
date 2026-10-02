@@ -42,7 +42,7 @@ public class ClientRegistrationFingerprintTests
             nameof(IClient.AdditionalIdTokenClaims),
             nameof(IClient.AdditionalUserInfoClaims),
             nameof(IClient.AdditionalAccessTokenClaims),
-            nameof(IClientWithCredentials.Credentials),
+            nameof(IClientWithCredentials.Secrets),
         ];
 
         // Type.GetProperties() on an interface does not return inherited members, so the whole
@@ -59,9 +59,9 @@ public class ClientRegistrationFingerprintTests
         // Naming a member in `covered` is enough to pass the check above, which would let a
         // member be listed without Compute ever reading it. The mutation theory is what proves
         // the fingerprint actually changes, so every covered member must appear there too.
-        // Credentials is exercised by its own dedicated tests rather than the theory.
+        // Secrets is exercised by its own dedicated tests rather than the theory.
         MemberMutations().Keys
-            .Should().BeEquivalentTo(covered.Except([nameof(IClientWithCredentials.Credentials)]));
+            .Should().BeEquivalentTo(covered.Except([nameof(IClientWithCredentials.Secrets)]));
     }
 
     [Fact]
@@ -79,8 +79,8 @@ public class ClientRegistrationFingerprintTests
             AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "a\u001Fb" },
         };
 
-        ClientRegistrationFingerprint.Compute(twoScopes).Value
-            .Should().NotBe(ClientRegistrationFingerprint.Compute(oneJoinedScope).Value);
+        ClientRegistrationFingerprint.Compute(twoScopes)
+            .Should().NotBe(ClientRegistrationFingerprint.Compute(oneJoinedScope));
     }
 
     [Fact]
@@ -88,8 +88,8 @@ public class ClientRegistrationFingerprintTests
     {
         // The property that removes the per-request PBKDF2 for a store handing out fresh
         // instances (an EF Core repository, for example).
-        ClientRegistrationFingerprint.Compute(NewClient()).Value
-            .Should().Be(ClientRegistrationFingerprint.Compute(NewClient()).Value);
+        ClientRegistrationFingerprint.Compute(NewClient())
+            .Should().Be(ClientRegistrationFingerprint.Compute(NewClient()));
     }
 
     [Fact]
@@ -104,8 +104,8 @@ public class ClientRegistrationFingerprintTests
             AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "email", "profile", "openid" },
         };
 
-        ClientRegistrationFingerprint.Compute(forwards).Value
-            .Should().Be(ClientRegistrationFingerprint.Compute(backwards).Value);
+        ClientRegistrationFingerprint.Compute(forwards)
+            .Should().Be(ClientRegistrationFingerprint.Compute(backwards));
     }
 
     private static Dictionary<string, Client> MemberMutations() => new(StringComparer.Ordinal)
@@ -149,8 +149,8 @@ public class ClientRegistrationFingerprintTests
     {
         // Given a registration that differs only in {member}, the fingerprint must differ —
         // otherwise a stale verdict would keep serving a registration validation now rejects.
-        ClientRegistrationFingerprint.Compute(mutated).Value
-            .Should().NotBe(ClientRegistrationFingerprint.Compute(NewClient()).Value, $"{member} is covered");
+        ClientRegistrationFingerprint.Compute(mutated)
+            .Should().NotBe(ClientRegistrationFingerprint.Compute(NewClient()), $"{member} is covered");
     }
 
     [Fact]
@@ -161,8 +161,8 @@ public class ClientRegistrationFingerprintTests
         var nullAlgs = NewClient() with { AllowedSigningAlgorithms = null };
         var emptyAlgs = NewClient() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm>() };
 
-        ClientRegistrationFingerprint.Compute(nullAlgs).Value
-            .Should().NotBe(ClientRegistrationFingerprint.Compute(emptyAlgs).Value);
+        ClientRegistrationFingerprint.Compute(nullAlgs)
+            .Should().NotBe(ClientRegistrationFingerprint.Compute(emptyAlgs));
     }
 
     [Fact]
@@ -171,32 +171,16 @@ public class ClientRegistrationFingerprintTests
         var original = Confidential(hash: [1, 2, 3]);
         var rotated = Confidential(hash: [4, 5, 6]);
 
-        ClientRegistrationFingerprint.Compute(rotated).Value
-            .Should().NotBe(ClientRegistrationFingerprint.Compute(original).Value,
+        ClientRegistrationFingerprint.Compute(rotated)
+            .Should().NotBe(ClientRegistrationFingerprint.Compute(original),
                 "a rotated secret must not inherit the previous verdict's empty-secret probe result");
     }
 
     [Fact]
     public void Equal_stored_secrets_on_different_instances_produce_the_same_fingerprint()
     {
-        ClientRegistrationFingerprint.Compute(Confidential(hash: [1, 2, 3])).Value
-            .Should().Be(ClientRegistrationFingerprint.Compute(Confidential(hash: [1, 2, 3])).Value);
-    }
-
-    [Fact]
-    public void A_custom_credential_type_falls_back_to_instance_identity()
-    {
-        // IClientCredential is a marker interface, so a custom credential exposes nothing to
-        // fingerprint by content. Distinct instances must therefore produce distinct
-        // fingerprints — conservative, and no worse than instance-keyed memoization.
-        var first = NewClient() with { Credentials = [new CustomCredential()] };
-        var second = NewClient() with { Credentials = [new CustomCredential()] };
-
-        var firstPrint = ClientRegistrationFingerprint.Compute(first);
-
-        firstPrint.Value.Should().NotBe(ClientRegistrationFingerprint.Compute(second).Value);
-        firstPrint.IsContentAddressable.Should().BeFalse(
-            "an instance-identity fingerprint must not be cached under — request volume would grow the cache");
+        ClientRegistrationFingerprint.Compute(Confidential(hash: [1, 2, 3]))
+            .Should().Be(ClientRegistrationFingerprint.Compute(Confidential(hash: [1, 2, 3])));
     }
 
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
@@ -211,18 +195,6 @@ public class ClientRegistrationFingerprintTests
     private static Client Confidential(byte[] hash) => NewClient() with
     {
         IsPublic = false,
-        Credentials = [new StubPbkdf2Secret(hash)],
+        Secrets = [Pbkdf2ClientSecretHasher.Format(600_000, new byte[16], hash)],
     };
-
-    private sealed class StubPbkdf2Secret(byte[] hash) : IPbkdf2ClientSecret
-    {
-        public int Iterations => 600_000;
-        public byte[] Salt => [9, 9, 9];
-        public byte[] Hash => hash;
-    }
-
-    private sealed class CustomCredential : IClientCredential
-    {
-        public IClientCredential Snapshot() => new CustomCredential();
-    }
 }

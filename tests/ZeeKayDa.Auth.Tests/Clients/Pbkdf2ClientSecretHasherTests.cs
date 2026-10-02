@@ -1,23 +1,37 @@
-using System.Reflection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
-using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
 
 public sealed class Pbkdf2ClientSecretHasherTests
 {
+    // Computed independently of this code base (Python's hashlib.pbkdf2_hmac), so a passing
+    // verification proves the format and derivation agree with other PHC producers.
+    private const string IndependentVector =
+        "$pbkdf2-sha256$i=600000$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY";
+
+    private const string IndependentVectorPassword = "correct horse battery staple";
+
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private static Pbkdf2ClientSecretHasher CreateHasher(
-        int iterations = Pbkdf2ClientSecretHasherOptions.DefaultIterations,
-        SanitizingLogger<Pbkdf2ClientSecretHasher>? logger = null)
+        int iterations = Pbkdf2ClientSecretHasherOptions.DefaultIterations)
         => new(
             new FixedOptionsMonitor<Pbkdf2ClientSecretHasherOptions>(
-                new Pbkdf2ClientSecretHasherOptions { Iterations = iterations }),
-            logger ?? NullSanitizingLogger<Pbkdf2ClientSecretHasher>.Instance);
+                new Pbkdf2ClientSecretHasherOptions { Iterations = iterations }));
+
+    private static ClientSecret Pbkdf2Secret(int iterations) =>
+        Pbkdf2ClientSecretHasher.Format(
+            iterations,
+            new byte[Pbkdf2ClientSecretHasher.SaltLength],
+            new byte[Pbkdf2ClientSecretHasher.HashLength]);
+
+    private static PhcString Parsed(ClientSecret secret)
+    {
+        PhcString.TryParse(secret.Value, out var phc).Should().BeTrue();
+        return phc!;
+    }
 
     // ── Happy path ───────────────────────────────────────────────────────────────────────────────
 
@@ -27,21 +41,24 @@ public sealed class Pbkdf2ClientSecretHasherTests
         var hasher = CreateHasher();
 
         var stored = hasher.Create("super-secret-value");
-        var verified = hasher.Verify(stored, "super-secret-value".AsSpan());
 
-        verified.Should().BeTrue();
+        hasher.Verify(stored, "super-secret-value".AsSpan()).Should().BeTrue();
     }
 
     [Fact]
-    public void Create_produces_IPbkdf2ClientSecret_with_configured_iterations()
+    public void Create_produces_a_PHC_string_with_the_configured_iterations()
     {
         var hasher = CreateHasher();
 
-        var stored = (IPbkdf2ClientSecret)hasher.Create("my-secret");
+        var phc = Parsed(hasher.Create("my-secret"));
 
-        stored.Iterations.Should().Be(Pbkdf2ClientSecretHasherOptions.DefaultIterations);
-        stored.Salt.Should().HaveCount(16);
-        stored.Hash.Should().HaveCount(32);
+        phc.Id.Should().Be("pbkdf2-sha256");
+        phc.Version.Should().BeNull();
+        phc.Parameters.Should().BeEquivalentTo(
+            [new KeyValuePair<string, string>("i", Pbkdf2ClientSecretHasherOptions.DefaultIterations.ToString())],
+            options => options.WithStrictOrdering());
+        phc.Salt.Length.Should().Be(16);
+        phc.Hash.Length.Should().Be(32);
     }
 
     [Fact]
@@ -49,10 +66,25 @@ public sealed class Pbkdf2ClientSecretHasherTests
     {
         var hasher = CreateHasher();
 
-        var a = (IPbkdf2ClientSecret)hasher.Create("same-secret");
-        var b = (IPbkdf2ClientSecret)hasher.Create("same-secret");
+        var a = Parsed(hasher.Create("same-secret"));
+        var b = Parsed(hasher.Create("same-secret"));
 
-        a.Salt.Should().NotEqual(b.Salt);
+        a.Salt.ToArray().Should().NotEqual(b.Salt.ToArray());
+    }
+
+    [Fact]
+    public void Verifies_a_hash_produced_by_an_independent_PBKDF2_implementation()
+    {
+        var hasher = CreateHasher();
+
+        hasher.Verify(new ClientSecret(IndependentVector), IndependentVectorPassword).Should().BeTrue();
+        hasher.Verify(new ClientSecret(IndependentVector), "wrong").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Declares_only_its_own_algorithm_id()
+    {
+        CreateHasher().AlgorithmIds.Should().BeEquivalentTo(["pbkdf2-sha256"]);
     }
 
     // ── Verify ───────────────────────────────────────────────────────────────────────────────────
@@ -63,9 +95,7 @@ public sealed class Pbkdf2ClientSecretHasherTests
         var hasher = CreateHasher();
         var stored = hasher.Create("correct-secret");
 
-        var result = hasher.Verify(stored, "wrong-secret".AsSpan());
-
-        result.Should().BeFalse();
+        hasher.Verify(stored, "wrong-secret".AsSpan()).Should().BeFalse();
     }
 
     [Fact]
@@ -74,65 +104,42 @@ public sealed class Pbkdf2ClientSecretHasherTests
         var hasher = CreateHasher();
         var stored = hasher.Create("some-secret");
 
-        var result = hasher.Verify(stored, ReadOnlySpan<char>.Empty);
-
-        result.Should().BeFalse();
+        hasher.Verify(stored, ReadOnlySpan<char>.Empty).Should().BeFalse();
     }
 
-    [Fact]
-    public void Verify_returns_false_for_unknown_secret_type()
+    public static TheoryData<string?> MalformedValues() =>
+    [
+        null!,
+        "",
+        "plaintext-secret",
+        "$bcrypt$i=600000$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY",
+        "$pbkdf2-sha256$v=1$i=600000$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY",
+        "$pbkdf2-sha256$i=600000,x=1$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY",
+        "$pbkdf2-sha256$n=600000$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY",
+        "$pbkdf2-sha256$i=abc$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY",
+        "$pbkdf2-sha256$i=0$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY",
+        "$pbkdf2-sha256$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY",
+        "$pbkdf2-sha256$i=600000$AAECAwQFBgcICQoLDA0O$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY",
+        "$pbkdf2-sha256$i=600000$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTY",
+        "$pbkdf2-sha256$i=600000$AAECAwQFBgcICQoLDA0ODw==$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY",
+    ];
+
+    [Theory]
+    [MemberData(nameof(MalformedValues))]
+    public void Verify_returns_false_for_a_value_that_is_not_a_well_formed_PBKDF2_secret(string? value)
     {
         var hasher = CreateHasher();
 
-        // IClientSecret whose type is not IPbkdf2ClientSecret
-        var result = hasher.Verify(new FakeSecret(), "anything".AsSpan());
-
-        result.Should().BeFalse();
-    }
-
-    [Fact]
-    public void Verify_never_throws()
-    {
-        var hasher = CreateHasher();
-
-        // Pass a broken IPbkdf2ClientSecret with null buffers — Verify must return false, not throw.
-        var brokenSecret = new Pbkdf2ClientSecret(600_000, null!, null!);
-
-        var act = () => hasher.Verify(brokenSecret, "anything".AsSpan());
-
-        act.Should().NotThrow();
-        act().Should().BeFalse();
+        hasher.Verify(new ClientSecret(value!), IndependentVectorPassword).Should().BeFalse();
     }
 
     [Fact]
     public void Verify_returns_false_when_stored_iterations_are_above_max()
     {
         var hasher = CreateHasher();
-        var tamperedSecret = new Pbkdf2ClientSecret(
-            Pbkdf2ClientSecretHasher.MaxIterations + 1,
-            new byte[16],
-            new byte[32]);
 
-        var result = hasher.Verify(tamperedSecret, "any-secret".AsSpan());
-
-        result.Should().BeFalse();
-    }
-
-    [Fact]
-    public void Verify_logs_warning_when_stored_iterations_are_above_max()
-    {
-        var logger = new CapturingSanitizingLogger<Pbkdf2ClientSecretHasher>();
-        var hasher = new Pbkdf2ClientSecretHasher(
-            new FixedOptionsMonitor<Pbkdf2ClientSecretHasherOptions>(new Pbkdf2ClientSecretHasherOptions()),
-            logger);
-        var tamperedSecret = new Pbkdf2ClientSecret(
-            Pbkdf2ClientSecretHasher.MaxIterations + 1,
-            new byte[16],
-            new byte[32]);
-
-        hasher.Verify(tamperedSecret, "any-secret".AsSpan());
-
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning);
+        hasher.Verify(Pbkdf2Secret(Pbkdf2ClientSecretHasher.MaxIterations + 1), "any-secret".AsSpan())
+            .Should().BeFalse();
     }
 
     // ── Constructor guard ────────────────────────────────────────────────────────────────────────
@@ -159,117 +166,22 @@ public sealed class Pbkdf2ClientSecretHasherTests
         act.Should().NotThrow();
     }
 
-    // ── CanHandle ────────────────────────────────────────────────────────────────────────────────
+    // ── Create ───────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void CanHandle_returns_true_for_Pbkdf2ClientSecret()
-    {
-        var hasher = CreateHasher();
-        var stored = hasher.Create("a-secret");
-
-        hasher.CanHandle(stored).Should().BeTrue();
-    }
-
-    [Fact]
-    public void CanHandle_returns_false_for_other_secret_type()
-    {
-        var hasher = CreateHasher();
-
-        hasher.CanHandle(new FakeSecret()).Should().BeFalse();
-    }
-
-    // ── Create argument validation ────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Create_throws_ArgumentException_for_null_plaintext()
-    {
-        var hasher = CreateHasher();
-
-        var act = () => hasher.Create(null!);
-
-        act.Should().Throw<ArgumentException>().WithParameterName("plaintext");
-    }
-
-    [Fact]
-    public void Create_throws_ArgumentException_for_empty_plaintext()
-    {
-        var hasher = CreateHasher();
-
-        var act = () => hasher.Create("");
-
-        act.Should().Throw<ArgumentException>().WithParameterName("plaintext");
-    }
-
-    [Fact]
-    public void Create_throws_ArgumentException_for_whitespace_plaintext()
-    {
-        var hasher = CreateHasher();
-
-        var act = () => hasher.Create("   ");
-
-        act.Should().Throw<ArgumentException>().WithParameterName("plaintext");
-    }
-
-    // ── Create span overload ─────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Create_span_throws_ArgumentException_for_empty_span()
-    {
-        var hasher = CreateHasher();
-
-        var act = () => hasher.Create(ReadOnlySpan<char>.Empty);
-
-        act.Should().Throw<ArgumentException>().WithParameterName("plaintext");
-    }
-
-    [Fact]
-    public void Create_span_throws_ArgumentException_for_whitespace_only_span()
-    {
-        var hasher = CreateHasher();
-
-        var act = () => hasher.Create("   ".AsSpan());
-
-        act.Should().Throw<ArgumentException>().WithParameterName("plaintext");
-    }
-
-    [Fact]
-    public void Create_span_produces_verifiable_credential()
-    {
-        var hasher = CreateHasher();
-
-        var stored = hasher.Create("span-secret".AsSpan());
-        var result = hasher.Verify(stored, "span-secret".AsSpan());
-
-        result.Should().BeTrue();
-    }
-
-    [Fact]
-    public void Create_span_credential_verifies_after_source_array_is_zeroed()
+    public void Create_credential_verifies_after_source_array_is_zeroed()
     {
         var hasher = CreateHasher();
         char[] chars = "zeroable-secret".ToCharArray();
 
         var stored = hasher.Create(chars.AsSpan());
         Array.Clear(chars);
-        var result = hasher.Verify(stored, "zeroable-secret".AsSpan());
 
-        result.Should().BeTrue();
+        hasher.Verify(stored, "zeroable-secret".AsSpan()).Should().BeTrue();
     }
 
     [Fact]
-    public void Create_span_and_string_paths_produce_hashes_that_verify_same_secret()
-    {
-        var hasher = CreateHasher();
-
-        var storedViaSpan = hasher.Create("shared-secret".AsSpan());
-        var storedViaString = hasher.Create("shared-secret");
-
-        hasher.Verify(storedViaSpan, "shared-secret".AsSpan()).Should().BeTrue();
-        hasher.Verify(storedViaString, "shared-secret".AsSpan()).Should().BeTrue();
-    }
-
-    [Fact]
-    public void Create_span_round_trip_with_non_ascii_secrets()
+    public void Create_round_trip_with_non_ascii_secrets()
     {
         var hasher = CreateHasher();
 
@@ -279,58 +191,64 @@ public sealed class Pbkdf2ClientSecretHasherTests
         hasher.Verify(stored, "cafe key secret".AsSpan()).Should().BeFalse();
     }
 
-    // ── GetRegistrationFailures ──────────────────────────────────────────────────────────────────
+    // ── ValidateStoredSecret ─────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void GetRegistrationFailures_returns_failure_when_iterations_below_minimum()
+    public void ValidateStoredSecret_returns_failure_when_iterations_below_minimum()
     {
         var hasher = CreateHasher();
-        var secret = new Pbkdf2ClientSecret(Pbkdf2ClientSecretHasher.MinIterations - 1, new byte[16], new byte[32]);
 
-        var failures = hasher.GetRegistrationFailures(secret, "my-client").ToList();
+        var failures = hasher.ValidateStoredSecret(Pbkdf2Secret(Pbkdf2ClientSecretHasher.MinIterations - 1)).ToList();
 
         failures.Should().ContainSingle(f =>
             f.Code == "client.credentials.pbkdf2_iterations_below_minimum" &&
-            f.Message.Contains("my-client") &&
             f.Message.Contains($"{Pbkdf2ClientSecretHasher.MinIterations - 1:N0}") &&
             f.Message.Contains($"{Pbkdf2ClientSecretHasher.MinIterations:N0}"));
     }
 
     [Fact]
-    public void GetRegistrationFailures_returns_empty_when_iterations_equal_minimum()
+    public void ValidateStoredSecret_returns_failure_when_iterations_above_maximum()
     {
         var hasher = CreateHasher();
-        var secret = new Pbkdf2ClientSecret(Pbkdf2ClientSecretHasher.MinIterations, new byte[16], new byte[32]);
 
-        var failures = hasher.GetRegistrationFailures(secret, "my-client");
-
-        failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void GetRegistrationFailures_returns_empty_when_iterations_above_minimum()
-    {
-        var hasher = CreateHasher();
-        var secret = new Pbkdf2ClientSecret(Pbkdf2ClientSecretHasher.MinIterations + 100_000, new byte[16], new byte[32]);
-
-        var failures = hasher.GetRegistrationFailures(secret, "my-client");
-
-        failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void GetRegistrationFailures_returns_failure_when_iterations_above_maximum()
-    {
-        var hasher = CreateHasher();
-        var secret = new Pbkdf2ClientSecret(Pbkdf2ClientSecretHasher.MaxIterations + 1, new byte[16], new byte[32]);
-
-        var failures = hasher.GetRegistrationFailures(secret, "my-client").ToList();
+        var failures = hasher.ValidateStoredSecret(Pbkdf2Secret(Pbkdf2ClientSecretHasher.MaxIterations + 1)).ToList();
 
         failures.Should().ContainSingle(f =>
             f.Code == "client.credentials.pbkdf2_iterations_above_maximum" &&
-            f.Message.Contains("my-client") &&
             f.Message.Contains($"{Pbkdf2ClientSecretHasher.MaxIterations + 1:N0}") &&
             f.Message.Contains($"{Pbkdf2ClientSecretHasher.MaxIterations:N0}"));
+    }
+
+    [Theory]
+    [InlineData(Pbkdf2ClientSecretHasher.MinIterations)]
+    [InlineData(Pbkdf2ClientSecretHasher.MinIterations + 100_000)]
+    [InlineData(Pbkdf2ClientSecretHasher.MaxIterations)]
+    public void ValidateStoredSecret_accepts_iterations_within_bounds(int iterations)
+    {
+        CreateHasher().ValidateStoredSecret(Pbkdf2Secret(iterations)).Should().BeEmpty();
+    }
+
+    [Theory]
+    [MemberData(nameof(MalformedValues))]
+    public void ValidateStoredSecret_reports_a_malformed_value_without_quoting_it(string? value)
+    {
+        var failures = CreateHasher().ValidateStoredSecret(new ClientSecret(value!)).ToList();
+
+        failures.Should().ContainSingle().Which.Should().Match<ZeeKayDaConfigurationFailure>(f =>
+            f.Code == "client.credentials.pbkdf2_malformed"
+            && (string.IsNullOrEmpty(value) || !f.Message.Contains(value)));
+    }
+
+    [Theory]
+    [InlineData("$pbkdf2-sha256$v=1$i=600000$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY", "no version field")]
+    [InlineData("$pbkdf2-sha256$i=abc$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY", "exactly one parameter")]
+    [InlineData("$pbkdf2-sha256$i=600000$AAECAwQFBgcICQoLDA0O$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY", "16-byte salt")]
+    [InlineData("$pbkdf2-sha256$i=600000$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTY", "32-byte hash")]
+    [InlineData("plaintext-secret", "not a PHC string")]
+    public void ValidateStoredSecret_names_the_first_rule_a_malformed_value_breaks(string value, string rule)
+    {
+        CreateHasher().ValidateStoredSecret(new ClientSecret(value)).Should().ContainSingle()
+            .Which.Message.Should().Contain(rule);
     }
 
     // ── Timing decoy ─────────────────────────────────────────────────────────────────────────────
@@ -348,21 +266,21 @@ public sealed class Pbkdf2ClientSecretHasherTests
     }
 
     [Theory]
-    [InlineData(Pbkdf2ClientSecretHasher.MinIterations, Pbkdf2ClientSecretHasher.MinIterations)]
-    [InlineData(1_200_000, 1_200_000)]
-    [InlineData(Pbkdf2ClientSecretHasher.MaxIterations, Pbkdf2ClientSecretHasher.MaxIterations)]
-    public void Timing_decoy_carries_the_iteration_count_real_credentials_are_created_with(
-        int configured, int expected)
+    [InlineData(Pbkdf2ClientSecretHasher.MinIterations)]
+    [InlineData(1_200_000)]
+    [InlineData(Pbkdf2ClientSecretHasher.MaxIterations)]
+    public void Timing_decoy_carries_the_iteration_count_real_secrets_are_created_with(int configured)
     {
-        // A decoy above MaxIterations would make VerifyCore return before deriving, and the
-        // padding would pad nothing; the options validator keeps the configured count at or below it.
+        // A decoy above MaxIterations would make Verify return before deriving, and the padding
+        // would pad nothing; the options validator keeps the configured count at or below it.
         IClientSecretHasher hasher = CreateHasher(configured);
 
-        var decoy = hasher.CreateTimingDecoy().Should().BeOfType<Pbkdf2ClientSecret>().Subject;
+        var decoy = hasher.CreateTimingDecoy();
 
-        decoy.Iterations.Should().Be(expected);
-        decoy.Salt.Should().HaveCount(16);
-        decoy.Hash.Should().HaveCount(32);
+        hasher.ValidateStoredSecret(decoy).Should().BeEmpty();
+        Parsed(decoy).Parameters.Should().BeEquivalentTo(
+            [new KeyValuePair<string, string>("i", configured.ToString())],
+            options => options.WithStrictOrdering());
     }
 
     [Fact]
@@ -370,11 +288,11 @@ public sealed class Pbkdf2ClientSecretHasherTests
     {
         IClientSecretHasher hasher = CreateHasher();
 
-        var first = (Pbkdf2ClientSecret)hasher.CreateTimingDecoy();
-        var second = (Pbkdf2ClientSecret)hasher.CreateTimingDecoy();
+        var first = Parsed(hasher.CreateTimingDecoy());
+        var second = Parsed(hasher.CreateTimingDecoy());
 
-        first.Salt.Should().NotEqual(second.Salt);
-        first.Hash.Should().NotEqual(second.Hash);
+        first.Salt.ToArray().Should().NotEqual(second.Salt.ToArray());
+        first.Hash.ToArray().Should().NotEqual(second.Hash.ToArray());
     }
 
     [Theory]
@@ -394,105 +312,17 @@ public sealed class Pbkdf2ClientSecretHasherTests
     [Theory]
     [InlineData(Pbkdf2ClientSecretHasher.MinIterations - 1, "client.credentials.pbkdf2_iterations_below_minimum")]
     [InlineData(Pbkdf2ClientSecretHasher.MaxIterations + 1, "client.credentials.pbkdf2_iterations_above_maximum")]
-    public void Registration_validation_reaches_the_iteration_bounds_through_IClientSecretHasher(
+    public void Registration_validation_reaches_the_iteration_bounds_through_the_composite(
         int iterations, string expectedCode)
     {
-        // Registration validation calls the hasher through the composite, which holds it as
-        // IClientSecretHasher — never as the concrete type the tests above call. A public method on a
-        // class that inherits the interface without re-listing it does not implement the
-        // interface's default member, so only this path proves the bounds check runs at startup.
         var composite = new CompositeClientSecretHasher(
             [CreateHasher()],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
-        var secret = new Pbkdf2ClientSecret(iterations, new byte[16], new byte[32]);
+            Options.Create(new ClientSecretHasherRegistrationOptions()),
+            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
 
-        var failures = composite.GetRegistrationFailures(secret, "my-client");
+        var failures = composite.ValidateStoredSecret(Pbkdf2Secret(iterations), "my-client");
 
-        failures.Should().ContainSingle().Which.Code.Should().Be(expectedCode);
-    }
-
-    [Fact]
-    public void GetRegistrationFailures_returns_empty_when_iterations_equal_maximum()
-    {
-        var hasher = CreateHasher();
-        var secret = new Pbkdf2ClientSecret(Pbkdf2ClientSecretHasher.MaxIterations, new byte[16], new byte[32]);
-
-        var failures = hasher.GetRegistrationFailures(secret, "my-client");
-
-        failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void GetRegistrationFailures_returns_empty_for_non_Pbkdf2_credential()
-    {
-        // Covers the `yield break` branch: credential is not IPbkdf2ClientSecret.
-        var hasher = CreateHasher();
-
-        var failures = hasher.GetRegistrationFailures(new FakeSecret(), "any-client");
-
-        failures.Should().BeEmpty();
-    }
-
-    // ── CreateCore(string) — string overload exercised via reflection ────────────────────────────
-    // Pbkdf2ClientSecretHasher overrides both CreateCore(ReadOnlySpan<char>) and CreateCore(string).
-    // Since the DIM IClientSecretHasher.Create(string) now routes through the span path, the
-    // string overload can only be reached via the base-class virtual fallback — but that fallback
-    // is bypassed because Pbkdf2ClientSecretHasher also overrides CreateCore(ReadOnlySpan<char>).
-    // Reflection is the only way to exercise the protected string override directly.
-
-    [Fact]
-    public void CreateCore_string_produces_verifiable_credential()
-    {
-        // Arrange
-        var hasher = CreateHasher();
-        var createCoreString = typeof(Pbkdf2ClientSecretHasher)
-            .GetMethod("CreateCore", BindingFlags.NonPublic | BindingFlags.Instance, [typeof(string)])!;
-
-        // Act
-        var stored = (IPbkdf2ClientSecret)createCoreString.Invoke(hasher, ["string-path-secret"])!;
-
-        // Assert — the produced credential must pass round-trip verification.
-        hasher.Verify(stored, "string-path-secret".AsSpan()).Should().BeTrue();
-        hasher.Verify(stored, "wrong-secret".AsSpan()).Should().BeFalse();
-    }
-
-    [Fact]
-    public void CreateCore_string_produces_credential_with_correct_structure()
-    {
-        var hasher = CreateHasher();
-        var createCoreString = typeof(Pbkdf2ClientSecretHasher)
-            .GetMethod("CreateCore", BindingFlags.NonPublic | BindingFlags.Instance, [typeof(string)])!;
-
-        var stored = (IPbkdf2ClientSecret)createCoreString.Invoke(hasher, ["structure-test-secret"])!;
-
-        stored.Iterations.Should().Be(Pbkdf2ClientSecretHasherOptions.DefaultIterations);
-        stored.Salt.Should().HaveCount(16);
-        stored.Hash.Should().HaveCount(32);
-    }
-
-    // ── ClientSecretHasher<T> exception swallowing ────────────────────────────────────────────────
-
-    [Fact]
-    public void Verify_returns_false_when_VerifyCore_throws()
-    {
-        // A custom IPbkdf2ClientSecret whose Salt getter throws causes VerifyCore to propagate
-        // an exception; the base-class catch block must swallow it and return false.
-        var hasher = CreateHasher();
-
-        var act = () => hasher.Verify(new ThrowingPbkdf2Secret(), "anything".AsSpan());
-
-        act.Should().NotThrow();
-        act().Should().BeFalse();
-    }
-
-    // ── Nested helpers ───────────────────────────────────────────────────────────────────────────
-
-    private sealed class FakeSecret : IClientSecret { public IClientCredential Snapshot() => new FakeSecret(); }
-
-    private sealed class ThrowingPbkdf2Secret : IPbkdf2ClientSecret
-    {
-        public int Iterations => Pbkdf2ClientSecretHasher.MinIterations;
-        public byte[] Salt => throw new InvalidOperationException("Simulated storage failure");
-        public byte[] Hash => new byte[32];
+        failures.Should().ContainSingle().Which.Should().Match<ZeeKayDaConfigurationFailure>(f =>
+            f.Code == expectedCode && f.Message.StartsWith("Client 'my-client': "));
     }
 }

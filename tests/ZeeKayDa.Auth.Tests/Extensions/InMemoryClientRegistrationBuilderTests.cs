@@ -41,7 +41,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
         var registration = SinglePublic();
         registration.ClientId.Should().Be("spa");
         registration.IsPublic.Should().BeTrue();
-        registration.Credentials.Should().BeEmpty();
+        registration.Secrets.Should().BeEmpty();
         registration.AllowedTokenEndpointAuthMethods.Should().Equal(TokenEndpointAuthMethods.None);
         registration.RedirectUris.Should().BeEquivalentTo(RedirectUris);
         registration.AllowedScopes.Should().BeEquivalentTo(Scopes);
@@ -84,7 +84,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
         pending.PlaintextSecret.Should().Be("very-secret");
         pending.Registration.ClientId.Should().Be("web");
         pending.Registration.IsPublic.Should().BeFalse();
-        pending.Registration.Credentials.Should().BeEmpty();
+        pending.Registration.Secrets.Should().BeEmpty();
     }
 
     [Fact]
@@ -205,7 +205,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     [
         nameof(IClientWithCredentials.ClientId),
         nameof(IClientWithCredentials.IsPublic),
-        nameof(IClientWithCredentials.Credentials),
+        nameof(IClientWithCredentials.Secrets),
         nameof(IClientWithCredentials.RedirectUris),
         nameof(IClientWithCredentials.PostLogoutRedirectUris),
         nameof(IClientWithCredentials.AllowedScopes),

@@ -8,12 +8,22 @@ public sealed class IdentityServerSettings
     public IReadOnlyList<ClientSettings> Clients { get; init; } = [];
 }
 
-/// <summary>A client to register. A client with a secret is confidential; one without is public.</summary>
+/// <summary>
+/// A client to register. A client with a <see cref="Secret"/> or a <see cref="SecretHash"/> is
+/// confidential; one with neither is public.
+/// </summary>
 public sealed class ClientSettings
 {
     public required string ClientId { get; init; }
 
+    /// <summary>A plaintext secret, hashed with the default hasher when the host starts.</summary>
     public string? Secret { get; init; }
+
+    /// <summary>
+    /// An already hashed secret, stored as it is, such as one another system produced. A registered
+    /// hasher must declare its algorithm id.
+    /// </summary>
+    public string? SecretHash { get; init; }
 
     public IReadOnlyList<string> RedirectUris { get; init; } = [];
 

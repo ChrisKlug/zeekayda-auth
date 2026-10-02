@@ -1,5 +1,6 @@
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Samples.IdentityServer;
+using ZeeKayDa.Auth.Samples.IdentityServer.ClientSecrets;
 using ZeeKayDa.Auth.Samples.IdentityServer.Users;
 using ZeeKayDa.Auth.Tokens;
 
@@ -28,11 +29,28 @@ var auth = builder.Services.AddZeeKayDaAuth(options =>
     options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
 });
 
+// Hashers from other libraries, beside the built-in PBKDF2 one, which still hashes every new secret.
+// Each verifies the stored secrets whose algorithm id it declares: "$2b$...", "$argon2id$..." and
+// "$pbkdf2-sha512$...".
+auth.AddClientSecretHasher<BCryptClientSecretHasher>()
+    .AddClientSecretHasher<Argon2ClientSecretHasher>()
+    .AddClientSecretHasher<Pbkdf2Sha512ClientSecretHasher>();
+
 auth.AddInMemoryClients(clients =>
 {
     foreach (var client in settings.Clients)
     {
-        if (client.Secret is { } secret)
+        if (client.SecretHash is { } hash)
+        {
+            clients.Add(Client.CreateConfidential(
+                client.ClientId, new ClientSecret(hash), client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes)
+                with
+            {
+                RequireConsent = client.RequireConsent,
+                InitiateLoginUri = client.InitiateLoginUri,
+            });
+        }
+        else if (client.Secret is { } secret)
         {
             clients.AddConfidential(client.ClientId, secret, client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes,
                 options => Configure(options, client));

@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -41,7 +40,7 @@ internal static class ClientRegistrationFingerprint
     /// fingerprints regardless of instance identity; any change to a covered value produces a
     /// different fingerprint.
     /// </summary>
-    public static Fingerprint Compute(IClientWithCredentials client)
+    public static string Compute(IClientWithCredentials client)
     {
         var builder = new StringBuilder();
 
@@ -74,11 +73,9 @@ internal static class ClientRegistrationFingerprint
         AppendSet(builder, "addaccesstoken", client.AdditionalAccessTokenClaims);
         Append(builder, "atlifetime", client.AccessTokenLifetime?.Ticks.ToString(CultureInfo.InvariantCulture) ?? NullSentinel);
         Append(builder, "idlifetime", client.IdTokenLifetime?.Ticks.ToString(CultureInfo.InvariantCulture) ?? NullSentinel);
-        var contentAddressable = AppendCredentials(builder, client.Credentials);
+        AppendSecrets(builder, client.Secrets);
 
-        return new Fingerprint(
-            Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()))),
-            contentAddressable);
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
     }
 
     private static void Append(StringBuilder builder, string name, string value)
@@ -105,56 +102,13 @@ internal static class ClientRegistrationFingerprint
             AppendLengthPrefixed(builder, value);
     }
 
-    /// <summary>
-    /// Returns <see langword="false"/> when any credential had to fall back to instance identity,
-    /// which makes the resulting fingerprint unrepeatable across instances and therefore unsafe
-    /// to cache under.
-    /// </summary>
-    private static bool AppendCredentials(StringBuilder builder, IReadOnlyList<IClientCredential> credentials)
+    private static void AppendSecrets(StringBuilder builder, IReadOnlyList<ClientSecret> secrets)
     {
-        var contentAddressable = true;
-        AppendLengthPrefixed(builder, "credentials");
-        builder.Append(credentials.Count).Append(FieldSeparator);
+        AppendLengthPrefixed(builder, "secrets");
+        builder.Append(secrets.Count).Append(FieldSeparator);
 
-        // Credential order is meaningful to the validator's two-credential cap, so it is not
-        // sorted away.
-        foreach (var credential in credentials)
-        {
-            AppendLengthPrefixed(builder, credential.GetType().FullName ?? string.Empty);
-
-            if (credential is IPbkdf2ClientSecret pbkdf2)
-            {
-                // Reads the stored digest; never derives one.
-                builder.Append(pbkdf2.Iterations).Append(FieldSeparator);
-                AppendLengthPrefixed(builder, Convert.ToHexStringLower(pbkdf2.Salt));
-                AppendLengthPrefixed(builder, Convert.ToHexStringLower(pbkdf2.Hash));
-            }
-            else
-            {
-                // IClientCredential is a marker interface with no members, so a custom credential
-                // type exposes nothing to fingerprint by content. Falling back to instance
-                // identity keeps the verdict correct — a mutated credential is a different
-                // fingerprint only if the instance changed — at the cost of revalidating when a
-                // store hands out fresh instances. That is exactly the behaviour every
-                // registration had before fingerprinting, so this is never a regression; it just
-                // does not get the improvement.
-                builder.Append(RuntimeHelpers.GetHashCode(credential)).Append(FieldSeparator);
-                contentAddressable = false;
-            }
-        }
-
-        return contentAddressable;
+        // Reads the stored hash; never derives one.
+        foreach (var secret in secrets)
+            AppendLengthPrefixed(builder, secret?.Value ?? NullSentinel);
     }
-
-    /// <summary>
-    /// A registration's content digest, and whether it is reproducible from content alone.
-    /// </summary>
-    /// <param name="Value">The hex SHA-256 digest.</param>
-    /// <param name="IsContentAddressable">
-    /// <see langword="false"/> when a custom <see cref="IClientCredential"/> forced an
-    /// instance-identity fallback. Such a fingerprint differs for every instance of the same
-    /// registration, so caching under it would fill the cache with keys that can never be hit
-    /// again — request-driven growth, which is exactly what the cache bound must not depend on.
-    /// </param>
-    internal readonly record struct Fingerprint(string Value, bool IsContentAddressable);
 }

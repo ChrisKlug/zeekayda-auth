@@ -7,15 +7,12 @@ namespace ZeeKayDa.Auth.Tests.Clients;
 
 public sealed class ClientTests
 {
-    private sealed record FakeCredential : IClientCredential
-    {
-        public IClientCredential Snapshot() => this with { };
-    }
+    private static ClientSecret FakeSecret() => new("$fake$x");
 
     private sealed class MinimalPublicClient : IClientWithCredentials
     {
         public string ClientId => "minimal";
-        public IReadOnlyList<IClientCredential> Credentials => [];
+        public IReadOnlyList<ClientSecret> Secrets => [];
         public bool IsPublic => true;
         public IReadOnlySet<string> RedirectUris => new HashSet<string>();
         public IReadOnlySet<string> PostLogoutRedirectUris => new HashSet<string>();
@@ -28,21 +25,21 @@ public sealed class ClientTests
     }
 
     [Fact]
-    public void CreateConfidential_sets_IsPublic_to_false_and_provides_non_empty_Credentials()
+    public void CreateConfidential_sets_IsPublic_to_false_and_provides_non_empty_Secrets()
     {
         var client = Client.CreateConfidential(
             clientId: "my-client",
-            credential: new FakeCredential(),
+            secret: FakeSecret(),
             redirectUris: ["https://app/callback"],
             postLogoutRedirectUris: [],
             allowedScopes: ["openid"]);
 
         client.IsPublic.Should().BeFalse();
-        client.Credentials.Should().NotBeEmpty();
+        client.Secrets.Should().NotBeEmpty();
     }
 
     [Fact]
-    public void CreatePublic_sets_IsPublic_to_true_and_Credentials_to_empty()
+    public void CreatePublic_sets_IsPublic_to_true_and_Secrets_to_empty()
     {
         var client = Client.CreatePublic(
             clientId: "spa-client",
@@ -51,7 +48,7 @@ public sealed class ClientTests
             allowedScopes: ["openid"]);
 
         client.IsPublic.Should().BeTrue();
-        client.Credentials.Should().BeEmpty();
+        client.Secrets.Should().BeEmpty();
     }
 
     [Fact]
@@ -90,7 +87,7 @@ public sealed class ClientTests
         var client = new Client
         {
             ClientId = "test",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(),
             PostLogoutRedirectUris = new HashSet<string>(),
@@ -115,7 +112,7 @@ public sealed class ClientTests
         var client = new Client
         {
             ClientId = "test",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(),
             PostLogoutRedirectUris = new HashSet<string>(),
@@ -130,7 +127,7 @@ public sealed class ClientTests
         var client = new Client
         {
             ClientId = "test",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(),
             PostLogoutRedirectUris = new HashSet<string>(),
@@ -145,7 +142,7 @@ public sealed class ClientTests
         var client = new Client
         {
             ClientId = "test",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(),
             PostLogoutRedirectUris = new HashSet<string>(),
@@ -172,7 +169,7 @@ public sealed class ClientTests
         var client = new Client
         {
             ClientId = "test",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(),
             PostLogoutRedirectUris = new HashSet<string>(),
@@ -219,22 +216,22 @@ public sealed class ClientTests
         client.PostLogoutRedirectUris.Should().BeEquivalentTo(new[] { "https://app/logout" });
     }
 
-    // Gap 3 — CreateConfidential stores the exact credential instance
+    // Gap 3 — CreateConfidential stores the exact secret instance
 
     [Fact]
-    public void CreateConfidential_stores_exact_credential_instance()
+    public void CreateConfidential_stores_exact_secret_instance()
     {
-        var credential = new FakeCredential();
+        var secret = FakeSecret();
 
         var client = Client.CreateConfidential(
             clientId: "my-client",
-            credential: credential,
+            secret: secret,
             redirectUris: [],
             postLogoutRedirectUris: [],
             allowedScopes: []);
 
-        client.Credentials.Should().ContainSingle()
-            .Which.Should().BeSameAs(credential);
+        client.Secrets.Should().ContainSingle()
+            .Which.Should().BeSameAs(secret);
     }
 
     // Gap 4 — CreateConfidential leaves AllowedTokenEndpointAuthMethods as client_secret_basic
@@ -244,7 +241,7 @@ public sealed class ClientTests
     {
         var client = Client.CreateConfidential(
             clientId: "my-client",
-            credential: new FakeCredential(),
+            secret: FakeSecret(),
             redirectUris: [],
             postLogoutRedirectUris: [],
             allowedScopes: []);
@@ -260,7 +257,7 @@ public sealed class ClientTests
     {
         var client = Client.CreateConfidential(
             clientId: "my-client",
-            credential: new FakeCredential(),
+            secret: FakeSecret(),
             redirectUris: [],
             postLogoutRedirectUris: [],
             allowedScopes: ["openid", "profile"]);
@@ -273,7 +270,7 @@ public sealed class ClientTests
     {
         var client = Client.CreateConfidential(
             clientId: "my-client",
-            credential: new FakeCredential(),
+            secret: FakeSecret(),
             redirectUris: ["https://app/callback"],
             postLogoutRedirectUris: [],
             allowedScopes: []);
@@ -286,7 +283,7 @@ public sealed class ClientTests
     {
         var client = Client.CreateConfidential(
             clientId: "my-client",
-            credential: new FakeCredential(),
+            secret: FakeSecret(),
             redirectUris: [],
             postLogoutRedirectUris: ["https://app/logout"],
             allowedScopes: []);
@@ -340,55 +337,26 @@ public sealed class ClientTests
         TokenEndpointAuthMethods.None.Should().Be("none");
     }
 
-    // Gap 9 — Pbkdf2ClientSecret stores constructor arguments
-
     [Fact]
-    public void Pbkdf2ClientSecret_stores_Iterations_Salt_and_Hash()
+    public void CreateConfidential_refuses_a_null_secret()
     {
-        var salt = new byte[] { 1, 2, 3 };
-        var hash = new byte[] { 4, 5, 6 };
+        var act = () => Client.CreateConfidential("c", null!, [], [], []);
 
-        var secret = new Pbkdf2ClientSecret(600_000, salt, hash);
-
-        secret.Iterations.Should().Be(600_000);
-        secret.Salt.Should().BeSameAs(salt);
-        secret.Hash.Should().BeSameAs(hash);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("secret");
     }
 
-    [Fact]
-    public void Snapshot_of_a_PBKDF2_secret_holds_its_own_copies_of_the_salt_and_hash()
-    {
-        // The constructor keeps the caller's arrays, so the snapshot is where they are copied: a
-        // copy sharing them would let a store's in-place write reach the credential the framework
-        // validated. The copy is a Pbkdf2ClientSecret, which the built-in hasher handles.
-        var salt = new byte[] { 1, 2, 3 };
-        var hash = new byte[] { 4, 5, 6 };
-        IClientCredential secret = new Pbkdf2ClientSecret(600_000, salt, hash);
-
-        var copy = secret.Snapshot().Should().BeOfType<Pbkdf2ClientSecret>().Subject;
-
-        copy.Iterations.Should().Be(600_000);
-        copy.Salt.Should().Equal(salt).And.NotBeSameAs(salt);
-        copy.Hash.Should().Equal(hash).And.NotBeSameAs(hash);
-    }
+    // Gap 9 — a secret never prints its value
 
     [Fact]
-    public void Pbkdf2ClientSecret_is_assignable_to_IPbkdf2ClientSecret()
+    public void ClientSecret_ToString_does_not_reveal_the_stored_value()
     {
-        var secret = new Pbkdf2ClientSecret(600_000, new byte[] { 1 }, new byte[] { 2 });
+        // A plaintext secret pasted into a store where a hash belongs would otherwise reach any log
+        // that prints a registration.
+        var secret = new ClientSecret("pasted-plaintext");
 
-        secret.Should().BeAssignableTo<IPbkdf2ClientSecret>();
-    }
-
-    // Gap 10 — interface hierarchy
-
-    [Fact]
-    public void Pbkdf2ClientSecret_is_assignable_to_IClientSecret_and_IClientCredential()
-    {
-        var secret = new Pbkdf2ClientSecret(600_000, new byte[] { 1 }, new byte[] { 2 });
-
-        secret.Should().BeAssignableTo<IClientSecret>();
-        secret.Should().BeAssignableTo<IClientCredential>();
+        secret.ToString().Should().NotContain("pasted-plaintext");
+        (Client.CreateConfidential("c", secret, [], [], []) with { }).ToString()
+            .Should().NotContain("pasted-plaintext");
     }
 
     // Gap 11 — IsPublic is a non-DIM declared property with no silent default

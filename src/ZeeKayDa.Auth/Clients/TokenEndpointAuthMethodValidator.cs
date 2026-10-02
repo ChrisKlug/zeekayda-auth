@@ -43,7 +43,7 @@ internal static class TokenEndpointAuthMethodValidator
         IClientWithCredentials client,
         List<ZeeKayDaConfigurationFailure> failures)
     {
-        var hasNoCredentials = client.Credentials.Count == 0;
+        var hasNoSecrets = client.Secrets.Count == 0;
 
         // Enumerate with explicit ordinal comparison — do NOT trust the set's comparer or its
         // Count: a custom set can report one entry while yielding 'none' and another method.
@@ -69,14 +69,14 @@ internal static class TokenEndpointAuthMethodValidator
         }
 
         // Three-way consistency check
-        if (client.IsPublic != hasNoCredentials || client.IsPublic != authMethodsIsNoneOnly)
+        if (client.IsPublic != hasNoSecrets || client.IsPublic != authMethodsIsNoneOnly)
         {
             failures.Add(new ZeeKayDaConfigurationFailure(
                 "client.is_public.trinity_violation",
                 $"Client '{client.ClientId}' has inconsistent public/confidential configuration. " +
-                $"IsPublic={client.IsPublic}, Credentials.Count={client.Credentials.Count}, " +
+                $"IsPublic={client.IsPublic}, Secrets.Count={client.Secrets.Count}, " +
                 $"AllowedTokenEndpointAuthMethods=[{string.Join(", ", client.AllowedTokenEndpointAuthMethods)}]. " +
-                "The three-way consistency rule requires: IsPublic=true ⟺ Credentials.Count=0 ⟺ AllowedTokenEndpointAuthMethods={\"none\"}."));
+                "The three-way consistency rule requires: IsPublic=true ⟺ Secrets.Count=0 ⟺ AllowedTokenEndpointAuthMethods={\"none\"}."));
         }
     }
 

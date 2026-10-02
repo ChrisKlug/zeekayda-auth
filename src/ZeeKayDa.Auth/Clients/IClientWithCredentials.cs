@@ -9,7 +9,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// this interface directly, avoiding a framework-type mapping step on the hot path.
 /// </para>
 /// <para>
-/// This adds <see cref="Credentials"/> to <see cref="IClient"/> and nothing else. Depend on it
+/// This adds the client's credentials to <see cref="IClient"/> and nothing else. Depend on it
 /// only where authenticating the client is the job; everything else takes
 /// <see cref="IClient"/>, so secrets stay off code paths that never need them.
 /// </para>
@@ -26,9 +26,9 @@ namespace ZeeKayDa.Auth.Clients;
 public interface IClientWithCredentials : IClient
 {
     /// <summary>
-    /// Credentials stored for this client. An empty list indicates a public client — see
-    /// <see cref="IClient.IsPublic"/> for the consistency rule the two must satisfy.
-    /// Use <c>Credentials.OfType&lt;IClientSecret&gt;()</c> to obtain shared-secret credentials.
+    /// The client's hashed secrets, for <c>client_secret_basic</c> and <c>client_secret_post</c>.
+    /// Empty for a public client — see <see cref="IClient.IsPublic"/> for the consistency rule the
+    /// two must satisfy. At most two, so a secret can be rotated without downtime.
     /// </summary>
-    IReadOnlyList<IClientCredential> Credentials { get; }
+    IReadOnlyList<ClientSecret> Secrets { get; }
 }

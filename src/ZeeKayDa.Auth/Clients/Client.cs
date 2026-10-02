@@ -26,7 +26,7 @@ public sealed record Client : IClientWithCredentials
     public required string ClientId { get; init; }
 
     /// <inheritdoc/>
-    public IReadOnlyList<IClientCredential> Credentials { get; init; } = [];
+    public IReadOnlyList<ClientSecret> Secrets { get; init; } = [];
 
     /// <inheritdoc/>
     public bool IsPublic { get; init; } = ClientDefaults.IsPublic;
@@ -99,31 +99,35 @@ public sealed record Client : IClientWithCredentials
     public IReadOnlySet<string> AdditionalAccessTokenClaims { get; init; } = ClientDefaults.AdditionalClaims;
 
     /// <summary>
-    /// Creates a confidential client registration with the given pre-built credential.
+    /// Creates a confidential client registration with the given hashed secret.
     /// </summary>
     /// <param name="clientId">Unique client identifier.</param>
-    /// <param name="credential">
-    /// A pre-built credential (for example a <see cref="Pbkdf2ClientSecret"/>). The caller is
-    /// responsible for hashing before passing it here.
+    /// <param name="secret">
+    /// An already hashed secret, for example from <see cref="IClientSecretFactory"/>.
     /// </param>
     /// <param name="redirectUris">Permitted redirect URIs.</param>
     /// <param name="postLogoutRedirectUris">Permitted post-logout redirect URIs.</param>
     /// <param name="allowedScopes">Scopes this client is permitted to request.</param>
     /// <remarks>
     /// Sets <see cref="IsPublic"/> to <see langword="false"/> and populates
-    /// <see cref="Credentials"/> with the supplied credential. All other properties use their
+    /// <see cref="Secrets"/> with the supplied secret. All other properties use their
     /// default values and can be overridden using <c>with</c> expressions.
     /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="secret"/> is <see langword="null"/>.</exception>
     public static Client CreateConfidential(
         string clientId,
-        IClientCredential credential,
+        ClientSecret secret,
         IEnumerable<string> redirectUris,
         IEnumerable<string> postLogoutRedirectUris,
-        IEnumerable<string> allowedScopes) =>
-        CreateConfidentialWithoutCredential(clientId, redirectUris, postLogoutRedirectUris, allowedScopes) with
+        IEnumerable<string> allowedScopes)
+    {
+        ArgumentNullException.ThrowIfNull(secret);
+
+        return CreateConfidentialWithoutCredential(clientId, redirectUris, postLogoutRedirectUris, allowedScopes) with
         {
-            Credentials = [credential],
+            Secrets = [secret],
         };
+    }
 
     /// <summary>
     /// Creates a public client registration with no credentials.
@@ -134,7 +138,7 @@ public sealed record Client : IClientWithCredentials
     /// <param name="allowedScopes">Scopes this client is permitted to request.</param>
     /// <remarks>
     /// <para>
-    /// Sets <see cref="IsPublic"/> to <see langword="true"/>, <see cref="Credentials"/> to an
+    /// Sets <see cref="IsPublic"/> to <see langword="true"/>, <see cref="Secrets"/> to an
     /// empty list, and <see cref="AllowedTokenEndpointAuthMethods"/> to <c>{ "none" }</c>.
     /// All other properties use their default values and can be overridden using <c>with</c>
     /// expressions.

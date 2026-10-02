@@ -12,21 +12,14 @@ public sealed class InMemoryClientRepositoryTests
 {
     // ── Fake infrastructure ───────────────────────────────────────────────────────────────────────
 
-    private sealed class FakeSecret : IClientSecret { public IClientCredential Snapshot() => new FakeSecret(); }
+    private static readonly ClientSecret FakeSecret = new("$fake-secret$x");
 
     private sealed class FakeHasher : IClientSecretHasher
     {
-        public bool CanHandle(IClientSecret secret) => secret is FakeSecret;
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake-secret" };
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
 
-        public IClientSecret Create(ReadOnlySpan<char> plaintext)
-        {
-            // Mirror ClientSecretHasher<T>.Create: reject an empty/whitespace plaintext secret.
-            if (MemoryExtensions.IsWhiteSpace(plaintext))
-                throw new ArgumentException("Plaintext secret must not be empty.", nameof(plaintext));
-
-            return new FakeSecret();
-        }
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
     }
 
     // A caller-supplied validator is an extension point, so it can throw a configuration exception
@@ -44,7 +37,8 @@ public sealed class InMemoryClientRepositoryTests
     private static CompositeClientSecretHasher MakeHasher()
         => new CompositeClientSecretHasher(
             [new FakeHasher()],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
+            Options.Create(new ClientSecretHasherRegistrationOptions()),
+            NullSanitizingLogger<CompositeClientSecretHasher>.Instance);
 
     private static AuthorizationServerOptions DefaultServerOptions()
     {
@@ -101,7 +95,7 @@ public sealed class InMemoryClientRepositoryTests
             new Client
             {
                 ClientId = clientId,
-                Credentials = [],
+                Secrets = [],
                 IsPublic = false,
                 RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
                 PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -216,7 +210,7 @@ public sealed class InMemoryClientRepositoryTests
         opts.PreBuilt.Add(new Client
         {
             ClientId = "bad-client",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb#bad"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -252,7 +246,7 @@ public sealed class InMemoryClientRepositoryTests
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(
-            Client.CreateConfidential("web", new FakeSecret(), ["https://app.example.com/cb"], [], ["openid"])
+            Client.CreateConfidential("web", FakeSecret, ["https://app.example.com/cb"], [], ["openid"])
             with
             {
                 AllowedTokenEndpointAuthMethods = new HashSet<string>(
@@ -303,7 +297,7 @@ public sealed class InMemoryClientRepositoryTests
         var found = await repo.FindByClientIdAsync("confidential-client", TestContext.Current.CancellationToken);
         found.Should().NotBeNull();
         found!.IsPublic.Should().BeFalse();
-        found.Credentials.Should().ContainSingle(c => c is IClientSecret);
+        found.Secrets.Should().ContainSingle().Which.Should().Be(FakeSecret);
     }
 
     [Fact]
@@ -317,14 +311,14 @@ public sealed class InMemoryClientRepositoryTests
         var found = await repo.FindByClientIdAsync("confidential-client", TestContext.Current.CancellationToken);
         found.Should().NotBeNull();
         found!.RequireConsent.Should().BeFalse();
-        found.Credentials.Should().ContainSingle().Which.Should().BeOfType<FakeSecret>();
+        found.Secrets.Should().ContainSingle().Which.Should().Be(FakeSecret);
     }
 
     [Fact]
     public async Task Constructor_stored_credential_is_not_equal_to_original_plaintext()
     {
-        // After hashing, the stored credential must be the opaque FakeSecret produced by FakeHasher,
-        // not a string equal to (or wrapping) the original plaintext. This verifies that the
+        // After hashing, the stored secret must be the FakeSecret produced by FakeHasher, not a
+        // value equal to (or wrapping) the original plaintext. This verifies that the
         // repository does not short-circuit the hasher and stash the plaintext directly.
         var ct = TestContext.Current.CancellationToken;
         const string plaintext = "super-secret";
@@ -335,8 +329,7 @@ public sealed class InMemoryClientRepositoryTests
 
         var found = await repo.FindByClientIdAsync("confidential-client", ct);
         found.Should().NotBeNull();
-        var credential = found!.Credentials.Single();
-        credential.Should().BeOfType<FakeSecret>();
+        found!.Secrets.Single().Should().Be(FakeSecret);
     }
 
     // ── Aggregates failures from multiple invalid clients ─────────────────────────────────────────
@@ -348,7 +341,7 @@ public sealed class InMemoryClientRepositoryTests
         opts.PreBuilt.Add(new Client
         {
             ClientId = "bad-client-1",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb#frag1"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -358,7 +351,7 @@ public sealed class InMemoryClientRepositoryTests
         opts.PreBuilt.Add(new Client
         {
             ClientId = "bad-client-2",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb#frag2"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -456,7 +449,7 @@ public sealed class InMemoryClientRepositoryTests
         opts.PreBuilt.Add(new Client
         {
             ClientId = "fragment-client",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb#frag"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),

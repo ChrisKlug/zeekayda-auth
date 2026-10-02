@@ -123,13 +123,13 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
             => Task.FromResult<IClientWithCredentials?>(null);
     }
 
-    private sealed class LegacySecret : IClientSecret { public IClientCredential Snapshot() => new LegacySecret(); }
+    private static readonly ClientSecret LegacySecret = new("$legacy-secret$x");
 
     private sealed class VerifyOnlyHasher : IClientSecretHasher
     {
-        public bool CanHandle(IClientSecret secret) => secret is LegacySecret;
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(ReadOnlySpan<char> plaintext) => throw new NotSupportedException();
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "legacy-secret" };
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => throw new NotSupportedException();
     }
 
     // ── Issue #521: TokenKind-to-issuer dispatch via keyed DI ────────────────────────────────────

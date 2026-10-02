@@ -39,16 +39,9 @@ namespace ZeeKayDa.Auth.Clients;
 /// because the framework chose it.
 /// </para>
 /// <para>
-/// <strong>Every credential is copied by its own type.</strong> The list is rebuilt from each
-/// credential's <see cref="IClientCredential.Snapshot"/>, so a store can neither add or remove a
-/// credential behind a verdict nor edit one in place — <see cref="Pbkdf2ClientSecret"/> hands out
-/// its <c>Salt</c> and <c>Hash</c> arrays, and <see cref="IPbkdf2ClientSecret"/>'s snapshot copies
-/// them. Copying is the credential type's job rather than this class's, so a custom credential type
-/// is treated exactly as the framework's own. <c>Snapshot</c> is called once per credential and its
-/// result checked here: one that returns the store's instance or <see langword="null"/> makes the
-/// registration unreadable (<c>client.credentials.not_copied</c>), which the resolver serves as an
-/// unknown client. Leaving that check to the validator would mean asking the credential a second
-/// time, and a credential that answered differently could pass while this copy held its instance.
+/// The secrets list is copied like every other collection, so a store cannot add or remove a secret
+/// behind a verdict. The secrets themselves are shared: a <see cref="ClientSecret"/> is a sealed
+/// record holding a string, and cannot change.
 /// </para>
 /// </remarks>
 internal sealed class ClientRegistrationSnapshot : IClientWithCredentials
@@ -79,8 +72,7 @@ internal sealed class ClientRegistrationSnapshot : IClientWithCredentials
         AdditionalIdTokenClaims = OrdinalCopy(client.AdditionalIdTokenClaims);
         AdditionalUserInfoClaims = OrdinalCopy(client.AdditionalUserInfoClaims);
         AdditionalAccessTokenClaims = OrdinalCopy(client.AdditionalAccessTokenClaims);
-        Credentials = new ReadOnlyCollection<IClientCredential>(
-            [.. client.Credentials.Select(credential => CopyOf(ClientId, credential))]);
+        Secrets = new ReadOnlyCollection<ClientSecret>([.. client.Secrets]);
     }
 
     /// <inheritdoc/>
@@ -150,7 +142,7 @@ internal sealed class ClientRegistrationSnapshot : IClientWithCredentials
     public IReadOnlySet<string> AdditionalAccessTokenClaims { get; }
 
     /// <inheritdoc/>
-    public IReadOnlyList<IClientCredential> Credentials { get; }
+    public IReadOnlyList<ClientSecret> Secrets { get; }
 
     /// <summary>
     /// Copies <paramref name="client"/>. Every member is read exactly once, here, so a store that
@@ -174,31 +166,4 @@ internal sealed class ClientRegistrationSnapshot : IClientWithCredentials
 
     private static IReadOnlySet<T> Copy<T>(IReadOnlySet<T> values) =>
         new ReadOnlySet<T>(new HashSet<T>(values));
-
-    // The one Snapshot() call per credential, checked on the spot. Throws rather than keeping the
-    // store's instance: the resolver turns this exception into an unknown client whose log entry
-    // carries the failure.
-    private static IClientCredential CopyOf(string clientId, IClientCredential? credential)
-    {
-        if (credential is null)
-            throw new UncopiedCredentialException(ClientCredentialValidator.NullCredential(clientId));
-
-        var copy = credential.Snapshot();
-
-        return ClientCredentialValidator.DescribeCopyProblem(credential, copy) is { } problem
-            ? throw new UncopiedCredentialException(ClientCredentialValidator.NotCopied(clientId, credential, problem))
-            : copy;
-    }
-
-    /// <summary>
-    /// Thrown by <see cref="Of"/> for a credential it refused to keep. Only this class throws it,
-    /// so its failure text is the framework's own and safe to log — unlike the message of anything a
-    /// store's getter or a credential's <c>Snapshot</c> throws, a
-    /// <see cref="ZeeKayDaConfigurationException"/> included.
-    /// </summary>
-    internal sealed class UncopiedCredentialException(ZeeKayDaConfigurationFailure failure)
-        : Exception(failure.Message)
-    {
-        public ZeeKayDaConfigurationFailure Failure { get; } = failure;
-    }
 }

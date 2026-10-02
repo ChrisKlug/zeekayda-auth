@@ -11,7 +11,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// <para>
 /// This is the view handed to code that must decide <em>what</em> to issue a client without ever
 /// needing to authenticate it — <c>ITokenIssuer</c> above all. Client authentication takes
-/// <see cref="IClientWithCredentials"/>, which adds <see cref="IClientWithCredentials.Credentials"/>;
+/// <see cref="IClientWithCredentials"/>, which adds <see cref="IClientWithCredentials.Secrets"/>;
 /// everything else takes this. A downcast still reaches the credentials, so this is a guardrail
 /// rather than a boundary: its value is that the default path does not carry secrets, so code that
 /// touches them has to visibly reach for them.
@@ -52,7 +52,7 @@ public interface IClient
     /// Defaults to <see langword="false"/>, and stays declared, never computed from the
     /// credentials: a public client that forgets to say so has no secret and fails validation
     /// loudly. Three-way consistency rule: a client is public if and only if it has no entries in
-    /// <see cref="IClientWithCredentials.Credentials"/>, and if and only if
+    /// <see cref="IClientWithCredentials.Secrets"/>, and if and only if
     /// <see cref="AllowedTokenEndpointAuthMethods"/> is exactly <c>{ "none" }</c>. Enforced by
     /// <see cref="IClientRegistrationValidator"/> on every registration the framework serves.
     /// See <see href="https://www.rfc-editor.org/rfc/rfc6749#section-2.1">RFC 6749 §2.1</see>.

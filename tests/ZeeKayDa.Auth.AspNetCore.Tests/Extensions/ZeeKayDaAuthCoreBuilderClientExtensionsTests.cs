@@ -43,13 +43,13 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
 
     // ── Fake hasher for tests ─────────────────────────────────────────────────────────────────────
 
-    private sealed class TestSecret : IClientSecret { public IClientCredential Snapshot() => new TestSecret(); }
+    private static readonly ClientSecret TestSecret = new("$test-secret$x");
 
     private sealed class TestHasher : IClientSecretHasher
     {
-        public bool CanHandle(IClientSecret secret) => secret is TestSecret;
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
-        public IClientSecret Create(ReadOnlySpan<char> plaintext) => new TestSecret();
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "test-secret" };
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => TestSecret;
     }
 
     // ── Web application factory for missing-repository test ───────────────────────────────────────
