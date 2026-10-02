@@ -878,8 +878,7 @@ public sealed class ClientRegistrationValidatorTests
         // The real hasher, reached the way production reaches it: through the composite, as
         // IClientSecretHasher. A fake here would prove nothing about whether the bound is live.
         var hasher = new Pbkdf2ClientSecretHasher(
-            new FixedOptionsMonitor<Pbkdf2ClientSecretHasherOptions>(new Pbkdf2ClientSecretHasherOptions()),
-            NullSanitizingLogger<Pbkdf2ClientSecretHasher>.Instance);
+            new FixedOptionsMonitor<Pbkdf2ClientSecretHasherOptions>(new Pbkdf2ClientSecretHasherOptions()));
         var validator = MakeValidator(hasher);
         var client = MakeValidConfidentialClient(
             secret: Pbkdf2ClientSecretHasher.Format(Pbkdf2ClientSecretHasher.MinIterations - 1, new byte[16], new byte[32]));

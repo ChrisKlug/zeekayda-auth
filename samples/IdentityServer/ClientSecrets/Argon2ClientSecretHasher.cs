@@ -42,29 +42,40 @@ public sealed class Argon2ClientSecretHasher : IClientSecretHasher
     public IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored) =>
         Problem(stored) is { } problem ? [new("sample.argon2.unacceptable", problem)] : [];
 
+    private sealed record Parts(int? Version, int? Memory, int? Passes, int? Parallelism, int SaltLength, int HashLength);
+
+    private const string Shape = "An Argon2id secret is not $argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>$<salt>$<hash>.";
+
+    private static readonly Func<Parts, string?>[] Rules =
+    [
+        parts => parts.Version == Version ? null : Shape,
+        parts => parts is { Memory: not null, Passes: not null, Parallelism: not null } ? null : Shape,
+        parts => parts.Memory is >= MinMemory and <= MaxMemory
+            ? null
+            : $"An Argon2id secret's memory must be {MinMemory}–{MaxMemory} KiB.",
+        parts => (long)parts.Memory!.Value * parts.Passes!.Value is >= MinWork and <= MaxWork
+            ? null
+            : $"An Argon2id secret's memory × passes must be {MinWork}–{MaxWork}.",
+        parts => parts.Parallelism is >= 1 and <= MaxParallelism
+            ? null
+            : $"An Argon2id secret's lanes must be 1–{MaxParallelism}.",
+        parts => parts.SaltLength == SaltLength && parts.HashLength == HashLength
+            ? null
+            : $"An Argon2id secret needs a {SaltLength}-byte salt and a {HashLength}-byte hash.",
+    ];
+
     private static string? Problem(ClientSecret stored)
     {
-        if (stored.Value is not { Length: <= MaxValueLength }
-            || !PhcString.TryParse(stored.Value, out var phc)
-            || phc.Version != Version
-            || phc.Parameters is not [{ Key: "m", Value: var m }, { Key: "t", Value: var t }, { Key: "p", Value: var p }]
-            || !TryReadInt(m, out var memory) || !TryReadInt(t, out var passes) || !TryReadInt(p, out var parallelism))
-        {
-            return $"An Argon2id secret is not $argon2id$v={Version}$m=<KiB>,t=<passes>,p=<lanes>$<salt>$<hash>.";
-        }
+        if (stored.Value is not { Length: <= MaxValueLength } || !PhcString.TryParse(stored.Value, out var phc))
+            return Shape;
 
-        var work = (long)memory * passes;
-        if (memory is < MinMemory or > MaxMemory || passes < 1 || work is < MinWork or > MaxWork || parallelism is < 1 or > MaxParallelism)
-        {
-            return $"An Argon2id secret has m={memory}, t={passes}, p={parallelism}: memory must be " +
-                $"{MinMemory}–{MaxMemory} KiB, memory × passes {MinWork}–{MaxWork}, and lanes 1–{MaxParallelism}.";
-        }
+        var parts = phc.Parameters is [{ Key: "m", Value: var m }, { Key: "t", Value: var t }, { Key: "p", Value: var p }]
+            ? new Parts(phc.Version, IntOf(m), IntOf(t), IntOf(p), phc.Salt.Length, phc.Hash.Length)
+            : new Parts(phc.Version, null, null, null, phc.Salt.Length, phc.Hash.Length);
 
-        return phc.Salt.Length != SaltLength || phc.Hash.Length != HashLength
-            ? $"An Argon2id secret needs a {SaltLength}-byte salt and a {HashLength}-byte hash."
-            : null;
+        return Rules.Select(rule => rule(parts)).FirstOrDefault(problem => problem is not null);
     }
 
-    private static bool TryReadInt(string text, out int value) =>
-        int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value);
+    private static int? IntOf(string text) =>
+        int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var value) ? value : null;
 }

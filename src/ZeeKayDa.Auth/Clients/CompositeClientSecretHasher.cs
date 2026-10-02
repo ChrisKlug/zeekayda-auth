@@ -242,41 +242,49 @@ internal sealed class CompositeClientSecretHasher : IClientSecretFactory
     private static IReadOnlyDictionary<string, IClientSecretHasher> IndexByAlgorithmId(
         IReadOnlyList<IClientSecretHasher> hashers)
     {
+        var failures = hashers
+            .SelectMany(hasher => DeclarationRules.Select(rule => rule(hasher)))
+            .OfType<ZeeKayDaConfigurationFailure>()
+            .ToList();
+
         var byId = new Dictionary<string, IClientSecretHasher>(StringComparer.Ordinal);
-        var failures = new List<ZeeKayDaConfigurationFailure>();
+        var declared = hashers.SelectMany(hasher =>
+            IdsOf(hasher).OfType<string>().Where(PhcString.IsName).Select(id => (Hasher: hasher, Id: id)));
 
-        foreach (var hasher in hashers)
+        foreach (var (hasher, id) in declared)
         {
-            var ids = hasher.AlgorithmIds ?? new HashSet<string>();
-            if (ids.Count == 0)
-            {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "configuration.hashers.no_algorithm_ids",
-                    $"The IClientSecretHasher '{hasher.GetType().FullName}' declares no AlgorithmIds, so no " +
-                    "stored secret can ever reach it."));
-            }
-
-            foreach (var id in ids)
-            {
-                if (id is null || !PhcString.IsName(id))
-                {
-                    failures.Add(new ZeeKayDaConfigurationFailure(
-                        "configuration.hashers.invalid_algorithm_id",
-                        $"The IClientSecretHasher '{hasher.GetType().FullName}' declares an algorithm id that " +
-                        "is not 1–32 characters from [a-z0-9-]."));
-                }
-                else if (!byId.TryAdd(id, hasher))
-                {
-                    failures.Add(new ZeeKayDaConfigurationFailure(
-                        "configuration.hashers.duplicate_algorithm_id",
-                        $"The algorithm id '{id}' is declared by both '{byId[id].GetType().FullName}' and " +
-                        $"'{hasher.GetType().FullName}'. Each id must belong to exactly one registered hasher."));
-                }
-            }
+            if (!byId.TryAdd(id, hasher))
+                failures.Add(DuplicateId(id, byId[id], hasher));
         }
 
         return failures.Count > 0 ? throw new ZeeKayDaConfigurationException([.. failures]) : byId;
     }
+
+    private static readonly Func<IClientSecretHasher, ZeeKayDaConfigurationFailure?>[] DeclarationRules =
+    [
+        hasher => hasher.AlgorithmIds is { Count: > 0 }
+            ? null
+            : new ZeeKayDaConfigurationFailure(
+                "configuration.hashers.no_algorithm_ids",
+                $"The IClientSecretHasher '{hasher.GetType().FullName}' declares no AlgorithmIds, so no " +
+                "stored secret can ever reach it."),
+        hasher => IdsOf(hasher).All(PhcString.IsName)
+            ? null
+            : new ZeeKayDaConfigurationFailure(
+                "configuration.hashers.invalid_algorithm_id",
+                $"The IClientSecretHasher '{hasher.GetType().FullName}' declares an algorithm id that " +
+                "is not 1–32 characters from [a-z0-9-]."),
+    ];
+
+    private static IEnumerable<string?> IdsOf(IClientSecretHasher hasher) =>
+        (IEnumerable<string?>?)hasher.AlgorithmIds ?? [];
+
+    private static ZeeKayDaConfigurationFailure DuplicateId(
+        string id, IClientSecretHasher first, IClientSecretHasher second) =>
+        new(
+            "configuration.hashers.duplicate_algorithm_id",
+            $"The algorithm id '{id}' is declared by both '{first.GetType().FullName}' and " +
+            $"'{second.GetType().FullName}'. Each id must belong to exactly one registered hasher.");
 
     private static ClientSecret CreateTimingDecoy(
         IReadOnlyDictionary<string, IClientSecretHasher> hashersById, IClientSecretHasher hasher)

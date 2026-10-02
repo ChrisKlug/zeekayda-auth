@@ -1,8 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Clients;
 
@@ -30,9 +28,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// <see cref="IOptionsMonitor{TOptions}"/> that validation runs through, so it trusts the value.
 /// </para>
 /// </remarks>
-internal sealed class Pbkdf2ClientSecretHasher(
-    IOptionsMonitor<Pbkdf2ClientSecretHasherOptions> options,
-    SanitizingLogger<Pbkdf2ClientSecretHasher> logger)
+internal sealed class Pbkdf2ClientSecretHasher(IOptionsMonitor<Pbkdf2ClientSecretHasherOptions> options)
     : IClientSecretHasher
 {
     /// <summary>
@@ -88,25 +84,18 @@ internal sealed class Pbkdf2ClientSecretHasher(
     public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
     {
         // Defence-in-depth: reject an empty presented span to guard against a stored hash of "".
-        if (presented.IsEmpty || Read(stored.Value) is not { } parts)
+        if (presented.IsEmpty || Read(stored.Value, out _) is not { Iterations: { } iterations } parts)
             return false;
 
-        // A legitimately created secret can never exceed MaxIterations (the options validator refuses
-        // it), so a higher value is a corrupt or malicious record. Deriving would risk a CPU-bound
-        // denial of service on every verification for that client.
-        if (parts.Iterations > MaxIterations)
-        {
-            logger.LogWarning(
-                "Pbkdf2ClientSecretHasher: stored secret has iteration count {Iterations} " +
-                "which exceeds the maximum of {MaxIterations}. Verification rejected.",
-                parts.Iterations, MaxIterations);
+        // Validation refuses such a secret before it is ever served; this is the last line, because
+        // deriving would cost every verification for that client a CPU-bound denial of service.
+        if (iterations > MaxIterations)
             return false;
-        }
 
         var expected = Rfc2898DeriveBytes.Pbkdf2(
             presented,
             parts.Salt.Span,
-            parts.Iterations,
+            iterations,
             HashAlgorithmName.SHA256,
             HashLength);
 
@@ -116,26 +105,23 @@ internal sealed class Pbkdf2ClientSecretHasher(
     /// <inheritdoc/>
     public IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored)
     {
-        if (Read(stored.Value) is not { } parts)
+        if (Read(stored.Value, out var problem) is not { Iterations: { } iterations })
         {
-            yield return new ZeeKayDaConfigurationFailure(
-                "client.credentials.pbkdf2_malformed",
-                $"A PBKDF2 secret is not of the form $pbkdf2-sha256$i=<iterations>$<salt>$<hash> with a " +
-                $"{SaltLength}-byte salt and a {HashLength}-byte hash, in unpadded base64.");
+            yield return new ZeeKayDaConfigurationFailure("client.credentials.pbkdf2_malformed", problem!);
             yield break;
         }
 
-        if (parts.Iterations < MinIterations)
+        if (iterations < MinIterations)
             yield return new ZeeKayDaConfigurationFailure(
                 "client.credentials.pbkdf2_iterations_below_minimum",
-                $"A PBKDF2 secret has {parts.Iterations:N0} iterations, " +
+                $"A PBKDF2 secret has {iterations:N0} iterations, " +
                 $"which is below the minimum of {MinIterations:N0}. " +
                 "Secrets with insufficient iterations do not provide adequate brute-force resistance (NIST SP 800-132).");
 
-        if (parts.Iterations > MaxIterations)
+        if (iterations > MaxIterations)
             yield return new ZeeKayDaConfigurationFailure(
                 "client.credentials.pbkdf2_iterations_above_maximum",
-                $"A PBKDF2 secret has {parts.Iterations:N0} iterations, " +
+                $"A PBKDF2 secret has {iterations:N0} iterations, " +
                 $"which exceeds the maximum of {MaxIterations:N0}. " +
                 "Verify rejects secrets above this threshold, so the secret can never authenticate.");
     }
@@ -174,28 +160,45 @@ internal sealed class Pbkdf2ClientSecretHasher(
             hash,
             [new(IterationsParameter, iterations.ToString(CultureInfo.InvariantCulture))]).ToString());
 
+    private const string NotAPhcString =
+        "A PBKDF2 secret is not a PHC string: $pbkdf2-sha256$i=<iterations>$<salt>$<hash>, in unpadded base64.";
+
+    /// <summary>A PBKDF2 secret's fields, each read once from its PHC string.</summary>
+    private sealed record Pbkdf2Parts(string Id, int? Version, int? Iterations, ReadOnlyMemory<byte> Salt, ReadOnlyMemory<byte> Hash);
+
+    // What a stored PBKDF2 secret must be. Iteration bounds are not here: they have their own codes.
+    private static readonly Func<Pbkdf2Parts, string?>[] Rules =
+    [
+        parts => parts.Id == AlgorithmId ? null : $"A PBKDF2 secret must have the id {AlgorithmId}.",
+        parts => parts.Version is null ? null : "A PBKDF2 secret has no version field.",
+        parts => parts.Iterations is not null
+            ? null
+            : $"A PBKDF2 secret needs exactly one parameter, {IterationsParameter}=<iterations>, a positive whole number.",
+        parts => parts.Salt.Length == SaltLength ? null : $"A PBKDF2 secret needs a {SaltLength}-byte salt.",
+        parts => parts.Hash.Length == HashLength ? null : $"A PBKDF2 secret needs a {HashLength}-byte hash.",
+    ];
+
     /// <summary>
-    /// The parts of a well-formed PBKDF2 secret, or <see langword="null"/>. Well-formed means our id,
-    /// no version, exactly one parameter — a positive iteration count — and the salt and hash
-    /// lengths this hasher writes. Iteration bounds are not checked here: they have their own
-    /// failure codes.
+    /// The parts of a well-formed PBKDF2 secret, or <see langword="null"/> with the first rule it
+    /// breaks in <paramref name="problem"/>.
     /// </summary>
-    private static Pbkdf2Parts? Read(string? value)
+    private static Pbkdf2Parts? Read(string? value, out string? problem)
     {
-        if (!PhcString.TryParse(value, out var phc)
-            || phc.Id != AlgorithmId
-            || phc.Version is not null
-            || phc.Parameters is not [{ Key: IterationsParameter, Value: var iterationsText }]
-            || !int.TryParse(iterationsText, NumberStyles.None, CultureInfo.InvariantCulture, out var iterations)
-            || iterations <= 0
-            || phc.Salt.Length != SaltLength
-            || phc.Hash.Length != HashLength)
+        if (!PhcString.TryParse(value, out var phc))
         {
+            problem = NotAPhcString;
             return null;
         }
 
-        return new Pbkdf2Parts(iterations, phc.Salt, phc.Hash);
+        var parts = new Pbkdf2Parts(phc.Id, phc.Version, IterationsOf(phc.Parameters), phc.Salt, phc.Hash);
+        problem = Rules.Select(rule => rule(parts)).FirstOrDefault(broken => broken is not null);
+        return problem is null ? parts : null;
     }
 
-    private sealed record Pbkdf2Parts(int Iterations, ReadOnlyMemory<byte> Salt, ReadOnlyMemory<byte> Hash);
+    private static int? IterationsOf(IReadOnlyList<KeyValuePair<string, string>> parameters) =>
+        parameters is [{ Key: IterationsParameter, Value: var text }]
+        && int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var iterations)
+        && iterations > 0
+            ? iterations
+            : null;
 }

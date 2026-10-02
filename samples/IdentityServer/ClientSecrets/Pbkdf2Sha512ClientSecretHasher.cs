@@ -28,11 +28,11 @@ public sealed class Pbkdf2Sha512ClientSecretHasher : IClientSecretHasher
 
     public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented)
     {
-        if (Read(stored) is not { } parts || parts.Iterations > MaxIterations)
+        if (Read(stored) is not { Iterations: { } iterations } parts || iterations > MaxIterations)
             return false;
 
         var derived = Rfc2898DeriveBytes.Pbkdf2(
-            presented, parts.Salt.Span, parts.Iterations, HashAlgorithmName.SHA512, HashLength);
+            presented, parts.Salt.Span, iterations, HashAlgorithmName.SHA512, HashLength);
         return CryptographicOperations.FixedTimeEquals(derived, parts.Hash.Span);
     }
 
@@ -62,18 +62,25 @@ public sealed class Pbkdf2Sha512ClientSecretHasher : IClientSecretHasher
         }
     }
 
-    private static (int Iterations, ReadOnlyMemory<byte> Salt, ReadOnlyMemory<byte> Hash)? Read(ClientSecret stored)
-    {
-        if (!PhcString.TryParse(stored.Value, out var phc)
-            || phc.Parameters is not [{ Key: IterationsParameter, Value: var text }]
-            || !int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var iterations)
-            || iterations <= 0
-            || phc.Salt.Length != SaltLength
-            || phc.Hash.Length != HashLength)
-        {
-            return null;
-        }
+    private sealed record Parts(int? Iterations, ReadOnlyMemory<byte> Salt, ReadOnlyMemory<byte> Hash);
 
-        return (iterations, phc.Salt, phc.Hash);
-    }
+    private static readonly Func<Parts, bool>[] Rules =
+    [
+        parts => parts.Iterations is > 0,
+        parts => parts.Salt.Length == SaltLength,
+        parts => parts.Hash.Length == HashLength,
+    ];
+
+    private static Parts? Read(ClientSecret stored) =>
+        PhcString.TryParse(stored.Value, out var phc)
+        && new Parts(IterationsOf(phc), phc.Salt, phc.Hash) is var parts
+        && Rules.All(rule => rule(parts))
+            ? parts
+            : null;
+
+    private static int? IterationsOf(PhcString phc) =>
+        phc.Parameters is [{ Key: IterationsParameter, Value: var text }]
+        && int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var iterations)
+            ? iterations
+            : null;
 }

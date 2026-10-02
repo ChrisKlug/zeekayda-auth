@@ -1,8 +1,6 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
-using ZeeKayDa.Auth.Logging;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
 
@@ -18,12 +16,10 @@ public sealed class Pbkdf2ClientSecretHasherTests
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private static Pbkdf2ClientSecretHasher CreateHasher(
-        int iterations = Pbkdf2ClientSecretHasherOptions.DefaultIterations,
-        SanitizingLogger<Pbkdf2ClientSecretHasher>? logger = null)
+        int iterations = Pbkdf2ClientSecretHasherOptions.DefaultIterations)
         => new(
             new FixedOptionsMonitor<Pbkdf2ClientSecretHasherOptions>(
-                new Pbkdf2ClientSecretHasherOptions { Iterations = iterations }),
-            logger ?? NullSanitizingLogger<Pbkdf2ClientSecretHasher>.Instance);
+                new Pbkdf2ClientSecretHasherOptions { Iterations = iterations }));
 
     private static ClientSecret Pbkdf2Secret(int iterations) =>
         Pbkdf2ClientSecretHasher.Format(
@@ -146,17 +142,6 @@ public sealed class Pbkdf2ClientSecretHasherTests
             .Should().BeFalse();
     }
 
-    [Fact]
-    public void Verify_logs_warning_when_stored_iterations_are_above_max()
-    {
-        var logger = new CapturingSanitizingLogger<Pbkdf2ClientSecretHasher>();
-        var hasher = CreateHasher(logger: logger);
-
-        hasher.Verify(Pbkdf2Secret(Pbkdf2ClientSecretHasher.MaxIterations + 1), "any-secret".AsSpan());
-
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning);
-    }
-
     // ── Constructor guard ────────────────────────────────────────────────────────────────────────
 
     [Theory]
@@ -252,6 +237,18 @@ public sealed class Pbkdf2ClientSecretHasherTests
         failures.Should().ContainSingle().Which.Should().Match<ZeeKayDaConfigurationFailure>(f =>
             f.Code == "client.credentials.pbkdf2_malformed"
             && (string.IsNullOrEmpty(value) || !f.Message.Contains(value)));
+    }
+
+    [Theory]
+    [InlineData("$pbkdf2-sha256$v=1$i=600000$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY", "no version field")]
+    [InlineData("$pbkdf2-sha256$i=abc$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY", "exactly one parameter")]
+    [InlineData("$pbkdf2-sha256$i=600000$AAECAwQFBgcICQoLDA0O$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTYweY", "16-byte salt")]
+    [InlineData("$pbkdf2-sha256$i=600000$AAECAwQFBgcICQoLDA0ODw$7xdxRO7JQgy8EJPSqLNEqSvFBtDU7JwCjdGfgyTY", "32-byte hash")]
+    [InlineData("plaintext-secret", "not a PHC string")]
+    public void ValidateStoredSecret_names_the_first_rule_a_malformed_value_breaks(string value, string rule)
+    {
+        CreateHasher().ValidateStoredSecret(new ClientSecret(value)).Should().ContainSingle()
+            .Which.Message.Should().Contain(rule);
     }
 
     // ── Timing decoy ─────────────────────────────────────────────────────────────────────────────

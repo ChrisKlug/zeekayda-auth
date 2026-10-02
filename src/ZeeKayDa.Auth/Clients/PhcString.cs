@@ -108,95 +108,105 @@ public sealed class PhcString
     /// well-formed PHC string with both a salt and a hash, and never throws.
     /// </summary>
     /// <remarks>
-    /// Strict: base64 must be canonical, so a parsed string formats back to exactly
-    /// <paramref name="value"/>.
+    /// Strict: base64 must be canonical and the version has no leading zero, so a parsed string
+    /// formats back to exactly <paramref name="value"/>.
     /// </remarks>
     public static bool TryParse(string? value, [NotNullWhen(true)] out PhcString? result)
     {
-        result = null;
-        if (value is null || !value.StartsWith('$'))
-            return false;
+        result = FieldsOf(value) is { } fields && FieldRules.All(rule => rule(fields))
+            ? new PhcString(
+                fields.Id,
+                FromUnpaddedBase64(fields.Salt),
+                FromUnpaddedBase64(fields.Hash),
+                fields.Parameters is null ? null : ParametersOf(fields.Parameters),
+                fields.Version is null ? null : int.Parse(fields.Version, CultureInfo.InvariantCulture))
+            : null;
 
-        // [0] is the empty string before the leading '$'; then id, up to two optional fields, salt, hash.
-        var fields = value.Split('$');
-        if (fields.Length is < 4 or > 6)
-            return false;
-
-        var id = fields[1];
-        var optional = fields[2..^2];
-        int? version = null;
-        IReadOnlyList<KeyValuePair<string, string>> parameters = [];
-
-        if (optional.Length > 0 && TryParseVersion(optional[0], out var parsedVersion))
-        {
-            version = parsedVersion;
-            optional = optional[1..];
-        }
-
-        if (optional.Length > 1)
-            return false;
-
-        if (optional.Length == 1 && !TryParseParameters(optional[0], out parameters))
-            return false;
-
-        if (!IsName(id)
-            || !TryFromUnpaddedBase64(fields[^2], out var salt)
-            || !TryFromUnpaddedBase64(fields[^1], out var hash)
-            || DescribeParameterProblem(parameters) is not null)
-        {
-            return false;
-        }
-
-        result = new PhcString(id, salt, hash, parameters, version);
-        return true;
+        return result is not null;
     }
 
-    private static bool TryParseVersion(string field, out int version)
+    /// <summary>The text of each field, split out of a PHC string before any of it is checked.</summary>
+    private sealed record Fields(string Id, string? Version, string? Parameters, string Salt, string Hash);
+
+    private static readonly Func<Fields, bool>[] FieldRules =
+    [
+        fields => IsName(fields.Id),
+        fields => fields.Version is null || IsVersion(fields.Version),
+        fields => fields.Parameters is null
+            || ParametersOf(fields.Parameters) is { } parameters && DescribeParameterProblem(parameters) is null,
+        fields => IsUnpaddedBase64(fields.Salt),
+        fields => IsUnpaddedBase64(fields.Hash),
+    ];
+
+    private static readonly Func<KeyValuePair<string, string>, string?>[] ParameterRules =
+    [
+        parameter => IsName(parameter.Key) ? null : "A parameter name must be 1–32 characters from [a-z0-9-].",
+        parameter => parameter.Key != "v"
+            ? null
+            : "A parameter must not be named 'v', which the format reserves for the version.",
+        parameter => parameter.Value is { Length: > 0 } text && text.All(IsValueChar)
+            ? null
+            : $"The value of parameter '{parameter.Key}' must be non-empty, from [a-zA-Z0-9/+.-].",
+    ];
+
+    private static readonly Func<string, bool>[] VersionRules =
+    [
+        text => text.Length > 0,
+        text => text.All(char.IsAsciiDigit),
+        // A leading zero would not survive formatting back.
+        text => text == "0" || text[0] != '0',
+        text => int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out _),
+    ];
+
+    private static readonly Func<string, bool>[] Base64Rules =
+    [
+        field => field.Length > 0,
+        field => field.Length % 4 != 1,
+        field => field.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '/'),
+        // Base64 has more than one spelling for the last few bits; only the canonical one round-trips.
+        field => ToUnpaddedBase64(FromUnpaddedBase64(field)) == field,
+    ];
+
+    // $<id>[$v=<version>][$<parameters>]$<salt>$<hash>; the first part is the empty text before the
+    // leading '$'. A first optional field starting "v=" is the version, whatever follows it.
+    private static Fields? FieldsOf(string? value)
     {
-        version = 0;
-        return field.StartsWith(VersionPrefix, StringComparison.Ordinal)
-            && field.Length > VersionPrefix.Length
-            && field.AsSpan(VersionPrefix.Length).IndexOfAnyExceptInRange('0', '9') < 0
-            && int.TryParse(field.AsSpan(VersionPrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out version);
+        if (value?.Split('$') is not ["", var id, .. var optional, var salt, var hash] || optional.Length > 2)
+            return null;
+
+        var version = optional is [var first, ..] && first.StartsWith(VersionPrefix, StringComparison.Ordinal)
+            ? first[VersionPrefix.Length..]
+            : null;
+        var rest = version is null ? optional : optional[1..];
+
+        return rest.Length <= 1 ? new Fields(id, version, rest.FirstOrDefault(), salt, hash) : null;
     }
 
-    private static bool TryParseParameters(string field, out IReadOnlyList<KeyValuePair<string, string>> parameters)
+    private static bool IsVersion(string text) => VersionRules.All(rule => rule(text));
+
+    // Null when a pair has no '='; names and values are checked by the parameter rules.
+    private static IReadOnlyList<KeyValuePair<string, string>>? ParametersOf(string field)
     {
-        var pairs = new List<KeyValuePair<string, string>>();
-        parameters = pairs;
-
-        foreach (var pair in field.Split(','))
-        {
-            var separator = pair.IndexOf('=', StringComparison.Ordinal);
-            if (separator < 0)
-                return false;
-
-            pairs.Add(new(pair[..separator], pair[(separator + 1)..]));
-        }
-
-        return true;
+        var pairs = field.Split(',').Select(pair => pair.Split('=', 2)).ToList();
+        return pairs.All(pair => pair.Length == 2)
+            ? [.. pairs.Select(pair => new KeyValuePair<string, string>(pair[0], pair[1]))]
+            : null;
     }
 
-    private static string? DescribeParameterProblem(IReadOnlyList<KeyValuePair<string, string>> parameters)
-    {
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var (name, value) in parameters)
-        {
-            if (name is null || !IsName(name))
-                return "A parameter name must be 1–32 characters from [a-z0-9-].";
-            if (name == "v")
-                return "A parameter must not be named 'v', which the format reserves for the version.";
-            if (!names.Add(name))
-                return $"The parameter '{name}' appears more than once.";
-            if (string.IsNullOrEmpty(value) || !value.All(IsValueChar))
-                return $"The value of parameter '{name}' must be non-empty, from [a-zA-Z0-9/+.-].";
-        }
+    private static string? DescribeParameterProblem(IReadOnlyList<KeyValuePair<string, string>> parameters) =>
+        parameters
+            .SelectMany(parameter => ParameterRules.Select(rule => rule(parameter)))
+            .FirstOrDefault(problem => problem is not null)
+        ?? RepeatedNameProblem(parameters);
 
-        return null;
-    }
+    private static string? RepeatedNameProblem(IReadOnlyList<KeyValuePair<string, string>> parameters) =>
+        parameters.GroupBy(parameter => parameter.Key, StringComparer.Ordinal).FirstOrDefault(group => group.Count() > 1)
+            is { } repeated
+            ? $"The parameter '{repeated.Key}' appears more than once."
+            : null;
 
-    internal static bool IsName(string value) =>
-        value.Length is > 0 and <= MaxNameLength
+    internal static bool IsName(string? value) =>
+        value is { Length: > 0 and <= MaxNameLength }
         && value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-');
 
     private static bool IsValueChar(char c) =>
@@ -205,19 +215,9 @@ public sealed class PhcString
     private static string ToUnpaddedBase64(ReadOnlySpan<byte> bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=');
 
-    private static bool TryFromUnpaddedBase64(string field, out byte[] bytes)
-    {
-        bytes = [];
-        if (field.Length == 0 || field.Length % 4 == 1
-            || !field.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '/'))
-        {
-            return false;
-        }
+    private static bool IsUnpaddedBase64(string field) => Base64Rules.All(rule => rule(field));
 
-        var padded = field.PadRight(field.Length + ((4 - (field.Length % 4)) % 4), '=');
-        bytes = Convert.FromBase64String(padded);
-
-        // Base64 has more than one spelling for the last few bits; only the canonical one round-trips.
-        return ToUnpaddedBase64(bytes) == field;
-    }
+    // Only for a field the Base64 rules accepted, or for checking that one round-trips.
+    private static byte[] FromUnpaddedBase64(string field) =>
+        Convert.FromBase64String(field.PadRight(field.Length + ((4 - (field.Length % 4)) % 4), '='));
 }

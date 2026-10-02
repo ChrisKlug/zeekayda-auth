@@ -116,6 +116,7 @@ public sealed class PhcStringTests
     [InlineData("$pbkdf2-sha256$i=600000$AAECAwQFBgcICQoLDA0ODw$+/8AEA")]
     [InlineData("$argon2id$v=19$m=65536,t=3,p=4$AAECAwQFBgcICQoLDA0ODw$+/8AEA")]
     [InlineData("$argon2id$v=19$AAECAwQFBgcICQoLDA0ODw$+/8AEA")]
+    [InlineData("$id$v=0$AAECAwQFBgcICQoLDA0ODw$+/8AEA")]
     public void A_parsed_string_formats_back_to_itself(string value)
     {
         PhcString.TryParse(value, out var phc).Should().BeTrue();
@@ -159,6 +160,9 @@ public sealed class PhcStringTests
     [InlineData("$id$i=$AAECAwQFBgcICQoLDA0ODw$+/8AEA")]
     [InlineData("$id$v=99999999999$AAECAwQFBgcICQoLDA0ODw$+/8AEA")]
     [InlineData("$id$v=+1$AAECAwQFBgcICQoLDA0ODw$+/8AEA")]
+    [InlineData("$id$v=019$AAECAwQFBgcICQoLDA0ODw$+/8AEA")]
+    [InlineData("$id$v=00$AAECAwQFBgcICQoLDA0ODw$+/8AEA")]
+    [InlineData("$id$v=$AAECAwQFBgcICQoLDA0ODw$+/8AEA")]
     [InlineData("$2b$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW")]
     public void TryParse_refuses_anything_that_is_not_a_well_formed_PHC_string(string? value)
     {
