@@ -53,7 +53,7 @@ public sealed class Pbkdf2Sha512ClientSecretHasher : IClientSecretHasher
         if (Read(stored) is not { } parts)
         {
             yield return new("sample.pbkdf2_sha512.malformed",
-                "A PBKDF2-SHA512 secret is not $pbkdf2-sha512$i=<iterations>$<salt>$<hash> with a 64-byte hash.");
+                "A PBKDF2-SHA512 secret is not $pbkdf2-sha512$i=<iterations>$<salt>$<hash> with a 16-byte salt and a 64-byte hash.");
         }
         else if (parts.Iterations is < Iterations or > MaxIterations)
         {
@@ -68,6 +68,7 @@ public sealed class Pbkdf2Sha512ClientSecretHasher : IClientSecretHasher
             || phc.Parameters is not [{ Key: IterationsParameter, Value: var text }]
             || !int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var iterations)
             || iterations <= 0
+            || phc.Salt.Length != SaltLength
             || phc.Hash.Length != HashLength)
         {
             return null;
