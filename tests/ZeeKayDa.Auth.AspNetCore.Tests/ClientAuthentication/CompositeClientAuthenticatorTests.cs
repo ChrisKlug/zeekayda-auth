@@ -348,7 +348,7 @@ public sealed class CompositeClientAuthenticatorTests
         var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
 
         result.Authenticated.Should().BeFalse();
-        hasher.CallCount.Should().BeGreaterThan(1,
+        hasher.CallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient,
             "a wrong credential is padded to the failure budget");
     }
 
@@ -561,14 +561,12 @@ public sealed class CompositeClientAuthenticatorTests
 
         var httpContext = CreateHttpContextWithBasicAuth("client-1:any", "client-1");
 
-        Func<Task> act = () =>
-            composite.AuthenticateAsync("client-1", httpContext, default).AsTask();
+        var act = () =>
+            composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken).AsTask();
 
-        await act.Should().NotThrowAsync("ClientSecretAuthenticator must return NotValid, never throw");
-
-        var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
+        var result = (await act.Should().NotThrowAsync("ClientSecretAuthenticator must return NotValid, never throw")).Which;
         result.Authenticated.Should().BeFalse();
-        hasher.CallCount.Should().BeGreaterThan(0,
+        hasher.CallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient,
             "a client with no credentials is padded to the failure budget");
     }
 
@@ -816,7 +814,7 @@ public sealed class CompositeClientAuthenticatorTests
         var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
 
         result.Authenticated.Should().BeFalse();
-        hasher.CallCount.Should().BeGreaterThan(1,
+        hasher.CallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient,
             "a wrong client_secret_post credential is padded to the failure budget");
     }
 
@@ -844,7 +842,7 @@ public sealed class CompositeClientAuthenticatorTests
         var result = await composite.AuthenticateAsync("client-1", httpContext, TestContext.Current.CancellationToken);
 
         result.Authenticated.Should().BeFalse();
-        hasher.CallCount.Should().BeGreaterThan(1,
+        hasher.CallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient,
             "the client_secret_post path is entered and padded — not the none fallback");
     }
 
