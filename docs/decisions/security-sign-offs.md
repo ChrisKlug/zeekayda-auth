@@ -1990,7 +1990,7 @@ Reverses the sanitizing-logger gate and the `IStartupCheck` rejection check reco
 - **Accepted residuals (maintainer):** a friend assembly could subclass the logger (first-party, not a boundary);
   a scoped factory returning a singleton check passes the lifetime check. No test.
 
-## 2026-10-02 — client secrets are self-describing PHC strings; hashers dispatch by algorithm id (#814, code frozen at `a647bd1`)
+## 2026-10-02 — client secrets are self-describing PHC strings; hashers dispatch by algorithm id (#814, code frozen at `1805d3f`)
 Copilot code, security and architecture lenses, the security and architect agents, the PR's Copilot and CodeQL review,
 and fix-diff verification of each round; no Critical.
 - A stored secret reaches only the hasher that declared its id, matched ordinally against the index built at startup; two
