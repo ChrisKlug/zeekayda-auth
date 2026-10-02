@@ -824,11 +824,15 @@ public sealed class TokenEndpointTests : IDisposable
         await ShouldBeErrorAsync(response, "invalid_client", HttpStatusCode.Unauthorized);
     }
 
-    /// <summary>Owns the <c>throws</c> algorithm id and throws from every verification.</summary>
+    /// <summary>
+    /// Owns the <c>throws</c> algorithm id and throws from every verification of a presented secret.
+    /// It refuses the empty one cleanly, so registration accepts it and the throw happens at request time.
+    /// </summary>
     private sealed class ThrowingVerifyHasher : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "throws" };
-        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) => throw new InvalidOperationException();
+        public bool Verify(ClientSecret stored, ReadOnlySpan<char> presented) =>
+            presented.IsEmpty ? false : throw new InvalidOperationException();
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$throws$x");
     }
 
