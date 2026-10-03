@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -28,6 +29,13 @@ internal sealed class ClientRegistrationValidator(
 {
     private static readonly Regex ClientIdPattern =
         new(@"^[A-Za-z0-9_\-.]+$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
+
+    // The resolver validates on every lookup, so an advisory written each time would let anyone
+    // who knows a client_id repeat it per request. Keyed by what the store returned, never by
+    // request input; cleared at the cap, which costs one repeat per advisory.
+    private const int MaxWarnedAdvisories = 16_384;
+
+    private readonly ConcurrentDictionary<(string ClientId, string Advisory, string? Detail), byte> _warned = new();
 
     /// <inheritdoc/>
     public void Validate(IClientWithCredentials client)
@@ -75,8 +83,10 @@ internal sealed class ClientRegistrationValidator(
             // where TLS already rules out the name-resolution risk the advice is about.
             // Suppressed when the URI broke a rule: a URI that is being rejected anyway should not
             // also generate advisory-warning noise.
-            if (RedirectUriValidator.ValidateRedirectUri(clientId, uriString, propertyName, failures) &&
-                RedirectUriRules.IsHttpLocalhost(uriString))
+            var isValidHttpLocalhost =
+                RedirectUriValidator.ValidateRedirectUri(clientId, uriString, propertyName, failures) &&
+                RedirectUriRules.IsHttpLocalhost(uriString);
+            if (isValidHttpLocalhost && FirstTime(clientId, "localhost-" + propertyName, uriString))
             {
                 logger.LogWarning(
                     "Client '{ClientId}' uses 'localhost' in {PropertyName}: '{Uri}'. " +
@@ -110,7 +120,7 @@ internal sealed class ClientRegistrationValidator(
     }
 
     /// <summary>Non-empty, at most 200 characters, and only <c>[A-Za-z0-9_\-.]</c>.</summary>
-    private static bool IsValidClientId(string? clientId) =>
+    internal static bool IsValidClientId(string? clientId) =>
         !string.IsNullOrEmpty(clientId)
         && clientId.Length <= 200
         && ClientIdPattern.IsMatch(clientId);
@@ -176,7 +186,8 @@ internal sealed class ClientRegistrationValidator(
 
         // Say so rather than passing silently. A host with no ring at all stays quiet: the protocol
         // endpoints refuse to start without one, so there is nothing a warning here would add.
-        if (!checkedAgainstServer && keyRing is not null)
+        var uncheckedAgainstRing = !checkedAgainstServer && keyRing is not null;
+        if (uncheckedAgainstRing && FirstTime(client.ClientId, "signing-unchecked"))
         {
             logger.LogWarning(
                 "Client '{ClientId}' declares AllowedSigningAlgorithms, but the signing key ring " +
@@ -218,7 +229,8 @@ internal sealed class ClientRegistrationValidator(
             return;
         }
 
-        if (value > options.Value.TokenEndpoint.AbsoluteFamilyLifetime)
+        if (value > options.Value.TokenEndpoint.AbsoluteFamilyLifetime
+            && FirstTime(client.ClientId, "lifetime-past-family", propertyName))
         {
             logger.LogWarning(
                 "Client '{ClientId}' has {PropertyName} set past TokenEndpoint.AbsoluteFamilyLifetime, " +
@@ -235,14 +247,30 @@ internal sealed class ClientRegistrationValidator(
     /// </summary>
     private void WarnOfRefreshWithoutIssuer(IClientWithCredentials client)
     {
-        if (client.AllowedGrantTypes.Any(grantType => grantType == GrantType.RefreshToken)
-            && !client.AllowedGrantTypes.Any(grantType => grantType == GrantType.AuthorizationCode))
+        var refreshWithoutIssuer = client.AllowedGrantTypes.Any(grantType => grantType == GrantType.RefreshToken)
+            && !client.AllowedGrantTypes.Any(grantType => grantType == GrantType.AuthorizationCode);
+        if (refreshWithoutIssuer && FirstTime(client.ClientId, "refresh-without-issuer"))
         {
             logger.LogWarning(
                 "Client '{ClientId}' allows the refresh_token grant but not authorization_code, the only grant " +
                 "that issues a refresh token, so it can use only refresh tokens issued before.",
                 client.ClientId);
         }
+    }
+
+    /// <summary>
+    /// <see langword="true"/> the first time an advisory is raised for a client, and
+    /// <see langword="false"/> for every repeat of it.
+    /// </summary>
+    private bool FirstTime(string clientId, string advisory, string? detail = null)
+    {
+        if (!_warned.TryAdd((clientId, advisory, detail), 0))
+            return false;
+
+        if (_warned.Count >= MaxWarnedAdvisories)
+            _warned.Clear();
+
+        return true;
     }
 
     private static void ValidateAllowedScopes(

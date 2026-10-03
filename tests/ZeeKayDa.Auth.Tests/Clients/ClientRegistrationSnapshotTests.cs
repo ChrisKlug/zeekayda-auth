@@ -21,7 +21,7 @@ public class ClientRegistrationSnapshotTests
     public void Snapshot_covers_every_IClientRegistration_member()
     {
         // Type.GetProperties() on an interface does not return inherited members, so the whole
-        // implemented-interface set is walked — the same reason the fingerprint's guard does it.
+        // implemented-interface set is walked.
         DeclaredProperties().Select(p => p.Name).Should().BeEquivalentTo(MemberMutations().Keys);
     }
 
@@ -29,21 +29,20 @@ public class ClientRegistrationSnapshotTests
     /// The guard that catches a member the snapshot forgot to copy. Such a member is not a compile
     /// error — <see cref="IClient"/>'s newer members are default interface implementations,
     /// so an uncopied one silently answers the interface default instead of the store's value.
-    /// Fingerprint equality is the check because the fingerprint covers every member and has its
-    /// own guard saying so, and the fixture leaves no member at a default an omission could match.
+    /// The fixture leaves no member at a default an omission could match.
     /// </summary>
     [Fact]
     public void A_snapshot_carries_every_value_of_the_registration_it_copied()
     {
         var registration = FullyPopulated();
 
-        ClientRegistrationFingerprint.Compute(ClientRegistrationSnapshot.Of(registration))
-            .Should().Be(ClientRegistrationFingerprint.Compute(registration));
+        ValuesOf(ClientRegistrationSnapshot.Of(registration))
+            .Should().BeEquivalentTo(ValuesOf(registration));
     }
 
     /// <summary>
     /// Keeps the test above honest. A member the fixture left at <see langword="false"/>,
-    /// <see langword="null"/> or empty would fingerprint identically whether it was copied or
+    /// <see langword="null"/> or empty would compare identically whether it was copied or
     /// forgotten, so the omission would pass unnoticed.
     /// </summary>
     [Fact]
@@ -72,16 +71,16 @@ public class ClientRegistrationSnapshotTests
     {
         var registration = new MutableRegistration();
         var snapshot = ClientRegistrationSnapshot.Of(registration);
-        var before = ClientRegistrationFingerprint.Compute(snapshot);
+        var before = ValuesOf(snapshot);
 
         mutate(registration);
 
         // Guards the theory against a mutation that changes nothing: unless the live registration
-        // now fingerprints differently, the assertion below would pass vacuously.
-        ClientRegistrationFingerprint.Compute(registration)
-            .Should().NotBe(before, $"the {member} mutation must be a real change");
-        ClientRegistrationFingerprint.Compute(snapshot)
-            .Should().Be(before, $"{member} is copied, not read through to the store's instance");
+        // now differs, the assertion below would pass vacuously.
+        ValuesOf(registration).Should().NotBeEquivalentTo(
+            before, $"the {member} mutation must be a real change");
+        ValuesOf(snapshot).Should().BeEquivalentTo(
+            before, $"{member} is copied, not read through to the store's instance");
     }
 
     [Fact]
@@ -216,6 +215,21 @@ public class ClientRegistrationSnapshotTests
     /// inherited members, so the whole implemented-interface set is walked — naming the interfaces
     /// by hand would let a member on a newly inserted base interface escape both guards.
     /// </summary>
+    /// <summary>
+    /// Every member's value, collections materialized into lists so a later edit to the
+    /// registration's own set cannot reach back into what was captured.
+    /// </summary>
+    private static Dictionary<string, object?> ValuesOf(IClientWithCredentials registration) =>
+        DeclaredProperties().ToDictionary(
+            p => p.Name,
+            p => p.GetValue(registration) switch
+            {
+                string text => text,
+                IEnumerable values => values.Cast<object>().ToList(),
+                var value => value,
+            },
+            StringComparer.Ordinal);
+
     private static IEnumerable<PropertyInfo> DeclaredProperties() =>
         typeof(IClientWithCredentials).GetInterfaces()
             .Append(typeof(IClientWithCredentials))
@@ -225,7 +239,7 @@ public class ClientRegistrationSnapshotTests
     /// <summary>
     /// A registration with every member set away from the value an uncopied one would hold. It is
     /// not a valid registration — a public client with a credential, for one — which neither the
-    /// snapshot nor the fingerprint cares about; only the validator does.
+    /// snapshot nor this test cares about; only the validator does.
     /// </summary>
     private static MutableRegistration FullyPopulated() => new()
     {

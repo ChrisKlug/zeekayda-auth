@@ -53,8 +53,9 @@ public interface IClientSecretHasher
     /// it cannot parse, or a work factor below its floor. Empty when the secret is acceptable.
     /// </summary>
     /// <remarks>
-    /// Runs wherever a client registration is validated. The framework puts the client id in front
-    /// of each message. Every message reaches the operator's log verbatim, so it describes the
+    /// Runs on every client lookup, unauthenticated requests included, so it parses and never
+    /// derives: a hash computed here is CPU any caller can spend. The framework puts the client id
+    /// in front of each message. Every message reaches the operator's log verbatim, so it describes the
     /// problem and never contains any part of the stored value, or a caught exception's message.
     /// </remarks>
     IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored) => [];

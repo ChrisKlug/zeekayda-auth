@@ -13,10 +13,8 @@ namespace ZeeKayDa.Auth.Clients;
 /// addition of <c>email</c> through, since no scope lists <c>email</c> for
 /// the access token, and an API would then read a claim the user never consented to. Compared
 /// ignoring case, because a consuming <c>ClaimsPrincipal</c> does: an addition of <c>Email</c>
-/// would otherwise deliver what a client's <c>FindFirst("email")</c> reads. Runs on every lookup
-/// that selects claims rather than once at registration: the registration validator's verdict is
-/// memoised by fingerprint and cannot see the scope repository, so a scope added later would
-/// leave a stale "valid".
+/// would otherwise deliver what a client's <c>FindFirst("email")</c> reads. Runs where claims are
+/// selected rather than in the registration validator, which cannot see the scope repository.
 /// </remarks>
 internal static class ClientClaimAdditions
 {

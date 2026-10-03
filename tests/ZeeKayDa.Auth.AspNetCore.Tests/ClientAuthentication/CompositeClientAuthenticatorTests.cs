@@ -858,10 +858,11 @@ public sealed class CompositeClientAuthenticatorTests
     public async Task AuthenticateAsync_returns_Authenticated_true_when_Basic_credentials_are_percent_encoded()
     {
         var secret = FakeSecret();
-        // client_id contains a slash and secret contains @; both must be percent-encoded in Basic.
+        // The secret contains @, which Basic percent-encodes; the client_id is encoded needlessly,
+        // which a decoder must accept all the same. A client_id needing encoding is malformed.
         var client = new MinimalClient
         {
-            ClientId = "client/one",
+            ClientId = "client-one",
             Secrets = [secret],
             IsPublic = false,
             AllowedTokenEndpointAuthMethods =
@@ -869,16 +870,16 @@ public sealed class CompositeClientAuthenticatorTests
         };
         var (composite, _) = CreateCompositeWithHasher(client, new FakeHasher(true));
 
-        // "client%2Fone:pass%40word" decodes to "client/one:pass@word"
+        // "client%2Done:pass%40word" decodes to "client-one:pass@word"
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers.Authorization =
-            "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("client%2Fone:pass%40word"));
+            "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("client%2Done:pass%40word"));
         httpContext.Request.Form = new FormCollection(new Dictionary<string, StringValues>
         {
-            ["client_id"] = "client/one",
+            ["client_id"] = "client-one",
         });
 
-        var result = await composite.AuthenticateAsync("client/one", httpContext, TestContext.Current.CancellationToken);
+        var result = await composite.AuthenticateAsync("client-one", httpContext, TestContext.Current.CancellationToken);
 
         result.Authenticated.Should().BeTrue(
             "percent-encoded Basic credentials must be URL-decoded per RFC 6749 §2.3.1");
@@ -1260,8 +1261,6 @@ public sealed class CompositeClientAuthenticatorTests
         var result = await composite.AuthenticateAsync("corrupt-client", httpContext, TestContext.Current.CancellationToken);
 
         result.Authenticated.Should().BeFalse();
-        // The validator's empty-secret probe also calls the hasher, with an empty value; count only
-        // derivations, which is what the padding performs.
         hasher.DerivationCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
         resolverLogger.Entries.Should().ContainSingle(e => e.Message.Contains(TrinityViolation));
     }

@@ -14,8 +14,7 @@ internal static class ClientCredentialValidator
 {
     /// <summary>
     /// The rules for one secret, in order; the first that finds anything reports it and the rest do
-    /// not run. The hasher's own checks come before the empty-secret probe, so a value its hasher
-    /// refuses — an excessive work factor included — is never verified.
+    /// not run.
     /// </summary>
     private static readonly Func<SecretCheck, IReadOnlyList<ZeeKayDaConfigurationFailure>>[] SecretRules =
     [
@@ -23,7 +22,6 @@ internal static class ClientCredentialValidator
         IsMalformed,
         HasNoHasher,
         IsRefusedByItsHasher,
-        FailsTheEmptySecretProbe,
     ];
 
     internal static void Validate(
@@ -94,7 +92,4 @@ internal static class ClientCredentialValidator
 
     private static IReadOnlyList<ZeeKayDaConfigurationFailure> IsRefusedByItsHasher(SecretCheck check) =>
         check.Registry.ValidateStoredSecret(check.Stored, check.ClientId);
-
-    private static IReadOnlyList<ZeeKayDaConfigurationFailure> FailsTheEmptySecretProbe(SecretCheck check) =>
-        check.Registry.EmptySecretProblem(check.Stored, check.ClientId) is { } problem ? [problem] : [];
 }

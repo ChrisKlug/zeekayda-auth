@@ -430,9 +430,9 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_key_the_client_no_longer_accepts_is_refused_before_any_token_is_issued()
     {
-        // The client passed registration against an RS256 key; the ring then rotates to ES256.
-        // The endpoint must refuse before the access token is issued, so an issuer that persists
-        // access tokens is never handed one whose ID token will be refused.
+        // The client passed validation against an RS256 key; the ring then rotates to ES256 before
+        // the request signs. The endpoint must refuse before the access token is issued, so an
+        // issuer that persists access tokens is never handed one whose ID token will be refused.
         var ring = new SwitchableRing(_time);
         var accessTokens = new CountingAccessTokenIssuer();
         using var host = new EndpointHost(
@@ -445,18 +445,11 @@ public sealed class TokenEndpointTests : IDisposable
                     AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 },
                 }));
                 builder.Services.AddSingleton<ISigningKeyRing>(ring);
+                builder.Services.AddSingleton<IClientRegistrationValidator>(new RotateAfterValidation(ring));
                 builder.Services.AddKeyedSingleton<ITokenIssuer>(TokenKind.AccessToken, accessTokens);
             });
         var code = await SeedCodeWithAsync(host);
-
-        // The client is resolved once while the ring still offers RS256, which is what the
-        // authorization request did before the code was issued. ValidatedClientResolver caches its
-        // verdict, so without this the rotation below would make the token request fail client
-        // resolution instead of reaching the signing refusal this test is about.
-        (await host.Resolve<ValidatedClientResolver>().FindClientWithCredentialsAsync(PublicClient, Cancellation))
-            .Should().NotBeNull();
-
-        ring.SwitchToEs256();
+        ring.SwitchToEs256AfterNextValidation();
 
         var response = await PostTokenWithAsync(host, TokenForm(code));
 
@@ -979,6 +972,26 @@ public sealed class TokenEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_client_store_outage_is_a_server_error_not_invalid_client()
+    {
+        var repository = new OutageRepository(PublicRegistration());
+        using var host = new EndpointHost(
+            configureBuilder: builder =>
+            {
+                builder.Services.AddSingleton<TimeProvider>(_time);
+                builder.Services.AddSingleton<IClientRepository>(repository);
+            });
+        var code = await SeedCodeWithAsync(host);
+        repository.Down = true;
+
+        var act = () => PostTokenWithAsync(host, TokenForm(code));
+
+        // Unhandled, which the host answers with a 500; the test server rethrows it instead.
+        // invalid_client would tell every caller their credentials are wrong while the store is down.
+        await act.Should().ThrowAsync<TimeoutException>();
+    }
+
+    [Fact]
     public async Task A_replay_whose_family_revocation_fails_is_still_refused_and_the_failure_is_logged()
     {
         var code = await SeedCodeAsync();
@@ -1029,6 +1042,16 @@ public sealed class TokenEndpointTests : IDisposable
         }
     }
 
+    private sealed class OutageRepository(IClientWithCredentials registration) : IClientRepository
+    {
+        public volatile bool Down;
+
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Down
+                ? throw new TimeoutException("The client store did not answer.")
+                : Task.FromResult<IClientWithCredentials?>(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
+    }
+
     /// <summary>
     /// A ring over two real static rings, RS256 first and ES256 on demand: the one runtime
     /// rotation the static ring cannot perform, so the endpoint's own pre-issuance check can be
@@ -1047,7 +1070,15 @@ public sealed class TokenEndpointTests : IDisposable
             _active = _rsa;
         }
 
-        public void SwitchToEs256() => _active = _ec;
+        private volatile bool _armed;
+
+        public void SwitchToEs256AfterNextValidation() => _armed = true;
+
+        public void ClientValidated()
+        {
+            if (_armed)
+                _active = _ec;
+        }
 
         public SigningKeySet Current => _active.Current;
 
@@ -1061,6 +1092,15 @@ public sealed class TokenEndpointTests : IDisposable
         }
 
         SigningKeySet? ISigningKeyRing.CurrentOrNull => _active.CurrentOrNull;
+    }
+
+    /// <summary>
+    /// A host validator, which runs after the framework's: rotating here lands the rotation between
+    /// the client passing validation and the request signing.
+    /// </summary>
+    private sealed class RotateAfterValidation(SwitchableRing ring) : IClientRegistrationValidator
+    {
+        public void Validate(IClientWithCredentials client) => ring.ClientValidated();
     }
 
     /// <summary>A source over one freshly generated key of the given algorithm.</summary>

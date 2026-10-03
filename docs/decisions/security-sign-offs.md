@@ -1357,7 +1357,8 @@ lenses, CodeScene) plus fix-diff verification of every High.
 - The rendered consent page is unframeable and uncacheable, alongside the host's own policy.
   Closed — `GetRequestAsync_makes_the_rendered_page_unframeable_and_uncacheable`.
 - The opt-out defaults to requiring consent and is fingerprinted, so a flip revalidates. Closed —
-  `An_implementation_that_never_heard_of_consent_requires_it`, `Changing_any_covered_member_changes_the_fingerprint`.
+  `An_implementation_that_never_heard_of_consent_requires_it`, Changing_any_covered_member_changes_the_fingerprint
+  [deleted by #788, which removed the fingerprint and validates every lookup, so a flip is always seen].
 - Residual: the login page has no render-time call to stamp, so it is not made unframeable — no test.
 - Residual, accepted: `IConsentInteraction` is a public interface a host could replace; a
   replacement cannot reach the internal continuation, so it can complete nothing — no test.
@@ -1999,7 +2000,8 @@ and fix-diff verification of each round; no Critical.
   `Algorithm_ids_match_case_sensitively`, `Create_refuses_an_id_the_hasher_declared_only_after_startup`.
 - A hasher that throws cannot crash or bypass authentication: at request time the verification fails, logged once by type;
   at registration the client is refused. Closed — `A_hasher_that_throws_from_Verify_produces_invalid_client_not_a_500`,
-  `A_Verify_that_throws_on_the_empty_secret_probe_is_a_named_failure_not_a_log_entry`.
+  A_Verify_that_throws_on_the_empty_secret_probe_is_a_named_failure_not_a_log_entry [deleted by #788, which removed the
+  empty-secret probe; a throwing Verify is covered at request time by the test above].
 - A bad secret refuses its client, a value its hasher refuses is never derived, and the two-secret cap counts what the
   store yields. Closed — `One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid`,
   `A_secret_its_hasher_refuses_is_never_verified`, `The_two_secret_cap_counts_what_the_list_yields_not_what_it_reports`.

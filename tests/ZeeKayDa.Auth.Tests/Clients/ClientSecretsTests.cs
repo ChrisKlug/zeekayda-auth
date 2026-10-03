@@ -322,17 +322,6 @@ public sealed class ClientSecretsTests
     }
 
     [Fact]
-    public void Empty_secret_probe_runs_only_the_secrets_own_hasher()
-    {
-        var (defaultHasher, altHasher) = (new DefaultHasher(), new AltHasher());
-        var registry = Registry([defaultHasher, altHasher], DefaultIs<DefaultHasher>());
-
-        registry.EmptySecretProblem(AltSecret, "client-a").Should().BeNull();
-
-        (defaultHasher.VerifyCallCount, altHasher.VerifyCallCount).Should().Be((0, 1));
-    }
-
-    [Fact]
     public void A_hasher_whose_Create_throws_fails_startup_with_a_configuration_failure()
     {
         var act = () => Secrets([new DefaultHasher(), new VerifyOnlyHasher()], DefaultIs<DefaultHasher>());
@@ -537,6 +526,34 @@ public sealed class ClientSecretsTests
         secrets.Verify([], []).Matched.Should().BeFalse();
 
         trackingHasher.VerifyCallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient);
+    }
+
+    [Fact]
+    public void An_empty_presented_secret_never_matches_even_a_hasher_that_accepts_everything()
+    {
+        // The verify path, not registration-time validation, is what guarantees no credential is
+        // matched by an empty secret, whatever its hasher would accept.
+        var hasher = new AcceptEverythingHasher();
+        var secrets = Secrets([hasher]);
+
+        secrets.Verify([], [DefaultSecret]).Matched.Should().BeFalse();
+        hasher.EmptySecretsPresented.Should().Be(0, "an empty secret is refused before any hasher runs");
+    }
+
+    private sealed class AcceptEverythingHasher : IClientSecretHasher
+    {
+        public int EmptySecretsPresented { get; private set; }
+
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "default" };
+
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored)
+        {
+            if (presented.IsEmpty)
+                EmptySecretsPresented++;
+            return true;
+        }
+
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => DefaultSecret;
     }
 
     [Fact]
@@ -827,20 +844,6 @@ public sealed class ClientSecretsTests
         var act = () => secrets.Create("new-secret");
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*returned null from Create*");
-    }
-
-    [Fact]
-    public void A_Verify_that_throws_on_the_empty_secret_probe_is_a_named_failure_not_a_log_entry()
-    {
-        // At registration the operator reads the failure; swallowed as a log entry instead, the
-        // client would be served and fail every request with invalid_client.
-        var registry = Registry([new ThrowingVerifyHasher()]);
-
-        registry.EmptySecretProblem(new ClientSecret("$throws$x"), "client-a")
-            .Should().Match<ZeeKayDaConfigurationFailure>(f =>
-                f.Code == "client.credentials.verify_threw"
-                && f.Message.Contains(nameof(InvalidOperationException))
-                && !f.Message.Contains(ThrowingVerifyHasher.Message));
     }
 
     private sealed class NullReturningHasher : IClientSecretHasher

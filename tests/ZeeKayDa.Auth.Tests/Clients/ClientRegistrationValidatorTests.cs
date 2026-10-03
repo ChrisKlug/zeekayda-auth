@@ -18,15 +18,12 @@ public sealed class ClientRegistrationValidatorTests
 
     private static readonly ClientSecret AnySecret = new("$any$x");
 
-    /// <summary>
-    /// A hasher that owns the <c>fake</c> id and always returns the configured
-    /// <paramref name="verifyResult"/> from <c>Verify</c>.
-    /// </summary>
-    private sealed class FakeHasher(bool verifyResult = false) : IClientSecretHasher
+    /// <summary>A hasher that owns the <c>fake</c> id and verifies nothing.</summary>
+    private sealed class FakeHasher : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake" };
 
-        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => verifyResult;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
 
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
     }
@@ -336,6 +333,115 @@ public sealed class ClientRegistrationValidatorTests
         validator.Validate(client);
 
         logger.Warnings.Should().ContainSingle(w => w.Contains("localhost"));
+    }
+
+    // ── Advisories are written once ──────────────────────────────────────────────────────────────
+    // The resolver validates on every lookup, so an advisory repeated per validation would let
+    // anyone who knows a client_id write a Warning per request.
+
+    [Fact]
+    public void A_valid_registration_s_advisory_warning_is_written_once_not_per_lookup()
+    {
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger);
+        var client = MakeValidPublicClient() with
+        {
+            RedirectUris = new HashSet<string>(["http://localhost/callback"], StringComparer.Ordinal)
+        };
+
+        validator.Validate(client);
+        validator.Validate(client);
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("localhost"));
+    }
+
+    [Fact]
+    public void A_second_localhost_redirect_uri_on_the_same_client_is_still_warned_about()
+    {
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger);
+        var client = MakeValidPublicClient() with
+        {
+            RedirectUris = new HashSet<string>(["http://localhost/callback"], StringComparer.Ordinal)
+        };
+
+        validator.Validate(client);
+        validator.Validate(client with
+        {
+            RedirectUris = new HashSet<string>(["http://localhost/other"], StringComparer.Ordinal)
+        });
+
+        logger.Warnings.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void The_same_localhost_redirect_uri_on_another_client_is_still_warned_about()
+    {
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger);
+        var redirectUris = new HashSet<string>(["http://localhost/callback"], StringComparer.Ordinal);
+
+        validator.Validate(MakeValidPublicClient("client-a") with { RedirectUris = redirectUris });
+        validator.Validate(MakeValidPublicClient("client-b") with { RedirectUris = redirectUris });
+
+        logger.Warnings.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void The_unread_key_ring_warning_is_written_once_per_client()
+    {
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger, keySet: null);
+        var client = MakeValidPublicClient() with
+        {
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 }
+        };
+
+        validator.Validate(client);
+        validator.Validate(client);
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("has not yet read its source"));
+    }
+
+    [Fact]
+    public void The_refresh_without_issuer_warning_is_written_once_per_client()
+    {
+        var options = BuildDefaultServerOptions();
+        options.GrantTypesSupported.Add(GrantType.RefreshToken);
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger, serverOptions: options);
+        var client = MakeValidPublicClient() with
+        {
+            AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken },
+            AllowedResponseTypes = new HashSet<ResponseType>(),
+            AllowedResponseModes = new HashSet<ResponseMode>(),
+        };
+
+        validator.Validate(client);
+        validator.Validate(client);
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("refresh_token", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void The_lifetime_past_the_family_ceiling_warning_is_written_once_per_client_and_lifetime()
+    {
+        var opts = BuildDefaultServerOptions();
+        opts.TokenEndpoint.AbsoluteFamilyLifetime = TimeSpan.FromDays(30);
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger, serverOptions: opts);
+        var client = MakeValidPublicClient() with
+        {
+            AccessTokenLifetime = TimeSpan.FromDays(31),
+            IdTokenLifetime = TimeSpan.FromDays(31),
+        };
+
+        validator.Validate(client);
+        validator.Validate(client);
+
+        logger.Warnings.Should().HaveCount(2)
+            .And.Contain(w => w.Contains("AccessTokenLifetime"))
+            .And.Contain(w => w.Contains("IdTokenLifetime"));
     }
 
     [Fact]
@@ -1035,23 +1141,6 @@ public sealed class ClientRegistrationValidatorTests
         var act = () => validator.Validate(ClientRegistrationSnapshot.Of(client));
 
         act.Should().NotThrow();
-    }
-
-    // ── Empty-secret probe ────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Validate_fails_with_empty_secret_accepted_code_if_a_secret_accepts_an_empty_secret()
-    {
-        // A hasher that accepts any presented value including empty
-        var emptyAcceptingHasher = new FakeHasher(verifyResult: true);
-        var validator = MakeValidator(hasher: emptyAcceptingHasher);
-
-        var client = MakeValidConfidentialClient(secret: FakeSecret);
-
-        var act = () => validator.Validate(client);
-
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.empty_secret_accepted");
     }
 
     [Fact]
