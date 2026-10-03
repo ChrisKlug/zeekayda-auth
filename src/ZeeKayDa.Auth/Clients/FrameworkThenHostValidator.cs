@@ -10,10 +10,8 @@ internal sealed class FrameworkThenHostValidator(
     ClientRegistrationValidator framework,
     IClientRegistrationValidator host) : IClientRegistrationValidator
 {
-    public void Validate(IClientWithCredentials client)
-    {
-        framework.Validate(client);
-        if (!ReferenceEquals(host, framework))
-            host.Validate(client);
-    }
+    public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
+        ReferenceEquals(host, framework)
+            ? framework.Validate(client)
+            : [.. framework.Validate(client), .. host.Validate(client)];
 }

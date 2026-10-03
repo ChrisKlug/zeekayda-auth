@@ -4,7 +4,7 @@ namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
 /// Pure redirect URI security rules: side-effect-free predicates over a URI or its raw string.
-/// Turning a broken rule into a configuration failure is <see cref="RedirectUriValidator"/>'s job.
+/// Turning a broken rule into a configuration failure is <see cref="ClientRegistrationValidator"/>'s job.
 /// </summary>
 internal static class RedirectUriRules
 {
@@ -74,7 +74,7 @@ internal static class RedirectUriRules
         if (IsHttp(uri))
         {
             // HTTP is permitted only for loopback hosts. IPv6 zone IDs are rejected separately
-            // and scheme-neutrally by RedirectUriValidator.
+            // and scheme-neutrally by ClientRegistrationValidator.
             return IsLoopbackHost(uri.Host);
         }
 

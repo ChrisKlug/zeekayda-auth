@@ -114,14 +114,13 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 
     private sealed class RejectEverythingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientWithCredentials client) =>
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure("host.tenant_rule", "Redirect URIs must be on the tenant domain."));
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
+            [new ZeeKayDaConfigurationFailure("host.tenant_rule", "Redirect URIs must be on the tenant domain.")];
     }
 
     private sealed class AcceptEverythingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientWithCredentials client) { }
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => [];
     }
 
     private sealed class SingleClientRepository(IClientWithCredentials client) : IClientRepository

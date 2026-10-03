@@ -443,26 +443,21 @@ public class ValidatedClientResolverTests
 
     private sealed class PassingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientWithCredentials client)
-        {
-        }
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => [];
     }
 
     private sealed class RejectingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientWithCredentials client) =>
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure("test_rule", "Deliberately rejected by the test."));
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
+            [new ZeeKayDaConfigurationFailure("test_rule", "Deliberately rejected by the test.")];
     }
 
     /// <summary>Rejects every registration, for the rule this test named for its <c>client_id</c>.</summary>
     private sealed class CodePerClientValidator(IReadOnlyDictionary<string, string> codesByClientId)
         : IClientRegistrationValidator
     {
-        public void Validate(IClientWithCredentials client) =>
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    codesByClientId[client.ClientId], "Deliberately rejected by the test."));
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
+            [new ZeeKayDaConfigurationFailure(codesByClientId[client.ClientId], "Deliberately rejected by the test.")];
     }
 
     /// <summary>Rejects every registration, breaking a different rule each time.</summary>
@@ -470,11 +465,10 @@ public class ValidatedClientResolverTests
     {
         private int _calls;
 
-        public void Validate(IClientWithCredentials client)
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
         {
             var call = ++_calls;
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure($"test_rule_{call}", $"Rejected by the test, rule {call}."));
+            return [new ZeeKayDaConfigurationFailure($"test_rule_{call}", $"Rejected by the test, rule {call}.")];
         }
     }
 
@@ -486,9 +480,8 @@ public class ValidatedClientResolverTests
     {
         private int _calls;
 
-        public void Validate(IClientWithCredentials client) =>
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure("test_rule", $"Rejected by the test, attempt {++_calls}."));
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
+            [new ZeeKayDaConfigurationFailure("test_rule", $"Rejected by the test, attempt {++_calls}.")];
     }
 
     /// <summary>
@@ -499,17 +492,21 @@ public class ValidatedClientResolverTests
     {
         private bool _second;
 
-        public void Validate(IClientWithCredentials client)
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
         {
             _second = !_second;
 
-            throw _second
-                ? new ZeeKayDaConfigurationException(
+            return _second
+                ?
+                [
                     new ZeeKayDaConfigurationFailure("a; b", "Rules a and b were broken."),
-                    new ZeeKayDaConfigurationFailure("c", "Rule c was broken."))
-                : new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure("c", "Rule c was broken."),
+                ]
+                :
+                [
                     new ZeeKayDaConfigurationFailure("a", "Rule a was broken."),
-                    new ZeeKayDaConfigurationFailure("b; c", "Rules b and c were broken."));
+                    new ZeeKayDaConfigurationFailure("b; c", "Rules b and c were broken."),
+                ];
         }
     }
 
@@ -518,15 +515,13 @@ public class ValidatedClientResolverTests
     {
         private bool _flipped;
 
-        public void Validate(IClientWithCredentials client)
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
         {
             var first = new ZeeKayDaConfigurationFailure("test_rule_a", "Rule A was broken.");
             var second = new ZeeKayDaConfigurationFailure("test_rule_b", "Rule B was broken.");
             _flipped = !_flipped;
 
-            throw _flipped
-                ? new ZeeKayDaConfigurationException(first, second)
-                : new ZeeKayDaConfigurationException(second, first);
+            return _flipped ? [first, second] : [second, first];
         }
     }
 
@@ -534,7 +529,11 @@ public class ValidatedClientResolverTests
     {
         public int Calls { get; private set; }
 
-        public void Validate(IClientWithCredentials client) => Calls++;
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
+        {
+            Calls++;
+            return [];
+        }
     }
 
 }

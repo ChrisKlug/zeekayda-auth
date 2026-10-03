@@ -137,14 +137,14 @@ public sealed class ClientRegistrationValidatorTests
     // ── Valid clients pass ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_does_not_throw_for_valid_public_client()
+    public void Validate_reports_no_failure_for_a_valid_public_client()
     {
         var validator = MakeValidator();
         var client = MakeValidPublicClient();
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -152,9 +152,9 @@ public sealed class ClientRegistrationValidatorTests
     {
         var validator = MakeValidator();
 
-        var act = () => validator.Validate(new MinimalEntity());
+        var failures = validator.Validate(new MinimalEntity());
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     /// <summary>A store's own entity that leaves every other member to the interface default.</summary>
@@ -167,14 +167,14 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_does_not_throw_for_valid_confidential_client()
+    public void Validate_reports_no_failure_for_a_valid_confidential_client()
     {
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient();
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     // ── PKCE opt-out ──────────────────────────────────────────────────────────────────────────────
@@ -185,10 +185,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { RequirePkce = false };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.require_pkce.disabled_on_public");
+        failures.Should().Contain(f => f.Code == "client.require_pkce.disabled_on_public");
     }
 
     [Fact]
@@ -197,9 +196,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient() with { RequirePkce = false };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     // ── Redirect URI rules ────────────────────────────────────────────────────────────────────────
@@ -213,9 +212,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["https://app.example.com/callback"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -227,9 +226,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["http://127.0.0.1/callback"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -241,9 +240,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["http://[::1]/cb"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -255,9 +254,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["myapp.scheme://callback"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -269,10 +268,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["https://app.example.com/cb#x"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
     }
 
     [Fact]
@@ -284,10 +282,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["https://user@app.example.com/cb"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.userinfo");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.userinfo");
     }
 
     [Fact]
@@ -299,10 +296,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["javascript:alert(1)"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.scheme_not_allowed");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.scheme_not_allowed");
     }
 
     [Fact]
@@ -314,10 +310,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["http://attacker.com/cb"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.scheme_http_non_loopback");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.scheme_http_non_loopback");
     }
 
     [Fact]
@@ -457,10 +452,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["http://localhost/cb#frag"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
         logger.Warnings.Should().NotContain(w => w.Contains("localhost"));
     }
 
@@ -473,10 +467,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["http://localhost.attacker.com/cb"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.scheme_http_non_loopback");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.scheme_http_non_loopback");
     }
 
     [Fact]
@@ -489,10 +482,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["http://[::1%25eth0]/cb"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.ipv6_zone_id");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.ipv6_zone_id");
     }
 
     [Fact]
@@ -506,10 +498,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["https://[::1%25eth0]/cb"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.ipv6_zone_id");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.ipv6_zone_id");
     }
 
     [Fact]
@@ -525,9 +516,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["https://localhost:5002/signin-oidc"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
         logger.Warnings.Should().NotContain(w => w.Contains("localhost"));
     }
 
@@ -558,9 +549,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["https://app.example.com/cb%20x"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -572,10 +563,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["https://app.example.com/../cb"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.path_traversal");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.path_traversal");
     }
 
     [Fact]
@@ -589,10 +579,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["https://app/cb/..?x=1"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.path_traversal");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.path_traversal");
     }
 
     [Fact]
@@ -606,10 +595,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["https://app/cb/.%2e/x"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.path_traversal");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.path_traversal");
     }
 
     [Fact]
@@ -623,10 +611,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["com.example.app:/cb/../x"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.path_traversal");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.path_traversal");
     }
 
     [Fact]
@@ -640,9 +627,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["https://example.com?a=[b%25c]"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -654,10 +641,9 @@ public sealed class ClientRegistrationValidatorTests
             .ToHashSet(StringComparer.Ordinal);
         var client = MakeValidPublicClient() with { RedirectUris = uris };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.count_exceeded");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.count_exceeded");
     }
 
     [Fact]
@@ -670,10 +656,9 @@ public sealed class ClientRegistrationValidatorTests
                 ["https://app.example.com/logout#frag"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
     }
 
     [Fact]
@@ -686,10 +671,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new MiscountingSet(uris, reportedCount: 1)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.count_exceeded");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.count_exceeded");
     }
 
     [Fact]
@@ -701,10 +685,9 @@ public sealed class ClientRegistrationValidatorTests
             .ToHashSet(StringComparer.Ordinal);
         var client = MakeValidPublicClient() with { PostLogoutRedirectUris = uris };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.count_exceeded");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.count_exceeded");
     }
 
     // ── IsPublic trinity ──────────────────────────────────────────────────────────────────────────
@@ -719,9 +702,9 @@ public sealed class ClientRegistrationValidatorTests
             [],
             ["openid"]);
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -735,9 +718,9 @@ public sealed class ClientRegistrationValidatorTests
             [],
             ["openid"]);
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -751,10 +734,9 @@ public sealed class ClientRegistrationValidatorTests
                 reportedCount: 1)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.is_public.trinity_violation");
+        failures.Should().Contain(f => f.Code == "client.is_public.trinity_violation");
     }
 
     [Fact]
@@ -772,10 +754,9 @@ public sealed class ClientRegistrationValidatorTests
                 [TokenEndpointAuthMethods.None], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.is_public.trinity_violation");
+        failures.Should().Contain(f => f.Code == "client.is_public.trinity_violation");
     }
 
     [Fact]
@@ -793,10 +774,9 @@ public sealed class ClientRegistrationValidatorTests
                 [TokenEndpointAuthMethods.ClientSecretBasic], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.is_public.trinity_violation");
+        failures.Should().Contain(f => f.Code == "client.is_public.trinity_violation");
     }
 
     [Fact]
@@ -814,10 +794,9 @@ public sealed class ClientRegistrationValidatorTests
                 [TokenEndpointAuthMethods.ClientSecretBasic], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.is_public.trinity_violation");
+        failures.Should().Contain(f => f.Code == "client.is_public.trinity_violation");
     }
 
     [Fact]
@@ -834,11 +813,10 @@ public sealed class ClientRegistrationValidatorTests
             AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        var ex = act.Should().Throw<ZeeKayDaConfigurationException>().Which;
-        ex.AggregatedFailures.Should().Contain(f => f.Code == "client.token_endpoint_auth_methods.empty");
-        ex.AggregatedFailures.Should().Contain(f => f.Code == "client.is_public.trinity_violation");
+        failures.Should().Contain(f => f.Code == "client.token_endpoint_auth_methods.empty");
+        failures.Should().Contain(f => f.Code == "client.is_public.trinity_violation");
     }
 
     [Fact]
@@ -852,9 +830,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(uris, StringComparer.Ordinal),
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -874,12 +852,11 @@ public sealed class ClientRegistrationValidatorTests
                 [" client_secret_basic "], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        var ex = act.Should().Throw<ZeeKayDaConfigurationException>().Which;
-        ex.AggregatedFailures.Should().ContainSingle(
-            f => f.Code.StartsWith("client.token_endpoint_auth_methods.", StringComparison.Ordinal))
-            .Which.Code.Should().Be("client.token_endpoint_auth_methods.invalid_entry");
+        failures.Should().ContainSingle(
+    f => f.Code.StartsWith("client.token_endpoint_auth_methods.", StringComparison.Ordinal))
+    .Which.Code.Should().Be("client.token_endpoint_auth_methods.invalid_entry");
     }
 
     [Fact]
@@ -897,10 +874,9 @@ public sealed class ClientRegistrationValidatorTests
                 ["client\u0001secret", TokenEndpointAuthMethods.ClientSecretBasic], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(
+        failures.Should().Contain(
                 f => f.Code == "client.token_endpoint_auth_methods.invalid_entry");
     }
 
@@ -923,10 +899,9 @@ public sealed class ClientRegistrationValidatorTests
                 StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(
+        failures.Should().Contain(
                 f => f.Code == "client.token_endpoint_auth_methods.none_on_confidential");
     }
 
@@ -949,9 +924,9 @@ public sealed class ClientRegistrationValidatorTests
                 [TokenEndpointAuthMethods.ClientSecretBasic], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -969,10 +944,9 @@ public sealed class ClientRegistrationValidatorTests
                 [TokenEndpointAuthMethods.ClientSecretBasic], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.too_many_secrets");
+        failures.Should().Contain(f => f.Code == "client.credentials.too_many_secrets");
     }
 
     [Fact]
@@ -986,10 +960,9 @@ public sealed class ClientRegistrationValidatorTests
         var client = MakeValidConfidentialClient(
             secret: Pbkdf2ClientSecretHasher.Format(Pbkdf2ClientSecretHasher.MinIterations - 1, new byte[16], new byte[32]));
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.pbkdf2_iterations_below_minimum");
+        failures.Should().Contain(f => f.Code == "client.credentials.pbkdf2_iterations_below_minimum");
     }
 
     // ── Stored secret shape ───────────────────────────────────────────────────────────────────────
@@ -1000,10 +973,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient() with { Secrets = [FakeSecret, null!] };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.null_entry");
+        failures.Should().Contain(f => f.Code == "client.credentials.null_entry");
     }
 
     [Theory]
@@ -1014,10 +986,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient(secret: new ClientSecret(value!));
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.null_entry");
+        failures.Should().Contain(f => f.Code == "client.credentials.null_entry");
     }
 
     [Theory]
@@ -1029,10 +1000,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient(secret: new ClientSecret(value));
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.malformed_secret")
+        failures.Should().ContainSingle(f => f.Code == "client.credentials.malformed_secret")
             .Which.Message.Should().NotContain(value);
     }
 
@@ -1042,10 +1012,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient(secret: new ClientSecret("$argon2id$v=19$m=1$c2FsdA$aGFzaA"));
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.no_hasher")
+        failures.Should().ContainSingle(f => f.Code == "client.credentials.no_hasher")
             .Which.Message.Should().Contain("'argon2id'").And.NotContain("c2FsdA");
     }
 
@@ -1057,10 +1026,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient(secret: new ClientSecret(value));
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.malformed_secret")
+        failures.Should().ContainSingle(f => f.Code == "client.credentials.malformed_secret")
             .Which.Message.Should().NotContain(value[1..value.IndexOf('$', 1)]);
     }
 
@@ -1072,10 +1040,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator(hasher);
         var client = MakeValidConfidentialClient();
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "test.refused");
+        failures.Should().ContainSingle(f => f.Code == "test.refused");
         hasher.VerifyCalls.Should().Be(0);
     }
 
@@ -1104,10 +1071,9 @@ public sealed class ClientRegistrationValidatorTests
             Secrets = new MiscountingList<ClientSecret>([FakeSecret, FakeSecret, FakeSecret], reportedCount: 2),
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.too_many_secrets");
+        failures.Should().Contain(f => f.Code == "client.credentials.too_many_secrets");
     }
 
     /// <summary>A store's own list that yields its items while reporting a different <c>Count</c>.</summary>
@@ -1126,21 +1092,20 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient() with { Secrets = [FakeSecret, AnySecret] };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.no_hasher");
+        failures.Should().ContainSingle(f => f.Code == "client.credentials.no_hasher");
     }
 
     [Fact]
-    public void Validate_does_not_throw_on_the_resolver_s_copy_of_a_valid_registration()
+    public void Validate_reports_no_failure_for_the_resolver_s_copy_of_a_valid_registration()
     {
         var validator = MakeValidator();
         var client = MakeValidConfidentialClient();
 
-        var act = () => validator.Validate(ClientRegistrationSnapshot.Of(client));
+        var failures = validator.Validate(ClientRegistrationSnapshot.Of(client));
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -1162,10 +1127,9 @@ public sealed class ClientRegistrationValidatorTests
                 [TokenEndpointAuthMethods.ClientSecretBasic], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.no_hasher");
+        failures.Should().Contain(f => f.Code == "client.credentials.no_hasher");
     }
 
     // ── AllowedSigningAlgorithms ──────────────────────────────────────────────────────────────────
@@ -1176,9 +1140,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { AllowedSigningAlgorithms = null };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -1190,10 +1154,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedSigningAlgorithms = new HashSet<SigningAlgorithm>()
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.signing_algorithms.empty_when_set");
+        failures.Should().Contain(f => f.Code == "client.signing_algorithms.empty_when_set");
     }
 
     [Fact]
@@ -1211,9 +1174,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 }
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -1229,10 +1192,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 }
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset");
+        failures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset");
     }
 
     [Fact]
@@ -1250,10 +1212,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 }
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset",
+        failures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset",
                 "the server holds an ES256 key but the operator has withheld it from discovery");
     }
 
@@ -1270,10 +1231,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 }
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset");
+        failures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset");
     }
 
     [Fact]
@@ -1309,9 +1269,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 }
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow("there is nothing yet for the client's set to be a subset of");
+        failures.Should().BeEmpty("there is nothing yet for the client's set to be a subset of");
     }
 
     // ── AllowedScopes ─────────────────────────────────────────────────────────────────────────────
@@ -1325,10 +1285,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedScopes = new HashSet<string>(["openid", ""], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.allowed_scopes.blank_entry");
+        failures.Should().Contain(f => f.Code == "client.allowed_scopes.blank_entry");
     }
 
     [Fact]
@@ -1340,10 +1299,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedScopes = new HashSet<string>(["openid", "  "], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.allowed_scopes.blank_entry");
+        failures.Should().Contain(f => f.Code == "client.allowed_scopes.blank_entry");
     }
 
     // ── Claim additions ──────────────────────────────────────────────────────────────────────────
@@ -1359,9 +1317,9 @@ public sealed class ClientRegistrationValidatorTests
             AdditionalAccessTokenClaims = new HashSet<string>(["tenant", "department"], StringComparer.Ordinal),
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Theory]
@@ -1372,10 +1330,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { AdditionalUserInfoClaims = new HashSet<string>(["tenant", entry], StringComparer.Ordinal) };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.claim_additions.blank_entry");
+        failures.Should().Contain(f => f.Code == "client.claim_additions.blank_entry");
     }
 
     [Theory]
@@ -1387,10 +1344,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { AdditionalAccessTokenClaims = new HashSet<string>([entry], StringComparer.Ordinal) };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.claim_additions.reserved");
+        failures.Should().Contain(f => f.Code == "client.claim_additions.reserved");
     }
 
     [Fact]
@@ -1399,10 +1355,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { AdditionalIdTokenClaims = null! };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.claim_additions.null");
+        failures.Should().Contain(f => f.Code == "client.claim_additions.null");
     }
 
     // ── AllowedTokenEndpointAuthMethods ──────────────────────────────────────────────────────────
@@ -1423,10 +1378,9 @@ public sealed class ClientRegistrationValidatorTests
                 ["private_key_jwt"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.token_endpoint_auth_methods.not_subset");
+        failures.Should().Contain(f => f.Code == "client.token_endpoint_auth_methods.not_subset");
     }
 
     // ── Enum.IsDefined checks ─────────────────────────────────────────────────────────────────────
@@ -1440,10 +1394,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedGrantTypes = new HashSet<GrantType> { (GrantType)999 }
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.grant_types.undefined_value");
+        failures.Should().Contain(f => f.Code == "client.grant_types.undefined_value");
     }
 
     [Fact]
@@ -1455,10 +1408,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedResponseTypes = new HashSet<ResponseType> { (ResponseType)999 }
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.response_types.undefined_value");
+        failures.Should().Contain(f => f.Code == "client.response_types.undefined_value");
     }
 
     [Fact]
@@ -1470,10 +1422,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedResponseModes = new HashSet<ResponseMode> { (ResponseMode)999 }
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.response_modes.undefined_value");
+        failures.Should().Contain(f => f.Code == "client.response_modes.undefined_value");
     }
 
     [Fact]
@@ -1485,10 +1436,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedPromptValues = new HashSet<PromptValue> { (PromptValue)999 }
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.prompt_values.undefined_value");
+        failures.Should().Contain(f => f.Code == "client.prompt_values.undefined_value");
     }
 
     // ── Flow sets against what the server serves ───────────────────────────────────────────────
@@ -1504,10 +1454,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode, GrantType.RefreshToken }
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f =>
+        failures.Should().ContainSingle(f =>
                 f.Code == "client.grant_types.not_subset" && f.Message.Contains("'RefreshToken'", StringComparison.Ordinal));
     }
 
@@ -1518,10 +1467,9 @@ public sealed class ClientRegistrationValidatorTests
         options.Response.TypesSupported = [];
         var validator = MakeValidator(serverOptions: options);
 
-        var act = () => validator.Validate(MakeValidPublicClient());
+        var failures = validator.Validate(MakeValidPublicClient());
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.response_types.not_subset");
+        failures.Should().ContainSingle(f => f.Code == "client.response_types.not_subset");
     }
 
     [Fact]
@@ -1531,10 +1479,9 @@ public sealed class ClientRegistrationValidatorTests
         options.Response.ModesSupported = [];
         var validator = MakeValidator(serverOptions: options);
 
-        var act = () => validator.Validate(MakeValidPublicClient());
+        var failures = validator.Validate(MakeValidPublicClient());
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f =>
+        failures.Should().ContainSingle(f =>
                 f.Code == "client.response_modes.not_subset" && f.Message.Contains("'Query'", StringComparison.Ordinal));
     }
 
@@ -1552,9 +1499,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedResponseModes = new HashSet<ResponseMode>(),
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow("a client whose code grant was withdrawn may still be draining refresh tokens");
+        failures.Should().BeEmpty("a client whose code grant was withdrawn may still be draining refresh tokens");
         logger.Warnings.Should().ContainSingle(w => w.Contains("refresh_token", StringComparison.Ordinal));
     }
 
@@ -1586,10 +1533,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode, GrantType.ClientCredentials },
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.grant_types.client_credentials_on_public");
+        failures.Should().ContainSingle(f => f.Code == "client.grant_types.client_credentials_on_public");
     }
 
     [Fact]
@@ -1603,9 +1549,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode, GrantType.ClientCredentials },
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -1614,10 +1560,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { AllowedGrantTypes = new HashSet<GrantType>() };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.grant_types.empty");
+        failures.Should().ContainSingle(f => f.Code == "client.grant_types.empty");
     }
 
     [Fact]
@@ -1626,10 +1571,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { AllowedResponseTypes = new HashSet<ResponseType>() };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.response_types.empty");
+        failures.Should().ContainSingle(f => f.Code == "client.response_types.empty");
     }
 
     [Fact]
@@ -1638,10 +1582,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { AllowedResponseModes = new HashSet<ResponseMode>() };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.response_modes.empty");
+        failures.Should().ContainSingle(f => f.Code == "client.response_modes.empty");
     }
 
     [Fact]
@@ -1660,9 +1603,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedResponseModes = new HashSet<ResponseMode>(),
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -1674,10 +1617,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedGrantTypes = new HashSet<GrantType> { GrantType.AuthorizationCode, (GrantType)999 }
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Where(f => f.Code.StartsWith("client.grant_types.", StringComparison.Ordinal))
+        failures.Where(f => f.Code.StartsWith("client.grant_types.", StringComparison.Ordinal))
             .Should().ContainSingle().Which.Code.Should().Be("client.grant_types.undefined_value");
     }
 
@@ -1690,9 +1632,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedGrantTypes = new MisreportingSet<GrantType>([GrantType.AuthorizationCode])
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow("the set yields a grant, whatever Count it reports");
+        failures.Should().BeEmpty("the set yields a grant, whatever Count it reports");
     }
 
     [Fact]
@@ -1707,10 +1649,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedResponseTypes = new HashSet<ResponseType>(),
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.response_types.empty");
+        failures.Should().ContainSingle(f => f.Code == "client.response_types.empty");
     }
 
     // ── ClientId format ───────────────────────────────────────────────────────────────────────────
@@ -1721,10 +1662,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { ClientId = "my client!" };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.client_id.invalid");
+        failures.Should().Contain(f => f.Code == "client.client_id.invalid");
     }
 
     [Theory]
@@ -1739,10 +1679,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { DisplayName = displayName };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.display_name.invalid");
+        failures.Should().Contain(f => f.Code == "client.display_name.invalid");
     }
 
     [Fact]
@@ -1751,10 +1690,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { DisplayName = new string('a', 201) };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.display_name.invalid");
+        failures.Should().Contain(f => f.Code == "client.display_name.invalid");
     }
 
     [Theory]
@@ -1766,9 +1704,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { DisplayName = displayName };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -1777,10 +1715,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { ClientId = new string('a', 201) };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.client_id.invalid");
+        failures.Should().Contain(f => f.Code == "client.client_id.invalid");
     }
 
     // ── Aggregate failures ────────────────────────────────────────────────────────────────────────
@@ -1800,10 +1737,9 @@ public sealed class ClientRegistrationValidatorTests
             AllowedTokenEndpointAuthMethods = new HashSet<string>(StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Count.Should().BeGreaterThan(1);
+        failures.Count.Should().BeGreaterThan(1);
     }
 
     // ── Argument validation ───────────────────────────────────────────────────────────────────────
@@ -1829,10 +1765,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["not a uri"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.invalid");
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.invalid");
     }
 
     // ── Redirect URI — IPv6 loopback with brackets ────────────────────────────────────────────────
@@ -1846,9 +1781,9 @@ public sealed class ClientRegistrationValidatorTests
             RedirectUris = new HashSet<string>(["http://[::1]/callback"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     // ── ClientId — null ───────────────────────────────────────────────────────────────────────────
@@ -1859,10 +1794,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { ClientId = null! };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.client_id.invalid");
+        failures.Should().Contain(f => f.Code == "client.client_id.invalid");
     }
 
     // ── AllowedTokenEndpointAuthMethods — invalid entries ────────────────────────────────────────
@@ -1882,10 +1816,9 @@ public sealed class ClientRegistrationValidatorTests
                 [" client_secret_basic"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(
+        failures.Should().Contain(
                 f => f.Code == "client.token_endpoint_auth_methods.invalid_entry");
     }
 
@@ -1904,10 +1837,9 @@ public sealed class ClientRegistrationValidatorTests
                 ["client\x01secret"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(
+        failures.Should().Contain(
                 f => f.Code == "client.token_endpoint_auth_methods.invalid_entry");
     }
 
@@ -1930,10 +1862,9 @@ public sealed class ClientRegistrationValidatorTests
                 TokenEndpointAuthMethods.ClientSecretBasic)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(
+        failures.Should().Contain(
                 f => f.Code == "client.token_endpoint_auth_methods.duplicate");
     }
 
@@ -1954,10 +1885,9 @@ public sealed class ClientRegistrationValidatorTests
                 ["client_secret_jwt"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f =>
+        failures.Should().Contain(f =>
                 f.Code == "client.token_endpoint_auth_methods.not_subset" &&
                 f.Message.Contains("client_secret_jwt"));
     }
@@ -1982,10 +1912,9 @@ public sealed class ClientRegistrationValidatorTests
                 ["client_secret_post"], StringComparer.Ordinal)
         };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f =>
+        failures.Should().Contain(f =>
                 f.Code == "client.token_endpoint_auth_methods.not_subset" &&
                 f.Message.Contains("client_secret_post"));
     }
@@ -2003,10 +1932,9 @@ public sealed class ClientRegistrationValidatorTests
             [],
             ["openid"]);
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f =>
+        failures.Should().Contain(f =>
                 f.Code == "client.token_endpoint_auth_methods.not_subset" &&
                 f.Message.Contains("none"));
     }
@@ -2036,10 +1964,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator(new RegistrationFailingHasher());
         var client = MakeValidConfidentialClient();
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f =>
+        failures.Should().ContainSingle(f =>
                 f.Code == "test.fake_constraint" &&
                 f.Message.Contains("test-client"));
     }
@@ -2081,9 +2008,9 @@ public sealed class ClientRegistrationValidatorTests
     {
         var client = MakeValidPublicClient() with { AccessTokenLifetime = null, IdTokenLifetime = null };
 
-        var act = () => MakeValidator().Validate(client);
+        var failures = MakeValidator().Validate(client);
 
-        act.Should().NotThrow("null inherits the server value");
+        failures.Should().BeEmpty("null inherits the server value");
     }
 
     [Fact]
@@ -2095,9 +2022,9 @@ public sealed class ClientRegistrationValidatorTests
             IdTokenLifetime = TimeSpan.FromMinutes(1),
         };
 
-        var act = () => MakeValidator().Validate(client);
+        var failures = MakeValidator().Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Theory]
@@ -2107,10 +2034,9 @@ public sealed class ClientRegistrationValidatorTests
     {
         var client = MakeValidPublicClient() with { AccessTokenLifetime = TimeSpan.FromSeconds(seconds) };
 
-        var act = () => MakeValidator().Validate(client);
+        var failures = MakeValidator().Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.token_lifetime.not_positive")
+        failures.Should().ContainSingle(f => f.Code == "client.token_lifetime.not_positive")
             .Which.Message.Should().Contain("AccessTokenLifetime");
     }
 
@@ -2121,10 +2047,9 @@ public sealed class ClientRegistrationValidatorTests
     {
         var client = MakeValidPublicClient() with { IdTokenLifetime = TimeSpan.FromSeconds(seconds) };
 
-        var act = () => MakeValidator().Validate(client);
+        var failures = MakeValidator().Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.token_lifetime.not_positive")
+        failures.Should().ContainSingle(f => f.Code == "client.token_lifetime.not_positive")
             .Which.Message.Should().Contain("IdTokenLifetime");
     }
 
@@ -2136,9 +2061,9 @@ public sealed class ClientRegistrationValidatorTests
         var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
         var client = MakeValidPublicClient() with { AccessTokenLifetime = TimeSpan.FromDays(31) };
 
-        var act = () => MakeValidator(logger: logger, serverOptions: opts).Validate(client);
+        var failures = MakeValidator(logger: logger, serverOptions: opts).Validate(client);
 
-        act.Should().NotThrow("a custom repository may validate on resolution, where a failure would take the request down");
+        failures.Should().BeEmpty("a custom repository may validate on resolution, where a failure would take the request down");
         logger.Warnings.Should().ContainSingle(w => w.Contains("AccessTokenLifetime") && w.Contains("AbsoluteFamilyLifetime"));
     }
 
@@ -2164,10 +2089,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator(keySet: keySet);
         var client = MakeValidPublicClient() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 } };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.signing_algorithms.excludes_signing_key");
+        failures.Should().ContainSingle(f => f.Code == "client.signing_algorithms.excludes_signing_key");
     }
 
     [Fact]
@@ -2177,9 +2101,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator(keySet: keySet);
         var client = MakeValidPublicClient() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     // ── InitiateLoginUri ──────────────────────────────────────────────────────────────────────────
@@ -2190,9 +2114,9 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { InitiateLoginUri = "https://app.example.com/login?source=idp" };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().NotThrow();
+        failures.Should().BeEmpty();
     }
 
     [Theory]
@@ -2215,9 +2139,8 @@ public sealed class ClientRegistrationValidatorTests
         var validator = MakeValidator();
         var client = MakeValidPublicClient() with { InitiateLoginUri = System.Text.RegularExpressions.Regex.Unescape(uri) };
 
-        var act = () => validator.Validate(client);
+        var failures = validator.Validate(client);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == code);
+        failures.Should().Contain(f => f.Code == code);
     }
 }

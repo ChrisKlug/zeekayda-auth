@@ -12,8 +12,8 @@ namespace ZeeKayDa.Auth.Clients;
 /// </summary>
 /// <remarks>
 /// <see cref="InMemoryClientRepository"/> performs duplicate detection, per-client validation, and
-/// secret hashing in its constructor; since it's a singleton, nothing else forces construction
-/// before the first request needing it. Nothing here catches exceptions thrown while resolving
+/// secret hashing when it is built; since it's a singleton, nothing else forces that before the
+/// first request needing it. Nothing here catches exceptions thrown while resolving
 /// <see cref="IClientRepository"/>; when none is registered at all, the
 /// <c>ClientRepositoryPresenceVerifier</c> failure aborts startup before this activator runs,
 /// otherwise the exception propagates to the runner.
@@ -38,7 +38,7 @@ internal sealed class ClientRepositoryActivator(
         if (ring is not null)
             await ring.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
 
-        // Resolved only now, not injected: its construction validates every registration against
+        // Resolved only now, not injected: building it validates every registration against
         // those algorithms. Any exception flows out to the runner and aborts startup.
         var repository = services.GetRequiredService<IClientRepository>();
 

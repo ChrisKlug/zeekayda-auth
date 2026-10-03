@@ -762,10 +762,8 @@ public class AuthorizeRequestValidatorTests
 
     private sealed class PassingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientWithCredentials client)
-        {
-            // These tests exercise request validation; registration validation has its own suite.
-        }
+        // These tests exercise request validation; registration validation has its own suite.
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => [];
     }
 
 }
