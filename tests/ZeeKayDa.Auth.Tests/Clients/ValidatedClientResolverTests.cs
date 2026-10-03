@@ -277,7 +277,7 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
-    public async Task A_host_validator_whose_list_yields_a_null_only_on_a_later_enumeration_is_named_as_malformed()
+    public async Task A_host_validators_result_is_judged_and_reported_from_one_snapshot()
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
@@ -285,9 +285,11 @@ public class ValidatedClientResolverTests
 
         var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
+        // The first enumeration yields "Broken." and every later one a null: reporting "Broken."
+        // proves the list was read once, and the null a second read would have hit never was.
         result.Should().BeNull();
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
-            .Which.Message.Should().NotContain(nameof(NullReferenceException));
+            .Which.Message.Should().Contain("Broken.").And.NotContain(nameof(NullReferenceException));
     }
 
     [Fact]
