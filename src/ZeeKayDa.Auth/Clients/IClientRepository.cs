@@ -5,9 +5,8 @@ namespace ZeeKayDa.Auth.Clients;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Custom implementations must return <see langword="null"/> (never throw) for unknown or
-/// malformed <c>client_id</c> values — throwing changes timing and undermines enumeration
-/// defence. See RFC 9700 §2.1.
+/// The framework calls this only with a well-formed <c>client_id</c>: a malformed one is answered
+/// as an unknown client before the repository is reached.
 /// </para>
 /// </remarks>
 public interface IClientRepository
@@ -17,9 +16,10 @@ public interface IClientRepository
     /// <see langword="null"/> if no client with that identifier is registered.
     /// </summary>
     /// <remarks>
-    /// Implementations MUST return <see langword="null"/> for unknown or malformed
-    /// <c>client_id</c> values — never throw. Throwing from this method changes response
-    /// timing and enables client enumeration attacks.
+    /// Implementations MUST return <see langword="null"/> for an unknown <c>client_id</c>, never
+    /// throw: throwing changes response timing and enables client enumeration (RFC 9700 §2.1).
+    /// Throwing when the store itself cannot answer — an outage, a timeout — is allowed; the
+    /// request fails as a server error, never as <c>invalid_client</c>.
     /// </remarks>
     Task<IClientWithCredentials?> FindByClientIdAsync(
         string clientId,

@@ -73,9 +73,8 @@ public class ValidatedClientResolverTests
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
-        // An unreadable registration never reaches the verdict cache, so suppressing by verdict
-        // instance wrote a Critical entry per request: an unauthenticated caller naming this
-        // client_id could drive the log level that pages on-call as fast as it could send.
+        // An unauthenticated caller naming this client_id must not be able to drive the log level
+        // that pages on-call as fast as it can send.
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
     }
 
@@ -107,8 +106,7 @@ public class ValidatedClientResolverTests
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
-        // A registration whose content changes on every lookup misses the verdict cache every time,
-        // which also gives it a fresh verdict, and so would give it a fresh Critical entry.
+        // A registration whose content changes on every lookup is still the same failure.
         logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
     }
 
@@ -170,9 +168,8 @@ public class ValidatedClientResolverTests
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
 
-        // Length prefixes, not a separator: "ab" + "c_rule" and "a" + "bc_rule" concatenate to the
-        // same string, so a key built by joining the two parts would collide and silence the
-        // second client's Critical entry — the operator would never hear about that registration.
+        // "ab" + "c_rule" and "a" + "bc_rule" concatenate to the same string, so a key built by
+        // joining the two parts would collide and silence the second client's Critical entry.
         var resolver = new ValidatedClientResolver(
             new MultiClientRepository(
                 ConfidentialClient("ab"),
@@ -262,36 +259,6 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
-    public async Task Verdict_is_memoized_for_a_cached_registration()
-    {
-        var validator = new CountingValidator();
-        var resolver = Resolver(NewClient(), validator);
-
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        validator.Calls.Should().Be(1,
-            "a repository serving a cached instance must not pay validation per lookup");
-    }
-
-    [Fact]
-    public async Task Fresh_instances_with_equal_content_are_validated_once()
-    {
-        var validator = new CountingValidator();
-        var resolver = new ValidatedClientResolver(
-            new FreshInstanceRepository(), validator, NullLogger());
-
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        // Validation runs a 600,000-iteration PBKDF2 (the empty-secret probe). Instance-keyed
-        // memoization made a store that hands out fresh instances per lookup — an EF Core
-        // repository, say — pay that on every unauthenticated authorize request, which is a
-        // CPU-exhaustion lever keyed on a public client_id. Content keying removes it.
-        validator.Calls.Should().Be(1);
-    }
-
-    [Fact]
     public async Task A_registration_mutated_in_place_is_revalidated()
     {
         var validator = new CountingValidator();
@@ -305,9 +272,47 @@ public class ValidatedClientResolverTests
         };
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
-        // A store that edits a cached registration must not keep the old verdict: the matcher
-        // reads the live redirect set, so a stale "valid" would bless a URI validation rejects.
+        // A store that edits a cached registration must not keep the old verdict: a stale "valid"
+        // would bless a URI validation rejects.
         validator.Calls.Should().Be(2);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("client 1")]
+    [InlineData("client/1")]
+    public async Task A_malformed_client_id_never_reaches_the_repository(string clientId)
+    {
+        var repository = new CountingRepository();
+        var resolver = new ValidatedClientResolver(repository, new PassingValidator(), NullLogger());
+
+        var result = await resolver.FindClientWithCredentialsAsync(clientId, TestContext.Current.CancellationToken);
+
+        result.Should().BeNull();
+        repository.Calls.Should().Be(0, "a repository only ever sees a well-formed client_id");
+    }
+
+    [Fact]
+    public async Task A_client_id_over_the_length_limit_never_reaches_the_repository()
+    {
+        var repository = new CountingRepository();
+        var resolver = new ValidatedClientResolver(repository, new PassingValidator(), NullLogger());
+
+        await resolver.FindClientWithCredentialsAsync(new string('a', 201), TestContext.Current.CancellationToken);
+
+        repository.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_repository_that_throws_propagates_rather_than_answering_unknown()
+    {
+        var resolver = new ValidatedClientResolver(new FailingRepository(), new PassingValidator(), NullLogger());
+
+        var act = async () => await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+
+        // An outage is the server's failure, not the client's: answering unknown would turn it
+        // into invalid_client for every caller.
+        await act.Should().ThrowAsync<TimeoutException>();
     }
 
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
@@ -390,16 +395,27 @@ public class ValidatedClientResolverTests
         public IReadOnlyList<ClientSecret> Secrets => [];
     }
 
-    private sealed class FreshInstanceRepository : IClientRepository
+    private sealed class CountingRepository : IClientRepository
+    {
+        public int Calls { get; private set; }
+
+        public Task<IClientWithCredentials?> FindByClientIdAsync(
+            string clientId, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult<IClientWithCredentials?>(null);
+        }
+    }
+
+    private sealed class FailingRepository : IClientRepository
     {
         public Task<IClientWithCredentials?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IClientWithCredentials?>(NewClient());
+            throw new TimeoutException("The client store did not answer.");
     }
 
     /// <summary>
-    /// Hands out a registration whose content differs on every lookup, so no lookup hits the
-    /// verdict cache.
+    /// Hands out a registration whose content differs on every lookup.
     /// </summary>
     private sealed class RevisingRepository : IClientRepository
     {

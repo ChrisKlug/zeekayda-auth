@@ -21,7 +21,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// A registration is an extension point, and nothing obliges a custom store to hand out a value
 /// object: it may return an ORM entity whose collections are still attached to a change tracker,
 /// or one instance shared across requests and edited in place. Validating a reference the
-/// framework does not own validates nothing durable — the resolver would fingerprint and approve
+/// framework does not own validates nothing durable — the resolver would approve
 /// one set of redirect URIs, and the authorize endpoint would then match the request against
 /// whatever the set held by then. Copying at the choke point is what makes "validated" mean the
 /// values the caller actually gets.

@@ -18,15 +18,12 @@ public sealed class ClientRegistrationValidatorTests
 
     private static readonly ClientSecret AnySecret = new("$any$x");
 
-    /// <summary>
-    /// A hasher that owns the <c>fake</c> id and always returns the configured
-    /// <paramref name="verifyResult"/> from <c>Verify</c>.
-    /// </summary>
-    private sealed class FakeHasher(bool verifyResult = false) : IClientSecretHasher
+    /// <summary>A hasher that owns the <c>fake</c> id and verifies nothing.</summary>
+    private sealed class FakeHasher : IClientSecretHasher
     {
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake" };
 
-        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => verifyResult;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
 
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
     }
@@ -1038,21 +1035,6 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     // ── Empty-secret probe ────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Validate_fails_with_empty_secret_accepted_code_if_a_secret_accepts_an_empty_secret()
-    {
-        // A hasher that accepts any presented value including empty
-        var emptyAcceptingHasher = new FakeHasher(verifyResult: true);
-        var validator = MakeValidator(hasher: emptyAcceptingHasher);
-
-        var client = MakeValidConfidentialClient(secret: FakeSecret);
-
-        var act = () => validator.Validate(client);
-
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.credentials.empty_secret_accepted");
-    }
 
     [Fact]
     public void Validate_fails_with_no_hasher_code_if_no_hasher_declared_the_secret_s_id()

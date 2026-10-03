@@ -41,9 +41,8 @@ forgets to say so has no secret and fails the three-way rule, enforced at regist
 credentials ⇔ auth methods exactly `{ "none" }`, which default from `IsPublic`. Redirect, post-logout
 and prompt sets, scopes and claim additions are empty (an empty prompt set permits every value);
 grant, response type and mode the code flow; consent and PKCE on; logout confirmation shown, zkd
-error codes off; the rest `null`. A mistyped implementation compiles and serves the default, so
-`Client` and the snapshot must implement every member, as must the fingerprint
-(`Every_IClient_member_is_implemented_and_never_left_to_the_interface_default`).
+error codes off; the rest `null`. A mistyped implementation compiles and serves the default, so `Client`
+and the snapshot implement every member (`Every_IClient_member_is_implemented_and_never_left_to_the_interface_default`).
 
 **A client's claim additions are selectors, never sources, and never remove.** `AdditionalIdTokenClaims`,
 `AdditionalUserInfoClaims` and `AdditionalAccessTokenClaims` widen what the granted scopes unlock for
@@ -109,32 +108,33 @@ without being told about it. An `http://localhost` URI logs an advisory warning 
 literal (RFC 8252 §8.3); `https://localhost` does not, being a web client on a dev certificate rather
 than a native loopback redirect. Post-logout redirect URIs get the same treatment.
 
-**A malformed secret, one no hasher declared or its hasher refuses, or one whose `Verify` accepts or
-throws on an empty secret refuses the whole client**, even beside a valid one
-(`One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid`); the probe runs last. No
+**A malformed secret, or one no hasher declared or its hasher refuses, refuses the whole client**,
+even beside a valid one (`One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid`). No
 framework message quotes a stored value (`no_hasher` names a valid id); a hasher's own text is unchecked.
+Validation never probes a hasher: `IClientSecrets.Verify` refuses an empty secret before any hasher runs
+(`An_empty_presented_secret_never_matches_even_a_hasher_that_accepts_everything`).
 
 **The resolver serves a snapshot, never the store's instance.** A repository may return an entity
 still attached to a change tracker, so validating what it handed back validated nothing durable — one
 set of redirect URIs approved, another matched against. `ValidatedClientResolver` copies every member
-into a `ClientRegistrationSnapshot` before reading it twice, then fingerprints, validates and returns
-the copy. Collections are rebuilt *and* wrapped against a downcast, because `TokenIssuanceContext.Client`
-hands the registration to the host's own `ITokenIssuer`. An uncopied member is not a compile error, so
+into a `ClientRegistrationSnapshot` before reading it twice, then validates and returns the copy on
+every lookup, uncached. Collections are rebuilt *and* wrapped against a downcast, because
+`TokenIssuanceContext.Client` hands the registration to the host's own `ITokenIssuer`. An uncopied member is not a compile error, so
 `Snapshot_covers_every_IClientRegistration_member` and
 `A_snapshot_carries_every_value_of_the_registration_it_copied` enforce it.
 
-**Client lookup returns `null` for unknown or malformed ids and never throws.** Throwing changes
-timing and leaks a signal usable for client-ID enumeration. `invalid_client` covers both unknown
-client and wrong credential, `error_description` never contains the `client_id`, and any opt-in
-sub-code must not distinguish the two either. Presented secrets, raw `Authorization` headers, raw
-token-endpoint bodies and `code_verifier` values are never logged (RFC 7636 §7.5).
+**Client lookup returns `null` for unknown or malformed ids.** A malformed id never reaches the
+repository (`A_malformed_client_id_never_reaches_the_repository`); an unknown one must not make it throw,
+which would change timing for client-ID enumeration. A store outage may throw: a server error, never
+`invalid_client`, which covers unknown client and wrong credential alike; `error_description` and
+any opt-in sub-code never tell them apart or name the `client_id`. Presented secrets, raw
+`Authorization` headers, token-endpoint bodies and `code_verifier` are never logged (RFC 7636 §7.5).
 
 **Every registration is validated where it is served, not only where it is written.** The iteration
 floor, the two-secret cap, the `IsPublic` rule and the rules holding a client to what the server
 serves are enforced by `ValidatedClientResolver`, the only path from a `client_id` to a registration:
 it runs the full validator on what the repository returned and serves a failing one as an unknown
-client. A repository never validates its own output; it may still call the validator to reject a
-bad client when one is written, for example from an admin UI.
+client. A repository never validates its own output, but may call the validator on write.
 
 **Client-facing types split on whether they need a request.** Registrations, credentials, hashers,
 the repository and the validator are core; the authenticator seam is in the ASP.NET Core package.

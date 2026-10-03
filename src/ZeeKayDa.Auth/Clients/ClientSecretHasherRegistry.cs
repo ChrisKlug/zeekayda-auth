@@ -105,35 +105,6 @@ internal sealed class ClientSecretHasherRegistry
         }
     }
 
-    /// <summary>
-    /// What is wrong if the stored secret's own hasher verifies an empty presented secret, or throws
-    /// trying. A throw is the operator's failure to read, not a request-time log entry.
-    /// </summary>
-    public ZeeKayDaConfigurationFailure? EmptySecretProblem(ClientSecret stored, string clientId)
-    {
-        if (HasherFor(stored) is not { } owner)
-            return null;
-
-        try
-        {
-            return owner.Verify(ReadOnlySpan<char>.Empty, stored)
-                ? new ZeeKayDaConfigurationFailure(
-                    "client.credentials.empty_secret_accepted",
-                    $"A secret for client '{clientId}' accepts an empty presented secret. " +
-                    "Secrets must not accept empty input — this would allow unauthenticated access " +
-                    "to the client. Review the stored secret and the associated hasher.")
-                : null;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Never ex.Message: it is the hasher's text, and failure messages are logged verbatim.
-            return new ZeeKayDaConfigurationFailure(
-                "client.credentials.verify_threw",
-                $"Client '{clientId}': the IClientSecretHasher '{owner.GetType().FullName}' threw " +
-                $"{ex.GetType().FullName} verifying a stored secret, so the client could never authenticate.");
-        }
-    }
-
     private static IReadOnlyList<ZeeKayDaConfigurationFailure> PrefixedWith(
         string clientId, IEnumerable<ZeeKayDaConfigurationFailure> failures) =>
     [

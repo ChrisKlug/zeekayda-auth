@@ -110,7 +110,7 @@ internal sealed class ClientRegistrationValidator(
     }
 
     /// <summary>Non-empty, at most 200 characters, and only <c>[A-Za-z0-9_\-.]</c>.</summary>
-    private static bool IsValidClientId(string? clientId) =>
+    internal static bool IsValidClientId(string? clientId) =>
         !string.IsNullOrEmpty(clientId)
         && clientId.Length <= 200
         && ClientIdPattern.IsMatch(clientId);
