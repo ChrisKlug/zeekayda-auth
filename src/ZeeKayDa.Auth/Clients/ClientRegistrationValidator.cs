@@ -83,9 +83,10 @@ internal sealed class ClientRegistrationValidator(
             // where TLS already rules out the name-resolution risk the advice is about.
             // Suppressed when the URI broke a rule: a URI that is being rejected anyway should not
             // also generate advisory-warning noise.
-            if (RedirectUriValidator.ValidateRedirectUri(clientId, uriString, propertyName, failures) &&
-                RedirectUriRules.IsHttpLocalhost(uriString) &&
-                FirstTime(clientId, "localhost-" + propertyName, uriString))
+            var isValidHttpLocalhost =
+                RedirectUriValidator.ValidateRedirectUri(clientId, uriString, propertyName, failures) &&
+                RedirectUriRules.IsHttpLocalhost(uriString);
+            if (isValidHttpLocalhost && FirstTime(clientId, "localhost-" + propertyName, uriString))
             {
                 logger.LogWarning(
                     "Client '{ClientId}' uses 'localhost' in {PropertyName}: '{Uri}'. " +
@@ -185,7 +186,8 @@ internal sealed class ClientRegistrationValidator(
 
         // Say so rather than passing silently. A host with no ring at all stays quiet: the protocol
         // endpoints refuse to start without one, so there is nothing a warning here would add.
-        if (!checkedAgainstServer && keyRing is not null && FirstTime(client.ClientId, "signing-unchecked"))
+        var uncheckedAgainstRing = !checkedAgainstServer && keyRing is not null;
+        if (uncheckedAgainstRing && FirstTime(client.ClientId, "signing-unchecked"))
         {
             logger.LogWarning(
                 "Client '{ClientId}' declares AllowedSigningAlgorithms, but the signing key ring " +
@@ -245,9 +247,9 @@ internal sealed class ClientRegistrationValidator(
     /// </summary>
     private void WarnOfRefreshWithoutIssuer(IClientWithCredentials client)
     {
-        if (client.AllowedGrantTypes.Any(grantType => grantType == GrantType.RefreshToken)
-            && !client.AllowedGrantTypes.Any(grantType => grantType == GrantType.AuthorizationCode)
-            && FirstTime(client.ClientId, "refresh-without-issuer"))
+        var refreshWithoutIssuer = client.AllowedGrantTypes.Any(grantType => grantType == GrantType.RefreshToken)
+            && !client.AllowedGrantTypes.Any(grantType => grantType == GrantType.AuthorizationCode);
+        if (refreshWithoutIssuer && FirstTime(client.ClientId, "refresh-without-issuer"))
         {
             logger.LogWarning(
                 "Client '{ClientId}' allows the refresh_token grant but not authorization_code, the only grant " +
