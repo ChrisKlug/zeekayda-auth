@@ -52,12 +52,39 @@ internal sealed partial class ClientRegistrationValidator
         }
     }
 
-    /// <summary>One URI of a client's redirect URI set, and the failures it can be reported with.</summary>
-    private readonly record struct RedirectUriEntry(string ClientId, string PropertyName, string Uri)
+    /// <summary>A redirect URI rule: its code, the problem as the message names it, and why.</summary>
+    private sealed record RedirectUriRule(string Code, string Problem, string Reason);
+
+    private static readonly RedirectUriRule ZoneIdRule = new(
+        "client.redirect_uri.ipv6_zone_id", "with an IPv6 zone ID",
+        "Zone IDs bind to a specific network interface rather than the loopback stack and are prohibited in redirect URIs.");
+
+    private static readonly RedirectUriRule FragmentRule = new(
+        "client.redirect_uri.fragment", "with a fragment component",
+        "Fragment components are prohibited in redirect URIs (RFC 9700 §2.1).");
+
+    private static readonly RedirectUriRule UserInfoRule = new(
+        "client.redirect_uri.userinfo", "with a userinfo component",
+        "Userinfo components are prohibited in redirect URIs.");
+
+    private static readonly RedirectUriRule PathTraversalRule = new(
+        "client.redirect_uri.path_traversal", "with a path traversal segment",
+        "Path traversal segments ('.' or '..') are prohibited in redirect URIs.");
+
+    private static readonly RedirectUriRule HttpNonLoopbackRule = new(
+        "client.redirect_uri.scheme_http_non_loopback", "using HTTP for a non-loopback host",
+        "HTTP redirect URIs are only permitted for loopback addresses (RFC 8252 §8.3).");
+
+    private static readonly RedirectUriRule SchemeRule = new(
+        "client.redirect_uri.scheme_not_allowed", "with a disallowed scheme",
+        "Permitted schemes are 'https', 'http' (loopback only), and private-use schemes containing a dot.");
+
+    /// <summary>One URI of a client's redirect URI set.</summary>
+    private sealed record RedirectUriEntry(string ClientId, string PropertyName, string Uri)
     {
-        public ZeeKayDaConfigurationFailure Fail(string code, string problem, string reason) => new(
-            code,
-            $"Client '{ClientId}' has a redirect URI in {PropertyName} {problem}: '{Uri}'. {reason}");
+        public ZeeKayDaConfigurationFailure Broke(RedirectUriRule rule) => new(
+            rule.Code,
+            $"Client '{ClientId}' has a redirect URI in {PropertyName} {rule.Problem}: '{Uri}'. {rule.Reason}");
     }
 
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateRedirectUri(RedirectUriEntry entry)
@@ -75,38 +102,20 @@ internal sealed partial class ClientRegistrationValidator
         // Checked on the original string: .NET strips a zone ID from uri.Host at parse time. A zone
         // ID binds to one network interface rather than the loopback stack, whatever the scheme.
         if (RedirectUriRules.HasIpv6ZoneId(uriString))
-        {
-            yield return entry.Fail("client.redirect_uri.ipv6_zone_id", "with an IPv6 zone ID",
-                "Zone IDs bind to a specific network interface rather than the loopback stack and are prohibited in redirect URIs.");
-        }
+            yield return entry.Broke(ZoneIdRule);
 
         if (RedirectUriRules.HasFragment(uri))
-        {
-            yield return entry.Fail("client.redirect_uri.fragment", "with a fragment component",
-                "Fragment components are prohibited in redirect URIs (RFC 9700 §2.1).");
-        }
+            yield return entry.Broke(FragmentRule);
 
         if (RedirectUriRules.HasUserInfo(uri))
-        {
-            yield return entry.Fail("client.redirect_uri.userinfo", "with a userinfo component",
-                "Userinfo components are prohibited in redirect URIs.");
-        }
+            yield return entry.Broke(UserInfoRule);
 
         // Checked on the original string: .NET's parser normalises '.' and '..' away.
         if (RedirectUriRules.HasPathTraversal(uriString))
-        {
-            yield return entry.Fail("client.redirect_uri.path_traversal", "with a path traversal segment",
-                "Path traversal segments ('.' or '..') are prohibited in redirect URIs.");
-        }
+            yield return entry.Broke(PathTraversalRule);
 
         if (!RedirectUriRules.IsSchemeAllowed(uri))
-        {
-            yield return RedirectUriRules.IsHttp(uri)
-                ? entry.Fail("client.redirect_uri.scheme_http_non_loopback", "using HTTP for a non-loopback host",
-                    "HTTP redirect URIs are only permitted for loopback addresses (RFC 8252 §8.3).")
-                : entry.Fail("client.redirect_uri.scheme_not_allowed", "with a disallowed scheme",
-                    "Permitted schemes are 'https', 'http' (loopback only), and private-use schemes containing a dot.");
-        }
+            yield return entry.Broke(RedirectUriRules.IsHttp(uri) ? HttpNonLoopbackRule : SchemeRule);
     }
 
     /// <summary>
