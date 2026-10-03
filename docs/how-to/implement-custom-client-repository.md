@@ -79,9 +79,10 @@ public sealed class MyDatabaseClientRepository : IClientRepository
 
     public async Task SaveClientAsync(IClientRegistration client)
     {
-        // Throws ZeeKayDaConfigurationException with all violations in AggregatedFailures
-        // if the registration is invalid — see every problem in one pass.
-        _validator.Validate(client);
+        // Every violation, so the caller sees every problem in one pass; empty when valid.
+        var failures = _validator.Validate(client);
+        if (failures.Count > 0)
+            throw new ZeeKayDaConfigurationException([.. failures]);
 
         // persist ...
     }

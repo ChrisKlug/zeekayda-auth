@@ -546,6 +546,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **`IClientRegistrationValidator.Validate` returns its failures instead of throwing** (#811). It
+  returns `IReadOnlyList<ZeeKayDaConfigurationFailure>`, empty for a valid registration; an invalid
+  client is an expected outcome, not an exception. The caller decides what to do: the in-memory
+  repository throws them aggregated at startup, and the client resolver serves the client as unknown
+  and logs them. A custom validator that throws is still refused as unknown, but the in-memory
+  repository no longer carries a thrown validator exception's root cause into its aggregate.
+
 - **Startup checks are constructor-injected, and the sanitizing logger is a class** (#771).
   `IStartupVerifier` and `IStartupActivator` each declare `Name` and
   `VerifyAsync(StartupVerificationContext, CancellationToken)` directly; the `IServiceProvider`

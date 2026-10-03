@@ -54,12 +54,10 @@ public sealed class CompositeClientAuthenticatorTests
 
     private sealed class PassingRegistrationValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientWithCredentials client)
-        {
-            // Deliberately accepts everything: these tests exercise the composite's dispatch
-            // rules with minimal fake registrations, not registration validation, which has its
-            // own suites (ClientRegistrationValidatorTests, ValidatedClientResolverTests).
-        }
+        // Deliberately accepts everything: these tests exercise the composite's dispatch
+        // rules with minimal fake registrations, not registration validation, which has its
+        // own suites (ClientRegistrationValidatorTests, ValidatedClientResolverTests).
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => [];
     }
 
     private static ValidatedClientResolver Resolver(IClientWithCredentials? client) => new(

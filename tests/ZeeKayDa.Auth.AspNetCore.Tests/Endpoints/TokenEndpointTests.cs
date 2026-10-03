@@ -1100,7 +1100,11 @@ public sealed class TokenEndpointTests : IDisposable
     /// </summary>
     private sealed class RotateAfterValidation(SwitchableRing ring) : IClientRegistrationValidator
     {
-        public void Validate(IClientWithCredentials client) => ring.ClientValidated();
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
+        {
+            ring.ClientValidated();
+            return [];
+        }
     }
 
     /// <summary>A source over one freshly generated key of the given algorithm.</summary>

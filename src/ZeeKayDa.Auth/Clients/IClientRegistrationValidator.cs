@@ -21,10 +21,9 @@ public interface IClientRegistrationValidator
     /// Validates <paramref name="client"/> against all framework configuration rules.
     /// </summary>
     /// <param name="client">The registration to validate.</param>
-    /// <exception cref="ZeeKayDaConfigurationException">
-    /// Thrown when one or more rule violations are detected. All violations are aggregated into
-    /// a single exception so operators see every problem in one pass — see
-    /// <see cref="ZeeKayDaConfigurationException.AggregatedFailures"/>.
-    /// </exception>
-    void Validate(IClientWithCredentials client);
+    /// <returns>
+    /// Every rule violation found, so operators see every problem in one pass; empty when the
+    /// registration is valid. An invalid registration is an expected outcome, never an exception.
+    /// </returns>
+    IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client);
 }
