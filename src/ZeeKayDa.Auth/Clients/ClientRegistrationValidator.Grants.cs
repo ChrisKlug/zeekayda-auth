@@ -11,11 +11,9 @@ namespace ZeeKayDa.Auth.Clients;
 internal sealed partial class ClientRegistrationValidator
 {
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateGrants(IClientWithCredentials client) =>
-    [
-        .. ValidateFlows(client),
-        .. ValidateAllowedScopes(client),
-        .. ValidateAllowedPromptValues(client),
-    ];
+        ValidateFlows(client)
+            .Concat(ValidateAllowedScopes(client))
+            .Concat(ValidateAllowedPromptValues(client));
 
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateFlows(IClientWithCredentials client)
     {

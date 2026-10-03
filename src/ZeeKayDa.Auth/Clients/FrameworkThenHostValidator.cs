@@ -13,5 +13,27 @@ internal sealed class FrameworkThenHostValidator(
     public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
         ReferenceEquals(host, framework)
             ? framework.Validate(client)
-            : [.. framework.Validate(client), .. host.Validate(client)];
+            : [.. framework.Validate(client), .. Checked(host, client)];
+
+    /// <summary>
+    /// <paramref name="host"/>'s failures, or a single <c>client.validator.malformed_result</c> when
+    /// it breaks its contract with a null list or a null entry, which would otherwise surface as a
+    /// bare <see cref="NullReferenceException"/> far from its cause.
+    /// </summary>
+    internal static IReadOnlyList<ZeeKayDaConfigurationFailure> Checked(
+        IClientRegistrationValidator host,
+        IClientWithCredentials client)
+    {
+        var found = host.Validate(client);
+
+        return found is null || found.Any(failure => failure is null)
+            ?
+            [
+                new ZeeKayDaConfigurationFailure(
+                    "client.validator.malformed_result",
+                    $"The IClientRegistrationValidator '{host.GetType().FullName}' returned a null list or a " +
+                    $"null failure for client '{client.ClientId}'. Return an empty list for a valid registration."),
+            ]
+            : found;
+    }
 }

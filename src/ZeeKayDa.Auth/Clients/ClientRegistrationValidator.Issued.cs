@@ -8,14 +8,12 @@ namespace ZeeKayDa.Auth.Clients;
 internal sealed partial class ClientRegistrationValidator
 {
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateIssued(IClientWithCredentials client) =>
-    [
-        .. ValidateAllowedSigningAlgorithms(client),
-        .. ValidateTokenLifetime(client, client.AccessTokenLifetime, nameof(IClient.AccessTokenLifetime)),
-        .. ValidateTokenLifetime(client, client.IdTokenLifetime, nameof(IClient.IdTokenLifetime)),
-        .. ValidateClaimAdditions(client, client.AdditionalIdTokenClaims, nameof(IClient.AdditionalIdTokenClaims)),
-        .. ValidateClaimAdditions(client, client.AdditionalUserInfoClaims, nameof(IClient.AdditionalUserInfoClaims)),
-        .. ValidateClaimAdditions(client, client.AdditionalAccessTokenClaims, nameof(IClient.AdditionalAccessTokenClaims)),
-    ];
+        ValidateAllowedSigningAlgorithms(client)
+            .Concat(ValidateTokenLifetime(client, client.AccessTokenLifetime, nameof(IClient.AccessTokenLifetime)))
+            .Concat(ValidateTokenLifetime(client, client.IdTokenLifetime, nameof(IClient.IdTokenLifetime)))
+            .Concat(ValidateClaimAdditions(client, client.AdditionalIdTokenClaims, nameof(IClient.AdditionalIdTokenClaims)))
+            .Concat(ValidateClaimAdditions(client, client.AdditionalUserInfoClaims, nameof(IClient.AdditionalUserInfoClaims)))
+            .Concat(ValidateClaimAdditions(client, client.AdditionalAccessTokenClaims, nameof(IClient.AdditionalAccessTokenClaims)));
 
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateAllowedSigningAlgorithms(IClientWithCredentials client)
     {

@@ -9,11 +9,9 @@ internal sealed partial class ClientRegistrationValidator
     private const int MaxUrisPerSet = 32;
 
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateDestinations(IClientWithCredentials client) =>
-    [
-        .. ValidateRedirectUriSet(client.ClientId, client.RedirectUris, "RedirectUris"),
-        .. ValidateRedirectUriSet(client.ClientId, client.PostLogoutRedirectUris, "PostLogoutRedirectUris"),
-        .. ValidateInitiateLoginUri(client),
-    ];
+        ValidateRedirectUriSet(client.ClientId, client.RedirectUris, "RedirectUris")
+            .Concat(ValidateRedirectUriSet(client.ClientId, client.PostLogoutRedirectUris, "PostLogoutRedirectUris"))
+            .Concat(ValidateInitiateLoginUri(client));
 
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateRedirectUriSet(
         string clientId,

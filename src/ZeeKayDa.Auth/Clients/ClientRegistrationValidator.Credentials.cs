@@ -19,12 +19,10 @@ internal sealed partial class ClientRegistrationValidator
     ];
 
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateCredentials(IClientWithCredentials client) =>
-    [
-        .. ValidateIsPublicTrinity(client),
-        .. ValidateAuthMethods(client),
-        .. ValidatePkceOptOut(client),
-        .. ValidateSecrets(client),
-    ];
+        ValidateIsPublicTrinity(client)
+            .Concat(ValidateAuthMethods(client))
+            .Concat(ValidatePkceOptOut(client))
+            .Concat(ValidateSecrets(client));
 
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateIsPublicTrinity(IClientWithCredentials client)
     {

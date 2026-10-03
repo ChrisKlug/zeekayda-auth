@@ -2,7 +2,9 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Logging;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
 
@@ -247,23 +249,44 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
-    public async Task A_validator_returning_a_null_list_is_served_as_unknown_not_a_500()
+    public async Task A_host_validator_returning_a_null_list_is_served_as_unknown_and_named_as_malformed()
     {
-        var resolver = Resolver(NewClient(), new MalformedResultValidator(null));
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(NewClient()), FrameworkThen(new MalformedResultValidator(null)), logger);
 
         var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
         result.Should().BeNull("a malformed validator result must fail closed, like a throwing validator");
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
+            .Which.Message.Should().Contain("MalformedResultValidator").And.NotContain(nameof(NullReferenceException));
     }
 
     [Fact]
-    public async Task A_validator_returning_a_null_failure_is_served_as_unknown_not_a_500()
+    public async Task A_host_validator_returning_a_null_failure_is_served_as_unknown_and_named_as_malformed()
     {
-        var resolver = Resolver(NewClient(), new MalformedResultValidator([null]));
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(NewClient()), FrameworkThen(new MalformedResultValidator([null])), logger);
 
         var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
         result.Should().BeNull("a malformed validator result must fail closed, like a throwing validator");
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
+            .Which.Message.Should().Contain("MalformedResultValidator").And.NotContain(nameof(NullReferenceException));
+    }
+
+    [Fact]
+    public async Task A_host_validator_returning_a_malformed_result_logs_critical_once_however_many_lookups()
+    {
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(NewClient()), FrameworkThen(new MalformedResultValidator(null)), logger);
+
+        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
     }
 
     [Fact]
@@ -543,6 +566,32 @@ public class ValidatedClientResolverTests
 
             return _flipped ? [first, second] : [second, first];
         }
+    }
+
+    /// <summary>The production wiring: the framework's rules, then <paramref name="host"/>'s.</summary>
+    private static FrameworkThenHostValidator FrameworkThen(IClientRegistrationValidator host)
+    {
+        var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+        serverOptions.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+        var registry = new ClientSecretHasherRegistry(
+            [new FakeHasher()], Microsoft.Extensions.Options.Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        return new FrameworkThenHostValidator(
+            new ClientRegistrationValidator(
+                Microsoft.Extensions.Options.Options.Create(serverOptions),
+                registry,
+                NullSanitizingLogger<ClientRegistrationValidator>.Instance,
+                keyRing: null),
+            host);
+    }
+
+    private sealed class FakeHasher : IClientSecretHasher
+    {
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake" };
+
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
+
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$fake$x");
     }
 
     /// <summary>A host validator breaking its contract: a null list, or a null entry in one.</summary>

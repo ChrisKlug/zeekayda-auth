@@ -74,7 +74,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
         }
 
         foreach (var client in clients)
-            failures.AddRange(ValidateWith(validator, client));
+            failures.AddRange(FrameworkThenHostValidator.Checked(validator, client));
 
         if (failures.Count > 0)
             throw new ZeeKayDaConfigurationException([.. failures]);
@@ -91,25 +91,6 @@ internal sealed class InMemoryClientRepository : IClientRepository
         }
 
         return new InMemoryClientRepository(clients.ToDictionary(client => client.ClientId, StringComparer.Ordinal));
-    }
-
-    private static IReadOnlyList<ZeeKayDaConfigurationFailure> ValidateWith(
-        IClientRegistrationValidator validator,
-        IClientWithCredentials client)
-    {
-        // A host's validator is an extension point: a null in its result would otherwise surface as a
-        // bare NullReferenceException from the aggregate.
-        var found = validator.Validate(client);
-
-        return found is null || found.Any(failure => failure is null)
-            ?
-            [
-                new ZeeKayDaConfigurationFailure(
-                    "client.validator.malformed_result",
-                    $"The IClientRegistrationValidator '{validator.GetType().FullName}' returned a null list or a " +
-                    $"null failure for client '{client.ClientId}'. Return an empty list for a valid registration."),
-            ]
-            : found;
     }
 
     /// <summary>Every registration this repository serves, for the startup checks that read them all.</summary>
