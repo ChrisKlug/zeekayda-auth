@@ -134,6 +134,23 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
             entry.Level == LogLevel.Warning && entry.Message.Contains("no public clients", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void In_memory_clients_are_held_to_the_framework_rules_at_startup_when_the_host_registers_its_own_validator()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IClientRegistrationValidator, AcceptEverythingValidator>();
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com")
+            .AddInMemoryClients(clients => clients.AddPublic(
+                "spa", ["https://app.example.com/cb#fragment"], [], ["openid"]));
+        using var provider = services.BuildServiceProvider();
+
+        var act = () => provider.GetRequiredService<IClientRepository>();
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
+    }
+
     private sealed class RejectEverythingValidator : IClientRegistrationValidator
     {
         public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>

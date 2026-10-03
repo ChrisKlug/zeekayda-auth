@@ -28,7 +28,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
         var repository = Build(
             services.GetRequiredService<InMemoryClientRegistrationOptions>(),
             services.GetRequiredService<ClientSecrets>(),
-            services.GetRequiredService<IClientRegistrationValidator>());
+            services.GetRequiredService<FrameworkThenHostValidator>());
 
         repository.WarnIfNoneHasNoPublicClient(
             services.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value,
@@ -48,13 +48,13 @@ internal sealed class InMemoryClientRepository : IClientRepository
     internal static InMemoryClientRepository Build(
         InMemoryClientRegistrationOptions registrations,
         ClientSecrets secrets,
-        IClientRegistrationValidator validator)
+        FrameworkThenHostValidator validator)
     {
         var (clients, failures) = HashPending(registrations.Pending, secrets);
         clients.AddRange(registrations.PreBuilt);
 
         failures.AddRange(FindDuplicateClientIds(clients));
-        failures.AddRange(clients.SelectMany(client => FrameworkThenHostValidator.Checked(validator, client)));
+        failures.AddRange(clients.SelectMany(validator.Validate));
 
         return failures.Count > 0
             ? throw new ZeeKayDaConfigurationException([.. failures])

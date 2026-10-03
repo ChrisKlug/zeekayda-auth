@@ -767,6 +767,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **In-memory clients are held to the framework's registration rules at startup even when the host
+  registers its own `IClientRegistrationValidator`** (#876). The in-memory repository was built with
+  whichever validator DI resolved, so a host validator replaced the framework's rules at startup
+  (the request-time resolver still applied both). It now validates with the framework's rules first,
+  then the host's, the same as the resolver.
+
 - **Hosts starting together no longer race on creating the persisted development key** (#853).
   `AddPersistedDevelopmentSigning()` checked for the key file and then created it, so two hosts
   sharing a key folder could both find none: on Unix the slower one failed to start, and on Windows
