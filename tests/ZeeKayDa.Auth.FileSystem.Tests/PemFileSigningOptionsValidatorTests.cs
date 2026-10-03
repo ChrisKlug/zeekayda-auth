@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem.Tests;
@@ -18,7 +19,7 @@ public sealed class PemFileSigningOptionsValidatorTests
     {
         try
         {
-            new PemFileSigningOptionsValidator().Validate(null, options);
+            ((IValidateOptions<PemFileSigningOptions>)new PemFileSigningOptionsValidator()).Validate(null, options);
             return [];
         }
         catch (ZeeKayDaConfigurationException exception)
@@ -40,7 +41,7 @@ public sealed class PemFileSigningOptionsValidatorTests
     {
         // Pins the Success result itself, so a validator that never returns Success cannot pass
         // startup on the strength of never having thrown.
-        var result = new PemFileSigningOptionsValidator().Validate(null, ValidOptions());
+        var result = ((IValidateOptions<PemFileSigningOptions>)new PemFileSigningOptionsValidator()).Validate(null, ValidOptions());
 
         result.Succeeded.Should().BeTrue();
     }
@@ -249,7 +250,7 @@ public sealed class PemFileSigningOptionsValidatorTests
     {
         var options = new PemFileSigningOptions { Current = new PemSigningFile("/etc/zeekayda/tls\0.pem") };
 
-        var act = () => new PemFileSigningOptionsValidator().Validate(null, options);
+        var act = () => ((IValidateOptions<PemFileSigningOptions>)new PemFileSigningOptionsValidator()).Validate(null, options);
 
         act.Should().Throw<ZeeKayDaConfigurationException>("an unresolvable path is a configuration error like any other");
         Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.paths.unresolvable"
@@ -262,7 +263,7 @@ public sealed class PemFileSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Next = new PemCertificateFile("/etc/zeekayda/next\0.pem");
 
-        var act = () => new PemFileSigningOptionsValidator().Validate(null, options);
+        var act = () => ((IValidateOptions<PemFileSigningOptions>)new PemFileSigningOptionsValidator()).Validate(null, options);
 
         act.Should().Throw<ZeeKayDaConfigurationException>();
         Validate(options).Should().Contain(f => f.Code == "configuration.pem_file_signing.paths.unresolvable"

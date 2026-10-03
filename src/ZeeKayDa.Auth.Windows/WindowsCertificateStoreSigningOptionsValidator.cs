@@ -14,29 +14,28 @@ namespace ZeeKayDa.Auth.Windows;
 internal sealed class WindowsCertificateStoreSigningOptionsValidator : ZeeKayDaOptionsValidator<WindowsCertificateStoreSigningOptions>
 {
     /// <inheritdoc/>
-    protected override void Validate(
+    protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(
         string? name,
-        WindowsCertificateStoreSigningOptions options,
-        ICollection<ZeeKayDaConfigurationFailure> failures)
+        WindowsCertificateStoreSigningOptions options)
     {
         if (options.Current is null)
         {
-            failures.Add(new(
+            yield return new(
                 "configuration.windows_certificate_store_signing.current.missing",
                 $"{nameof(WindowsCertificateStoreSigningOptions)}.{nameof(WindowsCertificateStoreSigningOptions.Current)} " +
-                "must be set to the certificate that signs. Previous and Next are optional; Current is not."));
+                "must be set to the certificate that signs. Previous and Next are optional; Current is not.");
         }
 
         if (!Enum.IsDefined(options.Algorithm))
         {
-            failures.Add(new(
+            yield return new(
                 "configuration.windows_certificate_store_signing.algorithm.undefined_value",
                 $"{nameof(WindowsCertificateStoreSigningOptions)}.{nameof(WindowsCertificateStoreSigningOptions.Algorithm)} " +
-                $"value '{options.Algorithm}' is not a defined {nameof(SigningAlgorithm)} member."));
+                $"value '{options.Algorithm}' is not a defined {nameof(SigningAlgorithm)} member.");
         }
 
         foreach (var failure in FindDuplicateSlots(options))
-            failures.Add(failure);
+            yield return failure;
     }
 
     /// <summary>

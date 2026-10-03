@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
@@ -10,7 +11,7 @@ public sealed class AllowedDevEnvironmentsValidatorTests
     {
         try
         {
-            Sut.Validate(name, options);
+            ((IValidateOptions<DevelopmentSigningOptions>)Sut).Validate(name, options);
             return [];
         }
         catch (ZeeKayDaConfigurationException exception)

@@ -1,4 +1,5 @@
 using System.Reflection;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Tokens;
@@ -118,7 +119,7 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
         };
 
         PostConfigure(options);
-        var act = () => new AuthorizationServerOptionsValidator().Validate(null, options);
+        var act = () => ((IValidateOptions<AuthorizationServerOptions>)new AuthorizationServerOptionsValidator()).Validate(null, options);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "configuration.grant_types_supported.null");
@@ -134,7 +135,7 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
         };
 
         PostConfigure(options);
-        var act = () => new AuthorizationServerOptionsValidator().Validate(null, options);
+        var act = () => ((IValidateOptions<AuthorizationServerOptions>)new AuthorizationServerOptionsValidator()).Validate(null, options);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "configuration.cors_origins.null");
@@ -145,7 +146,7 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     {
         var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
 
-        var result = new AuthorizationServerOptionsValidator().Validate(null, options);
+        var result = ((IValidateOptions<AuthorizationServerOptions>)new AuthorizationServerOptionsValidator()).Validate(null, options);
 
         result.Succeeded.Should().BeTrue();
     }

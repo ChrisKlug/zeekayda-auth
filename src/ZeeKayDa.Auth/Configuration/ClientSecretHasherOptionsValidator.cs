@@ -10,18 +10,17 @@ internal sealed class ClientSecretHasherOptionsValidator
     : ZeeKayDaOptionsValidator<ClientSecretHasherRegistrationOptions>
 {
     /// <inheritdoc/>
-    protected override void Validate(
+    protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(
         string? name,
-        ClientSecretHasherRegistrationOptions options,
-        ICollection<ZeeKayDaConfigurationFailure> failures)
+        ClientSecretHasherRegistrationOptions options)
     {
         // None marked is valid: PBKDF2 is then the default.
         var defaultCount = options.Registrations.Count(r => r.IsDefault);
 
         if (defaultCount > 1)
-            failures.Add(new(
+            yield return new(
                 "configuration.hashers.multiple_defaults",
                 $"{defaultCount} IClientSecretHasher implementations are marked as default. " +
-                "At most one hasher may have isDefault: true; with none, PBKDF2 is the default."));
+                "At most one hasher may have isDefault: true; with none, PBKDF2 is the default.");
     }
 }

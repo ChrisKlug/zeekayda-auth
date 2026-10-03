@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Configuration;
 
 namespace ZeeKayDa.Auth.Tests.Configuration;
@@ -8,7 +9,7 @@ public sealed class ClientSecretHasherOptionsValidatorTests
     {
         try
         {
-            new ClientSecretHasherOptionsValidator().Validate(null, options);
+            ((IValidateOptions<ClientSecretHasherRegistrationOptions>)new ClientSecretHasherOptionsValidator()).Validate(null, options);
             return [];
         }
         catch (ZeeKayDaConfigurationException exception)

@@ -12,51 +12,52 @@ namespace ZeeKayDa.Auth.FileSystem;
 internal sealed class PfxFileSigningOptionsValidator : ZeeKayDaOptionsValidator<PfxFileSigningOptions>
 {
     /// <inheritdoc/>
-    protected override void Validate(
+    protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(
         string? name,
-        PfxFileSigningOptions options,
-        ICollection<ZeeKayDaConfigurationFailure> failures)
+        PfxFileSigningOptions options)
     {
         if (options.Current is null)
         {
-            failures.Add(new(
+            yield return new(
                 "configuration.pfx_file_signing.current.missing",
                 "PfxFileSigningOptions.Current must be set to the PFX file that signs. Previous and " +
-                "Next are optional; Current is not."));
+                "Next are optional; Current is not.");
         }
 
-        AppendSlotErrors(nameof(PfxFileSigningOptions.Previous), options.Previous, failures);
-        AppendSlotErrors(nameof(PfxFileSigningOptions.Current), options.Current, failures);
-        AppendSlotErrors(nameof(PfxFileSigningOptions.Next), options.Next, failures);
+        var slotFailures = SlotFailures(nameof(PfxFileSigningOptions.Previous), options.Previous)
+            .Concat(SlotFailures(nameof(PfxFileSigningOptions.Current), options.Current))
+            .Concat(SlotFailures(nameof(PfxFileSigningOptions.Next), options.Next));
+        foreach (var failure in slotFailures)
+            yield return failure;
 
         if (!Enum.IsDefined(options.Algorithm))
         {
-            failures.Add(new(
+            yield return new(
                 "configuration.pfx_file_signing.algorithm.undefined_value",
                 $"PfxFileSigningOptions.Algorithm value '{options.Algorithm}' is not a defined " +
-                $"{nameof(SigningAlgorithm)} member."));
+                $"{nameof(SigningAlgorithm)} member.");
         }
 
         foreach (var failure in DuplicatePathFailures(options))
-            failures.Add(failure);
+            yield return failure;
     }
 
-    private static void AppendSlotErrors(string slotName, PfxFile? slot, ICollection<ZeeKayDaConfigurationFailure> failures)
+    private static IEnumerable<ZeeKayDaConfigurationFailure> SlotFailures(string slotName, PfxFile? slot)
     {
         if (slot is null)
-            return;
+            yield break;
 
         if (string.IsNullOrWhiteSpace(slot.Path))
-            failures.Add(new(
+            yield return new(
                 $"configuration.pfx_file_signing.{slotName.ToLowerInvariant()}.path.missing",
-                $"PfxFileSigningOptions.{slotName}.Path must be set to a non-empty file path."));
+                $"PfxFileSigningOptions.{slotName}.Path must be set to a non-empty file path.");
 
         // Every slot needs a password to be opened at all, including a published-only one, whose
         // certificate sits inside a password-protected safe.
         if (slot.PasswordSource is null)
-            failures.Add(new(
+            yield return new(
                 $"configuration.pfx_file_signing.{slotName.ToLowerInvariant()}.password_source.missing",
-                $"PfxFileSigningOptions.{slotName}.PasswordSource must be set to a password-source delegate."));
+                $"PfxFileSigningOptions.{slotName}.PasswordSource must be set to a password-source delegate.");
     }
 
     private static List<ZeeKayDaConfigurationFailure> DuplicatePathFailures(PfxFileSigningOptions options) =>

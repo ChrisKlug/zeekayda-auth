@@ -695,8 +695,7 @@ static Microsoft.Extensions.DependencyInjection.ZeeKayDaOptionsServiceCollection
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaOptionsServiceCollectionExtensions.ValidateWithZeeKayDa<TOptions>(this Microsoft.Extensions.Options.OptionsBuilder<TOptions!>! builder) -> Microsoft.Extensions.Options.OptionsBuilder<TOptions!>!
 ZeeKayDa.Auth.ZeeKayDaOptionsValidator<TOptions>
 ZeeKayDa.Auth.ZeeKayDaOptionsValidator<TOptions>.ZeeKayDaOptionsValidator() -> void
-ZeeKayDa.Auth.ZeeKayDaOptionsValidator<TOptions>.Validate(string? name, TOptions! options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
-abstract ZeeKayDa.Auth.ZeeKayDaOptionsValidator<TOptions>.Validate(string? name, TOptions! options, System.Collections.Generic.ICollection<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>! failures) -> void
+abstract ZeeKayDa.Auth.ZeeKayDaOptionsValidator<TOptions>.Validate(string? name, TOptions! options) -> System.Collections.Generic.IEnumerable<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderClaimsExtensions
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderClientExtensions
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderHasherExtensions

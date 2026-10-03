@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
@@ -15,7 +16,7 @@ public sealed class SigningKeyExpiryHealthCheckOptionsValidatorTests
     {
         try
         {
-            _sut.Validate(name: null, options);
+            ((IValidateOptions<SigningKeyExpiryHealthCheckOptions>)_sut).Validate(name: null, options);
             return [];
         }
         catch (ZeeKayDaConfigurationException exception)

@@ -17,7 +17,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     {
         try
         {
-            new AuthorizationServerOptionsValidator().Validate(null, options);
+            ((IValidateOptions<AuthorizationServerOptions>)new AuthorizationServerOptionsValidator()).Validate(null, options);
             return [];
         }
         catch (ZeeKayDaConfigurationException exception)

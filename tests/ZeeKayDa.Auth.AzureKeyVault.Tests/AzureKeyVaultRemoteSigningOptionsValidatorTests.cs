@@ -1,4 +1,5 @@
 using Azure.Security.KeyVault.Keys;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AzureKeyVault.Tests.Fakes;
 using ZeeKayDa.Auth.Tokens;
 
@@ -19,7 +20,7 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
     {
         try
         {
-            new AzureKeyVaultRemoteSigningOptionsValidator().Validate(null, options);
+            ((IValidateOptions<AzureKeyVaultRemoteSigningOptions>)new AzureKeyVaultRemoteSigningOptionsValidator()).Validate(null, options);
             return [];
         }
         catch (ZeeKayDaConfigurationException exception)
