@@ -533,16 +533,25 @@ public sealed class ClientSecretsTests
     {
         // The verify path, not registration-time validation, is what guarantees no credential is
         // matched by an empty secret, whatever its hasher would accept.
-        var secrets = Secrets([new AcceptEverythingHasher()]);
+        var hasher = new AcceptEverythingHasher();
+        var secrets = Secrets([hasher]);
 
         secrets.Verify([], [DefaultSecret]).Matched.Should().BeFalse();
+        hasher.EmptySecretsPresented.Should().Be(0, "an empty secret is refused before any hasher runs");
     }
 
     private sealed class AcceptEverythingHasher : IClientSecretHasher
     {
+        public int EmptySecretsPresented { get; private set; }
+
         public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "default" };
 
-        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => true;
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored)
+        {
+            if (presented.IsEmpty)
+                EmptySecretsPresented++;
+            return true;
+        }
 
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => DefaultSecret;
     }

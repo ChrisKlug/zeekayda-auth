@@ -335,6 +335,115 @@ public sealed class ClientRegistrationValidatorTests
         logger.Warnings.Should().ContainSingle(w => w.Contains("localhost"));
     }
 
+    // ── Advisories are written once ──────────────────────────────────────────────────────────────
+    // The resolver validates on every lookup, so an advisory repeated per validation would let
+    // anyone who knows a client_id write a Warning per request.
+
+    [Fact]
+    public void A_valid_registration_s_advisory_warning_is_written_once_not_per_lookup()
+    {
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger);
+        var client = MakeValidPublicClient() with
+        {
+            RedirectUris = new HashSet<string>(["http://localhost/callback"], StringComparer.Ordinal)
+        };
+
+        validator.Validate(client);
+        validator.Validate(client);
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("localhost"));
+    }
+
+    [Fact]
+    public void A_second_localhost_redirect_uri_on_the_same_client_is_still_warned_about()
+    {
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger);
+        var client = MakeValidPublicClient() with
+        {
+            RedirectUris = new HashSet<string>(["http://localhost/callback"], StringComparer.Ordinal)
+        };
+
+        validator.Validate(client);
+        validator.Validate(client with
+        {
+            RedirectUris = new HashSet<string>(["http://localhost/other"], StringComparer.Ordinal)
+        });
+
+        logger.Warnings.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void The_same_localhost_redirect_uri_on_another_client_is_still_warned_about()
+    {
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger);
+        var redirectUris = new HashSet<string>(["http://localhost/callback"], StringComparer.Ordinal);
+
+        validator.Validate(MakeValidPublicClient("client-a") with { RedirectUris = redirectUris });
+        validator.Validate(MakeValidPublicClient("client-b") with { RedirectUris = redirectUris });
+
+        logger.Warnings.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void The_unread_key_ring_warning_is_written_once_per_client()
+    {
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger, keySet: null);
+        var client = MakeValidPublicClient() with
+        {
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 }
+        };
+
+        validator.Validate(client);
+        validator.Validate(client);
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("has not yet read its source"));
+    }
+
+    [Fact]
+    public void The_refresh_without_issuer_warning_is_written_once_per_client()
+    {
+        var options = BuildDefaultServerOptions();
+        options.GrantTypesSupported.Add(GrantType.RefreshToken);
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger, serverOptions: options);
+        var client = MakeValidPublicClient() with
+        {
+            AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken },
+            AllowedResponseTypes = new HashSet<ResponseType>(),
+            AllowedResponseModes = new HashSet<ResponseMode>(),
+        };
+
+        validator.Validate(client);
+        validator.Validate(client);
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("refresh_token", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void The_lifetime_past_the_family_ceiling_warning_is_written_once_per_client_and_lifetime()
+    {
+        var opts = BuildDefaultServerOptions();
+        opts.TokenEndpoint.AbsoluteFamilyLifetime = TimeSpan.FromDays(30);
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger, serverOptions: opts);
+        var client = MakeValidPublicClient() with
+        {
+            AccessTokenLifetime = TimeSpan.FromDays(31),
+            IdTokenLifetime = TimeSpan.FromDays(31),
+        };
+
+        validator.Validate(client);
+        validator.Validate(client);
+
+        logger.Warnings.Should().HaveCount(2)
+            .And.Contain(w => w.Contains("AccessTokenLifetime"))
+            .And.Contain(w => w.Contains("IdTokenLifetime"));
+    }
+
     [Fact]
     public void Validate_fails_with_fragment_code_and_suppresses_localhost_warning_for_localhost_uri_with_fragment()
     {
@@ -1033,8 +1142,6 @@ public sealed class ClientRegistrationValidatorTests
 
         act.Should().NotThrow();
     }
-
-    // ── Empty-secret probe ────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Validate_fails_with_no_hasher_code_if_no_hasher_declared_the_secret_s_id()

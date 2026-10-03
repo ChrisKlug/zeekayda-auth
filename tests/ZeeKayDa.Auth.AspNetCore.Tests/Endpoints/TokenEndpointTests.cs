@@ -972,6 +972,26 @@ public sealed class TokenEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_client_store_outage_is_a_server_error_not_invalid_client()
+    {
+        var repository = new OutageRepository(PublicRegistration());
+        using var host = new EndpointHost(
+            configureBuilder: builder =>
+            {
+                builder.Services.AddSingleton<TimeProvider>(_time);
+                builder.Services.AddSingleton<IClientRepository>(repository);
+            });
+        var code = await SeedCodeWithAsync(host);
+        repository.Down = true;
+
+        var act = () => PostTokenWithAsync(host, TokenForm(code));
+
+        // Unhandled, which the host answers with a 500; the test server rethrows it instead.
+        // invalid_client would tell every caller their credentials are wrong while the store is down.
+        await act.Should().ThrowAsync<TimeoutException>();
+    }
+
+    [Fact]
     public async Task A_replay_whose_family_revocation_fails_is_still_refused_and_the_failure_is_logged()
     {
         var code = await SeedCodeAsync();
@@ -1020,6 +1040,16 @@ public sealed class TokenEndpointTests : IDisposable
             var registration = Interlocked.Increment(ref _reads) == 1 ? first : other;
             return Task.FromResult<IClientWithCredentials?>(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
         }
+    }
+
+    private sealed class OutageRepository(IClientWithCredentials registration) : IClientRepository
+    {
+        public volatile bool Down;
+
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Down
+                ? throw new TimeoutException("The client store did not answer.")
+                : Task.FromResult<IClientWithCredentials?>(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
     }
 
     /// <summary>

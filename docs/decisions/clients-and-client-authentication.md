@@ -104,9 +104,9 @@ match so `localhost.attacker.com` fails. Fragments, userinfo and path traversal 
 count is capped, and the scheme rule is a **pure allowlist** — `https` on any host, `http` on
 loopback, and any private-use scheme containing a dot (RFC 8252 §7.1). No blocklist is maintained,
 because every dangerous scheme (`javascript`, `data`, `file`) lacks a dot and the allowlist rejects it
-without being told about it. An `http://localhost` URI logs an advisory warning recommending the IP
-literal (RFC 8252 §8.3); `https://localhost` does not, being a web client on a dev certificate rather
-than a native loopback redirect. Post-logout redirect URIs get the same treatment.
+without being told about it. `http://localhost` (not `https`) logs an advisory recommending the IP
+literal (RFC 8252 §8.3), post-logout URIs too; advisories log once per client, as validation runs per
+lookup (`A_valid_registration_s_advisory_warning_is_written_once_not_per_lookup`).
 
 **A malformed secret, or one no hasher declared or its hasher refuses, refuses the whole client**,
 even beside a valid one (`One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid`). No
@@ -125,8 +125,8 @@ every lookup, uncached. Collections are rebuilt *and* wrapped against a downcast
 
 **Client lookup returns `null` for unknown or malformed ids.** A malformed id never reaches the
 repository (`A_malformed_client_id_never_reaches_the_repository`); an unknown one must not make it throw,
-which would change timing for client-ID enumeration. A store outage may throw: a server error, never
-`invalid_client`, which covers unknown client and wrong credential alike; `error_description` and
+which would change timing for client-ID enumeration. A store outage may throw: HTTP 500, never
+`invalid_client` (`A_client_store_outage_is_a_server_error_not_invalid_client`), which covers unknown client and wrong credential alike; `error_description` and
 any opt-in sub-code never tell them apart or name the `client_id`. Presented secrets, raw
 `Authorization` headers, token-endpoint bodies and `code_verifier` are never logged (RFC 7636 §7.5).
 

@@ -19,7 +19,7 @@ public interface IClientRepository
     /// Implementations MUST return <see langword="null"/> for an unknown <c>client_id</c>, never
     /// throw: throwing changes response timing and enables client enumeration (RFC 9700 §2.1).
     /// Throwing when the store itself cannot answer — an outage, a timeout — is allowed; the
-    /// request fails as a server error, never as <c>invalid_client</c>.
+    /// request fails with HTTP 500, never <c>invalid_client</c>.
     /// </remarks>
     Task<IClientWithCredentials?> FindByClientIdAsync(
         string clientId,

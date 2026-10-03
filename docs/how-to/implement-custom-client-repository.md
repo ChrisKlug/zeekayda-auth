@@ -24,9 +24,10 @@ public interface IClientRepository
 
 Two rules are **non-negotiable**:
 
-1. **Return `null` for unknown clients — never throw.** Throwing from this method changes response
-   timing and creates a timing oracle that enables client enumeration attacks. An unknown or
-   malformed `client_id` must always produce a `null` return, never an exception.
+1. **Return `null` for an unknown client — never throw for one.** Throwing changes response
+   timing and creates a timing oracle that enables client enumeration attacks. The framework never
+   passes a malformed `client_id`; it answers those itself. Throwing when your store cannot answer
+   at all — an outage, a timeout — is fine: the request fails with HTTP 500, never `invalid_client`.
 
 2. **Use parameterised queries — never concatenate `clientId` into a query string.** If your
    implementation queries a database, pass `clientId` as a parameter to prevent SQL injection.
