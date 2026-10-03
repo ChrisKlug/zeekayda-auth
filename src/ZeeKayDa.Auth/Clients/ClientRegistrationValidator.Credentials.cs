@@ -76,11 +76,14 @@ internal sealed partial class ClientRegistrationValidator
         var serverMethods = new HashSet<string>(options.Value.TokenEndpoint.AuthMethodsSupported, StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var method in client.AllowedTokenEndpointAuthMethods)
-        {
-            if (ValidateAuthMethod(client, method, seen, serverMethods) is { } failure)
-                yield return failure;
-        }
+        // Enumerated once: ValidateAuthMethod records each entry in 'seen', so a second pass would
+        // report every valid entry as a duplicate.
+        var failures = client.AllowedTokenEndpointAuthMethods
+            .Select(method => ValidateAuthMethod(client, method, seen, serverMethods))
+            .OfType<ZeeKayDaConfigurationFailure>();
+
+        foreach (var failure in failures)
+            yield return failure;
     }
 
     /// <summary>
