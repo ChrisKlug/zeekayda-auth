@@ -277,6 +277,20 @@ public class ValidatedClientResolverTests
         validator.Calls.Should().Be(2);
     }
 
+    [Fact]
+    public async Task An_unchanged_registration_is_validated_on_every_lookup()
+    {
+        var validator = new CountingValidator();
+        var resolver = Resolver(NewClient(), validator);
+
+        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+
+        // No verdict cache: a validator that reads state outside the registration — the signing
+        // key ring, the server's options — is consulted on the request it applies to.
+        validator.Calls.Should().Be(2);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("client 1")]
