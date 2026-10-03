@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth;
@@ -110,6 +111,27 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
             .FindClientWithCredentialsAsync("public-client", TestContext.Current.CancellationToken);
 
         served.Should().BeNull("a host's stricter rule applies to what is served, on top of the framework's");
+    }
+
+    [Fact]
+    public void Resolving_in_memory_clients_warns_when_none_is_advertised_but_only_confidential_clients_are_registered()
+    {
+        var logs = new CapturingLoggerProvider();
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.AddProvider(logs));
+        services.AddZeeKayDaAuth(options =>
+            {
+                options.Issuer = "https://auth.example.com";
+                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+            })
+            .AddInMemoryClients(clients => clients.AddConfidential(
+                "backend", "a-strong-test-secret", ["https://app.example.com/cb"], [], ["openid"]));
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IClientRepository>();
+
+        logs.Entries.Should().ContainSingle(entry =>
+            entry.Level == LogLevel.Warning && entry.Message.Contains("no public clients", StringComparison.Ordinal));
     }
 
     private sealed class RejectEverythingValidator : IClientRegistrationValidator
