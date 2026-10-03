@@ -102,9 +102,13 @@ internal sealed class InMemoryClientRepository : IClientRepository
         var found = validator.Validate(client);
 
         return found is null || found.Any(failure => failure is null)
-            ? throw new InvalidOperationException(
-                $"The IClientRegistrationValidator '{validator.GetType().FullName}' returned a null list or a " +
-                $"null failure for client '{client.ClientId}'.")
+            ?
+            [
+                new ZeeKayDaConfigurationFailure(
+                    "client.validator.malformed_result",
+                    $"The IClientRegistrationValidator '{validator.GetType().FullName}' returned a null list or a " +
+                    $"null failure for client '{client.ClientId}'. Return an empty list for a valid registration."),
+            ]
             : found;
     }
 

@@ -388,14 +388,19 @@ public sealed class InMemoryClientRepositoryTests
     }
 
     [Fact]
-    public void Build_names_a_validator_that_returns_a_null_failure_instead_of_a_bare_null_reference()
+    public void Build_reports_a_validator_that_returns_a_null_failure_as_a_coded_configuration_failure()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(ValidPublicClient("c1"));
 
         var act = () => MakeRepositoryWithValidator(opts, new DelegatingValidator(_ => [null!]));
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*DelegatingValidator*null failure*'c1'*");
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Should().Match<ZeeKayDaConfigurationFailure>(failure =>
+                failure.Code == "client.validator.malformed_result"
+                && failure.Message.Contains("DelegatingValidator", StringComparison.Ordinal)
+                && failure.Message.Contains("'c1'", StringComparison.Ordinal));
     }
 
     // ── Empty plaintext secret is aggregated, not thrown bare ─────────────────────────────────────
