@@ -43,6 +43,31 @@ public sealed class ZeeKayDaOptionsValidatorTests
         act.Should().Throw<ArgumentNullException>().WithParameterName("options");
     }
 
+    [Fact]
+    public void A_subclass_returning_null_is_reported_as_a_coded_failure()
+    {
+        var act = () => ((IValidateOptions<TestOptions>)new NullReturningValidator()).Validate(Options.DefaultName, new TestOptions());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.options_validator.malformed_result");
+    }
+
+    [Fact]
+    public void A_subclass_returning_a_null_failure_is_reported_as_a_coded_failure()
+    {
+        var act = () => ((IValidateOptions<TestOptions>)new FixedValidator(new ZeeKayDaConfigurationFailure[] { null! })).Validate(Options.DefaultName, new TestOptions());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.options_validator.malformed_result");
+    }
+
+    private sealed class NullReturningValidator : ZeeKayDaOptionsValidator<TestOptions>
+    {
+        protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(string? name, TestOptions options) => null!;
+    }
+
     private sealed class TestOptions;
 
     private sealed class FixedValidator(params ZeeKayDaConfigurationFailure[] toAdd)

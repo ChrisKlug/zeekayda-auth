@@ -27,7 +27,20 @@ public abstract class ZeeKayDaOptionsValidator<TOptions> : IValidateOptions<TOpt
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        ZeeKayDaConfigurationFailure[] failures = [.. Validate(name, options)];
+        var failures = Validate(name, options)?.ToArray();
+
+        // A subclass breaking its contract is reported like any other configuration failure, never
+        // as a bare NullReferenceException from the startup runner.
+        if (failures is null || failures.Any(failure => failure is null))
+        {
+            failures =
+            [
+                new ZeeKayDaConfigurationFailure(
+                    "configuration.options_validator.malformed_result",
+                    $"The options validator '{GetType().FullName}' returned a null list or a null failure " +
+                    $"for {typeof(TOptions).FullName}. Return an empty sequence for valid options."),
+            ];
+        }
 
         return failures.Length == 0
             ? ValidateOptionsResult.Success
