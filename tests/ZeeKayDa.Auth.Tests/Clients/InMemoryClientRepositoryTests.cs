@@ -387,6 +387,17 @@ public sealed class InMemoryClientRepositoryTests
         (await repository.FindByClientIdAsync("c1", TestContext.Current.CancellationToken)).Should().NotBeNull();
     }
 
+    [Fact]
+    public void Build_names_a_validator_that_returns_a_null_failure_instead_of_a_bare_null_reference()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(ValidPublicClient("c1"));
+
+        var act = () => MakeRepositoryWithValidator(opts, new DelegatingValidator(_ => [null!]));
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*DelegatingValidator*null failure*'c1'*");
+    }
+
     // ── Empty plaintext secret is aggregated, not thrown bare ─────────────────────────────────────
 
     [Fact]

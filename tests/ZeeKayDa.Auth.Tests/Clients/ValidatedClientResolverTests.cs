@@ -247,6 +247,26 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
+    public async Task A_validator_returning_a_null_list_is_served_as_unknown_not_a_500()
+    {
+        var resolver = Resolver(NewClient(), new MalformedResultValidator(null));
+
+        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull("a malformed validator result must fail closed, like a throwing validator");
+    }
+
+    [Fact]
+    public async Task A_validator_returning_a_null_failure_is_served_as_unknown_not_a_500()
+    {
+        var resolver = Resolver(NewClient(), new MalformedResultValidator([null]));
+
+        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull("a malformed validator result must fail closed, like a throwing validator");
+    }
+
+    [Fact]
     public async Task Invalid_registration_logs_critical_for_the_operator()
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
@@ -523,6 +543,13 @@ public class ValidatedClientResolverTests
 
             return _flipped ? [first, second] : [second, first];
         }
+    }
+
+    /// <summary>A host validator breaking its contract: a null list, or a null entry in one.</summary>
+    private sealed class MalformedResultValidator(IReadOnlyList<ZeeKayDaConfigurationFailure?>? result)
+        : IClientRegistrationValidator
+    {
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => result!;
     }
 
     private sealed class CountingValidator : IClientRegistrationValidator

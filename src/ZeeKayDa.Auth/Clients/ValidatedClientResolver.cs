@@ -148,10 +148,11 @@ internal sealed class ValidatedClientResolver(
 
     private Failure? Validate(IClientWithCredentials client)
     {
-        IReadOnlyList<ZeeKayDaConfigurationFailure> failures;
+        // Reading the result is inside the try too: a host's list is an extension point, and
+        // enumerating it may throw.
         try
         {
-            failures = validator.Validate(client);
+            return Describe(validator.Validate(client));
         }
         catch (Exception ex)
         {
@@ -162,6 +163,16 @@ internal sealed class ValidatedClientResolver(
                 $"The registration validator threw {ex.GetType().FullName}.",
                 new FailureIdentity("threw", [ex.GetType().FullName ?? ex.GetType().Name]));
         }
+    }
+
+    private static Failure? Describe(IReadOnlyList<ZeeKayDaConfigurationFailure?>? failures)
+    {
+        if (failures is null || failures.Any(failure => failure is null))
+        {
+            return new Failure(
+                "The registration validator returned a null list or a null failure.",
+                new FailureIdentity("malformed", []));
+        }
 
         if (failures.Count == 0)
             return null;
@@ -170,8 +181,8 @@ internal sealed class ValidatedClientResolver(
         // even when the validator rewords its message. Sorted so the same rules reported in a
         // different order are the same failure.
         return new Failure(
-            string.Join("; ", failures.Select(f => f.Message)),
-            new FailureIdentity("rules", [.. failures.Select(f => f.Code).Order(StringComparer.Ordinal)]));
+            string.Join("; ", failures.Select(f => f!.Message)),
+            new FailureIdentity("rules", [.. failures.Select(f => f!.Code).Order(StringComparer.Ordinal)]));
     }
 
     /// <param name="Violations">What the operator is told.</param>
