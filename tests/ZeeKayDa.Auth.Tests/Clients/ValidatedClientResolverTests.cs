@@ -277,6 +277,20 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
+    public async Task A_host_validator_whose_list_yields_a_null_only_on_a_later_enumeration_is_named_as_malformed()
+    {
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(NewClient()), FrameworkThen(new ChangingResultValidator()), logger);
+
+        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull();
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
+            .Which.Message.Should().NotContain(nameof(NullReferenceException));
+    }
+
+    [Fact]
     public async Task A_host_validator_returning_a_malformed_result_logs_critical_once_however_many_lookups()
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
@@ -565,6 +579,28 @@ public class ValidatedClientResolverTests
             _flipped = !_flipped;
 
             return _flipped ? [first, second] : [second, first];
+        }
+    }
+
+    /// <summary>A host validator whose list yields a failure the first time and a null after that.</summary>
+    private sealed class ChangingResultValidator : IClientRegistrationValidator
+    {
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => new ChangingList();
+
+        private sealed class ChangingList : IReadOnlyList<ZeeKayDaConfigurationFailure>
+        {
+            private int _enumerations;
+
+            public int Count => 1;
+
+            public ZeeKayDaConfigurationFailure this[int index] => this.First();
+
+            public IEnumerator<ZeeKayDaConfigurationFailure> GetEnumerator()
+            {
+                yield return _enumerations++ == 0 ? new ZeeKayDaConfigurationFailure("host.rule", "Broken.") : null!;
+            }
+
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
         }
     }
 

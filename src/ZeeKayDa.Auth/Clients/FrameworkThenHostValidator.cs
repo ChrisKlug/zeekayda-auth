@@ -24,7 +24,9 @@ internal sealed class FrameworkThenHostValidator(
         IClientRegistrationValidator host,
         IClientWithCredentials client)
     {
-        var found = host.Validate(client);
+        // Copied once, so the list that is checked is the list that is returned: a host's own list
+        // may yield something different each time it is enumerated.
+        var found = host.Validate(client)?.ToArray();
 
         return found is null || found.Any(failure => failure is null)
             ?
