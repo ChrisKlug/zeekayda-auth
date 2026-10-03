@@ -2049,3 +2049,19 @@ Copilot code and security lenses, the security agent, fix-diff verification of e
 - **Accepted residuals (maintainer):** an authenticator that calls `Verify` then returns `NotValid()` pays twice; one that
   shares a result across concurrent requests can let a request claim another's padding (contract stated on
   `ClientAuthenticationResult.From`); a throw from `AuthenticateAsync` is an unpadded 500 (#870). No test.
+
+## 2026-10-03 — no empty-secret probe or verdict cache; every client lookup is snapshotted and validated (#788, code frozen at `1535365`)
+Copilot code and security lenses, the security agent, fix-diff verification of each round, and CodeScene on the PR; no Critical.
+- An empty presented secret matches no credential, whatever its hasher accepts, so validation no longer probes hashers.
+  Closed — `An_empty_presented_secret_never_matches_even_a_hasher_that_accepts_everything`.
+- Every lookup validates what it serves; no stale verdict survives a store's edit. Closed —
+  `An_unchanged_registration_is_validated_on_every_lookup`, `A_registration_mutated_in_place_is_revalidated`.
+- Per-lookup validation derives nothing, so an unauthenticated request cannot buy a PBKDF2. Closed —
+  `AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_corrupt_public_client_with_credentials`.
+- A malformed `client_id` never reaches the repository; a store outage is a 500, never `invalid_client`. Closed —
+  `A_malformed_client_id_never_reaches_the_repository`, `A_client_store_outage_is_a_server_error_not_invalid_client`.
+- Neither the critical failure log nor an advisory warning repeats per request for a known `client_id`. Closed —
+  `A_registration_that_cannot_be_read_logs_critical_once_however_many_lookups`,
+  `A_valid_registration_s_advisory_warning_is_written_once_not_per_lookup`.
+- **Accepted residual (maintainer):** a host `IClientRegistrationValidator` that logs on every call now logs per request;
+  the host's own code, out of scope. No test.
