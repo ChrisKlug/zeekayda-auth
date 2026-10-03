@@ -56,23 +56,15 @@ public sealed class InMemoryClientRepositoryTests
         SanitizingLogger<InMemoryClientRepository>? logger = null)
     {
         var so = serverOptions ?? DefaultServerOptions();
-        return InMemoryClientRepository.Build(
-            opts,
-            MakeSecrets(),
-            MakeValidator(so),
-            so,
-            logger ?? NullSanitizingLogger<InMemoryClientRepository>.Instance);
+        var repository = InMemoryClientRepository.Build(opts, MakeSecrets(), MakeValidator(so));
+        repository.WarnIfNoneHasNoPublicClient(so, logger ?? NullSanitizingLogger<InMemoryClientRepository>.Instance);
+        return repository;
     }
 
     private static InMemoryClientRepository MakeRepositoryWithValidator(
         InMemoryClientRegistrationOptions opts, IClientRegistrationValidator validator)
     {
-        return InMemoryClientRepository.Build(
-            opts,
-            MakeSecrets(),
-            validator,
-            DefaultServerOptions(),
-            NullSanitizingLogger<InMemoryClientRepository>.Instance);
+        return InMemoryClientRepository.Build(opts, MakeSecrets(), validator);
     }
 
     private static Client ValidPublicClient(string clientId = "test-client") =>

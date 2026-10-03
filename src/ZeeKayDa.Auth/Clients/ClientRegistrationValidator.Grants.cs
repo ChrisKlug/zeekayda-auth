@@ -11,17 +11,56 @@ namespace ZeeKayDa.Auth.Clients;
 internal sealed partial class ClientRegistrationValidator
 {
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateGrants(IClientWithCredentials client) =>
-        ValidateFlows(client)
+        ValidateGrantTypes(client)
+            .Concat(ValidateResponseFlows(client))
             .Concat(ValidateAllowedScopes(client))
             .Concat(ValidateAllowedPromptValues(client));
 
-    private IEnumerable<ZeeKayDaConfigurationFailure> ValidateFlows(IClientWithCredentials client)
+    private IEnumerable<ZeeKayDaConfigurationFailure> ValidateGrantTypes(IClientWithCredentials client)
     {
-        var server = options.Value;
         var grantTypes = new FlowSet<GrantType>(
             nameof(IClient.AllowedGrantTypes), client.AllowedGrantTypes,
-            nameof(AuthorizationServerOptions.GrantTypesSupported), server.GrantTypesSupported,
+            nameof(AuthorizationServerOptions.GrantTypesSupported), options.Value.GrantTypesSupported,
             "client.grant_types");
+
+        var (failures, count) = ValidateFlowEntries(client, grantTypes);
+        if (count == 0)
+            failures.Add(EmptyFlowSet(client, grantTypes, ", so it can use no grant"));
+
+        // RFC 6749 §4.4: the client credentials grant MUST only be used by confidential clients.
+        if (client.IsPublic && client.AllowedGrantTypes.Any(grantType => grantType == GrantType.ClientCredentials))
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "client.grant_types.client_credentials_on_public",
+                $"Client '{client.ClientId}' is public but allows the client_credentials grant, which only a " +
+                "confidential client may use (RFC 6749 §4.4). Register it as confidential, or remove the grant."));
+        }
+
+        WarnOfRefreshWithoutIssuer(client);
+        return failures;
+    }
+
+    /// <summary>
+    /// Only warns: a client whose code grant was withdrawn may still be draining refresh tokens it
+    /// was issued before. The code grant is the only one that issues them (RFC 6749 §4.4.3).
+    /// </summary>
+    private void WarnOfRefreshWithoutIssuer(IClientWithCredentials client)
+    {
+        var refreshWithoutIssuer = !AllowsCodeGrant(client)
+            && client.AllowedGrantTypes.Any(grantType => grantType == GrantType.RefreshToken);
+
+        if (refreshWithoutIssuer && FirstTime(client.ClientId, "refresh-without-issuer"))
+        {
+            logger.LogWarning(
+                "Client '{ClientId}' allows the refresh_token grant but not authorization_code, the only grant " +
+                "that issues a refresh token, so it can use only refresh tokens issued before.",
+                client.ClientId);
+        }
+    }
+
+    private IEnumerable<ZeeKayDaConfigurationFailure> ValidateResponseFlows(IClientWithCredentials client)
+    {
+        var server = options.Value;
         var responseTypes = new FlowSet<ResponseType>(
             nameof(IClient.AllowedResponseTypes), client.AllowedResponseTypes,
             "Response.TypesSupported", server.Response.TypesSupported,
@@ -31,56 +70,30 @@ internal sealed partial class ClientRegistrationValidator
             "Response.ModesSupported", server.Response.ModesSupported,
             "client.response_modes");
 
-        var (grantTypeFailures, grantTypeCount) = ValidateFlowEntries(client, grantTypes);
-        foreach (var failure in grantTypeFailures)
-            yield return failure;
-
-        if (grantTypeCount == 0)
-            yield return EmptyFlowSet(client, grantTypes, ", so it can use no grant");
-
-        // RFC 6749 §4.4: the client credentials grant MUST only be used by confidential clients.
-        if (client.IsPublic && client.AllowedGrantTypes.Any(grantType => grantType == GrantType.ClientCredentials))
-        {
-            yield return new ZeeKayDaConfigurationFailure(
-                "client.grant_types.client_credentials_on_public",
-                $"Client '{client.ClientId}' is public but allows the client_credentials grant, which only a " +
-                "confidential client may use (RFC 6749 §4.4). Register it as confidential, or remove the grant.");
-        }
-
-        var allowsCode = client.AllowedGrantTypes.Any(grantType => grantType == GrantType.AuthorizationCode);
-        var refreshWithoutIssuer = !allowsCode && client.AllowedGrantTypes.Any(grantType => grantType == GrantType.RefreshToken);
-        if (refreshWithoutIssuer && FirstTime(client.ClientId, "refresh-without-issuer"))
-        {
-            // Only warns: a client whose code grant was withdrawn may still be draining refresh
-            // tokens it was issued before. RFC 6749 §4.4.3: client_credentials SHOULD NOT issue one.
-            logger.LogWarning(
-                "Client '{ClientId}' allows the refresh_token grant but not authorization_code, the only grant " +
-                "that issues a refresh token, so it can use only refresh tokens issued before.",
-                client.ClientId);
-        }
-
-        var (responseTypeFailures, responseTypeCount) = ValidateFlowEntries(client, responseTypes);
-        foreach (var failure in responseTypeFailures)
-            yield return failure;
-
-        var (responseModeFailures, responseModeCount) = ValidateFlowEntries(client, responseModes);
-        foreach (var failure in responseModeFailures)
-            yield return failure;
+        var (failures, responseTypeCount) = ValidateFlowEntries(client, responseTypes);
+        var (modeFailures, responseModeCount) = ValidateFlowEntries(client, responseModes);
+        failures.AddRange(modeFailures);
 
         // Only the code grant goes through the authorization endpoint, so only a client allowed it
-        // needs a response type and mode to be answered with there (RFC 7591 §2.1). Enumerated, not
-        // Contains: a custom registration's set may answer Contains differently from what it yields.
-        if (!allowsCode)
-            yield break;
+        // needs a response type and mode to be answered with there (RFC 7591 §2.1).
+        if (!AllowsCodeGrant(client))
+            return failures;
 
         const string reason = " but allows the authorization_code grant, which the authorization endpoint cannot answer without one";
 
         if (responseTypeCount == 0)
-            yield return EmptyFlowSet(client, responseTypes, reason);
+            failures.Add(EmptyFlowSet(client, responseTypes, reason));
 
         if (responseModeCount == 0)
-            yield return EmptyFlowSet(client, responseModes, reason);
+            failures.Add(EmptyFlowSet(client, responseModes, reason));
+
+        return failures;
     }
+
+    // Enumerated, not Contains: a custom registration's set may answer Contains differently from
+    // what it yields.
+    private static bool AllowsCodeGrant(IClient client) =>
+        client.AllowedGrantTypes.Any(grantType => grantType == GrantType.AuthorizationCode);
 
     /// <summary>
     /// Every entry's first broken rule, and how many entries the set yielded — counted by

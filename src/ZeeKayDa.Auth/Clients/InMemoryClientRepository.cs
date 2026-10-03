@@ -23,12 +23,19 @@ internal sealed class InMemoryClientRepository : IClientRepository
         _clients = clients;
 
     /// <summary>The DI factory <c>AddInMemoryClients</c> registers, and recognises as its own.</summary>
-    internal static readonly Func<IServiceProvider, IClientRepository> Factory = services => Build(
-        services.GetRequiredService<InMemoryClientRegistrationOptions>(),
-        services.GetRequiredService<ClientSecrets>(),
-        services.GetRequiredService<IClientRegistrationValidator>(),
-        services.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value,
-        services.GetRequiredService<SanitizingLogger<InMemoryClientRepository>>());
+    internal static readonly Func<IServiceProvider, IClientRepository> Factory = services =>
+    {
+        var repository = Build(
+            services.GetRequiredService<InMemoryClientRegistrationOptions>(),
+            services.GetRequiredService<ClientSecrets>(),
+            services.GetRequiredService<IClientRegistrationValidator>());
+
+        repository.WarnIfNoneHasNoPublicClient(
+            services.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value,
+            services.GetRequiredService<SanitizingLogger<InMemoryClientRepository>>());
+
+        return repository;
+    };
 
     /// <summary>
     /// Hashes the pending secrets, then checks every registration for a duplicate
@@ -41,14 +48,31 @@ internal sealed class InMemoryClientRepository : IClientRepository
     internal static InMemoryClientRepository Build(
         InMemoryClientRegistrationOptions registrations,
         ClientSecrets secrets,
-        IClientRegistrationValidator validator,
-        AuthorizationServerOptions serverOptions,
-        ILogger logger)
+        IClientRegistrationValidator validator)
     {
-        var failures = new List<ZeeKayDaConfigurationFailure>();
-        var clients = new List<IClientWithCredentials>(registrations.PreBuilt.Count + registrations.Pending.Count);
+        var (clients, failures) = HashPending(registrations.Pending, secrets);
+        clients.AddRange(registrations.PreBuilt);
 
-        foreach (var spec in registrations.Pending)
+        failures.AddRange(FindDuplicateClientIds(clients));
+        failures.AddRange(clients.SelectMany(client => FrameworkThenHostValidator.Checked(validator, client)));
+
+        return failures.Count > 0
+            ? throw new ZeeKayDaConfigurationException([.. failures])
+            : new InMemoryClientRepository(clients.ToDictionary(client => client.ClientId, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// The pending specs as confidential registrations with their secrets hashed, and a failure for
+    /// each spec whose plaintext secret is blank, which is skipped so the rest are still checked.
+    /// </summary>
+    private static (List<IClientWithCredentials> Clients, List<ZeeKayDaConfigurationFailure> Failures) HashPending(
+        IEnumerable<PendingConfidentialClientSpec> pending,
+        ClientSecrets secrets)
+    {
+        var clients = new List<IClientWithCredentials>();
+        var failures = new List<ZeeKayDaConfigurationFailure>();
+
+        foreach (var spec in pending)
         {
             if (string.IsNullOrWhiteSpace(spec.PlaintextSecret))
             {
@@ -62,35 +86,32 @@ internal sealed class InMemoryClientRepository : IClientRepository
             clients.Add(spec.Registration with { Secrets = [secrets.Create(spec.PlaintextSecret)] });
         }
 
-        clients.AddRange(registrations.PreBuilt);
+        return (clients, failures);
+    }
 
+    private static IEnumerable<ZeeKayDaConfigurationFailure> FindDuplicateClientIds(IEnumerable<IClientWithCredentials> clients)
+    {
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var client in clients.Where(client => !seen.Add(client.ClientId)))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.client_id.duplicate",
-                $"A client with ClientId '{client.ClientId}' has been registered more than once. " +
-                "Each client must have a unique ClientId (ordinal comparison)."));
-        }
 
-        foreach (var client in clients)
-            failures.AddRange(FrameworkThenHostValidator.Checked(validator, client));
+        return clients.Where(client => !seen.Add(client.ClientId)).Select(client => new ZeeKayDaConfigurationFailure(
+            "client.client_id.duplicate",
+            $"A client with ClientId '{client.ClientId}' has been registered more than once. " +
+            "Each client must have a unique ClientId (ordinal comparison)."));
+    }
 
-        if (failures.Count > 0)
-            throw new ZeeKayDaConfigurationException([.. failures]);
-
+    /// <summary>Warns when the server accepts <c>none</c> but no public client is registered to use it.</summary>
+    internal void WarnIfNoneHasNoPublicClient(AuthorizationServerOptions serverOptions, ILogger logger)
+    {
         var advertisesNone = serverOptions.TokenEndpoint.AuthMethodsSupported
             .Any(method => string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal));
 
-        if (advertisesNone && !clients.Any(client => client.IsPublic))
+        if (advertisesNone && !_clients.Values.Any(client => client.IsPublic))
         {
             logger.LogWarning(
                 "The server advertises 'none' as a supported token endpoint authentication method " +
                 "but no public clients (IsPublic=true) are registered. Consider removing " +
                 "TokenEndpointAuthMethods.None from AuthMethodsSupported if no public clients are expected.");
         }
-
-        return new InMemoryClientRepository(clients.ToDictionary(client => client.ClientId, StringComparer.Ordinal));
     }
 
     /// <summary>Every registration this repository serves, for the startup checks that read them all.</summary>

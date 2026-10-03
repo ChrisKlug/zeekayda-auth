@@ -31,23 +31,39 @@ internal sealed partial class ClientRegistrationValidator
             yield break;
         }
 
-        // Nothing to check against yet. The JWT issuer enforces the set again at signing, so only the
-        // earlier message is lost; say so. With no ring at all the endpoints refuse to start anyway.
-        if (ResolveServerAlgorithms() is not { } serverAlgorithms)
+        if (ResolveServerAlgorithms() is { } serverAlgorithms)
         {
-            if (keyRing is not null && FirstTime(client.ClientId, "signing-unchecked"))
-            {
-                logger.LogWarning(
-                    "Client '{ClientId}' declares AllowedSigningAlgorithms, but the signing key ring " +
-                    "has not yet read its source, so the set could not be checked against the " +
-                    "server's advertised algorithms. This happens when an IClientRepository is " +
-                    "resolved before host startup verification runs.",
-                    client.ClientId);
-            }
-
-            yield break;
+            foreach (var failure in ValidateAgainstServer(client, algorithms, serverAlgorithms))
+                yield return failure;
         }
+        else
+        {
+            WarnSigningUnchecked(client);
+        }
+    }
 
+    /// <summary>
+    /// Nothing to check against yet. The JWT issuer enforces the set again at signing, so only the
+    /// earlier message is lost; say so. With no ring at all the endpoints refuse to start anyway.
+    /// </summary>
+    private void WarnSigningUnchecked(IClientWithCredentials client)
+    {
+        if (keyRing is not null && FirstTime(client.ClientId, "signing-unchecked"))
+        {
+            logger.LogWarning(
+                "Client '{ClientId}' declares AllowedSigningAlgorithms, but the signing key ring " +
+                "has not yet read its source, so the set could not be checked against the " +
+                "server's advertised algorithms. This happens when an IClientRepository is " +
+                "resolved before host startup verification runs.",
+                client.ClientId);
+        }
+    }
+
+    private IEnumerable<ZeeKayDaConfigurationFailure> ValidateAgainstServer(
+        IClientWithCredentials client,
+        IReadOnlySet<SigningAlgorithm> algorithms,
+        IReadOnlyCollection<SigningAlgorithm> serverAlgorithms)
+    {
         // The key that signs today must be in the set, not only a key that is merely published:
         // with a ring that reads its source once, a client pinned to a next or previous key's
         // algorithm would otherwise pass startup and be refused on every exchange.

@@ -26,7 +26,7 @@ internal sealed partial class ClientRegistrationValidator
         {
             count++;
 
-            var uriFailures = ValidateRedirectUri(clientId, uriString, propertyName).ToList();
+            var uriFailures = ValidateRedirectUri(new RedirectUriEntry(clientId, propertyName, uriString)).ToList();
             foreach (var failure in uriFailures)
                 yield return failure;
 
@@ -52,16 +52,22 @@ internal sealed partial class ClientRegistrationValidator
         }
     }
 
-    private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateRedirectUri(
-        string clientId,
-        string uriString,
-        string propertyName)
+    /// <summary>One URI of a client's redirect URI set, and the failures it can be reported with.</summary>
+    private readonly record struct RedirectUriEntry(string ClientId, string PropertyName, string Uri)
     {
+        public ZeeKayDaConfigurationFailure Fail(string code, string problem, string reason) => new(
+            code,
+            $"Client '{ClientId}' has a redirect URI in {PropertyName} {problem}: '{Uri}'. {reason}");
+    }
+
+    private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateRedirectUri(RedirectUriEntry entry)
+    {
+        var uriString = entry.Uri;
         if (!Uri.TryCreate(uriString, UriKind.Absolute, out var uri))
         {
             yield return new ZeeKayDaConfigurationFailure(
                 "client.redirect_uri.invalid",
-                $"Client '{clientId}' has an invalid URI in {propertyName}: '{uriString}'. " +
+                $"Client '{entry.ClientId}' has an invalid URI in {entry.PropertyName}: '{uriString}'. " +
                 "The value could not be parsed as an absolute URI.");
             yield break;
         }
@@ -70,41 +76,37 @@ internal sealed partial class ClientRegistrationValidator
         // ID binds to one network interface rather than the loopback stack, whatever the scheme.
         if (RedirectUriRules.HasIpv6ZoneId(uriString))
         {
-            yield return Fail("client.redirect_uri.ipv6_zone_id", "with an IPv6 zone ID",
+            yield return entry.Fail("client.redirect_uri.ipv6_zone_id", "with an IPv6 zone ID",
                 "Zone IDs bind to a specific network interface rather than the loopback stack and are prohibited in redirect URIs.");
         }
 
         if (RedirectUriRules.HasFragment(uri))
         {
-            yield return Fail("client.redirect_uri.fragment", "with a fragment component",
+            yield return entry.Fail("client.redirect_uri.fragment", "with a fragment component",
                 "Fragment components are prohibited in redirect URIs (RFC 9700 §2.1).");
         }
 
         if (RedirectUriRules.HasUserInfo(uri))
         {
-            yield return Fail("client.redirect_uri.userinfo", "with a userinfo component",
+            yield return entry.Fail("client.redirect_uri.userinfo", "with a userinfo component",
                 "Userinfo components are prohibited in redirect URIs.");
         }
 
         // Checked on the original string: .NET's parser normalises '.' and '..' away.
         if (RedirectUriRules.HasPathTraversal(uriString))
         {
-            yield return Fail("client.redirect_uri.path_traversal", "with a path traversal segment",
+            yield return entry.Fail("client.redirect_uri.path_traversal", "with a path traversal segment",
                 "Path traversal segments ('.' or '..') are prohibited in redirect URIs.");
         }
 
         if (!RedirectUriRules.IsSchemeAllowed(uri))
         {
             yield return RedirectUriRules.IsHttp(uri)
-                ? Fail("client.redirect_uri.scheme_http_non_loopback", "using HTTP for a non-loopback host",
+                ? entry.Fail("client.redirect_uri.scheme_http_non_loopback", "using HTTP for a non-loopback host",
                     "HTTP redirect URIs are only permitted for loopback addresses (RFC 8252 §8.3).")
-                : Fail("client.redirect_uri.scheme_not_allowed", "with a disallowed scheme",
+                : entry.Fail("client.redirect_uri.scheme_not_allowed", "with a disallowed scheme",
                     "Permitted schemes are 'https', 'http' (loopback only), and private-use schemes containing a dot.");
         }
-
-        ZeeKayDaConfigurationFailure Fail(string code, string problem, string reason) => new(
-            code,
-            $"Client '{clientId}' has a redirect URI in {propertyName} {problem}: '{uriString}'. {reason}");
     }
 
     /// <summary>
