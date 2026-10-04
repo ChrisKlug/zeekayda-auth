@@ -2,7 +2,9 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
+using ZeeKayDa.Auth.Configuration;
 using ZeeKayDa.Auth.Logging;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
 
@@ -247,6 +249,63 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
+    public async Task A_host_validator_returning_a_null_list_is_served_as_unknown_and_named_as_malformed()
+    {
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(NewClient()), FrameworkThen(new MalformedResultValidator(null)), logger);
+
+        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull("a malformed validator result must fail closed, like a throwing validator");
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
+            .Which.Message.Should().Contain("MalformedResultValidator").And.NotContain(nameof(NullReferenceException));
+    }
+
+    [Fact]
+    public async Task A_host_validator_returning_a_null_failure_is_served_as_unknown_and_named_as_malformed()
+    {
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(NewClient()), FrameworkThen(new MalformedResultValidator([null])), logger);
+
+        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull("a malformed validator result must fail closed, like a throwing validator");
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
+            .Which.Message.Should().Contain("MalformedResultValidator").And.NotContain(nameof(NullReferenceException));
+    }
+
+    [Fact]
+    public async Task A_host_validators_result_is_judged_and_reported_from_one_snapshot()
+    {
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(NewClient()), FrameworkThen(new ChangingResultValidator()), logger);
+
+        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+
+        // The first enumeration yields "Broken." and every later one a null: reporting "Broken."
+        // proves the list was read once, and the null a second read would have hit never was.
+        result.Should().BeNull();
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
+            .Which.Message.Should().Contain("Broken.").And.NotContain(nameof(NullReferenceException));
+    }
+
+    [Fact]
+    public async Task A_host_validator_returning_a_malformed_result_logs_critical_once_however_many_lookups()
+    {
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
+        var resolver = new ValidatedClientResolver(
+            new SingleClientRepository(NewClient()), FrameworkThen(new MalformedResultValidator(null)), logger);
+
+        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
     public async Task Invalid_registration_logs_critical_for_the_operator()
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
@@ -443,26 +502,21 @@ public class ValidatedClientResolverTests
 
     private sealed class PassingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientWithCredentials client)
-        {
-        }
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => [];
     }
 
     private sealed class RejectingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientWithCredentials client) =>
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure("test_rule", "Deliberately rejected by the test."));
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
+            [new ZeeKayDaConfigurationFailure("test_rule", "Deliberately rejected by the test.")];
     }
 
     /// <summary>Rejects every registration, for the rule this test named for its <c>client_id</c>.</summary>
     private sealed class CodePerClientValidator(IReadOnlyDictionary<string, string> codesByClientId)
         : IClientRegistrationValidator
     {
-        public void Validate(IClientWithCredentials client) =>
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    codesByClientId[client.ClientId], "Deliberately rejected by the test."));
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
+            [new ZeeKayDaConfigurationFailure(codesByClientId[client.ClientId], "Deliberately rejected by the test.")];
     }
 
     /// <summary>Rejects every registration, breaking a different rule each time.</summary>
@@ -470,11 +524,10 @@ public class ValidatedClientResolverTests
     {
         private int _calls;
 
-        public void Validate(IClientWithCredentials client)
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
         {
             var call = ++_calls;
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure($"test_rule_{call}", $"Rejected by the test, rule {call}."));
+            return [new ZeeKayDaConfigurationFailure($"test_rule_{call}", $"Rejected by the test, rule {call}.")];
         }
     }
 
@@ -486,9 +539,8 @@ public class ValidatedClientResolverTests
     {
         private int _calls;
 
-        public void Validate(IClientWithCredentials client) =>
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure("test_rule", $"Rejected by the test, attempt {++_calls}."));
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
+            [new ZeeKayDaConfigurationFailure("test_rule", $"Rejected by the test, attempt {++_calls}.")];
     }
 
     /// <summary>
@@ -499,17 +551,21 @@ public class ValidatedClientResolverTests
     {
         private bool _second;
 
-        public void Validate(IClientWithCredentials client)
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
         {
             _second = !_second;
 
-            throw _second
-                ? new ZeeKayDaConfigurationException(
+            return _second
+                ?
+                [
                     new ZeeKayDaConfigurationFailure("a; b", "Rules a and b were broken."),
-                    new ZeeKayDaConfigurationFailure("c", "Rule c was broken."))
-                : new ZeeKayDaConfigurationException(
+                    new ZeeKayDaConfigurationFailure("c", "Rule c was broken."),
+                ]
+                :
+                [
                     new ZeeKayDaConfigurationFailure("a", "Rule a was broken."),
-                    new ZeeKayDaConfigurationFailure("b; c", "Rules b and c were broken."));
+                    new ZeeKayDaConfigurationFailure("b; c", "Rules b and c were broken."),
+                ];
         }
     }
 
@@ -518,23 +574,80 @@ public class ValidatedClientResolverTests
     {
         private bool _flipped;
 
-        public void Validate(IClientWithCredentials client)
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
         {
             var first = new ZeeKayDaConfigurationFailure("test_rule_a", "Rule A was broken.");
             var second = new ZeeKayDaConfigurationFailure("test_rule_b", "Rule B was broken.");
             _flipped = !_flipped;
 
-            throw _flipped
-                ? new ZeeKayDaConfigurationException(first, second)
-                : new ZeeKayDaConfigurationException(second, first);
+            return _flipped ? [first, second] : [second, first];
         }
+    }
+
+    /// <summary>A host validator whose list yields a failure the first time and a null after that.</summary>
+    private sealed class ChangingResultValidator : IClientRegistrationValidator
+    {
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => new ChangingList();
+
+        private sealed class ChangingList : IReadOnlyList<ZeeKayDaConfigurationFailure>
+        {
+            private int _enumerations;
+
+            public int Count => 1;
+
+            public ZeeKayDaConfigurationFailure this[int index] => this.First();
+
+            public IEnumerator<ZeeKayDaConfigurationFailure> GetEnumerator()
+            {
+                yield return _enumerations++ == 0 ? new ZeeKayDaConfigurationFailure("host.rule", "Broken.") : null!;
+            }
+
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        }
+    }
+
+    /// <summary>The production wiring: the framework's rules, then <paramref name="host"/>'s.</summary>
+    private static FrameworkThenHostValidator FrameworkThen(IClientRegistrationValidator host)
+    {
+        var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+        serverOptions.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+        var registry = new ClientSecretHasherRegistry(
+            [new FakeHasher()], Microsoft.Extensions.Options.Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+        return new FrameworkThenHostValidator(
+            new ClientRegistrationValidator(
+                Microsoft.Extensions.Options.Options.Create(serverOptions),
+                registry,
+                NullSanitizingLogger<ClientRegistrationValidator>.Instance,
+                keyRing: null),
+            host);
+    }
+
+    private sealed class FakeHasher : IClientSecretHasher
+    {
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake" };
+
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
+
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$fake$x");
+    }
+
+    /// <summary>A host validator breaking its contract: a null list, or a null entry in one.</summary>
+    private sealed class MalformedResultValidator(IReadOnlyList<ZeeKayDaConfigurationFailure?>? result)
+        : IClientRegistrationValidator
+    {
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => result!;
     }
 
     private sealed class CountingValidator : IClientRegistrationValidator
     {
         public int Calls { get; private set; }
 
-        public void Validate(IClientWithCredentials client) => Calls++;
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
+        {
+            Calls++;
+            return [];
+        }
     }
 
 }

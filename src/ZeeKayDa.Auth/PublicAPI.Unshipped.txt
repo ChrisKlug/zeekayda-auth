@@ -146,7 +146,7 @@ ZeeKayDa.Auth.Clients.IClient.RedirectUris.get -> System.Collections.Generic.IRe
 ZeeKayDa.Auth.Clients.IClient.RequireConsent.get -> bool
 ZeeKayDa.Auth.Clients.IClientWithCredentials
 ZeeKayDa.Auth.Clients.IClientRegistrationValidator
-ZeeKayDa.Auth.Clients.IClientRegistrationValidator.Validate(ZeeKayDa.Auth.Clients.IClientWithCredentials! client) -> void
+ZeeKayDa.Auth.Clients.IClientRegistrationValidator.Validate(ZeeKayDa.Auth.Clients.IClientWithCredentials! client) -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
 ZeeKayDa.Auth.Clients.IClientRepository
 ZeeKayDa.Auth.Clients.IClientRepository.FindByClientIdAsync(string! clientId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Clients.IClientWithCredentials?>!
 ZeeKayDa.Auth.Clients.IClientSecrets

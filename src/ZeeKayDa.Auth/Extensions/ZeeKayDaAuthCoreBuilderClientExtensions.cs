@@ -41,7 +41,7 @@ public static class ZeeKayDaAuthCoreBuilderClientExtensions
         // TryAddSingleton below, leaving the configured clients unreachable.
         var existing = builder.Services.FirstOrDefault(sd =>
             sd.ServiceType == typeof(IClientRepository) &&
-            sd.ImplementationType != typeof(InMemoryClientRepository));
+            !ReferenceEquals(sd.ImplementationFactory, InMemoryClientRepository.Factory));
         if (existing is not null)
         {
             throw new InvalidOperationException(
@@ -52,7 +52,7 @@ public static class ZeeKayDaAuthCoreBuilderClientExtensions
         }
 
         // Multiple AddInMemoryClients calls share the same options instance so registrations
-        // accumulate; the repository clears the list at startup once consumed.
+        // accumulate.
         var optionsDescriptor = builder.Services
             .FirstOrDefault(sd => sd.ServiceType == typeof(InMemoryClientRegistrationOptions));
 
@@ -65,14 +65,12 @@ public static class ZeeKayDaAuthCoreBuilderClientExtensions
         {
             opts = new InMemoryClientRegistrationOptions();
             builder.Services.AddSingleton(opts);
-            builder.Services.AddSingleton<IOptions<InMemoryClientRegistrationOptions>>(
-                new OptionsWrapper<InMemoryClientRegistrationOptions>(opts));
         }
 
         var registration = new InMemoryClientRegistrationBuilder(opts);
         configure(registration);
 
-        builder.Services.TryAddSingleton<IClientRepository, InMemoryClientRepository>();
+        builder.Services.TryAddSingleton(InMemoryClientRepository.Factory);
 
         return builder;
     }

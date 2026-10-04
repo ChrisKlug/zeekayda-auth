@@ -1,9 +1,5 @@
 using System.Collections.Concurrent;
-using System.Text.RegularExpressions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ZeeKayDa.Auth;
-using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
@@ -14,22 +10,17 @@ namespace ZeeKayDa.Auth.Clients;
 /// client registration rules.
 /// </summary>
 /// <remarks>
-/// Aggregates all violations before throwing so operators see every problem in one pass.
-/// Registered as a singleton by <c>AddZeeKayDaAuth()</c>. Areas with more than one rule or a
-/// dependency of their own live in their own validators; this class holds the dependencies,
-/// does all the logging, and keeps only the single-rule checks.
+/// Registered as a singleton by <c>AddZeeKayDaAuth()</c>. The rules are grouped by what they are
+/// about, one sibling file per group, and run in the order <see cref="Validate"/> lists them.
 /// </remarks>
 // keyRing is null when no ring is registered, and deliberately has no default: omitting it would
 // silently weaken the check that a client's AllowedSigningAlgorithms are ones the ring signs with.
-internal sealed class ClientRegistrationValidator(
+internal sealed partial class ClientRegistrationValidator(
     IOptions<AuthorizationServerOptions> options,
     ClientSecretHasherRegistry registry,
     SanitizingLogger<ClientRegistrationValidator> logger,
     ISigningKeyRing? keyRing) : IClientRegistrationValidator
 {
-    private static readonly Regex ClientIdPattern =
-        new(@"^[A-Za-z0-9_\-.]+$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));
-
     // The resolver validates on every lookup, so an advisory written each time would let anyone
     // who knows a client_id repeat it per request. Keyed by what the store returned, never by
     // request input; cleared at the cap, which costs one repeat per advisory.
@@ -38,224 +29,18 @@ internal sealed class ClientRegistrationValidator(
     private readonly ConcurrentDictionary<(string ClientId, string Advisory, string? Detail), byte> _warned = new();
 
     /// <inheritdoc/>
-    public void Validate(IClientWithCredentials client)
+    public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
     {
         ArgumentNullException.ThrowIfNull(client);
 
-        var failures = new List<ZeeKayDaConfigurationFailure>();
-
-        ValidateRedirectUriSet(client.ClientId, client.RedirectUris, "RedirectUris", failures);
-        ValidateRedirectUriSet(client.ClientId, client.PostLogoutRedirectUris, "PostLogoutRedirectUris", failures);
-        ValidateClientId(client, failures);
-        ValidateDisplayName(client, failures);
-        InitiateLoginUriValidator.Validate(client, failures);
-        ValidateAllowedTokenEndpointAuthMethods(client, failures);
-        ValidatePkceOptOut(client, failures);
-        ClientCredentialValidator.Validate(client, registry, failures);
-        ValidateAllowedSigningAlgorithms(client, failures);
-        ValidateTokenLifetimes(client, failures);
-        ValidateAllowedScopes(client, failures);
-        ClaimAdditionValidator.Validate(client, failures);
-        ClientFlowValidator.Validate(client, options.Value, failures);
-        WarnOfRefreshWithoutIssuer(client);
-        ValidateAllowedPromptValues(client, failures);
-
-        if (failures.Count > 0)
-            throw new ZeeKayDaConfigurationException([.. failures]);
-    }
-
-    private void ValidateRedirectUriSet(
-        string clientId,
-        IReadOnlySet<string> uriSet,
-        string propertyName,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        // Count what the set yields, not what its Count property claims: a custom registration's
-        // set may enumerate more entries than it reports, and the cap must see every one of them.
-        var count = 0;
-
-        foreach (var uriString in uriSet)
-        {
-            count++;
-
-            // localhost advisory warning (RFC 8252 §8.3): http only. A native app's loopback
-            // redirect is http (§7.3); https://localhost is a web client on a dev certificate,
-            // where TLS already rules out the name-resolution risk the advice is about.
-            // Suppressed when the URI broke a rule: a URI that is being rejected anyway should not
-            // also generate advisory-warning noise.
-            var isValidHttpLocalhost =
-                RedirectUriValidator.ValidateRedirectUri(clientId, uriString, propertyName, failures) &&
-                RedirectUriRules.IsHttpLocalhost(uriString);
-            if (isValidHttpLocalhost && FirstTime(clientId, "localhost-" + propertyName, uriString))
-            {
-                logger.LogWarning(
-                    "Client '{ClientId}' uses 'localhost' in {PropertyName}: '{Uri}'. " +
-                    "RFC 8252 §8.3 recommends using the IP literal '127.0.0.1' instead of 'localhost' " +
-                    "to avoid DNS rebinding and cross-platform compatibility issues.",
-                    clientId, propertyName, uriString);
-            }
-        }
-
-        if (count > 32)
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.redirect_uri.count_exceeded",
-                $"Client '{clientId}' has {count} URIs in {propertyName}, which exceeds the maximum of 32."));
-        }
-    }
-
-    private static void ValidateClientId(
-        IClientWithCredentials client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        var clientId = client.ClientId;
-
-        if (!IsValidClientId(clientId))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.client_id.invalid",
-                $"Client has an invalid ClientId: '{clientId}'. " +
-                "ClientId must match [A-Za-z0-9_\\-.]+, be non-empty, and be at most 200 characters."));
-        }
-    }
-
-    /// <summary>Non-empty, at most 200 characters, and only <c>[A-Za-z0-9_\-.]</c>.</summary>
-    internal static bool IsValidClientId(string? clientId) =>
-        !string.IsNullOrEmpty(clientId)
-        && clientId.Length <= 200
-        && ClientIdPattern.IsMatch(clientId);
-
-    /// <summary>
-    /// A display name is shown to users on the host's pages, so it is either absent or a
-    /// printable, bounded string — never something a page has to defend itself against.
-    /// </summary>
-    private static void ValidateDisplayName(
-        IClientWithCredentials client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        if (client.DisplayName is { } displayName && !IsValidDisplayName(displayName))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.display_name.invalid",
-                $"Client '{client.ClientId}' has an invalid DisplayName. " +
-                "DisplayName must be null or a non-blank string of at most 200 characters with no control characters."));
-        }
-    }
-
-    /// <summary>Non-blank, at most 200 characters, and nothing a page would have to escape or hide.</summary>
-    private static bool IsValidDisplayName(string displayName) =>
-        !string.IsNullOrWhiteSpace(displayName)
-        && displayName.Length <= 200
-        && !displayName.Any(char.IsControl);
-
-    private void ValidateAllowedTokenEndpointAuthMethods(
-        IClientWithCredentials client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        var serverMethods = new HashSet<string>(
-            options.Value.TokenEndpoint.AuthMethodsSupported,
-            StringComparer.Ordinal);
-
-        TokenEndpointAuthMethodValidator.Validate(client, serverMethods, failures);
-    }
-
-    /// <summary>
-    /// A public client has no credential, so PKCE is its only proof that the party redeeming the
-    /// code is the one that started the flow; nothing else can stand in for it.
-    /// </summary>
-    private static void ValidatePkceOptOut(
-        IClientWithCredentials client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        if (client.IsPublic && !client.RequirePkce)
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.require_pkce.disabled_on_public",
-                $"Public client '{client.ClientId}' has RequirePkce set to false. " +
-                "A public client must always use PKCE (OAuth 2.1 §7.5.1.1, RFC 9700 §2.1.1); " +
-                "only a confidential client may be registered without it."));
-        }
-    }
-
-    private void ValidateAllowedSigningAlgorithms(
-        IClientWithCredentials client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        var checkedAgainstServer = SigningAlgorithmValidator.Validate(
-            client, keyRing, options.Value.IdToken.AdvertisedSigningAlgorithms, failures);
-
-        // Say so rather than passing silently. A host with no ring at all stays quiet: the protocol
-        // endpoints refuse to start without one, so there is nothing a warning here would add.
-        var uncheckedAgainstRing = !checkedAgainstServer && keyRing is not null;
-        if (uncheckedAgainstRing && FirstTime(client.ClientId, "signing-unchecked"))
-        {
-            logger.LogWarning(
-                "Client '{ClientId}' declares AllowedSigningAlgorithms, but the signing key ring " +
-                "has not yet read its source, so the set could not be checked against the " +
-                "server's advertised algorithms. This happens when an IClientRepository is " +
-                "resolved before host startup verification runs.",
-                client.ClientId);
-        }
-    }
-
-    private void ValidateTokenLifetimes(
-        IClientWithCredentials client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        ValidateTokenLifetime(client, client.AccessTokenLifetime, nameof(IClient.AccessTokenLifetime), failures);
-        ValidateTokenLifetime(client, client.IdTokenLifetime, nameof(IClient.IdTokenLifetime), failures);
-    }
-
-    /// <summary>
-    /// A client override must be positive; one past the family ceiling only warns, because a
-    /// custom repository may validate on resolution rather than at startup, and a warning there
-    /// is still read while a failure would take the request down with it.
-    /// </summary>
-    private void ValidateTokenLifetime(
-        IClientWithCredentials client,
-        TimeSpan? lifetime,
-        string propertyName,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        if (lifetime is not { } value)
-            return;
-
-        if (value <= TimeSpan.Zero)
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.token_lifetime.not_positive",
-                $"Client '{client.ClientId}' has {propertyName} set to {value}. " +
-                "When set, a token lifetime must be greater than zero, or null to inherit the server default."));
-            return;
-        }
-
-        if (value > options.Value.TokenEndpoint.AbsoluteFamilyLifetime
-            && FirstTime(client.ClientId, "lifetime-past-family", propertyName))
-        {
-            logger.LogWarning(
-                "Client '{ClientId}' has {PropertyName} set past TokenEndpoint.AbsoluteFamilyLifetime, " +
-                "so a token issued to it would outlive the grant family that produced it.",
-                client.ClientId,
-                propertyName);
-        }
-    }
-
-    /// <summary>
-    /// A refresh token is issued only by the code grant (RFC 6749 §4.4.3: client_credentials SHOULD
-    /// NOT issue one), so refresh_token alone is usually a mistake. It only warns: a client whose code
-    /// grant was withdrawn may still be draining refresh tokens it was issued before.
-    /// </summary>
-    private void WarnOfRefreshWithoutIssuer(IClientWithCredentials client)
-    {
-        var refreshWithoutIssuer = client.AllowedGrantTypes.Any(grantType => grantType == GrantType.RefreshToken)
-            && !client.AllowedGrantTypes.Any(grantType => grantType == GrantType.AuthorizationCode);
-        if (refreshWithoutIssuer && FirstTime(client.ClientId, "refresh-without-issuer"))
-        {
-            logger.LogWarning(
-                "Client '{ClientId}' allows the refresh_token grant but not authorization_code, the only grant " +
-                "that issues a refresh token, so it can use only refresh tokens issued before.",
-                client.ClientId);
-        }
+        return
+        [
+            .. ValidateIdentity(client),
+            .. ValidateCredentials(client),
+            .. ValidateGrants(client),
+            .. ValidateDestinations(client),
+            .. ValidateIssued(client),
+        ];
     }
 
     /// <summary>
@@ -271,30 +56,5 @@ internal sealed class ClientRegistrationValidator(
             _warned.Clear();
 
         return true;
-    }
-
-    private static void ValidateAllowedScopes(
-        IClientWithCredentials client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        foreach (var _ in client.AllowedScopes.Where(string.IsNullOrWhiteSpace))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.allowed_scopes.blank_entry",
-                $"Client '{client.ClientId}' has a null, empty, or whitespace-only entry in AllowedScopes. " +
-                "Scope entries must be non-empty non-whitespace strings."));
-        }
-    }
-
-    private static void ValidateAllowedPromptValues(
-        IClientWithCredentials client,
-        List<ZeeKayDaConfigurationFailure> failures)
-    {
-        foreach (var promptValue in client.AllowedPromptValues.Where(promptValue => !Enum.IsDefined(promptValue)))
-        {
-            failures.Add(new ZeeKayDaConfigurationFailure(
-                "client.prompt_values.undefined_value",
-                $"Client '{client.ClientId}' has an undefined value '{(int)promptValue}' in AllowedPromptValues."));
-        }
     }
 }
