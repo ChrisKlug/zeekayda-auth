@@ -1,4 +1,5 @@
 using System.Reflection;
+using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
@@ -21,6 +22,19 @@ public sealed class InteractionServiceShapeTests
         service.IsSealed.Should().BeTrue("a host must not derive its own");
         service.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
             .Should().BeEmpty("a host must not construct its own");
+    }
+
+    [Theory]
+    [MemberData(nameof(InteractionServices))]
+    public void A_host_registration_made_before_AddZeeKayDaAuth_does_not_displace_the_frameworks(Type service)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(service);
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
+
+        // The container resolves the last registration of a type: it must be the framework's factory.
+        services.Last(descriptor => descriptor.ServiceType == service)
+            .ImplementationFactory.Should().NotBeNull("the framework builds each one through a factory");
     }
 
     [Fact]

@@ -114,10 +114,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<PageInteractionServices>();
         // The interaction services are public sealed classes with internal constructors, which the
         // container cannot call, so each is built here; a host can consume them but never supply one.
-        services.TryAddSingleton(sp => new ErrorInteraction(
+        // Added, not tried: the framework is the only possible supplier, so its registration wins.
+        services.AddSingleton(sp => new ErrorInteraction(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<AuthorizeErrorTransport>()));
-        services.TryAddSingleton(sp => new LoginInteraction(
+        services.AddSingleton(sp => new LoginInteraction(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<IOptions<AuthorizationServerOptions>>(),
             sp.GetRequiredService<ProviderRegistry>(),
@@ -128,16 +129,16 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupVerifier, LoginDispatchVerifier>());
 
-        services.TryAddSingleton(sp => new ConsentInteraction(
+        services.AddSingleton(sp => new ConsentInteraction(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<PageInteractionServices>()));
-        services.TryAddSingleton(sp => new ProviderSignInInteraction(
+        services.AddSingleton(sp => new ProviderSignInInteraction(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<ProviderRegistry>(),
             sp.GetRequiredService<PageInteractionServices>()));
         services.TryAddSingleton<LogoutRequestStore>();
         services.TryAddSingleton<EndSessionResponses>();
-        services.TryAddSingleton(sp => new LogoutInteraction(
+        services.AddSingleton(sp => new LogoutInteraction(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<LogoutRequestStore>(),
             sp.GetRequiredService<EndSessionResponses>(),

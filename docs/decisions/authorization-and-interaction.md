@@ -4,7 +4,7 @@
 error model, hands an unauthenticated one to the host's login page or an external provider, an
 authenticated one to the host's consent page, which returns through `ConsentInteraction`, and
 answers a request past both with an authorization code at the registered redirect URI. Remembered
-consent grants are the unbuilt part (#632). Interface shapes:
+consent grants are the unbuilt part (#632). Service shapes:
 `docs/design/authorization-endpoint-interaction.md`; the interaction surface, cookies and SSO
 session: `interaction-and-session.md`; the code store: `token-stores.md`.
 

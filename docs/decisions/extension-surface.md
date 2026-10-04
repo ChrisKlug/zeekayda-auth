@@ -121,6 +121,9 @@ dependencies are resolved inside the repository from an injected `IServiceScopeF
   could violate while compiling outnumbered the one thing a third party actually wanted to vary. The
   full reversal is in `token-stores.md`; it is listed here because it is the case that produced the
   house pattern.
+- **Interaction services as public interfaces.** Hosts could swap them in DI, so the framework's
+  guarantee for each protocol step came to rest on a startup check. Sealed classes with internal
+  constructors make the swap unrepresentable instead.
 - **A friend grant as a substitute for public contracts.** The Azure Key Vault provider's first
   attempt at reaching core's signing helpers. It works for exactly one first-party package and can
   never serve a third party. Public contracts with internal crypto is the fix.
