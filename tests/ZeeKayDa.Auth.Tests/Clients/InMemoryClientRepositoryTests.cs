@@ -56,7 +56,8 @@ public sealed class InMemoryClientRepositoryTests
         SanitizingLogger<InMemoryClientRepository>? logger = null)
     {
         var so = serverOptions ?? DefaultServerOptions();
-        var repository = InMemoryClientRepository.Build(opts, MakeSecrets(), MakeValidator(so));
+        var framework = MakeValidator(so);
+        var repository = InMemoryClientRepository.Build(opts, MakeSecrets(), new FrameworkThenHostValidator(framework, framework));
         repository.WarnIfNoneHasNoPublicClient(so, logger ?? NullSanitizingLogger<InMemoryClientRepository>.Instance);
         return repository;
     }
@@ -64,7 +65,7 @@ public sealed class InMemoryClientRepositoryTests
     private static InMemoryClientRepository MakeRepositoryWithValidator(
         InMemoryClientRegistrationOptions opts, IClientRegistrationValidator validator)
     {
-        return InMemoryClientRepository.Build(opts, MakeSecrets(), validator);
+        return InMemoryClientRepository.Build(opts, MakeSecrets(), new FrameworkThenHostValidator(MakeValidator(), validator));
     }
 
     private static Client ValidPublicClient(string clientId = "test-client") =>
@@ -393,6 +394,22 @@ public sealed class InMemoryClientRepositoryTests
                 failure.Code == "client.validator.malformed_result"
                 && failure.Message.Contains("DelegatingValidator", StringComparison.Ordinal)
                 && failure.Message.Contains("'c1'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Build_applies_the_framework_rules_even_when_a_host_validator_accepts_everything()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(ValidPublicClient("c1") with
+        {
+            RedirectUris = new HashSet<string>(["https://app.example.com/cb#fragment"], StringComparer.Ordinal),
+        });
+
+        var act = () => MakeRepositoryWithValidator(opts, new DelegatingValidator(_ => []));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.fragment",
+                "a host can add rules at startup, never remove the framework's");
     }
 
     // ── Empty plaintext secret is aggregated, not thrown bare ─────────────────────────────────────
