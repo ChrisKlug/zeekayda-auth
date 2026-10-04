@@ -366,17 +366,29 @@ public sealed class EndSessionEndpointHostTests
     /// </summary>
     internal static void AddClients(ZeeKayDaAuthBuilder builder) =>
         builder.AddInMemoryClients(clients => clients
-            .AddPublic(App, [Redirect], [AppSignedOut], ["openid"], client =>
+            .AddPublic(App, client =>
             {
+                client.RedirectUris.Add(Redirect);
+                client.PostLogoutRedirectUris.Add(AppSignedOut);
+                client.AllowedScopes.Add("openid");
                 client.RequireConsent = false;
                 client.DisplayName = AppName;
             })
-            .AddPublic(TrustedApp, [Redirect], [TrustedSignedOut], ["openid"], client =>
+            .AddPublic(TrustedApp, client =>
             {
+                client.RedirectUris.Add(Redirect);
+                client.PostLogoutRedirectUris.Add(TrustedSignedOut);
+                client.AllowedScopes.Add("openid");
                 client.RequireConsent = false;
                 client.SkipLogoutConfirmation = true;
             })
-            .AddPublic(OtherApp, [Redirect], [OtherSignedOut], ["openid"], client => client.RequireConsent = false));
+            .AddPublic(OtherApp, client =>
+            {
+                client.RedirectUris.Add(Redirect);
+                client.PostLogoutRedirectUris.Add(OtherSignedOut);
+                client.AllowedScopes.Add("openid");
+                client.RequireConsent = false;
+            }));
 
     /// <summary>The host's pages: sign-in, a logout page, a miswired logout link, and a session probe.</summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)

@@ -726,19 +726,26 @@ ZeeKayDa.Auth.Clients.ClientOptions.RequireConsent.get -> bool
 ZeeKayDa.Auth.Clients.ClientOptions.RequireConsent.set -> void
 ZeeKayDa.Auth.Clients.ClientOptions.SkipLogoutConfirmation.get -> bool
 ZeeKayDa.Auth.Clients.ClientOptions.SkipLogoutConfirmation.set -> void
+ZeeKayDa.Auth.Clients.ClientOptions.AllowedScopes.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.Clients.ClientOptions.PostLogoutRedirectUris.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.Clients.ClientOptions.RedirectUris.get -> System.Collections.Generic.ISet<string!>!
 ZeeKayDa.Auth.Clients.ConfidentialClientOptions
 ZeeKayDa.Auth.Clients.ConfidentialClientOptions.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.ISet<string!>!
 ZeeKayDa.Auth.Clients.ConfidentialClientOptions.RequirePkce.get -> bool
 ZeeKayDa.Auth.Clients.ConfidentialClientOptions.RequirePkce.set -> void
-ZeeKayDa.Auth.Clients.IInMemoryClientRegistrationBuilder
-ZeeKayDa.Auth.Clients.IInMemoryClientRegistrationBuilder.Add(ZeeKayDa.Auth.Clients.IClientWithCredentials! registration) -> ZeeKayDa.Auth.Clients.IInMemoryClientRegistrationBuilder!
-ZeeKayDa.Auth.Clients.IInMemoryClientRegistrationBuilder.AddConfidential(string! clientId, string! clientSecret, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes, System.Action<ZeeKayDa.Auth.Clients.ConfidentialClientOptions!>? configure = null) -> ZeeKayDa.Auth.Clients.IInMemoryClientRegistrationBuilder!
-ZeeKayDa.Auth.Clients.IInMemoryClientRegistrationBuilder.AddPublic(string! clientId, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes, System.Action<ZeeKayDa.Auth.Clients.PublicClientOptions!>? configure = null) -> ZeeKayDa.Auth.Clients.IInMemoryClientRegistrationBuilder!
+ZeeKayDa.Auth.Clients.ConfidentialClientOptions.Secret.get -> string?
+ZeeKayDa.Auth.Clients.ConfidentialClientOptions.Secret.set -> void
+ZeeKayDa.Auth.Clients.ConfidentialClientOptions.SecretHash.get -> string?
+ZeeKayDa.Auth.Clients.ConfidentialClientOptions.SecretHash.set -> void
+ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder
+ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder.Add(ZeeKayDa.Auth.Clients.IClientWithCredentials! registration) -> ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder!
+ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder.AddConfidential(string! clientId, System.Action<ZeeKayDa.Auth.Clients.ConfidentialClientOptions!>! configure) -> ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder!
+ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder.AddPublic(string! clientId, System.Action<ZeeKayDa.Auth.Clients.PublicClientOptions!>! configure) -> ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder!
 ZeeKayDa.Auth.Clients.PublicClientOptions
 ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder
 ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderClaimsExtensions.AddClaimsProvider<TProvider>(this ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder! builder) -> ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder!
-static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderClientExtensions.AddInMemoryClients<TBuilder>(this TBuilder! builder, System.Action<ZeeKayDa.Auth.Clients.IInMemoryClientRegistrationBuilder!>! configure) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderClientExtensions.AddInMemoryClients<TBuilder>(this TBuilder! builder, System.Action<ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder!>! configure) -> TBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderHasherExtensions.AddClientSecretHasher<THasher>(this ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder! builder, bool isDefault = false) -> ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderHasherExtensions.ConfigurePbkdf2ClientSecretHasher<TBuilder>(this TBuilder! builder, System.Action<ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasherOptions!>! configure) -> TBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderScopeExtensions.AddInMemoryScopes<TBuilder>(this TBuilder! builder, System.Collections.Generic.IEnumerable<ZeeKayDa.Auth.Scopes.ScopeDefinition!>! scopes) -> TBuilder!

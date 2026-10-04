@@ -124,8 +124,12 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
                 options.Issuer = "https://auth.example.com";
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             })
-            .AddInMemoryClients(clients => clients.AddConfidential(
-                "backend", "a-strong-test-secret", ["https://app.example.com/cb"], [], ["openid"]));
+            .AddInMemoryClients(clients => clients.AddConfidential("backend", client =>
+            {
+                client.Secret = "a-strong-test-secret";
+                client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
+                client.AllowedScopes.UnionWith(["openid"]);
+            }));
         using var provider = services.BuildServiceProvider();
 
         provider.GetRequiredService<IClientRepository>();
@@ -141,8 +145,11 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         services.AddLogging();
         services.AddSingleton<IClientRegistrationValidator, AcceptEverythingValidator>();
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com")
-            .AddInMemoryClients(clients => clients.AddPublic(
-                "spa", ["https://app.example.com/cb#fragment"], [], ["openid"]));
+            .AddInMemoryClients(clients => clients.AddPublic("spa", client =>
+            {
+                client.RedirectUris.UnionWith(["https://app.example.com/cb#fragment"]);
+                client.AllowedScopes.UnionWith(["openid"]);
+            }));
         using var provider = services.BuildServiceProvider();
 
         var act = () => provider.GetRequiredService<IClientRepository>();

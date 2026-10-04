@@ -123,9 +123,14 @@ public sealed record Client : IClientWithCredentials
     {
         ArgumentNullException.ThrowIfNull(secret);
 
-        return CreateConfidentialWithoutCredential(clientId, redirectUris, postLogoutRedirectUris, allowedScopes) with
+        return new()
         {
+            ClientId = clientId,
+            IsPublic = false,
             Secrets = [secret],
+            RedirectUris = new HashSet<string>(redirectUris, StringComparer.Ordinal),
+            PostLogoutRedirectUris = new HashSet<string>(postLogoutRedirectUris, StringComparer.Ordinal),
+            AllowedScopes = new HashSet<string>(allowedScopes, StringComparer.Ordinal),
         };
     }
 
@@ -158,23 +163,6 @@ public sealed record Client : IClientWithCredentials
         {
             ClientId = clientId,
             IsPublic = true,
-            RedirectUris = new HashSet<string>(redirectUris, StringComparer.Ordinal),
-            PostLogoutRedirectUris = new HashSet<string>(postLogoutRedirectUris, StringComparer.Ordinal),
-            AllowedScopes = new HashSet<string>(allowedScopes, StringComparer.Ordinal),
-        };
-
-    // A confidential registration whose credential is added later — by the in-memory builder,
-    // whose secret is hashed only when the repository is built. Sharing it with CreateConfidential
-    // keeps both paths on the same defaults.
-    internal static Client CreateConfidentialWithoutCredential(
-        string clientId,
-        IEnumerable<string> redirectUris,
-        IEnumerable<string> postLogoutRedirectUris,
-        IEnumerable<string> allowedScopes) =>
-        new()
-        {
-            ClientId = clientId,
-            IsPublic = false,
             RedirectUris = new HashSet<string>(redirectUris, StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(postLogoutRedirectUris, StringComparer.Ordinal),
             AllowedScopes = new HashSet<string>(allowedScopes, StringComparer.Ordinal),

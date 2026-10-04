@@ -48,7 +48,11 @@ public sealed class DevelopmentSigningKeyIntegrationTests
                 });
                 authBuilder
                     .AddInMemoryClients(clients =>
-                        clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]))
+                        clients.AddPublic("test-client", client =>
+                        {
+                            client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                            client.AllowedScopes.UnionWith(["openid"]);
+                        }))
                     // Integration test hosts run as "Production" by default; allow in-memory stores.
                     .AddInMemoryStores(allowOutsideDevelopment: true)
                     .AddTestClaimsProvider()

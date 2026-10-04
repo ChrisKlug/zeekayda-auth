@@ -9,6 +9,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
 {
     private static readonly string[] RedirectUris = ["https://app.example.com/cb"];
     private static readonly string[] Scopes = ["openid"];
+    private const string Secret = "very-secret";
 
     private readonly InMemoryClientRegistrationOptions _options = new();
     private readonly InMemoryClientRegistrationBuilder _builder;
@@ -23,7 +24,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     {
         PublicClientOptions? configured = null;
 
-        _builder.AddPublic("spa", RedirectUris, [], Scopes, options =>
+        _builder.AddPublic("spa", options =>
         {
             ChangeEverySharedSetting(options);
             configured = options;
@@ -34,9 +35,17 @@ public sealed class InMemoryClientRegistrationBuilderTests
     }
 
     [Fact]
+    public void AddPublic_without_a_callback_throws()
+    {
+        var act = () => _builder.AddPublic("spa", null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
+    }
+
+    [Fact]
     public void AddPublic_keeps_the_client_public_whatever_the_callback_sets()
     {
-        _builder.AddPublic("spa", RedirectUris, [], Scopes, options => options.RequireConsent = false);
+        _builder.AddPublic("spa", options => WithBasics(options).RequireConsent = false);
 
         var registration = SinglePublic();
         registration.ClientId.Should().Be("spa");
@@ -47,15 +56,6 @@ public sealed class InMemoryClientRegistrationBuilderTests
         registration.AllowedScopes.Should().BeEquivalentTo(Scopes);
     }
 
-    [Fact]
-    public void AddPublic_with_a_callback_that_changes_nothing_registers_the_same_client_as_without_one()
-    {
-        _builder.AddPublic("spa", RedirectUris, [], Scopes);
-        _builder.AddPublic("spa", RedirectUris, [], Scopes, _ => { });
-
-        _options.PreBuilt[1].Should().BeEquivalentTo(_options.PreBuilt[0]);
-    }
-
     // ── AddConfidential ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -63,7 +63,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     {
         ConfidentialClientOptions? configured = null;
 
-        _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes, options =>
+        _builder.AddConfidential("web", options =>
         {
             ChangeEverySharedSetting(options);
             options.RequirePkce = false;
@@ -71,29 +71,44 @@ public sealed class InMemoryClientRegistrationBuilderTests
             configured = options;
         });
 
-        // Covers the shared settings as well as the confidential-only ones.
-        SinglePending().Registration.Should().BeEquivalentTo(configured);
+        // Covers the shared settings as well as the confidential-only ones. The secret is not a
+        // registration member; it travels beside the registration until the repository is built.
+        SinglePending().Registration.Should().BeEquivalentTo(configured, compare => compare
+            .Excluding(options => options!.Secret)
+            .Excluding(options => options!.SecretHash));
     }
 
     [Fact]
     public void AddConfidential_keeps_the_client_confidential_and_its_secret_pending_hashing()
     {
-        _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes, options => options.RequireConsent = false);
+        _builder.AddConfidential("web", options => WithBasics(options).Secret = Secret);
 
         var pending = SinglePending();
-        pending.PlaintextSecret.Should().Be("very-secret");
+        pending.PlaintextSecret.Should().Be(Secret);
+        pending.SecretHash.Should().BeNull();
         pending.Registration.ClientId.Should().Be("web");
         pending.Registration.IsPublic.Should().BeFalse();
         pending.Registration.Secrets.Should().BeEmpty();
+        pending.Registration.RedirectUris.Should().BeEquivalentTo(RedirectUris);
+        pending.Registration.AllowedScopes.Should().BeEquivalentTo(Scopes);
     }
 
     [Fact]
-    public void AddConfidential_with_a_callback_that_changes_nothing_registers_the_same_client_as_without_one()
+    public void AddConfidential_carries_a_secret_hash_to_the_repository_as_given()
     {
-        _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes);
-        _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes, _ => { });
+        _builder.AddConfidential("web", options => WithBasics(options).SecretHash = "$2b$12$hash");
 
-        _options.Pending[1].Registration.Should().BeEquivalentTo(_options.Pending[0].Registration);
+        var pending = SinglePending();
+        pending.SecretHash.Should().Be("$2b$12$hash");
+        pending.PlaintextSecret.Should().BeNull();
+    }
+
+    [Fact]
+    public void AddConfidential_without_a_callback_throws()
+    {
+        var act = () => _builder.AddConfidential("web", null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
     }
 
     // ── Options defaults and ownership ────────────────────────────────────────────────────────────
@@ -103,7 +118,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     {
         ConfidentialClientOptions? seen = null;
 
-        _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes, options => seen = options);
+        _builder.AddConfidential("web", options => seen = options);
 
         seen!.RequireConsent.Should().BeTrue();
         seen.SkipLogoutConfirmation.Should().BeFalse();
@@ -116,8 +131,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     [Fact]
     public void A_confidential_client_configured_with_client_secret_post_alone_allows_only_client_secret_post()
     {
-        _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes,
-            options => options.AllowedTokenEndpointAuthMethods.Add(TokenEndpointAuthMethods.ClientSecretPost));
+        _builder.AddConfidential("web", options => WithBasics(options).AllowedTokenEndpointAuthMethods.Add(TokenEndpointAuthMethods.ClientSecretPost));
 
         SinglePending().Registration.AllowedTokenEndpointAuthMethods.Should().Equal(TokenEndpointAuthMethods.ClientSecretPost);
     }
@@ -125,7 +139,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     [Fact]
     public void A_confidential_client_configured_with_no_auth_method_gets_client_secret_basic()
     {
-        _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes, options => options.RequireConsent = false);
+        _builder.AddConfidential("web", options => WithBasics(options).RequireConsent = false);
 
         SinglePending().Registration.AllowedTokenEndpointAuthMethods.Should().Equal(TokenEndpointAuthMethods.ClientSecretBasic);
     }
@@ -135,7 +149,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     {
         ConfidentialClientOptions? seen = null;
 
-        _builder.AddConfidential("web", "very-secret", RedirectUris, [], Scopes, options => seen = options);
+        _builder.AddConfidential("web", options => seen = options);
 
         seen!.AllowedTokenEndpointAuthMethods.Should().BeEmpty();
         seen.AllowedGrantTypes.Should().BeEmpty();
@@ -146,7 +160,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     [Fact]
     public void A_client_that_names_no_grant_type_gets_the_code_grant_with_its_response_type_and_mode()
     {
-        _builder.AddPublic("spa", RedirectUris, [], Scopes, options => options.RequireConsent = false);
+        _builder.AddPublic("spa", options => WithBasics(options).RequireConsent = false);
 
         var registration = SinglePublic();
         registration.AllowedGrantTypes.Should().Equal(GrantType.AuthorizationCode);
@@ -157,8 +171,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     [Fact]
     public void A_client_credentials_only_client_gets_the_same_response_types_and_modes_as_through_the_record()
     {
-        _builder.AddConfidential("service", "very-secret", [], [], Scopes,
-            options => options.AllowedGrantTypes.Add(GrantType.ClientCredentials));
+        _builder.AddConfidential("service", options => options.AllowedGrantTypes.Add(GrantType.ClientCredentials));
 
         var registration = SinglePending().Registration;
         var throughRecord = new Client { ClientId = "service", AllowedGrantTypes = registration.AllowedGrantTypes };
@@ -170,7 +183,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     [Fact]
     public void Response_types_and_modes_the_callback_names_are_kept_whatever_the_grant_types()
     {
-        _builder.AddConfidential("service", "very-secret", [], [], Scopes, options =>
+        _builder.AddConfidential("service", options =>
         {
             options.AllowedGrantTypes.Add(GrantType.ClientCredentials);
             options.AllowedResponseTypes.Add(ResponseType.Code);
@@ -186,7 +199,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     public void Changing_the_options_after_the_callback_returns_does_not_change_the_registration()
     {
         PublicClientOptions? kept = null;
-        _builder.AddPublic("spa", RedirectUris, [], Scopes, options => kept = options);
+        _builder.AddPublic("spa", options => kept = options);
 
         kept!.RequireConsent = false;
         kept.AllowedGrantTypes.Add(GrantType.RefreshToken);
@@ -206,9 +219,13 @@ public sealed class InMemoryClientRegistrationBuilderTests
         nameof(IClientWithCredentials.ClientId),
         nameof(IClientWithCredentials.IsPublic),
         nameof(IClientWithCredentials.Secrets),
-        nameof(IClientWithCredentials.RedirectUris),
-        nameof(IClientWithCredentials.PostLogoutRedirectUris),
-        nameof(IClientWithCredentials.AllowedScopes),
+    ];
+
+    // The options' form of Secrets: one secret, in plaintext or already hashed.
+    private static readonly string[] SecretOptions =
+    [
+        nameof(ConfidentialClientOptions.Secret),
+        nameof(ConfidentialClientOptions.SecretHash),
     ];
 
     private static readonly string[] ConfidentialOnly =
@@ -222,7 +239,9 @@ public sealed class InMemoryClientRegistrationBuilderTests
     {
         var options = typeof(ConfidentialClientOptions).GetProperties().Select(p => p.Name);
 
-        options.Should().BeEquivalentTo(RegistrationMembers().Except(SetByTheBuilderMethods, StringComparer.Ordinal));
+        options.Should().BeEquivalentTo(RegistrationMembers()
+            .Except(SetByTheBuilderMethods, StringComparer.Ordinal)
+            .Concat(SecretOptions));
     }
 
     [Fact]
@@ -239,7 +258,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     [Fact]
     public void AllowedSigningAlgorithms_left_empty_registers_null_so_the_client_inherits_the_server_set()
     {
-        _builder.AddPublic("spa", RedirectUris, [], Scopes, options => options.RequireConsent = false);
+        _builder.AddPublic("spa", options => WithBasics(options).RequireConsent = false);
 
         SinglePublic().AllowedSigningAlgorithms.Should().BeNull();
     }
@@ -247,8 +266,7 @@ public sealed class InMemoryClientRegistrationBuilderTests
     [Fact]
     public void AllowedSigningAlgorithms_set_on_the_options_are_registered()
     {
-        _builder.AddPublic("spa", RedirectUris, [], Scopes,
-            options => options.AllowedSigningAlgorithms.Add(SigningAlgorithm.ES256));
+        _builder.AddPublic("spa", options => WithBasics(options).AllowedSigningAlgorithms.Add(SigningAlgorithm.ES256));
 
         SinglePublic().AllowedSigningAlgorithms.Should().Equal(SigningAlgorithm.ES256);
     }
@@ -257,6 +275,8 @@ public sealed class InMemoryClientRegistrationBuilderTests
     // match the registration by coincidence.
     private static void ChangeEverySharedSetting(ClientOptions options)
     {
+        WithBasics(options);
+        options.PostLogoutRedirectUris.Add("https://app.example.com/signed-out");
         options.DisplayName = "Our app";
         options.InitiateLoginUri = "https://app.example.com/login";
         options.RequireConsent = false;
@@ -273,6 +293,14 @@ public sealed class InMemoryClientRegistrationBuilderTests
         options.AdditionalIdTokenClaims.Add("department");
         options.AdditionalUserInfoClaims.Add("cost_center");
         options.AdditionalAccessTokenClaims.Add("tenant");
+    }
+
+    private static T WithBasics<T>(T options)
+        where T : ClientOptions
+    {
+        options.RedirectUris.UnionWith(RedirectUris);
+        options.AllowedScopes.UnionWith(Scopes);
+        return options;
     }
 
     // Type.GetProperties() on an interface does not return inherited members, so the whole

@@ -74,7 +74,7 @@ public sealed class IClientTests
     {
         IClient fromInterface = new IdOnly();
         IClient fromRecord = new Client { ClientId = "id-only" };
-        IClient fromOptions = new ConfidentialClientOptions().ApplyTo(new Client { ClientId = "id-only" });
+        IClient fromOptions = new ConfidentialClientOptions().ToClient("id-only");
 
         foreach (var property in typeof(IClient).GetProperties().Where(p => p.Name != nameof(IClient.ClientId)))
         {

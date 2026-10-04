@@ -421,11 +421,11 @@ public sealed class AuthorizationCodeIssuanceHostFixture : FlowHostFixture
                 builder.AddInMemoryClients(clients => clients
                     .Add(AuthorizationCodeIssuanceTests.ConsentingRegistration())
                     .Add(AuthorizationCodeIssuanceTests.TrustedRegistration())
-                    .AddPublic(
-                        AuthorizationCodeIssuanceTests.OtherClient,
-                        ["https://other.example.com/callback"],
-                        [],
-                        ["openid"]));
+                    .AddPublic(AuthorizationCodeIssuanceTests.OtherClient, client =>
+                    {
+                        client.RedirectUris.Add("https://other.example.com/callback");
+                        client.AllowedScopes.Add("openid");
+                    }));
             },
             mapEndpoints: AuthorizationCodeIssuanceTests.MapHostPages);
 }

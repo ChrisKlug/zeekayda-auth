@@ -33,7 +33,11 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
         services.AddSingleton<IClientRepository, CustomClientRepository>();
 
         var act = () => builder.AddInMemoryClients(clients =>
-            clients.AddPublic("client", ["https://app.example.com/cb"], [], ["openid"]));
+            clients.AddPublic("client", client =>
+            {
+                client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
+                client.AllowedScopes.UnionWith(["openid"]);
+            }));
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*IClientRepository*");
@@ -50,7 +54,11 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
         services.AddSingleton<IClientRepository>(_ => new CustomClientRepository());
 
         var act = () => builder.AddInMemoryClients(clients =>
-            clients.AddPublic("client", ["https://app.example.com/cb"], [], ["openid"]));
+            clients.AddPublic("client", client =>
+            {
+                client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
+                client.AllowedScopes.UnionWith(["openid"]);
+            }));
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*unknown*");
@@ -88,15 +96,17 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
         services.AddZeeKayDaAuthCore(AllowPublicClients)
             .AddClientSecretHasher<TestHasher>()
             .AddInMemoryClients(clients =>
-                clients.AddPublic("client-a",
-                    ["https://app.example.com/cb"],
-                    [],
-                    ["openid"]))
+                clients.AddPublic("client-a", client =>
+                {
+                    client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }))
             .AddInMemoryClients(clients =>
-                clients.AddPublic("client-b",
-                    ["https://app.example.com/cb"],
-                    [],
-                    ["openid"]));
+                clients.AddPublic("client-b", client =>
+                {
+                    client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }));
 
         using var provider = services.BuildServiceProvider();
         var repo = provider.GetRequiredService<IClientRepository>();
@@ -119,10 +129,12 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
         services.AddZeeKayDaAuthCore(AllowPublicClients)
             .AddClientSecretHasher<TestHasher>()
             .AddInMemoryClients(clients =>
-                clients.AddPublic("public-client",
-                    ["https://app.example.com/cb"],
-                    ["https://app.example.com/logout"],
-                    ["openid"]));
+                clients.AddPublic("public-client", client =>
+                {
+                    client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
+                    client.PostLogoutRedirectUris.UnionWith(["https://app.example.com/logout"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }));
 
         using var provider = services.BuildServiceProvider();
         var repo = provider.GetRequiredService<IClientRepository>();
@@ -145,12 +157,12 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
         services.AddZeeKayDaAuthCore(o => o.Issuer = "https://test.example.com")
             .AddClientSecretHasher<TestHasher>()
             .AddInMemoryClients(clients =>
-                clients.AddConfidential(
-                    "confidential-client",
-                    "very-secret",
-                    ["https://app.example.com/cb"],
-                    [],
-                    ["openid"]));
+                clients.AddConfidential("confidential-client", client =>
+                {
+                    client.Secret = "very-secret";
+                    client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }));
 
         using var provider = services.BuildServiceProvider();
         var repo = provider.GetRequiredService<IClientRepository>();

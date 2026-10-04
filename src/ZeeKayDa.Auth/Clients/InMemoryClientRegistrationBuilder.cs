@@ -2,62 +2,89 @@ using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.Clients;
 
-internal sealed class InMemoryClientRegistrationBuilder : IInMemoryClientRegistrationBuilder
+/// <summary>
+/// Registers clients with the in-memory client repository.
+/// </summary>
+/// <remarks>
+/// Obtained via <c>builder.AddInMemoryClients(clients => { ... })</c>. Multiple
+/// <c>AddInMemoryClients</c> calls are additive — registrations accumulate rather than replace.
+/// </remarks>
+public sealed class InMemoryClientRegistrationBuilder
 {
     private readonly InMemoryClientRegistrationOptions _options;
 
-    public InMemoryClientRegistrationBuilder(InMemoryClientRegistrationOptions options)
+    internal InMemoryClientRegistrationBuilder(InMemoryClientRegistrationOptions options)
         => _options = options;
 
-    /// <inheritdoc/>
-    public IInMemoryClientRegistrationBuilder AddPublic(
-        string clientId,
-        IEnumerable<string> redirectUris,
-        IEnumerable<string> postLogoutRedirectUris,
-        IEnumerable<string> allowedScopes,
-        Action<PublicClientOptions>? configure = null)
+    /// <summary>
+    /// Registers a public client: no credentials, token endpoint auth method <c>none</c>, and always
+    /// held to PKCE.
+    /// </summary>
+    /// <param name="clientId">The client's <c>client_id</c>.</param>
+    /// <param name="configure">
+    /// Sets the client's redirect URIs, scopes and other settings. It is called once, before this
+    /// method returns.
+    /// </param>
+    /// <returns>This builder, so calls can be chained.</returns>
+    /// <remarks>
+    /// The server accepts public clients only when it advertises <c>none</c>, which it does not by
+    /// default: add <c>TokenEndpointAuthMethods.None</c> to
+    /// <c>TokenEndpoint.AuthMethodsSupported</c>, or startup rejects the registration.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="clientId"/> or <paramref name="configure"/> is <see langword="null"/>.
+    /// </exception>
+    public InMemoryClientRegistrationBuilder AddPublic(string clientId, Action<PublicClientOptions> configure)
     {
-        var registration = Client.CreatePublic(clientId, redirectUris, postLogoutRedirectUris, allowedScopes);
-        _options.PreBuilt.Add(Configure(registration, configure, () => new PublicClientOptions()));
+        ArgumentNullException.ThrowIfNull(clientId);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var options = new PublicClientOptions();
+        configure(options);
+        _options.PreBuilt.Add(options.ToClient(clientId));
         return this;
     }
 
-    /// <inheritdoc/>
-    public IInMemoryClientRegistrationBuilder AddConfidential(
-        string clientId,
-        string clientSecret,
-        IEnumerable<string> redirectUris,
-        IEnumerable<string> postLogoutRedirectUris,
-        IEnumerable<string> allowedScopes,
-        Action<ConfidentialClientOptions>? configure = null)
+    /// <summary>
+    /// Registers a confidential client, authenticated at the token endpoint with its secret.
+    /// </summary>
+    /// <param name="clientId">The client's <c>client_id</c>.</param>
+    /// <param name="configure">
+    /// Sets the client's secret, redirect URIs, scopes and other settings. It is called once, before
+    /// this method returns.
+    /// </param>
+    /// <returns>This builder, so calls can be chained.</returns>
+    /// <remarks>
+    /// Exactly one of <see cref="ConfidentialClientOptions.Secret"/> and
+    /// <see cref="ConfidentialClientOptions.SecretHash"/> must be set. A plaintext secret is hashed by
+    /// the host's default <see cref="IClientSecretHasher"/> when the host starts, and the plaintext is
+    /// released after that.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="clientId"/> or <paramref name="configure"/> is <see langword="null"/>.
+    /// </exception>
+    public InMemoryClientRegistrationBuilder AddConfidential(string clientId, Action<ConfidentialClientOptions> configure)
     {
-        // The credentials stay empty until the repository hashes the secret at startup.
-        var registration = Client.CreateConfidentialWithoutCredential(
-            clientId, redirectUris, postLogoutRedirectUris, allowedScopes);
-        _options.Pending.Add(new PendingConfidentialClientSpec(
-            Configure(registration, configure, () => new ConfidentialClientOptions()),
-            clientSecret));
+        ArgumentNullException.ThrowIfNull(clientId);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var options = new ConfidentialClientOptions();
+        configure(options);
+        _options.Pending.Add(new PendingConfidentialClientSpec(options.ToClient(clientId), options.Secret, options.SecretHash));
         return this;
     }
 
-    /// <inheritdoc/>
-    public IInMemoryClientRegistrationBuilder Add(IClientWithCredentials registration)
+    /// <summary>
+    /// Registers a pre-built or pre-hashed <see cref="IClientWithCredentials"/> directly.
+    /// </summary>
+    /// <param name="registration">The client registration.</param>
+    /// <returns>This builder, so calls can be chained.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="registration"/> is <see langword="null"/>.</exception>
+    public InMemoryClientRegistrationBuilder Add(IClientWithCredentials registration)
     {
+        ArgumentNullException.ThrowIfNull(registration);
+
         _options.PreBuilt.Add(registration);
         return this;
-    }
-
-    private static Client Configure<TOptions>(
-        Client registration,
-        Action<TOptions>? configure,
-        Func<TOptions> createOptions)
-        where TOptions : ClientOptions
-    {
-        if (configure is null)
-            return registration;
-
-        var options = createOptions();
-        configure(options);
-        return options.ApplyTo(registration);
     }
 }

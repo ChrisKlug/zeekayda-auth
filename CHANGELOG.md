@@ -41,6 +41,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **In-memory clients can be bound from configuration** (#780).
+  `AddInMemoryClients(IConfiguration section)`, in `ZeeKayDa.Auth.AspNetCore`, reads a `Confidential`
+  and a `Public` child, each keyed by client id, and binds every client's keys onto
+  `ConfidentialClientOptions` or `PublicClientOptions`, with no mapping code in the host. Keying by
+  client id gives every secret a stable path for user secrets or a vault, such as
+  `Clients:Confidential:web-app:Secret`. A missing or empty section, any child other than
+  `Confidential` or `Public` (matched ignoring case), or a key the options type does not have throws
+  `InvalidOperationException` at registration, so a misspelt setting is never silently left on its
+  default.
+
 - **`AddZeeKayDaOptions<T>()` and `.ValidateWithZeeKayDa()` register options that ZeeKayDa.Auth
   validates together** (#796). They replace `ValidateOnStart()` for the framework's own options and
   are public so a third-party package, a signing source for example, gets the same behaviour: its
@@ -546,6 +556,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   host's disposal path selects.
 
 ### Changed
+
+- **Client registration takes a client id and one options callback** (#780). `AddPublic(clientId,
+  configure)` and `AddConfidential(clientId, configure)` replace the positional redirect URI,
+  post-logout redirect URI and scope lists: those are now `RedirectUris`, `PostLogoutRedirectUris`
+  and `AllowedScopes` on the options, and `configure` is required. The confidential client's secret
+  moves onto `ConfidentialClientOptions` as `Secret` (plaintext, hashed at startup) or `SecretHash`
+  (a PHC string stored as given); exactly one must be set, or startup fails with
+  `client.credentials.no_secret` or `client.credentials.secret_and_secret_hash`, and a blank
+  `SecretHash` fails with `client.credentials.empty_secret_hash`. The in-memory repository now
+  releases the plaintext secrets once it is built; before, it kept them for the process lifetime
+  although the documentation said otherwise.
+  `IInMemoryClientRegistrationBuilder` is replaced by the sealed `InMemoryClientRegistrationBuilder`.
 
 - **`IClientRegistrationValidator.Validate` returns its failures instead of throwing** (#811). It
   returns `IReadOnlyList<ZeeKayDaConfigurationFailure>`, empty for a valid registration; an invalid

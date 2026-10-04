@@ -76,7 +76,7 @@ public sealed class InMemoryClientRepositoryTests
             ["openid"]);
 
     private static PendingConfidentialClientSpec PendingSpec(
-        string clientId, string plaintextSecret, bool requireConsent = true) =>
+        string clientId, string? plaintextSecret, bool requireConsent = true, string? secretHash = null) =>
         new(
             new Client
             {
@@ -88,7 +88,8 @@ public sealed class InMemoryClientRepositoryTests
                 AllowedScopes = new HashSet<string>(["openid"], StringComparer.Ordinal),
                 RequireConsent = requireConsent,
             },
-            plaintextSecret);
+            plaintextSecret,
+            secretHash);
 
     // ── FindByClientIdAsync ───────────────────────────────────────────────────────────────────────
 
@@ -316,6 +317,90 @@ public sealed class InMemoryClientRepositoryTests
         var found = await repo.FindByClientIdAsync("confidential-client", ct);
         found.Should().NotBeNull();
         found!.Secrets.Single().Should().Be(FakeSecret);
+    }
+
+    [Fact]
+    public async Task Build_stores_a_pending_secret_hash_as_given()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("confidential-client", plaintextSecret: null, secretHash: "$fake-secret$stored"));
+
+        var repo = MakeRepository(opts);
+
+        var found = await repo.FindByClientIdAsync("confidential-client", TestContext.Current.CancellationToken);
+        found!.Secrets.Should().ContainSingle().Which.Should().Be(new ClientSecret("$fake-secret$stored"));
+    }
+
+    [Fact]
+    public void Build_rejects_a_pending_client_with_neither_a_secret_nor_a_secret_hash()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("no-secret-client", plaintextSecret: null));
+
+        var act = () => MakeRepository(opts);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.no_secret")
+            .Which.Message.Should().Contain("no-secret-client");
+    }
+
+    [Fact]
+    public void Build_rejects_a_pending_client_with_both_a_secret_and_a_secret_hash()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("two-secret-client", "super-secret", secretHash: "$fake-secret$stored"));
+
+        var act = () => MakeRepository(opts);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.secret_and_secret_hash")
+            .Which.Message.Should().Contain("two-secret-client");
+    }
+
+    [Fact]
+    public void Build_rejects_a_pending_client_with_a_whitespace_secret_hash()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("blank-hash-client", plaintextSecret: null, secretHash: "  "));
+
+        var act = () => MakeRepository(opts);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.empty_secret_hash")
+            .Which.Message.Should().Contain("blank-hash-client");
+    }
+
+    [Fact]
+    public void Build_releases_the_pending_plaintext_secrets_once_the_repository_is_built()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("confidential-client", "super-secret"));
+
+        MakeRepository(opts);
+
+        opts.Pending.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Build_keeps_the_pending_secrets_when_it_fails_so_building_again_fails_the_same_way()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("confidential-client", "super-secret"));
+        opts.Pending.Add(PendingSpec("no-secret-client", plaintextSecret: null));
+
+        var act = () => MakeRepository(opts);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>();
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.no_secret");
+        opts.Pending.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void A_pending_spec_prints_its_type_name_and_never_its_plaintext_secret()
+    {
+        PendingSpec("confidential-client", "super-secret").ToString()
+            .Should().Be(nameof(PendingConfidentialClientSpec));
     }
 
     // ── Aggregates failures from multiple invalid clients ─────────────────────────────────────────

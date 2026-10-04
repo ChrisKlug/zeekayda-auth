@@ -81,7 +81,11 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
                     options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 })
                 .AddInMemoryClients(clients =>
-                    clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]))
+                    clients.AddPublic("test-client", client =>
+                    {
+                        client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                        client.AllowedScopes.UnionWith(["openid"]);
+                    }))
                 .AddInMemoryStores(allowOutsideDevelopment: true).AddTestClaimsProvider();
 
                 // Fails a cheap verifier: no IDistributedCache is registered for the distributed

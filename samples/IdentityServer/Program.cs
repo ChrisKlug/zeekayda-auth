@@ -1,18 +1,13 @@
-using ZeeKayDa.Auth.Clients;
-using ZeeKayDa.Auth.Samples.IdentityServer;
 using ZeeKayDa.Auth.Samples.IdentityServer.ClientSecrets;
 using ZeeKayDa.Auth.Samples.IdentityServer.Users;
 using ZeeKayDa.Auth.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var settings = builder.Configuration.GetSection("IdentityServer").Get<IdentityServerSettings>()
-    ?? throw new InvalidOperationException("The IdentityServer configuration section is missing.");
-
 builder.Services.AddRazorPages();
 builder.Services.AddSingleton<UserStore>();
 
-// The Issuer key of the section is bound to the options; the sample's own keys are ignored by it.
+// The Issuer key of the section is bound to the options; its Clients key is ignored by it.
 var auth = builder.Services.AddZeeKayDaAuth(builder.Configuration.GetSection("IdentityServer"), options =>
 {
     // The login and consent pages sit at the default /login and /consent. Each page completes its
@@ -33,38 +28,10 @@ auth.AddClientSecretHasher<BCryptClientSecretHasher>()
     .AddClientSecretHasher<Argon2ClientSecretHasher>()
     .AddClientSecretHasher<Pbkdf2Sha512ClientSecretHasher>();
 
-auth.AddInMemoryClients(clients =>
-{
-    foreach (var client in settings.Clients)
-    {
-        if (client.SecretHash is { } hash)
-        {
-            clients.Add(Client.CreateConfidential(
-                client.ClientId, new ClientSecret(hash), client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes)
-                with
-            {
-                RequireConsent = client.RequireConsent,
-                InitiateLoginUri = client.InitiateLoginUri,
-            });
-        }
-        else if (client.Secret is { } secret)
-        {
-            clients.AddConfidential(client.ClientId, secret, client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes,
-                options => Configure(options, client));
-        }
-        else
-        {
-            clients.AddPublic(client.ClientId, client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes,
-                options => Configure(options, client));
-        }
-    }
-
-    static void Configure(ClientOptions options, ClientSettings client)
-    {
-        options.RequireConsent = client.RequireConsent;
-        options.InitiateLoginUri = client.InitiateLoginUri;
-    }
-});
+// The clients, keyed by client id under Confidential and Public. Each confidential client carries a
+// hash in the format of one of the hashers above; a plaintext Secret, hashed at startup, could come
+// from user secrets instead, under IdentityServer:Clients:Confidential:<client id>:Secret.
+auth.AddInMemoryClients(builder.Configuration.GetSection("IdentityServer:Clients"));
 
 // In-memory stores and a development signing key keep the sample runnable with no setup. Both
 // refuse to start outside Development: a deployment needs stores that survive restarts and span
