@@ -447,13 +447,16 @@ repository lookup. It MUST be a cheap shape check — no crypto, no database acc
 ```csharp
     public ClientAuthenticatorMatch CanHandle(TokenRequestContext context)
     {
-        // Shape check only: does the request carry the expected credential material?
-        if (!context.Form.ContainsKey("client_assertion"))
+        // Shape check only: does the request carry any of this method's parameters?
+        var hasAssertion = context.Form.ContainsKey("client_assertion");
+        var hasType = context.Form.ContainsKey("client_assertion_type");
+        if (!hasAssertion && !hasType)
             return ClientAuthenticatorMatch.None;
 
-        // Your shape, but malformed: refuse. Never answer None here, or the request falls through
-        // to the `none` method and a public client is accepted with the assertion ignored.
-        return context.Form["client_assertion_type"] == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+        // Your shape, but partial or malformed: refuse. Never answer None here, or the request falls
+        // through to the `none` method and a public client is accepted with the assertion ignored.
+        return hasAssertion &&
+               context.Form["client_assertion_type"] == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
             ? ClientAuthenticatorMatch.For(Method)
             : ClientAuthenticatorMatch.Refused;
     }

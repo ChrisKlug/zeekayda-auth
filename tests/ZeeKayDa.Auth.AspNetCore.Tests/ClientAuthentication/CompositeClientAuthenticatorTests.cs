@@ -799,21 +799,35 @@ public sealed class CompositeClientAuthenticatorTests
         repository.Lookups.Should().Be(0, "a refused match is decided from the request alone");
     }
 
-    [Fact]
-    public async Task A_bare_Basic_scheme_is_refused_not_None()
+    [Theory]
+    [InlineData("Basic")]
+    [InlineData("Basic not-base64!")]
+    [InlineData("Basic bm8tY29sb24=")] // "no-colon"
+    public async Task A_Basic_header_that_does_not_decode_is_refused_not_None(string header)
     {
-        // RFC 7617 §2: "Basic" with no credentials is a malformed Basic credential, so it must not
-        // fall through to the none method, which would accept this public client.
-        var (composite, hasher) = CreateCompositeWithHasher(
-            CreatePublicClient(),
-            new FakeHasher(),
-            allowedMethods: [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None]);
+        // RFC 7617 §2: a Basic header without a decodable user-id:password pair is a malformed Basic
+        // credential. It must be refused from the request alone, never fall through to the none
+        // method, which would accept this public client.
+        var hasher = new FakeHasher();
+        var secrets = new ClientSecrets(Registry([hasher]), NullSanitizingLogger<ClientSecrets>.Instance);
+        var repository = new FakeClientRepository(CreatePublicClient());
+        var composite = new CompositeClientAuthenticator(
+            [new ClientSecretAuthenticator(secrets)],
+            new ValidatedClientResolver(repository, new PassingRegistrationValidator(), NullSanitizingLogger<ValidatedClientResolver>.Instance),
+            CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None),
+            secrets,
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
         var httpContext = new DefaultHttpContext();
-        httpContext.Request.Headers.Authorization = "Basic";
+        httpContext.Request.Headers.Authorization = header;
+
+        new ClientSecretAuthenticator(secrets)
+            .CanHandle(new TokenRequestContext { HttpContext = httpContext, ClientId = "public-client", Form = FormCollection.Empty })
+            .Should().BeSameAs(ClientAuthenticatorMatch.Refused);
 
         var result = await composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken);
 
         result.Authenticated.Should().BeFalse();
+        repository.Lookups.Should().Be(0, "a malformed Basic header is refused from the request alone");
         hasher.CallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient, "the refusal is padded like a wrong secret");
     }
 

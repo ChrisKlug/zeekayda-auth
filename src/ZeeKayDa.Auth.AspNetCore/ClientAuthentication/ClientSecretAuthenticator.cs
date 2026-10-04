@@ -29,18 +29,21 @@ internal sealed class ClientSecretAuthenticator(ClientSecrets secrets) : IClient
     /// <remarks>
     /// An <c>Authorization: Basic</c> header is <c>client_secret_basic</c> and a <c>client_secret</c>
     /// form field is <c>client_secret_post</c>. Both at once is refused: RFC 6749 §2.3 allows one
-    /// authentication method per request.
+    /// authentication method per request. So is a Basic header that does not decode to a
+    /// <c>username:password</c> pair, a bare <c>Basic</c> included (RFC 7617 §2).
     /// </remarks>
     public ClientAuthenticatorMatch CanHandle(TokenRequestContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var hasBasic = BasicAuthorizationHeader.IsPresent(context.HttpContext.Request.Headers);
+        var headers = context.HttpContext.Request.Headers;
+        var hasBasic = BasicAuthorizationHeader.IsPresent(headers);
         var hasPost = context.Form.ContainsKey("client_secret");
 
         return (hasBasic, hasPost) switch
         {
             (true, true) => ClientAuthenticatorMatch.Refused,
+            (true, false) when !BasicAuthorizationHeader.TryParse(headers, out _, out _) => ClientAuthenticatorMatch.Refused,
             (true, false) => ClientAuthenticatorMatch.For(TokenEndpointAuthMethods.ClientSecretBasic),
             (false, true) => ClientAuthenticatorMatch.For(TokenEndpointAuthMethods.ClientSecretPost),
             _ => ClientAuthenticatorMatch.None,
