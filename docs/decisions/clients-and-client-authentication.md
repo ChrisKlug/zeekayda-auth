@@ -77,11 +77,11 @@ price is every hasher's cost on each failure. Paths with nothing real to verify 
 disallowed method, a malformed request, an empty secret, every `none` rejection) spend both slots, so
 a client mid-rotation looks like an unknown one. Request-volume enumeration is rate limiting's (RFC 9700 §2.1).
 
-**No caller counts padding.** `IClientSecrets.Verify` pads any failure and returns a
+**No caller counts padding.** `ClientSecrets.Verify` pads any failure and returns a
 `SecretVerification` only it can create, returned through `ClientAuthenticationResult.From`. Every
 other refusal (`NotValid()`, null, the composite's own) takes the composite's padded exit, so a cheap
 third-party refusal costs a wrong secret's time; the built-in authenticator uses the same public path.
-A host's own `IClientSecrets` fails startup (`A_host_IClientSecrets_registered_after_the_framework_fails_startup`);
+`ClientSecrets` is sealed with an internal constructor, so a host cannot supply its own (`ClientSecrets_cannot_be_supplied_by_a_host`);
 hasher indexing, decoys and the registration checks sit apart, in an internal startup registry.
 
 **Authenticators are self-describing; the composite has zero method-specific knowledge.** Each
@@ -111,7 +111,7 @@ lookup (`A_valid_registration_s_advisory_warning_is_written_once_not_per_lookup`
 **A malformed secret, or one no hasher declared or its hasher refuses, refuses the whole client**,
 even beside a valid one (`One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid`). No
 framework message quotes a stored value (`no_hasher` names a valid id); a hasher's own text is unchecked.
-Validation never probes a hasher: `IClientSecrets.Verify` refuses an empty secret before any hasher runs
+Validation never probes a hasher: `ClientSecrets.Verify` refuses an empty secret before any hasher runs
 (`An_empty_presented_secret_never_matches_even_a_hasher_that_accepts_everything`).
 
 **The resolver serves a snapshot, never the store's instance.** A repository may return an entity

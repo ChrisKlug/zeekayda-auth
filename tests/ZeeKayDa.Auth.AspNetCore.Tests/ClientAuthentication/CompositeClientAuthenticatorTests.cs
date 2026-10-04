@@ -131,7 +131,7 @@ public sealed class CompositeClientAuthenticatorTests
 
     /// <summary>
     /// A third-party authenticator for a method of its own, refusing however <paramref name="authenticate"/>
-    /// says: cheaply, or through <see cref="IClientSecrets.Verify"/>.
+    /// says: cheaply, or through <see cref="ClientSecrets.Verify"/>.
     /// </summary>
     private sealed class CustomAuthenticator(
         Func<ClientAuthenticationContext, ClientAuthenticationResult> authenticate) : IClientAuthenticator

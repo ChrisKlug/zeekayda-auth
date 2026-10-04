@@ -80,4 +80,4 @@ arrive from another system, each by a different library:
 
 Each hasher declares the algorithm ids it owns, and the framework hands it only the secrets that
 carry one of them. The built-in PBKDF2 hasher stays the default, so every secret hashed at startup
-or through `IClientSecrets` is still `$pbkdf2-sha256$...`.
+or through `ClientSecrets` is still `$pbkdf2-sha256$...`.

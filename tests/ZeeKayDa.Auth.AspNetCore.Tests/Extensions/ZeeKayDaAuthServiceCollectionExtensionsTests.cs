@@ -168,7 +168,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
             => Task.FromResult(clientId == client.ClientId ? client : null);
     }
 
-    // ── IClientSecrets DI wiring (AC1–AC4, issue #135) ─────────────────────────────────────
+    // ── ClientSecrets DI wiring (AC1–AC4, issue #135) ─────────────────────────────────────
 
     [Fact]
     public void AddZeeKayDaAuth_IClientSecrets_is_one_singleton()
@@ -178,67 +178,27 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
         using var provider = services.BuildServiceProvider();
 
-        var first = provider.GetRequiredService<IClientSecrets>();
+        var first = provider.GetRequiredService<ClientSecrets>();
 
         first.Should().BeOfType<ClientSecrets>()
-            .And.BeSameAs(provider.GetRequiredService<IClientSecrets>());
+            .And.BeSameAs(provider.GetRequiredService<ClientSecrets>());
     }
 
     [Fact]
     public void AddZeeKayDaAuth_IClientSecrets_Create_returns_IClientSecret()
     {
-        // AC3: IClientSecrets.Create must delegate to the default hasher and return
+        // AC3: ClientSecrets.Create must delegate to the default hasher and return
         // a valid IClientSecret, reachable through the interface (not the concrete type).
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
         using var provider = services.BuildServiceProvider();
 
-        var secrets = provider.GetRequiredService<IClientSecrets>();
+        var secrets = provider.GetRequiredService<ClientSecrets>();
 
         var secret = secrets.Create("s3cr3t-v4lu3");
 
         secret.Value.Should().StartWith("$pbkdf2-sha256$");
-    }
-
-    [Fact]
-    public async Task A_host_registered_IClientSecrets_fails_startup()
-    {
-        using var host = new EndpointHost(configureBuilder: builder =>
-            builder.Services.AddSingleton<IClientSecrets>(new FakeClientSecrets()));
-
-        var act = async () => await host.EnsureStartedAsync();
-
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(failure => failure.Code == "clients.secrets.replaced");
-    }
-
-    [Fact]
-    public async Task A_host_registered_IClientSecrets_never_verifies_for_the_built_in_authenticator()
-    {
-        // The host's replacement throws on every call: built-in authentication reaching it would throw.
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton<IClientSecrets>(new FakeClientSecrets());
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
-        using var provider = services.BuildServiceProvider();
-        var stored = provider.GetRequiredService<ClientSecrets>().Create("the-real-secret");
-        var authenticator = provider.GetServices<IClientAuthenticator>().OfType<ClientSecretAuthenticator>().Single();
-        var httpContext = new DefaultHttpContext();
-        var form = new FormCollection(new Dictionary<string, StringValues> { ["client_secret"] = "the-real-secret" });
-
-        var result = await authenticator.AuthenticateAsync(
-            new ClientAuthenticationContext
-            {
-                HttpContext = httpContext,
-                ClientId = "client-1",
-                Client = Client.CreateConfidential("client-1", stored, ["https://app.example.com/cb"], [], ["openid"]),
-                Form = form,
-                Headers = httpContext.Request.Headers,
-            },
-            TestContext.Current.CancellationToken);
-
-        result.Authenticated.Should().BeTrue();
     }
 
     [Theory]
@@ -247,14 +207,14 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     [InlineData("   ")]
     public void AddZeeKayDaAuth_IClientSecrets_Create_throws_on_invalid_plaintext(string? plaintext)
     {
-        // AC3 (negative): IClientSecrets.Create must reject null, empty, and whitespace
+        // AC3 (negative): ClientSecrets.Create must reject null, empty, and whitespace
         // plaintext — as documented in the interface's XML doc.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
         using var provider = services.BuildServiceProvider();
 
-        var secrets = provider.GetRequiredService<IClientSecrets>();
+        var secrets = provider.GetRequiredService<ClientSecrets>();
 
         var act = () => secrets.Create(plaintext!);
 
@@ -342,19 +302,5 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         opts.Development.AllowHttpLoopbackIssuer.Should().BeTrue();
         opts.Development.AllowHttpLoopbackCorsOrigins.Should().BeTrue();
         opts.Development.DisableExceptionSanitizing.Should().BeTrue();
-    }
-
-    // ── Test doubles ─────────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Stand-in IClientSecrets used to verify pre-registration is not overwritten
-    /// by TryAddSingleton inside AddZeeKayDaAuth.
-    /// </summary>
-    private sealed class FakeClientSecrets : IClientSecrets
-    {
-        public ClientSecret Create(string plaintext) => throw new NotImplementedException();
-        public ClientSecret Create(ReadOnlySpan<char> plaintext) => throw new NotImplementedException();
-        public SecretVerification Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored) =>
-            throw new NotImplementedException();
     }
 }

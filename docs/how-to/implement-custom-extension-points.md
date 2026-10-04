@@ -317,24 +317,24 @@ public interface IClientRepository
 | Scenario | Recommended approach |
 |---|---|
 | Clients known at startup | `AddInMemoryClients` — the builder hashes secrets automatically |
-| Clients created at runtime (admin API, credential rotation, future [RFC 7591 DCR](https://www.rfc-editor.org/rfc/rfc7591)) | Custom `IClientRepository` + inject `IClientSecrets` |
+| Clients created at runtime (admin API, credential rotation, future [RFC 7591 DCR](https://www.rfc-editor.org/rfc/rfc7591)) | Custom `IClientRepository` + inject `ClientSecrets` |
 
-### Using `IClientSecrets` to hash secrets at write time
+### Using `ClientSecrets` to hash secrets at write time
 
-Inject `IClientSecrets` into your repository to hash plaintext secrets at runtime using the
-same default hasher configured via `AddClientSecretHasher<T>`. `IClientSecrets` is registered
+Inject `ClientSecrets` into your repository to hash plaintext secrets at runtime using the
+same default hasher configured via `AddClientSecretHasher<T>`. `ClientSecrets` is registered
 automatically by `AddZeeKayDaAuth` as a singleton — no additional registration is required.
 
 ```csharp
 public sealed class DatabaseClientRepository : IClientRepository
 {
     private readonly IDbContextFactory<ClientDbContext> _factory;
-    private readonly IClientSecrets _secrets;
+    private readonly ClientSecrets _secrets;
     private readonly IClientRegistrationValidator _validator;
 
     public DatabaseClientRepository(
         IDbContextFactory<ClientDbContext> factory,
-        IClientSecrets secrets,
+        ClientSecrets secrets,
         IClientRegistrationValidator validator)
     {
         _factory = factory;
@@ -368,13 +368,13 @@ protocol — the framework validates every registration it serves and refuses a 
 unknown client — but it does mean the bad row is stored, and is found on a live request, in a log
 entry the operator has to act on, rather than where it was written.
 
-> ⚠️ **Warning: `IClientSecrets.Create` is CPU-intensive and must not be called on a hot
+> ⚠️ **Warning: `ClientSecrets.Create` is CPU-intensive and must not be called on a hot
 > request path.**
 > At the default iteration count of 600,000 PBKDF2-HMAC-SHA256 rounds, a single call takes
 > approximately 600 ms on typical server hardware. Calling it from a token-endpoint handler or any
 > other frequently-hit path will degrade throughput for all clients on the server.
 >
-> Reserve `IClientSecrets.Create` for admin operations only. The endpoint that calls it
+> Reserve `ClientSecrets.Create` for admin operations only. The endpoint that calls it
 > MUST be protected by strong authentication, rate-limited to prevent brute-force amplification,
 > and logged for audit purposes.
 
@@ -384,8 +384,8 @@ entry the operator has to act on, rather than where it was written.
 builder.Services.AddSingleton<IClientRepository, DatabaseClientRepository>();
 ```
 
-For the full `IClientSecrets` API reference, including lifetime and security notes, see
-[Client secrets reference — `IClientSecrets`](../reference/client-secrets.md#iclientsecrets).
+For the full `ClientSecrets` API reference, including lifetime and security notes, see
+[Client secrets reference — `ClientSecrets`](../reference/client-secrets.md#iclientsecrets).
 
 ---
 
@@ -508,10 +508,10 @@ builder.Services.AddZeeKayDaAuth(options =>
 |---|---|
 | `CanHandle` MUST be a cheap shape check — no crypto, no DB | Called on every token request for every authenticator; a slow check multiplies latency across all clients |
 | `AuthenticateAsync` MUST use timing-safe comparison | Prevents timing oracles from revealing credential validity |
-| Never compare secrets as plain strings or call a hasher yourself | Check a client secret with `IClientSecrets.Verify`, which pads a failure so the response time reveals nothing; a hasher called directly does not |
+| Never compare secrets as plain strings or call a hasher yourself | Check a client secret with `ClientSecrets.Verify`, which pads a failure so the response time reveals nothing; a hasher called directly does not |
 | Be singleton-safe | Authenticators are registered as singletons and called concurrently |
 | Refuse with `ClientAuthenticationResult.NotValid()` when no secret was checked — never throw | Throwing from `AuthenticateAsync` produces a 500 rather than a 401; the token endpoint pads a `NotValid()` refusal so it takes as long as a wrong secret |
-| A client secret is checked with `IClientSecrets.Verify` and returned with `ClientAuthenticationResult.From(...)` | `Verify` has already padded the failure; `From` tells the token endpoint not to pad it twice |
+| A client secret is checked with `ClientSecrets.Verify` and returned with `ClientAuthenticationResult.From(...)` | `Verify` has already padded the failure; `From` tells the token endpoint not to pad it twice |
 
 > 💡 **Exception messages are now redacted by default.**
 > `SanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,
@@ -574,5 +574,5 @@ Security contract:
 - [Configure discovery](configure-discovery.md) — customise the discovery document with the built-in options.
 - [Configure host-level log hygiene](configure-host-log-hygiene.md) — prevent sensitive parameters from appearing in host-pipeline logs outside ZeeKayDa.Auth's redaction boundary.
 - [`AuthorizationServerOptions` reference](../reference/configuration.md) — full property list and validation rules.
-- [Client secrets reference](../reference/client-secrets.md) — `Pbkdf2ClientSecretHasherOptions` property reference and `IClientSecrets` API.
+- [Client secrets reference](../reference/client-secrets.md) — `Pbkdf2ClientSecretHasherOptions` property reference and `ClientSecrets` API.
 - [Cancellation in managed threads](https://learn.microsoft.com/dotnet/standard/threading/cancellation-in-managed-threads) — Microsoft's reference for the cancellation pattern this framework follows.

@@ -11,7 +11,7 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// <remarks>
 /// Uses only the public contract a third-party authenticator has: a malformed request is refused with
 /// <see cref="ClientAuthenticationResult.NotValid"/>, and a presented secret is checked by
-/// <see cref="IClientSecrets.Verify"/>, never compared directly.
+/// <see cref="ClientSecrets.Verify"/>, never compared directly.
 /// </remarks>
 internal sealed class ClientSecretAuthenticator(ClientSecrets secrets) : IClientAuthenticator
 {
