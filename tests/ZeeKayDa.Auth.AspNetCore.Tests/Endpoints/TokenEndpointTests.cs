@@ -88,17 +88,17 @@ public sealed class TokenEndpointTests : IDisposable
                 .Add(PublicRegistration())
                 .Add(NoCodeGrantRegistration())
                 .AddConfidential(ConfidentialClient, client =>
-{
-    client.Secret = ConfidentialSecret;
-    client.RedirectUris.UnionWith([RegisteredRedirect]);
-    client.AllowedScopes.UnionWith(["openid", "profile"]);
-})
+                {
+                    client.Secret = ConfidentialSecret;
+                    client.RedirectUris.UnionWith([RegisteredRedirect]);
+                    client.AllowedScopes.UnionWith(["openid", "profile"]);
+                })
                 .Add(PkceOptionalRegistration())
                 .AddPublic(OtherClient, client =>
-{
-    client.RedirectUris.UnionWith(["https://other.example.com/callback"]);
-    client.AllowedScopes.UnionWith(["openid"]);
-}));
+                {
+                    client.RedirectUris.UnionWith(["https://other.example.com/callback"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }));
 
             if (withThrowingHasher)
             {

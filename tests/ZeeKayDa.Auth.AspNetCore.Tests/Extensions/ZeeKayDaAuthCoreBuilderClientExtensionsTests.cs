@@ -102,15 +102,15 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
                     .AddInMemoryClients(clients =>
                     {
                         clients.AddPublic("dupe", client =>
-{
-    client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
-    client.AllowedScopes.UnionWith(["openid"]);
-});
+                        {
+                            client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
+                            client.AllowedScopes.UnionWith(["openid"]);
+                        });
                         clients.AddPublic("dupe", client =>
-{
-    client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
-    client.AllowedScopes.UnionWith(["openid"]);
-});
+                        {
+                            client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
+                            client.AllowedScopes.UnionWith(["openid"]);
+                        });
                     });
             });
             builder.Configure(app =>

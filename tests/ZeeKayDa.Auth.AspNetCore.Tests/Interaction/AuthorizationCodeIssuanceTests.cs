@@ -77,10 +77,10 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
                 .Add(ConsentingRegistration())
                 .Add(TrustedRegistration())
                 .AddPublic(OtherClient, client =>
-{
-    client.RedirectUris.UnionWith(["https://other.example.com/callback"]);
-    client.AllowedScopes.UnionWith(["openid"]);
-}));
+                {
+                    client.RedirectUris.UnionWith(["https://other.example.com/callback"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }));
 
             // Registered after AddInMemoryClients, so it wins resolution rather than tripping the
             // guard against a repository registered before it.

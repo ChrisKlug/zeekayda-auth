@@ -57,10 +57,10 @@ public sealed class TokenEndpointClaimsHostTests
                 })
                 .AddInMemoryScopes(scopes ?? StandardScopes.All)
                 .AddInMemoryClients(clients ?? (c => c.AddPublic(App, client =>
-{
-    client.RedirectUris.UnionWith([Redirect]);
-    client.AllowedScopes.UnionWith(["openid"]);
-})))
+                {
+                    client.RedirectUris.UnionWith([Redirect]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                })))
                 .AddInMemoryStores(allowOutsideDevelopment: true)
                 .AddTestSigningKeys();
 

@@ -82,10 +82,10 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
                 })
                 .AddInMemoryClients(clients =>
                     clients.AddPublic("test-client", client =>
-{
-    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
-    client.AllowedScopes.UnionWith(["openid"]);
-}))
+                    {
+                        client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                        client.AllowedScopes.UnionWith(["openid"]);
+                    }))
                 .AddInMemoryStores(allowOutsideDevelopment: true).AddTestClaimsProvider();
 
                 // Fails a cheap verifier: no IDistributedCache is registered for the distributed

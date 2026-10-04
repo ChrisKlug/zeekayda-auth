@@ -114,10 +114,9 @@ public sealed class ZeeKayDaAuthClientConfigurationBindingTests
     [Fact]
     public void An_empty_json_array_leaves_a_defaulted_collection_on_its_default()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes(
-                """{ "Public": { "spa": { "AllowedScopes": [ "openid" ], "AllowedGrantTypes": [] } } }""")))
-            .Build();
+        using var json = new MemoryStream(Encoding.UTF8.GetBytes(
+            """{ "Public": { "spa": { "AllowedScopes": [ "openid" ], "AllowedGrantTypes": [] } } }"""));
+        var configuration = new ConfigurationBuilder().AddJsonStream(json).Build();
 
         Bind(configuration).PreBuilt.Should().ContainSingle().Which.AllowedGrantTypes.Should().Equal(GrantType.AuthorizationCode);
     }

@@ -457,10 +457,10 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     {
         using var host = new EndpointHost(
             configureBuilder: builder => builder.AddInMemoryClients(clients => clients.AddPublic("bad", client =>
-{
-    client.RedirectUris.UnionWith([Redirect]);
-    client.AllowedScopes.UnionWith(["openid", "undefined"]);
-})));
+            {
+                client.RedirectUris.UnionWith([Redirect]);
+                client.AllowedScopes.UnionWith(["openid", "undefined"]);
+            })));
 
         var failure = await host.StartupFailureAsync();
 

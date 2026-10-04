@@ -248,10 +248,10 @@ internal sealed class TestWebAppFactoryWithRemoteIp : WebApplicationFactory<Test
                 _configureOptions?.Invoke(options);
             }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client", client =>
-{
-    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
-    client.AllowedScopes.UnionWith(["openid"]);
-}))
+                {
+                    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
               .AddTestSigningKeys()
@@ -294,10 +294,10 @@ internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebA
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client", client =>
-{
-    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
-    client.AllowedScopes.UnionWith(["openid"]);
-}))
+                {
+                    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
               .AddTestSigningKeys()
@@ -354,10 +354,10 @@ internal sealed class TestWebAppFactoryWithFallbackAuthorizationPolicy : WebAppl
                 options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client", client =>
-{
-    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
-    client.AllowedScopes.UnionWith(["openid"]);
-}))
+                {
+                    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
               .AddTestSigningKeys()
@@ -426,10 +426,10 @@ internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactor
                 _configureOptions?.Invoke(options);
             }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client", client =>
-{
-    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
-    client.AllowedScopes.UnionWith(["openid"]);
-}))
+                {
+                    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
               .AddTestSigningKeys()
