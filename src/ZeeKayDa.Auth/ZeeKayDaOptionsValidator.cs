@@ -27,25 +27,24 @@ public abstract class ZeeKayDaOptionsValidator<TOptions> : IValidateOptions<TOpt
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        var failures = Validate(name, options)?.ToArray();
+        var returned = Validate(name, options)?.ToArray();
 
         // A subclass breaking its contract is reported like any other configuration failure, never
-        // as a bare NullReferenceException from the startup runner.
-        if (failures is null || failures.Any(failure => failure is null))
-        {
-            failures =
-            [
-                new ZeeKayDaConfigurationFailure(
-                    "configuration.options_validator.malformed_result",
-                    $"The options validator '{GetType().FullName}' returned a null list or a null failure " +
-                    $"for {typeof(TOptions).FullName}. Return an empty sequence for valid options."),
-            ];
-        }
+        // as a bare NullReferenceException from the startup runner, and alongside the real failures
+        // it did return, so the operator sees those in the same pass.
+        ZeeKayDaConfigurationFailure[] failures = returned is null || returned.Any(failure => failure is null)
+            ? [.. (returned ?? []).OfType<ZeeKayDaConfigurationFailure>(), MalformedResult()]
+            : returned;
 
         return failures.Length == 0
             ? ValidateOptionsResult.Success
             : throw new ZeeKayDaConfigurationException(failures);
     }
+
+    private ZeeKayDaConfigurationFailure MalformedResult() => new(
+        "configuration.options_validator.malformed_result",
+        $"The options validator '{GetType().FullName}' returned a null list or a null failure " +
+        $"for {typeof(TOptions).FullName}. Return an empty sequence for valid options.");
 
     /// <summary>Returns a failure, with its stable code, for every rule the options break.</summary>
     /// <param name="name">The options name, <see cref="Options.DefaultName"/> for unnamed options.</param>

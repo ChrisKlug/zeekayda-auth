@@ -63,6 +63,19 @@ public sealed class ZeeKayDaOptionsValidatorTests
             .Which.Code.Should().Be("configuration.options_validator.malformed_result");
     }
 
+    [Fact]
+    public void A_null_failure_is_reported_alongside_the_real_ones()
+    {
+        var real = new ZeeKayDaConfigurationFailure("test.real", "A real configuration problem.");
+        var validator = new FixedValidator(new ZeeKayDaConfigurationFailure[] { real, null! });
+
+        var act = () => ((IValidateOptions<TestOptions>)validator).Validate(Options.DefaultName, new TestOptions());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Select(f => f.Code).Should()
+            .Equal("test.real", "configuration.options_validator.malformed_result");
+    }
+
     private sealed class NullReturningValidator : ZeeKayDaOptionsValidator<TestOptions>
     {
         protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(string? name, TestOptions options) => null!;
