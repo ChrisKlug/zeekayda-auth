@@ -444,7 +444,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
             mapEndpoints: endpoints =>
             {
                 MapHostPages(endpoints);
-                endpoints.MapPost(CollectMorePath + "/link-self-cloning", async (IProviderSignInInteraction signIn) =>
+                endpoints.MapPost(CollectMorePath + "/link-self-cloning", async (ProviderSignInInteraction signIn) =>
                 {
                     var identity = new SelfCloningIdentity([new System.Security.Claims.Claim("sub", "local-1")], "test");
                     var principal = new System.Security.Claims.ClaimsPrincipal(identity);
@@ -492,7 +492,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
             mapEndpoints: endpoints =>
             {
                 MapHostPages(endpoints);
-                endpoints.MapPost(CollectMorePath + "/link-mutating", async (IProviderSignInInteraction signIn) =>
+                endpoints.MapPost(CollectMorePath + "/link-mutating", async (ProviderSignInInteraction signIn) =>
                 {
                     var identity = new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("sub", "local-1")], "test");
                     var principal = new System.Security.Claims.ClaimsPrincipal(identity);

@@ -77,26 +77,25 @@ price is every hasher's cost on each failure. Paths with nothing real to verify 
 disallowed method, a malformed request, an empty secret, every `none` rejection) spend both slots, so
 a client mid-rotation looks like an unknown one. Request-volume enumeration is rate limiting's (RFC 9700 §2.1).
 
-**No caller counts padding.** `IClientSecrets.Verify` pads any failure and returns a
+**No caller counts padding.** `ClientSecrets.Verify` pads any failure and returns a
 `SecretVerification` only it can create, returned through `ClientAuthenticationResult.From`. Every
 other refusal (`NotValid()`, null, the composite's own) takes the composite's padded exit, so a cheap
 third-party refusal costs a wrong secret's time; the built-in authenticator uses the same public path.
-A host's own `IClientSecrets` fails startup (`A_host_IClientSecrets_registered_after_the_framework_fails_startup`);
+`ClientSecrets` is sealed with an internal constructor, so a host cannot supply its own (`ClientSecrets_cannot_be_supplied_by_a_host`);
 hasher indexing, decoys and the registration checks sit apart, in an internal startup registry.
 
 **Authenticators are self-describing; the composite has zero method-specific knowledge.** Each
-authenticator declares the method strings it owns and detects its own request shape, so adding mTLS
-means implementing, registering, and adding the method string to the server allowlist — the composite
-never changes. Startup validation requires every advertised server method to have exactly one owning
-authenticator. `none` must never be declared by any authenticator: it is the composite's fallback
-after every credential-bearing authenticator has declined, because a generic "no evidence"
-authenticator cannot know about custom mechanisms and would collide with them.
+declares its method strings and decides its request shape once: `CanHandle` returns `None`,
+`For(method)`, which reaches `AuthenticateAsync` on the context, or `Refused` (its shape, malformed or
+ambiguous). `Refused` is a padded bare `invalid_client` and never `None`, whose `none` fallback would
+accept a public client and ignore the credential (`Basic_and_post_at_once_is_refused_never_treated_as_none`).
+Adding mTLS never changes the composite; startup requires one owning authenticator per advertised
+method, and none may declare `none`: a generic "no evidence" authenticator would collide with custom ones.
 
-**The composite defends against its own extension point.** More than one matching authenticator is
-`invalid_client` (RFC 6749 §2.3). An exception thrown from a shape check is logged and treated as
-non-matching rather than failing the request. A returned method not in the authenticator's own
-declared set is rejected — otherwise a buggy detector could route past the startup coverage check.
-Repository lookup is deferred until after the cheap rejections, so an ambiguous request costs no I/O.
+**The composite defends against its own extension point.** More than one match is `invalid_client`
+(RFC 6749 §2.3). A shape check that throws or returns null is logged and treated as non-matching. A
+returned method outside the authenticator's own declared set is rejected, or a buggy detector could
+route past the startup coverage check. The repository is read only after the cheap rejections.
 
 **Redirect URI matching is exact and ordinal — no prefix, normalisation or wildcard.** `http` is
 accepted only for loopback, where the port varies (RFC 8252 §7.3); the loopback test is a whole-string
@@ -111,7 +110,7 @@ lookup (`A_valid_registration_s_advisory_warning_is_written_once_not_per_lookup`
 **A malformed secret, or one no hasher declared or its hasher refuses, refuses the whole client**,
 even beside a valid one (`One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid`). No
 framework message quotes a stored value (`no_hasher` names a valid id); a hasher's own text is unchecked.
-Validation never probes a hasher: `IClientSecrets.Verify` refuses an empty secret before any hasher runs
+Validation never probes a hasher: `ClientSecrets.Verify` refuses an empty secret before any hasher runs
 (`An_empty_presented_secret_never_matches_even_a_hasher_that_accepts_everything`).
 
 **The resolver serves a snapshot, never the store's instance.** A repository may return an entity

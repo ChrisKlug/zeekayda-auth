@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Authorization;
 /// <para>
 /// These exist so a host never has to know that the claim is spelled <c>amr</c> or that a password
 /// is spelled <c>pwd</c>. Pass them to
-/// <c>ILoginInteraction.SignInAsync</c>: <c>SignInAsync(user, AuthenticationMethods.Password)</c>.
+/// <c>LoginInteraction.SignInAsync</c>: <c>SignInAsync(user, AuthenticationMethods.Password)</c>.
 /// </para>
 /// <para>
 /// These are the values with real-world traction, not the whole of RFC 8176 — the registry also
@@ -88,7 +88,7 @@ public static class AuthenticationMethods
     /// <param name="rest">Any further factors.</param>
     /// <returns>
     /// <see cref="MultiFactor"/> followed by every factor given, in order, ready to pass straight
-    /// to <c>ILoginInteraction.SignInAsync</c>:
+    /// to <c>LoginInteraction.SignInAsync</c>:
     /// <code>
     /// await login.SignInAsync(
     ///     user,

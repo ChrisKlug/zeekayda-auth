@@ -161,12 +161,13 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         services.TryAddSingleton<ClientSecretHasherRegistry>();
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupActivator, ClientSecretHasherActivator>());
-        // Framework code injects the concrete type; the verifier fails a host that registers its own
-        // IClientSecrets, which third-party authenticators would otherwise receive.
-        services.TryAddSingleton<ClientSecrets>();
-        services.TryAddSingleton(ClientSecretsRegistrationVerifier.FrameworkInstance);
-        services.TryAddEnumerable(
-            ServiceDescriptor.Scoped<IStartupVerifier, ClientSecretsRegistrationVerifier>());
+        // A sealed class with an internal constructor, which the container cannot call, so it is built
+        // here. Replaced, not tried: the framework is the only possible supplier, so its registration wins,
+        // and calling this twice still leaves one.
+        services.RemoveAll<ClientSecrets>();
+        services.AddSingleton(sp => new ClientSecrets(
+            sp.GetRequiredService<ClientSecretHasherRegistry>(),
+            sp.GetRequiredService<SanitizingLogger<ClientSecrets>>()));
 
         // A factory rather than type activation: the ISigningKeyRing parameter is optional, and DI
         // activation cannot supply a default for a service that is not registered.

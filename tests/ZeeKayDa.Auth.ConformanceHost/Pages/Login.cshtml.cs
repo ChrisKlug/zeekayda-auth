@@ -7,7 +7,7 @@ using ZeeKayDa.Auth.ConformanceHost.Users;
 
 namespace ZeeKayDa.Auth.ConformanceHost.Pages;
 
-internal sealed class LoginModel(UserStore users, ILoginInteraction login) : PageModel
+internal sealed class LoginModel(UserStore users, LoginInteraction login) : PageModel
 {
     [BindProperty]
     public string? Username { get; set; }

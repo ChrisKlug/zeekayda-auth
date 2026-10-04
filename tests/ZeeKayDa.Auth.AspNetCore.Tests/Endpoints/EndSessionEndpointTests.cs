@@ -313,7 +313,7 @@ public sealed class EndSessionEndpointTests
         //
         // The original scenario configures a host logout page; this asks the same question of the
         // framework's own confirmation page instead, since both end in the identical
-        // ILogoutInteraction.SignOutAsync session check this test is about.
+        // LogoutInteraction.SignOutAsync session check this test is about.
         using var host = NewHost();
         var jar = await SignInAsync(host);
         var asked = await EndSessionAsync(host, jar, new());

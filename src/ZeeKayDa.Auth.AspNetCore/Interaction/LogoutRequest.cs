@@ -26,7 +26,7 @@ public sealed class LogoutRequest
     /// </summary>
     /// <remarks>
     /// The user who was signed in when the sign-out was started, which is the only session it may
-    /// end: <see cref="ILogoutInteraction.SignOutAsync"/> refuses if the browser is no longer
+    /// end: <see cref="LogoutInteraction.SignOutAsync"/> refuses if the browser is no longer
     /// carrying that session, so this never names one user and signs out another.
     /// </remarks>
     public string Subject { get; }

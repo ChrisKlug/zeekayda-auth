@@ -1,11 +1,11 @@
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// The outcome of <see cref="IClientSecrets.Verify"/>: whether the presented secret matched, and
+/// The outcome of <see cref="ClientSecrets.Verify"/>: whether the presented secret matched, and
 /// proof that a failure already spent its timing padding.
 /// </summary>
 /// <remarks>
-/// Only <see cref="IClientSecrets.Verify"/> creates one, and each failure is a new instance that
+/// Only <see cref="ClientSecrets.Verify"/> creates one, and each failure is a new instance that
 /// vouches for its padding once, so a failure kept from an earlier request cannot excuse a later
 /// refusal from padding. A class rather than a struct: <c>default</c> would forge a padded failure.
 /// </remarks>

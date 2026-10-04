@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// <remarks>
 /// <para>
 /// Implementations MUST be singleton-safe. A secret-based authenticator verifies through
-/// <see cref="ZeeKayDa.Auth.Clients.IClientSecrets.Verify"/> with <c>context.Client.Secrets</c>,
+/// <see cref="ZeeKayDa.Auth.Clients.ClientSecrets.Verify"/> with <c>context.Client.Secrets</c>,
 /// never by comparing strings or calling a hasher itself, and returns the outcome through
 /// <see cref="ClientAuthenticationResult.From"/>. Any other refusal is
 /// <see cref="ClientAuthenticationResult.NotValid"/>, which the token endpoint pads, so every refusal
@@ -28,21 +28,21 @@ public interface IClientAuthenticator
     IReadOnlySet<string> AuthenticationMethods { get; }
 
     /// <summary>
-    /// Returns <see langword="true"/> if the current request carries authentication material
-    /// this authenticator handles, and writes the matched method string to
-    /// <paramref name="method"/>. Returns <see langword="false"/> and sets
-    /// <paramref name="method"/> to <see langword="null"/> otherwise.
+    /// Whether the request carries this authenticator's credential, and for which method: the one
+    /// place the request's shape is decided. A request that is this authenticator's shape but
+    /// malformed or ambiguous is <see cref="ClientAuthenticatorMatch.Refused"/>, never
+    /// <see cref="ClientAuthenticatorMatch.None"/>.
     /// </summary>
     /// <remarks>
     /// MUST be a cheap shape check — no crypto, no database access.
     /// </remarks>
-    bool CanHandle(TokenRequestContext context, out string? method);
+    ClientAuthenticatorMatch CanHandle(TokenRequestContext context);
 
     /// <summary>
-    /// Performs the actual client authentication. Invoked only after
-    /// <see cref="CanHandle"/> returned <see langword="true"/> and all composite allowlist
-    /// checks have passed. The client in <paramref name="context"/> is guaranteed to exist in
-    /// the repository.
+    /// Performs the actual client authentication. Invoked only after <see cref="CanHandle"/>
+    /// matched a method and all composite allowlist checks have passed. The method it matched is
+    /// <see cref="ClientAuthenticationContext.Method"/>, and the client in <paramref name="context"/>
+    /// is guaranteed to exist in the repository.
     /// </summary>
     /// <param name="context">The authentication context for this request, including the resolved client.</param>
     /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>

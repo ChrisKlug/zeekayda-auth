@@ -22,8 +22,8 @@ public sealed class ProviderOptions
     /// </para>
     /// <para>
     /// The page a redirect leads to reads the parked principal with
-    /// <see cref="IProviderSignInInteraction.GetPendingPrincipalAsync"/> and finishes through
-    /// <see cref="IProviderSignInInteraction"/>: with the claims it collected, which the
+    /// <see cref="ProviderSignInInteraction.GetPendingPrincipalAsync"/> and finishes through
+    /// <see cref="ProviderSignInInteraction"/>: with the claims it collected, which the
     /// framework adds to the provider's claims under the derived subject, or with a linked local
     /// account's own principal.
     /// </para>

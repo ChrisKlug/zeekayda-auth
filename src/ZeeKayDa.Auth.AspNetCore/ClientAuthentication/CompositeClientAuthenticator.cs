@@ -45,11 +45,10 @@ internal sealed class CompositeClientAuthenticator(
         var form = httpContext.Request.HasFormContentType
             ? await httpContext.Request.ReadFormAsync(cancellationToken)
             : FormCollection.Empty;
-        var headers = httpContext.Request.Headers;
 
         // RFC 7235 §4.2: a request MUST NOT carry more than one Authorization header field.
         // Reject before CanHandle so no authenticator ever sees an ambiguous header set.
-        if (headers.Authorization.Count > 1)
+        if (httpContext.Request.Headers.Authorization.Count > 1)
             return AuthenticatedClient.Refused;
 
         // CanHandle is a shape check; built without the client so the repository isn't consulted
@@ -59,17 +58,20 @@ internal sealed class CompositeClientAuthenticator(
             HttpContext = httpContext,
             ClientId = clientId,
             Form = form,
-            Headers = headers,
         };
 
-        var matches = _authenticators
-            .Select(authenticator =>
-            {
-                var canHandle = TryCanHandle(authenticator, canHandleContext, out var method);
-                return new { authenticator, canHandle, method };
-            })
-            .Where(x => x.canHandle)
-            .Select(x => (Authenticator: x.authenticator, Method: x.method!))
+        var answers = _authenticators
+            .Select(authenticator => (Authenticator: authenticator, Match: TryCanHandle(authenticator, canHandleContext)))
+            .ToList();
+
+        // An authenticator that recognised its credential but cannot accept it ends the request: it
+        // must never fall through to the none method, which would ignore the credential.
+        if (answers.Any(answer => answer.Match.IsRefused))
+            return RefuseAfterPadding();
+
+        var matches = answers
+            .Where(answer => answer.Match.Method is not null)
+            .Select(answer => (answer.Authenticator, Method: answer.Match.Method!))
             .ToList();
 
         // Multiple mechanisms → invalid_client (RFC 6749 §2.3).
@@ -107,13 +109,13 @@ internal sealed class CompositeClientAuthenticator(
             ClientId = clientId,
             Client = client,
             Form = form,
-            Headers = headers,
+            Method = matchedMethod,
         };
         return Conclude(await matchedAuthenticator.AuthenticateAsync(context, cancellationToken), client);
     }
 
     /// <summary>
-    /// Accepts, or refuses after padding unless a failed <see cref="IClientSecrets.Verify"/> already
+    /// Accepts, or refuses after padding unless a failed <see cref="ClientSecrets.Verify"/> already
     /// paid for it. A null from a caller-supplied authenticator is a refusal, not a fault to surface.
     /// </summary>
     private AuthenticatedClient Conclude(ClientAuthenticationResult? outcome, IClientWithCredentials client) =>
@@ -124,20 +126,29 @@ internal sealed class CompositeClientAuthenticator(
             _ => RefuseAfterPadding(),
         };
 
-    private bool TryCanHandle(IClientAuthenticator authenticator, TokenRequestContext context, out string? method)
+    /// <summary>
+    /// The authenticator's match, with a throw or a <see langword="null"/> logged and treated as not
+    /// matching rather than failing the request.
+    /// </summary>
+    private ClientAuthenticatorMatch TryCanHandle(IClientAuthenticator authenticator, TokenRequestContext context)
     {
         try
         {
-            return authenticator.CanHandle(context, out method);
+            if (authenticator.CanHandle(context) is { } match)
+                return match;
+
+            logger.LogError(
+                "Authenticator {AuthenticatorType} returned null from CanHandle; treating as non-matching.",
+                authenticator.GetType().FullName);
         }
         catch (Exception ex)
         {
             logger.LogError(ex,
                 "Authenticator {AuthenticatorType} threw from CanHandle; treating as non-matching.",
                 authenticator.GetType().FullName);
-            method = null;
-            return false;
         }
+
+        return ClientAuthenticatorMatch.None;
     }
 
     private AuthenticatedClient AuthenticateNone(IClientWithCredentials? client)

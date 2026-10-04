@@ -35,7 +35,7 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// the correlation back to the authorization request are the framework's: it pins each remote
     /// handler's <c>CallbackPath</c>, <c>SignInScheme</c> and access-denied event, clears every
     /// provider's forwarding, refuses a later change to any of them at startup, and drives the
-    /// round trip itself — the login page starts it with <c>ILoginInteraction.ChallengeAsync</c>,
+    /// round trip itself — the login page starts it with <c>LoginInteraction.ChallengeAsync</c>,
     /// the framework serves each provider's callback, and the user returns through
     /// <c>/connect/resume</c> to be signed in.
     /// </para>
@@ -43,7 +43,7 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// The schemes registered here are the framework's, not the host's. They do not appear in the
     /// host's <see cref="AuthenticationOptions"/>, cannot be challenged by name from host code, and
     /// are never dispatched by the authentication middleware. The login page sees them as
-    /// <c>ILoginInteraction.Providers</c>, each scheme's name serving as the provider identifier
+    /// <c>LoginInteraction.Providers</c>, each scheme's name serving as the provider identifier
     /// and its display name as the label.
     /// </para>
     /// <para>

@@ -44,7 +44,7 @@ public interface IClientSecretHasher
     /// </summary>
     /// <remarks>
     /// A span, so a caller holding the plaintext in a <c>char[]</c> can zero it afterwards. Callers
-    /// go through <see cref="IClientSecrets"/>, never through a hasher directly.
+    /// go through <see cref="ClientSecrets"/>, never through a hasher directly.
     /// </remarks>
     ClientSecret Create(ReadOnlySpan<char> plaintext);
 
