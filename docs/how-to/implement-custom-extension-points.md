@@ -385,7 +385,7 @@ builder.Services.AddSingleton<IClientRepository, DatabaseClientRepository>();
 ```
 
 For the full `ClientSecrets` API reference, including lifetime and security notes, see
-[Client secrets reference — `ClientSecrets`](../reference/client-secrets.md#iclientsecrets).
+[Client secrets reference — `ClientSecrets`](../reference/client-secrets.md#clientsecrets).
 
 ---
 

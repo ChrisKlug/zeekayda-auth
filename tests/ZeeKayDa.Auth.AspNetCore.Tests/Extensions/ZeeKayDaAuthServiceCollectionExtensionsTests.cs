@@ -171,7 +171,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     // ── ClientSecrets DI wiring (AC1–AC4, issue #135) ─────────────────────────────────────
 
     [Fact]
-    public void AddZeeKayDaAuth_IClientSecrets_is_one_singleton()
+    public void AddZeeKayDaAuth_ClientSecrets_is_one_singleton()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -185,10 +185,9 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_IClientSecrets_Create_returns_IClientSecret()
+    public void AddZeeKayDaAuth_ClientSecrets_Create_returns_a_ClientSecret()
     {
-        // AC3: ClientSecrets.Create must delegate to the default hasher and return
-        // a valid IClientSecret, reachable through the interface (not the concrete type).
+        // ClientSecrets.Create delegates to the default hasher.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
@@ -205,7 +204,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void AddZeeKayDaAuth_IClientSecrets_Create_throws_on_invalid_plaintext(string? plaintext)
+    public void AddZeeKayDaAuth_ClientSecrets_Create_throws_on_invalid_plaintext(string? plaintext)
     {
         // AC3 (negative): ClientSecrets.Create must reject null, empty, and whitespace
         // plaintext — as documented in the interface's XML doc.
