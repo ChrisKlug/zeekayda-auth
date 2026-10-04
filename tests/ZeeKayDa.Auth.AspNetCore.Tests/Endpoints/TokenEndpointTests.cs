@@ -87,9 +87,18 @@ public sealed class TokenEndpointTests : IDisposable
             builder.AddInMemoryClients(clients => clients
                 .Add(PublicRegistration())
                 .Add(NoCodeGrantRegistration())
-                .AddConfidential(ConfidentialClient, ConfidentialSecret, [RegisteredRedirect], [], ["openid", "profile"])
+                .AddConfidential(ConfidentialClient, client =>
+{
+    client.Secret = ConfidentialSecret;
+    client.RedirectUris.UnionWith([RegisteredRedirect]);
+    client.AllowedScopes.UnionWith(["openid", "profile"]);
+})
                 .Add(PkceOptionalRegistration())
-                .AddPublic(OtherClient, ["https://other.example.com/callback"], [], ["openid"]));
+                .AddPublic(OtherClient, client =>
+{
+    client.RedirectUris.UnionWith(["https://other.example.com/callback"]);
+    client.AllowedScopes.UnionWith(["openid"]);
+}));
 
             if (withThrowingHasher)
             {

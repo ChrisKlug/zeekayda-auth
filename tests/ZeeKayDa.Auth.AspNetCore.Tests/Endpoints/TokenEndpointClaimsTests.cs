@@ -456,7 +456,11 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     public async Task A_client_allowing_a_scope_no_repository_defines_fails_startup()
     {
         using var host = new EndpointHost(
-            configureBuilder: builder => builder.AddInMemoryClients(clients => clients.AddPublic("bad", [Redirect], [], ["openid", "undefined"])));
+            configureBuilder: builder => builder.AddInMemoryClients(clients => clients.AddPublic("bad", client =>
+{
+    client.RedirectUris.UnionWith([Redirect]);
+    client.AllowedScopes.UnionWith(["openid", "undefined"]);
+})));
 
         var failure = await host.StartupFailureAsync();
 

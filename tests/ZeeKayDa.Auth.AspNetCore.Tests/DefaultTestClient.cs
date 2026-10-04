@@ -15,8 +15,8 @@ internal static class DefaultTestClient
 {
     private const string Secret = "test-client-secret";
 
-    internal static IInMemoryClientRegistrationBuilder AddDefaultTestClient(
-        this IInMemoryClientRegistrationBuilder clients,
+    internal static InMemoryClientRegistrationBuilder AddDefaultTestClient(
+        this InMemoryClientRegistrationBuilder clients,
         Action<AuthorizationServerOptions>? configureOptions)
     {
         var served = new AuthorizationServerOptions();
@@ -25,11 +25,20 @@ internal static class DefaultTestClient
         var publicGrants = served.GrantTypesSupported.Where(grant => grant != GrantType.ClientCredentials).ToList();
         if (publicGrants.Count == 0)
         {
-            return clients.AddConfidential("test-client", Secret, ["https://test.example.com/callback"], [], ["openid"],
-                client => client.AllowedGrantTypes.UnionWith(served.GrantTypesSupported));
+            return clients.AddConfidential("test-client", client =>
+            {
+                client.Secret = Secret;
+                client.RedirectUris.Add("https://test.example.com/callback");
+                client.AllowedScopes.Add("openid");
+                client.AllowedGrantTypes.UnionWith(served.GrantTypesSupported);
+            });
         }
 
-        return clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"],
-            client => client.AllowedGrantTypes.UnionWith(publicGrants));
+        return clients.AddPublic("test-client", client =>
+        {
+            client.RedirectUris.Add("https://test.example.com/callback");
+            client.AllowedScopes.Add("openid");
+            client.AllowedGrantTypes.UnionWith(publicGrants);
+        });
     }
 }

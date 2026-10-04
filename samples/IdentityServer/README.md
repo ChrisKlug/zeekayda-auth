@@ -24,7 +24,8 @@ The server listens on `https://localhost:5443` using the ASP.NET Core developmen
 
 | Piece | Where |
 |---|---|
-| Registering the framework, clients, stores and signing | `Program.cs` |
+| Registering the framework, stores and signing | `Program.cs` |
+| The clients, bound from configuration with no mapping code | `appsettings.json`, `IdentityServer:Clients` |
 | The user store the framework never reads | `Users/UserStore.cs` |
 | Handing the framework a subject's claims | `Users/UserClaimsProvider.cs` |
 | Completing a sign-in with `LoginInteraction` | `Pages/Login.cshtml.cs` |
@@ -69,8 +70,8 @@ after its request is gone.
 
 A stored client secret is one string that names its algorithm, such as `$2a$12$...` or
 `$argon2id$v=19$...`, so a client store keeps any library's output without knowing the library. The
-three confidential clients above are registered with secrets already hashed, the way they would
-arrive from another system, each by a different library:
+three confidential clients above carry a `SecretHash` in `appsettings.json`, the way it would
+arrive from another system, each produced by a different library:
 
 | Hasher | Library | How it gets its string |
 |---|---|---|

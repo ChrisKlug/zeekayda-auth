@@ -132,17 +132,18 @@ secrets at write time — for example:
 - Future support for [RFC 7591 Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591)
 
 If your clients are registered at startup using the `AddInMemoryClients` builder, you do not
-need this service. The builder handles hashing automatically when you call `AddConfidential`:
+need this service. The builder hashes a plaintext `Secret` automatically when the host starts:
 
 ```csharp
 auth.AddInMemoryClients(clients =>
 {
-    clients.AddConfidential(
-        clientId:               "my-api-client",
-        clientSecret:           "s3cr3t",
-        redirectUris:           ["https://myapp.example.com/callback"],
-        postLogoutRedirectUris: ["https://myapp.example.com/signed-out"],
-        allowedScopes:          ["openid", "profile", "my-api"]);
+    clients.AddConfidential("my-api-client", client =>
+    {
+        client.Secret = configuration["ClientSecrets:MyApiClient"];
+        client.RedirectUris.Add("https://myapp.example.com/callback");
+        client.PostLogoutRedirectUris.Add("https://myapp.example.com/signed-out");
+        client.AllowedScopes.UnionWith(["openid", "profile", "my-api"]);
+    });
 });
 ```
 

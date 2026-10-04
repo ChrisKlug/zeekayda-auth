@@ -62,8 +62,8 @@ internal sealed class InMemoryClientRepository : IClientRepository
     }
 
     /// <summary>
-    /// The pending specs as confidential registrations with their secrets hashed, and a failure for
-    /// each spec whose plaintext secret is blank, which is skipped so the rest are still checked.
+    /// The pending specs as confidential registrations with their credentials set, and a failure for
+    /// each spec without exactly one usable secret, which is skipped so the rest are still checked.
     /// </summary>
     private static (List<IClientWithCredentials> Clients, List<ZeeKayDaConfigurationFailure> Failures) HashPending(
         IEnumerable<PendingConfidentialClientSpec> pending,
@@ -74,20 +74,35 @@ internal sealed class InMemoryClientRepository : IClientRepository
 
         foreach (var spec in pending)
         {
-            if (string.IsNullOrWhiteSpace(spec.PlaintextSecret))
+            if (CheckSecret(spec) is { } failure)
             {
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.credentials.empty_plaintext_secret",
-                    $"Client '{spec.Registration.ClientId}' was registered with a null, empty, or whitespace plaintext secret. " +
-                    "Use a strong random secret loaded from a secrets manager or environment variable."));
+                failures.Add(failure);
                 continue;
             }
 
-            clients.Add(spec.Registration with { Secrets = [secrets.Create(spec.PlaintextSecret)] });
+            var secret = spec.SecretHash is { } hash ? new ClientSecret(hash) : secrets.Create(spec.PlaintextSecret!);
+            clients.Add(spec.Registration with { Secrets = [secret] });
         }
 
         return (clients, failures);
     }
+
+    private static ZeeKayDaConfigurationFailure? CheckSecret(PendingConfidentialClientSpec spec) =>
+        (spec.PlaintextSecret, spec.SecretHash) switch
+        {
+            (null, null) => new ZeeKayDaConfigurationFailure(
+                "client.credentials.no_secret",
+                $"Confidential client '{spec.Registration.ClientId}' has neither a Secret nor a SecretHash. Set one of them."),
+            (not null, not null) => new ZeeKayDaConfigurationFailure(
+                "client.credentials.secret_and_secret_hash",
+                $"Confidential client '{spec.Registration.ClientId}' has both a Secret and a SecretHash. " +
+                "Set only one, so it is clear which secret the client authenticates with."),
+            ({ } plaintext, null) when string.IsNullOrWhiteSpace(plaintext) => new ZeeKayDaConfigurationFailure(
+                "client.credentials.empty_plaintext_secret",
+                $"Client '{spec.Registration.ClientId}' was registered with an empty or whitespace plaintext secret. " +
+                "Use a strong random secret loaded from a secrets manager or environment variable."),
+            _ => null,
+        };
 
     private static IEnumerable<ZeeKayDaConfigurationFailure> FindDuplicateClientIds(IEnumerable<IClientWithCredentials> clients)
     {

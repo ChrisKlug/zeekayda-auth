@@ -404,12 +404,21 @@ public sealed class EndSessionEndpointTests
             builder.Services.AddSingleton(time);
 
         builder.AddInMemoryClients(clients => clients
-            .AddPublic(App, [Redirect], [AppSignedOut], ["openid"], client =>
+            .AddPublic(App, client =>
             {
+                client.RedirectUris.Add(Redirect);
+                client.PostLogoutRedirectUris.Add(AppSignedOut);
+                client.AllowedScopes.Add("openid");
                 client.RequireConsent = false;
                 client.DisplayName = AppName;
             })
-            .AddPublic(OtherApp, [Redirect], [OtherSignedOut], ["openid"], client => client.RequireConsent = false));
+            .AddPublic(OtherApp, client =>
+            {
+                client.RedirectUris.Add(Redirect);
+                client.PostLogoutRedirectUris.Add(OtherSignedOut);
+                client.AllowedScopes.Add("openid");
+                client.RequireConsent = false;
+            }));
     });
 
     /// <summary>A container whose interaction store is <paramref name="store"/>, for the store-failure tests.</summary>

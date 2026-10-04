@@ -1,4 +1,3 @@
-using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.ConformanceHost;
 using ZeeKayDa.Auth.ConformanceHost.Users;
 using ZeeKayDa.Auth.Scopes;
@@ -36,37 +35,7 @@ var auth = builder.Services.AddZeeKayDaAuth(options =>
 
 auth.AddInMemoryScopes(StandardScopes.All);
 
-auth.AddInMemoryClients(clients =>
-{
-    foreach (var client in settings.Clients)
-    {
-        if (client.Secret is { } secret)
-        {
-            clients.AddConfidential(client.ClientId, secret, client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes,
-                options =>
-                {
-                    Configure(options, client);
-                    options.RequirePkce = client.RequirePkce;
-
-                    foreach (var method in client.TokenEndpointAuthMethods)
-                    {
-                        options.AllowedTokenEndpointAuthMethods.Add(method);
-                    }
-                });
-        }
-        else
-        {
-            clients.AddPublic(client.ClientId, client.RedirectUris, client.PostLogoutRedirectUris, client.Scopes,
-                options => Configure(options, client));
-        }
-    }
-
-    static void Configure(ClientOptions options, ClientSettings client)
-    {
-        options.RequireConsent = client.RequireConsent;
-        options.InitiateLoginUri = client.InitiateLoginUri;
-    }
-});
+auth.AddInMemoryClients(builder.Configuration.GetSection("IdentityServer:Clients"));
 
 // In-memory stores are deliberate: every restart starts from the same state, so there is nothing
 // to reset between conformance runs. They refuse to start outside Development, so the Conformance

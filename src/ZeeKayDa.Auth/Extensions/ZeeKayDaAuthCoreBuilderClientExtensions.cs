@@ -16,7 +16,7 @@ public static class ZeeKayDaAuthCoreBuilderClientExtensions
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="configure">
-    /// A callback that receives an <see cref="IInMemoryClientRegistrationBuilder"/> to register
+    /// A callback that receives an <see cref="InMemoryClientRegistrationBuilder"/> to register
     /// clients.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
@@ -31,7 +31,7 @@ public static class ZeeKayDaAuthCoreBuilderClientExtensions
     /// </remarks>
     public static TBuilder AddInMemoryClients<TBuilder>(
         this TBuilder builder,
-        Action<IInMemoryClientRegistrationBuilder> configure)
+        Action<InMemoryClientRegistrationBuilder> configure)
         where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);

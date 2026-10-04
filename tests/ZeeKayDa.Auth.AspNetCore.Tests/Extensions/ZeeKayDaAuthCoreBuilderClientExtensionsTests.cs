@@ -101,8 +101,16 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
                     // constructor must surface as a startup failure.
                     .AddInMemoryClients(clients =>
                     {
-                        clients.AddPublic("dupe", ["https://app.example.com/cb"], [], ["openid"]);
-                        clients.AddPublic("dupe", ["https://app.example.com/cb"], [], ["openid"]);
+                        clients.AddPublic("dupe", client =>
+{
+    client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
+    client.AllowedScopes.UnionWith(["openid"]);
+});
+                        clients.AddPublic("dupe", client =>
+{
+    client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
+    client.AllowedScopes.UnionWith(["openid"]);
+});
                     });
             });
             builder.Configure(app =>
