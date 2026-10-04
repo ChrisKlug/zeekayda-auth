@@ -43,8 +43,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// </exception>
     /// <remarks>
     /// A collection key replaces the default list: setting one <c>TokenEndpoint:AuthMethodsSupported</c>
-    /// entry leaves that entry as the whole list. The values are read when the options are first
-    /// resolved, so a configuration provider that reloads is not followed. In every other respect this
+    /// entry leaves that entry as the whole list, and an empty JSON array (<c>[]</c>) leaves it empty.
+    /// The framework reads these options once, so a configuration provider that reloads does not change
+    /// the running server; an <c>IOptionsSnapshot</c> a host resolves itself binds again and would see the
+    /// reloaded values. In every other respect this
     /// is <see cref="AddZeeKayDaAuth(IServiceCollection, Action{AuthorizationServerOptions})"/>.
     /// </remarks>
     public static ZeeKayDaAuthBuilder AddZeeKayDaAuth(

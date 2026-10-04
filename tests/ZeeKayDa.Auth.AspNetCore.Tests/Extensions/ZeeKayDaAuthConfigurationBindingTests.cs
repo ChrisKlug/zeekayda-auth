@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -65,6 +66,21 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
         options.Response.TypesSupported.Should().Equal(ResponseType.Code);
         options.Response.ModesSupported.Should().Equal(ResponseMode.Query);
         options.AuthorizationEndpoint.CodeChallengeMethodsSupported.Should().Equal(CodeChallengeMethod.S256);
+    }
+
+    [Fact]
+    public void An_empty_JSON_array_replaces_the_default_with_an_empty_collection()
+    {
+        // The JSON provider records [] as a key with an empty value, so the key exists and replaces;
+        // the in-memory provider used elsewhere here cannot express an empty array at all.
+        var section = new ConfigurationBuilder()
+            .AddJsonStream(new MemoryStream(Encoding.UTF8.GetBytes("""{ "GrantTypesSupported": [] }""")))
+            .Build();
+        var options = new AuthorizationServerOptions();
+
+        AuthorizationServerOptionsBinder.Bind(section, options);
+
+        options.GrantTypesSupported.Should().BeEmpty();
     }
 
     [Fact]
