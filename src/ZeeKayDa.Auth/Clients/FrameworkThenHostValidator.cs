@@ -30,9 +30,11 @@ internal sealed class FrameworkThenHostValidator(
         // may yield something different each time it is enumerated.
         var found = host.Validate(client)?.ToArray();
 
+        // The real failures it did return are kept, so the operator sees them in the same pass.
         return found is null || found.Any(failure => failure is null)
             ?
             [
+                .. (found ?? []).OfType<ZeeKayDaConfigurationFailure>(),
                 new ZeeKayDaConfigurationFailure(
                     "client.validator.malformed_result",
                     $"The IClientRegistrationValidator '{host.GetType().FullName}' returned a null list or a " +
