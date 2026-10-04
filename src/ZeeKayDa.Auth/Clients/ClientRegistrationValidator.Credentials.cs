@@ -208,7 +208,7 @@ internal sealed partial class ClientRegistrationValidator
                     "client.credentials.malformed_secret",
                     $"Client '{check.ClientId}' has a secret that does not start with $<algorithm id>$, an id of " +
                     "1–32 characters from [a-z0-9-]. A stored secret is a hash such as $pbkdf2-sha256$..., never " +
-                    "the plaintext; create one with IClientSecrets."),
+                    "the plaintext; create one with ClientSecrets."),
             ]
             : [];
 

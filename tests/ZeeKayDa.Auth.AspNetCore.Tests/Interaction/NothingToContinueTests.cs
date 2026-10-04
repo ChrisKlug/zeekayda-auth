@@ -344,17 +344,17 @@ public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHost
     /// <summary>The host's pages, written as a host that renders its own "nothing here" would write them.</summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(LoginPath, (ILoginInteraction login) => login.SignInAsync(
+        endpoints.MapPost(LoginPath, (LoginInteraction login) => login.SignInAsync(
             new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
             AuthenticationMethods.Password));
 
-        endpoints.MapGet(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
+        endpoints.MapGet(ConsentPath, async (HttpContext context, ConsentInteraction consent) =>
         {
             var request = await consent.TryGetRequestAsync(context.RequestAborted);
             return Results.Json(new { found = request is not null, clientId = request?.Client.ClientId });
         });
 
-        endpoints.MapPost(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
+        endpoints.MapPost(ConsentPath, async (HttpContext context, ConsentInteraction consent) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
 
@@ -364,13 +364,13 @@ public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHost
                 await consent.GrantAsync(form["scope"].Select(scope => scope ?? string.Empty));
         });
 
-        endpoints.MapGet(LogoutPath, async (HttpContext context, ILogoutInteraction logout) =>
+        endpoints.MapGet(LogoutPath, async (HttpContext context, LogoutInteraction logout) =>
         {
             var request = await logout.TryGetRequestAsync(context.RequestAborted);
             return Results.Json(new { found = request is not null, subject = request?.Subject });
         });
 
-        endpoints.MapGet(ErrorPath, async (HttpContext context, IErrorInteraction errors) =>
+        endpoints.MapGet(ErrorPath, async (HttpContext context, ErrorInteraction errors) =>
         {
             var details = await errors.GetErrorAsync(context.RequestAborted);
             return Results.Json(new { kind = details?.Kind.ToString(), error = details?.Error });

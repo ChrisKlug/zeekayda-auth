@@ -162,6 +162,11 @@ Then the severity gate:
 - **Medium/Low and judgement calls:** collected into a list for Stage 4. The maintainer decides.
   There is no fix round for these and no review loop.
 
+**Questions before verification.** When the review results are in, put every open question that
+could change the code to the maintainer — a judgement Low, a scope question, a finding you think is
+wrong — **before** running the fix-diff verification or the full suite. One answer that means
+another change costs a whole new verification run, so verify once, on settled code.
+
 A fresh reviewer re-reading any code will always find something new — that is sampling noise, not a
 converging process, and it is not a reason for round N+1. One round plus fix-diff verification is
 the whole process. The backstops for what one round misses are the milestone audit and the

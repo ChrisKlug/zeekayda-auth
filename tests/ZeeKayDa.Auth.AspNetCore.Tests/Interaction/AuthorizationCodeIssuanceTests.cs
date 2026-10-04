@@ -107,7 +107,7 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
     /// <summary>The host's pages: sign-in, the consent page, and two probes.</summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
+        endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var subject = form["sub"].FirstOrDefault() ?? "user-1";
@@ -117,7 +117,7 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
                 AuthenticationMethods.Password);
         });
 
-        endpoints.MapPost(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
+        endpoints.MapPost(ConsentPath, async (HttpContext context, ConsentInteraction consent) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
 

@@ -2028,8 +2028,10 @@ Copilot code, security and architecture lenses, the security and architect agent
   `AuthenticateAsync_returns_Authenticated_false_and_pads_timing_when_method_is_not_in_client_allowlist`,
   `A_public_client_refused_because_the_server_disallows_none_is_padded_like_an_unknown_client`.
 - A host cannot replace verification or padding: framework code takes the concrete type, and a host `IClientSecrets`, keyed
-  or not, fails startup. Closed — `A_host_registered_IClientSecrets_never_verifies_for_the_built_in_authenticator`,
-  `A_host_registered_IClientSecrets_fails_startup`, `A_keyed_host_IClientSecrets_fails_startup`.
+  or not, fails startup. Closed — A_host_registered_IClientSecrets_never_verifies_for_the_built_in_authenticator,
+  A_host_registered_IClientSecrets_fails_startup, A_keyed_host_IClientSecrets_fails_startup [deleted by #878:
+  the interface became the sealed `ClientSecrets` with an internal constructor, so a host cannot supply one —
+  `ClientSecrets_cannot_be_supplied_by_a_host`].
 - **Accepted residual (maintainer):** a stored PBKDF2 secret at an iteration count other than the configured one fails in
   a different time from an unknown client, revealing that the client id exists (client ids are not secret in OAuth);
   re-hashing on successful authentication is #868. No test.

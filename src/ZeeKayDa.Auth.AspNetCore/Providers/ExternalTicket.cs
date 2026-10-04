@@ -41,7 +41,7 @@ internal static class ExternalTicket
         var feature = context.HttpContext.Features.Get<ProviderCallbackFeature>()
             ?? throw new InvalidOperationException(
                 "Only a provider's callback endpoint may sign into the framework's external scheme. " +
-                "A host signs users in through ILoginInteraction, never by naming a framework scheme.");
+                "A host signs users in through LoginInteraction, never by naming a framework scheme.");
 
         context.Properties.Items[ProviderItem] = feature.Provider.Name;
         return Task.CompletedTask;

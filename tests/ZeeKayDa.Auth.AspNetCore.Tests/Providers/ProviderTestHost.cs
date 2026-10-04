@@ -115,7 +115,7 @@ internal static class ProviderTestHost
     {
         // The login page: a provider button posts the provider's id, the credential form posts a
         // subject. Both end in a terminal call.
-        endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
+        endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
 
@@ -131,11 +131,11 @@ internal static class ProviderTestHost
                 AuthenticationMethods.Password);
         });
 
-        endpoints.MapPost("/account/login/cancel", (ILoginInteraction login) => login.DenyAsync());
+        endpoints.MapPost("/account/login/cancel", (LoginInteraction login) => login.DenyAsync());
 
         // The collect-more page: reports the parked principal; on post, adds what the form
         // collected and lets the framework build the session principal.
-        endpoints.MapGet(CollectMorePath, async (IProviderSignInInteraction signIn) =>
+        endpoints.MapGet(CollectMorePath, async (ProviderSignInInteraction signIn) =>
         {
             var pending = await signIn.GetPendingPrincipalAsync();
 
@@ -152,21 +152,21 @@ internal static class ProviderTestHost
         });
 
         // The same read with a token the caller has already cancelled.
-        endpoints.MapGet(CollectMorePath + "/cancelled", async (IProviderSignInInteraction signIn) =>
+        endpoints.MapGet(CollectMorePath + "/cancelled", async (ProviderSignInInteraction signIn) =>
         {
             await signIn.GetPendingPrincipalAsync(new CancellationToken(canceled: true));
             return Results.Ok();
         });
 
         // Every form field becomes a claim, so a test can pass whatever it wants refused or kept.
-        endpoints.MapPost(CollectMorePath, async (HttpContext context, IProviderSignInInteraction signIn) =>
+        endpoints.MapPost(CollectMorePath, async (HttpContext context, ProviderSignInInteraction signIn) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             await signIn.SignInAsync(form.SelectMany(field => field.Value.Select(value => new Claim(field.Key, value ?? string.Empty))).ToArray());
         });
 
         // The linking page: maps the parked principal onto a local account and signs that in.
-        endpoints.MapPost(CollectMorePath + "/link", async (IProviderSignInInteraction signIn) =>
+        endpoints.MapPost(CollectMorePath + "/link", async (ProviderSignInInteraction signIn) =>
         {
             var pending = await signIn.GetPendingPrincipalAsync()
                 ?? throw new InvalidOperationException("Nothing is parked for this page.");
@@ -178,7 +178,7 @@ internal static class ProviderTestHost
         });
 
         // The mistake the service exists to refuse: passing the parked principal straight back.
-        endpoints.MapPost(CollectMorePath + "/link-passthrough", async (IProviderSignInInteraction signIn) =>
+        endpoints.MapPost(CollectMorePath + "/link-passthrough", async (ProviderSignInInteraction signIn) =>
         {
             var pending = await signIn.GetPendingPrincipalAsync()
                 ?? throw new InvalidOperationException("Nothing is parked for this page.");
@@ -187,7 +187,7 @@ internal static class ProviderTestHost
         });
 
         // Linking straight from the form, without reading first: the service's own refusals.
-        endpoints.MapPost(CollectMorePath + "/link-direct", async (HttpContext context, IProviderSignInInteraction signIn) =>
+        endpoints.MapPost(CollectMorePath + "/link-direct", async (HttpContext context, ProviderSignInInteraction signIn) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var claims = form.SelectMany(field => field.Value.Select(value => new Claim(field.Key, value ?? string.Empty))).ToArray();
@@ -195,11 +195,11 @@ internal static class ProviderTestHost
             await signIn.SignInWithReplacedPrincipalAsync(new ClaimsPrincipal(new ClaimsIdentity(claims, "test")), AuthenticationMethods.Password);
         });
 
-        endpoints.MapPost(CollectMorePath + "/cancel", (IProviderSignInInteraction signIn) => signIn.DenyAsync());
+        endpoints.MapPost(CollectMorePath + "/cancel", (ProviderSignInInteraction signIn) => signIn.DenyAsync());
 
         // What the service refuses: terminal calls from the request that renders the page.
-        endpoints.MapGet(CollectMorePath + "/sign-in-by-get", (IProviderSignInInteraction signIn) => signIn.SignInAsync());
-        endpoints.MapGet(CollectMorePath + "/cancel-by-get", (IProviderSignInInteraction signIn) => signIn.DenyAsync());
+        endpoints.MapGet(CollectMorePath + "/sign-in-by-get", (ProviderSignInInteraction signIn) => signIn.SignInAsync());
+        endpoints.MapGet(CollectMorePath + "/cancel-by-get", (ProviderSignInInteraction signIn) => signIn.DenyAsync());
 
         // What the invariant forbids and the framework refuses: a host page signing into the
         // framework's external scheme by name.

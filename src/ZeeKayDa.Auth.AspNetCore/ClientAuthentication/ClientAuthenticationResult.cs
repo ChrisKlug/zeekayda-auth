@@ -31,7 +31,7 @@ public sealed class ClientAuthenticationResult
     /// </summary>
     public static ClientAuthenticationResult NotValid() => new() { Authenticated = false };
 
-    /// <summary>Returns the result of checking a client secret with <see cref="IClientSecrets.Verify"/>.</summary>
+    /// <summary>Returns the result of checking a client secret with <see cref="ClientSecrets.Verify"/>.</summary>
     /// <remarks>
     /// A result, and the verification it carries, belong to the request that produced them: an
     /// authenticator never caches or shares either across requests.

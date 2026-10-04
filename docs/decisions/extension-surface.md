@@ -56,14 +56,20 @@ ship in lockstep with core. The rule around them: **anything expressible through
 must use it** — these are not a pattern to copy.
 
 **The enumerated public extension surface is the SemVer contract.** What a third party may implement:
-the startup verifier, the scope repository, the discovery document provider, the client repository,
-the client, client-with-credentials and credential interfaces, a client secret hasher (via the abstract base), the
-client registration validator, the two store backing contracts, the client authenticator, the token issuer (`ITokenIssuer`,
-keyed per `TokenKind`), a
-signing provider via the abstract signing base and its signer type, a signing key source via
-`ISigningKeySource`, and an options validator via `ZeeKayDaOptionsValidator<TOptions>`, which returns
-its coded failures and is registered as `IValidateOptions<TOptions>`. Everything else public is
-consume-only. Adding to this list is a minor version; changing anything on it is a major one. The
+the startup verifier (`IStartupVerifier`) and startup activator (`IStartupActivator`), the claims
+provider (`IClaimsProvider`, registered with `AddClaimsProvider<T>()`), the scope repository, the
+discovery document provider, the client repository, the client and client-with-credentials interfaces,
+a client secret hasher (`IClientSecretHasher`), the client registration validator, the two store
+backing contracts, the client authenticator, the token issuer (`ITokenIssuer`, keyed per `TokenKind`),
+a signing key source (`ISigningKeySource`) and the signer it lends (`ISigner`), and an options validator
+via `ZeeKayDaOptionsValidator<TOptions>`, which returns its coded failures and is registered as
+`IValidateOptions<TOptions>`. Everything else public is
+consume-only. A framework layer that enforces the rules between a seam and its consumers is a public
+sealed class with an internal constructor, never an interface: a host injects it and cannot supply
+its own. So are the five interaction services, which complete every protocol step for a page
+(`An_interaction_service_cannot_be_supplied_by_a_host`), and `ClientSecrets`, which verifies and pads
+(`ClientSecrets_cannot_be_supplied_by_a_host`). Unsealing one is additive. Adding to this list is a
+minor version; changing anything on it is a major one. The
 question asked of every new public member before it lands is whether it can be changed later without a
 breaking change.
 
@@ -118,6 +124,9 @@ dependencies are resolved inside the repository from an injected `IServiceScopeF
   could violate while compiling outnumbered the one thing a third party actually wanted to vary. The
   full reversal is in `token-stores.md`; it is listed here because it is the case that produced the
   house pattern.
+- **Interaction services as public interfaces.** Hosts could swap them in DI, so the framework's
+  guarantee for each protocol step came to rest on a startup check. Sealed classes with internal
+  constructors make the swap unrepresentable instead.
 - **A friend grant as a substitute for public contracts.** The Azure Key Vault provider's first
   attempt at reaching core's signing helpers. It works for exactly one first-party package and can
   never serve a third party. Public contracts with internal crypto is the fix.

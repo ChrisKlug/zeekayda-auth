@@ -24,7 +24,7 @@ acceptable while it is internal, finite and auditable.
 **Core holds everything with meaning outside an HTTP request; the dependency never reverses.** A
 type lives in `ZeeKayDa.Auth` unless it only means something inside a request. `ZeeKayDa.Auth.AspNetCore`
 keeps the endpoints and their wire types; the cookie, scheme and security-header names; the
-interaction flow and its contracts (`ILoginInteraction` and its siblings act on the current request
+interaction flow and its contracts (`LoginInteraction` and its siblings act on the current request
 though no signature names `HttpContext`); the typed interaction stores, which bind an entry to a
 browser cookie; client authentication; and external providers. Options and their validation,
 clients, scopes, stores, token issuance and the startup checks on them are Core, registered by

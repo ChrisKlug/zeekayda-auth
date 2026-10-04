@@ -2,7 +2,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
 /// What the host's consent page asks the user: which client wants access, to what, on whose
-/// behalf. Read through <see cref="IConsentInteraction.GetRequestAsync"/>.
+/// behalf. Read through <see cref="ConsentInteraction.GetRequestAsync"/>.
 /// </summary>
 public sealed class ConsentRequest
 {
@@ -22,7 +22,7 @@ public sealed class ConsentRequest
 
     /// <summary>
     /// The scopes being asked for — the requested scopes the client is allowed, in request order.
-    /// What the page passes to <see cref="IConsentInteraction.GrantAsync"/> can only narrow this.
+    /// What the page passes to <see cref="ConsentInteraction.GrantAsync"/> can only narrow this.
     /// </summary>
     public IReadOnlyList<string> Scopes { get; }
 

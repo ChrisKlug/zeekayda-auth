@@ -7,7 +7,7 @@ using ZeeKayDa.Auth.Samples.IdentityServer.Users;
 
 namespace ZeeKayDa.Auth.Samples.IdentityServer.Pages;
 
-public sealed class LoginModel(UserStore users, ILoginInteraction login) : PageModel
+public sealed class LoginModel(UserStore users, LoginInteraction login) : PageModel
 {
     [BindProperty]
     public string? Username { get; set; }

@@ -115,7 +115,7 @@ internal sealed class CompositeClientAuthenticator(
     }
 
     /// <summary>
-    /// Accepts, or refuses after padding unless a failed <see cref="IClientSecrets.Verify"/> already
+    /// Accepts, or refuses after padding unless a failed <see cref="ClientSecrets.Verify"/> already
     /// paid for it. A null from a caller-supplied authenticator is a refusal, not a fault to surface.
     /// </summary>
     private AuthenticatedClient Conclude(ClientAuthenticationResult? outcome, IClientWithCredentials client) =>

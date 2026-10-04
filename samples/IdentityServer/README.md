@@ -27,9 +27,9 @@ The server listens on `https://localhost:5443` using the ASP.NET Core developmen
 | Registering the framework, clients, stores and signing | `Program.cs` |
 | The user store the framework never reads | `Users/UserStore.cs` |
 | Handing the framework a subject's claims | `Users/UserClaimsProvider.cs` |
-| Completing a sign-in with `ILoginInteraction` | `Pages/Login.cshtml.cs` |
-| Completing consent with `IConsentInteraction` | `Pages/Consent.cshtml.cs` |
-| Confirming a sign-out with `ILogoutInteraction` | `Pages/Logout.cshtml.cs` |
+| Completing a sign-in with `LoginInteraction` | `Pages/Login.cshtml.cs` |
+| Completing consent with `ConsentInteraction` | `Pages/Consent.cshtml.cs` |
+| Confirming a sign-out with `LogoutInteraction` | `Pages/Logout.cshtml.cs` |
 | The page a user lands on once signed out, with no client to return to | `Pages/SignedOut.cshtml` |
 | Rendering an error the client cannot be sent | `Pages/Error.cshtml.cs` |
 | Verifying client secrets hashed by other libraries | `ClientSecrets/` |
@@ -80,4 +80,4 @@ arrive from another system, each by a different library:
 
 Each hasher declares the algorithm ids it owns, and the framework hands it only the secrets that
 carry one of them. The built-in PBKDF2 hasher stays the default, so every secret hashed at startup
-or through `IClientSecrets` is still `$pbkdf2-sha256$...`.
+or through `ClientSecrets` is still `$pbkdf2-sha256$...`.
