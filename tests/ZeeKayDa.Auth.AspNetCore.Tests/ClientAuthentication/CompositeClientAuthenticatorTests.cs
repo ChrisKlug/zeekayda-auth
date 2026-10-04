@@ -69,8 +69,12 @@ public sealed class CompositeClientAuthenticatorTests
     {
         private readonly IClientWithCredentials? _client;
         public FakeClientRepository(IClientWithCredentials? client = null) => _client = client;
+        public int Lookups { get; private set; }
         public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken ct)
-            => Task.FromResult(_client);
+        {
+            Lookups++;
+            return Task.FromResult(_client);
+        }
     }
 
     /// <summary>
@@ -776,6 +780,41 @@ public sealed class CompositeClientAuthenticatorTests
 
         result.Authenticated.Should().BeFalse("a refused match is a refusal, whatever any other authenticator says");
         hasher.CallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient, "a refused match is padded like a wrong secret");
+    }
+
+    [Fact]
+    public async Task A_refused_match_ends_the_request_before_the_repository_is_read()
+    {
+        var repository = new FakeClientRepository(CreatePublicClient());
+        var composite = new CompositeClientAuthenticator(
+            [new FixedMatchAuthenticator("custom_method", ClientAuthenticatorMatch.Refused)],
+            new ValidatedClientResolver(repository, new PassingRegistrationValidator(), NullSanitizingLogger<ValidatedClientResolver>.Instance),
+            CreateServerOptions("custom_method", TokenEndpointAuthMethods.None),
+            new ClientSecrets(Registry([new FakeHasher()]), NullSanitizingLogger<ClientSecrets>.Instance),
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
+
+        var result = await composite.AuthenticateAsync("public-client", new DefaultHttpContext(), TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        repository.Lookups.Should().Be(0, "a refused match is decided from the request alone");
+    }
+
+    [Fact]
+    public async Task A_bare_Basic_scheme_is_refused_not_None()
+    {
+        // RFC 7617 §2: "Basic" with no credentials is a malformed Basic credential, so it must not
+        // fall through to the none method, which would accept this public client.
+        var (composite, hasher) = CreateCompositeWithHasher(
+            CreatePublicClient(),
+            new FakeHasher(),
+            allowedMethods: [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None]);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Authorization = "Basic";
+
+        var result = await composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        hasher.CallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient, "the refusal is padded like a wrong secret");
     }
 
     [Fact]

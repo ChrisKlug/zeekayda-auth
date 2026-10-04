@@ -12,13 +12,17 @@ internal static class BasicAuthorizationHeader
 {
     private const string Scheme = "Basic ";
 
-    /// <summary>Whether the request carries exactly one <c>Authorization</c> header, and it is Basic.</summary>
+    /// <summary>
+    /// Whether the request carries exactly one <c>Authorization</c> header, and it is Basic: a bare
+    /// <c>Basic</c> with no credentials is still a Basic credential, malformed (RFC 7617 §2).
+    /// </summary>
     public static bool IsPresent(IHeaderDictionary headers)
     {
         var authHeader = headers.Authorization;
         return authHeader.Count == 1 &&
                authHeader[0] is { } value &&
-               value.StartsWith(Scheme, StringComparison.OrdinalIgnoreCase);
+               (value.StartsWith(Scheme, StringComparison.OrdinalIgnoreCase) ||
+                value.Trim().Equals(Scheme.TrimEnd(), StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -50,7 +54,7 @@ internal static class BasicAuthorizationHeader
         username = string.Empty;
         password = string.Empty;
         var authHeader = headers.Authorization[0]!;
-        var base64Part = authHeader[Scheme.Length..].Trim();
+        var base64Part = authHeader.Length > Scheme.Length ? authHeader[Scheme.Length..].Trim() : string.Empty;
         try
         {
             var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(base64Part));

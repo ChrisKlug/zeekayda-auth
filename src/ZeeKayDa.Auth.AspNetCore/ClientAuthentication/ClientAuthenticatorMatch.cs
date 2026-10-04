@@ -6,8 +6,8 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// malformed or ambiguous (<see cref="Refused"/>).
 /// </summary>
 /// <remarks>
-/// <see cref="Refused"/> carries no reason: RFC 6749 §5.2 answers every client-authentication failure
-/// with a bare <c>invalid_client</c>. It is not <see cref="None"/>, because a request no authenticator
+/// <see cref="Refused"/> carries no reason, so every client-authentication refusal is the same bare
+/// <c>invalid_client</c> (RFC 6749 §5.2) and none tells the caller which check failed. It is not <see cref="None"/>, because a request no authenticator
 /// claims falls through to the <c>none</c> method, which would accept a public client and ignore the
 /// credential the request carried.
 /// </remarks>
