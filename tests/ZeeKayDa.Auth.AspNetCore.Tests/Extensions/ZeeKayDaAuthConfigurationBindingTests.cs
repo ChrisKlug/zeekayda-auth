@@ -91,21 +91,28 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
         options.TokenEndpoint.AuthMethodsSupported.Should().Equal("client_secret_post", "none");
     }
 
-    [Fact]
-    public void Every_settable_collection_option_is_one_the_binder_replaces()
-    {
-        var found = SettableCollectionPaths(typeof(AuthorizationServerOptions), prefix: "");
+    public static TheoryData<string> SettableCollectionOptions() =>
+        [.. SettableCollectionPaths(typeof(AuthorizationServerOptions), prefix: "")];
 
-        found.Should().BeEquivalentTo(
-        [
-            "GrantTypesSupported",
-            "CorsOrigins",
-            "Response:TypesSupported",
-            "Response:ModesSupported",
-            "AuthorizationEndpoint:CodeChallengeMethodsSupported",
-            "TokenEndpoint:AuthMethodsSupported",
-            "IdToken:AdvertisedSigningAlgorithms",
-        ]);
+    [Theory]
+    [MemberData(nameof(SettableCollectionOptions))]
+    public void Every_settable_collection_option_is_replaced_by_configuration_not_appended_to(string path)
+    {
+        // Seeds the collection with one value, then configures another: an appending binder keeps both.
+        var options = new AuthorizationServerOptions();
+        var (owner, property) = Locate(options, path);
+        var elementType = property.PropertyType.GetGenericArguments()[0];
+        var (seed, configured) = TwoDistinctValues(elementType);
+        var collection = Activator.CreateInstance(typeof(List<>).MakeGenericType(elementType))!;
+        ((System.Collections.IList)collection).Add(seed);
+        property.SetValue(owner, collection);
+
+        var section = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [path + ":0"] = configured.ToString() })
+            .Build();
+        AuthorizationServerOptionsBinder.Bind(section, options);
+
+        ((System.Collections.IEnumerable)property.GetValue(owner)!).Cast<object>().Should().Equal(configured);
     }
 
     private static AuthorizationServerOptions Resolve(
@@ -118,6 +125,25 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
         services.AddZeeKayDaAuth(configuration, configure);
         using var provider = services.BuildServiceProvider();
         return provider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
+    }
+
+    private static (object Owner, PropertyInfo Property) Locate(object options, string path)
+    {
+        var names = path.Split(':');
+        var owner = options;
+        foreach (var name in names[..^1])
+            owner = owner.GetType().GetProperty(name)!.GetValue(owner)!;
+
+        return (owner, owner.GetType().GetProperty(names[^1])!);
+    }
+
+    private static (object Seed, object Configured) TwoDistinctValues(Type elementType)
+    {
+        if (elementType == typeof(string))
+            return ("seeded", "configured");
+
+        var values = Enum.GetValues(elementType);
+        return (values.GetValue(0)!, values.GetValue(values.Length - 1)!);
     }
 
     private static IEnumerable<string> SettableCollectionPaths(Type type, string prefix) =>
