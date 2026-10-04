@@ -81,8 +81,8 @@ internal static partial class AuthorizationServerOptionsValidation
     {
         var advertisesClientCredentialsWithOnlyNone = options.GrantTypesSupported is { } grants
             && grants.Contains(GrantType.ClientCredentials)
-            && options.TokenEndpoint.AuthMethodsSupported is { Count: > 0 }
-            && TokenEndpointAuthMethodRules.AllowsOnlyNone(options.TokenEndpoint.AuthMethodsSupported);
+            && options.TokenEndpoint.AuthMethodsSupported is { } methods
+            && TokenEndpointAuthMethodRules.AllowsOnlyNone(methods);
 
         if (advertisesClientCredentialsWithOnlyNone)
         {

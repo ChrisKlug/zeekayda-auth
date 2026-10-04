@@ -384,6 +384,21 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
+    public void An_empty_AuthMethodsSupported_with_the_client_credentials_grant_is_reported_as_empty_not_as_only_none()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.ClientCredentials],
+            TokenEndpoint = { AuthMethodsSupported = [] },
+        });
+
+        failures.Select(f => f.Code).Should()
+            .Contain("configuration.token_endpoint.auth_methods_supported.empty")
+            .And.NotContain("configuration.token_endpoint.auth_methods_supported.only_none_with_client_credentials");
+    }
+
+    [Fact]
     public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_empty_string()
     {
         var failures = Validate(new AuthorizationServerOptions
