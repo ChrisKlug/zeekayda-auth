@@ -27,34 +27,24 @@ internal sealed class ClientSecretAuthenticator(ClientSecrets secrets) : IClient
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Returns <see langword="true"/> with <c>client_secret_basic</c> when an
-    /// <c>Authorization: Basic</c> header is present — including the case where a
-    /// simultaneous <c>client_secret</c> form field is present, which
-    /// <see cref="AuthenticateAsync"/> rejects. Returns <see langword="true"/> with
-    /// <c>client_secret_post</c> when only a <c>client_secret</c> form field is present.
-    /// Returns <see langword="false"/> when neither is present.
+    /// An <c>Authorization: Basic</c> header is <c>client_secret_basic</c> and a <c>client_secret</c>
+    /// form field is <c>client_secret_post</c>. Both at once is refused: RFC 6749 §2.3 allows one
+    /// authentication method per request.
     /// </remarks>
-    public bool CanHandle(TokenRequestContext context, out string? method)
+    public ClientAuthenticatorMatch CanHandle(TokenRequestContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var hasBasic = BasicAuthorizationHeader.IsPresent(context.Headers);
+        var hasBasic = BasicAuthorizationHeader.IsPresent(context.HttpContext.Request.Headers);
         var hasPost = context.Form.ContainsKey("client_secret");
 
-        if (hasBasic)
+        return (hasBasic, hasPost) switch
         {
-            method = TokenEndpointAuthMethods.ClientSecretBasic;
-            return true;
-        }
-
-        if (hasPost)
-        {
-            method = TokenEndpointAuthMethods.ClientSecretPost;
-            return true;
-        }
-
-        method = null;
-        return false;
+            (true, true) => ClientAuthenticatorMatch.Refused,
+            (true, false) => ClientAuthenticatorMatch.For(TokenEndpointAuthMethods.ClientSecretBasic),
+            (false, true) => ClientAuthenticatorMatch.For(TokenEndpointAuthMethods.ClientSecretPost),
+            _ => ClientAuthenticatorMatch.None,
+        };
     }
 
     /// <inheritdoc/>
@@ -70,28 +60,8 @@ internal sealed class ClientSecretAuthenticator(ClientSecrets secrets) : IClient
     }
 
     /// <summary>The secret the request presents, or <see langword="null"/> when the request is malformed.</summary>
-    private static string? PresentedSecret(ClientAuthenticationContext context)
-    {
-        var hasBasic = BasicAuthorizationHeader.IsPresent(context.Headers);
-        var hasPost = context.Form.ContainsKey("client_secret");
-
-        // RFC 6749 §2.3: a client MUST NOT use more than one authentication method per request.
-        if (hasBasic && hasPost)
-            return null;
-
-        if (!hasBasic)
-            return context.Form["client_secret"].ToString();
-
-        // RFC 6749 §2.3.1: the Basic-auth username is the authoritative client_id.
-        if (!BasicAuthorizationHeader.TryParse(context.Headers, out var username, out var password) ||
-            !string.Equals(username, context.ClientId, StringComparison.Ordinal))
-            return null;
-
-        // Two conflicting client_id values in one request is a protocol error, whichever one the
-        // caller used to look up the client.
-        var formClientId = context.Form["client_id"].ToString();
-        return formClientId.Length > 0 && !string.Equals(formClientId, username, StringComparison.Ordinal)
-            ? null
-            : password;
-    }
+    private static string? PresentedSecret(ClientAuthenticationContext context) =>
+        context.Method == TokenEndpointAuthMethods.ClientSecretBasic
+            ? BasicAuthorizationHeader.SecretFor(context.HttpContext.Request.Headers, context.ClientId, context.Form)
+            : context.Form["client_secret"].ToString();
 }

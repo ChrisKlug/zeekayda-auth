@@ -22,6 +22,26 @@ internal static class BasicAuthorizationHeader
     }
 
     /// <summary>
+    /// The password the header presents for <paramref name="clientId"/>, or <see langword="null"/>
+    /// when the header cannot be decoded, names another client (RFC 6749 §2.3.1: its username is the
+    /// authoritative <c>client_id</c>), or disagrees with a <c>client_id</c> in the form. Only
+    /// meaningful after <see cref="IsPresent"/>.
+    /// </summary>
+    public static string? SecretFor(IHeaderDictionary headers, string clientId, IFormCollection form)
+    {
+        if (!TryParse(headers, out var username, out var password) ||
+            !string.Equals(username, clientId, StringComparison.Ordinal))
+            return null;
+
+        // Two conflicting client_id values in one request is a protocol error, whichever one the
+        // caller used to look up the client.
+        var formClientId = form["client_id"].ToString();
+        return formClientId.Length > 0 && !string.Equals(formClientId, username, StringComparison.Ordinal)
+            ? null
+            : password;
+    }
+
+    /// <summary>
     /// Decodes the header's credentials. Only meaningful after <see cref="IsPresent"/>; a header
     /// that is not valid base64 or carries no colon yields <see langword="false"/>.
     /// </summary>

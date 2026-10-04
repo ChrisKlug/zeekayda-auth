@@ -13,20 +13,26 @@ Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthServiceCollectionExtensions
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationContext
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationContext.Client.get -> ZeeKayDa.Auth.Clients.IClientWithCredentials!
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationContext.Client.init -> void
+ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationContext.Method.get -> string!
+ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationContext.Method.init -> void
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationContext.ClientAuthenticationContext() -> void
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult.Authenticated.get -> bool
+ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticatorMatch
+ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticatorMatch.IsRefused.get -> bool
+ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticatorMatch.Method.get -> string?
+static ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticatorMatch.For(string! method) -> ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticatorMatch!
+static ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticatorMatch.None.get -> ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticatorMatch!
+static ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticatorMatch.Refused.get -> ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticatorMatch!
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.IClientAuthenticator
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.IClientAuthenticator.AuthenticateAsync(ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult!>!
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.IClientAuthenticator.AuthenticationMethods.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.AspNetCore.ClientAuthentication.IClientAuthenticator.CanHandle(ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext! context, out string? method) -> bool
+ZeeKayDa.Auth.AspNetCore.ClientAuthentication.IClientAuthenticator.CanHandle(ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext! context) -> ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticatorMatch!
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.ClientId.get -> string!
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.ClientId.init -> void
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.Form.get -> Microsoft.AspNetCore.Http.IFormCollection!
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.Form.init -> void
-ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.Headers.get -> Microsoft.AspNetCore.Http.IHeaderDictionary!
-ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.Headers.init -> void
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.HttpContext.get -> Microsoft.AspNetCore.Http.HttpContext!
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.HttpContext.init -> void
 ZeeKayDa.Auth.AspNetCore.ClientAuthentication.TokenRequestContext.TokenRequestContext() -> void

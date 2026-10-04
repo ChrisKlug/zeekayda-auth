@@ -85,18 +85,17 @@ A host's own `IClientSecrets` fails startup (`A_host_IClientSecrets_registered_a
 hasher indexing, decoys and the registration checks sit apart, in an internal startup registry.
 
 **Authenticators are self-describing; the composite has zero method-specific knowledge.** Each
-authenticator declares the method strings it owns and detects its own request shape, so adding mTLS
-means implementing, registering, and adding the method string to the server allowlist — the composite
-never changes. Startup validation requires every advertised server method to have exactly one owning
-authenticator. `none` must never be declared by any authenticator: it is the composite's fallback
-after every credential-bearing authenticator has declined, because a generic "no evidence"
-authenticator cannot know about custom mechanisms and would collide with them.
+declares its method strings and decides its request shape once: `CanHandle` returns `None`,
+`For(method)`, which reaches `AuthenticateAsync` on the context, or `Refused` (its shape, malformed or
+ambiguous). `Refused` is a padded bare `invalid_client` and never `None`, whose `none` fallback would
+accept a public client and ignore the credential (`Basic_and_post_at_once_is_refused_never_treated_as_none`).
+Adding mTLS never changes the composite; startup requires one owning authenticator per advertised
+method, and none may declare `none`: a generic "no evidence" authenticator would collide with custom ones.
 
-**The composite defends against its own extension point.** More than one matching authenticator is
-`invalid_client` (RFC 6749 §2.3). An exception thrown from a shape check is logged and treated as
-non-matching rather than failing the request. A returned method not in the authenticator's own
-declared set is rejected — otherwise a buggy detector could route past the startup coverage check.
-Repository lookup is deferred until after the cheap rejections, so an ambiguous request costs no I/O.
+**The composite defends against its own extension point.** More than one match is `invalid_client`
+(RFC 6749 §2.3). A shape check that throws or returns null is logged and treated as non-matching. A
+returned method outside the authenticator's own declared set is rejected, or a buggy detector could
+route past the startup coverage check. The repository is read only after the cheap rejections.
 
 **Redirect URI matching is exact and ordinal — no prefix, normalisation or wildcard.** `http` is
 accepted only for loopback, where the port varies (RFC 8252 §7.3); the loopback test is a whole-string

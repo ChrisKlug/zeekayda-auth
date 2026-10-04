@@ -19,11 +19,7 @@ public sealed class AuthenticatorCoverageActivatorTests
 
         public IReadOnlySet<string> AuthenticationMethods { get; }
 
-        public bool CanHandle(TokenRequestContext context, out string? method)
-        {
-            method = null;
-            return false;
-        }
+        public ClientAuthenticatorMatch CanHandle(TokenRequestContext context) => ClientAuthenticatorMatch.None;
 
         public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken ct) =>
@@ -51,11 +47,7 @@ public sealed class AuthenticatorCoverageActivatorTests
         public IReadOnlySet<string> AuthenticationMethods =>
             new HashSet<string>(StringComparer.Ordinal);
 
-        public bool CanHandle(TokenRequestContext context, out string? method)
-        {
-            method = null;
-            return false;
-        }
+        public ClientAuthenticatorMatch CanHandle(TokenRequestContext context) => ClientAuthenticatorMatch.None;
 
         public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken ct) =>

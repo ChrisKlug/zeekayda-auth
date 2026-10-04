@@ -234,7 +234,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
                 ClientId = "client-1",
                 Client = Client.CreateConfidential("client-1", stored, ["https://app.example.com/cb"], [], ["openid"]),
                 Form = form,
-                Headers = httpContext.Request.Headers,
+                Method = TokenEndpointAuthMethods.ClientSecretPost,
             },
             TestContext.Current.CancellationToken);
 
