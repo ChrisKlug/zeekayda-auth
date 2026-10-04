@@ -126,6 +126,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<EndSessionResponses>();
         services.TryAddSingleton<ILogoutInteraction, LogoutInteraction>();
 
+        // The interaction services are consumed by pages, never replaced: startup fails on a host's own.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IStartupVerifier, InteractionServicesRegistrationVerifier>());
+
         // Lets a Razor Pages handler or controller action end with a plain await after a terminal
         // call. Inert on a host without MVC, which never reads MvcOptions.
         services.TryAddEnumerable(
