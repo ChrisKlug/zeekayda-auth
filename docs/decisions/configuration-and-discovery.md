@@ -128,9 +128,9 @@ sole path to a definition and the sole rule authority, so `InMemoryScopeReposito
 `server_error`. An `Audience` is checked against RFC 3986 directly, not by whether `Uri` parses it, which
 rewrites a raw space while the original reaches `aud`.
 
-**Collection keys bind by replacement, not merge.** An operator who sets one entry of an
-`IConfiguration` collection key loses the rest of that key's defaults. The validator's empty-and-subset
-checks turn the resulting gap into a startup failure rather than a quietly narrowed server.
+**Collection keys bind by replacement, not merge.** Setting one entry of a collection key loses the
+rest of that key's defaults; the validator turns the gap into a startup failure. The .NET binder alone
+appends, so `AddZeeKayDaAuth(IConfiguration, configure)` empties each configured collection first; a test fails if a new one is not covered.
 
 ## Tried, didn't work
 

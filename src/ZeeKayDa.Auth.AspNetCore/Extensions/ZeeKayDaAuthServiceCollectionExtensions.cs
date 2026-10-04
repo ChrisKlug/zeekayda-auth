@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
@@ -21,6 +22,46 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// </summary>
 public static class ZeeKayDaAuthServiceCollectionExtensions
 {
+    /// <summary>
+    /// Registers ZeeKayDa.Auth services, configuring <see cref="AuthorizationServerOptions"/> from
+    /// a configuration section.
+    /// </summary>
+    /// <param name="services">The service collection to add services to.</param>
+    /// <param name="configuration">
+    /// The configuration section whose keys are the names of the <see cref="AuthorizationServerOptions"/>
+    /// properties, such as <c>Issuer</c> and <c>TokenEndpoint:AccessTokenLifetime</c>. Enums bind by name.
+    /// </param>
+    /// <param name="configure">
+    /// An optional delegate that runs after the section is bound, for what configuration cannot hold.
+    /// </param>
+    /// <returns>
+    /// A <see cref="ZeeKayDaAuthBuilder"/> that can be used to register optional features.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="services"/> or <paramref name="configuration"/> is
+    /// <see langword="null"/>.
+    /// </exception>
+    /// <remarks>
+    /// A collection key replaces the default list: setting one <c>TokenEndpoint:AuthMethodsSupported</c>
+    /// entry leaves that entry as the whole list. The values are read when the options are first
+    /// resolved, so a configuration provider that reloads is not followed. In every other respect this
+    /// is <see cref="AddZeeKayDaAuth(IServiceCollection, Action{AuthorizationServerOptions})"/>.
+    /// </remarks>
+    public static ZeeKayDaAuthBuilder AddZeeKayDaAuth(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        Action<AuthorizationServerOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        return services.AddZeeKayDaAuth(options =>
+        {
+            AuthorizationServerOptionsBinder.Bind(configuration, options);
+            configure?.Invoke(options);
+        });
+    }
+
     /// <summary>
     /// Registers ZeeKayDa.Auth services in the dependency injection container.
     /// </summary>
