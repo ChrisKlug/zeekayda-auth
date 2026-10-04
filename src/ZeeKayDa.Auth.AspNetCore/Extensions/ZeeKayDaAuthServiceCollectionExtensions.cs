@@ -112,19 +112,44 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<InteractionAnswers>();
         services.TryAddSingleton<NothingToContinue>();
         services.TryAddSingleton<PageInteractionServices>();
-        services.TryAddSingleton<IErrorInteraction, ErrorInteraction>();
-        services.TryAddSingleton<ILoginInteraction, LoginInteraction>();
+        // The interaction services are public sealed classes with internal constructors, which the
+        // container cannot call, so each is built here; a host can consume them but never supply one.
+        // Replaced, not tried: the framework is the only possible supplier, so its registration wins,
+        // and calling this twice still leaves one.
+        services.RemoveAll<ErrorInteraction>();
+        services.AddSingleton(sp => new ErrorInteraction(
+            sp.GetRequiredService<IHttpContextAccessor>(),
+            sp.GetRequiredService<AuthorizeErrorTransport>()));
+        services.RemoveAll<LoginInteraction>();
+        services.AddSingleton(sp => new LoginInteraction(
+            sp.GetRequiredService<IHttpContextAccessor>(),
+            sp.GetRequiredService<IOptions<AuthorizationServerOptions>>(),
+            sp.GetRequiredService<ProviderRegistry>(),
+            sp.GetRequiredService<PageInteractionServices>()));
 
         // Registered whether or not WithProviders is called: its job is to catch a host with
         // neither a login page nor a provider, so nothing can sign a user in.
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupVerifier, LoginDispatchVerifier>());
 
-        services.TryAddSingleton<IConsentInteraction, ConsentInteraction>();
-        services.TryAddSingleton<IProviderSignInInteraction, ProviderSignInInteraction>();
+        services.RemoveAll<ConsentInteraction>();
+        services.AddSingleton(sp => new ConsentInteraction(
+            sp.GetRequiredService<IHttpContextAccessor>(),
+            sp.GetRequiredService<PageInteractionServices>()));
+        services.RemoveAll<ProviderSignInInteraction>();
+        services.AddSingleton(sp => new ProviderSignInInteraction(
+            sp.GetRequiredService<IHttpContextAccessor>(),
+            sp.GetRequiredService<ProviderRegistry>(),
+            sp.GetRequiredService<PageInteractionServices>()));
         services.TryAddSingleton<LogoutRequestStore>();
         services.TryAddSingleton<EndSessionResponses>();
-        services.TryAddSingleton<ILogoutInteraction, LogoutInteraction>();
+        services.RemoveAll<LogoutInteraction>();
+        services.AddSingleton(sp => new LogoutInteraction(
+            sp.GetRequiredService<IHttpContextAccessor>(),
+            sp.GetRequiredService<LogoutRequestStore>(),
+            sp.GetRequiredService<EndSessionResponses>(),
+            sp.GetRequiredService<SsoSession>(),
+            sp.GetRequiredService<NothingToContinue>()));
 
         // Lets a Razor Pages handler or controller action end with a plain await after a terminal
         // call. Inert on a host without MVC, which never reads MvcOptions.

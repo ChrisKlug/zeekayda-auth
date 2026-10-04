@@ -5,13 +5,38 @@ using ZeeKayDa.Auth.Logging;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Creates and verifies client secrets through the hashers in the <see cref="ClientSecretHasherRegistry"/>,
-/// holding each to the rules every hasher is held to, and pads every failed verification to one
-/// fixed cost.
+/// Creates client secrets with the host's default <see cref="IClientSecretHasher"/>, and verifies a
+/// presented secret against a client's stored ones in a time that reveals nothing when it fails.
 /// </summary>
-internal sealed class ClientSecrets(ClientSecretHasherRegistry registry, SanitizingLogger<ClientSecrets> logger)
-    : IClientSecrets
+/// <remarks>
+/// <para>
+/// Owned by the framework, to be consumed, never replaced: a new algorithm is an
+/// <see cref="IClientSecretHasher"/>. Sealed, with an internal constructor, so a host cannot supply its own.
+/// </para>
+/// <para>
+/// <strong>This is CPU-intensive.</strong> The default PBKDF2 hasher performs 600,000 iterations per
+/// call (~600 ms on typical server hardware). <see cref="Create(string)"/> is meant for administrative
+/// operations such as client registration or secret rotation, which must be rate-limited and
+/// authenticated at the application layer.
+/// </para>
+/// <para>
+/// <strong>The plaintext is sensitive.</strong> Never log, trace or serialise it, or pass it through
+/// anything that may capture method arguments. A caller holding it in a <c>char[]</c> uses the span
+/// overloads and zeroes the array afterwards; the string overload leaves a copy the garbage
+/// collector erases when it pleases.
+/// </para>
+/// </remarks>
+public sealed class ClientSecrets
 {
+    private readonly ClientSecretHasherRegistry _registry;
+    private readonly SanitizingLogger<ClientSecrets> _logger;
+
+    internal ClientSecrets(ClientSecretHasherRegistry registry, SanitizingLogger<ClientSecrets> logger)
+    {
+        _registry = registry;
+        _logger = logger;
+    }
+
     /// <summary>
     /// Maximum number of active secrets a client may have simultaneously (rotation window), and so
     /// the number of failed credential slots every failed verification spends.
@@ -26,32 +51,52 @@ internal sealed class ClientSecrets(ClientSecretHasherRegistry registry, Sanitiz
 
     private readonly ConcurrentDictionary<Type, byte> _loggedThrowingHashers = new();
 
-    /// <inheritdoc/>
+    /// <summary>Hashes <paramref name="plaintext"/> with the default hasher.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="plaintext"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="plaintext"/> is empty or whitespace.</exception>
     public ClientSecret Create(string plaintext)
     {
         ArgumentNullException.ThrowIfNull(plaintext);
         return Create(plaintext.AsSpan());
     }
 
-    /// <inheritdoc/>
+    /// <summary>Hashes <paramref name="plaintext"/> with the default hasher.</summary>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="plaintext"/> is empty or whitespace.
+    /// </exception>
     public ClientSecret Create(ReadOnlySpan<char> plaintext)
     {
         if (plaintext.IsWhiteSpace())
             throw new ArgumentException("Secret must not be empty or whitespace.", nameof(plaintext));
 
-        var hasher = registry.Default;
+        var hasher = _registry.Default;
         var created = hasher.Create(plaintext)
             ?? throw new InvalidOperationException(
                 $"The IClientSecretHasher '{hasher.GetType().FullName}' returned null from Create.");
 
-        return registry.IsHasherFor(hasher, created)
+        return _registry.IsHasherFor(hasher, created)
             ? created
             : throw new InvalidOperationException(
                 $"The IClientSecretHasher '{hasher.GetType().FullName}' created a secret whose algorithm id " +
                 "is not one of its AlgorithmIds, so no registered hasher would verify it.");
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Whether <paramref name="presented"/> matches any of <paramref name="stored"/>, each verified by
+    /// the hasher that declared its algorithm id.
+    /// </summary>
+    /// <remarks>
+    /// A failure always costs the same: two verifications by every registered hasher, whichever
+    /// secrets failed and however many there were — none included. So the time a refusal takes tells
+    /// neither whether the client exists nor whether it is mid-rotation. A match returns at once.
+    /// An authenticator returns the outcome through <c>ClientAuthenticationResult.From</c>, which
+    /// tells the token endpoint the failure is already padded. A hasher that throws counts as a
+    /// mismatch.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="stored"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="stored"/> holds more than two secrets, the most a registered client may hold.
+    /// </exception>
     public SecretVerification Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored)
     {
         var candidates = WithinBudget(stored);
@@ -95,7 +140,7 @@ internal sealed class ClientSecrets(ClientSecretHasherRegistry registry, Sanitiz
     /// </summary>
     private bool VerifyInFailedCredentialSlot(ReadOnlySpan<char> presented, ClientSecret? stored)
     {
-        var owner = registry.HasherFor(stored);
+        var owner = _registry.HasherFor(stored);
         if (owner is null)
         {
             FinishFailedCredentialSlot(alreadyVerifiedBy: null);
@@ -116,7 +161,7 @@ internal sealed class ClientSecrets(ClientSecretHasherRegistry registry, Sanitiz
     /// </summary>
     private void FinishFailedCredentialSlot(IClientSecretHasher? alreadyVerifiedBy)
     {
-        foreach (var (hasher, decoy) in registry.TimingDecoys)
+        foreach (var (hasher, decoy) in _registry.TimingDecoys)
         {
             if (!ReferenceEquals(hasher, alreadyVerifiedBy))
                 SafeVerify(hasher, DummyPresented.AsSpan(), decoy, out _);
@@ -140,7 +185,7 @@ internal sealed class ClientSecrets(ClientSecretHasherRegistry registry, Sanitiz
         {
             if (_loggedThrowingHashers.TryAdd(hasher.GetType(), 0))
             {
-                logger.LogError(
+                _logger.LogError(
                     "The IClientSecretHasher '{Hasher}' threw {ExceptionType} from Verify; the verification failed. " +
                     "Verify must return false rather than throw. Further throws from this hasher are not logged.",
                     hasher.GetType().FullName,

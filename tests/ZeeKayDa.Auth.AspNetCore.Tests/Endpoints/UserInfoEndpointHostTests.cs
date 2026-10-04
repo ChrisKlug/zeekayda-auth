@@ -174,7 +174,7 @@ public sealed class UserInfoEndpointHostTests(
     // ── Driving the flow ──────────────────────────────────────────────────────────────────────
 
     private static void MapLoginPage(IEndpointRouteBuilder endpoints) =>
-        endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
+        endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
             await login.SignInAsync(
                 new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", Subject)], "test")),
                 AuthenticationMethods.Password));

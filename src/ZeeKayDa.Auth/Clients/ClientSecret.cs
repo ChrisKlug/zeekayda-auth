@@ -14,7 +14,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// know which hashing algorithm produced it.
 /// </para>
 /// <para>
-/// Create one with <see cref="IClientSecrets"/>, which hashes with the host's default hasher.
+/// Create one with <see cref="ClientSecrets"/>, which hashes with the host's default hasher.
 /// A hash produced elsewhere — by another system's PHC-format library, for example — can be stored
 /// as it is, as long as a registered hasher declares its algorithm id.
 /// </para>

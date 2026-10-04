@@ -7,7 +7,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 
 /// <summary>A host login page written as a controller, its actions ending after a terminal call.</summary>
 [Route("mvc/login")]
-public sealed class TerminalCallController(ILoginInteraction login) : ControllerBase
+public sealed class TerminalCallController(LoginInteraction login) : ControllerBase
 {
     [HttpPost("sign-in")]
     public Task SignIn() => login.SignInAsync(TerminalCallModel.TestUser(), AuthenticationMethods.Password);

@@ -11,7 +11,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Pages;
 /// host would write them. Antiforgery is off so a test can post without rendering the form first.
 /// </summary>
 [IgnoreAntiforgeryToken]
-public sealed class TerminalCallModel(ILoginInteraction login) : PageModel
+public sealed class TerminalCallModel(LoginInteraction login) : PageModel
 {
     public const string RenderedText = "Rendered by the host page.";
     public const string HijackTarget = "https://attacker.example.net/collect";

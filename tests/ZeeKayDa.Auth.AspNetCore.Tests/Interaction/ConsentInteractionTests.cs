@@ -21,8 +21,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 /// </summary>
 /// <remarks>
 /// The test host maps a consent page written exactly as a real one would be — a GET that reads
-/// <see cref="IConsentInteraction.GetRequestAsync"/> and a POST that ends in
-/// <see cref="IConsentInteraction.GrantAsync"/> or <see cref="IConsentInteraction.DenyAsync"/> —
+/// <see cref="ConsentInteraction.GetRequestAsync"/> and a POST that ends in
+/// <see cref="ConsentInteraction.GrantAsync"/> or <see cref="ConsentInteraction.DenyAsync"/> —
 /// plus probes that report what the encrypted session and interaction cookies carry, since
 /// nothing else can observe them.
 /// </remarks>
@@ -93,7 +93,7 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
     /// <summary>The host's pages: sign-in, the consent page, a sign-out, and two probes.</summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
+        endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var subject = form["sub"].FirstOrDefault() ?? "user-1";
@@ -105,7 +105,7 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
 
         // The consent page, exactly as the issue's sample host writes it: the GET renders what
         // the framework says to ask, the POST hands back the boxes the user ticked.
-        endpoints.MapGet(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
+        endpoints.MapGet(ConsentPath, async (HttpContext context, ConsentInteraction consent) =>
         {
             // A host with a content security policy of its own sets it as it always did.
             context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'");
@@ -121,7 +121,7 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
             });
         });
 
-        endpoints.MapPost(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
+        endpoints.MapPost(ConsentPath, async (HttpContext context, ConsentInteraction consent) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
 
@@ -133,18 +133,18 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
 
         // Pages wired the way the XML docs say not to: a decision taken from the request that
         // renders the page, which is the request the framework itself arrives with.
-        endpoints.MapGet(GrantByLinkPath, (IConsentInteraction consent) => consent.GrantAsync(["openid"]));
-        endpoints.MapGet(DenyByLinkPath, (IConsentInteraction consent) => consent.DenyAsync());
+        endpoints.MapGet(GrantByLinkPath, (ConsentInteraction consent) => consent.GrantAsync(["openid"]));
+        endpoints.MapGet(DenyByLinkPath, (ConsentInteraction consent) => consent.DenyAsync());
 
         // Pages that do the thing the XML docs tell hosts not to do: call a terminal method and
         // then return a result of their own.
-        endpoints.MapPost(GrantThenReturnPath, async (IConsentInteraction consent) =>
+        endpoints.MapPost(GrantThenReturnPath, async (ConsentInteraction consent) =>
         {
             await consent.GrantAsync(["openid"]);
             return Results.Redirect(HijackTarget);
         });
 
-        endpoints.MapPost(DenyThenReturnPath, async (IConsentInteraction consent) =>
+        endpoints.MapPost(DenyThenReturnPath, async (ConsentInteraction consent) =>
         {
             await consent.DenyAsync();
             return Results.Redirect(HijackTarget);

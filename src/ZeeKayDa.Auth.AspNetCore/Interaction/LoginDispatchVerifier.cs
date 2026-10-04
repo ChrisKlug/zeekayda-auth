@@ -57,7 +57,7 @@ internal sealed class LoginDispatchVerifier(
                     "needed: local sign-in is enabled, or more than one external provider is registered, " +
                     "and the framework never chooses for the user. Authorization requests that need to " +
                     "authenticate a user will fail with server_error. Set LoginPath to the path of the " +
-                    "host's login page, whose handler completes the request through ILoginInteraction.");
+                    "host's login page, whose handler completes the request through LoginInteraction.");
                 break;
         }
 

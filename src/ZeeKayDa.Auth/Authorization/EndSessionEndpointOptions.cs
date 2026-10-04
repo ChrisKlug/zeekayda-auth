@@ -21,7 +21,7 @@ public sealed class EndSessionEndpointOptions
     /// <summary>
     /// Gets or sets the host-relative path of the host's logout page, where the user confirms a
     /// sign-out. The framework redirects a sign-out that must be confirmed here, and the page
-    /// completes it by calling <c>ILogoutInteraction.SignOutAsync</c>. When
+    /// completes it by calling <c>LogoutInteraction.SignOutAsync</c>. When
     /// <see langword="null"/> (the default), the framework renders a minimal unbranded
     /// confirmation page itself.
     /// </summary>

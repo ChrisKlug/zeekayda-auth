@@ -25,7 +25,7 @@ public sealed class InteractionOptions
     /// <summary>
     /// Gets or sets the host-relative path of the host's login page. The framework redirects an
     /// authorization request that needs authentication here, and the page completes the flow by
-    /// calling <c>ILoginInteraction.SignInAsync</c>. When <see langword="null"/> (the default),
+    /// calling <c>LoginInteraction.SignInAsync</c>. When <see langword="null"/> (the default),
     /// a host with <see cref="SupportsLocalSignIn"/> off and exactly one external provider sends
     /// the request straight to that provider; any other host needs the page, is warned at
     /// startup, and answers the client with <c>server_error</c>.
@@ -49,8 +49,8 @@ public sealed class InteractionOptions
     /// <summary>
     /// Gets or sets the host-relative path of the host's consent page. The framework redirects an
     /// authenticated authorization request here when the client requires consent, and the page
-    /// completes the flow by calling <c>IConsentInteraction.GrantAsync</c> or
-    /// <c>IConsentInteraction.DenyAsync</c>. When <see langword="null"/> (the default), a request
+    /// completes the flow by calling <c>ConsentInteraction.GrantAsync</c> or
+    /// <c>ConsentInteraction.DenyAsync</c>. When <see langword="null"/> (the default), a request
     /// for a client that requires consent answers the client with <c>server_error</c> and logs
     /// an error naming this option.
     /// </summary>
@@ -73,7 +73,7 @@ public sealed class InteractionOptions
 
     /// <summary>
     /// Gets or sets whether the host's login page signs users in itself, with a credential form
-    /// whose handler calls <c>ILoginInteraction.SignInAsync</c>. Defaults to <see langword="true"/>.
+    /// whose handler calls <c>LoginInteraction.SignInAsync</c>. Defaults to <see langword="true"/>.
     /// Set it to <see langword="false"/> for a host that authenticates only through external
     /// providers; with exactly one provider registered and no <see cref="LoginPath"/>, an
     /// authorization request is then sent straight to that provider.
