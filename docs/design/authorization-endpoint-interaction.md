@@ -252,17 +252,17 @@ a row of provider buttons, or both. No second path option, no second interaction
 **Whether a page is needed decides dispatch; `LoginPath` (default `/login`) is only its address.**
 An authorization request that needs authentication dispatches:
 
-1. Local off, exactly one provider → challenge that provider directly, whatever `LoginPath` is. The
+1. Local off, no providers → startup **error**.
+2. Local off, exactly one provider → challenge that provider directly, whatever `LoginPath` is. The
    user never sees a ZeeKayDa-controlled page, so cancellation happens at the provider and
    arrives at the callback endpoint as a failure, answered as `access_denied` at the client's
    registered redirect URI (the callback failure path under Host registration; #606 interplay).
-2. Otherwise `LoginPath` → redirect there.
-3. `LoginPath` set to `null` when the page is needed → `server_error` at the client's redirect,
+3. Otherwise `LoginPath` → redirect there.
+4. `LoginPath` set to `null` when the page is needed → `server_error` at the client's redirect,
    and a startup warning said so first.
-4. Local off, no providers → startup **error**.
 
 A single-provider host that wants a landing page turns local sign-in on, which makes the page
-needed. Adding a second provider to a local-off host moves it from rule 1 to rule 2: the framework
+needed. Adding a second provider to a local-off host moves it from rule 2 to rule 3: the framework
 cannot choose between two providers.
 
 **Startup checks are gated on `GrantTypesSupported` — there is no separate machine-to-machine
@@ -270,8 +270,8 @@ flag.** `GrantTypesSupported` already declares what the server does. When it lac
 `AuthorizationCode`, the interactive machinery is declared unused and none of these checks fire —
 that is the clean startup for a `client_credentials`-only host — and `/connect/authorize` is neither
 served nor advertised in discovery, so the endpoint and the metadata agree (#629). When it contains
-`AuthorizationCode`: rule 4 is a startup error (the message offers all three exits — add a
-provider, enable local sign-in, or remove `authorization_code`); rule 3 is a startup warning;
+`AuthorizationCode`: rule 1 is a startup error (the message offers all three exits — add a
+provider, enable local sign-in, or remove `authorization_code`); rule 4 is a startup warning;
 everything else is silent. The conditions are exact, so the warning cries wolf for nobody and has
 no built-in expiry date.
 

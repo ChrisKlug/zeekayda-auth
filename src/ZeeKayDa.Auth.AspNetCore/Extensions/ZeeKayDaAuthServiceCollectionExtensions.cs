@@ -49,11 +49,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(issuer);
 
-        return services.AddZeeKayDaAuth(options =>
-        {
-            options.Issuer = issuer;
-            configure?.Invoke(options);
-        });
+        return services.AddZeeKayDaAuth(Then(options => options.Issuer = issuer, configure));
     }
 
     /// <summary>
@@ -91,12 +87,19 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        return services.AddZeeKayDaAuth(options =>
-        {
-            AuthorizationServerOptionsBinder.Bind(configuration, options);
-            configure?.Invoke(options);
-        });
+        return services.AddZeeKayDaAuth(Then(options => AuthorizationServerOptionsBinder.Bind(configuration, options), configure));
     }
+#pragma warning restore RS0026
+
+    /// <summary>One options delegate: <paramref name="first"/>, then the host's <paramref name="configure"/>.</summary>
+    private static Action<AuthorizationServerOptions> Then(
+        Action<AuthorizationServerOptions> first,
+        Action<AuthorizationServerOptions>? configure) =>
+        options =>
+        {
+            first(options);
+            configure?.Invoke(options);
+        };
 
     /// <summary>
     /// Registers ZeeKayDa.Auth services in the dependency injection container.

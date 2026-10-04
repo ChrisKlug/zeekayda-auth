@@ -8,9 +8,9 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 
 /// <summary>
-/// The login dispatch rules, applied at startup: local sign-in is a flag, the login page's
-/// presence is the override, and the checks fire only for a host that does the authorization
-/// code grant at all.
+/// The login dispatch rules, applied at startup: local sign-in is a flag, whether a page is needed
+/// decides dispatch before the login path is looked at, and the checks fire only for a host that
+/// does the authorization code grant at all.
 /// </summary>
 public sealed class LoginDispatchVerifierTests
 {
