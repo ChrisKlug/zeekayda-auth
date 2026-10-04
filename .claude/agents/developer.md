@@ -75,6 +75,7 @@ Never guess on an ambiguous requirement and present the guess as settled. Return
 - Keep classes and methods short; no god classes or god methods. Keep cyclomatic complexity down (10–15 is the warning zone) — favour small, intent-revealing methods over complex multi-part conditionals
 - **A condition with two or more clauses is a named predicate, not an inline expression.** `if (client.DisplayName is { } name && !IsValidDisplayName(name))` reads as a sentence; `if (string.IsNullOrWhiteSpace(x) || x.Length > 200 || x.Any(char.IsControl))` does not, and trips CodeScene's complex-conditional rule besides. Worth it in nearly every case; the exception is a guard so short a name would only restate it
 - At 5+ parameters on a method or constructor, consider a parameter object
+- **A validator is split by what it validates, never by size.** Each options group has one `<Name>Validation.cs` beside its class, holding that group's own rules. A validator whose rules span several groups or concerns is a `partial` class split by topic (`AuthorizationServerOptionsValidation.Issuer.cs`, `ClientRegistrationValidator.Destinations.cs`), each file opening with a one-line comment naming its topic. The test: a reader who knows only which option a rule reads can name the file before opening it; a file that would need two topics in its name is two files
 
 ### Rules that exist because review found them repeatedly
 
