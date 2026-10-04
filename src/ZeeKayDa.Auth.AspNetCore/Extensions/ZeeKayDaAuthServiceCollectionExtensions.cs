@@ -22,6 +22,36 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// </summary>
 public static class ZeeKayDaAuthServiceCollectionExtensions
 {
+#pragma warning disable RS0026 // Optional trailing delegate on the issuer and configuration overloads; nothing is shipped to stay compatible with.
+    /// <summary>
+    /// Registers ZeeKayDa.Auth services for an authorization server with the given issuer.
+    /// </summary>
+    /// <param name="services">The service collection to add services to.</param>
+    /// <param name="issuer">
+    /// The issuer identifier, assigned to <see cref="AuthorizationServerOptions.Issuer"/> before
+    /// <paramref name="configure"/> runs.
+    /// </param>
+    /// <param name="configure">An optional delegate used to configure the remaining options.</param>
+    /// <returns>
+    /// A <see cref="ZeeKayDaAuthBuilder"/> that can be used to register optional features.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="services"/> or <paramref name="issuer"/> is <see langword="null"/>.
+    /// </exception>
+    /// <remarks>
+    /// In every other respect this is <see cref="AddZeeKayDaAuth(IServiceCollection, Action{AuthorizationServerOptions})"/>.
+    /// </remarks>
+    public static ZeeKayDaAuthBuilder AddZeeKayDaAuth(
+        this IServiceCollection services,
+        string issuer,
+        Action<AuthorizationServerOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(issuer);
+
+        return services.AddZeeKayDaAuth(Then(options => options.Issuer = issuer, configure));
+    }
+
     /// <summary>
     /// Registers ZeeKayDa.Auth services, configuring <see cref="AuthorizationServerOptions"/> from
     /// a configuration section.
@@ -57,12 +87,19 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        return services.AddZeeKayDaAuth(options =>
-        {
-            AuthorizationServerOptionsBinder.Bind(configuration, options);
-            configure?.Invoke(options);
-        });
+        return services.AddZeeKayDaAuth(Then(options => AuthorizationServerOptionsBinder.Bind(configuration, options), configure));
     }
+#pragma warning restore RS0026
+
+    /// <summary>One options delegate: <paramref name="first"/>, then the host's <paramref name="configure"/>.</summary>
+    private static Action<AuthorizationServerOptions> Then(
+        Action<AuthorizationServerOptions> first,
+        Action<AuthorizationServerOptions>? configure) =>
+        options =>
+        {
+            first(options);
+            configure?.Invoke(options);
+        };
 
     /// <summary>
     /// Registers ZeeKayDa.Auth services in the dependency injection container.

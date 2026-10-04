@@ -134,10 +134,10 @@ locally, logged by type never by message, and leaves the interaction alive. The 
 auto-promoted external principal is derived from provider, claim issuer and upstream subject together, never
 the upstream value: two providers can never share a session, and a subject without an issuer is refused.
 
-**Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and `LoginPath` presence is the
-dispatch override.** The login page is also the provider-selection page, and the framework never skips a page the
-host built: `LoginPath` set → redirect there; unset with local off and one provider → challenge it directly; unset
-when the page is needed → `server_error`, warned at startup; local off with no providers → startup error. Checks
+**Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and whether a page is needed
+decides dispatch, not the path.** `LoginPath` defaults to `/login` and `ConsentPath` to `/consent`; a path is only an
+address. Local off with one provider → challenge it directly; otherwise `LoginPath` → redirect there; a `LoginPath`
+nulled when the page is needed → `server_error`, warned at startup; local off, no providers → startup error. Checks
 fire only when `GrantTypesSupported` contains `AuthorizationCode`, so a `client_credentials`-only host starts
 clean. The conditions are exact: a warning that cries wolf trains people to ignore it.
 

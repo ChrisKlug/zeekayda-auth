@@ -107,6 +107,20 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
         options.TokenEndpoint.AuthMethodsSupported.Should().Equal("client_secret_post", "none");
     }
 
+    [Fact]
+    public void The_issuer_overload_sets_the_issuer_before_the_configure_delegate_runs()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        string? seen = null;
+        services.AddZeeKayDaAuth("https://auth.example.com", options => seen = options.Issuer);
+        using var provider = services.BuildServiceProvider();
+
+        var options = provider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
+
+        (options.Issuer, seen).Should().Be(("https://auth.example.com", "https://auth.example.com"));
+    }
+
     public static TheoryData<string> SettableCollectionOptions() =>
         [.. SettableCollectionPaths(typeof(AuthorizationServerOptions), prefix: "")];
 

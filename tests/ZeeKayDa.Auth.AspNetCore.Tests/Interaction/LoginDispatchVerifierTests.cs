@@ -8,9 +8,9 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 
 /// <summary>
-/// The login dispatch rules, applied at startup: local sign-in is a flag, the login page's
-/// presence is the override, and the checks fire only for a host that does the authorization
-/// code grant at all.
+/// The login dispatch rules, applied at startup: local sign-in is a flag, whether a page is needed
+/// decides dispatch before the login path is looked at, and the checks fire only for a host that
+/// does the authorization code grant at all.
 /// </summary>
 public sealed class LoginDispatchVerifierTests
 {
@@ -53,6 +53,23 @@ public sealed class LoginDispatchVerifierTests
 
         context.Warnings.Should().BeEmpty();
         context.Failures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task One_provider_with_local_sign_in_off_is_silent_whatever_the_login_path()
+    {
+        var context = await VerifyAsync("/account/login", supportsLocalSignIn: false, providerCount: 1);
+
+        context.Warnings.Should().BeEmpty();
+        context.Failures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void The_login_and_consent_pages_default_to_login_and_consent()
+    {
+        var interaction = new AuthorizationServerOptions().AuthorizationEndpoint.Interaction;
+
+        (interaction.LoginPath, interaction.ConsentPath).Should().Be(("/login", "/consent"));
     }
 
     [Fact]

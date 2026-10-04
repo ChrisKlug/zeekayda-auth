@@ -15,10 +15,8 @@ builder.Services.AddSingleton<UserStore>();
 // The Issuer key of the section is bound to the options; the sample's own keys are ignored by it.
 var auth = builder.Services.AddZeeKayDaAuth(builder.Configuration.GetSection("IdentityServer"), options =>
 {
-    // The pages the framework hands the browser to. Each page completes its step through an
-    // interaction service; none of them handles a return URL, a cookie or a scheme.
-    options.AuthorizationEndpoint.Interaction.LoginPath = "/login";
-    options.AuthorizationEndpoint.Interaction.ConsentPath = "/consent";
+    // The login and consent pages sit at the default /login and /consent. Each page completes its
+    // step through an interaction service; none of them handles a return URL, a cookie or a scheme.
     options.AuthorizationEndpoint.Interaction.ErrorPath = "/error";
     options.EndSessionEndpoint.LogoutPath = "/logout";
     options.EndSessionEndpoint.SignedOutPath = "/signed-out";

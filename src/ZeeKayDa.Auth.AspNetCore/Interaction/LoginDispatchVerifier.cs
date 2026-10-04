@@ -53,7 +53,7 @@ internal sealed class LoginDispatchVerifier(
             case LoginDispatchRule.PageNeeded:
                 context.AddWarning(
                     "interaction.no_login_path",
-                    "AuthorizationEndpoint.Interaction.LoginPath is not configured, but a login page is " +
+                    "AuthorizationEndpoint.Interaction.LoginPath is null, but a login page is " +
                     "needed: local sign-in is enabled, or more than one external provider is registered, " +
                     "and the framework never chooses for the user. Authorization requests that need to " +
                     "authenticate a user will fail with server_error. Set LoginPath to the path of the " +

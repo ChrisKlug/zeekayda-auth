@@ -25,12 +25,15 @@ public sealed class InteractionOptions
     /// <summary>
     /// Gets or sets the host-relative path of the host's login page. The framework redirects an
     /// authorization request that needs authentication here, and the page completes the flow by
-    /// calling <c>LoginInteraction.SignInAsync</c>. When <see langword="null"/> (the default),
-    /// a host with <see cref="SupportsLocalSignIn"/> off and exactly one external provider sends
-    /// the request straight to that provider; any other host needs the page, is warned at
-    /// startup, and answers the client with <c>server_error</c>.
+    /// calling <c>LoginInteraction.SignInAsync</c>. Defaults to <c>/login</c>. A host with
+    /// <see cref="SupportsLocalSignIn"/> off and exactly one external provider needs no page: the
+    /// request goes straight to that provider whatever this is set to. Set to <see langword="null"/>,
+    /// any other host is warned at startup and answers the client with <c>server_error</c>.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// The default is only an address: the host still has to serve a page there.
+    /// </para>
     /// <para>
     /// Must be an absolute path within the host application (starting with <c>/</c>), without
     /// scheme, authority, query, or fragment.
@@ -44,17 +47,21 @@ public sealed class InteractionOptions
     /// explicitly with <c>asp-route-zkd_i</c>.
     /// </para>
     /// </remarks>
-    public string? LoginPath { get; set; }
+    public string? LoginPath { get; set; } = "/login";
 
     /// <summary>
     /// Gets or sets the host-relative path of the host's consent page. The framework redirects an
     /// authenticated authorization request here when the client requires consent, and the page
     /// completes the flow by calling <c>ConsentInteraction.GrantAsync</c> or
-    /// <c>ConsentInteraction.DenyAsync</c>. When <see langword="null"/> (the default), a request
-    /// for a client that requires consent answers the client with <c>server_error</c> and logs
-    /// an error naming this option.
+    /// <c>ConsentInteraction.DenyAsync</c>. Defaults to <c>/consent</c>. When <see langword="null"/>,
+    /// a request for a client that requires consent answers the client with <c>server_error</c> and
+    /// logs an error naming this option.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// The default is only an address: the host still has to serve a page there if any client
+    /// requires consent.
+    /// </para>
     /// <para>
     /// Must be an absolute path within the host application (starting with <c>/</c>), without
     /// scheme, authority, query, or fragment.
@@ -69,14 +76,14 @@ public sealed class InteractionOptions
     /// clients all set <c>RequireConsent</c> to <see langword="false"/> never needs the page.
     /// </para>
     /// </remarks>
-    public string? ConsentPath { get; set; }
+    public string? ConsentPath { get; set; } = "/consent";
 
     /// <summary>
     /// Gets or sets whether the host's login page signs users in itself, with a credential form
     /// whose handler calls <c>LoginInteraction.SignInAsync</c>. Defaults to <see langword="true"/>.
     /// Set it to <see langword="false"/> for a host that authenticates only through external
-    /// providers; with exactly one provider registered and no <see cref="LoginPath"/>, an
-    /// authorization request is then sent straight to that provider.
+    /// providers; with exactly one provider registered, an authorization request is then sent
+    /// straight to that provider.
     /// </summary>
     /// <remarks>
     /// Local sign-in is a flag rather than a provider because it shares nothing with the
