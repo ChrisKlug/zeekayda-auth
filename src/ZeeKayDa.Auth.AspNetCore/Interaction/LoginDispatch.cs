@@ -9,12 +9,12 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </summary>
 internal enum LoginDispatchRule
 {
-    /// <summary>A login page is configured: redirect there, always.</summary>
+    /// <summary>A login page is needed and configured: redirect there.</summary>
     LoginPage,
 
     /// <summary>
-    /// No login page, local sign-in off, exactly one provider: the framework can choose, so the
-    /// request goes straight to that provider.
+    /// Local sign-in off, exactly one provider: the framework can choose, so the request goes
+    /// straight to that provider whatever the login path.
     /// </summary>
     SingleProvider,
 
@@ -32,8 +32,8 @@ internal enum LoginDispatchRule
 }
 
 /// <summary>
-/// The dispatch rules for an authorization request that must authenticate its user. The presence
-/// of a login page is the override: the framework never skips a page the host built.
+/// The dispatch rules for an authorization request that must authenticate its user. Whether a
+/// page is needed is decided first; the login path is only where it lives.
 /// </summary>
 internal static class LoginDispatch
 {
@@ -45,11 +45,11 @@ internal static class LoginDispatch
         if (!interaction.SupportsLocalSignIn && providerCount == 0)
             return LoginDispatchRule.NoSignInMethod;
 
-        if (interaction.LoginPath is not null)
-            return LoginDispatchRule.LoginPage;
-
         if (!interaction.SupportsLocalSignIn && providerCount == 1)
             return LoginDispatchRule.SingleProvider;
+
+        if (interaction.LoginPath is not null)
+            return LoginDispatchRule.LoginPage;
 
         return LoginDispatchRule.PageNeeded;
     }

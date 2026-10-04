@@ -22,6 +22,40 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// </summary>
 public static class ZeeKayDaAuthServiceCollectionExtensions
 {
+#pragma warning disable RS0026 // Optional trailing delegate on the issuer and configuration overloads; nothing is shipped to stay compatible with.
+    /// <summary>
+    /// Registers ZeeKayDa.Auth services for an authorization server with the given issuer.
+    /// </summary>
+    /// <param name="services">The service collection to add services to.</param>
+    /// <param name="issuer">
+    /// The issuer identifier, assigned to <see cref="AuthorizationServerOptions.Issuer"/> before
+    /// <paramref name="configure"/> runs.
+    /// </param>
+    /// <param name="configure">An optional delegate used to configure the remaining options.</param>
+    /// <returns>
+    /// A <see cref="ZeeKayDaAuthBuilder"/> that can be used to register optional features.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="services"/> or <paramref name="issuer"/> is <see langword="null"/>.
+    /// </exception>
+    /// <remarks>
+    /// In every other respect this is <see cref="AddZeeKayDaAuth(IServiceCollection, Action{AuthorizationServerOptions})"/>.
+    /// </remarks>
+    public static ZeeKayDaAuthBuilder AddZeeKayDaAuth(
+        this IServiceCollection services,
+        string issuer,
+        Action<AuthorizationServerOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(issuer);
+
+        return services.AddZeeKayDaAuth(options =>
+        {
+            options.Issuer = issuer;
+            configure?.Invoke(options);
+        });
+    }
+
     /// <summary>
     /// Registers ZeeKayDa.Auth services, configuring <see cref="AuthorizationServerOptions"/> from
     /// a configuration section.

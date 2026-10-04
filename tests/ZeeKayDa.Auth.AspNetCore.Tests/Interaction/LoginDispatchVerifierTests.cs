@@ -56,6 +56,23 @@ public sealed class LoginDispatchVerifierTests
     }
 
     [Fact]
+    public async Task One_provider_with_local_sign_in_off_is_silent_whatever_the_login_path()
+    {
+        var context = await VerifyAsync("/account/login", supportsLocalSignIn: false, providerCount: 1);
+
+        context.Warnings.Should().BeEmpty();
+        context.Failures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void The_login_and_consent_pages_default_to_login_and_consent()
+    {
+        var interaction = new AuthorizationServerOptions().AuthorizationEndpoint.Interaction;
+
+        (interaction.LoginPath, interaction.ConsentPath).Should().Be(("/login", "/consent"));
+    }
+
+    [Fact]
     public async Task Two_providers_and_no_login_page_warns_because_the_framework_never_chooses()
     {
         var context = await VerifyAsync(loginPath: null, supportsLocalSignIn: false, providerCount: 2);

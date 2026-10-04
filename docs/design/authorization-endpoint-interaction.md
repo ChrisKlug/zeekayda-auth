@@ -249,23 +249,21 @@ provider would mean a fake scheme or a null object, and the abstraction leaks im
 exposes `LocalLoginEnabled` and the configured `Providers`, and the host renders a credential form,
 a row of provider buttons, or both. No second path option, no second interaction service.
 
-**`LoginPath` presence is the dispatch override — the framework never skips a page the host
-built.** An authorization request that needs authentication dispatches:
+**Whether a page is needed decides dispatch; `LoginPath` (default `/login`) is only its address.**
+An authorization request that needs authentication dispatches:
 
-1. `LoginPath` set → redirect there, always.
-2. `LoginPath` unset, local off, exactly one provider → challenge that provider directly. The
+1. Local off, exactly one provider → challenge that provider directly, whatever `LoginPath` is. The
    user never sees a ZeeKayDa-controlled page, so cancellation happens at the provider and
    arrives at the callback endpoint as a failure, answered as `access_denied` at the client's
    registered redirect URI (the callback failure path under Host registration; #606 interplay).
-3. `LoginPath` unset but the page is needed — local on, or two or more providers → `server_error`
-   at the client's redirect, and a startup warning said so first.
+2. Otherwise `LoginPath` → redirect there.
+3. `LoginPath` set to `null` when the page is needed → `server_error` at the client's redirect,
+   and a startup warning said so first.
 4. Local off, no providers → startup **error**.
 
-A host that wants a branding or terms landing page with a single provider sets `LoginPath`; one
-that wants the straight-to-provider redirect leaves it unset. Intent is stated by building the
-page, which cannot be done by accident. Note the consequence: adding a second provider to a
-`LoginPath`-less, local-off host moves it from rule 2 to rule 3 — the framework cannot choose
-between two providers, and the startup warning says so.
+A single-provider host that wants a landing page turns local sign-in on, which makes the page
+needed. Adding a second provider to a local-off host moves it from rule 1 to rule 2: the framework
+cannot choose between two providers.
 
 **Startup checks are gated on `GrantTypesSupported` — there is no separate machine-to-machine
 flag.** `GrantTypesSupported` already declares what the server does. When it lacks
@@ -650,9 +648,9 @@ added later without breaking anyone, since loosening validation is non-breaking.
 - **Local sign-in as a provider list entry.** Requires a fake scheme or a null-object provider for
   an in-process form post that shares nothing with the redirect-out-and-back lifecycle; the
   abstraction leaks immediately. It is a flag (#607).
-- **A dedicated option to suppress the single-provider auto-redirect.** `LoginPath` presence
-  already states the intent; a flag would add a second way to say it and a contradiction to
-  resolve (#607).
+- **A dedicated option to suppress the single-provider auto-redirect.** Local sign-in
+  already states whether a page is needed; a flag would add a second way to say it and a
+  contradiction to resolve (#607).
 - **A separate machine-to-machine capability flag.** `GrantTypesSupported` already declares it,
   and a second flag could contradict the first (#607).
 - **A per-user home-realm-discovery callback.** An unauthenticated user-enumeration oracle on the

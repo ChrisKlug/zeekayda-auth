@@ -479,7 +479,7 @@ public sealed class ProviderHostIntegrationTests
     // ── Dispatch at the authorization endpoint ────────────────────────────────────────────────
 
     [Fact]
-    public async Task A_configured_login_page_is_used_even_with_a_single_provider_and_local_sign_in_off()
+    public async Task A_single_provider_with_local_sign_in_off_is_dispatched_to_the_provider_despite_a_configured_login_page()
     {
         using var factory = NewFactory(
             configureOptions: options => options.AuthorizationEndpoint.Interaction.SupportsLocalSignIn = false,
@@ -488,8 +488,8 @@ public sealed class ProviderHostIntegrationTests
 
         var response = await client.GetAsync(AuthorizeUrl(), TestContext.Current.CancellationToken);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Redirect, "the framework never skips a page the host built");
-        response.Headers.Location!.OriginalString.Should().StartWith("/account/login?");
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.OriginalString.Should().StartWith("https://acme.example.net/authorize?");
     }
 
     [Fact]
