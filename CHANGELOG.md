@@ -46,7 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   are public so a third-party package, a signing source for example, gets the same behaviour: its
   failures arrive in the one `ZeeKayDaConfigurationException` with everyone else's. A validator
   derived from the new `ZeeKayDaOptionsValidator<TOptions>` returns its coded failures from
-  `protected IEnumerable<ZeeKayDaConfigurationFailure> Validate(string? name, TOptions options)` and
+  `protected abstract IEnumerable<ZeeKayDaConfigurationFailure> Validate(string? name, TOptions options)` and
   the base throws them (#797); one that returns `ValidateOptionsResult.Fail` is reported as
   `configuration.options_invalid`, with its messages in the inner exception.
 

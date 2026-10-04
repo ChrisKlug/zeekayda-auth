@@ -36,6 +36,13 @@ internal static partial class AuthorizationServerOptionsValidation
         var issuer = options.Issuer!;
         var shown = ConfiguredUri.Display(issuer, uri);
 
+        return ValidateIssuerComponents(issuer, shown, uri)
+            .Concat(ValidateIssuerScheme(options, shown, uri))
+            .Concat(ValidateIssuerCanonicalForm(issuer, shown, uri));
+    }
+
+    private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateIssuerComponents(string issuer, string shown, Uri uri)
+    {
         // RFC 8414 §2 and OIDC Discovery 1.0 §4.1 prohibit query strings in the issuer.
         if (uri.Query.Length > 0)
         {
@@ -75,6 +82,10 @@ internal static partial class AuthorizationServerOptionsValidation
                 "used to derive the discovery address.");
         }
 
+    }
+
+    private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateIssuerScheme(AuthorizationServerOptions options, string shown, Uri uri)
+    {
         // The OIDC specification requires the issuer to be an HTTPS URI in production.
         if (!ServerUriRules.IsSchemePermitted(uri, options.Development.AllowHttpLoopbackIssuer))
         {
@@ -93,6 +104,10 @@ internal static partial class AuthorizationServerOptionsValidation
                 "Development.AllowHttpLoopbackIssuer only permits HTTP loopback issuers for local development and testing.");
         }
 
+    }
+
+    private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateIssuerCanonicalForm(string issuer, string shown, Uri uri)
+    {
         var canonicalIssuer = BuildCanonicalIssuer(uri);
         if (!string.Equals(NormalizeRootIssuer(issuer, uri), canonicalIssuer, StringComparison.Ordinal))
         {
