@@ -55,6 +55,18 @@ public sealed class InteractionServicesRegistrationVerifierTests
     }
 
     [Fact]
+    public async Task A_host_interaction_service_fails_a_real_startup()
+    {
+        using var host = new EndpointHost(configureBuilder: builder =>
+            builder.Services.AddSingleton<ILoginInteraction>(_ => null!));
+
+        var act = async () => await host.EnsureStartedAsync();
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(failure => failure.Code == "interaction.service.replaced");
+    }
+
+    [Fact]
     public void Every_public_interaction_interface_is_checked()
     {
         var interfaces = typeof(ILoginInteraction).Assembly.GetExportedTypes()
