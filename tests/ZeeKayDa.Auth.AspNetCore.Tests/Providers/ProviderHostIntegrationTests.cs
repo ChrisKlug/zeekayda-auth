@@ -46,7 +46,7 @@ public sealed class ProviderHostIntegrationTests
     /// <summary>The host's pages: a probe reporting what the login page would render.</summary>
     private static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/test/login-options", (ILoginInteraction login) => Results.Ok(new
+        endpoints.MapGet("/test/login-options", (LoginInteraction login) => Results.Ok(new
         {
             local = login.LocalLoginEnabled,
             providers = login.Providers.Select(provider => $"{provider.Id}:{provider.DisplayName}"),

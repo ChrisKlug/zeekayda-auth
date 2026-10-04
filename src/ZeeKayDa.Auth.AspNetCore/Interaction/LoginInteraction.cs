@@ -2,19 +2,53 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Providers;
+using ZeeKayDa.Auth.Authorization;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// Default <see cref="ILoginInteraction"/> implementation: verifies the handoff, then signs the
-/// user in, cancels the request, or sends the user out to an external provider.
+/// The host login page's completion of an authorization request. One of the per-page interaction
+/// services: the host owns the page, the credential check and the user store; this service owns
+/// the protocol.
 /// </summary>
-internal sealed class LoginInteraction(
-    IHttpContextAccessor httpContextAccessor,
-    IOptions<AuthorizationServerOptions> options,
-    ProviderRegistry providers,
-    PageInteractionServices services) : ILoginInteraction
+/// <remarks>
+/// <para>
+/// The page needs no <c>ReturnUrl</c>, no scheme name and no cookie name — the framework redirected
+/// the user here and knows which authorization request is being resumed. The one thing the page
+/// must preserve is the <c>zkd_i</c> query parameter it was reached with, which an ordinary
+/// <c>&lt;form method="post"&gt;</c> does by default.
+/// </para>
+/// <para>
+/// <strong>Nothing to continue is answered, not thrown.</strong> When a terminal method finds no
+/// interaction left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was
+/// already completed or was started in another browser; or another response completed it while
+/// this one was being prepared — the framework answers the request itself. It sends the browser to
+/// the client's registered <c>InitiateLoginUri</c>, with <c>iss</c>, to start again when the browser
+/// can still say which client it came from, and to the error page with
+/// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal either way.
+/// A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it causes the same
+/// answer on every submission.
+/// </para>
+/// </remarks>
+public sealed class LoginInteraction
 {
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IOptions<AuthorizationServerOptions> _options;
+    private readonly ProviderRegistry _providers;
+    private readonly PageInteractionServices _services;
+
+    internal LoginInteraction(
+        IHttpContextAccessor httpContextAccessor,
+        IOptions<AuthorizationServerOptions> options,
+        ProviderRegistry providers,
+        PageInteractionServices services)
+    {
+        _httpContextAccessor = httpContextAccessor;
+        _options = options;
+        _providers = providers;
+        _services = services;
+    }
+
     /// <summary>
     /// What a cancelled request tells the client. Names the stage as well as the outcome, so this
     /// reads differently from a consent denial or a policy refusal — all three are
@@ -25,7 +59,59 @@ internal sealed class LoginInteraction(
 
     private const string Page = "login";
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Establishes the SSO session for <paramref name="principal"/> and continues the
+    /// authorization request that led here.
+    /// </summary>
+    /// <param name="principal">
+    /// The authenticated user. Must carry a <c>sub</c> or
+    /// <see cref="ClaimTypes.NameIdentifier"/> claim; claims in the framework's reserved
+    /// <c>zkd:</c> namespace are stripped. Copied when the call is made, as
+    /// <paramref name="authenticationMethods"/> is: what was validated is what is signed in,
+    /// whatever the page does to either afterwards.
+    /// </param>
+    /// <param name="authenticationMethods">
+    /// How the user proved who they are, reported to the client in the <c>amr</c> claim. Use
+    /// <see cref="AuthenticationMethods"/> for the registered values —
+    /// <c>SignInAsync(user, AuthenticationMethods.Password)</c> — or pass your own string for a
+    /// method the registry does not name. Several may be given, and RFC 8176 §2 asks that they be:
+    /// a multi-factor sign-in reports <c>MultiFactor</c> alongside the individual factors.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
+    /// thing the page does. A Razor Pages handler or controller action can simply end after it:
+    /// the framework skips MVC's result, including one the handler returns. Anywhere else,
+    /// returning a result of your own after calling it throws, because the response has already
+    /// started.
+    /// </para>
+    /// <para>
+    /// A principal an external provider parked for this interaction — one the host's page did
+    /// not finish with — is discarded: the session holds <paramref name="principal"/>, and a
+    /// local sign-in records no provider.
+    /// </para>
+    /// <para>
+    /// Passing none omits the <c>amr</c> claim rather than assuming a password. The claim is
+    /// optional in OpenID Connect, and a relying party may gate a sensitive operation on what it
+    /// says — so the framework states nothing about a sign-in it was told nothing about, instead
+    /// of guessing a method that may not be the one used.
+    /// </para>
+    /// <para>
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// class remarks.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store or the authorization code store could not be reached. Fail-closed:
+    /// nothing was signed in or issued.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// An entry in <paramref name="authenticationMethods"/> is null or blank.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The request is not a <c>POST</c> — only the login form's submission may sign in, and that
+    /// is checked before anything is read — or there is no active HTTP request.
+    /// </exception>
     public async Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -47,36 +133,110 @@ internal sealed class LoginInteraction(
         var user = ReservedClaims.Snapshot(principal);
 
         var context = RequireStateChangingRequest();
-        await services.NothingToContinue.SignInStepAsync(context, Page, async () =>
+        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
-            var requestContext = await services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
             // A principal an external provider parked for this interaction is discarded, not
             // adopted: the login page signs in the host's own principal, and a local sign-in
             // records no provider.
-            await services.Flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
-            await services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(user, methods, ProviderScheme: null))
+            await _services.Flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
+            await _services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(user, methods, ProviderScheme: null))
                 .ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Ends the interaction the request is addressed to, telling the client the user did not
-    /// authorize it. Resolution and the <c>zkd_i</c> binding are exactly as they are for a
-    /// sign-in: a deny that could be aimed at another tab's request is a cross-tab denial of
-    /// service.
+    /// Ends the authorization request without signing anyone in, answering the client with
+    /// <c>access_denied</c> at its registered redirect URI. This is the Cancel button.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
+    /// thing the page does. A Razor Pages handler or controller action can simply end after it:
+    /// the framework skips MVC's result, including one the handler returns. Anywhere else,
+    /// returning a result of your own after calling it throws, because the response has already
+    /// started.
+    /// </para>
+    /// <para>
+    /// No SSO session is established, and an existing one is left alone — cancelling one client's
+    /// request does not sign the user out of another's. The interaction is discarded, so the
+    /// cancelled request cannot afterwards be resumed.
+    /// </para>
+    /// <para>
+    /// The client receives an <c>error_description</c> stating that the user cancelled at the
+    /// sign-in page, so it can tell this apart from the other refusals that also answer
+    /// <c>access_denied</c>.
+    /// </para>
+    /// <para>
+    /// Only a <c>POST</c> — the form's submission — is accepted, and that is checked before
+    /// anything is read. A cancel wired to a <c>GET</c> anchor would be triggerable cross-site by
+    /// anyone who learned the interaction identifier, ending the user's in-flight sign-in.
+    /// </para>
+    /// <para>
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// class remarks.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store or the authorization code store could not be reached. Fail-closed:
+    /// the client was told nothing.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was
+    /// resolved outside one.
+    /// </exception>
     public async Task DenyAsync()
     {
         var context = RequireStateChangingRequest();
-        await services.NothingToContinue.SignInStepAsync(context, Page, async () =>
+        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
-            var requestContext = await services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-            await services.Outcomes.DenyAsync(context, requestContext, CancelledAtSignIn).ConfigureAwait(false);
+            var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            await _services.Outcomes.DenyAsync(context, requestContext, CancelledAtSignIn).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Sends the user out to one of the external providers in <see cref="Providers"/> to be
+    /// authenticated there, and continues the authorization request when they return.
+    /// </summary>
+    /// <param name="provider">
+    /// The <see cref="ProviderDescriptor.Id"/> of the provider the user picked, as the page
+    /// received it from <see cref="Providers"/>.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
+    /// thing the page does. A Razor Pages handler or controller action can simply end after it:
+    /// the framework skips MVC's result, including one the handler returns. Anywhere else,
+    /// returning a result of your own after calling it throws, because the response has already
+    /// started.
+    /// </para>
+    /// <para>
+    /// The page names no scheme, callback path or return URL. The framework activates the
+    /// provider's handler, serves its callback, and brings the user back to establish the SSO
+    /// session — through <c>ProviderOptions.OnProviderSignIn</c> first, when the host registered
+    /// one. Only a <c>POST</c> — the form's submission — is accepted, and that is checked before
+    /// anything is read.
+    /// </para>
+    /// <para>
+    /// With nothing left to complete, this answers the request itself rather than throwing — see the
+    /// class remarks.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// <paramref name="provider"/> is not the identifier of a registered provider.
+    /// </exception>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store could not be reached. Fail-closed: no challenge was issued.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="provider"/> is null or empty.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was
+    /// resolved outside one.
+    /// </exception>
     public async Task ChallengeAsync(string provider)
     {
         ArgumentException.ThrowIfNullOrEmpty(provider);
@@ -85,21 +245,21 @@ internal sealed class LoginInteraction(
         // request input, so the message does not echo it. Checked before the interaction is
         // resolved: a wrong identifier is the page's bug, whatever state the interaction is in.
         var context = RequireStateChangingRequest();
-        var registration = providers.Find(provider)
+        var registration = _providers.Find(provider)
             ?? throw new ZeeKayDaInteractionException(
                 "The provider identifier is not one of the registered providers. Pass the Id of an " +
-                "entry in ILoginInteraction.Providers, as the login page received it.");
+                "entry in LoginInteraction.Providers, as the login page received it.");
 
-        await services.NothingToContinue.SignInStepAsync(context, Page, async () =>
+        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
-            var requestContext = await services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-            await services.Outcomes.ChallengeAsync(context, requestContext, registration).ConfigureAwait(false);
+            var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+            await _services.Outcomes.ChallengeAsync(context, requestContext, registration).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 
     private HttpContext RequireHttpContext() =>
-        httpContextAccessor.HttpContext ?? throw new InvalidOperationException(
-            "ILoginInteraction requires an active HTTP request. Resolve it from request services " +
+        _httpContextAccessor.HttpContext ?? throw new InvalidOperationException(
+            "LoginInteraction requires an active HTTP request. Resolve it from request services " +
             "inside the login page, not from a background service.");
 
     /// <summary>
@@ -123,9 +283,22 @@ internal sealed class LoginInteraction(
         return context;
     }
 
-    /// <inheritdoc/>
-    public bool LocalLoginEnabled => options.Value.AuthorizationEndpoint.Interaction.SupportsLocalSignIn;
+    /// <summary>
+    /// Whether the page should render a credential form of its own — the value of
+    /// <c>AuthorizationEndpoint.Interaction.SupportsLocalSignIn</c>. Configuration, frozen at
+    /// startup.
+    /// </summary>
+    public bool LocalLoginEnabled => _options.Value.AuthorizationEndpoint.Interaction.SupportsLocalSignIn;
 
-    /// <inheritdoc/>
-    public IReadOnlyList<ProviderDescriptor> Providers => providers.Descriptors;
+    /// <summary>
+    /// The external providers the host registered through <c>WithProviders</c>, in registration
+    /// order, for the page to render as a choice. Configuration, frozen at startup; empty when
+    /// none are registered.
+    /// </summary>
+    /// <remarks>
+    /// The page renders a credential form, a row of provider buttons, or both — the login page is
+    /// also the provider-selection page. A <see cref="ProviderDescriptor.Id"/> is handed back to
+    /// the framework to select that provider, never written by the page.
+    /// </remarks>
+    public IReadOnlyList<ProviderDescriptor> Providers => _providers.Descriptors;
 }

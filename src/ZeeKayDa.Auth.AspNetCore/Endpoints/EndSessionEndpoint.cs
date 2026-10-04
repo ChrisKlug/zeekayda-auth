@@ -155,9 +155,9 @@ internal sealed class EndSessionEndpoint(
 
     /// <summary>
     /// The framework's own confirmation page: the <c>GET</c> renders it, and the form's
-    /// <c>POST</c> does exactly what a host page's call to <see cref="ILogoutInteraction.SignOutAsync"/> does.
+    /// <c>POST</c> does exactly what a host page's call to <see cref="LogoutInteraction.SignOutAsync"/> does.
     /// </summary>
-    internal async Task<IResult> ConfirmAsync(HttpContext context, ILogoutInteraction logout)
+    internal async Task<IResult> ConfirmAsync(HttpContext context, LogoutInteraction logout)
     {
         context.Response.Headers.CacheControl = "no-store";
 

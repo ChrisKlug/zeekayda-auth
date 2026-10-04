@@ -2,7 +2,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
 /// The details of an error that could not be sent back to the client, as surfaced to the host's
-/// error page via <see cref="IErrorInteraction"/>.
+/// error page via <see cref="ErrorInteraction"/>.
 /// </summary>
 public sealed record AuthorizationErrorDetails
 {

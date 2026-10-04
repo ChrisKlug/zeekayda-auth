@@ -20,7 +20,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 /// minted when it does.
 /// </summary>
 /// <remarks>
-/// The test host maps a login page whose handler calls <see cref="ILoginInteraction.SignInAsync"/>
+/// The test host maps a login page whose handler calls <see cref="LoginInteraction.SignInAsync"/>
 /// exactly as a real one would, and a <c>/test/session</c> probe that reports the session claims
 /// the framework wrote — the session cookie is encrypted, so its contents are otherwise only
 /// observable through a handler.
@@ -64,7 +64,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
     /// </summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
+        endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var subject = form["sub"].FirstOrDefault() ?? "user-1";
@@ -91,19 +91,19 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
         });
 
         // The Cancel button, exactly as the issue's sample host writes it.
-        endpoints.MapPost(CancelPath, (ILoginInteraction login) => login.DenyAsync());
+        endpoints.MapPost(CancelPath, (LoginInteraction login) => login.DenyAsync());
 
         // Pages wired the way the XML docs say not to: a terminal step taken from a GET — the
         // request the framework itself arrives with, and one a link from anywhere can make.
-        endpoints.MapGet(SignInByLinkPath, (ILoginInteraction login) => login.SignInAsync(
+        endpoints.MapGet(SignInByLinkPath, (LoginInteraction login) => login.SignInAsync(
             new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
             AuthenticationMethods.Password));
-        endpoints.MapGet(CancelByLinkPath, (ILoginInteraction login) => login.DenyAsync());
-        endpoints.MapGet(ChallengeByLinkPath, (ILoginInteraction login) => login.ChallengeAsync("acme"));
+        endpoints.MapGet(CancelByLinkPath, (LoginInteraction login) => login.DenyAsync());
+        endpoints.MapGet(ChallengeByLinkPath, (LoginInteraction login) => login.ChallengeAsync("acme"));
 
         // Pages that do the thing the XML docs tell hosts not to do: call a terminal method and
         // then return a result of their own. The framework must not let the second one land.
-        endpoints.MapPost(SignInThenReturnPath, async (ILoginInteraction login) =>
+        endpoints.MapPost(SignInThenReturnPath, async (LoginInteraction login) =>
         {
             await login.SignInAsync(
                 new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
@@ -112,7 +112,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
             return Results.Redirect(HijackTarget);
         });
 
-        endpoints.MapPost(CancelThenReturnPath, async (ILoginInteraction login) =>
+        endpoints.MapPost(CancelThenReturnPath, async (LoginInteraction login) =>
         {
             await login.DenyAsync();
             return Results.Redirect(HijackTarget);
@@ -429,7 +429,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var factory = HoldingFactory(entered, proceed, endpoints =>
-            endpoints.MapPost(MutatingSignInPath, async (ILoginInteraction login) =>
+            endpoints.MapPost(MutatingSignInPath, async (LoginInteraction login) =>
             {
                 var identity = new ClaimsIdentity([new Claim("sub", "user-1")], "test");
                 var signingIn = login.SignInAsync(new ClaimsPrincipal(identity), AuthenticationMethods.Password);
@@ -457,7 +457,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var factory = HoldingFactory(entered, proceed, endpoints =>
-            endpoints.MapPost(MutatingSignInPath, async (ILoginInteraction login) =>
+            endpoints.MapPost(MutatingSignInPath, async (LoginInteraction login) =>
             {
                 var identity = new SelfCloningIdentity([new Claim("sub", "user-1")]);
                 var signingIn = login.SignInAsync(new ClaimsPrincipal(identity), AuthenticationMethods.Password);
@@ -487,7 +487,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var factory = HoldingFactory(entered, proceed, endpoints =>
-            endpoints.MapPost(MutatingSignInPath, async (ILoginInteraction login) =>
+            endpoints.MapPost(MutatingSignInPath, async (LoginInteraction login) =>
             {
                 var methods = new[] { AuthenticationMethods.Password };
                 var signingIn = login.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")), methods);

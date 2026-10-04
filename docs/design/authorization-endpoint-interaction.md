@@ -67,7 +67,7 @@ instance that appeared into a throwaway `AuthenticationOptions`. Every route int
 `builder.AddScheme`, `AddRemoteScheme`, `AddPolicyScheme`, and a raw `IAuthenticationHandler`
 added by writing `AuthenticationOptions.AddScheme` directly — ends as that one descriptor, so the
 replay sees them identically (verified against ASP.NET Core 10.0 with one of each). What the replay
-found is the provider set: `ILoginInteraction.Providers`, and the only names `ChallengeAsync`
+found is the provider set: `LoginInteraction.Providers`, and the only names `ChallengeAsync`
 will accept.
 
 Then the descriptors are **removed** from the collection. The host's `AuthenticationOptions` never
@@ -140,7 +140,7 @@ which fails closed at request time rather than at startup — accepted.
   neither complete nor cancel a live authorization request. `server_error` is never sent from
   here: a client that does not hear back is in the same position as one whose user closed the
   tab. A handler outside the base class has no refusal channel, so its failures render locally.
-- *Challenge.* `ILoginInteraction.ChallengeAsync` activates the handler and calls its
+- *Challenge.* `LoginInteraction.ChallengeAsync` activates the handler and calls its
   `ChallengeAsync` with a `RedirectUri` of `/connect/resume?zkd_i=<id>` under the issuer path,
   derived through the same route helper as the callback, so a path-based issuer completes.
 
@@ -204,14 +204,14 @@ anything else on NuGet for free.
 
 ```
 /connect/authorize          validates (two phases below), stores the context, writes zkd.interaction.<id>; no session →
-  → LoginPath?zkd_i=<id>    (local)   host page ends with ILoginInteraction.SignInAsync — terminal
+  → LoginPath?zkd_i=<id>    (local)   host page ends with LoginInteraction.SignInAsync — terminal
   → ChallengeAsync("facebook") (external)  ZeeKayDa activates the Facebook handler and sets its RedirectUri
       → facebook.com → /connect/callback/facebook   ZeeKayDa endpoint hands the request to the
                                                     Facebook handler: OAuth mechanics, signs into
                                                     zkd.external
         → /connect/resume   ZeeKayDa endpoint: reads zkd.external, fires OnProviderSignIn,
                             promotes to zkd.session, then the consent check below
-  → ConsentPath?zkd_i=<id>  (client requires consent)  host page ends with IConsentInteraction
+  → ConsentPath?zkd_i=<id>  (client requires consent)  host page ends with ConsentInteraction
                             .GrantAsync or .DenyAsync — terminal → code → client
 ```
 
@@ -245,7 +245,7 @@ sign-in is an in-process form post that shares none of that lifecycle, so it is 
 `InteractionOptions.SupportsLocalSignIn`, default `true` — not a list entry. Modelling it as a
 provider would mean a fake scheme or a null object, and the abstraction leaks immediately.
 
-**One page, not two.** The login page is also the provider-selection page: `ILoginInteraction`
+**One page, not two.** The login page is also the provider-selection page: `LoginInteraction`
 exposes `LocalLoginEnabled` and the configured `Providers`, and the host renders a credential form,
 a row of provider buttons, or both. No second path option, no second interaction service.
 
@@ -381,7 +381,7 @@ v1, on the same reasoning as the interaction context: without the cookie there i
 the user is, so there is nothing left to store.
 
 **`SsoSessionId` is ZeeKayDa-minted, random and stable for the life of the session.** 128 bits from
-`StoreKeyGenerator`, created at promotion inside `ILoginInteraction.SignInAsync` and carried as a
+`StoreKeyGenerator`, created at promotion inside `LoginInteraction.SignInAsync` and carried as a
 claim in `zkd.session`. The host neither supplies nor sees it. It is **not** the cookie value — that
 is regenerated on every sign-in promotion for fixation resistance, while the id is stable from
 sign-in to sign-out. Re-authentication (`prompt=login`, `max_age`) refreshes `auth_time` and keeps
@@ -435,7 +435,7 @@ One service per page the host builds; the service *is* the protocol knowledge, p
 methods write the redirect response and must be the caller's last action.
 
 ```csharp
-public interface ILoginInteraction   // singleton over IHttpContextAccessor, as are all the page services
+public interface LoginInteraction   // singleton over IHttpContextAccessor, as are all the page services
 {
     // Pure configuration — what the page should render. Frozen at startup.
     bool LocalLoginEnabled { get; }                       // InteractionOptions.SupportsLocalSignIn
@@ -466,7 +466,7 @@ public interface ILoginInteraction   // singleton over IHttpContextAccessor, as 
     Task ChallengeAsync(string provider);
 }
 
-public interface IProviderSignInInteraction       // built (#603); the page RedirectToAsync sent the user to
+public interface ProviderSignInInteraction       // built (#603); the page RedirectToAsync sent the user to
 {
     // Null when nothing is parked for the interaction — absent, expired, misbound, or from a
     // provider no longer registered — recoverable.
@@ -478,7 +478,7 @@ public interface IProviderSignInInteraction       // built (#603); the page Redi
     Task SignInAsync(params Claim[] additionalClaims);
 
     // Terminal. The host's own principal in place of the parked one — a linked local account —
-    // exactly as ILoginInteraction.SignInAsync takes it, except that a subject equal to the
+    // exactly as LoginInteraction.SignInAsync takes it, except that a subject equal to the
     // upstream one the provider returned is refused: the session subject is never the upstream
     // subject verbatim.
     Task SignInWithReplacedPrincipalAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
@@ -490,9 +490,9 @@ public interface IProviderSignInInteraction       // built (#603); the page Redi
 
 // Every refusal is decided on a read of the parked principal before it is taken, so a refused
 // page still has it; the take happens once, and what was taken is what is promoted. The login
-// page's ILoginInteraction.SignInAsync discards a parked principal and records no provider.
+// page's LoginInteraction.SignInAsync discards a parked principal and records no provider.
 
-public interface IConsentInteraction                     // built (#86); every method is zkd_i-bound on
+public interface ConsentInteraction                     // built (#86); every method is zkd_i-bound on
 {                                                        // SignInAsync's terms AND refuses when the session
     Task<ConsentRequest> GetRequestAsync(CancellationToken cancellationToken = default);
     Task GrantAsync(IEnumerable<string> scopes);         // terminal; re-intersects, no openid == deny
@@ -526,7 +526,7 @@ public sealed class ProviderSignInContext                // what OnProviderSignI
     public Task RedirectToAsync(PathString path);
 
     // Terminal. error=access_denied at the client's registered redirect URI with a fixed framework
-    // error_description naming the provider stage — ILoginInteraction.DenyAsync's exact terms.
+    // error_description naming the provider stage — LoginInteraction.DenyAsync's exact terms.
     public Task DenyAsync();
 }
 
@@ -568,20 +568,20 @@ re-registering the same name keeps every subject, which is what an operator rota
 an endpoint wants, and what an operator moving the name to a *different* upstream must not do —
 that is a new provider and needs a new name. A host
 that maps external identities onto its own users does so on the page `RedirectToAsync` leads to,
-through that page's own service: `IProviderSignInInteraction.SignInAsync(params Claim[])` has the
+through that page's own service: `ProviderSignInInteraction.SignInAsync(params Claim[])` has the
 framework build the promoted principal — the derived subject, the provider's claims, plus what the
 page collected — and refuses a subject claim, so the page cannot put the raw upstream `sub` into
 the session; `SignInWithReplacedPrincipalAsync` is for linking to a local account, where the host's
 own principal, subject included, replaces the parked one — and is refused when that subject is the
 upstream one. Both consume the parked principal. One service per host page: the login page's
-`ILoginInteraction` does not read the parked principal.
+`LoginInteraction` does not read the parked principal.
 `OnSigningIn` — **unbuilt** — will fire for every sign-in just before promotion, no interrupt,
 and shapes the *session* principal only: token claims never come from the session, they are
 resolved through `claims-resolution.md`'s provider on every issuance, and for the same reason the
-claims `IProviderSignInInteraction.SignInAsync` adds live in the session, not in any token; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
+claims `ProviderSignInInteraction.SignInAsync` adds live in the session, not in any token; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
 `acr`, `amr`, `zkd:*`) are stripped regardless. Until it exists, a host that wants the session to
 hold something other than what the provider returned redirects to a page of its own and finishes
-there through `IProviderSignInInteraction`; a change to the principal `OnProviderSignIn` receives
+there through `ProviderSignInInteraction`; a change to the principal `OnProviderSignIn` receives
 is not promoted, since the framework promotes its own copy.
 
 ## Request validation (#83)

@@ -23,8 +23,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 /// </summary>
 /// <remarks>
 /// The test host maps a logout page written as a real one would be — a GET that reads
-/// <see cref="ILogoutInteraction.GetRequestAsync"/> and a POST that ends in
-/// <see cref="ILogoutInteraction.SignOutAsync"/> — for the tests that configure one, and a probe
+/// <see cref="LogoutInteraction.GetRequestAsync"/> and a POST that ends in
+/// <see cref="LogoutInteraction.SignOutAsync"/> — for the tests that configure one, and a probe
 /// that reports whether the encrypted session cookie still authenticates. Two hosts serve the
 /// class: <see cref="EndSessionHostFixture"/> asks through the framework's own confirmation page,
 /// and <see cref="EndSessionLogoutPageHostFixture"/> through the host's logout page.
@@ -381,7 +381,7 @@ public sealed class EndSessionEndpointHostTests
     /// <summary>The host's pages: sign-in, a logout page, a miswired logout link, and a session probe.</summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
+        endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var subject = form["sub"].FirstOrDefault() ?? "user-1";
@@ -391,7 +391,7 @@ public sealed class EndSessionEndpointHostTests
                 AuthenticationMethods.Password);
         });
 
-        endpoints.MapGet(LogoutPath, async (HttpContext context, ILogoutInteraction logout) =>
+        endpoints.MapGet(LogoutPath, async (HttpContext context, LogoutInteraction logout) =>
         {
             var request = await logout.GetRequestAsync(context.RequestAborted);
 
@@ -403,8 +403,8 @@ public sealed class EndSessionEndpointHostTests
             });
         });
 
-        endpoints.MapPost(LogoutPath, (ILogoutInteraction logout) => logout.SignOutAsync());
-        endpoints.MapGet(SignOutByLinkPath, (ILogoutInteraction logout) => logout.SignOutAsync());
+        endpoints.MapPost(LogoutPath, (LogoutInteraction logout) => logout.SignOutAsync());
+        endpoints.MapGet(SignOutByLinkPath, (LogoutInteraction logout) => logout.SignOutAsync());
 
         endpoints.MapGet(SessionProbePath, async (HttpContext context) =>
         {

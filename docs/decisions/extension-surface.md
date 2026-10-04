@@ -64,9 +64,9 @@ backing contracts, the client authenticator, the token issuer (`ITokenIssuer`, k
 a signing key source (`ISigningKeySource`) and the signer it lends (`ISigner`), and an options validator
 via `ZeeKayDaOptionsValidator<TOptions>`, which returns its coded failures and is registered as
 `IValidateOptions<TOptions>`. Everything else public is
-consume-only. Where DI would let a host swap a consume-only service in, startup refuses it: the five
-interaction services, which complete every protocol step for a page
-(`A_host_interaction_service_registered_before_the_framework_fails_startup`), and `IClientSecrets`. Adding to this list is a minor version; changing anything on it is a major one. The
+consume-only. The five interaction services, which complete every protocol step for a page, are
+public sealed classes with internal constructors, not interfaces: a host injects them and cannot
+supply its own (`An_interaction_service_cannot_be_supplied_by_a_host`). Unsealing one is additive. Adding to this list is a minor version; changing anything on it is a major one. The
 question asked of every new public member before it lands is whether it can be changed later without a
 breaking change.
 

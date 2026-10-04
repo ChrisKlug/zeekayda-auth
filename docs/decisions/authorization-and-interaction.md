@@ -2,7 +2,7 @@
 
 **Built through code issuance.** `/connect/authorize` validates requests, applies the two-phase
 error model, hands an unauthenticated one to the host's login page or an external provider, an
-authenticated one to the host's consent page, which returns through `IConsentInteraction`, and
+authenticated one to the host's consent page, which returns through `ConsentInteraction`, and
 answers a request past both with an authorization code at the registered redirect URI. Remembered
 consent grants are the unbuilt part (#632). Interface shapes:
 `docs/design/authorization-endpoint-interaction.md`; the interaction surface, cookies and SSO
@@ -72,7 +72,7 @@ opt-out client to the page, and answers `consent_required` when the host has non
 grants are unbuilt: every request prompts, and `prompt=none` for a client requiring consent
 answers `consent_required` — not yet, rather than a reversal of the paragraph above.
 
-**A consent decision is recorded by the session it was asked of.** Every `IConsentInteraction`
+**A consent decision is recorded by the session it was asked of.** Every `ConsentInteraction`
 method is `zkd_i`-bound on the login service's terms and additionally refuses when the session
 cookie no longer names the session and subject that authenticated the request — a sign-out, or a
 sign-in as someone else, between the handoff and the answer. A grant can only narrow the request:
