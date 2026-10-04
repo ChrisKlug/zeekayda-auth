@@ -128,9 +128,9 @@ sole path to a definition and the sole rule authority, so `InMemoryScopeReposito
 `server_error`. An `Audience` is checked against RFC 3986 directly, not by whether `Uri` parses it, which
 rewrites a raw space while the original reaches `aud`.
 
-**Collection keys bind by replacement, not merge.** An operator who sets one entry of an
-`IConfiguration` collection key loses the rest of that key's defaults. The validator's empty-and-subset
-checks turn the resulting gap into a startup failure rather than a quietly narrowed server.
+**Collection keys bind by replacement, not merge.** Setting one entry drops that key's other
+defaults, and the validator fails startup on the gap. The .NET binder alone appends, so the
+`IConfiguration` overload empties each configured collection first (`Every_settable_collection_option_is_replaced_by_configuration_not_appended_to`).
 
 ## Tried, didn't work
 

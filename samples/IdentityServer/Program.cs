@@ -12,10 +12,9 @@ var settings = builder.Configuration.GetSection("IdentityServer").Get<IdentitySe
 builder.Services.AddRazorPages();
 builder.Services.AddSingleton<UserStore>();
 
-var auth = builder.Services.AddZeeKayDaAuth(options =>
+// The Issuer key of the section is bound to the options; the sample's own keys are ignored by it.
+var auth = builder.Services.AddZeeKayDaAuth(builder.Configuration.GetSection("IdentityServer"), options =>
 {
-    options.Issuer = settings.Issuer;
-
     // The pages the framework hands the browser to. Each page completes its step through an
     // interaction service; none of them handles a return URL, a cookie or a scheme.
     options.AuthorizationEndpoint.Interaction.LoginPath = "/login";
