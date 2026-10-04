@@ -74,7 +74,12 @@ properties of `ConfidentialClientOptions` or `PublicClientOptions`. Keying by cl
 secret a stable path, so it can come from user secrets, environment variables or a vault rather than
 the JSON file: `Clients:Confidential:my-server-app:Secret`. A child other than `Confidential` or
 `Public`, or a key the options type does not have, fails at registration, so a misspelt setting is
-never silently left on its default. The section is read once, when `AddInMemoryClients` is called.
+never silently left on its default, and so does a missing or empty section. The section is read
+once, when `AddInMemoryClients` is called.
+
+Configuration keys are case-insensitive, but a client id is matched exactly. `web-app` in one source
+and `Web-App` in another are the same configuration key, so they merge into one client, whose id is
+spelled as the first source spells it. Spell a client id the same way in every source.
 
 ## Secrets
 

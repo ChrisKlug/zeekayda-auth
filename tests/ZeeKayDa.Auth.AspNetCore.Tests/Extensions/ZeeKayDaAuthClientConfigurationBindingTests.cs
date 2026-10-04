@@ -130,6 +130,33 @@ public sealed class ZeeKayDaAuthClientConfigurationBindingTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*'Confidental'*");
     }
 
+    [Theory]
+    [InlineData("CONFIDENTIAL", "PUBLIC")]
+    [InlineData("confidential", "public")]
+    public void The_confidential_and_public_children_match_whatever_their_case(string confidential, string @public)
+    {
+        var registrations = Bind(new Dictionary<string, string?>
+        {
+            [confidential + ":web:Secret"] = "web-secret",
+            [@public + ":spa:AllowedScopes:0"] = "openid",
+        });
+
+        registrations.Pending.Should().ContainSingle().Which.Registration.ClientId.Should().Be("web");
+        registrations.PreBuilt.Should().ContainSingle().Which.ClientId.Should().Be("spa");
+    }
+
+    [Fact]
+    public void A_missing_clients_section_is_rejected()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Clients:Confidential:web:Secret"] = "web-secret" })
+            .Build();
+
+        var act = () => Bind(configuration.GetSection("Cleints"));
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*missing or empty*");
+    }
+
     [Fact]
     public void A_misspelt_client_key_is_rejected_instead_of_leaving_the_setting_on_its_default()
     {

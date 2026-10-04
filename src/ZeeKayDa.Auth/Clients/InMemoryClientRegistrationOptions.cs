@@ -11,4 +11,8 @@ internal sealed class InMemoryClientRegistrationOptions
 internal sealed record PendingConfidentialClientSpec(
     Client Registration,
     string? PlaintextSecret,
-    string? SecretHash);
+    string? SecretHash)
+{
+    /// <summary>Returns the type name only, so a logged spec never prints its plaintext secret.</summary>
+    public override string ToString() => nameof(PendingConfidentialClientSpec);
+}

@@ -27,9 +27,9 @@ public static class ZeeKayDaAuthBuilderClientConfigurationExtensions
     /// <paramref name="builder"/> or <paramref name="section"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// The section has a child other than <c>Confidential</c> or <c>Public</c>, or a client has a key
-    /// its options type does not have. A misspelt key would otherwise be ignored and leave the client
-    /// on a default.
+    /// The section does not exist, has a child other than <c>Confidential</c> or <c>Public</c>, or a
+    /// client has a key its options type does not have. A misspelt section or key would otherwise be
+    /// ignored and leave the server without the client, or the client on a default.
     /// </exception>
     /// <remarks>
     /// <para>
@@ -57,7 +57,16 @@ public static class ZeeKayDaAuthBuilderClientConfigurationExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(section);
 
-        var unknown = section.GetChildren().FirstOrDefault(child => child.Key is not (Confidential or Public));
+        if (!section.GetChildren().Any())
+        {
+            throw new InvalidOperationException(
+                $"The clients section is missing or empty. It needs a '{Confidential}' or a '{Public}' child, " +
+                "each keyed by client id.");
+        }
+
+        var unknown = section.GetChildren().FirstOrDefault(child =>
+            !string.Equals(child.Key, Confidential, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(child.Key, Public, StringComparison.OrdinalIgnoreCase));
         if (unknown is not null)
         {
             throw new InvalidOperationException(

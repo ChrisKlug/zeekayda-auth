@@ -357,6 +357,52 @@ public sealed class InMemoryClientRepositoryTests
             .Which.Message.Should().Contain("two-secret-client");
     }
 
+    [Fact]
+    public void Build_rejects_a_pending_client_with_a_whitespace_secret_hash()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("blank-hash-client", plaintextSecret: null, secretHash: "  "));
+
+        var act = () => MakeRepository(opts);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.empty_secret_hash")
+            .Which.Message.Should().Contain("blank-hash-client");
+    }
+
+    [Fact]
+    public void Build_releases_the_pending_plaintext_secrets_once_the_repository_is_built()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("confidential-client", "super-secret"));
+
+        MakeRepository(opts);
+
+        opts.Pending.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Build_keeps_the_pending_secrets_when_it_fails_so_building_again_fails_the_same_way()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("confidential-client", "super-secret"));
+        opts.Pending.Add(PendingSpec("no-secret-client", plaintextSecret: null));
+
+        var act = () => MakeRepository(opts);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>();
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.no_secret");
+        opts.Pending.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void A_pending_spec_prints_its_type_name_and_never_its_plaintext_secret()
+    {
+        PendingSpec("confidential-client", "super-secret").ToString()
+            .Should().Be(nameof(PendingConfidentialClientSpec));
+    }
+
     // ── Aggregates failures from multiple invalid clients ─────────────────────────────────────────
 
     [Fact]

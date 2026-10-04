@@ -39,7 +39,9 @@ internal sealed class InMemoryClientRepository : IClientRepository
 
     /// <summary>
     /// Hashes the pending secrets, then checks every registration for a duplicate
-    /// <c>client_id</c> and against <paramref name="validator"/>.
+    /// <c>client_id</c> and against <paramref name="validator"/>. On success the pending plaintext
+    /// secrets are released; on failure they are kept, so building again fails the same way rather
+    /// than succeeding without those clients.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Any registration is invalid. Every failure across all of them is aggregated, so operators
@@ -56,9 +58,11 @@ internal sealed class InMemoryClientRepository : IClientRepository
         failures.AddRange(FindDuplicateClientIds(clients));
         failures.AddRange(clients.SelectMany(validator.Validate));
 
-        return failures.Count > 0
-            ? throw new ZeeKayDaConfigurationException([.. failures])
-            : new InMemoryClientRepository(clients.ToDictionary(client => client.ClientId, StringComparer.Ordinal));
+        if (failures.Count > 0)
+            throw new ZeeKayDaConfigurationException([.. failures]);
+
+        registrations.Pending.Clear();
+        return new InMemoryClientRepository(clients.ToDictionary(client => client.ClientId, StringComparer.Ordinal));
     }
 
     /// <summary>
@@ -101,6 +105,10 @@ internal sealed class InMemoryClientRepository : IClientRepository
                 "client.credentials.empty_plaintext_secret",
                 $"Client '{spec.Registration.ClientId}' was registered with an empty or whitespace plaintext secret. " +
                 "Use a strong random secret loaded from a secrets manager or environment variable."),
+            (null, { } hash) when string.IsNullOrWhiteSpace(hash) => new ZeeKayDaConfigurationFailure(
+                "client.credentials.empty_secret_hash",
+                $"Confidential client '{spec.Registration.ClientId}' has an empty or whitespace SecretHash. " +
+                "Set it to a hashed secret such as '$pbkdf2-sha256$...'."),
             _ => null,
         };
 
