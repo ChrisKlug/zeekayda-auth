@@ -435,7 +435,7 @@ One service per page the host builds; the service *is* the protocol knowledge, p
 methods write the redirect response and must be the caller's last action.
 
 ```csharp
-public interface LoginInteraction   // singleton over IHttpContextAccessor, as are all the page services
+public sealed class LoginInteraction   // singleton over IHttpContextAccessor, as are all the page services
 {
     // Pure configuration — what the page should render. Frozen at startup.
     bool LocalLoginEnabled { get; }                       // InteractionOptions.SupportsLocalSignIn
@@ -466,7 +466,7 @@ public interface LoginInteraction   // singleton over IHttpContextAccessor, as a
     Task ChallengeAsync(string provider);
 }
 
-public interface ProviderSignInInteraction       // built (#603); the page RedirectToAsync sent the user to
+public sealed class ProviderSignInInteraction       // built (#603); the page RedirectToAsync sent the user to
 {
     // Null when nothing is parked for the interaction — absent, expired, misbound, or from a
     // provider no longer registered — recoverable.
@@ -492,7 +492,7 @@ public interface ProviderSignInInteraction       // built (#603); the page Redir
 // page still has it; the take happens once, and what was taken is what is promoted. The login
 // page's LoginInteraction.SignInAsync discards a parked principal and records no provider.
 
-public interface ConsentInteraction                     // built (#86); every method is zkd_i-bound on
+public sealed class ConsentInteraction                     // built (#86); every method is zkd_i-bound on
 {                                                        // SignInAsync's terms AND refuses when the session
     Task<ConsentRequest> GetRequestAsync(CancellationToken cancellationToken = default);
     Task GrantAsync(IEnumerable<string> scopes);         // terminal; re-intersects, no openid == deny
