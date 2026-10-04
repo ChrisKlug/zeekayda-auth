@@ -56,13 +56,14 @@ ship in lockstep with core. The rule around them: **anything expressible through
 must use it** — these are not a pattern to copy.
 
 **The enumerated public extension surface is the SemVer contract.** What a third party may implement:
-the startup verifier, the scope repository, the discovery document provider, the client repository,
-the client, client-with-credentials and credential interfaces, a client secret hasher (via the abstract base), the
-client registration validator, the two store backing contracts, the client authenticator, the token issuer (`ITokenIssuer`,
-keyed per `TokenKind`), a
-signing provider via the abstract signing base and its signer type, a signing key source via
-`ISigningKeySource`, and an options validator via `ZeeKayDaOptionsValidator<TOptions>`, which returns
-its coded failures and is registered as `IValidateOptions<TOptions>`. Everything else public is
+the startup verifier (`IStartupVerifier`) and startup activator (`IStartupActivator`), the claims
+provider (`IClaimsProvider`, registered with `AddClaimsProvider<T>()`), the scope repository, the
+discovery document provider, the client repository, the client and client-with-credentials interfaces,
+a client secret hasher (`IClientSecretHasher`), the client registration validator, the two store
+backing contracts, the client authenticator, the token issuer (`ITokenIssuer`, keyed per `TokenKind`),
+a signing key source (`ISigningKeySource`) and the signer it lends (`ISigner`), and an options validator
+via `ZeeKayDaOptionsValidator<TOptions>`, which returns its coded failures and is registered as
+`IValidateOptions<TOptions>`. Everything else public is
 consume-only. Adding to this list is a minor version; changing anything on it is a major one. The
 question asked of every new public member before it lands is whether it can be changed later without a
 breaking change.
