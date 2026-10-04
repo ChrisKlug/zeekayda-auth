@@ -29,12 +29,24 @@ public sealed class InteractionServiceShapeTests
     public void A_host_registration_made_before_AddZeeKayDaAuth_does_not_displace_the_frameworks(Type service)
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSingleton(service);
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com")
+            .AddInMemoryStores(allowOutsideDevelopment: true);
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService(service).Should().BeOfType(service, "the framework's instance resolves");
+    }
+
+    [Theory]
+    [MemberData(nameof(InteractionServices))]
+    public void Calling_AddZeeKayDaAuth_twice_registers_each_interaction_service_once(Type service)
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
 
-        // The container resolves the last registration of a type: it must be the framework's factory.
-        services.Last(descriptor => descriptor.ServiceType == service)
-            .ImplementationFactory.Should().NotBeNull("the framework builds each one through a factory");
+        services.Count(descriptor => descriptor.ServiceType == service).Should().Be(1);
     }
 
     [Fact]

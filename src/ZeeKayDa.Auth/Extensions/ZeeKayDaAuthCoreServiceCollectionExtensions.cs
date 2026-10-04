@@ -162,7 +162,9 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupActivator, ClientSecretHasherActivator>());
         // A sealed class with an internal constructor, which the container cannot call, so it is built
-        // here. Added, not tried: the framework is the only possible supplier, so its registration wins.
+        // here. Replaced, not tried: the framework is the only possible supplier, so its registration wins,
+        // and calling this twice still leaves one.
+        services.RemoveAll<ClientSecrets>();
         services.AddSingleton(sp => new ClientSecrets(
             sp.GetRequiredService<ClientSecretHasherRegistry>(),
             sp.GetRequiredService<SanitizingLogger<ClientSecrets>>()));

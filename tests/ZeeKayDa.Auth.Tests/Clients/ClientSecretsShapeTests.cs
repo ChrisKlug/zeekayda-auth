@@ -1,5 +1,7 @@
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
@@ -18,11 +20,22 @@ public sealed class ClientSecretsShapeTests
     public void A_host_registration_made_before_AddZeeKayDaAuthCore_does_not_displace_the_frameworks()
     {
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<ClientSecrets>();
         services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com");
+        using var provider = services.BuildServiceProvider();
 
-        // The container resolves the last registration of a type: it must be the framework's factory.
-        services.Last(descriptor => descriptor.ServiceType == typeof(ClientSecrets))
-            .ImplementationFactory.Should().NotBeNull("the framework builds it through a factory");
+        provider.GetRequiredService<ClientSecrets>().Create("a-client-secret").Value
+            .Should().StartWith("$pbkdf2-sha256$", "the framework's instance resolves and hashes");
+    }
+
+    [Fact]
+    public void Calling_AddZeeKayDaAuthCore_twice_registers_ClientSecrets_once()
+    {
+        var services = new ServiceCollection();
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com");
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com");
+
+        services.Count(descriptor => descriptor.ServiceType == typeof(ClientSecrets)).Should().Be(1);
     }
 }

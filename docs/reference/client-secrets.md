@@ -98,17 +98,18 @@ fallback string allocation.
 
 *Added in Unreleased.*
 
-`ClientSecrets` is the injectable seam for hashing new client secrets at runtime. It
+`ClientSecrets` is the framework's service for hashing new client secrets at runtime. It is a
+sealed class with an internal constructor: inject it, never implement or replace it. It
 delegates to the configured default `IClientSecretHasher` — whichever hasher was marked as
 default via `AddClientSecretHasher<T>(isDefault: true)` — so you never need to hard-code an
 algorithm in your repository or admin layer.
 
 ```csharp
-public interface ClientSecrets
+public sealed class ClientSecrets
 {
-    ClientSecret Create(string plaintext);
-    ClientSecret Create(ReadOnlySpan<char> plaintext);
-    SecretVerification Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored);
+    public ClientSecret Create(string plaintext);
+    public ClientSecret Create(ReadOnlySpan<char> plaintext);
+    public SecretVerification Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored);
 }
 ```
 
@@ -118,11 +119,10 @@ many secrets it holds. Return its outcome with `ClientAuthenticationResult.From(
 malformed request with `ClientAuthenticationResult.NotValid()`, which the token endpoint pads to the
 same cost.
 
-`ClientSecrets` is registered automatically by `AddZeeKayDaAuth` as a singleton via
-`TryAddSingleton`. You do not need to call `AddClientSecretHasher` before injecting it —
+`ClientSecrets` is registered automatically by `AddZeeKayDaAuth` as a singleton. You do not need to call `AddClientSecretHasher` before injecting it —
 registration order does not matter as long as both calls occur before the host is built.
 
-### Who should use this interface
+### Who should use this service
 
 `ClientSecrets` is for custom `IClientRepository` implementations that need to hash
 secrets at write time — for example:
@@ -132,7 +132,7 @@ secrets at write time — for example:
 - Future support for [RFC 7591 Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591)
 
 If your clients are registered at startup using the `AddInMemoryClients` builder, you do not
-need this interface. The builder handles hashing automatically when you call `AddConfidential`:
+need this service. The builder handles hashing automatically when you call `AddConfidential`:
 
 ```csharp
 auth.AddInMemoryClients(clients =>
@@ -148,7 +148,7 @@ auth.AddInMemoryClients(clients =>
 
 ### Injecting `ClientSecrets`
 
-Inject the interface through the constructor of your custom `IClientRepository`:
+Inject the service through the constructor of your custom `IClientRepository`:
 
 ```csharp
 public sealed class MyClientRepository : IClientRepository
