@@ -17,4 +17,7 @@ public sealed class ClientAuthenticationContext : TokenRequestContext
     /// context when the client exists in the repository.
     /// </summary>
     public required IClientWithCredentials Client { get; init; }
+
+    /// <summary>The method <see cref="IClientAuthenticator.CanHandle"/> matched for this request.</summary>
+    public required string Method { get; init; }
 }

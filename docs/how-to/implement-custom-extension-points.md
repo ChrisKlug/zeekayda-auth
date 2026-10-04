@@ -415,7 +415,7 @@ public interface IClientAuthenticator
 {
     IReadOnlySet<string> AuthenticationMethods { get; }
 
-    bool CanHandle(TokenRequestContext context, out string? method);
+    ClientAuthenticatorMatch CanHandle(TokenRequestContext context);
 
     Task<ClientAuthenticationResult> AuthenticateAsync(
         ClientAuthenticationContext context,
@@ -445,18 +445,20 @@ public sealed class PrivateKeyJwtAuthenticator : IClientAuthenticator
 repository lookup. It MUST be a cheap shape check — no crypto, no database access.
 
 ```csharp
-    public bool CanHandle(TokenRequestContext context, out string? method)
+    public ClientAuthenticatorMatch CanHandle(TokenRequestContext context)
     {
-        // Shape check only: does the request carry the expected credential material?
-        if (context.Form.ContainsKey("client_assertion") &&
-            context.Form["client_assertion_type"] == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
-        {
-            method = Method;
-            return true;
-        }
+        // Shape check only: does the request carry any of this method's parameters?
+        var hasAssertion = context.Form.ContainsKey("client_assertion");
+        var hasType = context.Form.ContainsKey("client_assertion_type");
+        if (!hasAssertion && !hasType)
+            return ClientAuthenticatorMatch.None;
 
-        method = null;
-        return false;
+        // Your shape, but partial or malformed: refuse. Never answer None here, or the request falls
+        // through to the `none` method and a public client is accepted with the assertion ignored.
+        return hasAssertion &&
+               context.Form["client_assertion_type"] == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+            ? ClientAuthenticatorMatch.For(Method)
+            : ClientAuthenticatorMatch.Refused;
     }
 ```
 
@@ -466,8 +468,9 @@ do not call a database or validate a signature here.
 
 ### Step 3: Implement `AuthenticateAsync`
 
-`AuthenticateAsync` is only invoked after `CanHandle` returned `true` and all composite allowlist
-checks have passed. The client is guaranteed to exist in the repository.
+`AuthenticateAsync` is only invoked after `CanHandle` matched a method and all composite allowlist
+checks have passed. The matched method is `context.Method`, and the client is guaranteed to exist in
+the repository.
 
 ```csharp
     public Task<ClientAuthenticationResult> AuthenticateAsync(

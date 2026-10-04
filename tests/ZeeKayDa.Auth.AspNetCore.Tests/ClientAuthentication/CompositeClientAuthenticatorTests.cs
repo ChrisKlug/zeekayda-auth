@@ -69,8 +69,12 @@ public sealed class CompositeClientAuthenticatorTests
     {
         private readonly IClientWithCredentials? _client;
         public FakeClientRepository(IClientWithCredentials? client = null) => _client = client;
+        public int Lookups { get; private set; }
         public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken ct)
-            => Task.FromResult(_client);
+        {
+            Lookups++;
+            return Task.FromResult(_client);
+        }
     }
 
     /// <summary>
@@ -119,11 +123,7 @@ public sealed class CompositeClientAuthenticatorTests
         public AlwaysHandlesAuthenticator(string method) => _method = method;
         public IReadOnlySet<string> AuthenticationMethods =>
             new HashSet<string>(StringComparer.Ordinal) { _method };
-        public bool CanHandle(TokenRequestContext context, out string? method)
-        {
-            method = _method;
-            return true;
-        }
+        public ClientAuthenticatorMatch CanHandle(TokenRequestContext context) => ClientAuthenticatorMatch.For(_method);
         public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken ct)
             => Task.FromResult(ClientAuthenticationResult.Valid());
@@ -141,11 +141,7 @@ public sealed class CompositeClientAuthenticatorTests
         public IReadOnlySet<string> AuthenticationMethods { get; } =
             new HashSet<string>(StringComparer.Ordinal) { Method };
 
-        public bool CanHandle(TokenRequestContext context, out string? method)
-        {
-            method = Method;
-            return true;
-        }
+        public ClientAuthenticatorMatch CanHandle(TokenRequestContext context) => ClientAuthenticatorMatch.For(Method);
 
         public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken ct)
@@ -178,15 +174,23 @@ public sealed class CompositeClientAuthenticatorTests
         public IReadOnlySet<string> AuthenticationMethods =>
             new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.ClientSecretBasic };
 
-        public bool CanHandle(TokenRequestContext context, out string? method)
-        {
-            method = TokenEndpointAuthMethods.ClientSecretBasic;
-            return true;
-        }
+        public ClientAuthenticatorMatch CanHandle(TokenRequestContext context) => ClientAuthenticatorMatch.For(TokenEndpointAuthMethods.ClientSecretBasic);
 
         public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken ct)
             => Task.FromResult<ClientAuthenticationResult>(null!);
+    }
+
+    /// <summary>An authenticator whose <see cref="IClientAuthenticator.CanHandle"/> always answers <paramref name="match"/>.</summary>
+    private sealed class FixedMatchAuthenticator(string method, ClientAuthenticatorMatch match) : IClientAuthenticator
+    {
+        public IReadOnlySet<string> AuthenticationMethods { get; } = new HashSet<string>(StringComparer.Ordinal) { method };
+
+        public ClientAuthenticatorMatch CanHandle(TokenRequestContext context) => match;
+
+        public Task<ClientAuthenticationResult> AuthenticateAsync(
+            ClientAuthenticationContext context, CancellationToken ct)
+            => throw new NotSupportedException("Should not be reached");
     }
 
     private sealed class ThrowingCanHandleAuthenticator : IClientAuthenticator
@@ -194,7 +198,7 @@ public sealed class CompositeClientAuthenticatorTests
         public IReadOnlySet<string> AuthenticationMethods =>
             new HashSet<string>(StringComparer.Ordinal) { "throwing_method" };
 
-        public bool CanHandle(TokenRequestContext context, out string? method)
+        public ClientAuthenticatorMatch CanHandle(TokenRequestContext context)
             => throw new InvalidOperationException("Simulated authenticator bug");
 
         public Task<ClientAuthenticationResult> AuthenticateAsync(
@@ -220,11 +224,7 @@ public sealed class CompositeClientAuthenticatorTests
         public IReadOnlySet<string> AuthenticationMethods =>
             new HashSet<string>(StringComparer.Ordinal) { _declared };
 
-        public bool CanHandle(TokenRequestContext context, out string? method)
-        {
-            method = _returned;
-            return true;
-        }
+        public ClientAuthenticatorMatch CanHandle(TokenRequestContext context) => ClientAuthenticatorMatch.For(_returned);
 
         public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken ct)
@@ -686,16 +686,63 @@ public sealed class CompositeClientAuthenticatorTests
             "a client with no credentials is padded to the failure budget");
     }
 
+    // ── ClientSecretAuthenticator decides the request shape once ──────────────────────────────────
+
+    private static ClientAuthenticatorMatch SecretAuthenticatorMatch(bool basic, bool post)
+    {
+        var httpContext = new DefaultHttpContext();
+        if (basic)
+            httpContext.Request.Headers.Authorization =
+                "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("client-1:secret"));
+
+        var form = new Dictionary<string, StringValues> { ["client_id"] = "client-1" };
+        if (post)
+            form["client_secret"] = "secret";
+
+        var secrets = new ClientSecrets(Registry([new FakeHasher()]), NullSanitizingLogger<ClientSecrets>.Instance);
+        return new ClientSecretAuthenticator(secrets).CanHandle(
+            new TokenRequestContext { HttpContext = httpContext, ClientId = "client-1", Form = new FormCollection(form) });
+    }
+
+    [Fact]
+    public void A_request_with_neither_secret_credential_is_None()
+    {
+        SecretAuthenticatorMatch(basic: false, post: false).Should().BeSameAs(ClientAuthenticatorMatch.None);
+    }
+
+    [Fact]
+    public void A_Basic_header_matches_client_secret_basic()
+    {
+        var match = SecretAuthenticatorMatch(basic: true, post: false);
+
+        match.Method.Should().Be(TokenEndpointAuthMethods.ClientSecretBasic);
+        match.IsRefused.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_client_secret_form_field_matches_client_secret_post()
+    {
+        var match = SecretAuthenticatorMatch(basic: false, post: true);
+
+        match.Method.Should().Be(TokenEndpointAuthMethods.ClientSecretPost);
+        match.IsRefused.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Basic_and_post_at_once_is_a_Refused_match_not_None()
+    {
+        SecretAuthenticatorMatch(basic: true, post: true).Should().BeSameAs(ClientAuthenticatorMatch.Refused);
+    }
+
     // ── Security: conflicting mechanisms → invalid_client, not none fallback ──────────────────────
 
     [Fact]
-    public async Task AuthenticateAsync_returns_Authenticated_false_when_both_secret_mechanisms_are_presented_by_public_client()
+    public async Task Basic_and_post_at_once_is_refused_never_treated_as_none()
     {
-        // A public client presents both Basic auth AND client_secret in the body.
-        // CanHandle returns (true, client_secret_basic) so the request doesn't fall to the 'none'
-        // fallback; the per-client method check then rejects it (public client only allows "none").
+        // The server allows none and the client is public, so a request that fell through to the
+        // none path would be accepted with both credentials ignored.
         var publicClient = CreatePublicClient();
-        var (composite, _) = CreateCompositeWithHasher(
+        var (composite, hasher) = CreateCompositeWithHasher(
             publicClient,
             new FakeHasher(true),
             allowedMethods: [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None]);
@@ -713,14 +760,138 @@ public sealed class CompositeClientAuthenticatorTests
 
         result.Authenticated.Should().BeFalse(
             "simultaneous presentation of both secret mechanisms must be rejected per RFC 6749 §2.3");
+        hasher.CallCount.Should().Be(
+            ClientSecrets.MaxActiveSecretsPerClient, "a refused match is padded like a wrong secret");
+    }
+
+    [Fact]
+    public async Task A_refused_match_ends_the_request_padded_even_when_another_authenticator_matches()
+    {
+        var hasher = new FakeHasher(true);
+        var secrets = new ClientSecrets(Registry([hasher]), NullSanitizingLogger<ClientSecrets>.Instance);
+        var composite = new CompositeClientAuthenticator(
+            [new FixedMatchAuthenticator("custom_method", ClientAuthenticatorMatch.Refused), new AlwaysHandlesAuthenticator(CustomAuthenticator.Method)],
+            Resolver(CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method)),
+            CreateServerOptions(CustomAuthenticator.Method, "custom_method"),
+            secrets,
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
+
+        var result = await composite.AuthenticateAsync("client-1", new DefaultHttpContext(), TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse("a refused match is a refusal, whatever any other authenticator says");
+        hasher.CallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient, "a refused match is padded like a wrong secret");
+    }
+
+    [Fact]
+    public async Task A_refused_match_ends_the_request_before_the_repository_is_read()
+    {
+        var repository = new FakeClientRepository(CreatePublicClient());
+        var composite = new CompositeClientAuthenticator(
+            [new FixedMatchAuthenticator("custom_method", ClientAuthenticatorMatch.Refused)],
+            new ValidatedClientResolver(repository, new PassingRegistrationValidator(), NullSanitizingLogger<ValidatedClientResolver>.Instance),
+            CreateServerOptions("custom_method", TokenEndpointAuthMethods.None),
+            new ClientSecrets(Registry([new FakeHasher()]), NullSanitizingLogger<ClientSecrets>.Instance),
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
+
+        var result = await composite.AuthenticateAsync("public-client", new DefaultHttpContext(), TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        repository.Lookups.Should().Be(0, "a refused match is decided from the request alone");
+    }
+
+    [Theory]
+    [InlineData("Basic")]
+    [InlineData("Basic not-base64!")]
+    [InlineData("Basic bm8tY29sb24=")] // "no-colon"
+    public async Task A_Basic_header_that_does_not_decode_is_refused_not_None(string header)
+    {
+        // RFC 7617 §2: a Basic header without a decodable user-id:password pair is a malformed Basic
+        // credential. It must be refused from the request alone, never fall through to the none
+        // method, which would accept this public client.
+        var hasher = new FakeHasher();
+        var secrets = new ClientSecrets(Registry([hasher]), NullSanitizingLogger<ClientSecrets>.Instance);
+        var repository = new FakeClientRepository(CreatePublicClient());
+        var composite = new CompositeClientAuthenticator(
+            [new ClientSecretAuthenticator(secrets)],
+            new ValidatedClientResolver(repository, new PassingRegistrationValidator(), NullSanitizingLogger<ValidatedClientResolver>.Instance),
+            CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None),
+            secrets,
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Authorization = header;
+
+        new ClientSecretAuthenticator(secrets)
+            .CanHandle(new TokenRequestContext { HttpContext = httpContext, ClientId = "public-client", Form = FormCollection.Empty })
+            .Should().BeSameAs(ClientAuthenticatorMatch.Refused);
+
+        var result = await composite.AuthenticateAsync("public-client", httpContext, TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        repository.Lookups.Should().Be(0, "a malformed Basic header is refused from the request alone");
+        hasher.CallCount.Should().Be(ClientSecrets.MaxActiveSecretsPerClient, "the refusal is padded like a wrong secret");
+    }
+
+    [Fact]
+    public async Task A_None_match_from_every_authenticator_falls_through_to_the_none_method()
+    {
+        var hasher = new FakeHasher();
+        var secrets = new ClientSecrets(Registry([hasher]), NullSanitizingLogger<ClientSecrets>.Instance);
+        var composite = new CompositeClientAuthenticator(
+            [new FixedMatchAuthenticator("custom_method", ClientAuthenticatorMatch.None)],
+            Resolver(CreatePublicClient()),
+            CreateServerOptions("custom_method", TokenEndpointAuthMethods.None),
+            secrets,
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
+
+        var result = await composite.AuthenticateAsync("public-client", new DefaultHttpContext(), TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeTrue("no authenticator claimed the request, so a public client authenticates with none");
+    }
+
+    [Fact]
+    public async Task The_method_a_match_names_reaches_AuthenticateAsync_on_the_context()
+    {
+        string? seen = null;
+        var composite = new CompositeClientAuthenticator(
+            [new CustomAuthenticator(context =>
+            {
+                seen = context.Method;
+                return ClientAuthenticationResult.Valid();
+            })],
+            Resolver(CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method)),
+            CreateServerOptions(CustomAuthenticator.Method),
+            new ClientSecrets(Registry([new FakeHasher()]), NullSanitizingLogger<ClientSecrets>.Instance),
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
+
+        var result = await composite.AuthenticateAsync("client-1", new DefaultHttpContext(), TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeTrue();
+        seen.Should().Be(CustomAuthenticator.Method);
+    }
+
+    [Fact]
+    public async Task A_null_match_is_logged_and_treated_as_not_matching()
+    {
+        var logger = new CapturingSanitizingLogger<CompositeClientAuthenticator>();
+        var composite = new CompositeClientAuthenticator(
+            [new FixedMatchAuthenticator("custom_method", null!)],
+            Resolver(CreatePublicClient()),
+            CreateServerOptions("custom_method", TokenEndpointAuthMethods.None),
+            new ClientSecrets(Registry([new FakeHasher()]), NullSanitizingLogger<ClientSecrets>.Instance),
+            logger);
+
+        var result = await composite.AuthenticateAsync("public-client", new DefaultHttpContext(), TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeTrue("a null match is not a claim on the request, so the none method decides");
+        logger.Entries.Should().ContainSingle().Which.Level.Should().Be(LogLevel.Error);
     }
 
     [Fact]
     public async Task AuthenticateAsync_returns_Authenticated_false_when_both_secret_mechanisms_are_presented_by_confidential_client()
     {
         // A confidential client presents both Basic auth AND client_secret in the body.
-        // ClientSecretAuthenticator.AuthenticateAsync detects the conflict and rejects
-        // even though the credentials themselves would be valid (FakeHasher returns true).
+        // ClientSecretAuthenticator.CanHandle refuses the pair even though the credentials
+        // themselves would be valid (FakeHasher returns true).
         var secret = FakeSecret();
         var client = CreateConfidentialClient(secret: secret);
         var (composite, hasher) = CreateCompositeWithHasher(

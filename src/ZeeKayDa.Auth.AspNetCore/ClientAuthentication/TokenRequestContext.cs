@@ -9,7 +9,10 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// </summary>
 public class TokenRequestContext
 {
-    /// <summary>The current HTTP context for the token endpoint request.</summary>
+    /// <summary>
+    /// The current HTTP context for the token endpoint request: the request headers, and the
+    /// connection's client certificate for mutual TLS (RFC 8705).
+    /// </summary>
     public required HttpContext HttpContext { get; init; }
 
     /// <summary>The <c>client_id</c> value extracted from the request.</summary>
@@ -21,10 +24,4 @@ public class TokenRequestContext
     /// which is synchronous and can throw on non-form content types.
     /// </summary>
     public required IFormCollection Form { get; init; }
-
-    /// <summary>
-    /// The HTTP request headers, captured at context-construction time so all authenticators see
-    /// a consistent snapshot. Prefer this over <c>HttpContext.Request.Headers</c>.
-    /// </summary>
-    public required IHeaderDictionary Headers { get; init; }
 }

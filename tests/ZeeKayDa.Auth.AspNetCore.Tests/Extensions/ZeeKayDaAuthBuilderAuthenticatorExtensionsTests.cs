@@ -55,11 +55,7 @@ public sealed class ZeeKayDaAuthBuilderAuthenticatorExtensionsTests
         public IReadOnlySet<string> AuthenticationMethods =>
             new HashSet<string>(StringComparer.Ordinal) { "fake_method" };
 
-        public bool CanHandle(TokenRequestContext context, out string? method)
-        {
-            method = null;
-            return false;
-        }
+        public ClientAuthenticatorMatch CanHandle(TokenRequestContext context) => ClientAuthenticatorMatch.None;
 
         public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken cancellationToken)
@@ -71,11 +67,7 @@ public sealed class ZeeKayDaAuthBuilderAuthenticatorExtensionsTests
         public IReadOnlySet<string> AuthenticationMethods =>
             new HashSet<string>(StringComparer.Ordinal) { "another_fake_method" };
 
-        public bool CanHandle(TokenRequestContext context, out string? method)
-        {
-            method = null;
-            return false;
-        }
+        public ClientAuthenticatorMatch CanHandle(TokenRequestContext context) => ClientAuthenticatorMatch.None;
 
         public Task<ClientAuthenticationResult> AuthenticateAsync(
             ClientAuthenticationContext context, CancellationToken cancellationToken)
