@@ -412,6 +412,21 @@ public sealed class InMemoryClientRepositoryTests
                 "a host can add rules at startup, never remove the framework's");
     }
 
+    [Fact]
+    public void Build_reports_a_null_failure_alongside_the_real_ones_a_validator_returned()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(ValidPublicClient("c1"));
+        var validator = new DelegatingValidator(_ =>
+            [new ZeeKayDaConfigurationFailure("host.rule", "A real problem."), null!]);
+
+        var act = () => MakeRepositoryWithValidator(opts, validator);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Select(f => f.Code).Should()
+            .Equal("host.rule", "client.validator.malformed_result");
+    }
+
     // ── Empty plaintext secret is aggregated, not thrown bare ─────────────────────────────────────
 
     [Fact]

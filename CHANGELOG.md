@@ -768,6 +768,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **A host client validator that returns a null failure no longer hides the real ones** (#881). The
+  framework reported only `client.validator.malformed_result`; it now reports that alongside every
+  real failure the validator returned.
+
 - **In-memory clients are held to the framework's registration rules at startup even when the host
   registers its own `IClientRegistrationValidator`** (#876). The in-memory repository was built with
   whichever validator DI resolved, so a host validator replaced the framework's rules at startup
