@@ -17,7 +17,7 @@ internal static class InteractionPath
     /// The failure for <paramref name="path"/> under <paramref name="code"/> when it is set and not
     /// <see cref="IsSafe"/>. Each of these is a redirect destination the framework builds itself.
     /// </summary>
-    public static IEnumerable<ZeeKayDaConfigurationFailure> Validate(string? path, string optionPath, string code)
+    internal static IEnumerable<ZeeKayDaConfigurationFailure> Validate(string? path, string optionPath, string code)
     {
         if (path is null || IsSafe(path))
             yield break;
