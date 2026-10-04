@@ -1,13 +1,12 @@
-namespace ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.Configuration;
 
-/// <summary>
-/// Validates the endpoint URI overrides. RFC 8414 §2 requires all metadata URLs to use HTTPS;
-/// RFC 6749 §3.1 and §3.2 carry the same two rules for the authorization and token endpoints
-/// alike — a query component is explicitly permitted, a fragment is forbidden. The JWKS,
-/// end-session and userinfo routes match on the path alone, so a query on any of them could never
-/// be honoured.
-/// </summary>
-internal static class EndpointUriValidator
+namespace ZeeKayDa.Auth;
+
+// The endpoint URI overrides, each against the issuer. RFC 8414 §2 requires all metadata URLs to use
+// HTTPS; RFC 6749 §3.1 and §3.2 permit a query on the authorization and token endpoints and forbid a
+// fragment. The JWKS, end-session and userinfo routes match on the path alone, so a query on any of
+// them could never be honoured.
+internal static partial class AuthorizationServerOptionsValidation
 {
     /// <summary>
     /// One endpoint override, the code prefix its failures carry, and whether a query component is
@@ -15,7 +14,7 @@ internal static class EndpointUriValidator
     /// </summary>
     private readonly record struct EndpointOverride(string PropertyName, string CodePrefix, string? Value, bool RejectQuery);
 
-    internal static void Validate(AuthorizationServerOptions options, Uri issuerUri, ICollection<ZeeKayDaConfigurationFailure> failures)
+    private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateEndpointUris(AuthorizationServerOptions options, Uri issuerUri)
     {
         EndpointOverride[] endpoints =
         [
@@ -28,12 +27,9 @@ internal static class EndpointUriValidator
             new("UserInfoEndpoint.Uri", "configuration.user_info_endpoint.uri", options.UserInfoEndpoint.Uri, RejectQuery: true),
         ];
 
-        var broken = endpoints
+        return endpoints
             .Select(endpoint => ValidateEndpoint(options, issuerUri, endpoint))
             .OfType<ZeeKayDaConfigurationFailure>();
-
-        foreach (var failure in broken)
-            failures.Add(failure);
     }
 
     /// <summary>The endpoint's first broken rule, or <see langword="null"/> when it broke none.</summary>

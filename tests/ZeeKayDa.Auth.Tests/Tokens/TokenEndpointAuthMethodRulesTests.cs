@@ -62,7 +62,7 @@ public sealed class TokenEndpointAuthMethodRulesTests
     [InlineData(false, "none", "client_secret_basic")]  // mixed set
     [InlineData(false, "client_secret_basic")]
     [InlineData(false, "None")]                         // ordinal, not case-insensitive
-    [InlineData(true)]                                  // vacuously true; callers check emptiness first
+    [InlineData(false)]                                 // no methods allows nothing, so not "only none"
     public void AllowsOnlyNone_returns_expected_value(bool expected, params string[] methods)
         => TokenEndpointAuthMethodRules.AllowsOnlyNone(methods).Should().Be(expected);
 }

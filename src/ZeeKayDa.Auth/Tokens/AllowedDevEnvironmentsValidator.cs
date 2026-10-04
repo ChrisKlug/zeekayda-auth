@@ -11,39 +11,38 @@ namespace ZeeKayDa.Auth.Tokens;
 internal sealed class AllowedDevEnvironmentsValidator : ZeeKayDaOptionsValidator<DevelopmentSigningOptions>
 {
     /// <inheritdoc/>
-    protected override void Validate(
+    protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(
         string? name,
-        DevelopmentSigningOptions options,
-        ICollection<ZeeKayDaConfigurationFailure> failures)
+        DevelopmentSigningOptions options)
     {
         var list = options.AllowedEnvironments;
 
         if (list.Count == 0)
         {
-            failures.Add(new(
+            yield return new(
                 "configuration.development_signing.allowed_environments.empty",
                 "DevelopmentSigningOptions.AllowedEnvironments must name at least one environment. " +
-                "An empty list refuses every environment, Development included."));
+                "An empty list refuses every environment, Development included.");
         }
 
         foreach (var entry in list)
         {
             if (string.IsNullOrWhiteSpace(entry))
             {
-                failures.Add(new(
+                yield return new(
                     "configuration.development_signing.allowed_environments.blank_entry",
                     "DevelopmentSigningOptions.AllowedEnvironments " +
-                    "must not contain null or empty entries."));
+                    "must not contain null or empty entries.");
                 continue;
             }
 
             if (string.Equals(entry, "Production", StringComparison.OrdinalIgnoreCase))
             {
-                failures.Add(new(
+                yield return new(
                     "configuration.development_signing.allowed_environments.contains_production",
                     "DevelopmentSigningOptions.AllowedEnvironments " +
                     "must not contain 'Production'. Development signing keys are never permitted in " +
-                    "Production regardless of this list. Listing 'Production' here is a misconfiguration."));
+                    "Production regardless of this list. Listing 'Production' here is a misconfiguration.");
             }
         }
     }

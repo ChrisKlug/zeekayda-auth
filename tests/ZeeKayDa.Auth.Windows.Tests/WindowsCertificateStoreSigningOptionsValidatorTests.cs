@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Windows.Tests;
@@ -28,7 +29,7 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
     {
         try
         {
-            Validator().Validate(null, options);
+            ((IValidateOptions<WindowsCertificateStoreSigningOptions>)Validator()).Validate(null, options);
             return [];
         }
         catch (ZeeKayDaConfigurationException exception)

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem.Tests;
@@ -20,7 +21,7 @@ public sealed class PfxFileSigningOptionsValidatorTests
     {
         try
         {
-            new PfxFileSigningOptionsValidator().Validate(null, options);
+            ((IValidateOptions<PfxFileSigningOptions>)new PfxFileSigningOptionsValidator()).Validate(null, options);
             return [];
         }
         catch (ZeeKayDaConfigurationException exception)
@@ -42,7 +43,7 @@ public sealed class PfxFileSigningOptionsValidatorTests
     {
         // Pins the Success result itself, so a validator that never returns Success cannot pass
         // startup on the strength of never having thrown.
-        var result = new PfxFileSigningOptionsValidator().Validate(null, ValidOptions());
+        var result = ((IValidateOptions<PfxFileSigningOptions>)new PfxFileSigningOptionsValidator()).Validate(null, ValidOptions());
 
         result.Succeeded.Should().BeTrue();
     }
@@ -178,7 +179,7 @@ public sealed class PfxFileSigningOptionsValidatorTests
     {
         var options = new PfxFileSigningOptions { Current = new PfxFile("/etc/zeekayda/tls\0.pfx", Password()) };
 
-        var act = () => new PfxFileSigningOptionsValidator().Validate(null, options);
+        var act = () => ((IValidateOptions<PfxFileSigningOptions>)new PfxFileSigningOptionsValidator()).Validate(null, options);
 
         act.Should().Throw<ZeeKayDaConfigurationException>("an unresolvable path is a configuration error like any other");
         Validate(options).Should().Contain(f => f.Code == "configuration.pfx_file_signing.paths.unresolvable"

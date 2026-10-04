@@ -11,24 +11,23 @@ internal sealed class Pbkdf2ClientSecretHasherOptionsValidator
     : ZeeKayDaOptionsValidator<Pbkdf2ClientSecretHasherOptions>
 {
     /// <inheritdoc/>
-    protected override void Validate(
+    protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(
         string? name,
-        Pbkdf2ClientSecretHasherOptions options,
-        ICollection<ZeeKayDaConfigurationFailure> failures)
+        Pbkdf2ClientSecretHasherOptions options)
     {
         var iterations = options.Iterations;
 
         if (iterations < Pbkdf2ClientSecretHasher.MinIterations)
-            failures.Add(new(
+            yield return new(
                 "configuration.pbkdf2.iterations_out_of_range",
                 $"Pbkdf2ClientSecretHasherOptions.Iterations is {iterations:N0}, below the minimum of " +
-                $"{Pbkdf2ClientSecretHasher.MinIterations:N0} (OWASP PBKDF2-HMAC-SHA256)."));
+                $"{Pbkdf2ClientSecretHasher.MinIterations:N0} (OWASP PBKDF2-HMAC-SHA256).");
 
         if (iterations > Pbkdf2ClientSecretHasher.MaxIterations)
-            failures.Add(new(
+            yield return new(
                 "configuration.pbkdf2.iterations_out_of_range",
                 $"Pbkdf2ClientSecretHasherOptions.Iterations is {iterations:N0}, above the maximum of " +
                 $"{Pbkdf2ClientSecretHasher.MaxIterations:N0}. Each verification would take over a " +
-                "second, and the token endpoint would stop serving under load."));
+                "second, and the token endpoint would stop serving under load.");
     }
 }

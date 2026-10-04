@@ -21,7 +21,7 @@ namespace ZeeKayDa.Auth.Configuration;
 /// is the "log <see cref="LogLevel.Critical"/> when they do" half of the environment rule rather
 /// than a missing gate; an option whose only job is to authorise another option would be one more
 /// thing to get wrong. The blast radius is capped elsewhere:
-/// <c>IssuerValidator.ValidateScheme</c> permits <c>http</c> only for a loopback host and fails
+/// the issuer rules in <c>AuthorizationServerOptionsValidation</c> permit <c>http</c> only for a loopback host and fail
 /// startup for any other, so an insecure issuer cannot be a public deployment in any environment.
 /// Failing here would instead break an intentional non-Development test host on
 /// <c>http://localhost</c>.

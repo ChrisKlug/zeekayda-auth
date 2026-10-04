@@ -14,6 +14,23 @@ namespace ZeeKayDa.Auth.Configuration;
 internal static class InteractionPath
 {
     /// <summary>
+    /// The failure for <paramref name="path"/> under <paramref name="code"/> when it is set and not
+    /// <see cref="IsSafe"/>. Each of these is a redirect destination the framework builds itself.
+    /// </summary>
+    internal static IEnumerable<ZeeKayDaConfigurationFailure> Validate(string? path, string optionPath, string code)
+    {
+        if (path is null || IsSafe(path))
+            yield break;
+
+        yield return new(
+            code,
+            $"AuthorizationServerOptions.{optionPath} must be an " +
+            "absolute path within the host application (starting with '/'), without scheme, " +
+            "authority, query, fragment, control characters, or a leading '//' or '/\\' " +
+            "that a browser would resolve to another origin.");
+    }
+
+    /// <summary>
     /// Returns <see langword="true"/> when <paramref name="path"/> is an absolute path within the
     /// host application, with no scheme, authority, query, or fragment, and nothing a browser
     /// would normalise into another origin.

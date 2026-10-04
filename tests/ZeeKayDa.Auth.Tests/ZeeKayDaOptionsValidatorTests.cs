@@ -11,7 +11,7 @@ public sealed class ZeeKayDaOptionsValidatorTests
             new ZeeKayDaConfigurationFailure("test.first", "First."),
             new ZeeKayDaConfigurationFailure("test.second", "Second."));
 
-        var act = () => validator.Validate(Options.DefaultName, new TestOptions());
+        var act = () => ((IValidateOptions<TestOptions>)validator).Validate(Options.DefaultName, new TestOptions());
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Select(f => f.Code).Should().Equal("test.first", "test.second");
@@ -20,7 +20,7 @@ public sealed class ZeeKayDaOptionsValidatorTests
     [Fact]
     public void Validate_returns_success_when_no_failure_was_added()
     {
-        var result = new FixedValidator().Validate(Options.DefaultName, new TestOptions());
+        var result = ((IValidateOptions<TestOptions>)new FixedValidator()).Validate(Options.DefaultName, new TestOptions());
 
         result.Succeeded.Should().BeTrue();
     }
@@ -30,7 +30,7 @@ public sealed class ZeeKayDaOptionsValidatorTests
     {
         var validator = new FixedValidator();
 
-        validator.Validate("tenant", new TestOptions());
+        ((IValidateOptions<TestOptions>)validator).Validate("tenant", new TestOptions());
 
         validator.SeenName.Should().Be("tenant");
     }
@@ -38,9 +38,47 @@ public sealed class ZeeKayDaOptionsValidatorTests
     [Fact]
     public void Validate_throws_ArgumentNullException_for_null_options()
     {
-        var act = () => new FixedValidator().Validate(Options.DefaultName, null!);
+        var act = () => ((IValidateOptions<TestOptions>)new FixedValidator()).Validate(Options.DefaultName, null!);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("options");
+    }
+
+    [Fact]
+    public void A_subclass_returning_null_is_reported_as_a_coded_failure()
+    {
+        var act = () => ((IValidateOptions<TestOptions>)new NullReturningValidator()).Validate(Options.DefaultName, new TestOptions());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.options_validator.malformed_result");
+    }
+
+    [Fact]
+    public void A_subclass_returning_a_null_failure_is_reported_as_a_coded_failure()
+    {
+        var act = () => ((IValidateOptions<TestOptions>)new FixedValidator(new ZeeKayDaConfigurationFailure[] { null! })).Validate(Options.DefaultName, new TestOptions());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("configuration.options_validator.malformed_result");
+    }
+
+    [Fact]
+    public void A_null_failure_is_reported_alongside_the_real_ones()
+    {
+        var real = new ZeeKayDaConfigurationFailure("test.real", "A real configuration problem.");
+        var validator = new FixedValidator(new ZeeKayDaConfigurationFailure[] { real, null! });
+
+        var act = () => ((IValidateOptions<TestOptions>)validator).Validate(Options.DefaultName, new TestOptions());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Select(f => f.Code).Should()
+            .Equal("test.real", "configuration.options_validator.malformed_result");
+    }
+
+    private sealed class NullReturningValidator : ZeeKayDaOptionsValidator<TestOptions>
+    {
+        protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(string? name, TestOptions options) => null!;
     }
 
     private sealed class TestOptions;
@@ -50,14 +88,10 @@ public sealed class ZeeKayDaOptionsValidatorTests
     {
         public string? SeenName { get; private set; }
 
-        protected override void Validate(
-            string? name,
-            TestOptions options,
-            ICollection<ZeeKayDaConfigurationFailure> failures)
+        protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(string? name, TestOptions options)
         {
             SeenName = name;
-            foreach (var failure in toAdd)
-                failures.Add(failure);
+            return toAdd;
         }
     }
 }

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
@@ -8,7 +9,7 @@ public sealed class Pbkdf2ClientSecretHasherOptionsValidatorTests
     {
         try
         {
-            new Pbkdf2ClientSecretHasherOptionsValidator().Validate(
+            ((IValidateOptions<Pbkdf2ClientSecretHasherOptions>)new Pbkdf2ClientSecretHasherOptionsValidator()).Validate(
                 null, new Pbkdf2ClientSecretHasherOptions { Iterations = iterations });
             return [];
         }

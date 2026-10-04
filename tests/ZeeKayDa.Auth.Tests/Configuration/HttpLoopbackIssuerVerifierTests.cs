@@ -67,8 +67,9 @@ public sealed class HttpLoopbackIssuerVerifierTests
     [InlineData("Production")]
     public async Task An_insecure_issuer_outside_Development_does_not_fail_startup(string environment)
     {
-        // AllowHttpLoopbackIssuer is itself the opt-out, and IssuerValidator.ValidateScheme already
-        // fails startup for a non-loopback http issuer, so what remains here can only be
+        // AllowHttpLoopbackIssuer is itself the opt-out, and the issuer scheme rule in
+        // AuthorizationServerOptionsValidation already fails startup for a non-loopback http
+        // issuer, so what remains here can only be
         // http://localhost. Failing would break an intentional non-Development test host and buy
         // no security the scheme rule has not already bought.
         var context = await VerifyAsync(environment, allowInsecureIssuer: true);

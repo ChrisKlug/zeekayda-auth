@@ -60,8 +60,9 @@ the startup verifier, the scope repository, the discovery document provider, the
 the client, client-with-credentials and credential interfaces, a client secret hasher (via the abstract base), the
 client registration validator, the two store backing contracts, the client authenticator, the token issuer (`ITokenIssuer`,
 keyed per `TokenKind`), a
-signing provider via the abstract signing base and its signer type, and a signing key source via
-`ISigningKeySource`. Everything else public is
+signing provider via the abstract signing base and its signer type, a signing key source via
+`ISigningKeySource`, and an options validator via `ZeeKayDaOptionsValidator<TOptions>`, which returns
+its coded failures and is registered as `IValidateOptions<TOptions>`. Everything else public is
 consume-only. Adding to this list is a minor version; changing anything on it is a major one. The
 question asked of every new public member before it lands is whether it can be changed later without a
 breaking change.

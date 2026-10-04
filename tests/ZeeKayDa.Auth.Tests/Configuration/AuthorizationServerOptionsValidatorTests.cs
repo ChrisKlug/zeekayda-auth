@@ -17,7 +17,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
     {
         try
         {
-            new AuthorizationServerOptionsValidator().Validate(null, options);
+            ((IValidateOptions<AuthorizationServerOptions>)new AuthorizationServerOptionsValidator()).Validate(null, options);
             return [];
         }
         catch (ZeeKayDaConfigurationException exception)
@@ -381,6 +381,38 @@ public sealed class AuthorizationServerOptionsValidatorTests
 
         failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.empty")
             .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported").And.Contain("null or empty");
+    }
+
+    [Theory]
+    [InlineData(null, "configuration.issuer.missing")]
+    [InlineData("not-a-uri", "configuration.issuer.invalid")]
+    public void An_issuer_that_does_not_parse_is_the_only_failure_reported(string? issuer, string expectedCode)
+    {
+        // Every other rule here is broken too; none can be judged without a parsed issuer.
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = issuer,
+            ClockSkewTolerance = TimeSpan.FromSeconds(-1),
+            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.Zero },
+            TokenEndpoint = { AuthMethodsSupported = [] },
+        });
+
+        failures.Should().ContainSingle().Which.Code.Should().Be(expectedCode);
+    }
+
+    [Fact]
+    public void An_empty_AuthMethodsSupported_with_the_client_credentials_grant_is_reported_as_empty_not_as_only_none()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.ClientCredentials],
+            TokenEndpoint = { AuthMethodsSupported = [] },
+        });
+
+        failures.Select(f => f.Code).Should()
+            .Contain("configuration.token_endpoint.auth_methods_supported.empty")
+            .And.NotContain("configuration.token_endpoint.auth_methods_supported.only_none_with_client_credentials");
     }
 
     [Fact]
