@@ -586,6 +586,32 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
     }
 
     [Fact]
+    public async Task A_grant_that_leaves_out_openid_still_grants_it()
+    {
+        // Agreeing to anything is agreeing to be identified: openid is the request itself, so a
+        // page never has to pass it, and leaving it out is not a refusal.
+        var interactionId = await ReachConsentAsync();
+
+        var response = await GrantAsync(interactionId, "email");
+
+        var code = response.ShouldHaveIssuedCodeTo(RegisteredRedirect);
+        var redeemed = (await RedeemAsync(code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>().Subject;
+        redeemed.Entry.Scope.Should().Equal("openid", "email");
+    }
+
+    [Fact]
+    public async Task An_empty_grant_grants_openid_alone()
+    {
+        var interactionId = await ReachConsentAsync();
+
+        var response = await GrantAsync(interactionId);
+
+        var code = response.ShouldHaveIssuedCodeTo(RegisteredRedirect);
+        var redeemed = (await RedeemAsync(code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>().Subject;
+        redeemed.Entry.Scope.Should().Equal("openid");
+    }
+
+    [Fact]
     public async Task A_grant_narrower_than_the_request_issues_the_narrower_set()
     {
         var interactionId = await ReachConsentAsync();

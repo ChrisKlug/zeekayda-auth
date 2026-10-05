@@ -49,14 +49,6 @@ public sealed class LoginInteraction
         _services = services;
     }
 
-    /// <summary>
-    /// What a cancelled request tells the client. Names the stage as well as the outcome, so this
-    /// reads differently from a consent denial or a policy refusal — all three are
-    /// <c>access_denied</c> on the wire. Generic by construction: it echoes no value, and a client
-    /// needing a stable discriminator gets the opt-in <c>zkd_error</c> sub-code, not this prose.
-    /// </summary>
-    private const string CancelledAtSignIn = "The user cancelled the request at the sign-in page.";
-
     private const string Page = "login";
 
     /// <summary>
@@ -250,7 +242,8 @@ public sealed class LoginInteraction
     /// </para>
     /// <para>
     /// The client receives an <c>error_description</c> stating that the user cancelled at the
-    /// sign-in page, so it can tell this apart from the other refusals that also answer
+    /// sign-in page and, when it registered with <c>EnableZkdErrorCodes</c>, the <c>zkd_error</c>
+    /// <c>login_cancelled</c>, so it can tell this apart from the other refusals that also answer
     /// <c>access_denied</c>.
     /// </para>
     /// <para>
@@ -277,7 +270,7 @@ public sealed class LoginInteraction
         await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
             var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-            await _services.Outcomes.DenyAsync(context, requestContext, CancelledAtSignIn).ConfigureAwait(false);
+            await _services.Outcomes.DenyAsync(context, requestContext, Denial.CancelledAtSignIn).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 

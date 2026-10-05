@@ -1348,7 +1348,8 @@ lenses, CodeScene) plus fix-diff verification of every High.
   grant. Closed — `GrantAsync_by_a_session_other_than_the_one_that_signed_in_is_refused`,
   `GrantAsync_after_the_user_signed_out_is_refused`, `A_second_sign_in_after_a_grant_finds_no_interaction_to_complete` (renamed under #87).
 - A grant only narrows the request, and one without `openid` is a denial. Closed —
-  `A_grant_naming_scopes_the_request_never_carried_issues_only_what_was_asked` (moved under #87), `GrantAsync_without_openid_answers_the_client_with_access_denied`.
+  `A_grant_naming_scopes_the_request_never_carried_issues_only_what_was_asked` (moved under #87), `A_grant_that_leaves_out_openid_still_grants_it`.
+  [Since #789 a grant always includes `openid`, so leaving it out is no longer a denial; citation repointed at that successor.]
 - The registration is read again at every step and must still list the request's redirect URI;
   otherwise the request ends where it stands. Closed — `Every_consent_operation_for_a_client_removed_after_the_handoff_is_refused`,
   `Every_consent_operation_for_a_client_that_dropped_the_redirect_uri_is_refused`,

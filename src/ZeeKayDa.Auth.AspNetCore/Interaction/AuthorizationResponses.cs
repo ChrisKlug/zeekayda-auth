@@ -2,6 +2,7 @@ using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Authorization;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
@@ -81,6 +82,28 @@ internal sealed class AuthorizationResponses(
             ["error"] = error,
             ["error_description"] = description,
         });
+    }
+
+    /// <summary>
+    /// The <c>access_denied</c> redirect for <paramref name="denial"/> to
+    /// <paramref name="redirectUri"/>, carrying its <c>zkd_error</c> sub-code when
+    /// <paramref name="withSubCode"/> — the client registered with <c>EnableZkdErrorCodes</c>.
+    /// </summary>
+    public IResult DeniedAtClient(string redirectUri, Denial denial, bool withSubCode, string? state)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(redirectUri);
+        ArgumentNullException.ThrowIfNull(denial);
+
+        var query = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["error"] = AuthorizeRequestErrors.AccessDenied,
+            ["error_description"] = denial.Description,
+        };
+
+        if (withSubCode)
+            query[Denial.ZkdErrorParameter] = denial.ZkdError;
+
+        return AtClient(redirectUri, state, query);
     }
 
     /// <summary>

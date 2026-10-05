@@ -91,7 +91,9 @@ public sealed class ProviderSignInContext
     /// <strong>Terminal.</strong> This writes and commits the response; it must be the last thing
     /// the handler does, and at most one of this and <see cref="RedirectToAsync"/> may be called.
     /// The client receives an <c>error_description</c> naming a refusal after sign-in at the
-    /// external provider, so it can tell this apart from a cancellation at the sign-in page.
+    /// external provider and, when it registered with <c>EnableZkdErrorCodes</c>, the
+    /// <c>zkd_error</c> <c>account_refused</c>, so it can tell this apart from a cancellation at
+    /// the sign-in page.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <see cref="RedirectToAsync"/> or <see cref="DenyAsync"/> has already been called on this

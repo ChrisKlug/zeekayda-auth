@@ -88,7 +88,7 @@ internal sealed class ResumeEndpoint(
             requestContext.Scopes.ToImmutableArray(),
             context.RequestAborted,
             path => outcomes.ParkAsync(context, requestContext, registration, principal, path),
-            () => outcomes.DenyAsync(context, requestContext, InteractionOutcomes.DeniedAfterProvider));
+            () => outcomes.DenyAsync(context, requestContext, Denial.RefusedAfterProvider));
 
         ClaimsPrincipal promoted;
         try

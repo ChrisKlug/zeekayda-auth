@@ -452,7 +452,7 @@ public sealed class LoginInteraction   // singleton over IHttpContextAccessor, a
     // The Cancel button. Ends the request with error=access_denied at the registered redirect
     // URI, establishing no session and leaving an existing one alone. Terminal, zkd_i-bound on
     // SignInAsync's exact terms. Carries a fixed framework error_description naming a cancellation
-    // at sign-in; a client needing to branch gets the opt-in zkd_error sub-code, not the prose.
+    // at sign-in, and zkd_error=login_cancelled for a client registered with EnableZkdErrorCodes.
     Task DenyAsync();
 
     // Starts the external round trip for one configured provider. Terminal, zkd_i-bound on
@@ -600,8 +600,8 @@ served by an error-interaction service, never in the query string.
 always).** `response_type=code`; `response_mode` absent/`query`; `code_challenge` required,
 `S256` only; `request`/`request_uri` → `..._not_supported`; duplicate parameters →
 `invalid_request`; unknown parameters ignored; `prompt`/`max_age` parsed now, behavior in #85/#86.
-`error_description` stays generic (names the parameter, never echoes a value); the detailed channel
-is the opt-in `zkd_error` sub-code per the register.
+`error_description` stays generic (names the parameter, never echoes a value). The opt-in `zkd_error`
+sub-code is for refusals only (`access_denied`); validation errors carry none.
 
 **Scopes: silent narrow.** Effective scope starts as `requested ∩ client.AllowedScopes`
 (RFC 6749 §3.3 sanctions partial ignoring; the granted `scope` is reported in the token response).
