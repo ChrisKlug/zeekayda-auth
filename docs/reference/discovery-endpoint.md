@@ -134,7 +134,7 @@ what condition.
 | `scopes_supported` | `IScopeRepository` | By default, published from the built-in `InMemoryScopeRepository` seeded with `StandardScopes.All` (`openid`, `profile`, `email`, `phone`, `address`). |
 | `response_modes_supported` | `Response.ModesSupported` | Defaults to `["query"]`. |
 | `grant_types_supported` | `GrantTypesSupported` | Defaults to `["authorization_code"]`. |
-| `token_endpoint_auth_methods_supported` | `TokenEndpoint.AuthMethodsSupported` | Defaults to `["client_secret_basic"]`. |
+| `token_endpoint_auth_methods_supported` | The registered client authenticators | Derived: every method a registered `IClientAuthenticator` declares, plus `none` — `["client_secret_basic", "client_secret_post", "none"]` with the built-in one — optionally narrowed by `TokenEndpoint.AdvertisedAuthMethods`. |
 | `subject_types_supported` | Fixed value | Always `["public"]`. Pairwise subject identifiers are not currently supported. |
 | `id_token_signing_alg_values_supported` | The configured signing keys | Derived: the distinct algorithms of every published key, ascending by `SigningAlgorithm` value, optionally narrowed by `IdToken.AdvertisedSigningAlgorithms`. Required by OIDC Discovery 1.0 Section 3. |
 | `claims_supported` | `IScopeRepository` + the ID token's protocol claims | Derived: the ID-token and userinfo claims of every discoverable scope, plus `iss`, `sub`, `aud`, `iat`, `exp`, `auth_time`, `at_hash`, `nonce`, `acr` and `amr`. A scope's access-token claims are not listed. Omitted on a host whose `GrantTypesSupported` lacks `authorization_code`, which issues no ID token. |

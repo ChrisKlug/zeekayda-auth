@@ -22,7 +22,8 @@ public interface IClientAuthenticator
 {
     /// <summary>
     /// The set of token endpoint authentication method strings this authenticator can produce.
-    /// Used for startup coverage validation against <c>TokenEndpoint.AuthMethodsSupported</c>.
+    /// The token endpoint advertises and accepts the union of every authenticator's set, plus
+    /// <c>none</c>, narrowed by <c>TokenEndpoint.AdvertisedAuthMethods</c>.
     /// All membership checks MUST use <see cref="System.StringComparer.Ordinal"/> semantics.
     /// </summary>
     IReadOnlySet<string> AuthenticationMethods { get; }

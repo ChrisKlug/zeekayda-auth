@@ -73,13 +73,12 @@ internal sealed partial class ClientRegistrationValidator
                 "The 'none' method is only valid for public clients (RFC 6749 §2.3).");
         }
 
-        var serverMethods = new HashSet<string>(options.Value.TokenEndpoint.AuthMethodsSupported, StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
         // Enumerated once: ValidateAuthMethod records each entry in 'seen', so a second pass would
         // report every valid entry as a duplicate.
         var failures = client.AllowedTokenEndpointAuthMethods
-            .Select(method => ValidateAuthMethod(client, method, seen, serverMethods))
+            .Select(method => ValidateAuthMethod(client, method, seen))
             .OfType<ZeeKayDaConfigurationFailure>();
 
         foreach (var failure in failures)
@@ -90,11 +89,10 @@ internal sealed partial class ClientRegistrationValidator
     /// The entry's first broken rule, if any: a malformed entry is not also a duplicate, and a
     /// duplicate is not also checked against the server's methods.
     /// </summary>
-    private static ZeeKayDaConfigurationFailure? ValidateAuthMethod(
+    private ZeeKayDaConfigurationFailure? ValidateAuthMethod(
         IClientWithCredentials client,
         string? method,
-        HashSet<string> seen,
-        HashSet<string> serverMethods)
+        HashSet<string> seen)
     {
         if (!TokenEndpointAuthMethodRules.IsWellFormed(method))
         {
@@ -112,30 +110,26 @@ internal sealed partial class ClientRegistrationValidator
                 $"Client '{client.ClientId}' has a duplicate entry in AllowedTokenEndpointAuthMethods: '{method}'.");
         }
 
-        return serverMethods.Contains(method) ? null : AuthMethodNotSupportedByServer(client, method, serverMethods);
+        return advertisedAuthMethods.Contains(method) ? null : AuthMethodNotAdvertised(client, method);
     }
 
-    // 'none' outside the server's methods on a public client is a host that registered one without
-    // opting in to accepting them — the common first-run mistake — so its failure names the opt-in.
-    // A confidential client listing 'none' is fixed by removing it (none_on_confidential), never by
-    // advertising it, so it gets no hint.
-    private static ZeeKayDaConfigurationFailure AuthMethodNotSupportedByServer(
-        IClientWithCredentials client,
-        string method,
-        HashSet<string> serverMethods)
+    // Outside the derived set, 'none' on a public client can only mean the filter withholds it, so
+    // its failure names the filter. A confidential client listing 'none' is fixed by removing it
+    // (none_on_confidential), never by advertising it, so it gets no hint.
+    private ZeeKayDaConfigurationFailure AuthMethodNotAdvertised(IClientWithCredentials client, string method)
     {
-        var needsNoneOptIn = client.IsPublic && string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal);
-        var fix = needsNoneOptIn
-            ? " Public clients present no credentials at the token endpoint, so the server accepts them " +
-              "only when it advertises 'none': add " +
-              "options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None); to the " +
-              "AddZeeKayDaAuth configuration, or 'none' to TokenEndpoint:AuthMethodsSupported in bound configuration."
-            : "";
+        var publicClientRefusedByFilter = client.IsPublic && string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal);
+        var fix = publicClientRefusedByFilter
+            ? " Public clients present no credentials at the token endpoint, and " +
+              "TokenEndpoint.AdvertisedAuthMethods leaves 'none' out: add it to the filter, or set the " +
+              "filter to null to advertise every method the server performs."
+            : " Register an IClientAuthenticator that performs it, or add it to TokenEndpoint.AdvertisedAuthMethods " +
+              "if a filter withholds it.";
 
         return new ZeeKayDaConfigurationFailure(
             "client.token_endpoint_auth_methods.not_subset",
-            $"Client '{client.ClientId}' has AllowedTokenEndpointAuthMethods entry '{method}' that is not " +
-            $"in the server's AuthMethodsSupported: [{string.Join(", ", serverMethods)}]." + fix);
+            $"Client '{client.ClientId}' has AllowedTokenEndpointAuthMethods entry '{method}' that the " +
+            $"server does not advertise: [{string.Join(", ", advertisedAuthMethods.Methods)}]." + fix);
     }
 
     /// <summary>

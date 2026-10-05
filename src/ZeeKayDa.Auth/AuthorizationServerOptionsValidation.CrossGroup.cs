@@ -72,25 +72,4 @@ internal static partial class AuthorizationServerOptionsValidation
                 "and the token endpoint enforces it for every client.");
         }
     }
-
-    /// <summary>
-    /// The client credentials grant requires client authentication (RFC 6749 §4.4, RFC 9700 §2.6),
-    /// so advertising it with only <c>none</c> leaves no client able to use it.
-    /// </summary>
-    private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateClientCredentialsCanAuthenticate(AuthorizationServerOptions options)
-    {
-        var advertisesClientCredentialsWithOnlyNone = options.GrantTypesSupported is { } grants
-            && grants.Contains(GrantType.ClientCredentials)
-            && options.TokenEndpoint.AuthMethodsSupported is { } methods
-            && TokenEndpointAuthMethodRules.AllowsOnlyNone(methods);
-
-        if (advertisesClientCredentialsWithOnlyNone)
-        {
-            yield return new(
-                "configuration.token_endpoint.auth_methods_supported.only_none_with_client_credentials",
-                "GrantTypesSupported includes 'client_credentials', which requires confidential clients. " +
-                "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
-                "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).");
-        }
-    }
 }

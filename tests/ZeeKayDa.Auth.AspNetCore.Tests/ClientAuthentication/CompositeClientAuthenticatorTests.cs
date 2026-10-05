@@ -157,7 +157,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new CustomAuthenticator(authenticate(secrets))],
             Resolver(client),
-            CreateServerOptions(CustomAuthenticator.Method),
+            Advertising(CustomAuthenticator.Method),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
@@ -261,13 +261,10 @@ public sealed class CompositeClientAuthenticatorTests
 
         var authenticator = new ClientSecretAuthenticator(secrets);
 
-        var serverOptions = CreateServerOptions(
-            allowedMethods ?? [TokenEndpointAuthMethods.ClientSecretBasic]);
-
         var composite = new CompositeClientAuthenticator(
             [authenticator],
             Resolver(client),
-            serverOptions,
+            Advertising(allowedMethods ?? [TokenEndpointAuthMethods.ClientSecretBasic]),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
@@ -284,14 +281,14 @@ public sealed class CompositeClientAuthenticatorTests
     {
         var registry = Registry([hasher]);
         var secrets = new ClientSecrets(registry, NullSanitizingLogger<ClientSecrets>.Instance);
-        var serverOptions = CreateServerOptions(
-            TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None);
-        serverOptions.Value.Issuer = "https://auth.example.com";
+        var serverOptions = Options.Create(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
+        var advertised = Advertising(TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None);
         var resolverLogger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
             new FakeClientRepository(client),
             new ClientRegistrationValidator(
                 serverOptions,
+                advertised,
                 registry,
                 NullSanitizingLogger<ClientRegistrationValidator>.Instance,
                 keyRing: null),
@@ -299,7 +296,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new ClientSecretAuthenticator(secrets)],
             resolver,
-            serverOptions,
+            advertised,
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
         return (composite, resolverLogger);
@@ -307,16 +304,8 @@ public sealed class CompositeClientAuthenticatorTests
 
     private const string TrinityViolation = "inconsistent public/confidential configuration";
 
-    private static IOptions<AuthorizationServerOptions> CreateServerOptions(
-        params string[] allowedMethods)
-    {
-        var options = new AuthorizationServerOptions();
-        options.TokenEndpoint.AuthMethodsSupported =
-            allowedMethods.Length > 0
-                ? [.. allowedMethods]
-                : [TokenEndpointAuthMethods.ClientSecretBasic];
-        return Options.Create(options);
-    }
+    /// <summary>A server advertising exactly <paramref name="methods"/>.</summary>
+    private static AdvertisedAuthMethods Advertising(params string[] methods) => new(methods, filter: methods);
 
     private static MinimalClient CreateConfidentialClient(
         string clientId = "client-1",
@@ -495,7 +484,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new NullReturningAuthenticator()],
             Resolver(client),
-            CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
+            Advertising(TokenEndpointAuthMethods.ClientSecretBasic),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
         var httpContext = new DefaultHttpContext();
@@ -527,7 +516,7 @@ public sealed class CompositeClientAuthenticatorTests
                 new AlwaysHandlesAuthenticator("method_b"),
             ],
             Resolver(client),
-            CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
+            Advertising(TokenEndpointAuthMethods.ClientSecretBasic),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
@@ -772,7 +761,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new FixedMatchAuthenticator("custom_method", ClientAuthenticatorMatch.Refused), new AlwaysHandlesAuthenticator(CustomAuthenticator.Method)],
             Resolver(CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method)),
-            CreateServerOptions(CustomAuthenticator.Method, "custom_method"),
+            Advertising(CustomAuthenticator.Method, "custom_method"),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
@@ -789,7 +778,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new FixedMatchAuthenticator("custom_method", ClientAuthenticatorMatch.Refused)],
             new ValidatedClientResolver(repository, new PassingRegistrationValidator(), NullSanitizingLogger<ValidatedClientResolver>.Instance),
-            CreateServerOptions("custom_method", TokenEndpointAuthMethods.None),
+            Advertising("custom_method", TokenEndpointAuthMethods.None),
             new ClientSecrets(Registry([new FakeHasher()]), NullSanitizingLogger<ClientSecrets>.Instance),
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
@@ -814,7 +803,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new ClientSecretAuthenticator(secrets)],
             new ValidatedClientResolver(repository, new PassingRegistrationValidator(), NullSanitizingLogger<ValidatedClientResolver>.Instance),
-            CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None),
+            Advertising(TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
         var httpContext = new DefaultHttpContext();
@@ -839,7 +828,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new FixedMatchAuthenticator("custom_method", ClientAuthenticatorMatch.None)],
             Resolver(CreatePublicClient()),
-            CreateServerOptions("custom_method", TokenEndpointAuthMethods.None),
+            Advertising("custom_method", TokenEndpointAuthMethods.None),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
@@ -859,7 +848,7 @@ public sealed class CompositeClientAuthenticatorTests
                 return ClientAuthenticationResult.Valid();
             })],
             Resolver(CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method)),
-            CreateServerOptions(CustomAuthenticator.Method),
+            Advertising(CustomAuthenticator.Method),
             new ClientSecrets(Registry([new FakeHasher()]), NullSanitizingLogger<ClientSecrets>.Instance),
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
@@ -876,7 +865,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new FixedMatchAuthenticator("custom_method", null!)],
             Resolver(CreatePublicClient()),
-            CreateServerOptions("custom_method", TokenEndpointAuthMethods.None),
+            Advertising("custom_method", TokenEndpointAuthMethods.None),
             new ClientSecrets(Registry([new FakeHasher()]), NullSanitizingLogger<ClientSecrets>.Instance),
             logger);
 
@@ -1240,7 +1229,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new ThrowingCanHandleAuthenticator()],
             Resolver(CreatePublicClient()),
-            CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
+            Advertising(TokenEndpointAuthMethods.ClientSecretBasic),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
@@ -1272,7 +1261,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new ThrowingCanHandleAuthenticator()],
             Resolver(CreatePublicClient()),
-            CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
+            Advertising(TokenEndpointAuthMethods.ClientSecretBasic),
             secrets,
             logger);
 
@@ -1310,7 +1299,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [mismatchedAuthenticator],
             Resolver(client),
-            CreateServerOptions("client_secret_basic", "undeclared_method"),
+            Advertising("client_secret_basic", "undeclared_method"),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
@@ -1331,7 +1320,7 @@ public sealed class CompositeClientAuthenticatorTests
     public async Task AuthenticateAsync_returns_Authenticated_false_when_matched_method_is_not_in_server_allowlist()
     {
         // Authenticator declares and returns "custom_method"; server only allows "client_secret_basic".
-        // The guard at line 116–117 rejects because "custom_method" is not in AuthMethodsSupported.
+        // Rejected because "custom_method" is not advertised.
         var customAuthenticator = new AlwaysHandlesAuthenticator("custom_method");
 
         var registry = Registry([new FakeHasher()]);
@@ -1349,7 +1338,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [customAuthenticator],
             Resolver(client),
-            CreateServerOptions("client_secret_basic"),
+            Advertising("client_secret_basic"),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
@@ -1374,7 +1363,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new ClientSecretAuthenticator(secrets)],
             Resolver(CreatePublicClient()),
-            CreateServerOptions(TokenEndpointAuthMethods.ClientSecretBasic),
+            Advertising(TokenEndpointAuthMethods.ClientSecretBasic),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 
@@ -1395,7 +1384,7 @@ public sealed class CompositeClientAuthenticatorTests
         var composite = new CompositeClientAuthenticator(
             [new ClientSecretAuthenticator(secrets)],
             Resolver(null),
-            CreateServerOptions(TokenEndpointAuthMethods.None),
+            Advertising(TokenEndpointAuthMethods.None),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
 

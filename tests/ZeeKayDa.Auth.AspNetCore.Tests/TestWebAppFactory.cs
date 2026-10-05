@@ -161,9 +161,6 @@ public sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactory>
                 // Default issuer used by most tests.
                 options.Issuer = "https://test.example.com";
 
-                // Advertise "none" so the public test client passes the subset validation.
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-
                 // A login page, so the default host can hand an unauthenticated request off the
                 // way a real one does. Tests covering the unconfigured case clear it themselves.
                 options.AuthorizationEndpoint.Interaction.LoginPath = "/account/login";
@@ -243,8 +240,6 @@ internal sealed class TestWebAppFactoryWithRemoteIp : WebApplicationFactory<Test
             {
                 options.Issuer = "http://localhost:5000";
                 options.Development.AllowHttpLoopbackIssuer = true;
-                // Advertise "none" so the public test client passes the subset validation.
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 _configureOptions?.Invoke(options);
             }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client", client =>
@@ -291,7 +286,6 @@ internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebA
             services.AddZeeKayDaAuth(options =>
             {
                 options.Issuer = "https://test.example.com";
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client", client =>
                 {
@@ -351,7 +345,6 @@ internal sealed class TestWebAppFactoryWithFallbackAuthorizationPolicy : WebAppl
             var authBuilder = services.AddZeeKayDaAuth(options =>
             {
                 options.Issuer = "https://test.example.com";
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client", client =>
                 {
@@ -422,7 +415,6 @@ internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactor
             services.AddZeeKayDaAuth(options =>
             {
                 options.Issuer = "https://test.example.com";
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 _configureOptions?.Invoke(options);
             }).AddInMemoryClients(clients =>
                 clients.AddPublic("test-client", client =>

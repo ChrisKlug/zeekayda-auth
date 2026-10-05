@@ -10,17 +10,16 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.AspNetCore.Tests.ClientAuthentication;
 
 /// <summary>
-/// End-to-end host-startup integration tests for AC #3 of issue #146:
-/// verifying that <c>InMemoryClientRepository</c> rejects client registrations whose
-/// <c>AllowedTokenEndpointAuthMethods</c> are not a subset of the server's
-/// <c>AuthMethodsSupported</c>, and that the failure aborts host startup.
+/// End-to-end host-startup tests: <c>InMemoryClientRepository</c> rejects a client registration
+/// whose <c>AllowedTokenEndpointAuthMethods</c> are not all advertised by the server, and the
+/// failure aborts host startup.
 /// </summary>
 public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
 {
     // ── Failing path ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Host_startup_throws_when_client_AllowedTokenEndpointAuthMethods_is_not_subset_of_AuthMethodsSupported()
+    public void Host_startup_throws_when_a_client_lists_a_method_no_authenticator_performs()
     {
         using var factory = new InvalidAuthMethodWebAppFactory();
 
@@ -31,16 +30,16 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
 
         configEx.Should().NotBeNull(
             because: "a ZeeKayDaConfigurationException must be somewhere in the exception chain " +
-                     "when a client's AllowedTokenEndpointAuthMethods is not a subset of AuthMethodsSupported");
+                     "when a client lists a method the server does not advertise");
 
         configEx!.AggregatedFailures.Should().Contain(
             f => f.Code == "client.token_endpoint_auth_methods.not_subset",
             because: "the validator must produce a 'client.token_endpoint_auth_methods.not_subset' failure " +
-                     "when the client's auth method is not in the server's AuthMethodsSupported list");
+                     "when the client's auth method is not advertised");
     }
 
     [Fact]
-    public void Host_startup_failure_for_a_method_other_than_none_does_not_suggest_advertising_none()
+    public void Host_startup_failure_for_a_method_no_authenticator_performs_points_at_registering_one()
     {
         using var factory = new InvalidAuthMethodWebAppFactory();
 
@@ -50,32 +49,29 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
             act.Should().Throw<Exception>().Which);
         configEx!.AggregatedFailures
             .Single(f => f.Code == "client.token_endpoint_auth_methods.not_subset")
-            .Message.Should().NotContain(
-                "none",
-                because: "the opt-in hint, in either its code or its bound-configuration form, is for " +
-                         "public clients only; a confidential client's unsupported method is fixed by " +
-                         "advertising that method");
+            .Message.Should().Contain("Register an IClientAuthenticator")
+            .And.NotContain("Public clients", because: "that hint is for a public client the filter refuses");
     }
 
     // ── Happy path ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Host_startup_succeeds_when_client_AllowedTokenEndpointAuthMethods_is_subset_of_AuthMethodsSupported()
+    public void Host_startup_succeeds_when_client_AllowedTokenEndpointAuthMethods_are_all_advertised()
     {
         using var factory = new ValidAuthMethodWebAppFactory();
 
         var act = () => factory.CreateClient();
 
         act.Should().NotThrow(
-            because: "the client's auth method is present in AuthMethodsSupported so startup must succeed");
+            because: "the client's auth method is advertised so startup must succeed");
     }
 
     // ── Inline factories ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Factory that registers a confidential client whose single auth method
-    /// (<c>client_secret_post</c>) is NOT in <c>AuthMethodsSupported</c> (which only contains
-    /// <c>client_secret_basic</c>).  Host startup must therefore throw.
+    /// (<c>private_key_jwt</c>) no registered authenticator performs, so the server does not
+    /// advertise it. Host startup must therefore throw.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -103,13 +99,7 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
             {
                 services.AddRouting();
 
-                // Server supports only client_secret_basic — intentionally omits client_secret_post.
-                services.AddZeeKayDaAuth(options =>
-                {
-                    options.Issuer = "https://test.example.com";
-                    // Only client_secret_basic is in AuthMethodsSupported.
-                    // The ClientSecretAuthenticator covers it, satisfying AuthenticatorCoverageActivator.
-                })
+                services.AddZeeKayDaAuth(options => options.Issuer = "https://test.example.com")
                 .AddInMemoryClients(clients =>
                     clients.Add(
                         Client.CreateConfidential(
@@ -119,13 +109,10 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                             ["https://test.example.com/callback"],
                             [],
                             ["openid"])
-                        // Override the default AllowedTokenEndpointAuthMethods to client_secret_post,
-                        // which is a valid method string but is NOT in AuthMethodsSupported.
                         with
                         {
                             AllowedTokenEndpointAuthMethods =
-                                new HashSet<string>(StringComparer.Ordinal)
-                                    { TokenEndpointAuthMethods.ClientSecretPost },
+                                new HashSet<string>(StringComparer.Ordinal) { "private_key_jwt" },
                         }))
                 // Integration test hosts run as "Production"; allow in-memory stores so only
                 // the intentional auth-method failure fires, not the environment guard.
@@ -143,7 +130,7 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
 
     /// <summary>
     /// Factory that registers a confidential client whose auth method
-    /// (<c>client_secret_basic</c>) IS in <c>AuthMethodsSupported</c>.
+    /// (<c>client_secret_basic</c>) the server advertises.
     /// Host startup must succeed.
     /// </summary>
     private sealed class ValidAuthMethodWebAppFactory
@@ -160,7 +147,6 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
             {
                 services.AddRouting();
 
-                // Server supports client_secret_basic. The client also uses client_secret_basic.
                 services.AddZeeKayDaAuth(options =>
                 {
                     options.Issuer = "https://test.example.com";
@@ -173,8 +159,6 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
                             ["https://test.example.com/callback"],
                             [],
                             ["openid"])
-                    // AllowedTokenEndpointAuthMethods defaults to { "client_secret_basic" }
-                    // which matches the server's AuthMethodsSupported — no override needed.
                     ))
                 // Integration test hosts run as "Production" by default; allow in-memory stores.
                 .AddInMemoryStores(allowOutsideDevelopment: true)

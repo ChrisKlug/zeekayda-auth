@@ -43,6 +43,7 @@ public sealed class ClientRegistrationValidatorTests
         var composite = MakeHasher(hasher ?? new FakeHasher());
         return new ClientRegistrationValidator(
             Options.Create(opts),
+            TestAuthMethods.Advertised(opts),
             composite,
             logger ?? NullSanitizingLogger<ClientRegistrationValidator>.Instance,
             withKeyRing ? new FakeSigningKeyRing(keySet) : null);
@@ -110,11 +111,7 @@ public sealed class ClientRegistrationValidatorTests
 
     private static AuthorizationServerOptions BuildDefaultServerOptions()
     {
-        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        // Include "none" so public clients (AllowedTokenEndpointAuthMethods={"none"}) pass
-        // the subset check. Confidential clients use "client_secret_basic" which is already default.
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-        return opts;
+        return new AuthorizationServerOptions { Issuer = "https://test.example.com" };
     }
 
     private static Client MakeValidPublicClient(string clientId = "test-client") =>
@@ -1163,8 +1160,6 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_passes_if_AllowedSigningAlgorithms_is_subset_of_server_algorithms()
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        // Include None so public clients (AllowedTokenEndpointAuthMethods={"none"}) pass subset check.
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         var validator = MakeValidator(
             serverOptions: opts,
             keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
@@ -1183,7 +1178,6 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_fails_with_not_subset_code_if_AllowedSigningAlgorithms_is_not_subset_of_server_algorithms()
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         var validator = MakeValidator(
             serverOptions: opts, keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256));
 
@@ -1202,7 +1196,6 @@ public sealed class ClientRegistrationValidatorTests
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         opts.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         var validator = MakeValidator(
             serverOptions: opts,
             keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
@@ -1223,7 +1216,6 @@ public sealed class ClientRegistrationValidatorTests
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         opts.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         var validator = MakeValidator(serverOptions: opts, keySet: null);
 
         var client = MakeValidPublicClient() with
@@ -1243,7 +1235,6 @@ public sealed class ClientRegistrationValidatorTests
         // check at all. That window is unchecked by anything else, so it is logged rather than
         // passed over in silence.
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
         var validator = MakeValidator(logger: logger, serverOptions: opts, keySet: null);
 
@@ -1261,7 +1252,6 @@ public sealed class ClientRegistrationValidatorTests
     public void Validate_skips_the_subset_check_when_there_is_no_key_set_and_no_filter()
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         var validator = MakeValidator(serverOptions: opts, withKeyRing: false);
 
         var client = MakeValidPublicClient() with
@@ -1898,7 +1888,7 @@ public sealed class ClientRegistrationValidatorTests
         // Explicitly configure a server that only supports client_secret_basic so that a client
         // registering client_secret_post fails the subset check.
         var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        serverOptions.TokenEndpoint.AuthMethodsSupported =
+        serverOptions.TokenEndpoint.AdvertisedAuthMethods =
             [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None];
         var validator = MakeValidator(serverOptions: serverOptions);
         var client = new Client
@@ -1920,11 +1910,10 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_failure_message_contains_wire_string_for_public_client_if_None_is_not_in_server_subset()
+    public void Validate_failure_message_names_the_filter_for_a_public_client_if_the_filter_withholds_None()
     {
-        // Server has only client_secret_basic (no none) — public client's {"none"} fails subset.
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        // Deliberately do NOT add TokenEndpointAuthMethods.None
+        opts.TokenEndpoint.AdvertisedAuthMethods = [TokenEndpointAuthMethods.ClientSecretBasic];
         var validator = MakeValidator(serverOptions: opts);
         var client = Client.CreatePublic(
             "client",
@@ -1936,7 +1925,18 @@ public sealed class ClientRegistrationValidatorTests
 
         failures.Should().Contain(f =>
                 f.Code == "client.token_endpoint_auth_methods.not_subset" &&
-                f.Message.Contains("none"));
+                f.Message.Contains("none") &&
+                f.Message.Contains("TokenEndpoint.AdvertisedAuthMethods"));
+    }
+
+    [Fact]
+    public void Validate_passes_a_public_client_with_no_filter_configured()
+    {
+        var validator = MakeValidator(serverOptions: new AuthorizationServerOptions { Issuer = "https://test.example.com" });
+
+        var failures = validator.Validate(MakeValidPublicClient());
+
+        failures.Should().BeEmpty("'none' is advertised by default, so a public client needs no server-wide opt-in");
     }
 
     // ── Credential registration constraints ──────────────────────────────────────────────────────

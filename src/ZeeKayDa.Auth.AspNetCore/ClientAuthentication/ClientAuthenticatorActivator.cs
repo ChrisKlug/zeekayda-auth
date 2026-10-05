@@ -7,9 +7,9 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 
 /// <summary>
-/// Startup check that ensures every method in <c>AuthMethodsSupported</c> is covered by
-/// exactly one registered <see cref="IClientAuthenticator"/>, and that no authenticator
-/// misconfigures the reserved <c>none</c> method or overlaps with another authenticator.
+/// Startup check that no registered <see cref="IClientAuthenticator"/> misconfigures the reserved
+/// <c>none</c> method or overlaps with another, and that the token endpoint auth methods derived
+/// from them (<see cref="AdvertisedAuthMethods"/>) can serve the configured grants.
 /// </summary>
 /// <remarks>
 /// An activator rather than a verifier, by the mechanical rule: it constructs every registered
@@ -20,12 +20,12 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// authenticator builds every registered hasher — is reported against this check while the rest of
 /// the phase still runs.
 /// </remarks>
-internal sealed class AuthenticatorCoverageActivator(
+internal sealed class ClientAuthenticatorActivator(
     IOptions<AuthorizationServerOptions> options,
     IServiceProvider services) : IStartupActivator
 {
     /// <inheritdoc/>
-    public string Name => "AuthenticatorCoverage";
+    public string Name => "ClientAuthenticator";
 
     /// <inheritdoc/>
     public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
@@ -34,36 +34,59 @@ internal sealed class AuthenticatorCoverageActivator(
 
         var authenticators = services.GetServices<IClientAuthenticator>();
 
-        // Map method string → authenticator type name. Used to detect overlaps and uncovered methods.
-        var declared = new Dictionary<string, string>(StringComparer.Ordinal);
+        var declaringTypeByMethod = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var authenticator in authenticators)
         {
             var typeName = authenticator.GetType().Name;
             foreach (var method in authenticator.AuthenticationMethods)
-                CheckDeclaredMethod(context, declared, typeName, method);
+                CheckDeclaredMethod(context, declaringTypeByMethod, typeName, method);
         }
 
-        // Every server-advertised method (except none) must have a covering authenticator.
-        var uncoveredMethods = options.Value.TokenEndpoint.AuthMethodsSupported
-            .Distinct(StringComparer.Ordinal)
-            .Where(methodString => !string.Equals(methodString, TokenEndpointAuthMethods.None, StringComparison.Ordinal)
-                && !declared.ContainsKey(methodString));
-
-        foreach (var methodString in uncoveredMethods)
-        {
-            context.AddFailure(
-                "authenticators.method_uncovered",
-                $"TokenEndpoint.AuthMethodsSupported contains '{methodString}' but no registered " +
-                "IClientAuthenticator covers it. Register an authenticator or remove the method.");
-        }
+        VerifyAdvertisedMethods(context, services.GetRequiredService<AdvertisedAuthMethods>());
 
         return Task.CompletedTask;
     }
 
+    private void VerifyAdvertisedMethods(StartupVerificationContext context, AdvertisedAuthMethods advertised)
+    {
+        if (advertised.Unperformable.Count > 0)
+        {
+            // A no-op rather than a misstatement: the advertised set is an intersection, so a method
+            // no authenticator performs is never advertised whatever the filter says.
+            context.AddWarning(
+                "token_endpoint.advertised_auth_methods.unperformable",
+                "TokenEndpoint.AdvertisedAuthMethods names {UnperformableMethods}, which no registered " +
+                "IClientAuthenticator performs. Those entries have no effect — the server advertises " +
+                "only methods it can perform: {AdvertisedMethods}.",
+                string.Join(", ", advertised.Unperformable),
+                string.Join(", ", advertised.Methods));
+        }
+
+        if (advertised.Methods.Count == 0)
+        {
+            context.AddFailure(
+                "token_endpoint.advertised_auth_methods.none_performable",
+                "TokenEndpoint.AdvertisedAuthMethods names no method the server performs, so the token " +
+                "endpoint would accept no client. Name a method a registered IClientAuthenticator " +
+                $"performs, or '{TokenEndpointAuthMethods.None}', or set the filter to null.");
+        }
+        else if (options.Value.GrantTypesSupported.Contains(GrantType.ClientCredentials)
+            && TokenEndpointAuthMethodRules.AllowsOnlyNone(advertised.Methods))
+        {
+            // The client credentials grant requires client authentication (RFC 6749 §4.4, RFC 9700 §2.6).
+            context.AddFailure(
+                "token_endpoint.advertised_auth_methods.only_none_with_client_credentials",
+                "GrantTypesSupported includes 'client_credentials', which requires confidential clients, " +
+                "but the only advertised token endpoint auth method is 'none'. Register an " +
+                "IClientAuthenticator, or stop TokenEndpoint.AdvertisedAuthMethods withholding its methods. " +
+                "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).");
+        }
+    }
+
     private static void CheckDeclaredMethod(
         StartupVerificationContext context,
-        Dictionary<string, string> declared,
+        Dictionary<string, string> declaringTypeByMethod,
         string typeName,
         string method)
     {
@@ -104,7 +127,7 @@ internal sealed class AuthenticatorCoverageActivator(
             return;
         }
 
-        if (declared.TryGetValue(method, out var existingType))
+        if (declaringTypeByMethod.TryGetValue(method, out var existingType))
         {
             context.AddFailure(
                 "authenticators.method_overlap",
@@ -113,7 +136,7 @@ internal sealed class AuthenticatorCoverageActivator(
         }
         else
         {
-            declared[method] = typeName;
+            declaringTypeByMethod[method] = typeName;
         }
     }
 

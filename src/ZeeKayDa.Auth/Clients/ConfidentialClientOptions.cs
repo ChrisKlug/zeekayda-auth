@@ -55,7 +55,7 @@ public sealed class ConfidentialClientOptions : ClientOptions
     /// empty, the client gets <see cref="TokenEndpointAuthMethods.ClientSecretBasic"/>.
     /// </summary>
     /// <remarks>
-    /// Every entry must also be listed in the server's <c>TokenEndpointOptions.AuthMethodsSupported</c>,
+    /// Every entry must be a method the server advertises (<c>TokenEndpointOptions.AdvertisedAuthMethods</c>),
     /// and <see cref="TokenEndpointAuthMethods.None"/> is refused; startup fails otherwise.
     /// </remarks>
     public ISet<string> AllowedTokenEndpointAuthMethods { get; } = new HashSet<string>(StringComparer.Ordinal);

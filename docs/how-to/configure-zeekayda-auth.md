@@ -60,7 +60,7 @@ With only `Issuer` configured, ZeeKayDa.Auth registers the following defaults:
 | `Response.TypesSupported` | `["code"]` |
 | `Response.ModesSupported` | `["query"]` |
 | `GrantTypesSupported` | `["authorization_code"]` |
-| `TokenEndpoint.AuthMethodsSupported` | `["client_secret_basic"]` |
+| `TokenEndpoint.AdvertisedAuthMethods` | `null` — every method a registered client authenticator performs, plus `none`, is advertised |
 | `IdToken.AdvertisedSigningAlgorithms` | `null` — every algorithm in the configured signing keys is advertised |
 
 These defaults are a safe starting point for a standard authorization code flow with a

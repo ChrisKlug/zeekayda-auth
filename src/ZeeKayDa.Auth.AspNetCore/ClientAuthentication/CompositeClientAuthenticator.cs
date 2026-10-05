@@ -19,7 +19,7 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 internal sealed class CompositeClientAuthenticator(
     IEnumerable<IClientAuthenticator> authenticators,
     ValidatedClientResolver clientResolver,
-    IOptions<AuthorizationServerOptions> serverOptions,
+    AdvertisedAuthMethods advertisedAuthMethods,
     ClientSecrets secrets,
     SanitizingLogger<CompositeClientAuthenticator> logger)
 {
@@ -173,7 +173,5 @@ internal sealed class CompositeClientAuthenticator(
         return AuthenticatedClient.Refused;
     }
 
-    private bool IsMethodAllowedByServer(string method)
-        => serverOptions.Value.TokenEndpoint.AuthMethodsSupported
-            .Contains(method, StringComparer.Ordinal);
+    private bool IsMethodAllowedByServer(string method) => advertisedAuthMethods.Contains(method);
 }

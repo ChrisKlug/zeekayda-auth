@@ -64,7 +64,6 @@ internal sealed class EndpointHost : IDisposable
         var authBuilder = services.AddZeeKayDaAuth(options =>
         {
             options.Issuer = "https://test.example.com";
-            options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             options.AuthorizationEndpoint.Interaction.LoginPath = "/account/login";
             options.AuthorizationEndpoint.Interaction.ConsentPath = "/account/consent";
 

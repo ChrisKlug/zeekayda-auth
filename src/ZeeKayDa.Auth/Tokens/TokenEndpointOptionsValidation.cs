@@ -3,7 +3,7 @@ namespace ZeeKayDa.Auth.Tokens;
 internal static class TokenEndpointOptionsValidation
 {
     internal static IEnumerable<ZeeKayDaConfigurationFailure> Validate(this TokenEndpointOptions tokenEndpoint) =>
-        ValidateLifetimes(tokenEndpoint).Concat(ValidateAuthMethodsSupported(tokenEndpoint));
+        ValidateLifetimes(tokenEndpoint).Concat(ValidateAdvertisedAuthMethods(tokenEndpoint));
 
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateLifetimes(TokenEndpointOptions tokenEndpoint)
     {
@@ -37,38 +37,43 @@ internal static class TokenEndpointOptionsValidation
         }
     }
 
-    private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateAuthMethodsSupported(TokenEndpointOptions tokenEndpoint)
+    /// <summary>
+    /// Null is the default and means "advertise everything the server can do"; an empty filter
+    /// would advertise and accept nothing at all, which is never what an operator means.
+    /// </summary>
+    private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateAdvertisedAuthMethods(TokenEndpointOptions tokenEndpoint)
     {
-        var methods = tokenEndpoint.AuthMethodsSupported;
+        var methods = tokenEndpoint.AdvertisedAuthMethods;
 
-        if (methods is not { Count: > 0 })
+        if (methods is null)
+            yield break;
+
+        if (methods.Count == 0)
         {
             yield return new(
-                methods is null
-                    ? "configuration.token_endpoint.auth_methods_supported.null"
-                    : "configuration.token_endpoint.auth_methods_supported.empty",
-                "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported must not be null or empty. " +
-                "Specify at least one client authentication method (e.g., TokenEndpointAuthMethods.ClientSecretBasic). " +
-                "See OAuth 2.0 Security BCP §2.6 (RFC 9700).");
+                "configuration.token_endpoint.advertised_auth_methods.empty",
+                "AuthorizationServerOptions.TokenEndpoint.AdvertisedAuthMethods is an empty set, which " +
+                "would accept no client at the token endpoint. Name at least one method, or set it to " +
+                "null to advertise every method the registered client authenticators perform.");
             yield break;
         }
 
         foreach (var problem in methods.Select(AuthMethodProblem).OfType<string>())
-            yield return new("configuration.token_endpoint.auth_methods_supported.invalid_entry", problem);
+            yield return new("configuration.token_endpoint.advertised_auth_methods.invalid_entry", problem);
     }
 
     private static string? AuthMethodProblem(string? authMethod)
     {
         if (TokenEndpointAuthMethodRules.IsBlank(authMethod))
-            return "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+            return "AuthorizationServerOptions.TokenEndpoint.AdvertisedAuthMethods contains an invalid entry: " +
                 "each entry must be a non-empty, non-whitespace string.";
 
         if (TokenEndpointAuthMethodRules.HasSurroundingWhitespace(authMethod))
-            return "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+            return "AuthorizationServerOptions.TokenEndpoint.AdvertisedAuthMethods contains an invalid entry: " +
                 $"'{authMethod}' has leading or trailing whitespace.";
 
         if (TokenEndpointAuthMethodRules.HasControlCharacters(authMethod))
-            return "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported contains an invalid entry: " +
+            return "AuthorizationServerOptions.TokenEndpoint.AdvertisedAuthMethods contains an invalid entry: " +
                 $"'{authMethod}' contains one or more control characters.";
 
         return null;

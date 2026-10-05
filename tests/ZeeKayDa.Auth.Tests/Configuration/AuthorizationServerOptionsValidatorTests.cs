@@ -8,11 +8,6 @@ namespace ZeeKayDa.Auth.Tests.Configuration;
 
 public sealed class AuthorizationServerOptionsValidatorTests
 {
-    private const string ClientCredentialsRequiresNonNoneTokenAuthMethodMessage =
-        "GrantTypesSupported includes 'client_credentials', which requires confidential clients. " +
-        "TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. " +
-        "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).";
-
     private static IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(AuthorizationServerOptions options)
     {
         try
@@ -358,29 +353,28 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_is_null()
+    public void Validate_succeeds_when_AdvertisedAuthMethods_is_null()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            TokenEndpoint = { AuthMethodsSupported = null! },
+            TokenEndpoint = { AdvertisedAuthMethods = null },
         });
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.null")
-            .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported").And.Contain("null or empty");
+        failures.Should().BeEmpty();
     }
 
     [Fact]
-    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_is_empty()
+    public void Validate_fails_when_AdvertisedAuthMethods_is_empty()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            TokenEndpoint = { AuthMethodsSupported = [] },
+            TokenEndpoint = { AdvertisedAuthMethods = [] },
         });
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.empty")
-            .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported").And.Contain("null or empty");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.advertised_auth_methods.empty")
+            .Which.Message.Should().Contain("TokenEndpoint.AdvertisedAuthMethods");
     }
 
     [Theory]
@@ -394,192 +388,71 @@ public sealed class AuthorizationServerOptionsValidatorTests
             Issuer = issuer,
             ClockSkewTolerance = TimeSpan.FromSeconds(-1),
             AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.Zero },
-            TokenEndpoint = { AuthMethodsSupported = [] },
+            TokenEndpoint = { AdvertisedAuthMethods = [] },
         });
 
         failures.Should().ContainSingle().Which.Code.Should().Be(expectedCode);
     }
 
     [Fact]
-    public void An_empty_AuthMethodsSupported_with_the_client_credentials_grant_is_reported_as_empty_not_as_only_none()
+    public void Validate_fails_when_AdvertisedAuthMethods_contains_empty_string()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            GrantTypesSupported = [GrantType.ClientCredentials],
-            TokenEndpoint = { AuthMethodsSupported = [] },
+            TokenEndpoint = { AdvertisedAuthMethods = [""] },
         });
 
-        failures.Select(f => f.Code).Should()
-            .Contain("configuration.token_endpoint.auth_methods_supported.empty")
-            .And.NotContain("configuration.token_endpoint.auth_methods_supported.only_none_with_client_credentials");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.advertised_auth_methods.invalid_entry")
+            .Which.Message.Should().Contain("TokenEndpoint.AdvertisedAuthMethods");
     }
 
     [Fact]
-    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_empty_string()
+    public void Validate_fails_when_AdvertisedAuthMethods_contains_whitespace_only_string()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            TokenEndpoint = { AuthMethodsSupported = [""] },
+            TokenEndpoint = { AdvertisedAuthMethods = ["   "] },
         });
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.invalid_entry")
-            .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.advertised_auth_methods.invalid_entry")
+            .Which.Message.Should().Contain("TokenEndpoint.AdvertisedAuthMethods");
     }
 
     [Fact]
-    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_whitespace_only_string()
+    public void Validate_fails_when_AdvertisedAuthMethods_contains_leading_whitespace()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            TokenEndpoint = { AuthMethodsSupported = ["   "] },
+            TokenEndpoint = { AdvertisedAuthMethods = [" client_secret_basic"] },
         });
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.invalid_entry")
-            .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.advertised_auth_methods.invalid_entry")
+            .Which.Message.Should().Contain("TokenEndpoint.AdvertisedAuthMethods");
     }
 
     [Fact]
-    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_leading_whitespace()
+    public void Validate_fails_when_AdvertisedAuthMethods_contains_control_character()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            TokenEndpoint = { AuthMethodsSupported = [" client_secret_basic"] },
+            TokenEndpoint = { AdvertisedAuthMethods = ["client\x00secret"] },
         });
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.invalid_entry")
-            .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported");
+        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.advertised_auth_methods.invalid_entry")
+            .Which.Message.Should().Contain("TokenEndpoint.AdvertisedAuthMethods");
     }
 
     [Fact]
-    public void Validate_fails_when_TokenEndpointAuthMethodsSupported_contains_control_character()
+    public void Validate_succeeds_when_AdvertisedAuthMethods_contains_custom_method_string()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            TokenEndpoint = { AuthMethodsSupported = ["client\x00secret"] },
-        });
-
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.invalid_entry")
-            .Which.Message.Should().Contain("TokenEndpoint.AuthMethodsSupported");
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_TokenEndpointAuthMethodsSupported_contains_custom_method_string()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            TokenEndpoint = { AuthMethodsSupported = ["tls_client_auth"] },
-        });
-
-        failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_None_is_only_auth_method_and_no_client_credentials_grant()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            GrantTypesSupported = [GrantType.AuthorizationCode],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
-        });
-
-        failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Validate_fails_when_ClientCredentials_grant_and_only_None_auth_method()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            GrantTypesSupported = [GrantType.ClientCredentials],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
-        });
-
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.only_none_with_client_credentials")
-            .Which.Message.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
-    }
-
-    [Fact]
-    public void Validate_fails_when_ClientCredentials_and_AuthorizationCode_grants_and_only_None_auth_method()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.ClientCredentials],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
-        });
-
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.auth_methods_supported.only_none_with_client_credentials")
-            .Which.Message.Should().Be(ClientCredentialsRequiresNonNoneTokenAuthMethodMessage);
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_ClientCredentials_grant_and_non_None_auth_method()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            GrantTypesSupported = [GrantType.ClientCredentials],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic] },
-        });
-
-        failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_ClientCredentials_grant_and_None_plus_other_auth_methods()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            GrantTypesSupported = [GrantType.ClientCredentials],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None, TokenEndpointAuthMethods.ClientSecretBasic] },
-        });
-
-        failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_None_auth_method_and_no_AuthorizationCode_grant()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            GrantTypesSupported = [GrantType.RefreshToken],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
-        });
-
-        failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_None_auth_method_and_AuthorizationCode_grant()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            GrantTypesSupported = [GrantType.AuthorizationCode],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
-        });
-
-        failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_None_auth_method_and_multiple_grants_including_AuthorizationCode()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.None] },
+            TokenEndpoint = { AdvertisedAuthMethods = ["tls_client_auth"] },
         });
 
         failures.Should().BeEmpty();
@@ -1280,17 +1153,17 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_accumulates_multiple_TokenEndpointAuthMethods_invalid_entries()
+    public void Validate_accumulates_multiple_AdvertisedAuthMethods_invalid_entries()
     {
         // Three distinct invalid entries: whitespace-only, padded, control character.
         // The validator must accumulate one error per entry rather than stopping at the first.
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            TokenEndpoint = { AuthMethodsSupported = ["   ", " padded ", "ctrl\x00char"] },
+            TokenEndpoint = { AdvertisedAuthMethods = ["   ", " padded ", "ctrl\x00char"] },
         });
 
-        failures.Where(f => f.Code == "configuration.token_endpoint.auth_methods_supported.invalid_entry")
+        failures.Where(f => f.Code == "configuration.token_endpoint.advertised_auth_methods.invalid_entry")
             .Should().HaveCount(3, "each of the three invalid entries must produce a separate error");
     }
 
@@ -1682,11 +1555,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         {
             Issuer = "https://auth.example.com",
             AuthorizationEndpoint = { Uri = "https://user:pass@auth.example.com/connect/authorize" },
-            TokenEndpoint =
-            {
-                Uri = "https://user:pass@auth.example.com/connect/token",
-                AuthMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic],
-            },
+            TokenEndpoint = { Uri = "https://user:pass@auth.example.com/connect/token" },
         });
 
         failures.Select(f => f.Code).Should().Contain(

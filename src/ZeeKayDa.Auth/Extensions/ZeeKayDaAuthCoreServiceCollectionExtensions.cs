@@ -169,10 +169,16 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
             sp.GetRequiredService<ClientSecretHasherRegistry>(),
             sp.GetRequiredService<SanitizingLogger<ClientSecrets>>()));
 
+        // No client authenticator exists without the HTTP layer, so the core alone advertises only
+        // 'none'; AddZeeKayDaAuth replaces this with the set its authenticators perform.
+        services.TryAddSingleton(sp => new AdvertisedAuthMethods(
+            [], sp.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value.TokenEndpoint.AdvertisedAuthMethods));
+
         // A factory rather than type activation: the ISigningKeyRing parameter is optional, and DI
         // activation cannot supply a default for a service that is not registered.
         services.TryAddSingleton(sp => new ClientRegistrationValidator(
             sp.GetRequiredService<IOptions<AuthorizationServerOptions>>(),
+            sp.GetRequiredService<AdvertisedAuthMethods>(),
             sp.GetRequiredService<ClientSecretHasherRegistry>(),
             sp.GetRequiredService<SanitizingLogger<ClientRegistrationValidator>>(),
             sp.GetService<ISigningKeyRing>()));

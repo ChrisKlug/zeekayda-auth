@@ -557,6 +557,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **The advertised token endpoint auth methods are derived from the registered authenticators**
+  (#778). `TokenEndpoint.AuthMethodsSupported` is replaced by `TokenEndpoint.AdvertisedAuthMethods`
+  (configuration key `TokenEndpoint:AdvertisedAuthMethods`), a nullable filter that defaults to
+  `null`. `token_endpoint_auth_methods_supported` is now every method a registered
+  `IClientAuthenticator` declares, plus `none`: `client_secret_basic`, `client_secret_post` and
+  `none` with the built-in authenticator, where it was `client_secret_basic` alone. A host with a
+  public client no longer adds `none` server-wide, and a custom authenticator's methods are
+  advertised by registering it. The filter can only withhold: an entry no authenticator performs
+  logs `token_endpoint.advertised_auth_methods.unperformable` at startup instead of failing with
+  `authenticators.method_uncovered`, an empty filter fails with
+  `configuration.token_endpoint.advertised_auth_methods.empty`, and `client_credentials` with only
+  `none` advertised now fails at startup with
+  `token_endpoint.advertised_auth_methods.only_none_with_client_credentials`. The in-memory client
+  store no longer warns when `none` is advertised with no public client registered.
+
 - **Client registration takes a client id and one options callback** (#780). `AddPublic(clientId,
   configure)` and `AddConfidential(clientId, configure)` replace the positional redirect URI,
   post-logout redirect URI and scope lists: those are now `RedirectUris`, `PostLogoutRedirectUris`

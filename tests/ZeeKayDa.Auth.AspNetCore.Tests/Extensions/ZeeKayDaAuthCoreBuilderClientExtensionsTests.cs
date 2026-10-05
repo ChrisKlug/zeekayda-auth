@@ -94,7 +94,6 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
                 services.AddZeeKayDaAuth(o =>
                     {
                         o.Issuer = "https://test.example.com";
-                        o.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                     })
                     .AddClientSecretHasher<TestHasher>()
                     // Register the same client_id twice — duplicate detection in the repository

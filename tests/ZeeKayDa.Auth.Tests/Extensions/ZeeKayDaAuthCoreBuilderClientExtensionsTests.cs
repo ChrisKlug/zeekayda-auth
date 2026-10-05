@@ -19,8 +19,15 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
     private static void AllowPublicClients(AuthorizationServerOptions options)
     {
         options.Issuer = "https://test.example.com";
-        options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
     }
+
+    /// <summary>
+    /// The core alone has no client authenticator, so it advertises only <c>none</c>; a confidential
+    /// client needs the methods <c>AddZeeKayDaAuth</c>'s authenticator performs.
+    /// </summary>
+    private static void AdvertiseClientSecretMethods(IServiceCollection services) =>
+        services.AddSingleton(new AdvertisedAuthMethods(
+            [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.ClientSecretPost], filter: null));
 
     [Fact]
     public void AddInMemoryClients_throws_if_IClientRepository_is_already_registered()
@@ -74,6 +81,7 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
         var services = ServicesWithLogging();
         services.AddZeeKayDaAuthCore(AllowPublicClients).AddInMemoryClients(clients => clients.Add(
             Client.CreateConfidential("client", new ClientSecret(stored), ["https://app.example.com/cb"], [], ["openid"])));
+        AdvertiseClientSecretMethods(services);
         using var provider = services.BuildServiceProvider();
 
         var client = await provider.GetRequiredService<ValidatedClientResolver>()
@@ -152,8 +160,6 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
         var ct = TestContext.Current.CancellationToken;
         var services = ServicesWithLogging();
 
-        // Note: confidential client uses client_secret_basic (the default), which IS in the
-        // server's default AuthMethodsSupported. No need to add None for this test.
         services.AddZeeKayDaAuthCore(o => o.Issuer = "https://test.example.com")
             .AddClientSecretHasher<TestHasher>()
             .AddInMemoryClients(clients =>
@@ -163,6 +169,7 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
                     client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
                     client.AllowedScopes.UnionWith(["openid"]);
                 }));
+        AdvertiseClientSecretMethods(services);
 
         using var provider = services.BuildServiceProvider();
         var repo = provider.GetRequiredService<IClientRepository>();

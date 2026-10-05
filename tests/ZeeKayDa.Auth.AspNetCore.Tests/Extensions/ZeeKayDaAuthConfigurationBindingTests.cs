@@ -21,7 +21,7 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
             ["GrantTypesSupported:1"] = "RefreshToken",
             ["CorsOrigins:0"] = "https://app.example.com",
             ["TokenEndpoint:AccessTokenLifetime"] = "00:20:00",
-            ["TokenEndpoint:AuthMethodsSupported:0"] = "client_secret_post",
+            ["TokenEndpoint:AdvertisedAuthMethods:0"] = "client_secret_post",
             ["AuthorizationEndpoint:MaxRequestContextBytes"] = "2048",
             ["AuthorizationEndpoint:CodeChallengeMethodsSupported:0"] = "S256",
             ["AuthorizationEndpoint:Interaction:LoginPath"] = "/sign-in",
@@ -37,7 +37,7 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
         options.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode, GrantType.RefreshToken);
         options.CorsOrigins.Should().Equal("https://app.example.com");
         options.TokenEndpoint.AccessTokenLifetime.Should().Be(TimeSpan.FromMinutes(20));
-        options.TokenEndpoint.AuthMethodsSupported.Should().Equal("client_secret_post");
+        options.TokenEndpoint.AdvertisedAuthMethods.Should().Equal("client_secret_post");
         options.AuthorizationEndpoint.MaxRequestContextBytes.Should().Be(2048);
         options.AuthorizationEndpoint.CodeChallengeMethodsSupported.Should().Equal(CodeChallengeMethod.S256);
         options.AuthorizationEndpoint.Interaction.LoginPath.Should().Be("/sign-in");
@@ -55,14 +55,14 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
         {
             ["Issuer"] = "https://auth.example.com",
             ["GrantTypesSupported:0"] = "ClientCredentials",
-            ["TokenEndpoint:AuthMethodsSupported:0"] = "client_secret_post",
+            ["TokenEndpoint:AdvertisedAuthMethods:0"] = "client_secret_post",
             ["Response:TypesSupported:0"] = "Code",
             ["Response:ModesSupported:0"] = "Query",
             ["AuthorizationEndpoint:CodeChallengeMethodsSupported:0"] = "S256",
         });
 
         options.GrantTypesSupported.Should().Equal(GrantType.ClientCredentials);
-        options.TokenEndpoint.AuthMethodsSupported.Should().Equal("client_secret_post");
+        options.TokenEndpoint.AdvertisedAuthMethods.Should().Equal("client_secret_post");
         options.Response.TypesSupported.Should().Equal(ResponseType.Code);
         options.Response.ModesSupported.Should().Equal(ResponseMode.Query);
         options.AuthorizationEndpoint.CodeChallengeMethodsSupported.Should().Equal(CodeChallengeMethod.S256);
@@ -89,7 +89,7 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
         var options = Resolve(new Dictionary<string, string?> { ["Issuer"] = "https://auth.example.com" });
 
         options.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode);
-        options.TokenEndpoint.AuthMethodsSupported.Should().Equal("client_secret_basic");
+        options.TokenEndpoint.AdvertisedAuthMethods.Should().BeNull();
         options.IdToken.AdvertisedSigningAlgorithms.Should().BeNull();
     }
 
@@ -100,11 +100,11 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
             new Dictionary<string, string?>
             {
                 ["Issuer"] = "https://auth.example.com",
-                ["TokenEndpoint:AuthMethodsSupported:0"] = "client_secret_post",
+                ["TokenEndpoint:AdvertisedAuthMethods:0"] = "client_secret_post",
             },
-            configure => configure.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None));
+            configure => configure.TokenEndpoint.AdvertisedAuthMethods!.Add(TokenEndpointAuthMethods.None));
 
-        options.TokenEndpoint.AuthMethodsSupported.Should().Equal("client_secret_post", "none");
+        options.TokenEndpoint.AdvertisedAuthMethods.Should().Equal("client_secret_post", "none");
     }
 
     [Fact]

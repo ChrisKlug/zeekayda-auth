@@ -34,7 +34,6 @@ internal static partial class AuthorizationServerOptionsValidation
                 .Concat(options.EndSessionEndpoint.Validate())
                 .Concat(ValidateLifetimeRelationships(options))
                 .Concat(ValidatePkceMatchesTheCodeGrant(options))
-                .Concat(ValidateClientCredentialsCanAuthenticate(options))
                 .Concat(ValidateEndpointUris(options, issuerUri));
 
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateGrantTypes(AuthorizationServerOptions options)

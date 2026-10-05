@@ -4,7 +4,7 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// Yes/no checks on token endpoint authentication method names, shared by the server's
-/// <c>TokenEndpoint.AuthMethodsSupported</c> and a client's <c>AllowedTokenEndpointAuthMethods</c>.
+/// <c>TokenEndpoint.AdvertisedAuthMethods</c> and a client's <c>AllowedTokenEndpointAuthMethods</c>.
 /// </summary>
 internal static class TokenEndpointAuthMethodRules
 {

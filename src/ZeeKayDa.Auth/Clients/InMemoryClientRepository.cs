@@ -23,19 +23,10 @@ internal sealed class InMemoryClientRepository : IClientRepository
         _clients = clients;
 
     /// <summary>The DI factory <c>AddInMemoryClients</c> registers, and recognises as its own.</summary>
-    internal static readonly Func<IServiceProvider, IClientRepository> Factory = services =>
-    {
-        var repository = Build(
-            services.GetRequiredService<InMemoryClientRegistrationOptions>(),
-            services.GetRequiredService<ClientSecrets>(),
-            services.GetRequiredService<FrameworkThenHostValidator>());
-
-        repository.WarnIfNoneHasNoPublicClient(
-            services.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value,
-            services.GetRequiredService<SanitizingLogger<InMemoryClientRepository>>());
-
-        return repository;
-    };
+    internal static readonly Func<IServiceProvider, IClientRepository> Factory = services => Build(
+        services.GetRequiredService<InMemoryClientRegistrationOptions>(),
+        services.GetRequiredService<ClientSecrets>(),
+        services.GetRequiredService<FrameworkThenHostValidator>());
 
     /// <summary>
     /// Hashes the pending secrets, then checks every registration for a duplicate
@@ -120,21 +111,6 @@ internal sealed class InMemoryClientRepository : IClientRepository
             "client.client_id.duplicate",
             $"A client with ClientId '{client.ClientId}' has been registered more than once. " +
             "Each client must have a unique ClientId (ordinal comparison)."));
-    }
-
-    /// <summary>Warns when the server accepts <c>none</c> but no public client is registered to use it.</summary>
-    internal void WarnIfNoneHasNoPublicClient(AuthorizationServerOptions serverOptions, ILogger logger)
-    {
-        var advertisesNone = serverOptions.TokenEndpoint.AuthMethodsSupported
-            .Any(method => string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal));
-
-        if (advertisesNone && !_clients.Values.Any(client => client.IsPublic))
-        {
-            logger.LogWarning(
-                "The server advertises 'none' as a supported token endpoint authentication method " +
-                "but no public clients (IsPublic=true) are registered. Consider removing " +
-                "TokenEndpointAuthMethods.None from AuthMethodsSupported if no public clients are expected.");
-        }
     }
 
     /// <summary>Every registration this repository serves, for the startup checks that read them all.</summary>
