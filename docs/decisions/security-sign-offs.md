@@ -2105,3 +2105,22 @@ Copilot code, security and architecture lenses, the security and architect agent
 - **Accepted residuals (maintainer):** a forged callback in a browser mid-challenge can change only the login page's message
   (`A_forged_callback_in_a_browser_mid_challenge_changes_only_the_login_page_message`); a post-configurer replacing the
   `OnRemoteFailure` wrapper costs only precision; the read-then-write in `ReturnToLoginAsync` has a fail-closed race. No test for the last two.
+
+## 2026-10-05 — `zkd_error` sub-codes on `access_denied`; a grant always keeps `openid` (#789, code frozen at `2d8da3b`)
+Design-time security check of the code set, then Copilot code and security lenses, the security agent, fix-diff verification
+of each round, and the PR's Copilot, CodeQL and CodeScene review; no Critical.
+- Each code reaches only an opted-in client, and the description names the stage for every client. Closed —
+  `A_cancel_at_the_login_page_carries_login_cancelled_only_for_a_client_that_opted_in`,
+  `A_decline_at_the_consent_page_carries_consent_declined_only_for_a_client_that_opted_in`,
+  `A_refusal_at_the_only_provider_carries_provider_declined_only_for_a_client_that_opted_in`,
+  `A_host_refusing_the_external_account_carries_account_refused_only_for_a_client_that_opted_in`,
+  `A_host_page_refusing_the_external_account_carries_account_refused_only_for_a_client_that_opted_in`,
+  `The_description_names_the_stage_for_every_client_whether_or_not_it_opted_in`.
+- The token endpoint sends none. Closed — `The_token_endpoint_sends_no_zkd_error_to_a_client_that_opted_in`.
+- A denial for a client that no longer answers ends locally; nothing reaches a dropped redirect URI. Closed —
+  `A_cancel_after_the_client_dropped_the_redirect_uri_ends_the_request_locally`,
+  `A_refusal_at_the_only_provider_after_the_client_dropped_the_redirect_uri_ends_the_request_locally`.
+- A grant keeps `openid` and still only narrows the request. Closed — `A_grant_that_leaves_out_openid_still_grants_it`,
+  `An_empty_grant_grants_openid_alone`, `A_grant_naming_scopes_the_request_never_carried_issues_only_what_was_asked`.
+- **Accepted (maintainer):** the stage is visible to every client in `error_description`; the flag buys a stable value, not the
+  information. No test needed beyond the description test above.
