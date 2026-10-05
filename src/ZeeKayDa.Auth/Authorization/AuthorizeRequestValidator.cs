@@ -58,7 +58,7 @@ internal sealed partial class AuthorizeRequestValidator(
         PromptValuesAreCoherent,
         PromptValuesArePermittedForTheClient,
         MaxAgeIsWellFormed,
-        LoginHintIsWithinLimit,
+        LoginHintIsWellFormed,
     ];
 
     private readonly ValidatedScopeCatalog _scopes = scopes;
@@ -412,10 +412,18 @@ internal sealed partial class AuthorizeRequestValidator(
     /// </summary>
     internal const int MaxLoginHintLength = 256;
 
-    private static Problem? LoginHintIsWithinLimit(RequestContext context) =>
-        context.Single("login_hint") is { Length: > MaxLoginHintLength }
-            ? InvalidRequest("The login_hint parameter is too long.")
-            : null;
+    /// <summary>
+    /// Within the length cap and free of control and format characters — a line break a page could
+    /// carry into a log line, a bidi override that makes the pre-filled field display misleadingly.
+    /// Ordinary spaces are kept: phone numbers carry them.
+    /// </summary>
+    private static Problem? LoginHintIsWellFormed(RequestContext context) =>
+        context.Single("login_hint") switch
+        {
+            { Length: > MaxLoginHintLength } => InvalidRequest("The login_hint parameter is too long."),
+            { } hint when hint.Any(IsControlOrFormat) => InvalidRequest("The login_hint parameter is malformed."),
+            _ => null,
+        };
 
     // ---- Helpers ----
 
@@ -430,7 +438,7 @@ internal sealed partial class AuthorizeRequestValidator(
             Pkce = context.CodeChallenge is { } challenge ? new PkceChallenge(challenge, CodeChallengeMethod.S256) : null,
             Prompts = context.Prompts,
             MaxAge = context.MaxAge,
-            LoginHint = context.Single("login_hint") is { Length: > 0 } hint ? hint : null,
+            LoginHint = context.Single("login_hint") is { } hint && !string.IsNullOrWhiteSpace(hint) ? hint : null,
         };
 
     /// <summary>The request's <c>nonce</c>, or <see langword="null"/> when it carried none.</summary>
@@ -468,6 +476,9 @@ internal sealed partial class AuthorizeRequestValidator(
         Error = AuthorizeRequestErrors.InvalidRequest,
         Description = LocalErrorDescription,
     };
+
+    private static bool IsControlOrFormat(char c) =>
+        char.IsControl(c) || char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Format;
 
     private static bool ContainsControlOrWhitespace(string value) =>
         value.Any(c => char.IsControl(c) || char.IsWhiteSpace(c));

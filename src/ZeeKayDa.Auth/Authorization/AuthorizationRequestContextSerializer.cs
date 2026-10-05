@@ -3,14 +3,14 @@ using System.Text;
 namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
-/// Encodes an <see cref="AuthorizationRequestContext"/> to the compact binary form carried in the
-/// interaction cookie, and decodes it back.
+/// Encodes an <see cref="AuthorizationRequestContext"/> to the compact binary form held in the
+/// interaction store, and decodes it back.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The format is positional — a version byte followed by length-prefixed fields in a fixed order —
 /// rather than JSON. Field names would be roughly 200 bytes of pure overhead on a payload of about
-/// 400, and the cookie is re-sent on every request to its path. Nothing is lost by dropping
+/// 400, and the store holds one per interaction in flight. Nothing is lost by dropping
 /// self-description from a payload only this framework reads.
 /// </para>
 /// <para>

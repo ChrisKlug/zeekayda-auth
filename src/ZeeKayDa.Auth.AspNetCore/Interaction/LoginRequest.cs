@@ -52,8 +52,9 @@ public sealed class LoginRequest
     /// <summary>
     /// The <c>login_hint</c> the client sent (OIDC Core §3.1.2.1) — typically the user's email
     /// address or phone number — for the page to pre-fill, or <see langword="null"/> when it sent
-    /// none. Verbatim and unverified, at most 256 characters: a convenience for the user, never an
-    /// identity, so the page must not sign anyone in, or look anyone up, on its strength alone.
+    /// none. Verbatim and unverified, at most 256 characters with no control or format characters: a
+    /// convenience for the user, never an identity, so the page must not sign anyone in, or look
+    /// anyone up, on its strength alone. It is untrusted input: encode it as you would any other.
     /// </summary>
     public string? LoginHint { get; }
 }

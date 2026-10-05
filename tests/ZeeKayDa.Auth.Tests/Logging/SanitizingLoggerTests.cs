@@ -97,7 +97,9 @@ public sealed class SanitizingLoggerTests
             "actor_token",
             "password",
             "code",
-            "DPoP"],
+            "DPoP",
+            "login_hint",
+            "LoginHint"],
             o => o.WithoutStrictOrdering());
     }
 

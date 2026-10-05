@@ -37,7 +37,9 @@ namespace ZeeKayDa.Auth.Logging;
 /// <c>actor_token</c>,
 /// <c>password</c>,
 /// <c>code</c>,
-/// <c>DPoP</c>. Only states that implement
+/// <c>DPoP</c>,
+/// <c>login_hint</c>,
+/// <c>LoginHint</c>. Only states that implement
 /// <see cref="IEnumerable{T}">IEnumerable&lt;KeyValuePair&lt;string, object?&gt;&gt;</see>
 /// are inspected; all other state types pass through unchanged.
 /// </para>
@@ -82,7 +84,12 @@ public class SanitizingLogger<T> : ILogger<T>
             "actor_token",
             "password",
             "code",
-            "DPoP"
+            "DPoP",
+
+            // Not a credential, but personal data: the client's login_hint is an email address
+            // or a phone number (OIDC Core §3.1.2.1).
+            "login_hint",
+            "LoginHint",
         };
 
     /// <inheritdoc/>

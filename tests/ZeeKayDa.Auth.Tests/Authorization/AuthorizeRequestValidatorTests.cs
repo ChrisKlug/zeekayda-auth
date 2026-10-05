@@ -698,9 +698,36 @@ public class AuthorizeRequestValidatorTests
     }
 
     [Theory]
+    [InlineData("alice\n@example.com")]
+    [InlineData("alice\u0000")]
+    [InlineData("\u202Ealice")]
+    public async Task Phase2_login_hint_with_a_control_or_format_character_is_invalid_request(string hint)
+    {
+        var parameters = ValidParameters();
+        parameters["login_hint"] = [hint];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_request");
+    }
+
+    [Fact]
+    public async Task A_login_hint_with_ordinary_spaces_is_kept()
+    {
+        var parameters = ValidParameters();
+        parameters["login_hint"] = ["+46 70 123 45 67"];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.LoginHint.Should().Be("+46 70 123 45 67");
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
-    public async Task An_absent_or_empty_login_hint_is_carried_as_none(string? hint)
+    [InlineData("   ")]
+    public async Task An_absent_empty_or_whitespace_login_hint_is_carried_as_none(string? hint)
     {
         var parameters = ValidParameters();
         if (hint is not null)

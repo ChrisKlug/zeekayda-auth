@@ -47,8 +47,8 @@ internal sealed record ValidatedAuthorizeRequest
 
     /// <summary>
     /// The <c>login_hint</c> (OIDC Core §3.1.2.1) as the client sent it, at most
-    /// <see cref="AuthorizeRequestValidator.MaxLoginHintLength"/> characters, or
-    /// <see langword="null"/> when absent or empty. A hint, never an identity.
+    /// <see cref="AuthorizeRequestValidator.MaxLoginHintLength"/> characters with no control
+    /// or format characters, or <see langword="null"/> when absent, empty or whitespace. A hint, never an identity.
     /// </summary>
     public required string? LoginHint { get; init; }
 }

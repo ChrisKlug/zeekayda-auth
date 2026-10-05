@@ -14,6 +14,14 @@ public sealed class LoginModel(UserStore users, LoginInteraction login) : PageMo
 
     public bool Failed { get; private set; }
 
+    public async Task OnGetAsync()
+    {
+        // The client may have said who is signing in (login_hint); pre-fill it as a convenience.
+        // Razor encodes it like any other value, and it is never used to sign anyone in.
+        var request = await login.TryGetRequestAsync(HttpContext.RequestAborted);
+        Username ??= request?.LoginHint;
+    }
+
     public async Task OnPostAsync(string? password, string? action)
     {
         if (action == "cancel")

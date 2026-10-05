@@ -329,6 +329,10 @@ internal static class SensitiveLogNames
         "password",
         "code",
         "DPoP",
+
+        // Amended (#782): the client's login_hint is an email address or phone number — personal data.
+        "login_hint",
+        "LoginHint",
     ];
 }
 
