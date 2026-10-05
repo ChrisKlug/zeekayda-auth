@@ -2068,8 +2068,8 @@ Copilot code and security lenses, the security agent, fix-diff verification of e
 - **Accepted residual (maintainer):** a host `IClientRegistrationValidator` that logs on every call now logs per request;
   the host's own code, out of scope. No test.
 
-## 2026-10-05 — `none` advertised by default; token endpoint auth methods derived from the authenticators (#778, code frozen at `826d3c8`)
-Copilot code, security and architecture lenses, the security and architect agents, and fix-diff verification of each round; no Critical.
+## 2026-10-05 — `none` advertised by default; token endpoint auth methods derived from the authenticators (#778, code frozen at `1f1d05d`)
+Copilot code, security and architecture lenses, the security and architect agents, fix-diff verification of each round, and the PR's Copilot, CodeQL and CodeScene review; no Critical.
 - `none` is honoured only for a validator-served public client, and a confidential client cannot list it. Closed —
   `AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_confidential_client_on_none_fallback`,
   `A_confidential_client_listing_none_fails_as_none_on_confidential_although_none_is_advertised`.
@@ -2078,6 +2078,8 @@ Copilot code, security and architecture lenses, the security and architect agent
 - `client_credentials` with only `none` advertised fails startup (RFC 6749 §4.4). Closed —
   `Verify_fails_when_client_credentials_is_served_and_the_filter_leaves_only_none`,
   `Verify_fails_when_client_credentials_is_served_and_no_authenticator_is_registered`.
+- A host without the HTTP layer is held to the same advertised-set checks. Closed —
+  `AddZeeKayDaAuthCore_registers_the_check_so_a_core_only_host_is_held_to_it`.
 - Discovery, client registration and the token endpoint read one resolution, fixed at startup. Closed —
   `Methods_cannot_be_cast_back_to_a_mutable_collection`, `An_authenticator_adding_a_method_after_registration_cannot_authenticate_with_it`.
 - A malformed declaration or a miscased filter entry fails startup rather than silently withholding a method. Closed —
