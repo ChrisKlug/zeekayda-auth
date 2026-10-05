@@ -450,8 +450,8 @@ ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AbsoluteFamilyLifetime.get -> System.T
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AbsoluteFamilyLifetime.set -> void
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AccessTokenLifetime.get -> System.TimeSpan
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AccessTokenLifetime.set -> void
-ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AuthMethodsSupported.get -> System.Collections.Generic.ICollection<string!>!
-ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AuthMethodsSupported.set -> void
+ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AdvertisedAuthMethods.get -> System.Collections.Generic.ICollection<string!>?
+ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AdvertisedAuthMethods.set -> void
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.ComputeFamilyAbsoluteExpiry(System.DateTimeOffset now) -> System.DateTimeOffset
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.IdTokenLifetime.get -> System.TimeSpan
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.IdTokenLifetime.set -> void

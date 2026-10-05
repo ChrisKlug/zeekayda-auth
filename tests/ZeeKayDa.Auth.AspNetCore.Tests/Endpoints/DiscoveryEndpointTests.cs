@@ -202,10 +202,10 @@ public sealed class DiscoveryEndpointTests
             .Select(element => element.GetString())
             .Should().Equal("authorization_code");
 
-        // The default test configuration adds None on top of the default (ClientSecretBasic only).
+        // Derived: what the built-in client-secret authenticator performs, plus none.
         doc.GetProperty("token_endpoint_auth_methods_supported").EnumerateArray()
             .Select(element => element.GetString())
-            .Should().BeEquivalentTo(new[] { "client_secret_basic", "none" });
+            .Should().Equal("client_secret_basic", "client_secret_post", "none");
     }
 
     [Fact]
@@ -523,7 +523,7 @@ public sealed class DiscoveryEndpointTests
     {
         using var host = new EndpointHost(opts =>
         {
-            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
+            opts.TokenEndpoint.AdvertisedAuthMethods = [TokenEndpointAuthMethods.None];
             opts.GrantTypesSupported = [GrantType.AuthorizationCode];
         });
 
@@ -545,11 +545,11 @@ public sealed class DiscoveryEndpointTests
     [Fact]
     public async Task Startup_rejects_a_whitespace_TokenEndpointAuthMethod()
     {
-        using var host = new EndpointHost(opts => opts.TokenEndpoint.AuthMethodsSupported = ["   "]);
+        using var host = new EndpointHost(opts => opts.TokenEndpoint.AdvertisedAuthMethods = ["   "]);
 
         var failure = await host.StartupFailureAsync();
 
-        failure.AllMessages().Should().Contain("TokenEndpoint.AuthMethodsSupported");
+        failure.AllMessages().Should().Contain("TokenEndpoint.AdvertisedAuthMethods");
     }
 
     [Fact]

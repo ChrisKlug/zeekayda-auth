@@ -14,6 +14,7 @@ using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.AspNetCore.Tokens;
 using ZeeKayDa.Auth.StartupVerification;
+using ZeeKayDa.Auth.Tokens;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -72,7 +73,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// <see langword="null"/>.
     /// </exception>
     /// <remarks>
-    /// A collection key replaces the default list: setting one <c>TokenEndpoint:AuthMethodsSupported</c>
+    /// A collection key replaces the default list: setting one <c>Response:TypesSupported</c>
     /// entry leaves that entry as the whole list, and an empty JSON array (<c>[]</c>) leaves it empty.
     /// The framework reads these options once, so a configuration provider that reloads does not change
     /// the running server; an <c>IOptionsSnapshot</c> a host resolves itself binds again and would see the
@@ -160,10 +161,15 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // excluded from IEnumerable<IClientAuthenticator> and cannot dispatch recursively.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
+        services.TryAddSingleton(sp => new RegisteredAuthenticators(sp.GetServices<IClientAuthenticator>()));
         services.TryAddSingleton<CompositeClientAuthenticator>();
 
+        // Replaces the core's authenticator-less default: the HTTP layer is what performs methods.
+        services.RemoveAll<AdvertisedAuthMethods>();
+        services.AddSingleton(RegisteredAuthenticators.Advertise);
+
         services.TryAddEnumerable(
-            ServiceDescriptor.Scoped<IStartupActivator, AuthenticatorCoverageActivator>());
+            ServiceDescriptor.Scoped<IStartupActivator, ClientAuthenticatorActivator>());
 
         services.TryAddSingleton<GrantClaimsResolver>();
         services.TryAddSingleton<AuthorizationCodeGrant>();

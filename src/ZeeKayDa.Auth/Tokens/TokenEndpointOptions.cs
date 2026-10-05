@@ -7,7 +7,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 public sealed class TokenEndpointOptions
 {
-    private ICollection<string> _authMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic];
+    private ICollection<string>? _advertisedAuthMethods;
     private bool _frozen;
 
     /// <summary>
@@ -17,33 +17,33 @@ public sealed class TokenEndpointOptions
     public string? Uri { get; set; }
 
     /// <summary>
-    /// Gets or sets the client authentication methods supported by the token endpoint.
-    /// Defaults to <c>["client_secret_basic"]</c> (see <see cref="TokenEndpointAuthMethods.ClientSecretBasic"/>).
+    /// Gets or sets an optional narrowing filter on the client authentication methods the token
+    /// endpoint advertises and accepts. <see langword="null"/> — the default — advertises every
+    /// method a registered client authenticator performs, plus
+    /// <see cref="TokenEndpointAuthMethods.None"/>.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Maps to the <c>token_endpoint_auth_methods_supported</c> discovery metadata field.
-    /// Must not be null or empty and must contain at least one non-<c>"none"</c> method
-    /// (see <see cref="TokenEndpointAuthMethods.None"/>) if
+    /// The advertised set is derived from what the server can do, so this filter can only withhold
+    /// a method; it can never add one no authenticator performs. Naming such a method is a no-op and
+    /// warns at startup. An empty filter fails startup.
+    /// </para>
+    /// <para>
+    /// <see cref="TokenEndpointAuthMethods.None"/> is how public clients (single-page and native
+    /// apps) authenticate. Leaving it out refuses them: the in-memory client store fails startup on a
+    /// public client, and a public client from any other store is refused at the token endpoint. A
+    /// filter that leaves only <c>none</c> fails startup while
     /// <see cref="AuthorizationServerOptions.GrantTypesSupported"/> includes
     /// <see cref="GrantType.ClientCredentials"/>.
     /// </para>
     /// <para>
-    /// Public clients (single-page and native apps) authenticate with nothing, so registering one
-    /// requires adding <see cref="TokenEndpointAuthMethods.None"/>. It is not in the default because
-    /// advertising it declares that the server accepts clients presenting no credentials; a server
-    /// with only confidential clients should not make that statement.
-    /// </para>
-    /// <para>
-    /// Well-known values are available as constants on <see cref="TokenEndpointAuthMethods"/>.
-    /// Custom authentication methods (e.g. <c>tls_client_auth</c>) can be expressed as plain
-    /// strings alongside those constants.
+    /// Maps to the <c>token_endpoint_auth_methods_supported</c> discovery metadata field.
     /// </para>
     /// </remarks>
-    public ICollection<string> AuthMethodsSupported
+    public ICollection<string>? AdvertisedAuthMethods
     {
-        get => _authMethodsSupported;
-        set => _authMethodsSupported = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.TokenEndpoint.AuthMethodsSupported");
+        get => _advertisedAuthMethods;
+        set => _advertisedAuthMethods = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.TokenEndpoint.AdvertisedAuthMethods");
     }
 
     /// <summary>
@@ -152,7 +152,7 @@ public sealed class TokenEndpointOptions
         if (_frozen)
             return;
 
-        AuthMethodsSupported = FrozenOptions.Copy(AuthMethodsSupported);
+        AdvertisedAuthMethods = FrozenOptions.Copy(AdvertisedAuthMethods);
         _frozen = true;
     }
 }

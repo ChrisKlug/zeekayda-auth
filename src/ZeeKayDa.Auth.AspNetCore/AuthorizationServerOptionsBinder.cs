@@ -36,8 +36,8 @@ internal static class AuthorizationServerOptionsBinder
             options.AuthorizationEndpoint.CodeChallengeMethodsSupported = [];
 
         var token = section.GetSection(nameof(options.TokenEndpoint));
-        if (IsConfigured(token, nameof(TokenEndpointOptions.AuthMethodsSupported)))
-            options.TokenEndpoint.AuthMethodsSupported = [];
+        if (IsConfigured(token, nameof(TokenEndpointOptions.AdvertisedAuthMethods)))
+            options.TokenEndpoint.AdvertisedAuthMethods = [];
 
         var idToken = section.GetSection(nameof(options.IdToken));
         if (IsConfigured(idToken, nameof(IdTokenOptions.AdvertisedSigningAlgorithms)))

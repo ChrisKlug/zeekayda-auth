@@ -17,6 +17,7 @@ namespace ZeeKayDa.Auth.Clients;
 // silently weaken the check that a client's AllowedSigningAlgorithms are ones the ring signs with.
 internal sealed partial class ClientRegistrationValidator(
     IOptions<AuthorizationServerOptions> options,
+    AdvertisedAuthMethods advertisedAuthMethods,
     ClientSecretHasherRegistry registry,
     SanitizingLogger<ClientRegistrationValidator> logger,
     ISigningKeyRing? keyRing) : IClientRegistrationValidator

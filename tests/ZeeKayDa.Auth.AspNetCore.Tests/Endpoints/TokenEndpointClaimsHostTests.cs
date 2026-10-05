@@ -53,7 +53,6 @@ public sealed class TokenEndpointClaimsHostTests
                 var auth = services.AddZeeKayDaAuth(options =>
                 {
                     options.Issuer = Issuer;
-                    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 })
                 .AddInMemoryScopes(scopes ?? StandardScopes.All)
                 .AddInMemoryClients(clients ?? (c => c.AddPublic(App, client =>

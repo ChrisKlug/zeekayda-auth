@@ -44,7 +44,6 @@ public sealed class DevelopmentSigningKeyIntegrationTests
                 var authBuilder = services.AddZeeKayDaAuth(options =>
                 {
                     options.Issuer = "https://test.example.com";
-                    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 });
                 authBuilder
                     .AddInMemoryClients(clients =>

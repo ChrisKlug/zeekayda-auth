@@ -610,13 +610,13 @@ public class ValidatedClientResolverTests
     private static FrameworkThenHostValidator FrameworkThen(IClientRegistrationValidator host)
     {
         var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        serverOptions.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         var registry = new ClientSecretHasherRegistry(
             [new FakeHasher()], Microsoft.Extensions.Options.Options.Create(new ClientSecretHasherRegistrationOptions()));
 
         return new FrameworkThenHostValidator(
             new ClientRegistrationValidator(
                 Microsoft.Extensions.Options.Options.Create(serverOptions),
+                TestAuthMethods.Advertised(serverOptions),
                 registry,
                 NullSanitizingLogger<ClientRegistrationValidator>.Instance,
                 keyRing: null),

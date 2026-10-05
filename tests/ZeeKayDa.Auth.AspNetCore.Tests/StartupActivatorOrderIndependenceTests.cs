@@ -94,7 +94,6 @@ public sealed class StartupActivatorOrderIndependenceTests
                 var authBuilder = services.AddZeeKayDaAuth(options =>
                 {
                     options.Issuer = "https://test.example.com";
-                    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 })
                 .AddInMemoryClients(clients =>
                     clients.Add(Client.CreatePublic(

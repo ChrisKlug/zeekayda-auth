@@ -19,8 +19,6 @@ plus a callback that sets its redirect URIs, scopes and other settings:
 var builder = services.AddZeeKayDaAuth(options =>
 {
     options.Issuer = "https://id.example.com";
-    // Allow public clients (no client authentication)
-    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
 });
 
 builder.AddInMemoryClients(clients =>
@@ -108,16 +106,9 @@ clients.AddPublic("my-spa", client =>
 });
 ```
 
-To allow public clients, the server must advertise `none` as a supported token endpoint
-authentication method:
-
-```csharp
-services.AddZeeKayDaAuth(options =>
-{
-    options.Issuer = "https://id.example.com";
-    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-});
-```
+The server advertises `none` as a token endpoint authentication method by default, so a public
+client needs no server-wide setting. A host that sets `TokenEndpoint.AdvertisedAuthMethods` to
+refuse public clients must leave `none` out of it, and a public client registration then fails startup.
 
 ## Confidential clients
 
@@ -291,7 +282,7 @@ Common validation failures:
 | `client.redirect_uri.scheme_http_non_loopback` | `http://` URI for a non-loopback host |
 | `client.is_public.trinity_violation` | `IsPublic`, `Credentials`, and `AllowedTokenEndpointAuthMethods` are inconsistent |
 | `client.grant_types.client_credentials_on_public` | A public client allows `client_credentials`, which only a confidential client may use (RFC 6749 §4.4) |
-| `client.token_endpoint_auth_methods.not_subset` | Client auth method not in server's `AuthMethodsSupported` |
+| `client.token_endpoint_auth_methods.not_subset` | Client auth method not advertised by the server — no authenticator performs it, or `TokenEndpoint.AdvertisedAuthMethods` withholds it |
 | `client.client_id.duplicate` | Two clients with the same `ClientId` |
 | `client.credentials.no_secret` | A confidential client sets neither `Secret` nor `SecretHash` |
 | `client.credentials.secret_and_secret_hash` | A confidential client sets both `Secret` and `SecretHash` |

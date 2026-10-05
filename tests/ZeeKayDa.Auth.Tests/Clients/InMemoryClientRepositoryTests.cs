@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Clients;
@@ -35,31 +34,26 @@ public sealed class InMemoryClientRepositoryTests
         => new(MakeRegistry(), NullSanitizingLogger<ClientSecrets>.Instance);
 
     private static AuthorizationServerOptions DefaultServerOptions()
-    {
-        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        // Include "none" so public clients pass the subset validation check.
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-        return opts;
-    }
+        => new() { Issuer = "https://test.example.com" };
 
     private static ClientRegistrationValidator MakeValidator(
         AuthorizationServerOptions? serverOptions = null)
-        => new ClientRegistrationValidator(
-            Options.Create(serverOptions ?? DefaultServerOptions()),
+    {
+        var options = serverOptions ?? DefaultServerOptions();
+        return new ClientRegistrationValidator(
+            Options.Create(options),
+            TestAuthMethods.Advertised(options),
             MakeRegistry(),
             NullSanitizingLogger<ClientRegistrationValidator>.Instance,
             keyRing: null);
+    }
 
     private static InMemoryClientRepository MakeRepository(
         InMemoryClientRegistrationOptions opts,
-        AuthorizationServerOptions? serverOptions = null,
-        SanitizingLogger<InMemoryClientRepository>? logger = null)
+        AuthorizationServerOptions? serverOptions = null)
     {
-        var so = serverOptions ?? DefaultServerOptions();
-        var framework = MakeValidator(so);
-        var repository = InMemoryClientRepository.Build(opts, MakeSecrets(), new FrameworkThenHostValidator(framework, framework));
-        repository.WarnIfNoneHasNoPublicClient(so, logger ?? NullSanitizingLogger<InMemoryClientRepository>.Instance);
-        return repository;
+        var framework = MakeValidator(serverOptions);
+        return InMemoryClientRepository.Build(opts, MakeSecrets(), new FrameworkThenHostValidator(framework, framework));
     }
 
     private static InMemoryClientRepository MakeRepositoryWithValidator(
@@ -212,24 +206,23 @@ public sealed class InMemoryClientRepositoryTests
     }
 
     [Fact]
-    public void Build_failure_for_a_public_client_on_a_server_not_advertising_none_names_the_line_that_adds_it()
+    public void Build_failure_for_a_public_client_on_a_server_whose_filter_withholds_none_names_the_filter()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(ValidPublicClient("spa"));
-        // The default AuthMethodsSupported, which does not advertise "none".
-        var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+        var serverOptions = DefaultServerOptions();
+        serverOptions.TokenEndpoint.AdvertisedAuthMethods = [TokenEndpointAuthMethods.ClientSecretBasic];
 
         var act = () => MakeRepository(opts, serverOptions);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should()
             .ContainSingle(f => f.Code == "client.token_endpoint_auth_methods.not_subset")
-            .Which.Message.Should().Contain(
-                "options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);");
+            .Which.Message.Should().Contain("TokenEndpoint.AdvertisedAuthMethods leaves 'none' out");
     }
 
     [Fact]
-    public void Build_failure_for_a_confidential_client_listing_none_does_not_suggest_advertising_none()
+    public void A_confidential_client_listing_none_fails_as_none_on_confidential_although_none_is_advertised()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(
@@ -240,18 +233,12 @@ public sealed class InMemoryClientRepositoryTests
                     [TokenEndpointAuthMethods.None, TokenEndpointAuthMethods.ClientSecretBasic],
                     StringComparer.Ordinal),
             });
-        // The default AuthMethodsSupported, which does not advertise "none".
-        var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-
-        var act = () => MakeRepository(opts, serverOptions);
+        var act = () => MakeRepository(opts);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should()
-            .ContainSingle(f => f.Code == "client.token_endpoint_auth_methods.not_subset")
-            .Which.Message.Should().NotContain(
-                "Public clients",
-                because: "a confidential client listing 'none' is fixed by removing it from the client, " +
-                         "and advertising 'none' on the server would not make its registration valid");
+            .Which.AggregatedFailures.Select(f => f.Code).Should().Equal(
+                ["client.token_endpoint_auth_methods.none_on_confidential"],
+                "the server advertising 'none' must not let a confidential client be called without credentials");
     }
 
     // ── Multiple clients ──────────────────────────────────────────────────────────────────────────
@@ -555,33 +542,5 @@ public sealed class InMemoryClientRepositoryTests
             .Which.AggregatedFailures;
         failures.Should().Contain(f => f.Code == "client.credentials.empty_plaintext_secret");
         failures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
-    }
-
-    // ── None-advertised server-wide warning ───────────────────────────────────────────────────────
-
-    [Fact]
-    public void Build_logs_warning_when_none_is_advertised_but_no_public_clients_are_registered()
-    {
-        // Server advertises "none" but only confidential clients are registered → warning
-        var logger = new CapturingSanitizingLogger<InMemoryClientRepository>();
-        var opts = new InMemoryClientRegistrationOptions();
-        opts.Pending.Add(PendingSpec("confidential-only", "super-secret"));
-
-        MakeRepository(opts, logger: logger);
-
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.Contains("none"));
-    }
-
-    [Fact]
-    public void Build_does_not_log_warning_when_none_is_advertised_and_public_client_is_present()
-    {
-        // Server advertises "none" and at least one public client is registered → no warning
-        var logger = new CapturingSanitizingLogger<InMemoryClientRepository>();
-        var opts = new InMemoryClientRegistrationOptions();
-        opts.PreBuilt.Add(ValidPublicClient("public-client"));
-
-        MakeRepository(opts, logger: logger);
-
-        logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning && e.Message.Contains("none"));
     }
 }

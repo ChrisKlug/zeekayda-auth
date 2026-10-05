@@ -367,36 +367,37 @@ document.
 
 ---
 
-### `TokenEndpoint.AuthMethodsSupported`
+### `TokenEndpoint.AdvertisedAuthMethods`
 
 | Attribute | Value |
 |---|---|
-| Type | `ICollection<string>` |
-| Default | `["client_secret_basic"]` (see `TokenEndpointAuthMethods.ClientSecretBasic`) |
-| Required | Yes (must not be null or empty) |
+| Type | `ICollection<string>?` |
+| Default | `null` |
+| Required | No |
 
-The client authentication methods supported at the token endpoint. Published as
-`token_endpoint_auth_methods_supported` in the discovery document.
+An optional filter on the client authentication methods the token endpoint advertises and accepts.
+Published, after filtering, as `token_endpoint_auth_methods_supported` in the discovery document.
 
-Well-known method string constants are available on `TokenEndpointAuthMethods`. Custom authentication
-methods (e.g. `"tls_client_auth"` from RFC 8705) may also be included as plain strings alongside
-those constants.
+The advertised set is **derived**, not configured: every method a registered `IClientAuthenticator`
+declares in its `AuthenticationMethods`, plus `"none"`, which the framework handles itself. With the
+built-in authenticator that is `client_secret_basic`, `client_secret_post` and `none`. A host with a
+public client therefore needs no server-wide setting.
 
-> ⚠️ **Note:** Every method listed in `AuthMethodsSupported` (except `"none"`) must be present in
-> exactly one registered `IClientAuthenticator`'s `AuthenticationMethods`. Advertising a method with
-> no covering authenticator — or with more than one — will be caught by startup validation.
+The filter can only withhold a method, never add one:
 
-Each entry must be a non-empty, non-whitespace string with no leading or trailing whitespace and no
-control characters. If `GrantTypesSupported` includes `GrantType.ClientCredentials`, the collection
-must contain at least one method other than `TokenEndpointAuthMethods.None` (`"none"`).
+- An entry no authenticator performs (e.g. `"private_key_jwt"` with no authenticator for it) has no
+  effect and logs a startup warning (`token_endpoint.advertised_auth_methods.unperformable`).
+- A filter that leaves nothing the server performs fails startup
+  (`token_endpoint.advertised_auth_methods.none_performable`).
+- An entry that differs from a performed method only in casing (`Client_Secret_Basic`) fails startup
+  (`token_endpoint.advertised_auth_methods.casing`).
+- An empty filter fails startup; `null` advertises everything.
+- Each entry must be a non-empty string with no surrounding whitespace and no control characters.
 
-This cross-group validator rule is grounded in [RFC 6749 §4.4](https://www.rfc-editor.org/rfc/rfc6749#section-4.4) and
-[RFC 9700 §2.6](https://www.rfc-editor.org/rfc/rfc9700#section-2.6). If violated, startup validation
-emits:
-
-```text
-GrantTypesSupported includes 'client_credentials', which requires confidential clients. TokenEndpoint.AuthMethodsSupported must contain at least one method other than 'none'. See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).
-```
+If `GrantTypesSupported` includes `GrantType.ClientCredentials`, at least one method other than
+`"none"` must be advertised ([RFC 6749 §4.4](https://www.rfc-editor.org/rfc/rfc6749#section-4.4),
+[RFC 9700 §2.6](https://www.rfc-editor.org/rfc/rfc9700#section-2.6)); otherwise startup fails with
+`token_endpoint.advertised_auth_methods.only_none_with_client_credentials`.
 
 | `TokenEndpointAuthMethods` constant | String value |
 |---|---|
@@ -404,8 +405,13 @@ GrantTypesSupported includes 'client_credentials', which requires confidential c
 | `ClientSecretPost` | `"client_secret_post"` |
 | `None` | `"none"` |
 
-Custom methods not listed above (e.g. `"tls_client_auth"`, `"private_key_jwt"`) are expressed as
-plain strings alongside these constants.
+Custom methods (e.g. `"tls_client_auth"`) are plain strings, declared by the authenticator that
+performs them.
+
+```csharp
+// Refuse public clients: a public client registration then fails startup.
+options.TokenEndpoint.AdvertisedAuthMethods = [TokenEndpointAuthMethods.ClientSecretBasic];
+```
 
 `token_endpoint_auth_methods_supported` is defined by
 [RFC 8414 §2](https://www.rfc-editor.org/rfc/rfc8414#section-2).
@@ -413,32 +419,10 @@ plain strings alongside these constants.
 #### `"none"` and PKCE
 
 `TokenEndpointAuthMethods.None` (`"none"`) represents **public clients** — clients with no client
-secret. Public clients cannot securely transmit credentials at the token endpoint.
-
-> ⚠️ **Warning:** Public clients MUST use PKCE (Proof Key for Public OAuth 2.0 Clients) as the sole protection mechanism for the authorization code. This is mandated by [RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1) (OAuth 2.0 Security Best Current Practice).
-
-**PKCE is defined for the authorization code grant** per [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636). Therefore:
-
-- Public clients using the authorization code flow with `"none"` **must** use PKCE and present a valid `code_verifier` at the token endpoint.
-- `"none"` may be advertised alongside confidential-client methods such as `"client_secret_basic"`; this supports deployments that serve both public clients and confidential clients.
-- Startup validation does **not** reject `"none"` just because `GrantTypesSupported` omits `GrantType.AuthorizationCode`. Only the `client_credentials` + `none`-only combination above is rejected.
-- When the token endpoint is implemented, it must enforce each registered client's `token_endpoint_auth_method` at request time (tracked by issue #64). Without per-client enforcement, a confidential client could downgrade to public-client behavior by omitting credentials.
-
-Attempting to support `ClientCredentials` with only public-client authentication will fail at host startup with the error message shown above.
-
-```csharp
-// ✓ Valid: public clients with authorization code grant + PKCE
-options.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
-options.GrantTypesSupported = [GrantType.AuthorizationCode];
-
-// ✗ Invalid: client_credentials with only public-client authentication
-// This will fail startup validation
-options.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
-options.GrantTypesSupported = [GrantType.ClientCredentials];
-```
-
-Authorization-code clients that use `"none"` must perform the token exchange with a PKCE challenge
-and verifier. Consult your OAuth client library's documentation for PKCE implementation details.
+secret. Public clients cannot securely transmit credentials at the token endpoint, so they MUST use
+PKCE ([RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1)). The framework
+requires `S256` for every authorization code exchange, and a public client can use no grant that
+needs a credential.
 
 ---
 
@@ -654,10 +638,8 @@ startup output and host logs.
 | `configuration.response.modes_supported.null` | `Response.ModesSupported` is `null` |
 | `configuration.grant_types_supported.null` | `GrantTypesSupported` is `null` |
 | `configuration.grant_types_supported.undefined_value` | `GrantTypesSupported` contains an out-of-range `GrantType` cast |
-| `configuration.token_endpoint.auth_methods_supported.null` | `TokenEndpoint.AuthMethodsSupported` is `null` |
-| `configuration.token_endpoint.auth_methods_supported.empty` | `TokenEndpoint.AuthMethodsSupported` is empty |
-| `configuration.token_endpoint.auth_methods_supported.invalid_entry` | a `TokenEndpoint.AuthMethodsSupported` entry is blank, has surrounding whitespace, or contains a control character |
-| `configuration.token_endpoint.auth_methods_supported.only_none_with_client_credentials` | `GrantTypesSupported` includes `ClientCredentials` and every `TokenEndpoint.AuthMethodsSupported` value is `None` |
+| `configuration.token_endpoint.advertised_auth_methods.empty` | `TokenEndpoint.AdvertisedAuthMethods` is empty |
+| `configuration.token_endpoint.advertised_auth_methods.invalid_entry` | a `TokenEndpoint.AdvertisedAuthMethods` entry is blank, has surrounding whitespace, or contains a control character |
 | `configuration.token_endpoint.access_token_lifetime.not_positive` | `TokenEndpoint.AccessTokenLifetime` is zero or negative |
 | `configuration.token_endpoint.id_token_lifetime.not_positive` | `TokenEndpoint.IdTokenLifetime` is zero or negative |
 | `configuration.token_endpoint.refresh_token_lifetime.not_positive` | `TokenEndpoint.RefreshTokenLifetime` is zero or negative |
@@ -684,9 +666,6 @@ startup output and host logs.
 
 `<endpoint>` is `authorization_endpoint`, `token_endpoint`, `jwks_endpoint`, `end_session_endpoint`,
 or `user_info_endpoint`.
-
-For the exact failure text of the `client_credentials` + `none`-only token auth combination, see
-[`TokenEndpoint.AuthMethodsSupported`](#tokenendpointauthmethodssupported) above.
 
 > Note: Startup validation checks `AuthorizationServerOptions` and verifies that
 > `IScopeRepository` includes `openid`. Scope repositories still enforce their own validation rules

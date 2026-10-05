@@ -45,7 +45,7 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
             "GrantTypesSupported",
             "CorsOrigins",
             "AuthorizationEndpoint.CodeChallengeMethodsSupported",
-            "TokenEndpoint.AuthMethodsSupported",
+            "TokenEndpoint.AdvertisedAuthMethods",
             "IdToken.AdvertisedSigningAlgorithms",
             "Response.TypesSupported",
             "Response.ModesSupported");
@@ -66,7 +66,7 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     public void PostConfigure_keeps_the_host_values_order_and_duplicates_of_a_collection()
     {
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
-        options.TokenEndpoint.AuthMethodsSupported =
+        options.TokenEndpoint.AdvertisedAuthMethods =
         [
             TokenEndpointAuthMethods.ClientSecretPost,
             TokenEndpointAuthMethods.None,
@@ -75,7 +75,7 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
 
         PostConfigure(options);
 
-        options.TokenEndpoint.AuthMethodsSupported.Should().Equal(
+        options.TokenEndpoint.AdvertisedAuthMethods.Should().Equal(
             TokenEndpointAuthMethods.ClientSecretPost,
             TokenEndpointAuthMethods.None,
             TokenEndpointAuthMethods.ClientSecretPost);

@@ -22,15 +22,6 @@ var auth = builder.Services.AddZeeKayDaAuth(options =>
     options.AuthorizationEndpoint.Interaction.ErrorPath = "/error";
     options.EndSessionEndpoint.LogoutPath = "/logout";
     options.EndSessionEndpoint.SignedOutPath = "/signed-out";
-
-    // Public clients authenticate with nothing at the token endpoint, so "none" must be advertised
-    // for them to be registrable.
-    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-
-    // client_secret_basic is advertised by default. client_secret_post is added because the
-    // conformance suite's oidcc-server-client-secret-post module needs a client that authenticates
-    // that way.
-    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.ClientSecretPost);
 });
 
 auth.AddInMemoryScopes(StandardScopes.All);

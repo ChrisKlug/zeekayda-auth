@@ -47,7 +47,7 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
     }
 
     [Fact]
-    public async Task Discovery_advertises_the_default_method_and_none_for_the_public_client()
+    public async Task Discovery_advertises_none_for_the_public_client_with_no_server_wide_setting()
     {
         using var browser = NewBrowser();
 
@@ -55,7 +55,7 @@ public sealed partial class SampleIdentityServerTests : IClassFixture<WebApplica
 
         document.GetProperty("token_endpoint_auth_methods_supported").EnumerateArray()
             .Select(method => method.GetString())
-            .Should().BeEquivalentTo(["client_secret_basic", "none"]);
+            .Should().Equal("client_secret_basic", "client_secret_post", "none");
     }
 
     [Theory]

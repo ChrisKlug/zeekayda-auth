@@ -15,10 +15,6 @@ var auth = builder.Services.AddZeeKayDaAuth(builder.Configuration.GetSection("Id
     options.AuthorizationEndpoint.Interaction.ErrorPath = "/error";
     options.EndSessionEndpoint.LogoutPath = "/logout";
     options.EndSessionEndpoint.SignedOutPath = "/signed-out";
-
-    // Public clients authenticate with nothing at the token endpoint, so "none" must be advertised
-    // for them to be registrable.
-    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
 });
 
 // Hashers from other libraries, beside the built-in PBKDF2 one, which still hashes every new secret.

@@ -149,9 +149,9 @@ public sealed record Client : IClientWithCredentials
     /// expressions.
     /// </para>
     /// <para>
-    /// The server accepts public clients only when it advertises <c>none</c>, which it does not by
-    /// default: add <see cref="TokenEndpointAuthMethods.None"/> to
-    /// <c>TokenEndpoint.AuthMethodsSupported</c>, or startup rejects the registration.
+    /// The server advertises <see cref="TokenEndpointAuthMethods.None"/> by default; a
+    /// <c>TokenEndpoint.AdvertisedAuthMethods</c> filter that withholds it refuses the client — at
+    /// startup in the in-memory store, at the token endpoint from any other store.
     /// </para>
     /// </remarks>
     public static Client CreatePublic(

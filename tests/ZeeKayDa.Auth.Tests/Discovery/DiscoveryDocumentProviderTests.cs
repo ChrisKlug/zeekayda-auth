@@ -19,7 +19,8 @@ public sealed class DiscoveryDocumentProviderTests
         var provider = new DiscoveryDocumentProvider(
             optionsWrapper,
             new ValidatedScopeCatalog(scopeRepository ?? new InMemoryScopeRepository(StandardScopes.All)),
-            new FakeSigningKeyRing(keySet ?? TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
+            new FakeSigningKeyRing(keySet ?? TestSigningKeys.KeySet(SigningAlgorithm.RS256)),
+            TestAuthMethods.Advertised(options));
         return await provider.GetDocumentAsync(TestContext.Current.CancellationToken);
     }
 
@@ -206,7 +207,8 @@ public sealed class DiscoveryDocumentProviderTests
         doc.ScopesSupported.Should().Equal(StandardScopes.All.Select(scope => scope.Name));
         doc.ResponseModesSupported.Should().ContainSingle().Which.Should().Be(ResponseMode.Query);
         doc.GrantTypesSupported.Should().ContainSingle().Which.Should().Be(GrantType.AuthorizationCode);
-        doc.TokenEndpointAuthMethodsSupported.Should().ContainSingle().Which.Should().Be(TokenEndpointAuthMethods.ClientSecretBasic);
+        doc.TokenEndpointAuthMethodsSupported.Should().Equal(
+            TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.ClientSecretPost, TokenEndpointAuthMethods.None);
         doc.SubjectTypesSupported.Should().ContainSingle().Which.Should().Be("public");
         doc.IdTokenSigningAlgValuesSupported.Should().ContainSingle().Which.Should().Be(SigningAlgorithm.RS256);
     }
@@ -229,7 +231,7 @@ public sealed class DiscoveryDocumentProviderTests
                 ModesSupported = [ResponseMode.Query],
             },
             GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic, "tls_client_auth"] },
+            TokenEndpoint = { AdvertisedAuthMethods = [TokenEndpointAuthMethods.ClientSecretBasic, "tls_client_auth"] },
         }, scopeRepository, TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.PS256));
 
         doc.ResponseTypesSupported.Should().Equal(ResponseType.Code);
@@ -237,8 +239,8 @@ public sealed class DiscoveryDocumentProviderTests
         doc.ResponseModesSupported.Should().Equal(ResponseMode.Query);
         doc.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode, GrantType.RefreshToken);
         doc.TokenEndpointAuthMethodsSupported.Should().Equal(
-            TokenEndpointAuthMethods.ClientSecretBasic,
-            "tls_client_auth");
+            [TokenEndpointAuthMethods.ClientSecretBasic],
+            "the filter narrows what the server performs, and no authenticator performs tls_client_auth");
         doc.IdTokenSigningAlgValuesSupported.Should().Equal(SigningAlgorithm.RS256, SigningAlgorithm.PS256);
     }
 
@@ -595,7 +597,8 @@ public sealed class DiscoveryDocumentProviderTests
         var provider = new DiscoveryDocumentProvider(
             options,
             new ValidatedScopeCatalog(new InMemoryScopeRepository(StandardScopes.All)),
-            new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
+            new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)),
+            TestAuthMethods.Advertised(options.Value));
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -614,7 +617,8 @@ public sealed class DiscoveryDocumentProviderTests
         var provider = new DiscoveryDocumentProvider(
             options,
             new ValidatedScopeCatalog(capturingRepository),
-            new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
+            new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)),
+            TestAuthMethods.Advertised(options.Value));
 
         using var cts = new CancellationTokenSource();
 
@@ -631,7 +635,8 @@ public sealed class DiscoveryDocumentProviderTests
         var provider = new DiscoveryDocumentProvider(
             options,
             new ValidatedScopeCatalog(new ThrowingScopeRepository()),
-            new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
+            new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)),
+            TestAuthMethods.Advertised(options.Value));
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();

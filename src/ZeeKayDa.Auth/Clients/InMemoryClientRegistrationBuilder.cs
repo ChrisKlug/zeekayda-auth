@@ -27,9 +27,8 @@ public sealed class InMemoryClientRegistrationBuilder
     /// </param>
     /// <returns>This builder, so calls can be chained.</returns>
     /// <remarks>
-    /// The server accepts public clients only when it advertises <c>none</c>, which it does not by
-    /// default: add <c>TokenEndpointAuthMethods.None</c> to
-    /// <c>TokenEndpoint.AuthMethodsSupported</c>, or startup rejects the registration.
+    /// The server advertises <c>none</c> by default; a <c>TokenEndpoint.AdvertisedAuthMethods</c>
+    /// filter that withholds it makes startup reject the registration.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="clientId"/> or <paramref name="configure"/> is <see langword="null"/>.

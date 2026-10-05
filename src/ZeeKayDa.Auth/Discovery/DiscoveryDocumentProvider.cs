@@ -25,7 +25,8 @@ namespace ZeeKayDa.Auth.Discovery;
 /// from the <see cref="ISigningKeyRing"/>'s current key set on every read — never from operator
 /// configuration alone — so the server cannot advertise an algorithm it has no key for. A host with
 /// no signing key source registered fails startup (<c>signing.key_ring.missing</c>) rather than
-/// reaching this type.
+/// reaching this type. <c>token_endpoint_auth_methods_supported</c> is likewise derived, from the
+/// registered client authenticators (<see cref="AdvertisedAuthMethods"/>).
 /// </remarks>
 internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
 {
@@ -39,15 +40,18 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly ValidatedScopeCatalog _scopes;
     private readonly ISigningKeyRing _keyRing;
+    private readonly AdvertisedAuthMethods _authMethods;
 
     public DiscoveryDocumentProvider(
         IOptions<AuthorizationServerOptions> options,
         ValidatedScopeCatalog scopes,
-        ISigningKeyRing keyRing)
+        ISigningKeyRing keyRing,
+        AdvertisedAuthMethods authMethods)
     {
         _options = options;
         _scopes = scopes;
         _keyRing = keyRing;
+        _authMethods = authMethods;
     }
 
     /// <inheritdoc/>
@@ -78,8 +82,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
             ClaimsSupported = interactive.ClaimsSupported,
             ResponseModesSupported = interactive.ResponseModesSupported,
             GrantTypesSupported = [.. options.GrantTypesSupported],
-            TokenEndpointAuthMethodsSupported = [.. options.TokenEndpoint.AuthMethodsSupported
-                .Distinct(StringComparer.Ordinal)],
+            TokenEndpointAuthMethodsSupported = _authMethods.Methods,
             IdTokenSigningAlgValuesSupported = [.. AdvertisedSigningAlgorithms.Resolve(
                 _keyRing.Current, options.IdToken.AdvertisedSigningAlgorithms)],
             CodeChallengeMethodsSupported = interactive.CodeChallengeMethodsSupported,
