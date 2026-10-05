@@ -81,7 +81,7 @@ internal sealed class HandlerOptionsPin<TOptions>(
 
         // Wrapped, not replaced: handling the response in OnRemoteFailure is a host owning its own
         // failure page. A later replacement only costs the precision; the challenge cookie remains.
-        events.OnRemoteFailure = ProviderAccessDenied.RecordingFailures(events.OnRemoteFailure);
+        events.OnRemoteFailure = ProviderAccessDenied.RecordingFailures(events.OnRemoteFailure ?? (_ => Task.CompletedTask));
     }
 
     private static bool IsDefault(Func<AccessDeniedContext, Task>? handler) =>

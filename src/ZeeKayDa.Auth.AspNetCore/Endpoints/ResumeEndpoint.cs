@@ -76,6 +76,7 @@ internal sealed class ResumeEndpoint(
             return outcomes.LocalError(context, AuthorizeRequestErrors.InvalidRequest, NothingToResume);
 
         var (registration, requestContext, principal) = resolved;
+        outcomes.ForgetChallenge(context, registration.Name, requestContext.Id);
 
         // The host's callback gets a copy — of the identities, since ClaimsPrincipal.Clone shares
         // them. What is parked or promoted is the framework's own principal, so a reference the

@@ -6,8 +6,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// <summary>
 /// Names, to a provider's callback, the interaction a challenge from the login page was issued for:
 /// one cookie per challenged interaction, <c>zkd.challenge.&lt;id&gt;</c>, scoped to that provider's
-/// callback route, written when the user is sent out and removed when it sends them back to the
-/// login page.
+/// callback route, written when the user is sent out and removed when the round trip comes back
+/// either way: at <c>/connect/resume</c>, or when it sends the user back to the login page.
 /// </summary>
 /// <remarks>
 /// <para>

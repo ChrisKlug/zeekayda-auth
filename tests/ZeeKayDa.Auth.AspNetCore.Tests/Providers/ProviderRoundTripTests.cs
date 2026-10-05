@@ -487,6 +487,61 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
     }
 
     [Fact]
+    public async Task A_completed_round_trip_removes_its_challenge_cookie_at_resume()
+    {
+        using var client = _fixture.NewFlowClient();
+        var (interactionId, challenge) = await ChallengeAsync(client);
+        var callback = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
+
+        var resume = await client.GetAsync(callback.Headers.Location!.OriginalString, Cancellation);
+
+        resume.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
+            cookie.StartsWith($"zkd.challenge.{interactionId}=", StringComparison.Ordinal)
+            && cookie.Contains("path=/connect/callback/acme")
+            && cookie.Contains("expires=Thu, 01 Jan 1970"));
+    }
+
+    [Fact]
+    public async Task A_hosts_own_remote_failure_event_still_runs_and_the_user_still_returns_to_the_login_page()
+    {
+        var hostEventRan = false;
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+            auth.AddOAuth("acme", options =>
+            {
+                ConfigureAcme(options);
+                options.Events.OnRemoteFailure = _ =>
+                {
+                    hostEventRan = true;
+                    return Task.CompletedTask;
+                };
+            })));
+        using var client = NewClient(factory);
+        var (interactionId, challenge) = await ChallengeAsync(client);
+
+        var failed = await client.GetAsync(CallbackUrlOf(challenge, error: "temporarily_unavailable"), Cancellation);
+
+        hostEventRan.Should().BeTrue();
+        failed.Headers.Location!.OriginalString.Should().Be(WithInteractionId(LoginPath, interactionId));
+    }
+
+    [Fact]
+    public async Task A_host_that_clears_the_remote_failure_event_still_starts_and_returns_the_user_to_the_login_page()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+            auth.AddOAuth("acme", options =>
+            {
+                ConfigureAcme(options);
+                options.Events.OnRemoteFailure = null!;
+            })));
+        using var client = NewClient(factory);
+        var (interactionId, challenge) = await ChallengeAsync(client);
+
+        var failed = await client.GetAsync(CallbackUrlOf(challenge, error: "temporarily_unavailable"), Cancellation);
+
+        failed.Headers.Location!.OriginalString.Should().Be(WithInteractionId(LoginPath, interactionId));
+    }
+
+    [Fact]
     public async Task A_failure_carrying_only_the_challenge_cookie_renders_locally_and_records_nothing()
     {
         // Another browser that somehow holds the challenge cookie but not the interaction's binding.

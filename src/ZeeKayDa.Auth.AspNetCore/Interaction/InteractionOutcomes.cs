@@ -351,9 +351,16 @@ internal sealed class InteractionOutcomes(
             logger.LogError(ex, "Recording the provider outcome for client {ClientId} failed; the login page will not show it.", requestContext.ClientId);
         }
 
-        ProviderChallengeCookie.Clear(context, CallbackRouteFor(attempt.Provider), requestContext.Id);
+        ForgetChallenge(context, attempt.Provider, requestContext.Id);
         return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
     }
+
+    /// <summary>
+    /// Removes the challenge cookie <see cref="ChallengeAsync"/> wrote for this interaction and
+    /// provider, once the round trip it names has come back either way.
+    /// </summary>
+    public void ForgetChallenge(HttpContext context, string provider, string interactionId) =>
+        ProviderChallengeCookie.Clear(context, CallbackRouteFor(provider), interactionId);
 
     private PathString CallbackRouteFor(string provider) =>
         ProviderCallbackRoute.For(EndpointRouteHelper.GetIssuerUri(options), provider);
