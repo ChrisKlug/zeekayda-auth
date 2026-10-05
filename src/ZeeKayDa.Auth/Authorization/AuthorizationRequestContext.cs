@@ -65,6 +65,12 @@ internal sealed record AuthorizationRequestContext
     /// </summary>
     public string? Subject { get; init; }
 
+    /// <summary>
+    /// The client's <c>login_hint</c>, verbatim, for the login page to pre-fill, or
+    /// <see langword="null"/>. Unverified client input: never an identity.
+    /// </summary>
+    public string? LoginHint { get; init; }
+
     /// <summary>When the user authenticated, for <c>max_age</c> and the <c>auth_time</c> claim.</summary>
     public DateTimeOffset? AuthTime { get; init; }
 

@@ -673,6 +673,44 @@ public class AuthorizeRequestValidatorTests
         error.RedirectUri.Should().NotContain("..");
     }
 
+    [Fact]
+    public async Task Phase2_login_hint_longer_than_the_limit_is_invalid_request()
+    {
+        var parameters = ValidParameters();
+        parameters["login_hint"] = [new string('a', AuthorizeRequestValidator.MaxLoginHintLength + 1)];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_request");
+    }
+
+    [Fact]
+    public async Task A_login_hint_at_the_limit_is_carried_verbatim()
+    {
+        var hint = "user+tag@example.com" + new string('x', AuthorizeRequestValidator.MaxLoginHintLength - 20);
+        var parameters = ValidParameters();
+        parameters["login_hint"] = [hint];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.LoginHint.Should().Be(hint);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task An_absent_or_empty_login_hint_is_carried_as_none(string? hint)
+    {
+        var parameters = ValidParameters();
+        if (hint is not null)
+            parameters["login_hint"] = [hint];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.LoginHint.Should().BeNull();
+    }
+
     // ── Valid request ─────────────────────────────────────────────────────────────────────────
 
     [Fact]

@@ -93,7 +93,8 @@ public sealed class LoginInteraction
             client,
             _providers.Descriptors,
             _options.Value.AuthorizationEndpoint.Interaction.SupportsLocalSignIn,
-            ProviderReturnOf(requestContext.ProviderAttempt));
+            ProviderReturnOf(requestContext.ProviderAttempt),
+            requestContext.LoginHint);
     }
 
     /// <summary>

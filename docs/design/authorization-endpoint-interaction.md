@@ -436,8 +436,9 @@ methods write the redirect response and must be the caller's last action.
 public sealed class LoginInteraction   // singleton over IHttpContextAccessor, as are all the page services
 {
     // What the page renders: the client (ClientId + optional DisplayName), LocalLoginEnabled,
-    // the configured Providers, and ProviderReturn — the provider the user just came back from
-    // without signing in, Declined or Failed, null on an ordinary arrival. zkd_i-bound on
+    // the configured Providers, ProviderReturn — the provider the user just came back from
+    // without signing in, Declined or Failed, null on an ordinary arrival — and LoginHint, the
+    // client's login_hint verbatim (at most 256 characters; a hint, never an identity). zkd_i-bound on
     // SignInAsync's exact terms; stamps the page unframeable and uncacheable, as consent's does.
     // TryGetRequestAsync answers null instead of throwing when there is nothing to sign in for.
     Task<LoginRequest> GetRequestAsync(CancellationToken cancellationToken = default);

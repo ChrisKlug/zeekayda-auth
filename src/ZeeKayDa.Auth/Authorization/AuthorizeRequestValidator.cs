@@ -58,6 +58,7 @@ internal sealed partial class AuthorizeRequestValidator(
         PromptValuesAreCoherent,
         PromptValuesArePermittedForTheClient,
         MaxAgeIsWellFormed,
+        LoginHintIsWithinLimit,
     ];
 
     private readonly ValidatedScopeCatalog _scopes = scopes;
@@ -405,6 +406,17 @@ internal sealed partial class AuthorizeRequestValidator(
         return null;
     }
 
+    /// <summary>
+    /// The most a <c>login_hint</c> may hold. Generous for an email address or a phone number, and
+    /// a bound on what an unauthenticated request may make the interaction carry to the login page.
+    /// </summary>
+    internal const int MaxLoginHintLength = 256;
+
+    private static Problem? LoginHintIsWithinLimit(RequestContext context) =>
+        context.Single("login_hint") is { Length: > MaxLoginHintLength }
+            ? InvalidRequest("The login_hint parameter is too long.")
+            : null;
+
     // ---- Helpers ----
 
     private static ValidatedAuthorizeRequest Build(RequestContext context, string redirectUri, string? state) =>
@@ -418,6 +430,7 @@ internal sealed partial class AuthorizeRequestValidator(
             Pkce = context.CodeChallenge is { } challenge ? new PkceChallenge(challenge, CodeChallengeMethod.S256) : null,
             Prompts = context.Prompts,
             MaxAge = context.MaxAge,
+            LoginHint = context.Single("login_hint") is { Length: > 0 } hint ? hint : null,
         };
 
     /// <summary>The request's <c>nonce</c>, or <see langword="null"/> when it carried none.</summary>

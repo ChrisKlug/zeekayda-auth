@@ -29,7 +29,7 @@ internal static class AuthorizationRequestContextSerializer
     /// The format version. A payload carrying any other value is refused rather than misread —
     /// positional formats have no way to detect a field that moved.
     /// </summary>
-    private const byte Version = 4;
+    private const byte Version = 5;
 
     public static byte[] Encode(AuthorizationRequestContext context)
     {
@@ -65,6 +65,7 @@ internal static class AuthorizationRequestContextSerializer
         WriteNullableStrings(writer, context.GrantedScopes);
         WriteNullableTimestamp(writer, context.ConsentedAt);
         WriteProviderAttempt(writer, context.ProviderAttempt);
+        WriteNullableString(writer, context.LoginHint);
 
         writer.Flush();
         return buffer.ToArray();
@@ -150,9 +151,10 @@ internal static class AuthorizationRequestContextSerializer
             ConsentedAt = ReadNullableTimestamp(reader),
         };
 
-        return TryReadProviderAttempt(reader, out var attempt)
-            ? context with { ProviderAttempt = attempt }
-            : null;
+        if (!TryReadProviderAttempt(reader, out var attempt))
+            return null;
+
+        return context with { ProviderAttempt = attempt, LoginHint = ReadNullableString(reader) };
     }
 
     /// <summary>

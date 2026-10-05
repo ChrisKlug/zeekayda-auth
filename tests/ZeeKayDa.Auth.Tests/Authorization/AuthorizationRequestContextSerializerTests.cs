@@ -42,6 +42,7 @@ public class AuthorizationRequestContextSerializerTests
             GrantedScopes = ["openid", "profile"],
             ConsentedAt = Now.AddMinutes(-1),
             ProviderAttempt = new ProviderAttempt("facebook", Declined: true),
+            LoginHint = "user@example.com",
         };
 
         AuthorizationRequestContextSerializer.TryDecode(

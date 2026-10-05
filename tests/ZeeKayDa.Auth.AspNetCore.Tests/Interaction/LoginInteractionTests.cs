@@ -78,6 +78,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
                 local = request.LocalLoginEnabled,
                 providers = request.Providers.Count,
                 providerReturn = request.ProviderReturn is not null,
+                loginHint = request.LoginHint,
             });
         });
 
@@ -264,6 +265,19 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
         page.GetProperty("clientId").GetString().Should().Be("test-client");
         page.GetProperty("local").GetBoolean().Should().BeTrue();
         page.GetProperty("providerReturn").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_reports_the_login_hint_the_client_sent()
+    {
+        var query = ValidQuery();
+        query["login_hint"] = "alice@example.com";
+        var handoff = await AuthorizeAsync(query);
+
+        var response = await _client.GetAsync(WithInteractionId(LoginPath, InteractionIdFrom(handoff)), TestContext.Current.CancellationToken);
+
+        var page = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).RootElement;
+        page.GetProperty("loginHint").GetString().Should().Be("alice@example.com");
     }
 
     [Fact]
