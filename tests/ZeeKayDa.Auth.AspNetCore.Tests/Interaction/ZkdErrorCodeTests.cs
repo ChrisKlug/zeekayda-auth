@@ -167,13 +167,15 @@ public sealed class ZkdErrorCodeTests
         ShouldBeDeniedWith(callback, expected);
     }
 
-    [Fact]
-    public async Task The_description_names_the_stage_for_every_client_whether_or_not_it_opted_in()
+    [Theory]
+    [InlineData(Flagged)]
+    [InlineData(Plain)]
+    public async Task The_description_names_the_stage_for_every_client_whether_or_not_it_opted_in(string clientId)
     {
         // The stage is not a secret: the flag buys a stable value to branch on, not the information.
         using var host = NewHost();
         using var client = NewClient(host);
-        var interactionId = await ToLoginPageAsync(client, Plain);
+        var interactionId = await ToLoginPageAsync(client, clientId);
 
         var cancel = await client.PostAsync(WithInteractionId(LoginPath + "/cancel", interactionId), Form(), Cancellation);
 
