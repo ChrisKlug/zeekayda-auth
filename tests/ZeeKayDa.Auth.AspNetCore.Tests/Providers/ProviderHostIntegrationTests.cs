@@ -46,11 +46,15 @@ public sealed class ProviderHostIntegrationTests
     /// <summary>The host's pages: a probe reporting what the login page would render.</summary>
     private static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/test/login-options", (LoginInteraction login) => Results.Ok(new
+        endpoints.MapGet("/test/login-options", async (LoginInteraction login) =>
         {
-            local = login.LocalLoginEnabled,
-            providers = login.Providers.Select(provider => $"{provider.Id}:{provider.DisplayName}"),
-        }));
+            var request = await login.GetRequestAsync();
+            return Results.Ok(new
+            {
+                local = request.LocalLoginEnabled,
+                providers = request.Providers.Select(provider => $"{provider.Id}:{provider.DisplayName}"),
+            });
+        });
 
         // What the invariant forbids a host from doing, and what removal makes impossible.
         endpoints.MapGet("/test/challenge-provider", (HttpContext context) => context.ChallengeAsync("acme"));
@@ -66,6 +70,17 @@ public sealed class ProviderHostIntegrationTests
         ["code_challenge"] = Challenge,
         ["code_challenge_method"] = "S256",
     });
+
+    /// <summary>Authorize, then read what the login page the framework sent the user to would render.</summary>
+    private static async Task<string> LoginOptionsAsync(HttpClient client)
+    {
+        var handoff = await client.GetAsync(AuthorizeUrl(), TestContext.Current.CancellationToken);
+        var interactionId = ProviderTestHost.InteractionIdFrom(handoff);
+
+        return await client.GetStringAsync(
+            ProviderTestHost.WithInteractionId("/test/login-options", interactionId),
+            TestContext.Current.CancellationToken);
+    }
 
     private static void ShouldFailStartupWith(TestWebAppFactory factory, string code)
     {
@@ -88,7 +103,7 @@ public sealed class ProviderHostIntegrationTests
         }));
         using var client = NewClient(factory);
 
-        var body = await client.GetStringAsync("/test/login-options", TestContext.Current.CancellationToken);
+        var body = await LoginOptionsAsync(client);
 
         // "OAuth" is the display name AddOAuth defaults when the registration gives none.
         body.Should().Be("""{"local":true,"providers":["acme:Acme Corp","globex:OAuth"]}""");
@@ -97,14 +112,19 @@ public sealed class ProviderHostIntegrationTests
     [Fact]
     public async Task A_host_with_local_sign_in_off_reports_it_to_the_page()
     {
+        // Two providers, so the framework cannot choose and the login page is shown.
         using var factory = NewFactory(
             configureOptions: options => options.AuthorizationEndpoint.Interaction.SupportsLocalSignIn = false,
-            configureBuilder: builder => builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme)));
+            configureBuilder: builder => builder.WithProviders(auth =>
+            {
+                auth.AddOAuth("acme", ConfigureAcme);
+                auth.AddOAuth("globex", ConfigureAcme);
+            }));
         using var client = NewClient(factory);
 
-        var body = await client.GetStringAsync("/test/login-options", TestContext.Current.CancellationToken);
+        var body = await LoginOptionsAsync(client);
 
-        body.Should().Be("""{"local":false,"providers":["acme:OAuth"]}""");
+        body.Should().Be("""{"local":false,"providers":["acme:OAuth","globex:OAuth"]}""");
     }
 
     // ── Invisible to the host ─────────────────────────────────────────────────────────────────
@@ -471,7 +491,7 @@ public sealed class ProviderHostIntegrationTests
             auth.AddScheme<AuthenticationSchemeOptions, PlainHandler>("plain", "Plain", _ => { })));
         using var client = NewClient(factory);
 
-        var body = await client.GetStringAsync("/test/login-options", TestContext.Current.CancellationToken);
+        var body = await LoginOptionsAsync(client);
 
         body.Should().Be("""{"local":true,"providers":["plain:Plain"]}""");
     }

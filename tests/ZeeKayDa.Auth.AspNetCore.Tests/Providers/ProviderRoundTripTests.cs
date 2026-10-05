@@ -103,10 +103,28 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
         return System.Text.Json.JsonDocument.Parse(body).RootElement.Clone();
     }
 
+    /// <summary>What the login page renders for the interaction.</summary>
+    private static async Task<System.Text.Json.JsonElement> ReadLoginPageAsync(HttpClient client, string interactionId)
+    {
+        var body = await client.GetStringAsync(WithInteractionId(LoginPath, interactionId), Cancellation);
+        return System.Text.Json.JsonDocument.Parse(body).RootElement.Clone();
+    }
+
+    /// <summary>A host whose one provider is challenged straight from the authorization endpoint.</summary>
+    private static TestWebAppFactory NewSingleProviderFactory() => NewFactory(configureOptions: options =>
+    {
+        options.AuthorizationEndpoint.Interaction.LoginPath = null;
+        options.AuthorizationEndpoint.Interaction.SupportsLocalSignIn = false;
+    });
+
     private static string CorrelationCookieOf(HttpResponseMessage challenge) => challenge.Headers
         .GetValues("Set-Cookie")
         .Single(cookie => cookie.StartsWith(".AspNetCore.Correlation.", StringComparison.Ordinal))
         .Split(';')[0];
+
+    private static string ChallengeCookieOf(HttpResponseMessage response) => response.Headers
+        .GetValues("Set-Cookie")
+        .Single(cookie => cookie.StartsWith("zkd.challenge=", StringComparison.Ordinal));
 
     // ── The challenge ─────────────────────────────────────────────────────────────────────────
 
@@ -240,13 +258,148 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
         resume.ShouldHaveReachedConsent();
     }
 
-    // ── Refusal at the provider ───────────────────────────────────────────────────────────────
+    // ── Back to the login page ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task A_refusal_by_the_user_at_the_provider_reaches_the_client_as_access_denied()
+    public async Task An_ordinary_arrival_at_the_login_page_reports_no_provider_return()
     {
         using var client = _fixture.NewFlowClient();
-        var (_, challenge) = await ChallengeAsync(client, state: "client-state");
+        var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
+
+        var page = await ReadLoginPageAsync(client, InteractionIdFrom(handoff));
+
+        page.GetProperty("returnedFrom").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        page.GetProperty("providers").EnumerateArray().Select(provider => provider.GetString()).Should().Equal("acme");
+    }
+
+    [Fact]
+    public async Task A_refusal_at_the_provider_returns_the_user_to_the_login_page_reporting_it_declined()
+    {
+        using var client = _fixture.NewFlowClient();
+        var (interactionId, challenge) = await ChallengeAsync(client);
+
+        var callback = await client.GetAsync(CallbackUrlOf(challenge, error: "access_denied"), Cancellation);
+
+        callback.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        callback.Headers.Location!.OriginalString.Should().Be(WithInteractionId(LoginPath, interactionId),
+            "the user picked this provider on the login page, and gets to pick again there");
+        var page = await ReadLoginPageAsync(client, interactionId);
+        page.GetProperty("returnedFrom").GetString().Should().Be("acme");
+        page.GetProperty("outcome").GetString().Should().Be(nameof(ProviderReturnOutcome.Declined));
+    }
+
+    [Fact]
+    public async Task A_refusal_at_the_provider_leaves_the_interaction_alive_for_another_sign_in()
+    {
+        using var client = _fixture.NewFlowClient();
+        var (interactionId, challenge) = await ChallengeAsync(client);
+        await client.GetAsync(CallbackUrlOf(challenge, error: "access_denied"), Cancellation);
+
+        var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
+
+        signIn.ShouldHaveReachedConsent("the client was told nothing, and the request carries on");
+    }
+
+    [Fact]
+    public async Task A_provider_failure_returns_the_user_to_the_login_page_reporting_it_failed()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+            builder.WithProviders(auth => auth.AddOAuth("broken", ConfigureBroken)));
+        using var client = NewClient(factory);
+        var (interactionId, challenge) = await ChallengeAsync(client, "broken");
+
+        var callback = await client.GetAsync(CallbackUrlOf(challenge, "broken"), Cancellation);
+
+        callback.Headers.Location!.OriginalString.Should().Be(WithInteractionId(LoginPath, interactionId));
+        var page = await ReadLoginPageAsync(client, interactionId);
+        page.GetProperty("returnedFrom").GetString().Should().Be("broken");
+        page.GetProperty("outcome").GetString().Should().Be(nameof(ProviderReturnOutcome.Failed));
+        var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
+        signIn.ShouldHaveReachedConsent("the interaction survived the failed callback");
+    }
+
+    [Fact]
+    public async Task Picking_a_provider_again_clears_the_provider_return()
+    {
+        using var client = _fixture.NewFlowClient();
+        var (interactionId, challenge) = await ChallengeAsync(client);
+        await client.GetAsync(CallbackUrlOf(challenge, error: "access_denied"), Cancellation);
+
+        await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("provider", "acme")), Cancellation);
+
+        var page = await ReadLoginPageAsync(client, interactionId);
+        page.GetProperty("returnedFrom").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task The_challenge_names_the_interaction_in_a_cookie_only_the_providers_callback_receives()
+    {
+        using var client = _fixture.NewFlowClient();
+
+        var (interactionId, challenge) = await ChallengeAsync(client);
+
+        var cookie = ChallengeCookieOf(challenge);
+        cookie.Should().StartWith($"zkd.challenge={interactionId};");
+        cookie.Should().Contain("path=/connect/callback/acme").And.Contain("secure").And.Contain("samesite=lax").And.Contain("httponly");
+    }
+
+    [Fact]
+    public async Task The_callback_removes_the_challenge_cookie()
+    {
+        using var client = _fixture.NewFlowClient();
+        var (_, challenge) = await ChallengeAsync(client);
+
+        var callback = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
+
+        ChallengeCookieOf(callback).Should().Contain("expires=Thu, 01 Jan 1970");
+    }
+
+    [Fact]
+    public async Task A_failure_carrying_only_the_challenge_cookie_renders_locally_and_records_nothing()
+    {
+        // Another browser that somehow holds the challenge cookie but not the interaction's binding.
+        using var browser = _fixture.NewFlowClient();
+        var (interactionId, challenge) = await ChallengeAsync(browser);
+        using var stranger = _fixture.NewFlowClient(handleCookies: false);
+        using var request = new HttpRequestMessage(HttpMethod.Get, CallbackUrlOf(challenge));
+        request.Headers.Add("Cookie", ChallengeCookieOf(challenge).Split(';')[0]);
+
+        var callback = await stranger.SendAsync(request, Cancellation);
+
+        callback.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        callback.Headers.Location.Should().BeNull();
+        var page = await ReadLoginPageAsync(browser, interactionId);
+        page.GetProperty("returnedFrom").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task A_refusal_without_the_interaction_cookie_renders_locally_and_reaches_no_client()
+    {
+        // The correlation cookie alone, as a form_post callback — a cross-site POST the Lax
+        // interaction cookie does not accompany — would carry it.
+        using var browser = _fixture.NewFlowClient();
+        var (interactionId, challenge) = await ChallengeAsync(browser);
+        using var crossSite = _fixture.NewFlowClient(handleCookies: false);
+        using var request = new HttpRequestMessage(HttpMethod.Get, CallbackUrlOf(challenge, error: "access_denied"));
+        request.Headers.Add("Cookie", CorrelationCookieOf(challenge));
+
+        var callback = await crossSite.SendAsync(request, Cancellation);
+
+        callback.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await callback.Content.ReadAsStringAsync(Cancellation)).Should().Contain("access_denied");
+        var page = await ReadLoginPageAsync(browser, interactionId);
+        page.GetProperty("returnedFrom").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null,
+            "nothing is recorded on an interaction the callback's browser does not carry");
+    }
+
+    // ── No login page: the single provider's refusal reaches the client ──────────────────────
+
+    [Fact]
+    public async Task A_refusal_with_no_login_page_reaches_the_client_as_access_denied()
+    {
+        using var factory = NewSingleProviderFactory();
+        using var client = NewClient(factory);
+        var challenge = await client.GetAsync(AuthorizeUrl("client-state"), Cancellation);
 
         var callback = await client.GetAsync(CallbackUrlOf(challenge, error: "access_denied"), Cancellation);
 
@@ -259,52 +412,7 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
         query["iss"].ToString().Should().Be("https://test.example.com");
     }
 
-    [Fact]
-    public async Task A_refusal_at_the_provider_discards_the_interaction()
-    {
-        using var client = _fixture.NewFlowClient();
-        var (interactionId, challenge) = await ChallengeAsync(client);
-        await client.GetAsync(CallbackUrlOf(challenge, error: "access_denied"), Cancellation);
-
-        using var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
-
-        await signIn.ShouldHaveFoundNothingToContinueAsync("a refused request cannot be picked back up");
-    }
-
-    [Fact]
-    public async Task A_refusal_without_the_interaction_cookie_renders_locally_and_reaches_no_client()
-    {
-        // The correlation cookie alone, as a form_post callback — a cross-site POST the Lax
-        // interaction cookie does not accompany — would carry it.
-        using var browser = _fixture.NewFlowClient();
-        var (_, challenge) = await ChallengeAsync(browser);
-        using var crossSite = _fixture.NewFlowClient(handleCookies: false);
-        using var request = new HttpRequestMessage(HttpMethod.Get, CallbackUrlOf(challenge, error: "access_denied"));
-        request.Headers.Add("Cookie", CorrelationCookieOf(challenge));
-
-        var callback = await crossSite.SendAsync(request, Cancellation);
-
-        callback.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await callback.Content.ReadAsStringAsync(Cancellation)).Should().Contain("access_denied");
-    }
-
     // ── Every other failure renders locally and leaves the interaction alive ──────────────────
-
-    [Fact]
-    public async Task A_provider_outage_renders_locally_and_the_user_can_still_sign_in()
-    {
-        using var factory = NewFactory(configureBuilder: builder =>
-            builder.WithProviders(auth => auth.AddOAuth("broken", ConfigureBroken)));
-        using var client = NewClient(factory);
-        var (interactionId, challenge) = await ChallengeAsync(client, "broken");
-
-        var callback = await client.GetAsync(CallbackUrlOf(challenge, "broken"), Cancellation);
-
-        callback.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await callback.Content.ReadAsStringAsync(Cancellation)).Should().Contain("server_error").And.NotContain("upstream outage");
-        var signIn = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("sub", "user-1")), Cancellation);
-        signIn.ShouldHaveReachedConsent("the interaction survived the failed callback");
-    }
 
     [Fact]
     public async Task A_replayed_callback_neither_completes_nor_cancels_the_live_request()
@@ -315,7 +423,8 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
 
         var replay = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
 
-        replay.StatusCode.Should().Be(HttpStatusCode.BadRequest, "the correlation cookie was consumed by the first callback");
+        replay.StatusCode.Should().Be(HttpStatusCode.BadRequest,
+            "the first callback consumed both the correlation cookie and the challenge cookie");
         var resume = await client.GetAsync(callback.Headers.Location!.OriginalString, Cancellation);
         resume.ShouldHaveReachedConsent("the first callback's return still completes");
     }
@@ -486,7 +595,7 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
 
         var callback = await client.GetAsync(CallbackUrlOf(challenge, "hand"), Cancellation);
 
-        callback.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        callback.Headers.Location!.OriginalString.Should().Be(WithInteractionId(LoginPath, interactionId));
         var resume = await client.GetAsync(WithInteractionId("/connect/resume", interactionId), Cancellation);
         resume.StatusCode.Should().Be(HttpStatusCode.BadRequest, "the ticket the handler wrote was discarded with the failure");
         (await ReadSessionAsync(client)).Should().BeNull();

@@ -5,8 +5,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// <summary>
 /// The framework's <c>OnAccessDenied</c> for every remote provider handler. It records the refusal
 /// on the request's callback feature and nothing else: no result is set, so the handler goes on to
-/// fail its callback exactly as it would have, and the callback endpoint turns the marked failure
-/// into <c>access_denied</c> at the client.
+/// fail its callback exactly as it would have, and the callback endpoint decides where the marked
+/// failure goes.
 /// </summary>
 /// <remarks>
 /// The mark can be trusted because a remote handler validates its correlation cookie before it

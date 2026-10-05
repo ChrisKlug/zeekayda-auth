@@ -85,4 +85,16 @@ internal sealed record AuthorizationRequestContext
 
     /// <summary>When the consent decision was recorded.</summary>
     public DateTimeOffset? ConsentedAt { get; init; }
+
+    /// <summary>
+    /// The external provider the user last came back from without signing in, for the login page
+    /// to say so, or <see langword="null"/> when there is none to report.
+    /// </summary>
+    public ProviderAttempt? ProviderAttempt { get; init; }
 }
+
+/// <summary>
+/// A round trip to an external provider that did not sign the user in: the provider's registered
+/// name, and whether the user declined there rather than the provider failing.
+/// </summary>
+internal sealed record ProviderAttempt(string Provider, bool Declined);

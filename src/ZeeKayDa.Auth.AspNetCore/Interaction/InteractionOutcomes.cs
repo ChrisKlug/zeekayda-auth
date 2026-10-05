@@ -14,7 +14,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// <summary>
 /// The ways an interaction step ends, shared by every endpoint and page service that ends one:
 /// a local error page, an error at the client's registered redirect URI, a denial, a completed
-/// sign-in, a challenge to an external provider, and a parked principal sent on to a host page.
+/// sign-in, a challenge to an external provider, a return to the login page from one, and a
+/// parked principal sent on to a host page.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -164,6 +165,7 @@ internal sealed class InteractionOutcomes(
             // this sign-in's: the consent page asks again.
             GrantedScopes = null,
             ConsentedAt = null,
+            ProviderAttempt = null,
         };
 
         IResult result;
@@ -298,6 +300,10 @@ internal sealed class InteractionOutcomes(
 
         context.Response.Headers.CacheControl = "no-store";
 
+        // What the last trip to a provider ended in is no longer news once the user sets out again.
+        if (requestContext.ProviderAttempt is not null)
+            await flow.UpdateAsync(context, requestContext with { ProviderAttempt = null }).ConfigureAwait(false);
+
         var resume = ResumeEndpoint.RouteFor(EndpointRouteHelper.GetIssuerUri(options));
         var properties = new AuthenticationProperties
         {
@@ -305,10 +311,48 @@ internal sealed class InteractionOutcomes(
         };
         properties.Items[ExternalTicket.InteractionIdItem] = requestContext.Id;
         properties.Items[ExternalTicket.ChallengedProviderItem] = registration.Name;
+        ProviderChallengeCookie.Issue(
+            context,
+            ProviderCallbackRoute.For(EndpointRouteHelper.GetIssuerUri(options), registration.Name),
+            requestContext.Id,
+            requestContext.ExpiresAt);
 
         var handler = await activator.ActivateAsync(context, registration).ConfigureAwait(false);
         await handler.ChallengeAsync(properties).ConfigureAwait(false);
         await CommitAsync(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Sends the user back to the login page at <paramref name="loginPath"/> after a trip to an
+    /// external provider that did not sign them in, recording <paramref name="attempt"/> on the
+    /// interaction for the page to read. The interaction stays alive and the client is told
+    /// nothing. Not terminal — the caller writes the result.
+    /// </summary>
+    /// <remarks>
+    /// A store that cannot record the attempt still sends the user back: the page then shows an
+    /// ordinary sign-in, which is a lost message, not a lost sign-in.
+    /// </remarks>
+    public async Task<IResult> ReturnToLoginAsync(
+        HttpContext context,
+        AuthorizationRequestContext requestContext,
+        ProviderAttempt attempt,
+        string loginPath)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(requestContext);
+        ArgumentNullException.ThrowIfNull(attempt);
+        ArgumentException.ThrowIfNullOrEmpty(loginPath);
+
+        try
+        {
+            await flow.UpdateAsync(context, requestContext with { ProviderAttempt = attempt }).ConfigureAwait(false);
+        }
+        catch (ZeeKayDaStoreException ex)
+        {
+            logger.LogError(ex, "Recording the provider outcome for client {ClientId} failed; the login page will not show it.", requestContext.ClientId);
+        }
+
+        return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
     }
 
     /// <summary>

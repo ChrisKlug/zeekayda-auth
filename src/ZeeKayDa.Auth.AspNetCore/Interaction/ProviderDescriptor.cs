@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </summary>
 /// <remarks>
 /// <see cref="Id"/> is opaque to the host. The page reads it from
-/// <see cref="LoginInteraction.Providers"/> and hands it back to the framework to select that
+/// <see cref="LoginRequest.Providers"/> and hands it back to the framework to select that
 /// provider; it never writes one, which is what keeps scheme names out of host code.
 /// </remarks>
 public sealed class ProviderDescriptor

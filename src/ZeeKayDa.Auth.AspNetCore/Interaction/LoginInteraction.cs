@@ -60,6 +60,91 @@ public sealed class LoginInteraction
     private const string Page = "login";
 
     /// <summary>
+    /// What the page should render for: the client, the ways the user can sign in, and how their
+    /// last trip to an external provider ended when it brought them back here.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read; pass the request's own token.</param>
+    /// <remarks>
+    /// The page takes credentials, so the response this is called from is marked unframeable
+    /// (<c>Content-Security-Policy: frame-ancestors 'none'</c>, appended alongside any policy of
+    /// the host's, and <c>X-Frame-Options: DENY</c>) and uncacheable (<c>Cache-Control:
+    /// no-store</c>).
+    /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// There is no interaction to sign in for: the request carries no <c>zkd_i</c>, or names an
+    /// interaction this browser is not carrying — it expired, was already completed, or was
+    /// started in another browser. A page that wants to render its own message for these cases
+    /// calls <see cref="TryGetRequestAsync"/> instead.
+    /// </exception>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store could not be reached. Fail-closed: nothing is reported as absent.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// There is no active HTTP request — the service was resolved outside one.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// <paramref name="cancellationToken"/> was cancelled.
+    /// </exception>
+    public async Task<LoginRequest> GetRequestAsync(CancellationToken cancellationToken = default)
+    {
+        var context = RequireHttpContext();
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Stamped before the read, so whatever the page renders — the form, or its own "nothing to
+        // continue" after TryGetRequestAsync — is framed by nobody and cached by nothing.
+        RenderedPage.Protect(context.Response);
+        var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
+        var client = await _services.Flow.DescribeClientAsync(context, requestContext, cancellationToken).ConfigureAwait(false);
+
+        return new LoginRequest(
+            client,
+            _providers.Descriptors,
+            _options.Value.AuthorizationEndpoint.Interaction.SupportsLocalSignIn,
+            ProviderReturnOf(requestContext.ProviderAttempt));
+    }
+
+    /// <summary>
+    /// What the page should render for, or <see langword="null"/> when there is no interaction to
+    /// sign in for — for a page that renders its own "nothing to continue" message.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the read; pass the request's own token.</param>
+    /// <remarks>
+    /// Exactly <see cref="GetRequestAsync"/>, including the headers it stamps, except that each case
+    /// <see cref="GetRequestAsync"/> reports with <see cref="ZeeKayDaInteractionException"/> returns
+    /// <see langword="null"/> instead. A request with no <c>zkd_i</c> is logged as a warning, since
+    /// a form that drops it looks like this on every submission.
+    /// </remarks>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store could not be reached. Fail-closed: nothing is reported as absent.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// There is no active HTTP request — the service was resolved outside one.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// <paramref name="cancellationToken"/> was cancelled.
+    /// </exception>
+    public async Task<LoginRequest?> TryGetRequestAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await GetRequestAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (NothingToContinueException missing)
+        {
+            _services.NothingToContinue.Log(Page, missing);
+            return null;
+        }
+    }
+
+    private ProviderReturn? ProviderReturnOf(ProviderAttempt? attempt) =>
+        attempt is not null && _providers.Find(attempt.Provider) is { } registration
+            ? new ProviderReturn(
+                registration.Descriptor,
+                attempt.Declined ? ProviderReturnOutcome.Declined : ProviderReturnOutcome.Failed)
+            : null;
+
+    /// <summary>
     /// Establishes the SSO session for <paramref name="principal"/> and continues the
     /// authorization request that led here.
     /// </summary>
@@ -197,12 +282,12 @@ public sealed class LoginInteraction
     }
 
     /// <summary>
-    /// Sends the user out to one of the external providers in <see cref="Providers"/> to be
+    /// Sends the user out to one of the external providers in <see cref="LoginRequest.Providers"/> to be
     /// authenticated there, and continues the authorization request when they return.
     /// </summary>
     /// <param name="provider">
     /// The <see cref="ProviderDescriptor.Id"/> of the provider the user picked, as the page
-    /// received it from <see cref="Providers"/>.
+    /// received it from <see cref="LoginRequest.Providers"/>.
     /// </param>
     /// <remarks>
     /// <para>
@@ -248,7 +333,7 @@ public sealed class LoginInteraction
         var registration = _providers.Find(provider)
             ?? throw new ZeeKayDaInteractionException(
                 "The provider identifier is not one of the registered providers. Pass the Id of an " +
-                "entry in LoginInteraction.Providers, as the login page received it.");
+                "entry in LoginRequest.Providers, as the login page received it.");
 
         await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
@@ -282,23 +367,4 @@ public sealed class LoginInteraction
 
         return context;
     }
-
-    /// <summary>
-    /// Whether the page should render a credential form of its own — the value of
-    /// <c>AuthorizationEndpoint.Interaction.SupportsLocalSignIn</c>. Configuration, frozen at
-    /// startup.
-    /// </summary>
-    public bool LocalLoginEnabled => _options.Value.AuthorizationEndpoint.Interaction.SupportsLocalSignIn;
-
-    /// <summary>
-    /// The external providers the host registered through <c>WithProviders</c>, in registration
-    /// order, for the page to render as a choice. Configuration, frozen at startup; empty when
-    /// none are registered.
-    /// </summary>
-    /// <remarks>
-    /// The page renders a credential form, a row of provider buttons, or both — the login page is
-    /// also the provider-selection page. A <see cref="ProviderDescriptor.Id"/> is handed back to
-    /// the framework to select that provider, never written by the page.
-    /// </remarks>
-    public IReadOnlyList<ProviderDescriptor> Providers => _providers.Descriptors;
 }

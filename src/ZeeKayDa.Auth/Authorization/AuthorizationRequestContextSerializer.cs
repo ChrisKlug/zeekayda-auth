@@ -29,7 +29,7 @@ internal static class AuthorizationRequestContextSerializer
     /// The format version. A payload carrying any other value is refused rather than misread —
     /// positional formats have no way to detect a field that moved.
     /// </summary>
-    private const byte Version = 3;
+    private const byte Version = 4;
 
     public static byte[] Encode(AuthorizationRequestContext context)
     {
@@ -64,6 +64,7 @@ internal static class AuthorizationRequestContextSerializer
         WriteNullableStrings(writer, context.Amr);
         WriteNullableStrings(writer, context.GrantedScopes);
         WriteNullableTimestamp(writer, context.ConsentedAt);
+        WriteProviderAttempt(writer, context.ProviderAttempt);
 
         writer.Flush();
         return buffer.ToArray();
@@ -126,7 +127,7 @@ internal static class AuthorizationRequestContextSerializer
         if (prompts is null)
             return null;
 
-        return new AuthorizationRequestContext
+        var context = new AuthorizationRequestContext
         {
             Id = id,
             ClientId = clientId,
@@ -148,6 +149,10 @@ internal static class AuthorizationRequestContextSerializer
             GrantedScopes = ReadNullableStrings(reader),
             ConsentedAt = ReadNullableTimestamp(reader),
         };
+
+        return TryReadProviderAttempt(reader, out var attempt)
+            ? context with { ProviderAttempt = attempt }
+            : null;
     }
 
     /// <summary>
@@ -210,6 +215,32 @@ internal static class AuthorizationRequestContextSerializer
             return false;
 
         pkce = new PkceChallenge(challenge, method);
+        return true;
+    }
+
+    private static void WriteProviderAttempt(BinaryWriter writer, ProviderAttempt? attempt)
+    {
+        writer.Write(attempt is not null);
+        if (attempt is null)
+            return;
+
+        writer.Write(attempt.Provider);
+        writer.Write(attempt.Declined);
+    }
+
+    /// <summary>False for an empty provider name: a payload this version did not write.</summary>
+    private static bool TryReadProviderAttempt(BinaryReader reader, out ProviderAttempt? attempt)
+    {
+        attempt = null;
+        if (!reader.ReadBoolean())
+            return true;
+
+        var provider = reader.ReadString();
+        var declined = reader.ReadBoolean();
+        if (provider.Length == 0)
+            return false;
+
+        attempt = new ProviderAttempt(provider, declined);
         return true;
     }
 

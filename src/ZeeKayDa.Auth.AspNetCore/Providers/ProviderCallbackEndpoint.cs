@@ -22,11 +22,13 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// <para>
 /// The endpoint owns the outcomes the handler does not. A handler declining its own callback is
 /// logged and answered with an empty 404, never fallen through to the next middleware. A failure
-/// is classified: only a refusal by the user at the provider, recorded on the request by the
-/// framework's own access-denied event, reaches the client as <c>access_denied</c> — and only
-/// when the refused challenge names the interaction this browser is carrying. Everything else
-/// renders the local error page and leaves the interaction untouched, so the user can try again
-/// and a stray or replayed callback can neither complete nor cancel a live request.
+/// whose challenge names the interaction this browser is carrying sends the user back to the
+/// login page that started it, the interaction alive and the outcome recorded on it, so they can
+/// try again or pick another provider. With no login page — the authorization endpoint challenged
+/// the one provider itself — a refusal by the user, recorded by the framework's own access-denied
+/// event, reaches the client as <c>access_denied</c>. Everything else renders the local error page
+/// and leaves the interaction untouched, so a stray or replayed callback can neither complete nor
+/// cancel a live request.
 /// </para>
 /// <para>
 /// Failures are logged by exception type, never by message: a remote failure's message embeds
@@ -73,7 +75,7 @@ internal sealed class ProviderCallbackEndpoint(
 
         // Set after routing and before the handler runs: the provider is what the route says,
         // never what the request or the handler says.
-        var feature = new ProviderCallbackFeature(registration);
+        var feature = new ProviderCallbackFeature(registration, ProviderChallengeCookie.Take(context));
         context.Features.Set(feature);
 
         // Activation is inside the guarded path too: a handler's constructor or InitializeAsync
@@ -151,29 +153,61 @@ internal sealed class ProviderCallbackEndpoint(
     {
         await DiscardTicketAsync(context).ConfigureAwait(false);
 
-        if (!feature.Refused)
+        if (feature.Refused)
+        {
+            logger.LogInformation("The user declined to sign in at provider {Provider}.", feature.Provider.Name);
+        }
+        else
         {
             logger.LogError(
                 "The handler for provider {Provider} failed its callback with {ExceptionType}.",
                 feature.Provider.Name,
                 exception.GetType().FullName);
-            return outcomes.LocalError(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
         }
 
-        logger.LogInformation("The user declined to sign in at provider {Provider}.", feature.Provider.Name);
+        // Only an interaction this browser is carrying is acted on. Without the binding cookie — a
+        // form_post callback is a cross-site POST the Lax cookie does not accompany — the failure
+        // renders locally and the interaction, if any, survives untouched.
+        if (LoginPageChallenged() is { } loginPath)
+        {
+            var returning = feature.ReturnInteractionId is { } returnId
+                ? await flow.ReadAsync(context, returnId).ConfigureAwait(false)
+                : null;
 
-        // The refusal reaches the client only for the interaction this browser is carrying and
-        // the refused challenge was issued for. Without the binding cookie — a form_post callback
-        // is a cross-site POST the Lax cookie does not accompany — the refusal renders locally and
-        // the interaction, if any, survives.
-        var requestContext = feature.RefusedInteractionId is { } refusedInteractionId
+            if (returning is not null)
+            {
+                var attempt = new ProviderAttempt(feature.Provider.Name, feature.Refused);
+                return await outcomes.ReturnToLoginAsync(context, returning, attempt, loginPath).ConfigureAwait(false);
+            }
+        }
+
+        if (!feature.Refused)
+            return outcomes.LocalError(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
+
+        // Ending the request at the client is decided on the refused challenge's own properties
+        // alone, never on the challenge cookie.
+        var refused = feature.RefusedInteractionId is { } refusedInteractionId
             ? await flow.ReadAsync(context, refusedInteractionId).ConfigureAwait(false)
             : null;
 
-        if (requestContext is null)
+        if (refused is null)
             return outcomes.LocalError(context, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider);
 
-        return await outcomes.ClientErrorAsync(context, requestContext, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider)
+        return await outcomes.ClientErrorAsync(context, refused, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The login page every provider challenge started from, or <see langword="null"/> when the
+    /// authorization endpoint challenges the one provider itself and there is no page to go back to.
+    /// Configuration is frozen at startup, so this is the dispatch the challenge was made under.
+    /// </summary>
+    private string? LoginPageChallenged()
+    {
+        var interaction = options.Value.AuthorizationEndpoint.Interaction;
+
+        return LoginDispatch.Decide(interaction, providers.Count) == LoginDispatchRule.LoginPage
+            ? interaction.LoginPath
+            : null;
     }
 }

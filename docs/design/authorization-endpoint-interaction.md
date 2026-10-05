@@ -67,7 +67,7 @@ instance that appeared into a throwaway `AuthenticationOptions`. Every route int
 `builder.AddScheme`, `AddRemoteScheme`, `AddPolicyScheme`, and a raw `IAuthenticationHandler`
 added by writing `AuthenticationOptions.AddScheme` directly — ends as that one descriptor, so the
 replay sees them identically (verified against ASP.NET Core 10.0 with one of each). What the replay
-found is the provider set: `LoginInteraction.Providers`, and the only names `ChallengeAsync`
+found is the provider set: `LoginRequest.Providers`, and the only names `ChallengeAsync`
 will accept.
 
 Then the descriptors are **removed** from the collection. The host's `AuthenticationOptions` never
@@ -245,8 +245,8 @@ sign-in is an in-process form post that shares none of that lifecycle, so it is 
 `InteractionOptions.SupportsLocalSignIn`, default `true` — not a list entry. Modelling it as a
 provider would mean a fake scheme or a null object, and the abstraction leaks immediately.
 
-**One page, not two.** The login page is also the provider-selection page: `LoginInteraction`
-exposes `LocalLoginEnabled` and the configured `Providers`, and the host renders a credential form,
+**One page, not two.** The login page is also the provider-selection page: its `LoginRequest`
+carries `LocalLoginEnabled` and the configured `Providers`, and the host renders a credential form,
 a row of provider buttons, or both. No second path option, no second interaction service.
 
 **Whether a page is needed decides dispatch; `LoginPath` (default `/login`) is only its address.**
@@ -435,15 +435,13 @@ methods write the redirect response and must be the caller's last action.
 ```csharp
 public sealed class LoginInteraction   // singleton over IHttpContextAccessor, as are all the page services
 {
-    // Pure configuration — what the page should render. Frozen at startup.
-    bool LocalLoginEnabled { get; }                       // InteractionOptions.SupportsLocalSignIn
-    IReadOnlyList<ProviderDescriptor> Providers { get; }  // Id + DisplayName, from WithProviders
-
-    // UNBUILT. The client asking to be signed in to — ClientId plus the registration's optional
-    // DisplayName, as the consent page already gets. Reads the interaction context, so it is
-    // zkd_i-bound on SignInAsync's exact terms; a page that dropped the query string fails on its
-    // first GET.
-    Task<ClientInformation> GetClientInformationAsync();
+    // What the page renders: the client (ClientId + optional DisplayName), LocalLoginEnabled,
+    // the configured Providers, and ProviderReturn — the provider the user just came back from
+    // without signing in, Declined or Failed, null on an ordinary arrival. zkd_i-bound on
+    // SignInAsync's exact terms; stamps the page unframeable and uncacheable, as consent's does.
+    // TryGetRequestAsync answers null instead of throwing when there is nothing to sign in for.
+    Task<LoginRequest> GetRequestAsync(CancellationToken cancellationToken = default);
+    Task<LoginRequest?> TryGetRequestAsync(CancellationToken cancellationToken = default);
 
     // Promotes principal to SSO session, continues the flow (consent → code → redirect).
     // Auto-consumes a principal parked for the interaction. Terminal. Throws ZeeKayDaInteractionException
