@@ -48,17 +48,6 @@ public sealed class ConsentInteraction
         _services = services;
     }
 
-    /// <summary>
-    /// What a declined request tells the client. Names the stage, as the sign-in cancellation
-    /// does, so the two read differently on the wire; generic by construction, echoing no value.
-    /// </summary>
-    private const string DeclinedAtConsent = "The user declined the request at the consent page.";
-
-    /// <summary>
-    /// What a grant without <c>openid</c> tells the client: consent to be identified was
-    /// withheld, which is the whole of what an OpenID Connect request asks for.
-    /// </summary>
-    private const string IdentityWithheld = "The user did not consent to being identified to the client.";
 
     private const string Page = "consent";
 
@@ -150,7 +139,7 @@ public sealed class ConsentInteraction
     /// <param name="scopes">
     /// The scopes the user agreed to, typically the boxes they ticked. Only entries in
     /// <see cref="ConsentRequest.Scopes"/> count; anything else is dropped without comment, so
-    /// a page cannot widen what was asked.
+    /// a page cannot widen what was asked. <c>openid</c> need not be passed: it is always granted.
     /// </param>
     /// <remarks>
     /// <para>
@@ -161,9 +150,9 @@ public sealed class ConsentInteraction
     /// started.
     /// </para>
     /// <para>
-    /// A grant that leaves out <c>openid</c> is a refusal to be identified to the client, and is
-    /// answered as one: the client receives <c>access_denied</c>, as from <see cref="DenyAsync"/>.
-    /// A page that does not want to offer that choice renders <c>openid</c> as required.
+    /// A grant always includes <c>openid</c>: every request carries it, and agreeing to anything is
+    /// agreeing to be identified to the client. An empty grant therefore grants <c>openid</c> alone.
+    /// A page that wants to refuse calls <see cref="DenyAsync"/>.
     /// </para>
     /// <para>
     /// Only a <c>POST</c> — the consent form's submission — is accepted, and that is checked
@@ -208,16 +197,11 @@ public sealed class ConsentInteraction
         var (requestContext, client) = await ResolveAsync(context, context.RequestAborted).ConfigureAwait(false);
 
         // The page's answer can only narrow what was asked: intersected in request order, over
-        // ordinal comparison, so a page cannot grant a scope the request never carried.
+        // ordinal comparison, so a page cannot grant a scope the request never carried. openid is
+        // the request itself, so it is kept whatever the page passed.
         var granted = requestContext.Scopes
-            .Where(scope => answered.Contains(scope, StringComparer.Ordinal))
+            .Where(scope => scope == StandardScopes.OpenId.Name || answered.Contains(scope, StringComparer.Ordinal))
             .ToImmutableArray();
-
-        if (!granted.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
-        {
-            await _services.Outcomes.DenyAsync(context, requestContext, IdentityWithheld).ConfigureAwait(false);
-            return;
-        }
 
         await _services.Outcomes.CompleteConsentAsync(context, requestContext, client, granted).ConfigureAwait(false);
     }
@@ -238,8 +222,9 @@ public sealed class ConsentInteraction
     /// The SSO session is left alone — declining one client does not sign the user out of
     /// another. The interaction is discarded, so the declined request cannot afterwards be
     /// resumed. The client receives an <c>error_description</c> stating that the user declined
-    /// at the consent page, so it can tell this apart from the other refusals that also answer
-    /// <c>access_denied</c>.
+    /// at the consent page and, when it registered with <c>EnableZkdErrorCodes</c>, the
+    /// <c>zkd_error</c> <c>consent_declined</c>, so it can tell this apart from the other refusals
+    /// that also answer <c>access_denied</c>.
     /// </para>
     /// <para>
     /// Only a <c>POST</c> — the form's submission — is accepted, and that is checked before
@@ -265,7 +250,7 @@ public sealed class ConsentInteraction
         await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
             var (requestContext, _) = await ResolveAsync(context, context.RequestAborted).ConfigureAwait(false);
-            await _services.Outcomes.DenyAsync(context, requestContext, DeclinedAtConsent).ConfigureAwait(false);
+            await _services.Outcomes.DenyAsync(context, requestContext, Denial.DeclinedAtConsent).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 

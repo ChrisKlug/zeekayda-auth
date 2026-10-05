@@ -330,9 +330,9 @@ public sealed class ProviderSignInInteraction
     /// <para>
     /// No SSO session is established, and an existing one is left alone. The interaction and the
     /// principal parked for it are discarded, so the request cannot afterwards be resumed. The
-    /// client receives an <c>error_description</c> naming a refusal after sign-in at the external
-    /// provider, the same one <c>ProviderSignInContext.DenyAsync</c> sends, so it can tell this
-    /// apart from a cancellation at the sign-in page.
+    /// client receives the same refusal <c>ProviderSignInContext.DenyAsync</c> sends — an
+    /// <c>error_description</c> naming a refusal after sign-in at the external provider and, for a
+    /// client registered with <c>EnableZkdErrorCodes</c>, the <c>zkd_error</c> <c>account_refused</c>.
     /// </para>
     /// <para>
     /// Only a <c>POST</c> — the form's submission — is accepted, and that is checked before
@@ -357,7 +357,7 @@ public sealed class ProviderSignInInteraction
         await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
             var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-            await _services.Outcomes.DenyAsync(context, requestContext, InteractionOutcomes.DeniedAfterProvider).ConfigureAwait(false);
+            await _services.Outcomes.DenyAsync(context, requestContext, Denial.RefusedAfterProvider).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 

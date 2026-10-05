@@ -72,15 +72,15 @@ opt-out client to the page, and answers `consent_required` when the host has non
 grants are unbuilt: every request prompts, and `prompt=none` for a client requiring consent
 answers `consent_required` — not yet, rather than a reversal of the paragraph above.
 
-**A consent decision is recorded by the session it was asked of.** Every `ConsentInteraction`
-method is `zkd_i`-bound on the login service's terms and additionally refuses when the session
-cookie no longer names the session and subject that authenticated the request — a sign-out, or a
-sign-in as someone else, between the handoff and the answer. A grant can only narrow the request:
-it is re-intersected with the effective scopes, and one that drops `openid` is a refusal to be
-identified, answered `access_denied` as a deny is. The client is resolved again at every step — the
-post-authentication dispatch and each consent call — and must still list the request's redirect
-URI, so a registration removed or narrowed mid-flow ends the request where it stands, never at a
-redirect URI that no longer belongs to anyone.
+**A consent decision is recorded by the session it was asked of.** Every `ConsentInteraction` method
+is `zkd_i`-bound on the login service's terms and additionally refuses when the session cookie no
+longer names the session and subject that authenticated the request — a sign-out, or a sign-in as
+someone else, between the handoff and the answer. A grant can only narrow the request: it is
+re-intersected with the effective scopes, and always keeps `openid`, since agreeing to anything is
+agreeing to be identified and a page that wants to refuse calls `DenyAsync`. The client is resolved
+again at every step — the post-authentication dispatch, each consent call and each denial — and must
+still list the request's redirect URI, so a registration removed or narrowed mid-flow ends the request
+where it stands, never at a redirect URI that no longer belongs to anyone.
 
 **A consent decision is never persisted: it is taken, the code issued and the interaction
 discarded in the one response.** Nothing is left on the interaction for a replayed consent `POST`

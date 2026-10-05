@@ -137,6 +137,11 @@ script covered the startup-warning API before the analyzer did, and the script i
 analyzer being switched off. Neither is a substitute for the other. A canary project that must fail to
 build, asserted per rule ID, is what proves the analyzers are still firing.
 
+**`zkd_error` codes are public contract: a closed set that tells a client only what the user did or already knows.**
+`login_cancelled`, `consent_declined`, `provider_declined`, `account_refused`, on the authorization error redirect beside
+an unchanged `access_denied`, for opted-in clients only; none says whether an account exists, which credential failed,
+whether a `client_id` exists, or which provider. The token endpoint sends none. A new code is decided here first.
+
 ## Tried, didn't work
 
 - **Enumerating suppression syntaxes in the CI script.** The regex-based predecessor tried to

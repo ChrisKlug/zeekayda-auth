@@ -544,25 +544,6 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
     }
 
     [Fact]
-    public async Task GrantAsync_without_openid_answers_the_client_with_access_denied()
-    {
-        var query = ValidQuery();
-        query["state"] = "opaque-client-state";
-        var signIn = await ReachConsentAsync(query);
-
-        var grant = await GrantAsync(InteractionIdFrom(signIn), "profile", "email");
-
-        grant.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        DestinationOf(grant).Should().Be(RegisteredRedirect);
-        var parameters = RedirectQueryOf(grant);
-        parameters["error"].Should().Equal(["access_denied"]);
-        parameters["error_description"].ToString().Should().Contain("identified");
-        parameters["state"].Should().Equal(["opaque-client-state"]);
-        parameters["iss"].Should().Equal(["https://test.example.com"]);
-        (await ReadInteractionAsync(InteractionIdFrom(signIn))).Should().BeNull("a refused request is not resumed later");
-    }
-
-    [Fact]
     public async Task GrantAsync_with_a_blank_scope_entry_is_refused_as_an_argument_error()
     {
         var signIn = await ReachConsentAsync();

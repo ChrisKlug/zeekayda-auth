@@ -48,14 +48,6 @@ internal sealed class InteractionOutcomes(
     /// <summary>What the user is told when the request is larger than the interaction store may hold.</summary>
     internal const string TooLarge = "The authorization request is too large to process.";
 
-    /// <summary>
-    /// What a refusal after the provider tells the client, whether the host's handler or its page
-    /// refused. Names the stage, as the sign-in page's cancellation does, so a client can tell the
-    /// two apart; framework-owned, so nothing a host or a provider said reaches the client,
-    /// browser history or proxy logs.
-    /// </summary>
-    internal const string DeniedAfterProvider = "The sign-in at the external identity provider was not accepted.";
-
     /// <summary>An error that must not reach the client: the host's error page, or the framework's minimal one.</summary>
     public IResult LocalError(HttpContext context, string error, string description) =>
         responses.Local(context, error, description);
@@ -89,7 +81,7 @@ internal sealed class InteractionOutcomes(
     /// Another response — a grant, a sign-in that issued, or an earlier denial — completed the
     /// interaction first, or it expired while this response was being prepared.
     /// </exception>
-    public async Task DenyAsync(HttpContext context, AuthorizationRequestContext requestContext, string description)
+    public async Task DenyAsync(HttpContext context, AuthorizationRequestContext requestContext, Denial denial)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
@@ -107,10 +99,37 @@ internal sealed class InteractionOutcomes(
         await DiscardPendingAsync(context, requestContext.Id).ConfigureAwait(false);
         await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
 
-        await WriteAsync(
-                context,
-                responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.AccessDenied, description, requestContext.State))
+        await WriteAsync(context, await DeniedAtClientAsync(context, requestContext, denial).ConfigureAwait(false))
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// An <c>access_denied</c> refusal at the client's registered redirect URI, outside an
+    /// interaction step — a refusal at the external provider — discarding the interaction first,
+    /// as <see cref="ClientErrorAsync"/> does.
+    /// </summary>
+    public async Task<IResult> DeniedAtClientAfterClearingAsync(HttpContext context, AuthorizationRequestContext requestContext, Denial denial)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(requestContext);
+
+        await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+        return await DeniedAtClientAsync(context, requestContext, denial).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The refusal's redirect, with its <c>zkd_error</c> when the client opted in. The registration is
+    /// read again here, as at every step: one that vanished, stopped validating or dropped the
+    /// request's redirect URI since the request was accepted ends it locally, and nothing is sent
+    /// to that URI.
+    /// </summary>
+    private async Task<IResult> DeniedAtClientAsync(HttpContext context, AuthorizationRequestContext requestContext, Denial denial)
+    {
+        var client = await flow.ResolveClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false);
+        if (client is null)
+            return responses.Local(context, AuthorizeRequestErrors.InvalidRequest, AuthorizationCodeIssuer.ClientNoLongerAnswers);
+
+        return responses.DeniedAtClient(requestContext.RedirectUri, denial, client.EnableZkdErrorCodes, requestContext.State);
     }
 
     /// <summary>

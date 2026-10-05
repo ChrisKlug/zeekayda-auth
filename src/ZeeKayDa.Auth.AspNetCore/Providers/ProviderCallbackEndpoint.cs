@@ -43,9 +43,6 @@ internal sealed class ProviderCallbackEndpoint(
     InteractionOutcomes outcomes,
     SanitizingLogger<ProviderCallbackEndpoint> logger) : IZeeKayDaEndpoint
 {
-    private const string DeclinedAtProvider =
-        "The user declined to sign in at the external identity provider.";
-
     private const string DidNotComplete =
         "Sign-in at the external identity provider did not complete. Return to the application and try again.";
 
@@ -181,10 +178,9 @@ internal sealed class ProviderCallbackEndpoint(
         // alone, never on the challenge cookie.
         var refused = await ReadBoundAsync(context, feature.RefusedInteractionId).ConfigureAwait(false);
         if (refused is null)
-            return outcomes.LocalError(context, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider);
+            return outcomes.LocalError(context, AuthorizeRequestErrors.AccessDenied, Denial.DeclinedAtProvider.Description);
 
-        return await outcomes.ClientErrorAsync(context, refused, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider)
-            .ConfigureAwait(false);
+        return await outcomes.DeniedAtClientAfterClearingAsync(context, refused, Denial.DeclinedAtProvider).ConfigureAwait(false);
     }
 
     private void LogFailure(ProviderCallbackFeature feature, Exception exception)

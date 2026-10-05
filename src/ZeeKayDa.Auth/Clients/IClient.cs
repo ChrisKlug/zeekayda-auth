@@ -127,13 +127,16 @@ public interface IClient
     IReadOnlySet<PromptValue> AllowedPromptValues => ClientDefaults.AllowedPromptValues;
 
     /// <summary>
-    /// When <see langword="true"/>, the framework may include ZeeKayDa-specific extended error
-    /// codes (<c>zkd_error</c>) in token endpoint responses for this client.
+    /// When <see langword="true"/>, an authorization error redirect that answers
+    /// <c>access_denied</c> for this client also carries a <c>zkd_error</c> sub-code saying which
+    /// refusal it was: <c>login_cancelled</c>, <c>consent_declined</c>, <c>provider_declined</c> or
+    /// <c>account_refused</c>.
     /// </summary>
     /// <remarks>
-    /// Even with extended error codes enabled, the <c>zkd_error</c> value for
-    /// <c>invalid_client</c> MUST NOT distinguish an unknown <c>client_id</c> from a wrong
-    /// credential (client enumeration non-disclosure constraint).
+    /// The standard <c>error</c> is unchanged, and a client that does not know the parameter
+    /// ignores it (RFC 6749 §4.1.2). A code tells the client only what the user did or already
+    /// knows; none says whether an account exists, which credential was wrong, or which provider
+    /// was used. The token endpoint never sends one.
     /// </remarks>
     bool EnableZkdErrorCodes => ClientDefaults.EnableZkdErrorCodes;
 

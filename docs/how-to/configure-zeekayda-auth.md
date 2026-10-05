@@ -185,10 +185,19 @@ For the full `Pbkdf2ClientSecretHasherOptions` property reference, see
 
 ## 7. Enable extended error codes per client (`EnableZkdErrorCodes`)
 
-`EnableZkdErrorCodes` is a per-client flag, set in the client's `AddConfidential` callback or
-configuration section (or on an `IClient` you build yourself). When `true`, the server may include a `zkd_error`
-field in token endpoint error responses for that client, surfacing machine-readable diagnostic
-codes beyond what RFC 6749 defines.
+`EnableZkdErrorCodes` is a per-client flag, set in the client's `AddConfidential` or `AddPublic` callback or
+configuration section (or on an `IClient` you build yourself). It is off by default.
+
+The standard error code can't tell a client why the user didn't sign in. A cancel on the login page, a declined
+consent and a refused account all reach it as `error=access_denied`. With the flag on, that error
+redirect also carries a `zkd_error` parameter the client can branch on:
+
+| `zkd_error` | What happened |
+|---|---|
+| `login_cancelled` | The user pressed cancel on the login page (`LoginInteraction.DenyAsync`). |
+| `consent_declined` | The user declined on the consent page (`ConsentInteraction.DenyAsync`). |
+| `provider_declined` | The user cancelled or refused at the external provider, when there is no login page to return to. With a login page, the user goes back to it instead and the client is told nothing. |
+| `account_refused` | The user signed in at the external provider, and your `OnProviderSignIn` handler or provider sign-in page refused the account (`DenyAsync`). |
 
 ```csharp
 builder.AddInMemoryClients(clients =>
@@ -199,16 +208,18 @@ builder.AddInMemoryClients(clients =>
     }));
 ```
 
-### Operator guidance
+```
+https://app.example.com/callback?error=access_denied
+    &error_description=The+user+cancelled+the+request+at+the+sign-in+page.
+    &zkd_error=login_cancelled&state=...&iss=...
+```
 
-Extended error codes improve diagnostics for legitimate callers, but they give an attacker more
-signal in aggregate — every additional code is a distinguisher. Follow these guidelines:
-
-- Enable `EnableZkdErrorCodes` only for **confidential clients** with a demonstrated diagnostic
-  need, such as a trusted first-party backend that requires machine-readable error routing.
-- Do **not** enable it for public clients (single-page applications, native apps) or for clients
-  operated by third parties you do not fully trust.
-- If you operate a multi-tenant deployment, treat the flag as **trusted-tenant-only** by default.
+- `error` is always the standard value, and a client that doesn't know `zkd_error` ignores it (RFC 6749 §4.1.2).
+- `error_description` names the same stage for every client, flagged or not. It is text for a developer
+  reading an error page; `zkd_error` is the value a program should branch on.
+- A code only tells the client what the user did or already knows. None says whether an account exists, which
+  credential was wrong or which provider was used, and none is ever text your code wrote.
+- The token endpoint never sends `zkd_error`.
 
 ### Rate limiting is load-bearing for public-client identification
 
@@ -218,15 +229,8 @@ signal in aggregate — every additional code is a distinguisher. Follow these g
 > on the token endpoint is not optional — it is the primary mitigation for this accepted
 > distinguishability.
 >
-> This residual is accepted deliberately. Regardless of `EnableZkdErrorCodes`, operators
-> must apply rate limiting to the token endpoint. Timing uniformity alone is not sufficient to
-> defeat a sustained enumeration attempt.
-
-### `zkd_error` non-disclosure constraint
-
-Even with `EnableZkdErrorCodes = true`, the `zkd_error` value for `invalid_client` **must not**
-distinguish "unknown `client_id`" from "wrong credential". The framework enforces this constraint
-internally; no configuration is required.
+> This residual is accepted deliberately. Operators must apply rate limiting to the token endpoint.
+> Timing uniformity alone is not sufficient to defeat a sustained enumeration attempt.
 
 ## Next steps
 
