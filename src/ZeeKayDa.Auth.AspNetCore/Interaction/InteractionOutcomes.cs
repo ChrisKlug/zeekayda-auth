@@ -119,13 +119,17 @@ internal sealed class InteractionOutcomes(
 
     /// <summary>
     /// The refusal's redirect, with its <c>zkd_error</c> when the client opted in. The registration is
-    /// read again here, as at every step; a client that no longer answers gets the standard
-    /// response, at the redirect URI it was authenticated against.
+    /// read again here, as at every step: one that vanished, stopped validating or dropped the
+    /// request's redirect URI since the request was accepted ends it locally, and nothing is sent
+    /// to that URI.
     /// </summary>
     private async Task<IResult> DeniedAtClientAsync(HttpContext context, AuthorizationRequestContext requestContext, Denial denial)
     {
         var client = await flow.ResolveClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false);
-        return responses.DeniedAtClient(requestContext.RedirectUri, denial, client?.EnableZkdErrorCodes == true, requestContext.State);
+        if (client is null)
+            return responses.Local(context, AuthorizeRequestErrors.InvalidRequest, AuthorizationCodeIssuer.ClientNoLongerAnswers);
+
+        return responses.DeniedAtClient(requestContext.RedirectUri, denial, client.EnableZkdErrorCodes, requestContext.State);
     }
 
     /// <summary>

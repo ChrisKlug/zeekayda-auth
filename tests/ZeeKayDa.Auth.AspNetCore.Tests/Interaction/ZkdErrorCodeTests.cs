@@ -24,8 +24,11 @@ public sealed class ZkdErrorCodeTests
 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
-    /// <summary>A host with a login page, a consent page and one provider whose sign-in the host refuses.</summary>
-    private static TestWebAppFactory NewHost() => new(
+    /// <summary>
+    /// A host with a login page, a consent page and one provider whose sign-in the host refuses;
+    /// <paramref name="repository"/>, when given, replaces the registrations.
+    /// </summary>
+    private static TestWebAppFactory NewHost(IClientRepository? repository = null) => new(
         configureOptions: options => options.AuthorizationEndpoint.Interaction.ConsentPath = ConsentPath,
         configureBuilder: builder =>
         {
@@ -33,6 +36,10 @@ public sealed class ZkdErrorCodeTests
             builder.WithProviders(
                 auth => auth.AddOAuth("acme", "Acme", ConfigureAcme),
                 options => options.OnProviderSignIn = context => context.DenyAsync());
+
+            // Registered after AddInMemoryClients, so it wins resolution.
+            if (repository is not null)
+                builder.Services.AddSingleton(repository);
         },
         mapEndpoints: MapPages);
 
@@ -167,6 +174,40 @@ public sealed class ZkdErrorCodeTests
         ShouldBeDeniedWith(callback, expected);
     }
 
+    [Fact]
+    public async Task A_cancel_after_the_client_dropped_the_redirect_uri_ends_the_request_locally()
+    {
+        // The registration is read again at the denial, as at every step: a redirect URI the
+        // operator removed mid-sign-in receives nothing, state included.
+        var repository = new MutableClientRepository(Registration(Flagged, enabled: true));
+        using var host = NewHost(repository);
+        using var client = NewClient(host);
+        var interactionId = await ToLoginPageAsync(client, Flagged);
+        repository.Current = Client.CreatePublic(Flagged, ["https://test.example.com/elsewhere"], [], ["openid"]) with { EnableZkdErrorCodes = true };
+
+        var cancel = await client.PostAsync(WithInteractionId(LoginPath + "/cancel", interactionId), Form(), Cancellation);
+
+        cancel.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+        cancel.Headers.Location.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_token_endpoint_sends_no_zkd_error_to_a_client_that_opted_in()
+    {
+        using var host = NewHost();
+        using var client = NewClient(host);
+
+        var response = await client.PostAsync("/connect/token", Form(
+            ("grant_type", "authorization_code"),
+            ("client_id", Flagged),
+            ("code", "no-such-code"),
+            ("redirect_uri", RegisteredRedirect),
+            ("code_verifier", "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")), Cancellation);
+
+        response.IsSuccessStatusCode.Should().BeFalse();
+        (await response.Content.ReadAsStringAsync(Cancellation)).Should().Contain("\"error\"").And.NotContain("zkd_error");
+    }
+
     [Theory]
     [InlineData(Flagged)]
     [InlineData(Plain)]
@@ -180,5 +221,14 @@ public sealed class ZkdErrorCodeTests
         var cancel = await client.PostAsync(WithInteractionId(LoginPath + "/cancel", interactionId), Form(), Cancellation);
 
         RedirectQueryOf(cancel)["error_description"].ToString().Should().Be("The user cancelled the request at the sign-in page.");
+    }
+
+    private sealed class MutableClientRepository(IClientWithCredentials initial) : IClientRepository
+    {
+        /// <summary>The registration as it is now; <see langword="null"/> once removed.</summary>
+        public IClientWithCredentials? Current { get; set; } = initial;
+
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientWithCredentials?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
     }
 }
