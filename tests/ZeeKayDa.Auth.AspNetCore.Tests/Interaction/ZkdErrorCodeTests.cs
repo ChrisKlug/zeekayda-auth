@@ -20,6 +20,7 @@ public sealed class ZkdErrorCodeTests
     private const string Flagged = "flagged-client";
     private const string Plain = "plain-client";
     private const string ConsentPath = "/account/consent";
+    private const string ProviderPagePath = "/account/link";
     private const string Pkce = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
@@ -43,8 +44,26 @@ public sealed class ZkdErrorCodeTests
         },
         mapEndpoints: MapPages);
 
-    /// <summary>A host whose one provider is challenged straight from the authorization endpoint.</summary>
-    private static TestWebAppFactory NewSingleProviderHost() => new(
+    /// <summary>A host whose provider sign-in goes on to a host page, which refuses the account.</summary>
+    private static TestWebAppFactory NewHostWithProviderPage() => new(
+        configureBuilder: builder =>
+        {
+            builder.AddInMemoryClients(clients => clients.Add(Registration(Flagged, enabled: true)).Add(Registration(Plain, enabled: false)));
+            builder.WithProviders(
+                auth => auth.AddOAuth("acme", "Acme", ConfigureAcme),
+                options => options.OnProviderSignIn = context => context.RedirectToAsync(ProviderPagePath));
+        },
+        mapEndpoints: endpoints =>
+        {
+            MapPages(endpoints);
+            endpoints.MapPost(ProviderPagePath, (ProviderSignInInteraction signIn) => signIn.DenyAsync());
+        });
+
+    /// <summary>
+    /// A host whose one provider is challenged straight from the authorization endpoint;
+    /// <paramref name="repository"/>, when given, replaces the registrations.
+    /// </summary>
+    private static TestWebAppFactory NewSingleProviderHost(IClientRepository? repository = null) => new(
         configureOptions: options =>
         {
             options.AuthorizationEndpoint.Interaction.LoginPath = null;
@@ -54,6 +73,9 @@ public sealed class ZkdErrorCodeTests
         {
             builder.AddInMemoryClients(clients => clients.Add(Registration(Flagged, enabled: true)).Add(Registration(Plain, enabled: false)));
             builder.WithProviders(auth => auth.AddOAuth("acme", "Acme", ConfigureAcme));
+
+            if (repository is not null)
+                builder.Services.AddSingleton(repository);
         });
 
     private static Client Registration(string clientId, bool enabled) =>
@@ -161,6 +183,23 @@ public sealed class ZkdErrorCodeTests
     }
 
     [Theory]
+    [InlineData(Flagged, "account_refused")]
+    [InlineData(Plain, null)]
+    public async Task A_host_page_refusing_the_external_account_carries_account_refused_only_for_a_client_that_opted_in(string clientId, string? expected)
+    {
+        using var host = NewHostWithProviderPage();
+        using var client = NewClient(host);
+        var interactionId = await ToLoginPageAsync(client, clientId);
+        var challenge = await client.PostAsync(WithInteractionId(LoginPath, interactionId), Form(("provider", "acme")), Cancellation);
+        var callback = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
+        var resume = await client.GetAsync(callback.Headers.Location!.OriginalString, Cancellation);
+
+        var refuse = await client.PostAsync(resume.Headers.Location!.OriginalString, Form(), Cancellation);
+
+        ShouldBeDeniedWith(refuse, expected);
+    }
+
+    [Theory]
     [InlineData(Flagged, "provider_declined")]
     [InlineData(Plain, null)]
     public async Task A_refusal_at_the_only_provider_carries_provider_declined_only_for_a_client_that_opted_in(string clientId, string? expected)
@@ -189,6 +228,21 @@ public sealed class ZkdErrorCodeTests
 
         cancel.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
         cancel.Headers.Location.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_refusal_at_the_only_provider_after_the_client_dropped_the_redirect_uri_ends_the_request_locally()
+    {
+        var repository = new MutableClientRepository(Registration(Flagged, enabled: true));
+        using var host = NewSingleProviderHost(repository);
+        using var client = NewClient(host);
+        var challenge = await client.GetAsync(AuthorizeUrl(Flagged), Cancellation);
+        repository.Current = Client.CreatePublic(Flagged, ["https://test.example.com/elsewhere"], [], ["openid"]) with { EnableZkdErrorCodes = true };
+
+        var callback = await client.GetAsync(CallbackUrlOf(challenge, error: "access_denied"), Cancellation);
+
+        callback.StatusCode.Should().Be(System.Net.HttpStatusCode.BadRequest);
+        callback.Headers.Location.Should().BeNull();
     }
 
     [Fact]
