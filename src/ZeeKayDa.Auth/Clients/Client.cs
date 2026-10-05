@@ -150,8 +150,8 @@ public sealed record Client : IClientWithCredentials
     /// </para>
     /// <para>
     /// The server advertises <see cref="TokenEndpointAuthMethods.None"/> by default; a
-    /// <c>TokenEndpoint.AdvertisedAuthMethods</c> filter that withholds it makes startup reject the
-    /// registration.
+    /// <c>TokenEndpoint.AdvertisedAuthMethods</c> filter that withholds it refuses the client — at
+    /// startup in the in-memory store, at the token endpoint from any other store.
     /// </para>
     /// </remarks>
     public static Client CreatePublic(

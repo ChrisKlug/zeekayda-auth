@@ -155,6 +155,29 @@ public sealed class ZeeKayDaAuthCoreBuilderClientExtensionsTests
     }
 
     [Fact]
+    public void A_confidential_client_on_a_core_only_host_fails_as_not_advertised()
+    {
+        var services = ServicesWithLogging();
+        services.AddZeeKayDaAuthCore(o => o.Issuer = "https://test.example.com")
+            .AddClientSecretHasher<TestHasher>()
+            .AddInMemoryClients(clients =>
+                clients.AddConfidential("confidential-client", client =>
+                {
+                    client.Secret = "very-secret";
+                    client.RedirectUris.UnionWith(["https://app.example.com/cb"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }));
+        using var provider = services.BuildServiceProvider();
+
+        var act = () => provider.GetRequiredService<IClientRepository>();
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("client.token_endpoint_auth_methods.not_subset",
+                "without the HTTP layer no authenticator performs a secret method");
+    }
+
+    [Fact]
     public async Task AddConfidential_resolves_client_as_confidential()
     {
         var ct = TestContext.Current.CancellationToken;

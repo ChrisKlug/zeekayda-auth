@@ -30,8 +30,8 @@ public sealed class TokenEndpointOptions
     /// </para>
     /// <para>
     /// <see cref="TokenEndpointAuthMethods.None"/> is how public clients (single-page and native
-    /// apps) authenticate. Leaving it out refuses them: a public client registration then fails
-    /// startup. A filter that leaves only <c>none</c> fails startup while
+    /// apps) authenticate. Leaving it out refuses them: the in-memory client store fails startup on a
+    /// public client, and a public client from any other store is refused at the token endpoint. A filter that leaves only <c>none</c> fails startup while
     /// <see cref="AuthorizationServerOptions.GrantTypesSupported"/> includes
     /// <see cref="GrantType.ClientCredentials"/>.
     /// </para>

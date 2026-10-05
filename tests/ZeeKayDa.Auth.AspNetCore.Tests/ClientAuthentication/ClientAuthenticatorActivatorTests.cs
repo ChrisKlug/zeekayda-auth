@@ -166,6 +166,17 @@ public sealed class ClientAuthenticatorActivatorTests
             failure.Message.Contains("whitespace"));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("client\u0001secret")]
+    public async Task Verify_fails_when_authenticator_declares_a_blank_or_control_character_method(string method)
+    {
+        var failures = await VerifyAsync(null, new FakeAuthenticator(method));
+
+        failures.Should().ContainSingle()
+            .Which.Code.Should().Be("authenticators.method_malformed");
+    }
+
     // ── Non-canonical casing ──────────────────────────────────────────────────────────────────────
 
     [Theory]
@@ -232,6 +243,19 @@ public sealed class ClientAuthenticatorActivatorTests
             .Which.Should().Match<StartupVerificationWarning>(warning =>
                 warning.Code == "token_endpoint.advertised_auth_methods.unperformable" &&
                 warning.Args.Contains("private_key_jwt"));
+    }
+
+    [Fact]
+    public async Task Verify_fails_when_the_filter_names_a_performable_method_in_different_casing()
+    {
+        var context = await VerifyContextAsync(
+            ["Client_Secret_Basic", TokenEndpointAuthMethods.None],
+            [GrantType.AuthorizationCode],
+            new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
+
+        context.Failures.Should().ContainSingle()
+            .Which.Code.Should().Be("token_endpoint.advertised_auth_methods.casing");
+        context.Warnings.Should().BeEmpty("the entry is reported once, as the typo it is");
     }
 
     [Fact]

@@ -15,10 +15,10 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// An activator rather than a verifier, by the mechanical rule: it constructs every registered
 /// authenticator, and those are the host's own. It is deliberately not an
 /// <c>IValidateOptions&lt;AuthorizationServerOptions&gt;</c>, which would make the first read of
-/// the server options construct part of the service graph. The authenticators are resolved in
-/// <see cref="VerifyAsync"/>, not injected, so one that fails to construct — the client-secret
-/// authenticator builds every registered hasher — is reported against this check while the rest of
-/// the phase still runs.
+/// the server options construct part of the service graph. The authenticators are built by whichever
+/// startup check first reads <see cref="AdvertisedAuthMethods"/> — this one, or the client
+/// repository's when its validation runs first — so one that fails to construct is reported against
+/// that check, with the construction failure as its root cause either way.
 /// </remarks>
 internal sealed class ClientAuthenticatorActivator(
     IOptions<AuthorizationServerOptions> options,
@@ -47,14 +47,32 @@ internal sealed class ClientAuthenticatorActivator(
                 CheckDeclaredMethod(context, declaringTypeByMethod, typeName, method);
         }
 
-        VerifyAdvertisedMethods(context, services.GetRequiredService<AdvertisedAuthMethods>());
+        VerifyAdvertisedMethods(context, services.GetRequiredService<AdvertisedAuthMethods>(), declaringTypeByMethod.Keys);
 
         return Task.CompletedTask;
     }
 
-    private void VerifyAdvertisedMethods(StartupVerificationContext context, AdvertisedAuthMethods advertised)
+    private void VerifyAdvertisedMethods(
+        StartupVerificationContext context, AdvertisedAuthMethods advertised, IEnumerable<string> declared)
     {
-        if (advertised.Unperformable.Count > 0)
+        // A filter entry that is a performable method in other casing is a typo that withholds the
+        // method it meant to keep, the same mistake an authenticator declaration fails on.
+        var performable = declared.Append(TokenEndpointAuthMethods.None).ToList();
+        var miscased = advertised.Unperformable
+            .Where(entry => performable.Contains(entry, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        foreach (var entry in miscased)
+        {
+            context.AddFailure(
+                "token_endpoint.advertised_auth_methods.casing",
+                $"TokenEndpoint.AdvertisedAuthMethods names '{entry}', which differs only in casing from " +
+                $"'{performable.First(method => string.Equals(method, entry, StringComparison.OrdinalIgnoreCase))}'. " +
+                $"Method names compare exactly — use the constants in {nameof(TokenEndpointAuthMethods)}.");
+        }
+
+        var unperformable = advertised.Unperformable.Except(miscased, StringComparer.Ordinal).ToList();
+        if (unperformable.Count > 0)
         {
             // A no-op rather than a misstatement: the advertised set is an intersection, so a method
             // no authenticator performs is never advertised whatever the filter says.
@@ -63,7 +81,7 @@ internal sealed class ClientAuthenticatorActivator(
                 "TokenEndpoint.AdvertisedAuthMethods names {UnperformableMethods}, which no registered " +
                 "IClientAuthenticator performs. Those entries have no effect — the server advertises " +
                 "only methods it can perform: {AdvertisedMethods}.",
-                string.Join(", ", advertised.Unperformable),
+                string.Join(", ", unperformable),
                 string.Join(", ", advertised.Methods));
         }
 
@@ -97,6 +115,17 @@ internal sealed class ClientAuthenticatorActivator(
         if (method is null)
         {
             ReportNullMethod(context, typeName);
+            return;
+        }
+
+        // Blank or control-character entries are never advertised, so a declaration holding one
+        // would otherwise start a server that silently cannot perform it.
+        if (TokenEndpointAuthMethodRules.IsBlank(method) || TokenEndpointAuthMethodRules.HasControlCharacters(method))
+        {
+            context.AddFailure(
+                "authenticators.method_malformed",
+                $"{typeName} declares an auth method that is blank or contains control characters. " +
+                $"Method strings must match exactly — use the constants in {nameof(TokenEndpointAuthMethods)}.");
             return;
         }
 

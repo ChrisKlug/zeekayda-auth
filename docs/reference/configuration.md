@@ -389,6 +389,8 @@ The filter can only withhold a method, never add one:
   effect and logs a startup warning (`token_endpoint.advertised_auth_methods.unperformable`).
 - A filter that leaves nothing the server performs fails startup
   (`token_endpoint.advertised_auth_methods.none_performable`).
+- An entry that differs from a performed method only in casing (`Client_Secret_Basic`) fails startup
+  (`token_endpoint.advertised_auth_methods.casing`).
 - An empty filter fails startup; `null` advertises everything.
 - Each entry must be a non-empty string with no surrounding whitespace and no control characters.
 
