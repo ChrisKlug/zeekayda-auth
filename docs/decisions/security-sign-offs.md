@@ -2067,3 +2067,19 @@ Copilot code and security lenses, the security agent, fix-diff verification of e
   `A_valid_registration_s_advisory_warning_is_written_once_not_per_lookup`.
 - **Accepted residual (maintainer):** a host `IClientRegistrationValidator` that logs on every call now logs per request;
   the host's own code, out of scope. No test.
+
+## 2026-10-05 — `none` advertised by default; token endpoint auth methods derived from the authenticators (#778, code frozen at `826d3c8`)
+Copilot code, security and architecture lenses, the security and architect agents, and fix-diff verification of each round; no Critical.
+- `none` is honoured only for a validator-served public client, and a confidential client cannot list it. Closed —
+  `AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_confidential_client_on_none_fallback`,
+  `A_confidential_client_listing_none_fails_as_none_on_confidential_although_none_is_advertised`.
+- A filter withholding `none` refuses public clients. Closed — `A_public_client_refused_because_the_server_disallows_none_is_padded_like_an_unknown_client`,
+  `Build_failure_for_a_public_client_on_a_server_whose_filter_withholds_none_names_the_filter`.
+- `client_credentials` with only `none` advertised fails startup (RFC 6749 §4.4). Closed —
+  `Verify_fails_when_client_credentials_is_served_and_the_filter_leaves_only_none`,
+  `Verify_fails_when_client_credentials_is_served_and_no_authenticator_is_registered`.
+- Discovery, client registration and the token endpoint read one resolution, fixed at startup. Closed —
+  `Methods_cannot_be_cast_back_to_a_mutable_collection`, `An_authenticator_adding_a_method_after_registration_cannot_authenticate_with_it`.
+- A malformed declaration or a miscased filter entry fails startup rather than silently withholding a method. Closed —
+  `Verify_fails_when_authenticator_declares_a_blank_or_control_character_method`,
+  `Verify_fails_when_the_filter_names_a_performable_method_in_different_casing`.
