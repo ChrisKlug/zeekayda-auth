@@ -17,13 +17,12 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// excluded from the injected authenticator enumerable and cannot be dispatched recursively.
 /// </remarks>
 internal sealed class CompositeClientAuthenticator(
-    IEnumerable<IClientAuthenticator> authenticators,
+    RegisteredAuthenticators authenticators,
     ValidatedClientResolver clientResolver,
     AdvertisedAuthMethods advertisedAuthMethods,
     ClientSecrets secrets,
     SanitizingLogger<CompositeClientAuthenticator> logger)
 {
-    private readonly IReadOnlyList<IClientAuthenticator> _authenticators = authenticators.ToList().AsReadOnly();
 
     /// <summary>
     /// Authenticates the client identified by <paramref name="clientId"/> using the mechanism(s)
@@ -60,8 +59,8 @@ internal sealed class CompositeClientAuthenticator(
             Form = form,
         };
 
-        var answers = _authenticators
-            .Select(authenticator => (Authenticator: authenticator, Match: TryCanHandle(authenticator, canHandleContext)))
+        var answers = authenticators.All
+            .Select(registered => (Registered: registered, Match: TryCanHandle(registered.Authenticator, canHandleContext)))
             .ToList();
 
         // An authenticator that recognised its credential but cannot accept it ends the request: it
@@ -71,7 +70,7 @@ internal sealed class CompositeClientAuthenticator(
 
         var matches = answers
             .Where(answer => answer.Match.Method is not null)
-            .Select(answer => (answer.Authenticator, Method: answer.Match.Method!))
+            .Select(answer => (answer.Registered, Method: answer.Match.Method!))
             .ToList();
 
         // Multiple mechanisms → invalid_client (RFC 6749 §2.3).
@@ -87,11 +86,11 @@ internal sealed class CompositeClientAuthenticator(
             return AuthenticateNone(client);
 
         // Exactly one mechanism.
-        var (matchedAuthenticator, matchedMethod) = matches[0];
+        var (matched, matchedMethod) = matches[0];
 
-        // Returned method must be in the authenticator's own declared set (defends against a
-        // buggy CanHandle that returns an undeclared method, bypassing the coverage check).
-        if (!matchedAuthenticator.AuthenticationMethods.ContainsOrdinal(matchedMethod))
+        // Returned method must be one the authenticator declared (defends against a buggy
+        // CanHandle that returns an undeclared method, bypassing the startup checks).
+        if (!matched.Performs(matchedMethod))
             return AuthenticatedClient.Refused;
 
         // Method must be in the server's global allowlist.
@@ -111,7 +110,7 @@ internal sealed class CompositeClientAuthenticator(
             Form = form,
             Method = matchedMethod,
         };
-        return Conclude(await matchedAuthenticator.AuthenticateAsync(context, cancellationToken), client);
+        return Conclude(await matched.Authenticator.AuthenticateAsync(context, cancellationToken), client);
     }
 
     /// <summary>

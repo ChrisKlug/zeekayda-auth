@@ -24,8 +24,11 @@ public interface IClientAuthenticator
     /// The set of token endpoint authentication method strings this authenticator can produce.
     /// The token endpoint advertises and accepts the union of every authenticator's set, plus
     /// <c>none</c>, narrowed by <c>TokenEndpoint.AdvertisedAuthMethods</c>.
-    /// All membership checks MUST use <see cref="System.StringComparer.Ordinal"/> semantics.
     /// </summary>
+    /// <remarks>
+    /// Read once, when the authenticators are first resolved at startup, and compared ordinally. A
+    /// change to the set after that has no effect.
+    /// </remarks>
     IReadOnlySet<string> AuthenticationMethods { get; }
 
     /// <summary>

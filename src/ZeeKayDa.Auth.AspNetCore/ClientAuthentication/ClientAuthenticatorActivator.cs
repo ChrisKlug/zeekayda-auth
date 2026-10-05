@@ -32,14 +32,12 @@ internal sealed class ClientAuthenticatorActivator(
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var authenticators = services.GetServices<IClientAuthenticator>();
-
         var declaringTypeByMethod = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        foreach (var authenticator in authenticators)
+        foreach (var registered in services.GetRequiredService<RegisteredAuthenticators>().All)
         {
-            var typeName = authenticator.GetType().Name;
-            if (authenticator.AuthenticationMethods is not { } methods)
+            var typeName = registered.Authenticator.GetType().Name;
+            if (registered.Declared is not { } methods)
             {
                 ReportNullMethod(context, typeName);
                 continue;

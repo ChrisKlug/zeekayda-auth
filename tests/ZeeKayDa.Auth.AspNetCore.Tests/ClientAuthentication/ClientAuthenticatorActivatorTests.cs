@@ -100,7 +100,8 @@ public sealed class ClientAuthenticatorActivatorTests
         var options = new AuthorizationServerOptions { GrantTypesSupported = [.. grants] };
         options.TokenEndpoint.AdvertisedAuthMethods = filter;
         services.AddSingleton(Options.Create(options));
-        services.AddSingleton(AuthenticatorAuthMethods.Resolve);
+        services.AddSingleton(sp => new RegisteredAuthenticators(sp.GetServices<IClientAuthenticator>()));
+        services.AddSingleton(RegisteredAuthenticators.Advertise);
 
         await using var provider = services.BuildServiceProvider();
         var context = new StartupVerificationContext();

@@ -161,11 +161,12 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // excluded from IEnumerable<IClientAuthenticator> and cannot dispatch recursively.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
+        services.TryAddSingleton(sp => new RegisteredAuthenticators(sp.GetServices<IClientAuthenticator>()));
         services.TryAddSingleton<CompositeClientAuthenticator>();
 
         // Replaces the core's authenticator-less default: the HTTP layer is what performs methods.
         services.RemoveAll<AdvertisedAuthMethods>();
-        services.AddSingleton(AuthenticatorAuthMethods.Resolve);
+        services.AddSingleton(RegisteredAuthenticators.Advertise);
 
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupActivator, ClientAuthenticatorActivator>());
