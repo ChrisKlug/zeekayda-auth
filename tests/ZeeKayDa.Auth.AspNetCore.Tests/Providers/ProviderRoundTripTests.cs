@@ -525,6 +525,30 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
     }
 
     [Fact]
+    public async Task A_host_failure_event_that_answers_the_callback_itself_removes_the_challenge_cookie()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+            auth.AddOAuth("acme", options =>
+            {
+                ConfigureAcme(options);
+                options.Events.OnRemoteFailure = context =>
+                {
+                    context.Response.Redirect("/host-error");
+                    context.HandleResponse();
+                    return Task.CompletedTask;
+                };
+            })));
+        using var client = NewClient(factory);
+        var (interactionId, challenge) = await ChallengeAsync(client);
+
+        var failed = await client.GetAsync(CallbackUrlOf(challenge, error: "temporarily_unavailable"), Cancellation);
+
+        failed.Headers.Location!.OriginalString.Should().Be("/host-error", "the host owns its failure page");
+        ChallengeCookieOf(failed).Should().StartWith($"zkd.challenge.{interactionId}=")
+            .And.Contain("expires=Thu, 01 Jan 1970");
+    }
+
+    [Fact]
     public async Task A_host_that_clears_the_remote_failure_event_still_starts_and_returns_the_user_to_the_login_page()
     {
         using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>

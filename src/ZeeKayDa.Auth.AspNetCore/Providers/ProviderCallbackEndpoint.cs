@@ -100,11 +100,28 @@ internal sealed class ProviderCallbackEndpoint(
             return await FailAsync(context, feature, ex).ConfigureAwait(false);
         }
 
+        // A host's own failure event handled or skipped the callback: the round trip is over all
+        // the same.
+        ForgetChallengeIfFailed(context, feature);
+
         if (handled)
             return Results.Empty;
 
         logger.LogError("The handler for provider {Provider} declined its own callback.", registration.Name);
         return await DeclineAsync(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Removes the challenge cookie of a callback that failed but was answered without reaching
+    /// <see cref="FailAsync"/>, which would otherwise leave the next failure two to choose between.
+    /// </summary>
+    private void ForgetChallengeIfFailed(HttpContext context, ProviderCallbackFeature feature)
+    {
+        if (context.Response.HasStarted)
+            return;
+
+        if (feature.FailedChallengeInteractionId is { } interactionId)
+            ProviderChallengeCookie.Clear(context, EndpointRouteHelper.GetIssuerUri(options), feature.Provider, interactionId);
     }
 
     /// <summary>
@@ -152,48 +169,57 @@ internal sealed class ProviderCallbackEndpoint(
     private async Task<IResult> FailAsync(HttpContext context, ProviderCallbackFeature feature, Exception exception)
     {
         await DiscardTicketAsync(context).ConfigureAwait(false);
+        LogFailure(feature, exception);
 
-        if (feature.Refused)
-        {
-            logger.LogInformation("The user declined to sign in at provider {Provider}.", feature.Provider.Name);
-        }
-        else
-        {
-            logger.LogError(
-                "The handler for provider {Provider} failed its callback with {ExceptionType}.",
-                feature.Provider.Name,
-                exception.GetType().FullName);
-        }
-
-        // Only an interaction this browser is carrying is acted on. Without the binding cookie — a
-        // form_post callback is a cross-site POST the Lax cookie does not accompany — the failure
-        // renders locally and the interaction, if any, survives untouched.
-        if (LoginDispatch.LoginPageFor(options.Value.AuthorizationEndpoint.Interaction, providers.Count) is { } loginPath)
-        {
-            var returning = feature.ReturnInteractionId is { } returnId
-                ? await flow.ReadAsync(context, returnId).ConfigureAwait(false)
-                : null;
-
-            if (returning is not null)
-            {
-                var attempt = new ProviderAttempt(feature.Provider.Name, feature.Refused);
-                return await outcomes.ReturnToLoginAsync(context, returning, attempt, loginPath).ConfigureAwait(false);
-            }
-        }
+        if (await ReturnToLoginAsync(context, feature).ConfigureAwait(false) is { } returned)
+            return returned;
 
         if (!feature.Refused)
             return outcomes.LocalError(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
 
         // Ending the request at the client is decided on the refused challenge's own properties
         // alone, never on the challenge cookie.
-        var refused = feature.RefusedInteractionId is { } refusedInteractionId
-            ? await flow.ReadAsync(context, refusedInteractionId).ConfigureAwait(false)
-            : null;
-
+        var refused = await ReadBoundAsync(context, feature.RefusedInteractionId).ConfigureAwait(false);
         if (refused is null)
             return outcomes.LocalError(context, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider);
 
         return await outcomes.ClientErrorAsync(context, refused, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider)
             .ConfigureAwait(false);
     }
+
+    private void LogFailure(ProviderCallbackFeature feature, Exception exception)
+    {
+        if (feature.Refused)
+        {
+            logger.LogInformation("The user declined to sign in at provider {Provider}.", feature.Provider.Name);
+            return;
+        }
+
+        logger.LogError(
+            "The handler for provider {Provider} failed its callback with {ExceptionType}.",
+            feature.Provider.Name,
+            exception.GetType().FullName);
+    }
+
+    /// <summary>
+    /// Back to the login page the challenge was issued from, or <see langword="null"/> when there
+    /// is none, or the callback names no interaction this browser is carrying. Without the binding
+    /// cookie — a form_post callback is a cross-site POST the Lax cookie does not accompany — the
+    /// failure renders locally and the interaction, if any, survives untouched.
+    /// </summary>
+    private async Task<IResult?> ReturnToLoginAsync(HttpContext context, ProviderCallbackFeature feature)
+    {
+        if (!outcomes.ReturnsToLoginPage)
+            return null;
+
+        var returning = await ReadBoundAsync(context, feature.ReturnInteractionId).ConfigureAwait(false);
+        if (returning is null)
+            return null;
+
+        var outcome = feature.Refused ? ProviderReturnOutcome.Declined : ProviderReturnOutcome.Failed;
+        return await outcomes.ReturnToLoginAsync(context, returning, feature.Provider, outcome).ConfigureAwait(false);
+    }
+
+    private async ValueTask<AuthorizationRequestContext?> ReadBoundAsync(HttpContext context, string? interactionId) =>
+        interactionId is null ? null : await flow.ReadAsync(context, interactionId).ConfigureAwait(false);
 }

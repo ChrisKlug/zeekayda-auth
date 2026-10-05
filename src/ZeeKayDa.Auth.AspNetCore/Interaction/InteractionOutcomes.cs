@@ -313,8 +313,8 @@ internal sealed class InteractionOutcomes(
         properties.Items[ExternalTicket.InteractionIdItem] = requestContext.Id;
         properties.Items[ExternalTicket.ChallengedProviderItem] = registration.Name;
         // Only a challenge from the login page has a page to come back to.
-        if (LoginDispatch.LoginPageFor(options.Value.AuthorizationEndpoint.Interaction, providers.Count) is not null)
-            ProviderChallengeCookie.Issue(context, CallbackRouteFor(registration.Name), requestContext.Id, requestContext.ExpiresAt);
+        if (ReturnsToLoginPage)
+            ProviderChallengeCookie.Issue(context, EndpointRouteHelper.GetIssuerUri(options), registration, requestContext);
 
         var handler = await activator.ActivateAsync(context, registration).ConfigureAwait(false);
         await handler.ChallengeAsync(properties).ConfigureAwait(false);
@@ -322,25 +322,39 @@ internal sealed class InteractionOutcomes(
     }
 
     /// <summary>
-    /// Sends the user back to the login page at <paramref name="loginPath"/> after a trip to an
-    /// external provider that did not sign them in, recording <paramref name="attempt"/> on the
-    /// interaction for the page to read. The interaction stays alive and the client is told
-    /// nothing. Not terminal — the caller writes the result.
+    /// Whether a provider challenge is issued from the login page and returns there when it does
+    /// not sign the user in — <see langword="false"/> when the authorization endpoint challenges the
+    /// one provider itself. Configuration, frozen at startup.
+    /// </summary>
+    public bool ReturnsToLoginPage => LoginPage is not null;
+
+    private string? LoginPage =>
+        LoginDispatch.LoginPageFor(options.Value.AuthorizationEndpoint.Interaction, providers.Count);
+
+    /// <summary>
+    /// Sends the user back to the login page after a trip to <paramref name="registration"/> that
+    /// did not sign them in, recording how it ended on the interaction for the page to read. The
+    /// interaction stays alive and the client is told nothing. Not terminal — the caller writes
+    /// the result.
     /// </summary>
     /// <remarks>
-    /// A store that cannot record the attempt still sends the user back: the page then shows an
+    /// A store that cannot record the outcome still sends the user back: the page then shows an
     /// ordinary sign-in, which is a lost message, not a lost sign-in.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">There is no login page: <see cref="ReturnsToLoginPage"/> is false.</exception>
     public async Task<IResult> ReturnToLoginAsync(
         HttpContext context,
         AuthorizationRequestContext requestContext,
-        ProviderAttempt attempt,
-        string loginPath)
+        ProviderRegistration registration,
+        ProviderReturnOutcome outcome)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
-        ArgumentNullException.ThrowIfNull(attempt);
-        ArgumentException.ThrowIfNullOrEmpty(loginPath);
+        ArgumentNullException.ThrowIfNull(registration);
+
+        var loginPath = LoginPage
+            ?? throw new InvalidOperationException("There is no login page to return to; check ReturnsToLoginPage first.");
+        var attempt = new ProviderAttempt(registration.Name, Declined: outcome == ProviderReturnOutcome.Declined);
 
         try
         {
@@ -351,19 +365,9 @@ internal sealed class InteractionOutcomes(
             logger.LogError(ex, "Recording the provider outcome for client {ClientId} failed; the login page will not show it.", requestContext.ClientId);
         }
 
-        ForgetChallenge(context, attempt.Provider, requestContext.Id);
+        ProviderChallengeCookie.Clear(context, EndpointRouteHelper.GetIssuerUri(options), registration, requestContext.Id);
         return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
     }
-
-    /// <summary>
-    /// Removes the challenge cookie <see cref="ChallengeAsync"/> wrote for this interaction and
-    /// provider, once the round trip it names has come back either way.
-    /// </summary>
-    public void ForgetChallenge(HttpContext context, string provider, string interactionId) =>
-        ProviderChallengeCookie.Clear(context, CallbackRouteFor(provider), interactionId);
-
-    private PathString CallbackRouteFor(string provider) =>
-        ProviderCallbackRoute.For(EndpointRouteHelper.GetIssuerUri(options), provider);
 
     /// <summary>
     /// Terminal. Parks <paramref name="principal"/> for the interaction and sends the user to

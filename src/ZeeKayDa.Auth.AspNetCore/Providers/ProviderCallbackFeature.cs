@@ -26,7 +26,14 @@ internal sealed class ProviderCallbackFeature
     /// Records the interaction a failing callback's properties name, when the handler handed them
     /// over. A refusal recorded first keeps its own: the handler fails every refused callback.
     /// </summary>
-    public void MarkFailed(string? interactionId) => FailedInteractionId ??= RefusedInteractionId ?? interactionId;
+    public void MarkFailed(string? interactionId)
+    {
+        Failed = true;
+        FailedInteractionId ??= RefusedInteractionId ?? interactionId;
+    }
+
+    /// <summary>Whether the handler raised its failure event — whoever then answered the callback.</summary>
+    public bool Failed { get; private set; }
 
     public ProviderRegistration Provider { get; }
 
@@ -51,4 +58,7 @@ internal sealed class ProviderCallbackFeature
     /// which name exactly the challenge that failed, then the challenge cookie.
     /// </summary>
     public string? ReturnInteractionId => RefusedInteractionId ?? FailedInteractionId ?? ChallengedInteractionId;
+
+    /// <summary>The interaction whose challenge failed, once the handler raised its failure event; otherwise <see langword="null"/>.</summary>
+    public string? FailedChallengeInteractionId => Failed ? ReturnInteractionId : null;
 }
