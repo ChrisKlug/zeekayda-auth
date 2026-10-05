@@ -70,67 +70,34 @@ public sealed class ClientAuthenticatorActivatorTests
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
     private static async Task<IReadOnlyList<ZeeKayDaConfigurationFailure>> VerifyAsync(
-        string[]? filter,
-        params IClientAuthenticator[] authenticators)
-        => (await VerifyContextAsync(filter, [GrantType.AuthorizationCode], authenticators)).Failures;
-
-    private static async Task<StartupVerificationContext> VerifyContextAsync(
-        string[]? filter,
-        GrantType[] grants,
         params IClientAuthenticator[] authenticators)
     {
         var services = new ServiceCollection();
         foreach (var a in authenticators)
             services.AddSingleton(a);
 
-        return await VerifyContextAsync(services, filter, grants);
+        return await VerifyAsync(services);
     }
 
-    private static async Task<IReadOnlyList<ZeeKayDaConfigurationFailure>> VerifyAsync(
-        ServiceCollection services,
-        string[]? filter)
-        => (await VerifyContextAsync(services, filter, [GrantType.AuthorizationCode])).Failures;
-
-    /// <summary>Runs the activator with the advertised set wired as <c>AddZeeKayDaAuth</c> wires it.</summary>
-    private static async Task<StartupVerificationContext> VerifyContextAsync(
-        ServiceCollection services,
-        string[]? filter,
-        GrantType[] grants)
+    private static async Task<IReadOnlyList<ZeeKayDaConfigurationFailure>> VerifyAsync(ServiceCollection services)
     {
-        var options = new AuthorizationServerOptions { GrantTypesSupported = [.. grants] };
-        options.TokenEndpoint.AdvertisedAuthMethods = filter;
-        services.AddSingleton(Options.Create(options));
         services.AddSingleton(sp => new RegisteredAuthenticators(sp.GetServices<IClientAuthenticator>()));
-        services.AddSingleton(RegisteredAuthenticators.Advertise);
 
         await using var provider = services.BuildServiceProvider();
         var context = new StartupVerificationContext();
 
-        await new ClientAuthenticatorActivator(Options.Create(options), provider)
+        await new ClientAuthenticatorActivator(provider)
             .VerifyAsync(context, TestContext.Current.CancellationToken);
 
-        return context;
+        return context.Failures;
     }
 
     // ── Happy path ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Verify_succeeds_when_no_filter_is_configured()
+    public async Task Verify_succeeds_when_an_authenticator_declares_well_formed_methods()
     {
-        var failures = await VerifyAsync(
-            null,
-            new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
-
-        failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task Verify_succeeds_when_the_filter_names_none_without_a_matching_authenticator()
-    {
-        // "none" is always performed by the composite fallback — no authenticator needed.
-        var failures = await VerifyAsync(
-            [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None],
-            new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
+        var failures = await VerifyAsync(new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
 
         failures.Should().BeEmpty();
     }
@@ -139,7 +106,6 @@ public sealed class ClientAuthenticatorActivatorTests
     public async Task Verify_succeeds_when_multiple_authenticators_each_cover_distinct_methods()
     {
         var failures = await VerifyAsync(
-            [TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.ClientSecretPost],
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic),
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretPost));
 
@@ -158,7 +124,6 @@ public sealed class ClientAuthenticatorActivatorTests
         string methodWithWhitespace)
     {
         var failures = await VerifyAsync(
-            [TokenEndpointAuthMethods.ClientSecretBasic],
             new FakeAuthenticator(methodWithWhitespace));
 
         failures.Should().Contain(failure =>
@@ -171,7 +136,7 @@ public sealed class ClientAuthenticatorActivatorTests
     [InlineData("client\u0001secret")]
     public async Task Verify_fails_when_authenticator_declares_a_blank_or_control_character_method(string method)
     {
-        var failures = await VerifyAsync(null, new FakeAuthenticator(method));
+        var failures = await VerifyAsync(new FakeAuthenticator(method));
 
         failures.Should().ContainSingle()
             .Which.Code.Should().Be("authenticators.method_malformed");
@@ -189,7 +154,6 @@ public sealed class ClientAuthenticatorActivatorTests
         string methodWithWrongCasing)
     {
         var failures = await VerifyAsync(
-            [TokenEndpointAuthMethods.ClientSecretBasic],
             new FakeAuthenticator(methodWithWrongCasing));
 
         failures.Should().Contain(failure =>
@@ -203,7 +167,6 @@ public sealed class ClientAuthenticatorActivatorTests
     public async Task Verify_fails_when_an_authenticator_declares_none()
     {
         var failures = await VerifyAsync(
-            [TokenEndpointAuthMethods.None],
             new FakeAuthenticator(TokenEndpointAuthMethods.None));
 
         failures.Should().ContainSingle()
@@ -218,7 +181,6 @@ public sealed class ClientAuthenticatorActivatorTests
     public async Task Verify_fails_when_two_authenticators_declare_the_same_method()
     {
         var failures = await VerifyAsync(
-            [TokenEndpointAuthMethods.ClientSecretBasic],
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic),
             new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
 
@@ -228,112 +190,12 @@ public sealed class ClientAuthenticatorActivatorTests
                 failure.Message.Contains(TokenEndpointAuthMethods.ClientSecretBasic));
     }
 
-    // ── Filter against what the server performs ───────────────────────────────────────────────────
-
-    [Fact]
-    public async Task Verify_warns_when_the_filter_names_a_method_no_authenticator_performs()
-    {
-        var context = await VerifyContextAsync(
-            [TokenEndpointAuthMethods.ClientSecretBasic, "private_key_jwt"],
-            [GrantType.AuthorizationCode],
-            new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
-
-        context.Failures.Should().BeEmpty("an unperformable entry is a no-op, not a misstatement");
-        context.Warnings.Should().ContainSingle()
-            .Which.Should().Match<StartupVerificationWarning>(warning =>
-                warning.Code == "token_endpoint.advertised_auth_methods.unperformable" &&
-                warning.Args.Contains("private_key_jwt"));
-    }
-
-    [Fact]
-    public async Task Verify_fails_when_the_filter_names_a_performable_method_in_different_casing()
-    {
-        var context = await VerifyContextAsync(
-            ["Client_Secret_Basic", TokenEndpointAuthMethods.None],
-            [GrantType.AuthorizationCode],
-            new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
-
-        context.Failures.Should().ContainSingle()
-            .Which.Code.Should().Be("token_endpoint.advertised_auth_methods.casing");
-        context.Warnings.Should().BeEmpty("the entry is reported once, as the typo it is");
-    }
-
-    [Fact]
-    public async Task Verify_does_not_warn_when_no_filter_is_configured()
-    {
-        var context = await VerifyContextAsync(
-            null, [GrantType.AuthorizationCode], new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
-
-        context.Warnings.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task Verify_fails_when_the_filter_leaves_no_method_the_server_performs()
-    {
-        var failures = await VerifyAsync(
-            ["private_key_jwt"],
-            new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
-
-        failures.Should().ContainSingle()
-            .Which.Code.Should().Be("token_endpoint.advertised_auth_methods.none_performable");
-    }
-
-    [Fact]
-    public async Task Verify_succeeds_when_the_filter_withholds_a_method_an_authenticator_performs()
-    {
-        var failures = await VerifyAsync(
-            [TokenEndpointAuthMethods.ClientSecretBasic],
-            new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.ClientSecretPost));
-
-        failures.Should().BeEmpty();
-    }
-
-    // ── The client credentials grant needs a credential (RFC 6749 §4.4) ──────────────────────────
-
-    [Fact]
-    public async Task Verify_fails_when_client_credentials_is_served_and_the_filter_leaves_only_none()
-    {
-        var context = await VerifyContextAsync(
-            [TokenEndpointAuthMethods.None],
-            [GrantType.ClientCredentials],
-            new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
-
-        context.Failures.Should().ContainSingle()
-            .Which.Code.Should().Be("token_endpoint.advertised_auth_methods.only_none_with_client_credentials");
-    }
-
-    [Fact]
-    public async Task Verify_fails_when_client_credentials_is_served_and_no_authenticator_is_registered()
-    {
-        var context = await VerifyContextAsync(null, [GrantType.AuthorizationCode, GrantType.ClientCredentials]);
-
-        context.Failures.Should().ContainSingle()
-            .Which.Code.Should().Be("token_endpoint.advertised_auth_methods.only_none_with_client_credentials");
-    }
-
-    [Fact]
-    public async Task Verify_succeeds_when_client_credentials_is_served_and_a_credential_method_is_advertised()
-    {
-        var context = await VerifyContextAsync(
-            null, [GrantType.ClientCredentials], new FakeAuthenticator(TokenEndpointAuthMethods.ClientSecretBasic));
-
-        context.Failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task Verify_succeeds_with_only_none_advertised_when_client_credentials_is_not_served()
-    {
-        var context = await VerifyContextAsync(null, [GrantType.AuthorizationCode]);
-
-        context.Failures.Should().BeEmpty("a server with only public clients serves the code grant with PKCE");
-    }
-
     // ── An authenticator breaking the non-null contract ───────────────────────────────────────────
 
     [Fact]
     public async Task Verify_fails_naming_an_authenticator_whose_AuthenticationMethods_is_null()
     {
-        var failures = await VerifyAsync(null, new NullMethodsAuthenticator(null!));
+        var failures = await VerifyAsync(new NullMethodsAuthenticator(null!));
 
         failures.Should().ContainSingle()
             .Which.Should().Match<ZeeKayDaConfigurationFailure>(failure =>
@@ -344,9 +206,8 @@ public sealed class ClientAuthenticatorActivatorTests
     [Fact]
     public async Task Verify_fails_naming_an_authenticator_that_declares_a_null_method()
     {
-        var failures = await VerifyAsync(
-            null,
-            new NullMethodsAuthenticator(new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.ClientSecretBasic, null! }));
+        var failures = await VerifyAsync(new NullMethodsAuthenticator(
+            new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.ClientSecretBasic, null! }));
 
         failures.Should().ContainSingle()
             .Which.Code.Should().Be("authenticators.method_null");
@@ -363,7 +224,7 @@ public sealed class ClientAuthenticatorActivatorTests
         var services = new ServiceCollection();
         services.AddSingleton<IClientAuthenticator, BrokenAuthenticator>();
 
-        var act = () => VerifyAsync(services, null);
+        var act = () => VerifyAsync(services);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
@@ -395,7 +256,7 @@ public sealed class ClientAuthenticatorActivatorTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_registers_the_coverage_check_as_a_startup_activator()
+    public void AddZeeKayDaAuth_registers_the_declaration_check_as_a_startup_activator()
     {
         var services = new ServiceCollection();
 

@@ -176,6 +176,8 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // 'none'; AddZeeKayDaAuth replaces this with the set its authenticators perform.
         services.TryAddSingleton(sp => new AdvertisedAuthMethods(
             [], sp.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value.TokenEndpoint.AdvertisedAuthMethods));
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IStartupActivator, AdvertisedAuthMethodsActivator>());
 
         // A factory rather than type activation: the ISigningKeyRing parameter is optional, and DI
         // activation cannot supply a default for a service that is not registered.

@@ -16,6 +16,7 @@ internal sealed class AdvertisedAuthMethods
 {
     private readonly HashSet<string> _methods;
 
+    /// <summary>Resolves what to advertise from what the server performs and the operator's filter.</summary>
     /// <param name="performable">
     /// The methods the registered authenticators declare; <c>none</c> is added here, never by them. A
     /// malformed entry is never advertised: the startup check on the declarations fails on it.
@@ -33,12 +34,16 @@ internal sealed class AdvertisedAuthMethods
 
         // Read-only wrappers, not arrays: discovery hands Methods to a public document, and an array
         // cast back from it would let the advertised set drift from the one the token endpoint checks.
+        Performable = all.ToList().AsReadOnly();
         Methods = (filter is null ? all : all.Where(method => filter.Contains(method, StringComparer.Ordinal)))
             .ToList().AsReadOnly();
         Unperformable = (filter ?? []).Where(method => !all.Contains(method)).Distinct(StringComparer.Ordinal)
             .ToList().AsReadOnly();
         _methods = new HashSet<string>(Methods, StringComparer.Ordinal);
     }
+
+    /// <summary>Every method the server performs, <c>none</c> included, before the filter, in ordinal order.</summary>
+    public IReadOnlyList<string> Performable { get; }
 
     /// <summary>The advertised methods, in ordinal order.</summary>
     public IReadOnlyList<string> Methods { get; }

@@ -224,7 +224,7 @@ This matters for issuers with path segments.
   "scopes_supported": ["openid", "profile", "api.read"],
   "response_modes_supported": ["query"],
   "grant_types_supported": ["authorization_code"],
-  "token_endpoint_auth_methods_supported": ["client_secret_basic"],
+  "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"],
   "subject_types_supported": ["public"],
   "id_token_signing_alg_values_supported": ["RS256"]
 }

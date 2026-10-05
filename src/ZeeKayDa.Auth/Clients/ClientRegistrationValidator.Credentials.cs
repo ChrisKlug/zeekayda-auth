@@ -123,8 +123,8 @@ internal sealed partial class ClientRegistrationValidator
             ? " Public clients present no credentials at the token endpoint, and " +
               "TokenEndpoint.AdvertisedAuthMethods leaves 'none' out: add it to the filter, or set the " +
               "filter to null to advertise every method the server performs."
-            : " Register an IClientAuthenticator that performs it, or add it to TokenEndpoint.AdvertisedAuthMethods " +
-              "if a filter withholds it.";
+            : " The server advertises a method only when a registered IClientAuthenticator performs it " +
+              "and, if TokenEndpoint.AdvertisedAuthMethods is set, the filter names it too.";
 
         return new ZeeKayDaConfigurationFailure(
             "client.token_endpoint_auth_methods.not_subset",

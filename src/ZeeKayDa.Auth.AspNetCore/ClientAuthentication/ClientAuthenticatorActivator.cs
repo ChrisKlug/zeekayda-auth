@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
@@ -7,22 +6,20 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 
 /// <summary>
-/// Startup check that no registered <see cref="IClientAuthenticator"/> misconfigures the reserved
-/// <c>none</c> method or overlaps with another, and that the token endpoint auth methods derived
-/// from them (<see cref="AdvertisedAuthMethods"/>) can serve the configured grants.
+/// Startup check that every registered <see cref="IClientAuthenticator"/> declares well-formed
+/// methods, none of them the reserved <c>none</c>, and none declared by another. What the server
+/// advertises from those declarations is checked by the core's <c>AdvertisedAuthMethodsActivator</c>.
 /// </summary>
 /// <remarks>
 /// An activator rather than a verifier, by the mechanical rule: it constructs every registered
 /// authenticator, and those are the host's own. It is deliberately not an
 /// <c>IValidateOptions&lt;AuthorizationServerOptions&gt;</c>, which would make the first read of
 /// the server options construct part of the service graph. The authenticators are built by whichever
-/// startup check first reads <see cref="AdvertisedAuthMethods"/> — this one, or the client
-/// repository's when its validation runs first — so one that fails to construct is reported against
-/// that check, with the construction failure as its root cause either way.
+/// startup check first needs them — this one, the advertised-methods check, or the client
+/// repository's — so one that fails to construct is reported against that check, with the
+/// construction failure as its root cause either way.
 /// </remarks>
-internal sealed class ClientAuthenticatorActivator(
-    IOptions<AuthorizationServerOptions> options,
-    IServiceProvider services) : IStartupActivator
+internal sealed class ClientAuthenticatorActivator(IServiceProvider services) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "ClientAuthenticator";
@@ -35,127 +32,84 @@ internal sealed class ClientAuthenticatorActivator(
         var declaringTypeByMethod = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var registered in services.GetRequiredService<RegisteredAuthenticators>().All)
-        {
-            var typeName = registered.Authenticator.GetType().Name;
-            if (registered.Declared is not { } methods)
-            {
-                ReportNullMethod(context, typeName);
-                continue;
-            }
-
-            foreach (var method in methods)
-                CheckDeclaredMethod(context, declaringTypeByMethod, typeName, method);
-        }
-
-        VerifyAdvertisedMethods(context, services.GetRequiredService<AdvertisedAuthMethods>(), declaringTypeByMethod.Keys);
+            CheckDeclaration(context, declaringTypeByMethod, registered);
 
         return Task.CompletedTask;
     }
 
-    private void VerifyAdvertisedMethods(
-        StartupVerificationContext context, AdvertisedAuthMethods advertised, IEnumerable<string> declared)
+    private static void CheckDeclaration(
+        StartupVerificationContext context,
+        Dictionary<string, string> declaringTypeByMethod,
+        RegisteredAuthenticator registered)
     {
-        // A filter entry that is a performable method in other casing is a typo that withholds the
-        // method it meant to keep, the same mistake an authenticator declaration fails on.
-        var performable = declared.Append(TokenEndpointAuthMethods.None).ToList();
-        var miscased = advertised.Unperformable
-            .Where(entry => performable.Contains(entry, StringComparer.OrdinalIgnoreCase))
-            .ToList();
-
-        foreach (var entry in miscased)
+        var typeName = registered.Authenticator.GetType().Name;
+        if (registered.Declared is not { } methods)
         {
-            context.AddFailure(
-                "token_endpoint.advertised_auth_methods.casing",
-                $"TokenEndpoint.AdvertisedAuthMethods names '{entry}', which differs only in casing from " +
-                $"'{performable.First(method => string.Equals(method, entry, StringComparison.OrdinalIgnoreCase))}'. " +
-                $"Method names compare exactly — use the constants in {nameof(TokenEndpointAuthMethods)}.");
+            Report(context, NullMethod(typeName));
+            return;
         }
 
-        var unperformable = advertised.Unperformable.Except(miscased, StringComparer.Ordinal).ToList();
-        if (unperformable.Count > 0)
+        foreach (var method in methods)
         {
-            // A no-op rather than a misstatement: the advertised set is an intersection, so a method
-            // no authenticator performs is never advertised whatever the filter says.
-            context.AddWarning(
-                "token_endpoint.advertised_auth_methods.unperformable",
-                "TokenEndpoint.AdvertisedAuthMethods names {UnperformableMethods}, which no registered " +
-                "IClientAuthenticator performs. Those entries have no effect — the server advertises " +
-                "only methods it can perform: {AdvertisedMethods}.",
-                string.Join(", ", unperformable),
-                string.Join(", ", advertised.Methods));
-        }
-
-        if (advertised.Methods.Count == 0)
-        {
-            context.AddFailure(
-                "token_endpoint.advertised_auth_methods.none_performable",
-                "TokenEndpoint.AdvertisedAuthMethods names no method the server performs, so the token " +
-                "endpoint would accept no client. Name a method a registered IClientAuthenticator " +
-                $"performs, or '{TokenEndpointAuthMethods.None}', or set the filter to null.");
-        }
-        else if (options.Value.GrantTypesSupported.Contains(GrantType.ClientCredentials)
-            && TokenEndpointAuthMethodRules.AllowsOnlyNone(advertised.Methods))
-        {
-            // The client credentials grant requires client authentication (RFC 6749 §4.4, RFC 9700 §2.6).
-            context.AddFailure(
-                "token_endpoint.advertised_auth_methods.only_none_with_client_credentials",
-                "GrantTypesSupported includes 'client_credentials', which requires confidential clients, " +
-                "but the only advertised token endpoint auth method is 'none'. Register an " +
-                "IClientAuthenticator, or stop TokenEndpoint.AdvertisedAuthMethods withholding its methods. " +
-                "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).");
+            if (MalformedMethod(typeName, method) is { } malformed)
+                Report(context, malformed);
+            else
+                CheckReservedAndOverlap(context, declaringTypeByMethod, typeName, method!);
         }
     }
 
-    private static void CheckDeclaredMethod(
-        StartupVerificationContext context,
-        Dictionary<string, string> declaringTypeByMethod,
-        string typeName,
-        string? method)
+    private static void Report(StartupVerificationContext context, ZeeKayDaConfigurationFailure failure) =>
+        context.AddFailure(failure.Code, failure.Message);
+
+    /// <summary>
+    /// Whether a method string is unusable as a name at all. Every one of these would pass the
+    /// ordinal comparisons the server uses, and so fail silently at runtime instead of at startup.
+    /// </summary>
+    private static ZeeKayDaConfigurationFailure? MalformedMethod(string typeName, string? method)
     {
         if (method is null)
-        {
-            ReportNullMethod(context, typeName);
-            return;
-        }
+            return NullMethod(typeName);
 
-        // Blank or control-character entries are never advertised, so a declaration holding one
-        // would otherwise start a server that silently cannot perform it.
+        // Never advertised, so the server would start unable to perform it.
         if (TokenEndpointAuthMethodRules.IsBlank(method) || TokenEndpointAuthMethodRules.HasControlCharacters(method))
         {
-            context.AddFailure(
+            return new(
                 "authenticators.method_malformed",
                 $"{typeName} declares an auth method that is blank or contains control characters. " +
                 $"Method strings must match exactly — use the constants in {nameof(TokenEndpointAuthMethods)}.");
-            return;
         }
 
-        // Reject leading/trailing whitespace before any other check: " none" or
-        // "client_secret_basic " would pass the ordinal equality checks below but fail
-        // silently at runtime because the runtime comparisons are also ordinal.
-        if (method != method.Trim())
+        // " none" or "client_secret_basic " would never match what a client presents.
+        if (TokenEndpointAuthMethodRules.HasSurroundingWhitespace(method))
         {
-            context.AddFailure(
+            return new(
                 "authenticators.method_whitespace",
                 $"{typeName} declares auth method '{method}' which has leading or trailing " +
                 "whitespace. Method strings must match exactly — use the constants in " +
                 $"{nameof(TokenEndpointAuthMethods)}.");
-            return;
         }
 
-        // Non-canonical casing (e.g. "Client_Secret_Basic") passes the ordinal overlap
-        // check below but still collides at runtime with the built-in authenticator's
+        // "Client_Secret_Basic" would collide at runtime with the built-in authenticator's
         // CanHandle, producing a silent invalid_client.
         if (_canonicalMethodNames.TryGetValue(method, out var canonical) &&
             !string.Equals(method, canonical, StringComparison.Ordinal))
         {
-            context.AddFailure(
+            return new(
                 "authenticators.method_casing",
                 $"{typeName} declares auth method '{method}' which differs from the canonical " +
                 $"form '{canonical}' in casing. Use the exact constant from " +
                 $"{nameof(TokenEndpointAuthMethods)} to avoid silent runtime mismatches.");
-            return;
         }
 
+        return null;
+    }
+
+    private static void CheckReservedAndOverlap(
+        StartupVerificationContext context,
+        Dictionary<string, string> declaringTypeByMethod,
+        string typeName,
+        string method)
+    {
         if (string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal))
         {
             context.AddFailure(
@@ -163,10 +117,8 @@ internal sealed class ClientAuthenticatorActivator(
                 $"{typeName} declares '{TokenEndpointAuthMethods.None}' in AuthenticationMethods. " +
                 $"'{TokenEndpointAuthMethods.None}' is reserved for the CompositeClientAuthenticator " +
                 "fallback and must not be declared by any IClientAuthenticator.");
-            return;
         }
-
-        if (declaringTypeByMethod.TryGetValue(method, out var existingType))
+        else if (declaringTypeByMethod.TryGetValue(method, out var existingType))
         {
             context.AddFailure(
                 "authenticators.method_overlap",
@@ -179,11 +131,10 @@ internal sealed class ClientAuthenticatorActivator(
         }
     }
 
-    private static void ReportNullMethod(StartupVerificationContext context, string typeName) =>
-        context.AddFailure(
-            "authenticators.method_null",
-            $"{typeName} returns a null AuthenticationMethods set or a null entry in it. Declare the " +
-            $"methods it performs, using the constants in {nameof(TokenEndpointAuthMethods)}.");
+    private static ZeeKayDaConfigurationFailure NullMethod(string typeName) => new(
+        "authenticators.method_null",
+        $"{typeName} returns a null AuthenticationMethods set or a null entry in it. Declare the " +
+        $"methods it performs, using the constants in {nameof(TokenEndpointAuthMethods)}.");
 
     // Case-insensitive map of framework-handled method strings to their canonical form.
     private static readonly IReadOnlyDictionary<string, string> _canonicalMethodNames =

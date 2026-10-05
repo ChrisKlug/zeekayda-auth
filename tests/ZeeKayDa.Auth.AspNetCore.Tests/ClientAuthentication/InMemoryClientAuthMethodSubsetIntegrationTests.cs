@@ -39,7 +39,7 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
     }
 
     [Fact]
-    public void Host_startup_failure_for_a_method_no_authenticator_performs_points_at_registering_one()
+    public void Host_startup_failure_for_a_method_no_authenticator_performs_names_both_conditions()
     {
         using var factory = new InvalidAuthMethodWebAppFactory();
 
@@ -49,7 +49,8 @@ public sealed class InMemoryClientAuthMethodSubsetIntegrationTests
             act.Should().Throw<Exception>().Which);
         configEx!.AggregatedFailures
             .Single(f => f.Code == "client.token_endpoint_auth_methods.not_subset")
-            .Message.Should().Contain("Register an IClientAuthenticator")
+            .Message.Should().Contain("a registered IClientAuthenticator performs it")
+            .And.Contain("the filter names it too")
             .And.NotContain("Public clients", because: "that hint is for a public client the filter refuses");
     }
 
