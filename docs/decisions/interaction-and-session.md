@@ -71,8 +71,8 @@ the cookie value breaks every binding the moment the cookie rotates, and one tra
 events could never key a denylist. Claims in the reserved `zkd:` namespace are stripped from the
 host's principal, or a host copying claims from an inbound token could choose its own identifier.
 
-**Framework cookie names are reserved, the `zkd.interaction.` prefix included; a host registering one
-fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and the
+**Framework cookie names are reserved, the `zkd.interaction.` and `zkd.challenge.` prefixes included; a host
+registering one fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and the
 binding cookies hold a random secret and a sealed hint. A session cookie needs `SameSite=None` only if silent authentication
 is supported; the rest take `Lax`: each is first read on a cross-site navigation, which `Strict` is withheld
 from — a control that silently breaks the feature is no control. The parked external principal is no cookie
