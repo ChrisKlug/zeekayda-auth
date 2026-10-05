@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
@@ -66,11 +67,12 @@ internal sealed class ReservedCookieNameActivator(
         ZeeKayDaCookies.SchemeNames.Contains(schemeName, StringComparer.Ordinal);
 
     /// <summary>
-    /// A reserved name exactly, or anything under the interaction prefix: the binding cookies are
-    /// named <c>zkd.interaction.&lt;id&gt;</c>, and a host cookie in that space would be read as
-    /// one of them.
+    /// A reserved name exactly, or anything under a per-interaction prefix: the binding and
+    /// challenge cookies are named <c>zkd.interaction.&lt;id&gt;</c> and <c>zkd.challenge.&lt;id&gt;</c>,
+    /// and a host cookie in either space would be read as one of them.
     /// </summary>
     private static bool IsReserved(string name) =>
         ZeeKayDaCookies.ReservedNames.Contains(name, StringComparer.Ordinal)
-        || name.StartsWith(InteractionBindingCookie.NamePrefix, StringComparison.Ordinal);
+        || name.StartsWith(InteractionBindingCookie.NamePrefix, StringComparison.Ordinal)
+        || name.StartsWith(ProviderChallengeCookie.NamePrefix, StringComparison.Ordinal);
 }

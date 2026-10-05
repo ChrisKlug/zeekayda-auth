@@ -41,6 +41,7 @@ public class AuthorizationRequestContextSerializerTests
             Amr = ["pwd", "mfa"],
             GrantedScopes = ["openid", "profile"],
             ConsentedAt = Now.AddMinutes(-1),
+            ProviderAttempt = new ProviderAttempt("facebook", Declined: true),
         };
 
         AuthorizationRequestContextSerializer.TryDecode(
@@ -69,6 +70,15 @@ public class AuthorizationRequestContextSerializerTests
             AuthorizationRequestContextSerializer.Encode(context), out var decoded).Should().BeTrue();
 
         decoded!.Nonce.Should().BeNull();
+    }
+
+    [Fact]
+    public void Context_with_a_provider_attempt_naming_no_provider_is_refused()
+    {
+        var payload = AuthorizationRequestContextSerializer.Encode(MinimalContext() with { ProviderAttempt = new ProviderAttempt("", Declined: false) });
+
+        AuthorizationRequestContextSerializer.TryDecode(payload, out var decoded).Should().BeFalse();
+        decoded.Should().BeNull();
     }
 
     [Fact]

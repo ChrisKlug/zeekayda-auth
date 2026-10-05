@@ -43,7 +43,7 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// The schemes registered here are the framework's, not the host's. They do not appear in the
     /// host's <see cref="AuthenticationOptions"/>, cannot be challenged by name from host code, and
     /// are never dispatched by the authentication middleware. The login page sees them as
-    /// <c>LoginInteraction.Providers</c>, each scheme's name serving as the provider identifier
+    /// <c>LoginRequest.Providers</c>, each scheme's name serving as the provider identifier
     /// and its display name as the label.
     /// </para>
     /// <para>

@@ -14,7 +14,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// <summary>
 /// The ways an interaction step ends, shared by every endpoint and page service that ends one:
 /// a local error page, an error at the client's registered redirect URI, a denial, a completed
-/// sign-in, a challenge to an external provider, and a parked principal sent on to a host page.
+/// sign-in, a challenge to an external provider, a return to the login page from one, and a
+/// parked principal sent on to a host page.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -36,6 +37,7 @@ internal sealed class InteractionOutcomes(
     AuthorizationFlow flow,
     AuthorizationResponses responses,
     ProviderHandlerActivator activator,
+    ProviderRegistry providers,
     AuthorizationCodeIssuer issuer,
     IOptions<AuthorizationServerOptions> options,
     SanitizingLogger<InteractionOutcomes> logger)
@@ -164,6 +166,7 @@ internal sealed class InteractionOutcomes(
             // this sign-in's: the consent page asks again.
             GrantedScopes = null,
             ConsentedAt = null,
+            ProviderAttempt = null,
         };
 
         IResult result;
@@ -298,6 +301,10 @@ internal sealed class InteractionOutcomes(
 
         context.Response.Headers.CacheControl = "no-store";
 
+        // What the last trip to a provider ended in is no longer news once the user sets out again.
+        if (requestContext.ProviderAttempt is not null)
+            await flow.UpdateAsync(context, requestContext with { ProviderAttempt = null }).ConfigureAwait(false);
+
         var resume = ResumeEndpoint.RouteFor(EndpointRouteHelper.GetIssuerUri(options));
         var properties = new AuthenticationProperties
         {
@@ -305,10 +312,61 @@ internal sealed class InteractionOutcomes(
         };
         properties.Items[ExternalTicket.InteractionIdItem] = requestContext.Id;
         properties.Items[ExternalTicket.ChallengedProviderItem] = registration.Name;
+        // Only a challenge from the login page has a page to come back to.
+        if (ReturnsToLoginPage)
+            ProviderChallengeCookie.Issue(context, EndpointRouteHelper.GetIssuerUri(options), registration, requestContext);
 
         var handler = await activator.ActivateAsync(context, registration).ConfigureAwait(false);
         await handler.ChallengeAsync(properties).ConfigureAwait(false);
         await CommitAsync(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Whether a provider challenge is issued from the login page and returns there when it does
+    /// not sign the user in — <see langword="false"/> when the authorization endpoint challenges the
+    /// one provider itself. Configuration, frozen at startup.
+    /// </summary>
+    public bool ReturnsToLoginPage => LoginPage is not null;
+
+    private string? LoginPage =>
+        LoginDispatch.LoginPageFor(options.Value.AuthorizationEndpoint.Interaction, providers.Count);
+
+    /// <summary>
+    /// Sends the user back to the login page after a trip to <paramref name="registration"/> that
+    /// did not sign them in, recording how it ended on the interaction for the page to read. The
+    /// interaction stays alive and the client is told nothing. Not terminal — the caller writes
+    /// the result.
+    /// </summary>
+    /// <remarks>
+    /// A store that cannot record the outcome still sends the user back: the page then shows an
+    /// ordinary sign-in, which is a lost message, not a lost sign-in.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">There is no login page: <see cref="ReturnsToLoginPage"/> is false.</exception>
+    public async Task<IResult> ReturnToLoginAsync(
+        HttpContext context,
+        AuthorizationRequestContext requestContext,
+        ProviderRegistration registration,
+        ProviderReturnOutcome outcome)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(requestContext);
+        ArgumentNullException.ThrowIfNull(registration);
+
+        var loginPath = LoginPage
+            ?? throw new InvalidOperationException("There is no login page to return to; check ReturnsToLoginPage first.");
+        var attempt = new ProviderAttempt(registration.Name, Declined: outcome == ProviderReturnOutcome.Declined);
+
+        try
+        {
+            await flow.UpdateAsync(context, requestContext with { ProviderAttempt = attempt }).ConfigureAwait(false);
+        }
+        catch (ZeeKayDaStoreException ex)
+        {
+            logger.LogError(ex, "Recording the provider outcome for client {ClientId} failed; the login page will not show it.", requestContext.ClientId);
+        }
+
+        ProviderChallengeCookie.Clear(context, EndpointRouteHelper.GetIssuerUri(options), registration, requestContext.Id);
+        return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
     }
 
     /// <summary>

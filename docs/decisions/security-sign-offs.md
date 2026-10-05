@@ -1306,10 +1306,12 @@ ran alongside.
   `A_replayed_callback_neither_completes_nor_cancels_the_live_request`.
 - Only a refusal by the user at the provider reaches the client, and only for the interaction the
   browser carries; every other failure renders locally and leaves the interaction alive. Closed —
-  `A_refusal_by_the_user_at_the_provider_reaches_the_client_as_access_denied`,
+  `A_refusal_with_no_login_page_reaches_the_client_as_access_denied`,
   `A_refusal_without_the_interaction_cookie_renders_locally_and_reaches_no_client`,
-  `A_provider_outage_renders_locally_and_the_user_can_still_sign_in`,
-  `A_handler_that_throws_renders_locally_and_leaves_the_interaction_alive`.
+  `A_provider_failure_returns_the_user_to_the_login_page_reporting_it_failed`,
+  `A_handler_that_throws_renders_locally_and_leaves_the_interaction_alive`. [Since #889 a failure
+  for the interaction the browser carries returns to the login page that challenged, and a refusal
+  reaches the client only on the single-provider path; citations repointed at those successors.]
 - The session subject is derived from provider, issuer and upstream subject, and a subject without
   an issuer is refused. Closed — `Two_providers_returning_the_same_upstream_subject_get_different_session_subjects`,
   `A_subject_claim_without_an_issuer_is_refused_at_promotion`.

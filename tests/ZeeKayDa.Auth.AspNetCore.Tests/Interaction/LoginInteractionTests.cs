@@ -64,6 +64,23 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
     /// </summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
+        // The login page's render: what the framework says to show.
+        endpoints.MapGet(LoginPath, async (HttpContext context, LoginInteraction login) =>
+        {
+            // A host with a content security policy of its own sets it as it always did.
+            context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'");
+
+            var request = await login.GetRequestAsync(context.RequestAborted);
+
+            return Results.Ok(new
+            {
+                clientId = request.Client.ClientId,
+                local = request.LocalLoginEnabled,
+                providers = request.Providers.Count,
+                providerReturn = request.ProviderReturn is not null,
+            });
+        });
+
         endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
@@ -232,6 +249,47 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
 
         public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             _inner.RemoveAsync(key, cancellationToken);
+    }
+
+    // ── GetRequestAsync ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetRequestAsync_reports_the_client_and_no_provider_return_on_an_ordinary_arrival()
+    {
+        var handoff = await AuthorizeAsync();
+
+        var response = await _client.GetAsync(WithInteractionId(LoginPath, InteractionIdFrom(handoff)), TestContext.Current.CancellationToken);
+
+        var page = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).RootElement;
+        page.GetProperty("clientId").GetString().Should().Be("test-client");
+        page.GetProperty("local").GetBoolean().Should().BeTrue();
+        page.GetProperty("providerReturn").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_makes_the_rendered_page_unframeable_and_uncacheable()
+    {
+        // The page takes credentials, so an attacker who can frame it can overlay what the user
+        // types into. Stamped alongside a policy the host set itself, not instead of it.
+        var handoff = await AuthorizeAsync();
+
+        var response = await _client.GetAsync(WithInteractionId(LoginPath, InteractionIdFrom(handoff)), TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("Content-Security-Policy")
+            .Should().BeEquivalentTo(["default-src 'self'", "frame-ancestors 'none'"]);
+        response.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_without_an_interaction_id_is_refused()
+    {
+        await AuthorizeAsync();
+
+        var read = async () => await _client.GetAsync(LoginPath, TestContext.Current.CancellationToken);
+
+        await read.Should().ThrowAsync<ZeeKayDaInteractionException>();
     }
 
     /// <summary>The interaction identifier the framework put on the login redirect.</summary>

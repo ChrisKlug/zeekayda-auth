@@ -280,6 +280,23 @@ public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHost
     }
 
     [Fact]
+    public async Task A_login_page_reached_without_an_interaction_id_reads_null_and_warns()
+    {
+        var page = await ReadJsonAsync(_client, LoginPath);
+
+        page.GetProperty("found").GetBoolean().Should().BeFalse();
+        _fixture.Logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Warning && entry.Message.Contains("login", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_login_page_with_nothing_to_sign_in_for_is_still_unframeable_and_uncacheable()
+    {
+        using var page = await _client.GetAsync(LoginPath, Cancellation);
+
+        page.ShouldBeProtectedFromFramingAndCaching();
+    }
+
+    [Fact]
     public async Task A_consent_page_with_nothing_to_ask_is_still_unframeable_and_uncacheable()
     {
         using var page = await _client.GetAsync(ConsentPath, Cancellation);
@@ -347,6 +364,12 @@ public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHost
         endpoints.MapPost(LoginPath, (LoginInteraction login) => login.SignInAsync(
             new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
             AuthenticationMethods.Password));
+
+        endpoints.MapGet(LoginPath, async (HttpContext context, LoginInteraction login) =>
+        {
+            var request = await login.TryGetRequestAsync(context.RequestAborted);
+            return Results.Json(new { found = request is not null, clientId = request?.Client.ClientId });
+        });
 
         endpoints.MapGet(ConsentPath, async (HttpContext context, ConsentInteraction consent) =>
         {

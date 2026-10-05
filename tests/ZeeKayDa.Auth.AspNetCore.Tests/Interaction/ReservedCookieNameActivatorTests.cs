@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.DependencyInjection;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
+using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
@@ -88,6 +89,19 @@ public sealed class ReservedCookieNameActivatorTests
         var context = await VerifyAsync(auth => auth.AddCookie(
             "host-scheme",
             options => options.Cookie.Name = InteractionBindingCookie.NamePrefix + "mine"));
+
+        context.Failures.Should().ContainSingle()
+            .Which.Code.Should().Be("cookie.reserved_name");
+    }
+
+    [Fact]
+    public async Task A_host_scheme_taking_a_name_under_the_challenge_prefix_is_reported()
+    {
+        // The challenge cookies are named zkd.challenge.<id>, so a host cookie in that space would
+        // be read as one of them.
+        var context = await VerifyAsync(auth => auth.AddCookie(
+            "host-scheme",
+            options => options.Cookie.Name = ProviderChallengeCookie.NamePrefix + "mine"));
 
         context.Failures.Should().ContainSingle()
             .Which.Code.Should().Be("cookie.reserved_name");

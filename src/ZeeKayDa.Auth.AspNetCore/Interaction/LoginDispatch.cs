@@ -53,4 +53,12 @@ internal static class LoginDispatch
 
         return LoginDispatchRule.PageNeeded;
     }
+
+    /// <summary>
+    /// The login page a provider challenge is issued from, and returns to when it does not sign the
+    /// user in, or <see langword="null"/> when the authorization endpoint challenges the one provider
+    /// itself and there is no page.
+    /// </summary>
+    public static string? LoginPageFor(InteractionOptions interaction, int providerCount) =>
+        Decide(interaction, providerCount) == LoginDispatchRule.LoginPage ? interaction.LoginPath : null;
 }

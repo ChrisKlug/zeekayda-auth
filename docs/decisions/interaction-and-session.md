@@ -71,8 +71,8 @@ the cookie value breaks every binding the moment the cookie rotates, and one tra
 events could never key a denylist. Claims in the reserved `zkd:` namespace are stripped from the
 host's principal, or a host copying claims from an inbound token could choose its own identifier.
 
-**Framework cookie names are reserved, the `zkd.interaction.` prefix included; a host registering one
-fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and the
+**Framework cookie names are reserved, the `zkd.interaction.` and `zkd.challenge.` prefixes included; a host
+registering one fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and the
 binding cookies hold a random secret and a sealed hint. A session cookie needs `SameSite=None` only if silent authentication
 is supported; the rest take `Lax`: each is first read on a cross-site navigation, which `Strict` is withheld
 from — a control that silently breaks the feature is no control. The parked external principal is no cookie
@@ -109,8 +109,8 @@ A missing `zkd_i`, the one host-bug case, logs a warning; the rest log at inform
 **ZeeKayDa owns no interaction UI that needs a user model.** Login, consent and provider selection are the
 host's pages, with its own user store, branding and MFA — more host code than a shipped page, a cost accepted.
 Only the error, logout-confirmation and signed-out pages have unbranded framework fallbacks for a host that sets no path.
-Those, and every response a consent or logout page calls `GetRequestAsync`/`TryGetRequestAsync` from or a provider sign-in page
-`GetPendingPrincipalAsync`, are stamped `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `no-store`; the login page is not.
+Those, and every response a login, consent or logout page calls `GetRequestAsync`/`TryGetRequestAsync` from or a provider
+sign-in page `GetPendingPrincipalAsync`, are stamped `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `no-store`.
 
 **Provider schemes exist only in the framework's scheme map, and what would make them visible to the host fails
 at startup.** `WithProviders` replays the scheme-map configurers the host's callback appended, records the
@@ -123,16 +123,16 @@ at startup, because a post-configurer registered later would otherwise win silen
 wrong cookie or the callback to a path nothing serves. A host remote scheme whose callback path is a provider's
 route is refused for the same reason: the middleware would claim the callback first.
 
-**No handler is trusted for provider identity or interaction binding.** The challenge stamps the interaction
-identifier into the properties it hands the handler; the callback endpoint marks the request with the provider
-its route names before the handler runs; `zkd.external` records that mark at sign-in and refuses a sign-in
-without one; `/connect/resume` consumes the ticket first and refuses one naming another interaction or an
-unregistered provider. A handler that drops its properties fails loudly there and can complete nothing else.
-Only a refusal by the user at the provider reaches the client — recorded by the framework's own pinned
-access-denied event, and only for the interaction the browser carries; every other callback failure renders
-locally, logged by type never by message, and leaves the interaction alive. The session subject of an
-auto-promoted external principal is derived from provider, claim issuer and upstream subject together, never
-the upstream value: two providers can never share a session, and a subject without an issuer is refused.
+**No handler is trusted for provider identity or interaction binding.** The challenge stamps the interaction identifier into the
+properties it hands the handler; the callback endpoint marks the request with the provider its route names before the handler runs;
+`zkd.external` records that mark at sign-in and refuses a sign-in without one; `/connect/resume` consumes the ticket first and
+refuses one naming another interaction or an unregistered provider. A handler that drops its properties fails loudly there and can
+complete nothing else. A failed callback for an interaction the browser carries returns the user to the login page that challenged,
+the interaction alive and the outcome on `LoginRequest.ProviderReturn` — found by the handler's own properties, else by the one
+callback-scoped `zkd.challenge.<id>` cookie (none or several: the error page; a forged one changes only the message, accepted). With
+no login page only a refusal reaches the client, as `access_denied` on its own properties; the rest renders locally, logged by type
+never by message. The session subject of an auto-promoted external principal is derived from provider, claim issuer and upstream
+subject together, never the upstream value: two providers can never share a session, and a subject without an issuer is refused.
 
 **Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and whether a page is needed
 decides dispatch, not the path.** `LoginPath` defaults to `/login` and `ConsentPath` to `/consent`; a path is only an

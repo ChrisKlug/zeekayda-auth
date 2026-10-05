@@ -113,6 +113,19 @@ internal static class ProviderTestHost
     /// <summary>The host's pages.</summary>
     public static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
+        // The login page's render: what it would show, including how the last trip to a provider ended.
+        endpoints.MapGet(LoginPath, async (HttpContext context, LoginInteraction login) =>
+        {
+            var request = await login.GetRequestAsync(context.RequestAborted);
+
+            return Results.Ok(new
+            {
+                providers = request.Providers.Select(provider => provider.Id),
+                returnedFrom = request.ProviderReturn?.Provider.Id,
+                outcome = request.ProviderReturn?.Outcome.ToString(),
+            });
+        });
+
         // The login page: a provider button posts the provider's id, the credential form posts a
         // subject. Both end in a terminal call.
         endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>

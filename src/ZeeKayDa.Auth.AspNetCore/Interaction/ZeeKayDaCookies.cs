@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </summary>
 /// <remarks>
 /// <para>
-/// All four names are reserved: a host that registers a cookie authentication scheme using one of
+/// Every name is reserved: a host that registers a cookie authentication scheme using one of
 /// them fails at startup rather than silently sharing a cookie with the framework. Sharing would
 /// let host-written claims arrive where the framework expects only its own.
 /// </para>
@@ -44,17 +44,24 @@ internal static class ZeeKayDaCookies
     public const string Pending = "zkd.pending";
 
     /// <summary>
+    /// The prefix of the challenge cookies, one per interaction challenged from the login page,
+    /// named <c>zkd.challenge.&lt;id&gt;</c> and scoped to the provider's callback route, so a failed
+    /// callback can still find its way back to the login page.
+    /// </summary>
+    public const string Challenge = "zkd.challenge";
+
+    /// <summary>
     /// Every reserved name, whether or not a scheme backs it. A name is reserved because the
     /// framework uses it, not because a scheme registers it — <see cref="Interaction"/> is written
     /// directly and has no scheme, and a host taking that name collides just as squarely as one
     /// taking <see cref="Session"/>. Startup is a better place to learn that than production.
     /// </summary>
-    public static readonly string[] ReservedNames = [Session, Interaction, External, Pending];
+    public static readonly string[] ReservedNames = [Session, Interaction, External, Pending, Challenge];
 
     /// <summary>
-    /// The reserved names that are also authentication scheme names. <see cref="Interaction"/> and
-    /// <see cref="Pending"/> are absent: what they name lives in the interaction store, so no
-    /// scheme backs either. Keeping the two lists apart is what lets the startup check skip the
+    /// The reserved names that are also authentication scheme names. <see cref="Interaction"/>,
+    /// <see cref="Pending"/> and <see cref="Challenge"/> are absent: no scheme backs any of them.
+    /// Keeping the two lists apart is what lets the startup check skip the
     /// framework's own schemes without also skipping a host scheme that took a reserved name the
     /// framework never registers.
     /// </summary>

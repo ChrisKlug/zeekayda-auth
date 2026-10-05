@@ -5,8 +5,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// <summary>
 /// The framework's <c>OnAccessDenied</c> for every remote provider handler. It records the refusal
 /// on the request's callback feature and nothing else: no result is set, so the handler goes on to
-/// fail its callback exactly as it would have, and the callback endpoint turns the marked failure
-/// into <c>access_denied</c> at the client.
+/// fail its callback exactly as it would have, and the callback endpoint decides where the marked
+/// failure goes.
 /// </summary>
 /// <remarks>
 /// The mark can be trusted because a remote handler validates its correlation cookie before it
@@ -22,6 +22,21 @@ internal static class ProviderAccessDenied
         // else there is nothing to mark, and nothing that would read the mark.
         context.HttpContext.Features.Get<ProviderCallbackFeature>()?.MarkRefused(InteractionIdOf(context.Properties));
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Wraps a handler's <c>OnRemoteFailure</c> so the interaction a failing callback's properties
+    /// name is recorded before <paramref name="inner"/> — the host's, or the handler's default — runs.
+    /// </summary>
+    public static Func<RemoteFailureContext, Task> RecordingFailures(Func<RemoteFailureContext, Task> inner)
+    {
+        ArgumentNullException.ThrowIfNull(inner);
+
+        return context =>
+        {
+            context.HttpContext.Features.Get<ProviderCallbackFeature>()?.MarkFailed(InteractionIdOf(context.Properties));
+            return inner(context);
+        };
     }
 
     private static string? InteractionIdOf(AuthenticationProperties? properties) =>

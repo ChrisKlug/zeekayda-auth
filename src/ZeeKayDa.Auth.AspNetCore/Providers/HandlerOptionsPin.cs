@@ -10,7 +10,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// Pins, on every handler's options whose name is a registered provider, the members the
 /// framework owns: no forwarding on any provider, and on a remote one also the callback path the
 /// framework maps an endpoint on, the sign-in scheme the framework reads the result from, no
-/// access-denied page, and the framework's own access-denied event.
+/// access-denied page, the framework's own access-denied event, and a remote-failure event that
+/// records the interaction a failing callback's properties name.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -69,13 +70,18 @@ internal sealed class HandlerOptionsPin<TOptions>(
         // to a host page the framework never redirected to.
         remote.AccessDeniedPath = PathString.Empty;
 
+        if (remote.Events is not { } events)
+            return;
+
         // Replaced only when it is the one the handler ships with. A host-set event is left for
         // the validator to refuse: it would put the refusal outcome outside the framework's
-        // control, and overriding it silently would hide that from the host. OnRemoteFailure,
-        // which runs after the mark is recorded, is deliberately left to the host: handling the
-        // response there is a host owning its own failure page, not defeating the mark.
-        if (remote.Events is { } events && IsDefault(events.OnAccessDenied))
+        // control, and overriding it silently would hide that from the host.
+        if (IsDefault(events.OnAccessDenied))
             events.OnAccessDenied = ProviderAccessDenied.Handler;
+
+        // Wrapped, not replaced: handling the response in OnRemoteFailure is a host owning its own
+        // failure page. A later replacement only costs the precision; the challenge cookie remains.
+        events.OnRemoteFailure = ProviderAccessDenied.RecordingFailures(events.OnRemoteFailure ?? (_ => Task.CompletedTask));
     }
 
     private static bool IsDefault(Func<AccessDeniedContext, Task>? handler) =>
