@@ -75,7 +75,7 @@ internal sealed class ProviderCallbackEndpoint(
 
         // Set after routing and before the handler runs: the provider is what the route says,
         // never what the request or the handler says.
-        var feature = new ProviderCallbackFeature(registration, ProviderChallengeCookie.Read(context));
+        var feature = new ProviderCallbackFeature(registration, ProviderChallengeCookie.Single(context));
         context.Features.Set(feature);
 
         // Activation is inside the guarded path too: a handler's constructor or InitializeAsync
@@ -168,7 +168,7 @@ internal sealed class ProviderCallbackEndpoint(
         // Only an interaction this browser is carrying is acted on. Without the binding cookie — a
         // form_post callback is a cross-site POST the Lax cookie does not accompany — the failure
         // renders locally and the interaction, if any, survives untouched.
-        if (LoginPageChallenged() is { } loginPath)
+        if (LoginDispatch.LoginPageFor(options.Value.AuthorizationEndpoint.Interaction, providers.Count) is { } loginPath)
         {
             var returning = feature.ReturnInteractionId is { } returnId
                 ? await flow.ReadAsync(context, returnId).ConfigureAwait(false)
@@ -176,7 +176,6 @@ internal sealed class ProviderCallbackEndpoint(
 
             if (returning is not null)
             {
-                ProviderChallengeCookie.Clear(context);
                 var attempt = new ProviderAttempt(feature.Provider.Name, feature.Refused);
                 return await outcomes.ReturnToLoginAsync(context, returning, attempt, loginPath).ConfigureAwait(false);
             }
@@ -196,19 +195,5 @@ internal sealed class ProviderCallbackEndpoint(
 
         return await outcomes.ClientErrorAsync(context, refused, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider)
             .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// The login page every provider challenge started from, or <see langword="null"/> when the
-    /// authorization endpoint challenges the one provider itself and there is no page to go back to.
-    /// Configuration is frozen at startup, so this is the dispatch the challenge was made under.
-    /// </summary>
-    private string? LoginPageChallenged()
-    {
-        var interaction = options.Value.AuthorizationEndpoint.Interaction;
-
-        return LoginDispatch.Decide(interaction, providers.Count) == LoginDispatchRule.LoginPage
-            ? interaction.LoginPath
-            : null;
     }
 }

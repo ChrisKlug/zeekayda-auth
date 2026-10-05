@@ -44,8 +44,9 @@ internal static class ZeeKayDaCookies
     public const string Pending = "zkd.pending";
 
     /// <summary>
-    /// The interaction a provider challenge was issued for, scoped to that provider's callback
-    /// route, so a failed callback can still find its way back to the login page.
+    /// The prefix of the challenge cookies, one per interaction challenged from the login page,
+    /// named <c>zkd.challenge.&lt;id&gt;</c> and scoped to the provider's callback route, so a failed
+    /// callback can still find its way back to the login page.
     /// </summary>
     public const string Challenge = "zkd.challenge";
 

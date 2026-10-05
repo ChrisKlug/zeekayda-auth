@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
+using ZeeKayDa.Auth.Stores;
 using static ZeeKayDa.Auth.AspNetCore.Tests.Providers.ProviderTestHost;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Providers;
@@ -124,7 +125,7 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
 
     private static string ChallengeCookieOf(HttpResponseMessage response) => response.Headers
         .GetValues("Set-Cookie")
-        .Single(cookie => cookie.StartsWith("zkd.challenge=", StringComparison.Ordinal));
+        .Single(cookie => cookie.StartsWith("zkd.challenge.", StringComparison.Ordinal));
 
     // ── The challenge ─────────────────────────────────────────────────────────────────────────
 
@@ -339,7 +340,7 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
         var (interactionId, challenge) = await ChallengeAsync(client);
 
         var cookie = ChallengeCookieOf(challenge);
-        cookie.Should().StartWith($"zkd.challenge={interactionId};");
+        cookie.Should().StartWith($"zkd.challenge.{interactionId}=");
         cookie.Should().Contain("path=/connect/callback/acme").And.Contain("secure").And.Contain("samesite=lax").And.Contain("httponly");
     }
 
@@ -369,6 +370,120 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
         failed.Headers.Location!.OriginalString.Should().Be(WithInteractionId(LoginPath, secondInteractionId));
         var page = await ReadLoginPageAsync(client, secondInteractionId);
         page.GetProperty("outcome").GetString().Should().Be(nameof(ProviderReturnOutcome.Failed));
+    }
+
+    [Fact]
+    public async Task Two_tabs_on_the_same_provider_each_return_to_their_own_login_page_when_the_handler_reports_the_failure()
+    {
+        using var client = _fixture.NewFlowClient();
+        var (firstInteractionId, first) = await ChallengeAsync(client);
+        await ChallengeAsync(client);
+
+        var failed = await client.GetAsync(CallbackUrlOf(first, error: "temporarily_unavailable"), Cancellation);
+
+        failed.Headers.Location!.OriginalString.Should().Be(WithInteractionId(LoginPath, firstInteractionId),
+            "the handler's own properties name the challenge that failed, whichever tab challenged last");
+    }
+
+    [Fact]
+    public async Task A_thrown_failure_with_two_challenges_outstanding_renders_locally_rather_than_guess_the_tab()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+            builder.WithProviders(auth => auth.AddOAuth("broken", ConfigureBroken)));
+        using var client = NewClient(factory);
+        var (_, first) = await ChallengeAsync(client, "broken");
+        await ChallengeAsync(client, "broken");
+
+        var failed = await client.GetAsync(CallbackUrlOf(first, "broken"), Cancellation);
+
+        failed.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        failed.Headers.Location.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_refusal_in_one_tab_leaves_another_tabs_way_back_to_its_login_page()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+            builder.WithProviders(auth => auth.AddOAuth("broken", ConfigureBroken)));
+        using var client = NewClient(factory);
+        var (_, first) = await ChallengeAsync(client, "broken");
+        var (secondInteractionId, second) = await ChallengeAsync(client, "broken");
+        await client.GetAsync(CallbackUrlOf(first, "broken", error: "access_denied"), Cancellation);
+
+        // The token endpoint answers in plain text, so the handler throws and drops its properties:
+        // only the second tab's challenge cookie is left to find the way back.
+        var failed = await client.GetAsync(CallbackUrlOf(second, "broken"), Cancellation);
+
+        failed.Headers.Location!.OriginalString.Should().Be(WithInteractionId(LoginPath, secondInteractionId));
+    }
+
+    [Fact]
+    public async Task A_challenge_with_no_login_page_writes_no_challenge_cookie()
+    {
+        using var factory = NewSingleProviderFactory();
+        using var client = NewClient(factory);
+
+        var challenge = await client.GetAsync(AuthorizeUrl(), Cancellation);
+
+        challenge.Headers.GetValues("Set-Cookie").Should().NotContain(cookie => cookie.StartsWith("zkd.challenge.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_forged_callback_in_a_browser_mid_challenge_changes_only_the_login_page_message()
+    {
+        // Accepted: a top-level navigation to the callback with a state the handler cannot read
+        // still finds the challenge cookie. All it can do is report a failure on the login page;
+        // the interaction stays alive and the genuine callback still completes.
+        using var client = _fixture.NewFlowClient();
+        var (interactionId, challenge) = await ChallengeAsync(client);
+
+        var forged = await client.GetAsync("/connect/callback/acme?state=forged", Cancellation);
+
+        forged.Headers.Location!.OriginalString.Should().Be(WithInteractionId(LoginPath, interactionId));
+        var genuine = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
+        var resume = await client.GetAsync(genuine.Headers.Location!.OriginalString, Cancellation);
+        resume.ShouldHaveReachedConsent();
+    }
+
+    [Fact]
+    public async Task A_store_that_cannot_record_the_outcome_still_returns_the_user_to_the_login_page()
+    {
+        var store = new WriteFailingInteractionStore();
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", "Acme", ConfigureAcme));
+            builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true);
+            builder.AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+            builder.Services.AddSingleton<IInteractionBackingStore>(store);
+        });
+        using var client = NewClient(factory);
+        var (interactionId, challenge) = await ChallengeAsync(client);
+        store.FailWrites = true;
+
+        var callback = await client.GetAsync(CallbackUrlOf(challenge, error: "access_denied"), Cancellation);
+
+        callback.Headers.Location!.OriginalString.Should().Be(WithInteractionId(LoginPath, interactionId),
+            "a lost message, not a lost sign-in");
+        store.FailWrites = false;
+        var page = await ReadLoginPageAsync(client, interactionId);
+        page.GetProperty("returnedFrom").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+    }
+
+    /// <summary>An in-memory interaction store whose writes can be made to fail mid-test.</summary>
+    private sealed class WriteFailingInteractionStore : IInteractionBackingStore
+    {
+        private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
+
+        public bool FailWrites { get; set; }
+
+        public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+            FailWrites ? throw new InvalidOperationException("store is down") : _inner.SetAsync(key, value, expiresAt, cancellationToken);
+
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            _inner.GetAsync(key, cancellationToken);
+
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+            _inner.RemoveAsync(key, cancellationToken);
     }
 
     [Fact]

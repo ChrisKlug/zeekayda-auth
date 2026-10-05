@@ -4,56 +4,69 @@ using ZeeKayDa.Auth.AspNetCore.Interaction;
 namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
-/// Names, to a provider's callback, the interaction its challenge was issued for: a cookie scoped
-/// to that provider's callback route, written when the user is sent out and removed when it sends
-/// them back to the login page.
+/// Names, to a provider's callback, the interaction a challenge from the login page was issued for:
+/// one cookie per challenged interaction, <c>zkd.challenge.&lt;id&gt;</c>, scoped to that provider's
+/// callback route, written when the user is sent out and removed when it sends them back to the
+/// login page.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A remote handler surfaces its properties — and the interaction stamped into them — only for a
-/// refusal. A failure, a token exchange that fails after the provider redirected back among them,
-/// arrives with none, and without this the framework could not say which login page to return the
-/// user to.
+/// A remote handler hands the failure event its properties — and the interaction stamped into them —
+/// only when it reports the failure itself. When it throws instead, as the OAuth handler does for a
+/// token endpoint error that is not JSON or for a network failure, they are dropped, and a handler
+/// outside ASP.NET Core's remote base never hands them over. This is the generic way back.
 /// </para>
 /// <para>
-/// The value is not a secret and grants nothing: the identifier already travels in URLs, and it
-/// is acted on only for a browser that also carries the interaction's binding, only to send the
-/// user back to the login page with the interaction left alive. Two tabs challenging the same
-/// provider share one cookie, the later one's, which is why a refusal's own properties are
-/// preferred when there are some.
+/// The cookie proves nothing about the callback: a forged one in a browser mid-challenge can make the
+/// login page report a failure that did not happen, and that is accepted, since it changes only the
+/// message. It is not a secret and grants nothing either: the identifier already travels in URLs, and
+/// it is acted on only for a browser that also carries the interaction's binding. When the callback
+/// receives more than one — two tabs challenging the same provider — it cannot tell which tab it
+/// belongs to, and names none rather than guess.
 /// </para>
 /// </remarks>
 internal static class ProviderChallengeCookie
 {
+    /// <summary>The prefix every challenge cookie's name starts with; the interaction identifier follows it.</summary>
+    internal const string NamePrefix = ZeeKayDaCookies.Challenge + ".";
+
     public static void Issue(HttpContext context, PathString callbackPath, string interactionId, DateTimeOffset expiresAt)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
-        context.Response.Cookies.Append(ZeeKayDaCookies.Challenge, interactionId, OptionsFor(callbackPath, expiresAt));
-    }
-
-    /// <summary>The interaction the cookie names, or <see langword="null"/> without one.</summary>
-    public static string? Read(HttpContext context)
-    {
-        ArgumentNullException.ThrowIfNull(context);
-
-        return context.Request.Cookies.TryGetValue(ZeeKayDaCookies.Challenge, out var interactionId) && !string.IsNullOrEmpty(interactionId)
-            ? interactionId
-            : null;
+        context.Response.Cookies.Append(NamePrefix + interactionId, "1", OptionsFor(callbackPath, expiresAt));
     }
 
     /// <summary>
-    /// Removes the cookie once it has sent the user back to the login page. Only then: a callback
-    /// that completes leaves it alone, since by that time it may name another tab's challenge to
-    /// the same provider, and otherwise it expires with the interaction or is replaced by the next
-    /// challenge.
+    /// The interaction the request's one challenge cookie names, or <see langword="null"/> when it
+    /// carries none, or several.
     /// </summary>
-    public static void Clear(HttpContext context)
+    public static string? Single(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        context.Response.Cookies.Delete(ZeeKayDaCookies.Challenge, OptionsFor(context.Request.PathBase.Add(context.Request.Path), null));
+        string? found = null;
+        foreach (var name in context.Request.Cookies.Keys)
+        {
+            if (!name.StartsWith(NamePrefix, StringComparison.Ordinal) || name.Length == NamePrefix.Length)
+                continue;
+
+            if (found is not null)
+                return null;
+
+            found = name[NamePrefix.Length..];
+        }
+
+        return found;
+    }
+
+    public static void Clear(HttpContext context, PathString callbackPath, string interactionId)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentException.ThrowIfNullOrEmpty(interactionId);
+
+        context.Response.Cookies.Delete(NamePrefix + interactionId, OptionsFor(callbackPath, null));
     }
 
     private static CookieOptions OptionsFor(PathString callbackPath, DateTimeOffset? expiresAt) => new()

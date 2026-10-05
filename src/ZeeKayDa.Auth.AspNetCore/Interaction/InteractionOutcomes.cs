@@ -37,6 +37,7 @@ internal sealed class InteractionOutcomes(
     AuthorizationFlow flow,
     AuthorizationResponses responses,
     ProviderHandlerActivator activator,
+    ProviderRegistry providers,
     AuthorizationCodeIssuer issuer,
     IOptions<AuthorizationServerOptions> options,
     SanitizingLogger<InteractionOutcomes> logger)
@@ -311,11 +312,9 @@ internal sealed class InteractionOutcomes(
         };
         properties.Items[ExternalTicket.InteractionIdItem] = requestContext.Id;
         properties.Items[ExternalTicket.ChallengedProviderItem] = registration.Name;
-        ProviderChallengeCookie.Issue(
-            context,
-            ProviderCallbackRoute.For(EndpointRouteHelper.GetIssuerUri(options), registration.Name),
-            requestContext.Id,
-            requestContext.ExpiresAt);
+        // Only a challenge from the login page has a page to come back to.
+        if (LoginDispatch.LoginPageFor(options.Value.AuthorizationEndpoint.Interaction, providers.Count) is not null)
+            ProviderChallengeCookie.Issue(context, CallbackRouteFor(registration.Name), requestContext.Id, requestContext.ExpiresAt);
 
         var handler = await activator.ActivateAsync(context, registration).ConfigureAwait(false);
         await handler.ChallengeAsync(properties).ConfigureAwait(false);
@@ -352,8 +351,12 @@ internal sealed class InteractionOutcomes(
             logger.LogError(ex, "Recording the provider outcome for client {ClientId} failed; the login page will not show it.", requestContext.ClientId);
         }
 
+        ProviderChallengeCookie.Clear(context, CallbackRouteFor(attempt.Provider), requestContext.Id);
         return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
     }
+
+    private PathString CallbackRouteFor(string provider) =>
+        ProviderCallbackRoute.For(EndpointRouteHelper.GetIssuerUri(options), provider);
 
     /// <summary>
     /// Terminal. Parks <paramref name="principal"/> for the interaction and sends the user to

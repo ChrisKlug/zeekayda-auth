@@ -24,6 +24,21 @@ internal static class ProviderAccessDenied
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Wraps a handler's <c>OnRemoteFailure</c> so the interaction a failing callback's properties
+    /// name is recorded before <paramref name="inner"/> — the host's, or the handler's default — runs.
+    /// </summary>
+    public static Func<RemoteFailureContext, Task> RecordingFailures(Func<RemoteFailureContext, Task> inner)
+    {
+        ArgumentNullException.ThrowIfNull(inner);
+
+        return context =>
+        {
+            context.HttpContext.Features.Get<ProviderCallbackFeature>()?.MarkFailed(InteractionIdOf(context.Properties));
+            return inner(context);
+        };
+    }
+
     private static string? InteractionIdOf(AuthenticationProperties? properties) =>
         properties is not null && properties.Items.TryGetValue(ExternalTicket.InteractionIdItem, out var id) ? id : null;
 }
