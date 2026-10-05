@@ -2087,3 +2087,20 @@ Copilot code, security and architecture lenses, the security and architect agent
 - A malformed declaration or a miscased filter entry fails startup rather than silently withholding a method. Closed —
   `Verify_fails_when_authenticator_declares_a_blank_or_control_character_method`,
   `Verify_fails_when_the_filter_names_a_performable_method_in_different_casing`.
+
+## 2026-10-05 — a failed provider round trip returns to the login page; the challenge cookie (#889, code frozen at `68d3987`)
+Copilot code, security and architecture lenses, the security and architect agents, fix-diff verification of each round
+(the last one after merge), and the PR's Copilot, CodeQL and CodeScene review; no Critical.
+- A refusal or failure for an interaction the browser carries returns to the login page, interaction alive, client told
+  nothing. Closed — `A_refusal_at_the_provider_returns_the_user_to_the_login_page_reporting_it_declined`,
+  `A_provider_failure_returns_the_user_to_the_login_page_reporting_it_failed`.
+- Only a refusal's own properties end a request at the client, and only with no login page and the binding present. Closed —
+  `A_refusal_with_no_login_page_reaches_the_client_as_access_denied`, `A_refusal_without_the_interaction_cookie_renders_locally_and_reaches_no_client`.
+- The `zkd.challenge.<id>` cookie acts only with the interaction's binding, never guesses between tabs, and its prefix is
+  reserved. Closed — `A_failure_carrying_only_the_challenge_cookie_renders_locally_and_records_nothing`,
+  `A_thrown_failure_with_two_challenges_outstanding_renders_locally_rather_than_guess_the_tab`,
+  `A_host_scheme_taking_a_name_under_the_challenge_prefix_is_reported`.
+- The login page's read is unframeable and uncacheable. Closed — `GetRequestAsync_makes_the_rendered_page_unframeable_and_uncacheable`.
+- **Accepted residuals (maintainer):** a forged callback in a browser mid-challenge can change only the login page's message
+  (`A_forged_callback_in_a_browser_mid_challenge_changes_only_the_login_page_message`); a post-configurer replacing the
+  `OnRemoteFailure` wrapper costs only precision; the read-then-write in `ReturnToLoginAsync` has a fail-closed race. No test for the last two.
