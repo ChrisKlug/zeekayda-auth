@@ -57,10 +57,13 @@ Report each path removed.
 ### 3. Kill the language server
 
 ```sh
-pkill -f 'Microsoft\.CodeAnalysis\.LanguageServer'
-pkill -f 'OmniSharp'
-pkill -f 'csharp-ls'
+pkill -f '[M]icrosoft\.CodeAnalysis\.LanguageServer'
+pkill -f '[O]mniSharp'
+pkill -f '[c]sharp-ls'
 ```
+
+The first character is bracketed so a pattern does not match its own shell's command line: an
+unbracketed `pkill -f 'csharp-ls'` kills the shell running it before it reaches the server.
 
 Report how many processes were killed.
 
