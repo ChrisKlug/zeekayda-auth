@@ -165,9 +165,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
 
         // Replaces the core's authenticator-less default: the HTTP layer is what performs methods.
         services.RemoveAll<AdvertisedAuthMethods>();
-        services.AddSingleton(sp => new AdvertisedAuthMethods(
-            sp.GetServices<IClientAuthenticator>().SelectMany(authenticator => authenticator.AuthenticationMethods),
-            sp.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value.TokenEndpoint.AdvertisedAuthMethods));
+        services.AddSingleton(AuthenticatorAuthMethods.Resolve);
 
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupActivator, ClientAuthenticatorActivator>());

@@ -55,6 +55,18 @@ public sealed class ClientAuthenticatorActivatorTests
             Task.FromResult(ClientAuthenticationResult.NotValid());
     }
 
+    /// <summary>Breaks the interface's non-null contract, as a careless implementation can.</summary>
+    private sealed class NullMethodsAuthenticator(IReadOnlySet<string> methods) : IClientAuthenticator
+    {
+        public IReadOnlySet<string> AuthenticationMethods => methods;
+
+        public ClientAuthenticatorMatch CanHandle(TokenRequestContext context) => ClientAuthenticatorMatch.None;
+
+        public Task<ClientAuthenticationResult> AuthenticateAsync(
+            ClientAuthenticationContext context, CancellationToken ct) =>
+            Task.FromResult(ClientAuthenticationResult.NotValid());
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
     private static async Task<IReadOnlyList<ZeeKayDaConfigurationFailure>> VerifyAsync(
@@ -87,9 +99,8 @@ public sealed class ClientAuthenticatorActivatorTests
     {
         var options = new AuthorizationServerOptions { GrantTypesSupported = [.. grants] };
         options.TokenEndpoint.AdvertisedAuthMethods = filter;
-        services.AddSingleton(sp => new AdvertisedAuthMethods(
-            sp.GetServices<IClientAuthenticator>().SelectMany(authenticator => authenticator.AuthenticationMethods),
-            options.TokenEndpoint.AdvertisedAuthMethods));
+        services.AddSingleton(Options.Create(options));
+        services.AddSingleton(AuthenticatorAuthMethods.Resolve);
 
         await using var provider = services.BuildServiceProvider();
         var context = new StartupVerificationContext();
@@ -290,6 +301,30 @@ public sealed class ClientAuthenticatorActivatorTests
         var context = await VerifyContextAsync(null, [GrantType.AuthorizationCode]);
 
         context.Failures.Should().BeEmpty("a server with only public clients serves the code grant with PKCE");
+    }
+
+    // ── An authenticator breaking the non-null contract ───────────────────────────────────────────
+
+    [Fact]
+    public async Task Verify_fails_naming_an_authenticator_whose_AuthenticationMethods_is_null()
+    {
+        var failures = await VerifyAsync(null, new NullMethodsAuthenticator(null!));
+
+        failures.Should().ContainSingle()
+            .Which.Should().Match<ZeeKayDaConfigurationFailure>(failure =>
+                failure.Code == "authenticators.method_null" &&
+                failure.Message.Contains(nameof(NullMethodsAuthenticator)));
+    }
+
+    [Fact]
+    public async Task Verify_fails_naming_an_authenticator_that_declares_a_null_method()
+    {
+        var failures = await VerifyAsync(
+            null,
+            new NullMethodsAuthenticator(new HashSet<string>(StringComparer.Ordinal) { TokenEndpointAuthMethods.ClientSecretBasic, null! }));
+
+        failures.Should().ContainSingle()
+            .Which.Code.Should().Be("authenticators.method_null");
     }
 
     // ── DI construction failure ───────────────────────────────────────────────────────────────────

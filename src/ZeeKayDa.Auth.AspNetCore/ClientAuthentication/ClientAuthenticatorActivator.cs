@@ -39,7 +39,13 @@ internal sealed class ClientAuthenticatorActivator(
         foreach (var authenticator in authenticators)
         {
             var typeName = authenticator.GetType().Name;
-            foreach (var method in authenticator.AuthenticationMethods)
+            if (authenticator.AuthenticationMethods is not { } methods)
+            {
+                ReportNullMethod(context, typeName);
+                continue;
+            }
+
+            foreach (var method in methods)
                 CheckDeclaredMethod(context, declaringTypeByMethod, typeName, method);
         }
 
@@ -88,8 +94,14 @@ internal sealed class ClientAuthenticatorActivator(
         StartupVerificationContext context,
         Dictionary<string, string> declaringTypeByMethod,
         string typeName,
-        string method)
+        string? method)
     {
+        if (method is null)
+        {
+            ReportNullMethod(context, typeName);
+            return;
+        }
+
         // Reject leading/trailing whitespace before any other check: " none" or
         // "client_secret_basic " would pass the ordinal equality checks below but fail
         // silently at runtime because the runtime comparisons are also ordinal.
@@ -139,6 +151,12 @@ internal sealed class ClientAuthenticatorActivator(
             declaringTypeByMethod[method] = typeName;
         }
     }
+
+    private static void ReportNullMethod(StartupVerificationContext context, string typeName) =>
+        context.AddFailure(
+            "authenticators.method_null",
+            $"{typeName} returns a null AuthenticationMethods set or a null entry in it. Declare the " +
+            $"methods it performs, using the constants in {nameof(TokenEndpointAuthMethods)}.");
 
     // Case-insensitive map of framework-handled method strings to their canonical form.
     private static readonly IReadOnlyDictionary<string, string> _canonicalMethodNames =

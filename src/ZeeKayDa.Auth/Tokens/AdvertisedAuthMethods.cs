@@ -17,7 +17,8 @@ internal sealed class AdvertisedAuthMethods
     private readonly HashSet<string> _methods;
 
     /// <param name="performable">
-    /// The methods the registered authenticators declare; <c>none</c> is added here, never by them.
+    /// The methods the registered authenticators declare; <c>none</c> is added here, never by them. A
+    /// malformed entry is never advertised: the startup check on the declarations fails on it.
     /// </param>
     /// <param name="filter">
     /// <see cref="TokenEndpointOptions.AdvertisedAuthMethods"/>; <see langword="null"/> advertises
@@ -25,12 +26,17 @@ internal sealed class AdvertisedAuthMethods
     /// </param>
     public AdvertisedAuthMethods(IEnumerable<string> performable, ICollection<string>? filter)
     {
-        var all = new SortedSet<string>(performable, StringComparer.Ordinal) { TokenEndpointAuthMethods.None };
+        var all = new SortedSet<string>(performable.Where(TokenEndpointAuthMethodRules.IsWellFormed), StringComparer.Ordinal)
+        {
+            TokenEndpointAuthMethods.None,
+        };
 
-        Methods = [.. filter is null ? all : all.Where(method => filter.Contains(method, StringComparer.Ordinal))];
-        Unperformable = filter is null
-            ? []
-            : [.. filter.Where(method => !all.Contains(method)).Distinct(StringComparer.Ordinal)];
+        // Read-only wrappers, not arrays: discovery hands Methods to a public document, and an array
+        // cast back from it would let the advertised set drift from the one the token endpoint checks.
+        Methods = (filter is null ? all : all.Where(method => filter.Contains(method, StringComparer.Ordinal)))
+            .ToList().AsReadOnly();
+        Unperformable = (filter ?? []).Where(method => !all.Contains(method)).Distinct(StringComparer.Ordinal)
+            .ToList().AsReadOnly();
         _methods = new HashSet<string>(Methods, StringComparer.Ordinal);
     }
 
