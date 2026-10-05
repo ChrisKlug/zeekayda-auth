@@ -45,8 +45,7 @@ internal static class ZeeKayDaCookies
 
     /// <summary>
     /// The interaction a provider challenge was issued for, scoped to that provider's callback
-    /// route and read once when the user comes back, so a failed callback can still find its way
-    /// back to the login page.
+    /// route, so a failed callback can still find its way back to the login page.
     /// </summary>
     public const string Challenge = "zkd.challenge";
 

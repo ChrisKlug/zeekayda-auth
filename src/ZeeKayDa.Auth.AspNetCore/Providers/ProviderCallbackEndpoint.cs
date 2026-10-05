@@ -75,7 +75,7 @@ internal sealed class ProviderCallbackEndpoint(
 
         // Set after routing and before the handler runs: the provider is what the route says,
         // never what the request or the handler says.
-        var feature = new ProviderCallbackFeature(registration, ProviderChallengeCookie.Take(context));
+        var feature = new ProviderCallbackFeature(registration, ProviderChallengeCookie.Read(context));
         context.Features.Set(feature);
 
         // Activation is inside the guarded path too: a handler's constructor or InitializeAsync
@@ -176,6 +176,7 @@ internal sealed class ProviderCallbackEndpoint(
 
             if (returning is not null)
             {
+                ProviderChallengeCookie.Clear(context);
                 var attempt = new ProviderAttempt(feature.Provider.Name, feature.Refused);
                 return await outcomes.ReturnToLoginAsync(context, returning, attempt, loginPath).ConfigureAwait(false);
             }

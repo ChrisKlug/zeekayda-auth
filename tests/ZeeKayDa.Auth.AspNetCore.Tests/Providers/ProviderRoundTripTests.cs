@@ -344,14 +344,31 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
     }
 
     [Fact]
-    public async Task The_callback_removes_the_challenge_cookie()
+    public async Task A_callback_that_returns_to_the_login_page_removes_the_challenge_cookie()
     {
         using var client = _fixture.NewFlowClient();
         var (_, challenge) = await ChallengeAsync(client);
 
-        var callback = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
+        var callback = await client.GetAsync(CallbackUrlOf(challenge, error: "temporarily_unavailable"), Cancellation);
 
         ChallengeCookieOf(callback).Should().Contain("expires=Thu, 01 Jan 1970");
+    }
+
+    [Fact]
+    public async Task A_completed_callback_in_one_tab_leaves_another_tabs_failure_its_way_back_to_the_login_page()
+    {
+        // Both tabs challenge the same provider, so the one callback-scoped cookie names the
+        // second. The first completing must not take it from the second.
+        using var client = _fixture.NewFlowClient();
+        var (_, first) = await ChallengeAsync(client);
+        var (secondInteractionId, second) = await ChallengeAsync(client);
+
+        await client.GetAsync(CallbackUrlOf(first), Cancellation);
+        var failed = await client.GetAsync(CallbackUrlOf(second, error: "temporarily_unavailable"), Cancellation);
+
+        failed.Headers.Location!.OriginalString.Should().Be(WithInteractionId(LoginPath, secondInteractionId));
+        var page = await ReadLoginPageAsync(client, secondInteractionId);
+        page.GetProperty("outcome").GetString().Should().Be(nameof(ProviderReturnOutcome.Failed));
     }
 
     [Fact]
@@ -423,8 +440,9 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
 
         var replay = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
 
-        replay.StatusCode.Should().Be(HttpStatusCode.BadRequest,
-            "the first callback consumed both the correlation cookie and the challenge cookie");
+        // The correlation cookie was consumed by the first callback, so the replay fails, and in
+        // the browser that carries the interaction a failure goes back to the login page.
+        replay.Headers.Location!.OriginalString.Should().StartWith(LoginPath);
         var resume = await client.GetAsync(callback.Headers.Location!.OriginalString, Cancellation);
         resume.ShouldHaveReachedConsent("the first callback's return still completes");
     }

@@ -5,8 +5,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
 /// Names, to a provider's callback, the interaction its challenge was issued for: a cookie scoped
-/// to that provider's callback route, written when the user is sent out and removed when they
-/// come back.
+/// to that provider's callback route, written when the user is sent out and removed when it sends
+/// them back to the login page.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -33,19 +33,27 @@ internal static class ProviderChallengeCookie
         context.Response.Cookies.Append(ZeeKayDaCookies.Challenge, interactionId, OptionsFor(callbackPath, expiresAt));
     }
 
-    /// <summary>
-    /// The interaction the cookie names, or <see langword="null"/> without one, and the cookie
-    /// removed either way: it is read once, on the callback it was written for.
-    /// </summary>
-    public static string? Take(HttpContext context)
+    /// <summary>The interaction the cookie names, or <see langword="null"/> without one.</summary>
+    public static string? Read(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        if (!context.Request.Cookies.TryGetValue(ZeeKayDaCookies.Challenge, out var interactionId))
-            return null;
+        return context.Request.Cookies.TryGetValue(ZeeKayDaCookies.Challenge, out var interactionId) && !string.IsNullOrEmpty(interactionId)
+            ? interactionId
+            : null;
+    }
+
+    /// <summary>
+    /// Removes the cookie once it has sent the user back to the login page. Only then: a callback
+    /// that completes leaves it alone, since by that time it may name another tab's challenge to
+    /// the same provider, and otherwise it expires with the interaction or is replaced by the next
+    /// challenge.
+    /// </summary>
+    public static void Clear(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
 
         context.Response.Cookies.Delete(ZeeKayDaCookies.Challenge, OptionsFor(context.Request.PathBase.Add(context.Request.Path), null));
-        return string.IsNullOrEmpty(interactionId) ? null : interactionId;
     }
 
     private static CookieOptions OptionsFor(PathString callbackPath, DateTimeOffset? expiresAt) => new()
