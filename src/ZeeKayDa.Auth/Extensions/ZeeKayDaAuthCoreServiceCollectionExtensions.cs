@@ -42,7 +42,8 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
     /// endpoints, cookies, interaction and external providers on top. Call it directly only for a
     /// host that does not serve the protocol over ASP.NET Core. Client authentication lives in that
     /// layer, so without it the server performs only <c>none</c> and accepts public clients only: a
-    /// confidential client registration fails startup. A repeated call adds its
+    /// confidential client fails startup in the in-memory store, and is refused when looked up from
+    /// any other store. A repeated call adds its
     /// <paramref name="configure"/> delegate and registers nothing twice.
     /// </remarks>
     public static ZeeKayDaAuthCoreBuilder AddZeeKayDaAuthCore(

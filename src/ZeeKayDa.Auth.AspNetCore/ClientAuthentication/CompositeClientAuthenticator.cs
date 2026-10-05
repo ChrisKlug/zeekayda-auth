@@ -23,7 +23,6 @@ internal sealed class CompositeClientAuthenticator(
     ClientSecrets secrets,
     SanitizingLogger<CompositeClientAuthenticator> logger)
 {
-
     /// <summary>
     /// Authenticates the client identified by <paramref name="clientId"/> using the mechanism(s)
     /// detected in the current request.
