@@ -109,8 +109,8 @@ A missing `zkd_i`, the one host-bug case, logs a warning; the rest log at inform
 **ZeeKayDa owns no interaction UI that needs a user model.** Login, consent and provider selection are the
 host's pages, with its own user store, branding and MFA — more host code than a shipped page, a cost accepted.
 Only the error, logout-confirmation and signed-out pages have unbranded framework fallbacks for a host that sets no path.
-Those, and every response a consent or logout page calls `GetRequestAsync`/`TryGetRequestAsync` from or a provider sign-in page
-`GetPendingPrincipalAsync`, are stamped `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `no-store`; the login page is not.
+Those, and every response a login, consent or logout page calls `GetRequestAsync`/`TryGetRequestAsync` from or a provider
+sign-in page `GetPendingPrincipalAsync`, are stamped `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `no-store`.
 
 **Provider schemes exist only in the framework's scheme map, and what would make them visible to the host fails
 at startup.** `WithProviders` replays the scheme-map configurers the host's callback appended, records the
