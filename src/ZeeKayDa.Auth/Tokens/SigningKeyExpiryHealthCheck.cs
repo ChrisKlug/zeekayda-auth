@@ -13,8 +13,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// signing key's expiry has passed, <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded"/>
 /// within the configured <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> of it,
 /// otherwise <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy"/> —
-/// including when the signing key has no expiry at all. <c>Previous</c>/<c>Next</c> keys are
-/// reported in the result data but never drive the verdict; only the key that actually signs does.
+/// including when the signing key has no expiry at all. Every other published key appears in the
+/// result data but never drives the verdict; only the key that actually signs does.
 /// </remarks>
 public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
 {
@@ -84,14 +84,15 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
             object (key) => new SigningKeyExpiryStatus(
                 key.Kid,
                 IsSigningKey: string.Equals(key.Kid, set.SigningKey.Kid, StringComparison.Ordinal),
-                key.ExpiresAt,
-                RemainingLifetime: key.ExpiresAt is { } expiresAt ? expiresAt - now : null));
+                NeverExpires(key) ? null : key.ExpiresAt,
+                RemainingLifetime: NeverExpires(key) ? null : key.ExpiresAt - now));
 
         var signingKey = set.SigningKey;
 
-        if (signingKey.ExpiresAt is not { } signingKeyExpiresAt)
+        if (NeverExpires(signingKey))
             return HealthCheckResult.Healthy($"Signing key '{signingKey.Kid}' has no expiry.", data);
 
+        var signingKeyExpiresAt = signingKey.ExpiresAt;
         var remaining = signingKeyExpiresAt - now;
 
         if (remaining <= TimeSpan.Zero)
@@ -109,4 +110,6 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
 
         return HealthCheckResult.Healthy($"Signing key '{signingKey.Kid}' expires at {signingKeyExpiresAt:O}.", data);
     }
+
+    private static bool NeverExpires(SigningKey key) => key.ExpiresAt == DateTimeOffset.MaxValue;
 }

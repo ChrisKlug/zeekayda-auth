@@ -14,7 +14,7 @@ public sealed class SigningKeyRingPresenceVerifierTests
 {
     private sealed class StubSigningKeySource : ISigningKeySource
     {
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -26,7 +26,7 @@ public sealed class SigningKeyRingPresenceVerifierTests
         public UnconstructableSigningKeySource() => throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("test.source.broken", "The source cannot be built."));
 
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -93,7 +93,7 @@ public sealed class SigningKeyRingPresenceVerifierTests
         // reports the failure in the next phase. Driven through a container with no
         // IServiceProviderIsService, because that is the only path that resolves the ring at all —
         // the default container answers without invoking the factory.
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddRingDependencies();
         new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<UnconstructableSigningKeySource>();
         using var inner = services.BuildServiceProvider();
         var context = new StartupVerificationContext();

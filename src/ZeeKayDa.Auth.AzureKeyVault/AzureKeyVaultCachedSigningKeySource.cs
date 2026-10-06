@@ -15,13 +15,8 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// <para>
 /// Read once, never re-read: the ring reads this source exactly once at startup, and the read is
 /// memoized here too, so a version added, disabled, or replaced after startup has no effect until
-/// the host restarts. The version-to-slot mapping is
-/// <see cref="KeyVaultVersionSelector.SelectVersions"/>, shared with the remote source: the newest
-/// enabled version inside its own validity window that has existed for
-/// <see cref="AzureKeyVaultCachedSigningOptions.PreActivationDelay"/> signs (the
-/// chronologically-first version ever is exempt), every newer enabled version is published as
-/// staged, and up to <see cref="AzureKeyVaultCachedSigningOptions.PreviousVersionsToPublish"/>
-/// older enabled versions stay published. Disabling a version excludes it from every slot.
+/// the host restarts. Every enabled version is listed, dated as <see cref="KeyVaultVersions"/>
+/// describes; the framework decides which one signs. Disabling a version excludes it entirely.
 /// </para>
 /// <para>
 /// <b>Private material is downloaded for exactly one version: the signing one, and only in
@@ -47,8 +42,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </remarks>
 internal sealed class AzureKeyVaultCachedSigningKeySource(
     IOptions<AzureKeyVaultCachedSigningOptions> options,
-    IKeyVaultCertificateReader certificateReader,
-    TimeProvider timeProvider) : ISigningKeySource
+    IKeyVaultCertificateReader certificateReader) : ISigningKeySource
 {
     private readonly IOptions<AzureKeyVaultCachedSigningOptions> _options = options;
 
@@ -58,18 +52,17 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
     // would strand any reader queued behind it.
     private readonly SemaphoreSlim _readGate = new(1, 1);
 
-    // The one key set this source ever reports. Assigned only after every selected version's public
+    // The one key set this source ever reports. Assigned only after every listed version's public
     // material has been fetched, so a failed read is never cached and a retry re-reads the vault.
-    private SourceKeySet? _keySet;
+    private IReadOnlyList<SourceKey>? _keySet;
 
-    // The signing version the memoized read selected, with the public key the read published for
-    // it — the reference CreateSignerAsync cross-checks the downloaded private key against.
-    // volatile: written under _readGate, read by CreateSignerAsync without it — no happens-before
-    // edge otherwise connects the two.
-    private volatile SigningVersion? _signingVersion;
+    // The public key the memoized read listed for each version — the reference CreateSignerAsync
+    // cross-checks the downloaded private key against. volatile: written under _readGate, read by
+    // CreateSignerAsync without it.
+    private volatile IReadOnlyDictionary<string, PublicKeyParameters>? _listedVersions;
 
     /// <inheritdoc/>
-    public async Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
         await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -93,26 +86,17 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
                         "certificate version before starting the host."));
             }
 
-            var (signing, published) = KeyVaultVersionSelector.SelectVersions(
-                allVersions,
-                options.PreviousVersionsToPublish,
-                options.PreActivationDelay,
-                timeProvider.GetUtcNow(),
-                KeyVaultVersionSelector.SelectionContext.ForCertificate(
-                    options.CertificateIdentifier.Name, options.CertificateIdentifier.VaultUri));
+            var enabled = KeyVaultVersions.Enabled(
+                allVersions, "certificate", options.CertificateIdentifier.Name, options.CertificateIdentifier.VaultUri);
 
-            var signingKey = await ToSourceKeyAsync(signing, options, cancellationToken).ConfigureAwait(false);
+            var keys = new List<SourceKey>(enabled.Count);
+            foreach (var version in enabled)
+                keys.Add(await ToSourceKeyAsync(version, options, cancellationToken).ConfigureAwait(false));
 
-            var alsoPublished = new List<SourceKey>(published.Count);
-            foreach (var version in published)
-                alsoPublished.Add(await ToSourceKeyAsync(version, options, cancellationToken).ConfigureAwait(false));
-
-            // The key set is built first and the signing version committed only after nothing can
-            // throw any more, so a failed read can never leave a signer openable for a version that
-            // was never reported in a key set.
-            var keySet = new SourceKeySet(signingKey, [.. alsoPublished]);
-            _signingVersion = new SigningVersion(signing.Version, signingKey.PublicKey);
-            return _keySet = keySet;
+            // Committed only after nothing can throw any more, so a failed read can never leave a
+            // signer openable for a version that was never listed.
+            _listedVersions = keys.ToDictionary(k => k.Id.Value, k => k.PublicKey, StringComparer.Ordinal);
+            return _keySet = keys;
         }
         finally
         {
@@ -122,34 +106,28 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The single place private material enters this process: downloads the signing version's
-    /// private key via the certificate's linked secret, cross-checks its public component against
+    /// The single place private material enters this process: downloads the version's private key via the certificate's linked secret, cross-checks its public component against
     /// the key the read published for that version, and hands it to a <see cref="LocalSigner"/>
     /// that owns and disposes it.
     /// </remarks>
     public async Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
     {
-        var signingVersion = _signingVersion;
-
-        // Only the version the memoized read selected as the signing key is ever openable for
-        // signing. Published-only versions never sign, so an id naming one of them — or an id
-        // arriving before any successful read — is a defect in the caller rather than a request
-        // this source should honour by downloading a private key it otherwise never touches.
-        if (signingVersion is null || !string.Equals(signingVersion.Version, id.Value, StringComparison.Ordinal))
+        // An id this source never listed, or one arriving before any successful read, is a defect in
+        // the caller rather than a request this source should honour by downloading a private key.
+        if (_listedVersions is not { } listed || !listed.TryGetValue(id.Value, out var publishedPublicKey))
         {
             throw new InvalidOperationException(
-                $"{nameof(CreateSignerAsync)} was called for key '{id.Value}', which is not the Key Vault " +
-                "certificate version this source most recently reported as the signing key. This source " +
-                "reads the vault exactly once, so the reported signing version cannot change after startup, " +
-                "and only it ever signs — or has its private key downloaded at all.");
+                $"{nameof(CreateSignerAsync)} was called for key '{id.Value}', which is not a Key Vault " +
+                "certificate version this source listed. This source reads the vault exactly once, so the " +
+                "listed versions cannot change after startup.");
         }
 
         var (privateKey, keyType) = await certificateReader
-            .GetPrivateKeyMaterialAsync(signingVersion.Version, cancellationToken).ConfigureAwait(false);
+            .GetPrivateKeyMaterialAsync(id.Value, cancellationToken).ConfigureAwait(false);
 
         try
         {
-            VerifyPrivateKeyMatchesPublishedPublicKey(signingVersion.Version, privateKey, keyType, signingVersion.PublishedPublicKey);
+            VerifyPrivateKeyMatchesPublishedPublicKey(id.Value, privateKey, keyType, publishedPublicKey);
         }
         catch
         {
@@ -177,8 +155,8 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
             new SourceKeyId(version.Version),
             options.Algorithm,
             ToPublicKeyParameters(publicKey, keyType),
-            ExpiresAt: version.ExpiresOn,
-            NotBefore: version.NotBefore);
+            notBefore: KeyVaultVersions.NotBefore(version),
+            expiresAt: version.ExpiresOn);
     }
 
     /// <summary>
@@ -239,11 +217,4 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
         string.Equals(actualOid, published.Curve.Oid?.Value, StringComparison.Ordinal) &&
         actual.Q.X.AsSpan().SequenceEqual(published.Q.X) &&
         actual.Q.Y.AsSpan().SequenceEqual(published.Q.Y);
-
-    /// <summary>
-    /// The signing version a successful read selected: its version string (the source key id) and
-    /// the public key the read published for it, against which the downloaded private key is
-    /// cross-checked.
-    /// </summary>
-    private sealed record SigningVersion(string Version, PublicKeyParameters PublishedPublicKey);
 }

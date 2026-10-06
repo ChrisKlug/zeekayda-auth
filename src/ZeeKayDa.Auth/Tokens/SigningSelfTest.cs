@@ -85,14 +85,13 @@ internal static class SigningSelfTest
     }
 
     /// <summary>
-    /// A cancellation is the caller's only when it carries the caller's token and that token was
-    /// requested. A signer's own timeout cancels with a different token, or none, and is the
-    /// signer failing, whatever the caller's token happens to say at that moment.
+    /// A cancellation is the caller's whenever the caller's own token was cancelled, whatever token
+    /// the exception carries: a signer that links the caller's token to its own (as the Azure SDK
+    /// does) reports the linked one. A cancellation while the caller's token is live is the signer's
+    /// own timeout, and the signer failing.
     /// </summary>
     private static bool IsCallersCancellation(Exception ex, CancellationToken cancellationToken) =>
-        ex is OperationCanceledException cancelled
-        && cancelled.CancellationToken == cancellationToken
-        && cancellationToken.IsCancellationRequested;
+        ex is OperationCanceledException && cancellationToken.IsCancellationRequested;
 
     /// <summary>
     /// Bytes that are not a signature of this key's algorithm at all, wrong length included, do

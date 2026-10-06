@@ -30,17 +30,17 @@ public sealed class AccessTokenValidatorTests
     private static readonly RSA ForeignKey = RSA.Create(2048);
 
     private static readonly SigningKeyRing Ring = TestSigningKeys.Ring(
-        SourceKeySet.Create(previous: null, RsaSourceKey("current", CurrentKey), next: null), CurrentKey);
+        [RsaSourceKey("current", CurrentKey)], CurrentKey);
 
     private static string CurrentKid => Ring.Current.SigningKey.Kid;
 
     // ── Fakes and helpers ────────────────────────────────────────────────────────────────────────
 
-    private static SourceKey RsaSourceKey(string id, RSA rsa) => new(
+    private static SourceKey RsaSourceKey(string id, RSA rsa, DateTimeOffset? notBefore = null) => new(
         new SourceKeyId(id),
         SigningAlgorithm.RS256,
         PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)),
-        ExpiresAt: null);
+        notBefore);
 
     private static AccessTokenValidator CreateValidator(TimeSpan? clockSkew = null)
     {

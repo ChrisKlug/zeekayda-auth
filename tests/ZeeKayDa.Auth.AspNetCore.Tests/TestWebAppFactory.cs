@@ -80,15 +80,14 @@ internal sealed class TestSigningKeySource : ISigningKeySource, IDisposable
 
     private readonly RSA _rsa = RSA.Create(SharedKey.Value);
 
-    public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
         var key = new SourceKey(
             KeyId,
             SigningAlgorithm.RS256,
-            PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)),
-            ExpiresAt: null);
+            PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)));
 
-        return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, key, next: null));
+        return Task.FromResult<IReadOnlyList<SourceKey>>([key]);
     }
 
     public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)

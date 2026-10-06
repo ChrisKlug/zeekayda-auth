@@ -137,8 +137,7 @@ public sealed class DevelopmentSigningKeySourceTests
 
         var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
 
-        set.Keys.Should().ContainSingle();
-        set.SigningKey.Should().BeSameAs(set.Keys[0]);
+        set.Should().ContainSingle();
     }
 
     [Fact]
@@ -148,7 +147,7 @@ public sealed class DevelopmentSigningKeySourceTests
 
         var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
 
-        set.SigningKey.Algorithm.Should().Be(SigningAlgorithm.RS256);
+        set.Single().Algorithm.Should().Be(SigningAlgorithm.RS256);
     }
 
     [Fact]
@@ -158,9 +157,9 @@ public sealed class DevelopmentSigningKeySourceTests
 
         var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
 
-        set.SigningKey.PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
+        set.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
         using var rsa = RSA.Create();
-        rsa.ImportParameters(set.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        rsa.ImportParameters(set.Single().PublicKey.RsaPublicParameters!.Value);
         rsa.KeySize.Should().BeGreaterThanOrEqualTo(3072);
     }
 
@@ -173,7 +172,7 @@ public sealed class DevelopmentSigningKeySourceTests
 
         var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
 
-        set.Keys.Should().ContainSingle();
+        set.Should().ContainSingle();
     }
 
     [Fact]
@@ -183,7 +182,7 @@ public sealed class DevelopmentSigningKeySourceTests
 
         var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
 
-        set.SigningKey.ExpiresAt.Should().BeNull(
+        set.Single().ExpiresAt.Should().Be(DateTimeOffset.MaxValue,
             "a development key's lifetime is the process's, not a certificate's");
     }
 
@@ -194,7 +193,7 @@ public sealed class DevelopmentSigningKeySourceTests
 
         var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
 
-        set.SigningKey.Id.Should().Be(new SourceKeyId("development"));
+        set.Single().Id.Should().Be(new SourceKeyId("development"));
     }
 
     // ── Lending the signer ───────────────────────────────────────────────────────────────────────
@@ -206,12 +205,11 @@ public sealed class DevelopmentSigningKeySourceTests
         var ct = TestContext.Current.CancellationToken;
         var set = await sut.ReadAsync(ct);
 
-        using var signer = await sut.CreateSignerAsync(set.SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(set.Single().Id, ct);
         var signature = await signer.SignAsync("payload"u8.ToArray(), ct);
 
-        signer.Algorithm.Should().Be(SigningAlgorithm.RS256);
         SigningAlgorithms.Verify(
-                SigningAlgorithm.RS256, set.SigningKey.PublicKey, "payload"u8, signature.Span)
+                SigningAlgorithm.RS256, set.Single().PublicKey, "payload"u8, signature.Span)
             .Should().BeTrue("the lent signer must hold the private half of the reported key");
     }
 
@@ -221,9 +219,9 @@ public sealed class DevelopmentSigningKeySourceTests
         using var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
         var set = await sut.ReadAsync(ct);
-        using var first = await sut.CreateSignerAsync(set.SigningKey.Id, ct);
+        using var first = await sut.CreateSignerAsync(set.Single().Id, ct);
 
-        var act = () => sut.CreateSignerAsync(set.SigningKey.Id, ct);
+        var act = () => sut.CreateSignerAsync(set.Single().Id, ct);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*no pending private key is available*");
@@ -260,7 +258,7 @@ public sealed class DevelopmentSigningKeySourceTests
     public async Task Development_keys_are_served_through_the_ring_and_can_sign_a_jws()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var ring = new SigningKeyRing(BuildEphemeral(), new FakeTimeProvider());
+        using var ring = new SigningKeyRing(BuildEphemeral(), new FakeTimeProvider(), TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(ct);
 
         var outcome = await ring.SignAsync(
@@ -312,13 +310,13 @@ public sealed class DevelopmentSigningKeySourceTests
         using (var first = BuildPersisted(fs))
         {
             var set = await first.ReadAsync(ct);
-            firstModulus = set.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus!;
+            firstModulus = set.Single().PublicKey.RsaPublicParameters!.Value.Modulus!;
         }
 
         using var second = BuildPersisted(fs);
         var secondSet = await second.ReadAsync(ct);
 
-        secondSet.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus
+        secondSet.Single().PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().Equal(firstModulus,
                 "a persisted key must survive a restart, or tokens issued before it would stop verifying");
     }
@@ -331,7 +329,7 @@ public sealed class DevelopmentSigningKeySourceTests
 
         var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
 
-        set.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus
+        set.Single().PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().Equal(winner.ExportParameters(false).Modulus,
                 "hosts sharing a key folder must sign with the one key on disk, not each with its own");
     }
@@ -359,13 +357,13 @@ public sealed class DevelopmentSigningKeySourceTests
         var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
         var set = await sut.ReadAsync(ct);
-        using var signer = await sut.CreateSignerAsync(set.SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(set.Single().Id, ct);
 
         sut.Dispose();
 
         var signature = await signer.SignAsync("payload"u8.ToArray(), ct);
         SigningAlgorithms.Verify(
-                SigningAlgorithm.RS256, set.SigningKey.PublicKey, "payload"u8, signature.Span)
+                SigningAlgorithm.RS256, set.Single().PublicKey, "payload"u8, signature.Span)
             .Should().BeTrue("the signer owns the key once it is lent, so the source must not dispose it");
     }
 
@@ -378,8 +376,8 @@ public sealed class DevelopmentSigningKeySourceTests
         var first = await sut.ReadAsync(ct);
         var second = await sut.ReadAsync(ct);
 
-        second.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus
-            .Should().Equal(first.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus,
+        second.Single().PublicKey.RsaPublicParameters!.Value.Modulus
+            .Should().Equal(first.Single().PublicKey.RsaPublicParameters!.Value.Modulus,
                 "minting a fresh key on a later read would invalidate every token already issued");
     }
 
@@ -391,11 +389,11 @@ public sealed class DevelopmentSigningKeySourceTests
         var set = await sut.ReadAsync(ct);
         await sut.ReadAsync(ct);
 
-        using var signer = await sut.CreateSignerAsync(set.SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(set.Single().Id, ct);
         var signature = await signer.SignAsync("payload"u8.ToArray(), ct);
 
         SigningAlgorithms.Verify(
-                SigningAlgorithm.RS256, set.SigningKey.PublicKey, "payload"u8, signature.Span)
+                SigningAlgorithm.RS256, set.Single().PublicKey, "payload"u8, signature.Span)
             .Should().BeTrue("the memoized key set and the pending private key must stay in step");
     }
 
@@ -409,14 +407,14 @@ public sealed class DevelopmentSigningKeySourceTests
             Enumerable.Range(0, 8).Select(_ => Task.Run(async () => await sut.ReadAsync(ct), ct)));
 
         var moduli = sets
-            .Select(set => Convert.ToHexString(set.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus!))
+            .Select(set => Convert.ToHexString(set.Single().PublicKey.RsaPublicParameters!.Value.Modulus!))
             .Distinct();
         moduli.Should().ContainSingle("concurrent reads must not each mint their own key");
 
-        using var signer = await sut.CreateSignerAsync(sets[0].SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(sets[0].Single().Id, ct);
         var signature = await signer.SignAsync("payload"u8.ToArray(), ct);
         SigningAlgorithms.Verify(
-                SigningAlgorithm.RS256, sets[0].SigningKey.PublicKey, "payload"u8, signature.Span)
+                SigningAlgorithm.RS256, sets[0].Single().PublicKey, "payload"u8, signature.Span)
             .Should().BeTrue();
     }
 
@@ -518,7 +516,7 @@ public sealed class DevelopmentSigningKeySourceTests
 
         var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
 
-        set.Keys.Should().ContainSingle();
+        set.Should().ContainSingle();
     }
 
     [Fact]
@@ -528,7 +526,7 @@ public sealed class DevelopmentSigningKeySourceTests
 
         var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
 
-        set.Keys.Should().ContainSingle();
+        set.Should().ContainSingle();
     }
 
     [Fact]

@@ -14,8 +14,6 @@ public sealed class SigningSelfTestTests
     {
         public ReadOnlyMemory<byte>? LastSigningInput { get; private set; }
 
-        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
-
         public Task<ReadOnlyMemory<byte>> SignAsync(
             ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
         {
@@ -93,7 +91,7 @@ public sealed class SigningSelfTestTests
         // A wrong-length blob is not a mismatch a verifier can weigh; on some platforms it throws.
         // Either way it is a failed self-test, never a crash out of the ring.
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var signer = new GarbageSigner(SigningAlgorithm.ES256);
+        var signer = new GarbageSigner();
         var key = BuildKey(ec);
 
         var act = async () => await SigningSelfTest.RunAsync(signer, key, TestContext.Current.CancellationToken);
@@ -111,7 +109,7 @@ public sealed class SigningSelfTestTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var signer = new CapturingSigner(rsa);
         var keyThatCannotBeVerifiedUnderItsAlgorithm = new SigningKey(
-            new SourceKeyId("current"), "kid", SigningAlgorithm.RS256, PublicKeyParameters.FromEc(ec.ExportParameters(false)), null);
+            new SourceKeyId("current"), "kid", SigningAlgorithm.RS256, PublicKeyParameters.FromEc(ec.ExportParameters(false)), DateTimeOffset.MinValue, DateTimeOffset.MaxValue);
 
         var act = async () => await SigningSelfTest.RunAsync(signer, keyThatCannotBeVerifiedUnderItsAlgorithm, TestContext.Current.CancellationToken);
 
@@ -153,23 +151,20 @@ public sealed class SigningSelfTestTests
     }
 
     [Fact]
-    public async Task RunAsync_treats_a_signers_cancellation_for_another_token_as_unavailable_even_while_the_caller_is_cancelling()
+    public async Task RunAsync_reports_a_signer_cancelled_through_a_linked_token_as_the_callers_cancellation()
     {
-        // Host shutdown cancels the startup token while the remote signer independently times
-        // out: the exception carries the signer's token, not the caller's, so it is the signer's
-        // failure and is reported as such rather than mistaken for the caller's cancellation.
+        // A signer that links the caller's token to its own (as the Azure SDK does) throws with the
+        // linked token. On shutdown that is still the caller's cancellation, not a broken signer.
         using var rsa = RSA.Create(2048);
         using var callers = new CancellationTokenSource();
-        using var signers = new CancellationTokenSource();
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(callers.Token);
         await callers.CancelAsync();
-        await signers.CancelAsync();
-        var signer = new ThrowingSigner(new OperationCanceledException(signers.Token));
+        var signer = new ThrowingSigner(new OperationCanceledException(linked.Token));
         var key = BuildKey(rsa);
 
         var act = async () => await SigningSelfTest.RunAsync(signer, key, callers.Token);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.self_test_unavailable");
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Fact]
@@ -189,15 +184,13 @@ public sealed class SigningSelfTestTests
     }
 
     private static SigningKey BuildKey(RSA rsa) =>
-        new(new SourceKeyId("current"), "kid", SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), null);
+        new(new SourceKeyId("current"), "kid", SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), DateTimeOffset.MinValue, DateTimeOffset.MaxValue);
 
     private static SigningKey BuildKey(ECDsa ec) =>
-        new(new SourceKeyId("current"), "kid", SigningAlgorithm.ES256, PublicKeyParameters.FromEc(ec.ExportParameters(false)), null);
+        new(new SourceKeyId("current"), "kid", SigningAlgorithm.ES256, PublicKeyParameters.FromEc(ec.ExportParameters(false)), DateTimeOffset.MinValue, DateTimeOffset.MaxValue);
 
     private sealed class EcSigner(ECDsa ec) : ISigner
     {
-        public SigningAlgorithm Algorithm => SigningAlgorithm.ES256;
-
         public Task<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default) =>
             Task.FromResult<ReadOnlyMemory<byte>>(ec.SignData(signingInput.Span, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
 
@@ -206,10 +199,8 @@ public sealed class SigningSelfTestTests
         }
     }
 
-    private sealed class GarbageSigner(SigningAlgorithm algorithm) : ISigner
+    private sealed class GarbageSigner : ISigner
     {
-        public SigningAlgorithm Algorithm => algorithm;
-
         public Task<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default) =>
             Task.FromResult<ReadOnlyMemory<byte>>(new byte[] { 1, 2, 3 });
 
@@ -220,8 +211,6 @@ public sealed class SigningSelfTestTests
 
     private sealed class ThrowingSigner(Exception exception) : ISigner
     {
-        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
-
         public Task<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default) =>
             throw exception;
 

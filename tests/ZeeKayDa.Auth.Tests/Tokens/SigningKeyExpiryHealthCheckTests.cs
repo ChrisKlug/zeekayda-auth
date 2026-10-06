@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.Tokens;
@@ -166,9 +167,9 @@ public sealed class SigningKeyExpiryHealthCheckTests
     public async Task CheckHealthAsync_reports_the_ring_s_current_set_health()
     {
         using var privateKey = TestSigningKeys.PrivateKey(SigningAlgorithm.RS256);
-        var current = TestSigningKeys.SourceKey("current", SigningAlgorithm.RS256, privateKey) with { ExpiresAt = Now.AddDays(90) };
+        var current = TestSigningKeys.SourceKey("current", SigningAlgorithm.RS256, privateKey, expiresAt: Now.AddDays(90));
         var timeProvider = new FakeTimeProvider(Now);
-        using var ring = TestSigningKeys.Ring(SourceKeySet.Create(previous: null, current, next: null), privateKey, timeProvider);
+        using var ring = TestSigningKeys.Ring([current], privateKey, timeProvider);
         var sut = new SigningKeyExpiryHealthCheck(
             ring, timeProvider, Options.Create(new SigningKeyExpiryHealthCheckOptions()));
 
@@ -182,11 +183,11 @@ public sealed class SigningKeyExpiryHealthCheckTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Now.AddDays(1));
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Now.AddDays(1));
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
         var source = new CountingSigningKeySource(current, privateKeyPem);
         var timeProvider = new FakeTimeProvider(Now);
-        var ring = new SigningKeyRing(source, timeProvider);
+        var ring = new SigningKeyRing(source, timeProvider, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         timeProvider.SetUtcNow(Now.AddDays(2)); // advance past the signing key's expiry
@@ -205,10 +206,10 @@ public sealed class SigningKeyExpiryHealthCheckTests
     {
         public int ReadAsyncCallCount { get; private set; }
 
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             ReadAsyncCallCount++;
-            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -232,18 +233,19 @@ public sealed class SigningKeyExpiryHealthCheckTests
 
     private static SigningKeySet BuildSet(DateTimeOffset? signingKeyExpiresAt)
     {
-        var current = CreateRsaKey("current", signingKeyExpiresAt);
-        var keys = SourceKeySet.Create(previous: null, current, next: null);
-        return SigningKeySetBuilder.Build(keys);
+        // Built long before any expiry these tests evaluate against: the builder refuses a set whose
+        // only key has already expired, but the health check must judge one that expired since.
+        return SigningKeySetBuilder.Build(
+            [CreateRsaKey("current", signingKeyExpiresAt)], Now.AddYears(-10), TestSigningKeys.Options, NullLogger.Instance);
     }
 
     private static SourceKey CreateRsaKey(string id, DateTimeOffset? expiresAt)
     {
         using var rsa = RSA.Create(2048);
         var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
-        return new SourceKey(new SourceKeyId(id), SigningAlgorithm.RS256, publicKey, expiresAt);
+        return new SourceKey(new SourceKeyId(id), SigningAlgorithm.RS256, publicKey, expiresAt: expiresAt);
     }
 
     private static SigningKey BuildSigningKey(SourceKey sourceKey) =>
-        SigningKeySetBuilder.Build(SourceKeySet.Create(previous: null, sourceKey, next: null)).SigningKey;
+        SigningKeySetBuilder.Build([sourceKey], Now.AddYears(-10), TestSigningKeys.Options, NullLogger.Instance).SigningKey;
 }

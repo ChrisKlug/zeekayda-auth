@@ -85,7 +85,9 @@ public sealed class FileSigningIntegrationTests
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var previous = TestCertificateFactory.CreateRsaSelfSigned("previous", T0 - TimeSpan.FromDays(400), T0 + TimeSpan.FromDays(30));
-        using var current = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        // Just past the one-day lead time, and inside it plus the ten-minute retention, so Current
+        // signs and Previous stays published.
+        using var current = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(1) - TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(365));
         using var next = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
         var previousPath = tempDir.WritePemFile("previous.pem", previous);
         var currentPath = tempDir.WritePemFile("current.pem", current);
@@ -235,7 +237,9 @@ public sealed class FileSigningIntegrationTests
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var previous = TestCertificateFactory.CreateRsaSelfSigned("previous", T0 - TimeSpan.FromDays(400), T0 + TimeSpan.FromDays(30));
-        using var current = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(30), T0 + TimeSpan.FromDays(365));
+        // Just past the one-day lead time, and inside it plus the ten-minute retention, so Current
+        // signs and Previous stays published.
+        using var current = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(1) - TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(365));
         using var next = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
         var previousPath = tempDir.WritePfxFile("previous.pfx", previous, "previous-password");
         var currentPath = tempDir.WritePfxFile("current.pfx", current, CorrectPassword);
@@ -291,6 +295,46 @@ public sealed class FileSigningIntegrationTests
     }
 
     // ── Startup failure propagation ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Full_DI_wiring_fails_startup_naming_the_PEM_file_whose_key_does_not_match_the_configured_algorithm()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("rsa", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WritePemFile("current.pem", certificate);
+        var (services, _) = BuildServices(T0);
+
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
+        builder.AddPemFileSigning(path, SigningAlgorithm.ES256);
+
+        await using var provider = services.BuildServiceProvider();
+        var act = async () => await StartHostedServicesAsync(provider, ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
+        exception.Which.Message.Should().Contain(path);
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_fails_startup_naming_the_PFX_bundle_whose_key_does_not_match_the_configured_algorithm()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("rsa", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var (services, _) = BuildServices(T0);
+
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
+        builder.AddPfxFileSigning(path, SigningAlgorithm.ES256, _ => Task.FromResult(CorrectPassword));
+
+        await using var provider = services.BuildServiceProvider();
+        var act = async () => await StartHostedServicesAsync(provider, ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
+        exception.Which.Message.Should().Contain(path);
+    }
 
     [Fact]
     public async Task Full_DI_wiring_surfaces_missing_file_as_ZeeKayDaConfigurationException()

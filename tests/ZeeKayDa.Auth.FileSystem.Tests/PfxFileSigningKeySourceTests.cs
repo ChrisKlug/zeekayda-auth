@@ -63,11 +63,11 @@ public sealed class PfxFileSigningKeySourceTests
 
         var keySet = await sut.ReadAsync(ct);
 
-        keySet.Keys.Should().ContainSingle();
-        keySet.SigningKey.Id.Should().Be(new SourceKeyId(path));
-        keySet.SigningKey.Algorithm.Should().Be(SigningAlgorithm.RS256);
-        keySet.SigningKey.PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
-        keySet.SigningKey.PublicKey.RsaPublicParameters.Should().NotBeNull(
+        keySet.Should().ContainSingle();
+        keySet.Single().Id.Should().Be(new SourceKeyId(path));
+        keySet.Single().Algorithm.Should().Be(SigningAlgorithm.RS256);
+        keySet.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
+        keySet.Single().PublicKey.RsaPublicParameters.Should().NotBeNull(
             "only public material may ever leave this source's read path");
     }
 
@@ -82,8 +82,8 @@ public sealed class PfxFileSigningKeySourceTests
 
         var keySet = await sut.ReadAsync(ct);
 
-        keySet.SigningKey.NotBefore.Should().Be(new DateTimeOffset(certificate.NotBefore));
-        keySet.SigningKey.ExpiresAt.Should().Be(new DateTimeOffset(certificate.NotAfter));
+        keySet.Single().NotBefore.Should().Be(new DateTimeOffset(certificate.NotBefore));
+        keySet.Single().ExpiresAt.Should().Be(new DateTimeOffset(certificate.NotAfter));
     }
 
     [Fact]
@@ -96,12 +96,11 @@ public sealed class PfxFileSigningKeySourceTests
         var sut = BuildSource(new PfxFile(path, Password()));
         var keySet = await sut.ReadAsync(ct);
 
-        using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         var signingInput = "header.payload"u8.ToArray();
         var signature = await signer.SignAsync(signingInput, ct);
 
-        signer.Algorithm.Should().Be(SigningAlgorithm.RS256);
-        using var rsa = RSA.Create(keySet.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        using var rsa = RSA.Create(keySet.Single().PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the signer must be opened over the same key pair the read reported");
     }
@@ -130,8 +129,8 @@ public sealed class PfxFileSigningKeySourceTests
 
         var keySet = await sut.ReadAsync(ct);
 
-        keySet.Keys.Should().HaveCount(3);
-        keySet.Keys.Should().AllSatisfy(key =>
+        keySet.Should().HaveCount(3);
+        keySet.Should().AllSatisfy(key =>
             key.PublicKey.RsaPublicParameters.Should().NotBeNull("every slot yields public material only"));
     }
 
@@ -153,8 +152,8 @@ public sealed class PfxFileSigningKeySourceTests
 
         var keySet = await sut.ReadAsync(ct);
 
-        keySet.Keys.Should().HaveCount(2);
-        keySet.Keys.Select(k => k.Id.Value).Should().BeEquivalentTo([currentPath, nextPath]);
+        keySet.Should().HaveCount(2);
+        keySet.Select(k => k.Id.Value).Should().BeEquivalentTo([currentPath, nextPath]);
     }
 
     // ── Integrity: the password must actually authenticate the bundle ───────────────────────────
@@ -192,9 +191,9 @@ public sealed class PfxFileSigningKeySourceTests
 
         var keySet = await sut.ReadAsync(ct);
 
-        keySet.SigningKey.Id.Should().Be(new SourceKeyId(path));
-        keySet.SigningKey.PublicKey.RsaPublicParameters.Should().NotBeNull();
-        keySet.SigningKey.NotBefore.Should().BeCloseTo(T0 - TimeSpan.FromDays(1), TimeSpan.FromSeconds(1));
+        keySet.Single().Id.Should().Be(new SourceKeyId(path));
+        keySet.Single().PublicKey.RsaPublicParameters.Should().NotBeNull();
+        keySet.Single().NotBefore.Should().BeCloseTo(T0 - TimeSpan.FromDays(1), TimeSpan.FromSeconds(1));
     }
 
     [Fact]
@@ -258,7 +257,7 @@ public sealed class PfxFileSigningKeySourceTests
 
         var keySet = await sut.ReadAsync(ct);
 
-        keySet.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus
+        keySet.Single().PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().BeEquivalentTo(signingPublicKey.Modulus, "the leaf's key signs, not the CA's");
 
         // The certificate the old first-bag walk would have returned, proving the two differ and that
@@ -280,11 +279,11 @@ public sealed class PfxFileSigningKeySourceTests
         var sut = BuildSource(new PfxFile(path, Password()));
         var keySet = await sut.ReadAsync(ct);
 
-        using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         var signingInput = "header.payload"u8.ToArray();
         var signature = await signer.SignAsync(signingInput, ct);
 
-        using var rsa = RSA.Create(keySet.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        using var rsa = RSA.Create(keySet.Single().PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the published key and the signing key must be the same key pair");
     }
@@ -340,7 +339,7 @@ public sealed class PfxFileSigningKeySourceTests
 
         var keySet = await sut.ReadAsync(ct);
 
-        keySet.SigningKey.PublicKey.RsaPublicParameters.Should().NotBeNull();
+        keySet.Single().PublicKey.RsaPublicParameters.Should().NotBeNull();
     }
 
     [Fact]
@@ -361,7 +360,7 @@ public sealed class PfxFileSigningKeySourceTests
 
         var keySet = await sut.ReadAsync(ct);
 
-        var previous = keySet.Keys.Single(k => k.Id.Value == previousPath);
+        var previous = keySet.Single(k => k.Id.Value == previousPath);
         previous.PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().BeEquivalentTo(expectedPublicKey.Modulus, "the leaf is the stripped key's certificate, not the CA");
     }
@@ -405,7 +404,7 @@ public sealed class PfxFileSigningKeySourceTests
     // ── The three slots ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_publishes_every_configured_slot_and_signs_with_Current()
+    public async Task ReadAsync_lists_every_configured_slot()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -422,24 +421,8 @@ public sealed class PfxFileSigningKeySourceTests
 
         var keySet = await sut.ReadAsync(ct);
 
-        keySet.Keys.Should().HaveCount(3);
-        keySet.SigningKey.Id.Should().Be(new SourceKeyId(currentPath));
-        keySet.Keys.Select(k => k.Id.Value).Should().BeEquivalentTo([currentPath, previousPath, nextPath]);
-    }
-
-    [Fact]
-    public async Task ReadAsync_throws_when_no_Current_slot_is_configured()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var tempDir = new TempSigningKeyDirectory();
-        using var certificate = CreateRsaCertificate();
-        var path = tempDir.WritePfxFile("next.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(current: null, next: new PfxFile(path, Password()));
-
-        var act = async () => await sut.ReadAsync(ct);
-
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.no_current_key");
+        keySet.Should().HaveCount(3);
+        keySet.Select(k => k.Id.Value).Should().BeEquivalentTo([currentPath, previousPath, nextPath]);
     }
 
     // ── Read-once ────────────────────────────────────────────────────────────────────────────────
@@ -660,9 +643,9 @@ public sealed class PfxFileSigningKeySourceTests
 
         var keySet = await sut.ReadAsync(ct);
 
-        keySet.SigningKey.PublicKey.KeyType.Should().Be(SigningKeyType.Ec);
-        keySet.SigningKey.PublicKey.EcPublicParameters.Should().NotBeNull();
-        keySet.SigningKey.Algorithm.Should().Be(SigningAlgorithm.ES256);
+        keySet.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Ec);
+        keySet.Single().PublicKey.EcPublicParameters.Should().NotBeNull();
+        keySet.Single().Algorithm.Should().Be(SigningAlgorithm.ES256);
     }
 
     [Fact]
@@ -675,20 +658,19 @@ public sealed class PfxFileSigningKeySourceTests
         var sut = BuildSource(new PfxFile(path, Password()), algorithm: SigningAlgorithm.ES256);
         var keySet = await sut.ReadAsync(ct);
 
-        using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         var signingInput = "header.payload"u8.ToArray();
         var signature = await signer.SignAsync(signingInput, ct);
 
-        using var ecdsa = ECDsa.Create(keySet.SigningKey.PublicKey.EcPublicParameters!.Value);
+        using var ecdsa = ECDsa.Create(keySet.Single().PublicKey.EcPublicParameters!.Value);
         ecdsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256).Should().BeTrue();
     }
 
     [Fact]
-    public async Task ReadAsync_reports_a_mismatched_algorithm_verbatim_and_leaves_the_rejection_to_the_key_set_builder()
+    public async Task ReadAsync_reports_a_mismatched_algorithm_verbatim()
     {
-        // This source performs no key-pairing check of its own: SigningKeySetBuilder is the single
-        // choke point where a mismatched algorithm is rejected, keyed on the source id — which here
-        // is the file path, so the failure still names the offending bundle.
+        // This source performs no key-pairing check of its own; startup rejects the mismatch, naming
+        // the bundle (FileSigningIntegrationTests).
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
@@ -696,12 +678,8 @@ public sealed class PfxFileSigningKeySourceTests
         var sut = BuildSource(new PfxFile(path, Password()), algorithm: SigningAlgorithm.ES256);
 
         var keySet = await sut.ReadAsync(ct);
-        var act = () => SigningKeySetBuilder.Build(keySet);
 
-        keySet.SigningKey.Algorithm.Should().Be(SigningAlgorithm.ES256);
-        var exception = act.Should().Throw<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
-        exception.Which.Message.Should().Contain(path);
+        keySet.Single().Algorithm.Should().Be(SigningAlgorithm.ES256);
     }
 
     // ── CreateSignerAsync is only ever openable for Current ──────────────────────────────────────

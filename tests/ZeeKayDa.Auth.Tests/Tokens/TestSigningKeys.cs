@@ -1,4 +1,9 @@
 using System.Security.Cryptography;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
@@ -10,46 +15,61 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 /// </summary>
 internal static class TestSigningKeys
 {
+    /// <summary>A one-day lead time and one day of retention: a key signs once a day old, and the key
+    /// it succeeds stays published until the successor is two days old.</summary>
+    public static SigningKeyOptions Options => new()
+    {
+        LeadTime = TimeSpan.FromDays(1),
+        RetainRetiredKeysFor = TimeSpan.FromDays(1),
+    };
+
+    /// <summary>A date that makes a key older than any key dated <see cref="SigningNotBefore"/>, and
+    /// still published beside it.</summary>
+    public static DateTimeOffset RetiringNotBefore => DateTimeOffset.UtcNow - TimeSpan.FromDays(10);
+
+    /// <summary>A date past the lead time but inside the retention period, under <see cref="Options"/>:
+    /// the newest key with it signs, and older keys stay published.</summary>
+    public static DateTimeOffset SigningNotBefore => DateTimeOffset.UtcNow - TimeSpan.FromHours(36);
+
+    /// <summary>A date inside the lead time: a key with it is published but does not sign yet.</summary>
+    public static DateTimeOffset StagedNotBefore => DateTimeOffset.UtcNow - TimeSpan.FromHours(1);
+
     /// <summary>
-    /// Builds a key set whose signing key uses <paramref name="signingAlgorithm"/>, optionally
-    /// publishing further keys under <paramref name="alsoPublished"/>. At most two extra algorithms
-    /// can be published: the set has exactly three slots (Previous/Current/Next).
+    /// Builds a key set whose signing key uses <paramref name="signingAlgorithm"/>, publishing at
+    /// most two further keys: the first older than the signing key, the second staged.
     /// </summary>
     public static SigningKeySet KeySet(
         SigningAlgorithm signingAlgorithm, params SigningAlgorithm[] alsoPublished)
     {
-        var current = SourceKey("current", signingAlgorithm);
-        var previous = alsoPublished.Length > 0 ? SourceKey("previous", alsoPublished[0]) : null;
-        var next = alsoPublished.Length > 1 ? SourceKey("next", alsoPublished[1]) : null;
-
-        return SigningKeySetBuilder.Build(SourceKeySet.Create(previous, current, next));
+        using var privateKey = PrivateKey(signingAlgorithm);
+        return SigningKeySetBuilder.Build(
+            Keys(signingAlgorithm, privateKey, alsoPublished), DateTimeOffset.UtcNow, Options, NullLogger.Instance);
     }
 
     /// <summary>
     /// Builds an initialized ring whose signing key uses <paramref name="signingAlgorithm"/>,
-    /// optionally publishing further keys under <paramref name="alsoPublished"/> (at most two).
+    /// publishing at most two further keys: the first older than the signing key, the second staged.
     /// </summary>
     public static SigningKeyRing Ring(SigningAlgorithm signingAlgorithm, params SigningAlgorithm[] alsoPublished)
     {
         using var privateKey = PrivateKey(signingAlgorithm);
-        var current = SourceKey("current", signingAlgorithm, privateKey);
-        var previous = alsoPublished.Length > 0 ? SourceKey("previous", alsoPublished[0]) : null;
-        var next = alsoPublished.Length > 1 ? SourceKey("next", alsoPublished[1]) : null;
-
-        return Ring(SourceKeySet.Create(previous, current, next), privateKey);
+        return Ring(Keys(signingAlgorithm, privateKey, alsoPublished), privateKey);
     }
 
     /// <summary>
     /// Builds a ring over <paramref name="keys"/> and initializes it, signing with a copy of
-    /// <paramref name="signingPrivateKey"/>, which must pair with <paramref name="keys"/>' signing key.
+    /// <paramref name="signingPrivateKey"/>, which must pair with whichever key the ring chooses.
     /// <paramref name="decorateSigner"/>, when given, wraps the signer the source hands the ring.
     /// </summary>
     public static SigningKeyRing Ring(
-        SourceKeySet keys, AsymmetricAlgorithm signingPrivateKey, TimeProvider? timeProvider = null,
-        Func<ISigner, ISigner>? decorateSigner = null)
+        IReadOnlyList<SourceKey> keys, AsymmetricAlgorithm signingPrivateKey, TimeProvider? timeProvider = null,
+        Func<ISigner, ISigner>? decorateSigner = null, SanitizingLogger<SigningKeyRing>? logger = null)
     {
         var ring = new SigningKeyRing(
-            new InMemorySource(keys, signingPrivateKey, decorateSigner), timeProvider ?? TimeProvider.System);
+            new InMemorySource(keys, signingPrivateKey, decorateSigner),
+            timeProvider ?? TimeProvider.System,
+            Options,
+            logger ?? new CapturingSanitizingLogger<SigningKeyRing>());
 
         // Every await in initialization completes synchronously over an in-memory source and a
         // LocalSigner, so this never blocks; a ring that did would be a broken fixture, not a wait.
@@ -62,30 +82,67 @@ internal static class TestSigningKeys
     }
 
     /// <summary>Builds a ring over <paramref name="keys"/> without initializing it.</summary>
-    public static SigningKeyRing Uninitialized(SourceKeySet keys, AsymmetricAlgorithm signingPrivateKey, TimeProvider? timeProvider = null)
-        => new(new InMemorySource(keys, signingPrivateKey, decorateSigner: null), timeProvider ?? TimeProvider.System);
+    public static SigningKeyRing Uninitialized(
+        IReadOnlyList<SourceKey> keys, AsymmetricAlgorithm signingPrivateKey, TimeProvider? timeProvider = null,
+        Func<ISigner, ISigner>? decorateSigner = null)
+        => new(
+            new InMemorySource(keys, signingPrivateKey, decorateSigner),
+            timeProvider ?? TimeProvider.System,
+            Options,
+            new CapturingSanitizingLogger<SigningKeyRing>());
 
     /// <summary>Builds a ring over one freshly generated key without initializing it.</summary>
     public static SigningKeyRing Uninitialized(SigningAlgorithm algorithm)
     {
         using var privateKey = PrivateKey(algorithm);
-        return Uninitialized(SourceKeySet.Create(previous: null, SourceKey("current", algorithm, privateKey), next: null), privateKey);
+        return Uninitialized([SourceKey("current", algorithm, privateKey)], privateKey);
     }
 
     /// <summary>Builds a ring whose initialization fails with <paramref name="failure"/>, raised by the source's read.</summary>
     public static SigningKeyRing Failing(ZeeKayDaConfigurationFailure failure)
-        => new(new FailingSource(failure), TimeProvider.System);
+        => new(new FailingSource(failure), TimeProvider.System, Options, new CapturingSanitizingLogger<SigningKeyRing>());
 
-    /// <summary>Generates one key of the type and strength <paramref name="algorithm"/> requires.</summary>
-    public static SourceKey SourceKey(string id, SigningAlgorithm algorithm)
+    /// <summary>
+    /// Registers what <c>AddZeeKayDaAuthCore</c> provides and the ring's registration resolves —
+    /// the server options and the sanitizing logger — for tests that build a bare builder.
+    /// </summary>
+    public static IServiceCollection AddRingDependencies(this IServiceCollection services)
     {
-        using var privateKey = PrivateKey(algorithm);
-        return SourceKey(id, algorithm, privateKey);
+        services.AddOptions<AuthorizationServerOptions>()
+            .Configure(options => options.SigningKeys.RetainRetiredKeysFor = TimeSpan.FromHours(1));
+        services.TryAddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.TryAddSingleton(typeof(SanitizingLogger<>), typeof(RegisteredSanitizingLogger<>));
+        return services;
     }
 
-    /// <summary>Reports the public half of <paramref name="privateKey"/> as a key with no expiry.</summary>
-    public static SourceKey SourceKey(string id, SigningAlgorithm algorithm, AsymmetricAlgorithm privateKey)
-        => new(new SourceKeyId(id), algorithm, PublicKey(privateKey), ExpiresAt: null);
+    /// <summary>Generates one key of the type and strength <paramref name="algorithm"/> requires.</summary>
+    public static SourceKey SourceKey(string id, SigningAlgorithm algorithm, DateTimeOffset? notBefore = null)
+    {
+        using var privateKey = PrivateKey(algorithm);
+        return SourceKey(id, algorithm, privateKey, notBefore);
+    }
+
+    /// <summary>Reports the public half of <paramref name="privateKey"/> as a key.</summary>
+    public static SourceKey SourceKey(
+        string id, SigningAlgorithm algorithm, AsymmetricAlgorithm privateKey,
+        DateTimeOffset? notBefore = null, DateTimeOffset? expiresAt = null)
+        => new(new SourceKeyId(id), algorithm, PublicKey(privateKey), notBefore, expiresAt);
+
+    private static List<SourceKey> Keys(
+        SigningAlgorithm signingAlgorithm, AsymmetricAlgorithm signingPrivateKey, SigningAlgorithm[] alsoPublished)
+    {
+        if (alsoPublished.Length == 0)
+            return [SourceKey("current", signingAlgorithm, signingPrivateKey)];
+
+        List<SourceKey> keys =
+        [
+            SourceKey("current", signingAlgorithm, signingPrivateKey, SigningNotBefore),
+            SourceKey("previous", alsoPublished[0], RetiringNotBefore),
+        ];
+        if (alsoPublished.Length > 1)
+            keys.Add(SourceKey("next", alsoPublished[1], StagedNotBefore));
+        return keys;
+    }
 
     /// <summary>Generates a private key of the type and strength <paramref name="algorithm"/> requires.</summary>
     public static AsymmetricAlgorithm PrivateKey(SigningAlgorithm algorithm) => algorithm switch
@@ -120,16 +177,16 @@ internal static class TestSigningKeys
     /// caller keeps ownership of the key it passed.
     /// </summary>
     private sealed class InMemorySource(
-        SourceKeySet keys, AsymmetricAlgorithm signingPrivateKey, Func<ISigner, ISigner>? decorateSigner)
+        IReadOnlyList<SourceKey> keys, AsymmetricAlgorithm signingPrivateKey, Func<ISigner, ISigner>? decorateSigner)
         : ISigningKeySource, IDisposable
     {
         private readonly AsymmetricAlgorithm _privateKey = Copy(signingPrivateKey);
 
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) => Task.FromResult(keys);
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) => Task.FromResult(keys);
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
-            ISigner signer = new LocalSigner(keys.SigningKey.Algorithm, Copy(_privateKey));
+            ISigner signer = new LocalSigner(keys.Single(key => key.Id == id).Algorithm, Copy(_privateKey));
             return Task.FromResult(decorateSigner is null ? signer : decorateSigner(signer));
         }
 
@@ -138,7 +195,7 @@ internal static class TestSigningKeys
 
     private sealed class FailingSource(ZeeKayDaConfigurationFailure failure) : ISigningKeySource
     {
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
             => throw new ZeeKayDaConfigurationException(failure);
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)

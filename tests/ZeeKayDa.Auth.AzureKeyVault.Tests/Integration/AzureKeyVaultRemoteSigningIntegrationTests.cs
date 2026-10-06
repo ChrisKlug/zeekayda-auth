@@ -105,14 +105,15 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Full_DI_wiring_publishes_previous_and_staged_versions_alongside_the_signing_one()
+    public async Task Full_DI_wiring_signs_with_the_newest_version_past_the_lead_time_and_publishes_its_predecessor_and_the_staged_one()
     {
         var ct = TestContext.Current.CancellationToken;
         var now = T0 + TimeSpan.FromDays(30);
         var (services, reader, _, _) = BuildServices(now);
         reader.AddRsaVersion("v1", createdOn: T0);
-        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
-        reader.AddRsaVersion("v3", createdOn: now - TimeSpan.FromHours(1)); // Younger than the delay -> staged.
+        // Past the one-day lead time, and inside it plus the ten-minute retention: v2 signs, v1 stays published.
+        reader.AddRsaVersion("v2", createdOn: now - TimeSpan.FromDays(1) - TimeSpan.FromMinutes(5));
+        reader.AddRsaVersion("v3", createdOn: now - TimeSpan.FromHours(1)); // Inside the lead time -> staged.
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
@@ -122,9 +123,9 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().HaveCount(3,
-            "the signing version, one previous version (the default count), and the staged version are all published");
+            "the signing version, its predecessor still inside retention, and the staged version are all published");
         ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")),
-            "v2 is the newest version older than the pre-activation delay");
+            "v2 is the newest version past the lead time");
     }
 
     [Fact]

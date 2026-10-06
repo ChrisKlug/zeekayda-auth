@@ -17,23 +17,10 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// the host restarts.
 /// </para>
 /// <para>
-/// The version-to-slot mapping is derived entirely from the vault's own durable per-version
-/// metadata (<c>CreatedOn</c>, <c>Enabled</c>, <c>NotBefore</c>, <c>ExpiresOn</c>), so every
-/// replica and every restart derives the same answer with no local state. A version is <b>eligible
-/// to sign</b> when it is enabled, inside its own validity window, and was created at least
-/// <see cref="AzureKeyVaultRemoteSigningOptions.PreActivationDelay"/> ago — except the
-/// chronologically-first version ever recorded, which is exempt from the delay so a brand-new
-/// deployment starts without waiting (see <see cref="KeyVaultVersionSelector"/>). The newest
-/// eligible version signs; every enabled version newer than it — whatever is keeping it from
-/// signing yet — is published as staged; and up to
-/// <see cref="AzureKeyVaultRemoteSigningOptions.PreviousVersionsToPublish"/> enabled versions older
-/// than the signing one stay published so relying parties can verify tokens they signed.
-/// </para>
-/// <para>
-/// Disabling a version in the vault is the operator's revocation lever: a disabled version is
-/// excluded from every slot unconditionally. An expired-but-enabled older version still publishes —
-/// tokens it signed before expiry are still within their own lifetime — until the operator disables
-/// it.
+/// Lists every enabled version, dated by the vault's own durable metadata (see
+/// <see cref="KeyVaultVersions"/>), so every replica and every restart lists the same keys with no
+/// local state. The framework decides which version signs. Disabling a version in the vault is the
+/// operator's revocation lever: a disabled version is never listed.
 /// </para>
 /// <para>
 /// A failed or empty vault read always throws — never a partial key set — so a vault outage is
@@ -50,8 +37,7 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 internal sealed class AzureKeyVaultRemoteSigningKeySource(
     IOptions<AzureKeyVaultRemoteSigningOptions> options,
     IKeyVaultKeyReader keyReader,
-    IKeyVaultSigner signer,
-    TimeProvider timeProvider) : ISigningKeySource
+    IKeyVaultSigner signer) : ISigningKeySource
 {
     private readonly IOptions<AzureKeyVaultRemoteSigningOptions> _options = options;
     private readonly IKeyVaultSigner _signer = signer;
@@ -62,18 +48,17 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
     // would strand any reader queued behind it.
     private readonly SemaphoreSlim _readGate = new(1, 1);
 
-    // The one key set this source ever reports. Assigned only after every selected version's public
+    // The one key set this source ever reports. Assigned only after every listed version's public
     // material has been fetched, so a failed read is never cached and a retry re-reads the vault;
     // once a read has succeeded, no later one can observe a version rotated in after startup.
-    private SourceKeySet? _keySet;
+    private IReadOnlyList<SourceKey>? _keySet;
 
-    // The signing version the memoized read selected, with the versioned key URI its signer is
-    // pinned to. volatile: written under _readGate, read by CreateSignerAsync without it — no
-    // happens-before edge otherwise connects the two.
-    private volatile SigningVersion? _signingVersion;
+    // The versioned key URI of every version the memoized read listed, by version. volatile: written
+    // under _readGate, read by CreateSignerAsync without it.
+    private volatile IReadOnlyDictionary<string, Uri>? _listedVersions;
 
     /// <inheritdoc/>
-    public async Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
         await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -96,26 +81,17 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
                         "has no versions. Create at least one key version before starting the host."));
             }
 
-            var (signing, published) = KeyVaultVersionSelector.SelectVersions(
-                allVersions,
-                options.PreviousVersionsToPublish,
-                options.PreActivationDelay,
-                timeProvider.GetUtcNow(),
-                KeyVaultVersionSelector.SelectionContext.ForKey(
-                    options.KeyIdentifier.Name, options.KeyIdentifier.VaultUri));
+            var enabled = KeyVaultVersions.Enabled(
+                allVersions, "key", options.KeyIdentifier.Name, options.KeyIdentifier.VaultUri);
 
-            var signingKey = await ToSourceKeyAsync(signing, options, cancellationToken).ConfigureAwait(false);
+            var keys = new List<SourceKey>(enabled.Count);
+            foreach (var version in enabled)
+                keys.Add(await ToSourceKeyAsync(version, options, cancellationToken).ConfigureAwait(false));
 
-            var alsoPublished = new List<SourceKey>(published.Count);
-            foreach (var version in published)
-                alsoPublished.Add(await ToSourceKeyAsync(version, options, cancellationToken).ConfigureAwait(false));
-
-            // The key set is built first and the signing version committed only after nothing can
-            // throw any more, so a failed read can never leave a signer openable for a version that
-            // was never reported in a key set.
-            var keySet = new SourceKeySet(signingKey, [.. alsoPublished]);
-            _signingVersion = new SigningVersion(signing.Version, signing.Id);
-            return _keySet = keySet;
+            // Committed only after nothing can throw any more, so a failed read can never leave a
+            // signer openable for a version that was never listed.
+            _listedVersions = enabled.ToDictionary(v => v.Version, v => v.Id, StringComparer.Ordinal);
+            return _keySet = keys;
         }
         finally
         {
@@ -128,23 +104,18 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var signingVersion = _signingVersion;
-
-        // Only the version the memoized read selected as the signing key is ever openable for
-        // signing. Published-only versions never sign, so an id naming one of them — or an id
-        // arriving before any successful read — is a defect in the caller rather than a request
-        // this source should honour.
-        if (signingVersion is null || !string.Equals(signingVersion.Version, id.Value, StringComparison.Ordinal))
+        // An id this source never listed, or one arriving before any successful read, is a defect in
+        // the caller rather than a request this source should honour.
+        if (_listedVersions is not { } listed || !listed.TryGetValue(id.Value, out var keyVersionUri))
         {
             throw new InvalidOperationException(
-                $"{nameof(CreateSignerAsync)} was called for key '{id.Value}', which is not the Key Vault " +
-                "key version this source most recently reported as the signing key. This source reads the " +
-                "vault exactly once, so the reported signing version cannot change after startup, and only " +
-                "it ever signs.");
+                $"{nameof(CreateSignerAsync)} was called for key '{id.Value}', which is not a Key Vault " +
+                "key version this source listed. This source reads the vault exactly once, so the listed " +
+                "versions cannot change after startup.");
         }
 
         return Task.FromResult<ISigner>(new KeyVaultRemoteSigner(
-            _signer, signingVersion.KeyVersionUri, signingVersion.Version, _options.Value.Algorithm));
+            _signer, keyVersionUri, id.Value, _options.Value.Algorithm));
     }
 
     /// <summary>
@@ -164,8 +135,8 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
             new SourceKeyId(version.Version),
             options.Algorithm,
             ToPublicKeyParameters(publicKey, keyType),
-            ExpiresAt: version.ExpiresOn,
-            NotBefore: version.NotBefore);
+            notBefore: KeyVaultVersions.NotBefore(version),
+            expiresAt: version.ExpiresOn);
     }
 
     /// <summary>
@@ -178,12 +149,6 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
         keyType == SigningKeyType.Rsa
             ? PublicKeyParameters.FromRsa(((RSA)publicKey).ExportParameters(false))
             : PublicKeyParameters.FromEc(((ECDsa)publicKey).ExportParameters(false));
-
-    /// <summary>
-    /// The signing version a successful read selected: its version string (the source key id) and
-    /// the versioned key URI its signer is pinned to.
-    /// </summary>
-    private sealed record SigningVersion(string Version, Uri KeyVersionUri);
 
     /// <summary>
     /// <see cref="ISigner"/> wrapper over the shared, DI-owned <see cref="IKeyVaultSigner"/> seam
@@ -206,7 +171,5 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
         {
             // Intentionally empty — see the class remarks.
         }
-
-        public SigningAlgorithm Algorithm => algorithm;
     }
 }

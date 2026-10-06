@@ -29,10 +29,12 @@ internal static partial class AuthorizationServerOptionsValidation
                 .Concat(options.IdToken.Validate())
                 .Concat(options.DiscoveryDocument.Validate())
                 .Concat(options.JwksEndpoint.Validate())
+                .Concat(options.SigningKeys.Validate())
                 .Concat(options.SecurityHeaders.Validate())
                 .Concat(options.AuthorizationEndpoint.Validate())
                 .Concat(options.EndSessionEndpoint.Validate())
                 .Concat(ValidateLifetimeRelationships(options))
+                .Concat(ValidateSigningKeyLeadTime(options))
                 .Concat(ValidatePkceMatchesTheCodeGrant(options))
                 .Concat(ValidateEndpointUris(options, issuerUri));
 

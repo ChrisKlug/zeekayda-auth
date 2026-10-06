@@ -64,10 +64,10 @@ internal sealed class WindowsCertificateStoreSigningKeySource(
     // The one key set this source ever reports. Memoized so a second read cannot observe a
     // certificate removed or replaced after startup — read-once is a property of this source, not
     // only of the ring.
-    private SourceKeySet? _keySet;
+    private IReadOnlyList<SourceKey>? _keySet;
 
     /// <inheritdoc/>
-    public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -76,14 +76,14 @@ internal sealed class WindowsCertificateStoreSigningKeySource(
         lock (_readLock)
         {
             if (_keySet is not null)
-                return Task.FromResult<SourceKeySet>(_keySet);
+                return Task.FromResult(_keySet);
 
             var previous = ReadSlot(options.Previous, options);
             var current = ReadSlot(options.Current, options);
             var next = ReadSlot(options.Next, options);
 
-            _keySet = SourceKeySet.Create(previous, current, next);
-            return Task.FromResult<SourceKeySet>(_keySet);
+            _keySet = [.. new[] { previous, current, next }.OfType<SourceKey>()];
+            return Task.FromResult(_keySet);
         }
     }
 
@@ -140,8 +140,8 @@ internal sealed class WindowsCertificateStoreSigningKeySource(
             new SourceKeyId(lookup.NormalizedThumbprint),
             options.Algorithm,
             ToPublicKeyParameters(publicKey, keyType),
-            ExpiresAt: new DateTimeOffset(certificate.NotAfter),
-            NotBefore: new DateTimeOffset(certificate.NotBefore));
+            notBefore: new DateTimeOffset(certificate.NotBefore),
+            expiresAt: new DateTimeOffset(certificate.NotAfter));
     }
 
     /// <summary>

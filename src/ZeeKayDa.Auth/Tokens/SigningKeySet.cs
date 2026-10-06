@@ -5,14 +5,17 @@ namespace ZeeKayDa.Auth.Tokens;
 /// which one signs, and which algorithms to advertise.
 /// </summary>
 /// <remarks>
-/// The only way to obtain an instance is <see cref="SigningKeySetBuilder.Build"/>, and its
-/// constructor is <see langword="internal"/>.
+/// Only the framework constructs one, and <see cref="SigningKey"/> is always among
+/// <see cref="Published"/>.
 /// </remarks>
 public sealed class SigningKeySet
 {
     internal SigningKeySet(
         SigningKey signingKey, IReadOnlyList<SigningKey> published, IReadOnlyList<SigningAlgorithm> advertisedAlgorithms)
     {
+        if (!published.Any(key => string.Equals(key.Kid, signingKey.Kid, StringComparison.Ordinal)))
+            throw new ArgumentException("The signing key must be among the published keys.", nameof(published));
+
         SigningKey = signingKey;
         Published = published;
         AdvertisedAlgorithms = advertisedAlgorithms;
@@ -21,7 +24,7 @@ public sealed class SigningKeySet
     /// <summary>Gets the key that signs.</summary>
     public SigningKey SigningKey { get; }
 
-    /// <summary>Gets every key to publish, signing key included.</summary>
+    /// <summary>Gets every key to publish, signing key included, oldest first.</summary>
     public IReadOnlyList<SigningKey> Published { get; }
 
     /// <summary>
@@ -31,8 +34,8 @@ public sealed class SigningKeySet
     /// </summary>
     /// <remarks>
     /// Derived from the published set, not from <see cref="SigningKey"/> alone, so an algorithm
-    /// does not drop out of discovery while tokens signed under it are still live (a <c>Previous</c>
-    /// key's algorithm remains advertised for as long as that key is published).
+    /// does not drop out of discovery while tokens signed under it are still live (a retired key's
+    /// algorithm remains advertised for as long as that key is published).
     /// </remarks>
     public IReadOnlyList<SigningAlgorithm> AdvertisedAlgorithms { get; }
 }

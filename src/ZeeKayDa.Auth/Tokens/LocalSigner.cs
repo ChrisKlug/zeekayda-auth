@@ -59,7 +59,4 @@ public sealed class LocalSigner : ISigner
 
         _privateKey.Dispose();
     }
-
-    /// <inheritdoc/>
-    public SigningAlgorithm Algorithm => _algorithm;
 }

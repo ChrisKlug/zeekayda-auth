@@ -1054,8 +1054,10 @@ read-once StaticSigningKeyRing model.
 - Least privilege — private material is downloaded for the signing version only, only in
   `CreateSignerAsync`; every published version (signing one included) is read as public `Cer`.
   Closed — proven by `ReadAsync_never_downloads_private_material_for_any_version`,
-  `CreateSignerAsync_downloads_private_material_for_exactly_the_signing_version`, and
-  `CreateSignerAsync_rejects_a_published_only_id_without_downloading_anything`.
+  `CreateSignerAsync_downloads_private_material_for_exactly_the_version_asked_for`, and
+  `CreateSignerAsync_rejects_an_id_that_was_not_listed_without_downloading_anything`
+  [renamed by #823 from CreateSignerAsync_downloads_private_material_for_exactly_the_signing_version and
+  CreateSignerAsync_rejects_a_published_only_id_without_downloading_anything: any listed version may sign].
 - Secret-vs-Cer divergence — a downloaded key whose public half differs from the published one is
   refused and disposed, failing startup as `signing.azure_key_vault.secret_cer_mismatch`, absorbed
   verbatim by the ring so the divergence is named. Closed — proven by
@@ -1638,7 +1640,9 @@ non-JWS prefix plus a fresh 32-byte nonce, not a fixed constant.
   `RunAsync_throws_self_test_failed_when_the_signer_returns_bytes_that_are_not_a_signature`,
   `RunAsync_throws_self_test_unavailable_naming_only_the_type_when_the_signer_throws`,
   `RunAsync_treats_a_cancellation_the_signer_raised_itself_as_self_test_unavailable`,
-  `RunAsync_treats_a_signers_cancellation_for_another_token_as_unavailable_even_while_the_caller_is_cancelling`.
+  RunAsync_treats_a_signers_cancellation_for_another_token_as_unavailable_even_while_the_caller_is_cancelling
+  [reversed by #823: a cancellation is the caller's whenever the caller's token is cancelled, proven by
+  `RunAsync_reports_a_signer_cancelled_through_a_linked_token_as_the_callers_cancellation`].
 - Exactly one signer is opened, nothing signs before it passed, the failure is sticky, and startup
   propagates it unmodified. Closed — `InitializeAsync_builds_the_key_set_and_opens_the_signer_exactly_once`,
   `SignAsync_throws_InvalidOperationException_before_initialization`,

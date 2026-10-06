@@ -31,18 +31,10 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
     /// <para>
     /// The vault is read exactly once, at startup — rotation is picked up by restarting the host.
     /// Rotate by creating a new version of the key (Key Vault's automatic rotation policy does
-    /// exactly that): the new version is published as staged until it has existed for
-    /// <see cref="AzureKeyVaultRemoteSigningOptions.PreActivationDelay"/>, so relying parties see
-    /// its public half in the JWKS before it ever signs, and a restart after that promotes it to
-    /// the signing key. Versions it succeeds stay published per
-    /// <see cref="AzureKeyVaultRemoteSigningOptions.PreviousVersionsToPublish"/>; disabling a
-    /// version in the vault removes it from publication unconditionally.
-    /// </para>
-    /// <para>
-    /// If no enabled version is eligible to sign — every one expired, not yet valid, or younger
-    /// than the pre-activation delay (the key's chronologically-first version ever is exempt from
-    /// the delay) — startup fails closed with a configuration error rather than signing with an
-    /// ineligible key.
+    /// exactly that). Every enabled version is listed, dated from its creation; the framework's
+    /// <see cref="ZeeKayDa.Auth.Tokens.SigningKeyOptions"/> decide which one signs and how long the
+    /// versions it succeeds stay published. Disabling a version in the vault removes it from
+    /// publication unconditionally.
     /// </para>
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
@@ -51,8 +43,7 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
     /// <param name="algorithm">The JWS algorithm to sign with.</param>
     /// <param name="credential">The credential used to authenticate to Key Vault.</param>
     /// <param name="configure">
-    /// An optional callback to further configure <see cref="AzureKeyVaultRemoteSigningOptions"/>
-    /// (for example, <see cref="AzureKeyVaultRemoteSigningOptions.PreActivationDelay"/>).
+    /// An optional callback to further configure <see cref="AzureKeyVaultRemoteSigningOptions"/>.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -92,7 +83,6 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
                 IValidateOptions<AzureKeyVaultRemoteSigningOptions>,
                 AzureKeyVaultRemoteSigningOptionsValidator>());
 
-        builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.TryAddSingleton<IKeyVaultKeyReader, KeyVaultKeyReader>();
         builder.Services.TryAddSingleton<IKeyVaultSigner, KeyVaultSigner>();
 
@@ -121,13 +111,10 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
     /// </para>
     /// <para>
     /// The vault is read exactly once, at startup — rotation is picked up by restarting the host.
-    /// Rotate by creating a new version of the certificate: it is published as staged until it has
-    /// existed for <see cref="AzureKeyVaultCachedSigningOptions.PreActivationDelay"/>, so relying
-    /// parties see its public half in the JWKS before it ever signs, and a restart after that
-    /// promotes it to the signing key. Versions it succeeds stay published per
-    /// <see cref="AzureKeyVaultCachedSigningOptions.PreviousVersionsToPublish"/>; disabling a
-    /// version in the vault removes it from publication unconditionally. If no enabled version is
-    /// eligible to sign, startup fails closed with a configuration error.
+    /// Rotate by creating a new version of the certificate. Every enabled version is listed, dated
+    /// from its creation; the framework's <see cref="ZeeKayDa.Auth.Tokens.SigningKeyOptions"/>
+    /// decide which one signs and how long the versions it succeeds stay published. Disabling a
+    /// version in the vault removes it from publication unconditionally.
     /// </para>
     /// <para>
     /// Private key material is downloaded for exactly one version — the signing one. Every other
@@ -144,8 +131,7 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
     /// <param name="algorithm">The JWS algorithm to sign with.</param>
     /// <param name="credential">The credential used to authenticate to Key Vault.</param>
     /// <param name="configure">
-    /// An optional callback to further configure <see cref="AzureKeyVaultCachedSigningOptions"/>
-    /// (for example, <see cref="AzureKeyVaultCachedSigningOptions.PreActivationDelay"/>).
+    /// An optional callback to further configure <see cref="AzureKeyVaultCachedSigningOptions"/>.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -185,7 +171,6 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
                 IValidateOptions<AzureKeyVaultCachedSigningOptions>,
                 AzureKeyVaultCachedSigningOptionsValidator>());
 
-        builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         builder.Services.TryAddSingleton<IKeyVaultCertificateReader, KeyVaultCertificateReader>();
 
         return builder;

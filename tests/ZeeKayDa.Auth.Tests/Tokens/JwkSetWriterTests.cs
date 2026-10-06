@@ -2,6 +2,7 @@ using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
@@ -72,8 +73,7 @@ public sealed class JwkSetWriterTests
             {
                 Modulus = paddedModulus,
                 Exponent = DecodeBase64Url(Rfc7638ExponentBase64Url),
-            }),
-            ExpiresAt: null));
+            })));
 
         var jwk = SingleKey(JwkSetWriter.Write(keySet.Published));
 
@@ -93,12 +93,12 @@ public sealed class JwkSetWriterTests
                 new SourceKeyId("rsa"),
                 SigningAlgorithm.RS256,
                 PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: true)),
-                ExpiresAt: null),
+                TestSigningKeys.RetiringNotBefore),
             current: new SourceKey(
                 new SourceKeyId("ec"),
                 SigningAlgorithm.ES256,
                 PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: true)),
-                ExpiresAt: null));
+                TestSigningKeys.SigningNotBefore));
 
         using var document = JsonDocument.Parse(JwkSetWriter.Write(keySet.Published));
 
@@ -139,7 +139,8 @@ public sealed class JwkSetWriterTests
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private static SigningKeySet BuildKeySet(SourceKey current, SourceKey? previous = null)
-        => SigningKeySetBuilder.Build(SourceKeySet.Create(previous, current, next: null));
+        => SigningKeySetBuilder.Build(
+            previous is null ? [current] : [previous, current], DateTimeOffset.UtcNow, TestSigningKeys.Options, NullLogger.Instance);
 
     private static SourceKey RsaSourceKey(string id, string modulusBase64Url, string exponentBase64Url)
         => new(
@@ -149,8 +150,7 @@ public sealed class JwkSetWriterTests
             {
                 Modulus = DecodeBase64Url(modulusBase64Url),
                 Exponent = DecodeBase64Url(exponentBase64Url),
-            }),
-            ExpiresAt: null);
+            }));
 
     private static SourceKey EcSourceKey(string id, string xBase64Url, string yBase64Url)
         => new(
@@ -164,8 +164,7 @@ public sealed class JwkSetWriterTests
                     X = DecodeBase64Url(xBase64Url),
                     Y = DecodeBase64Url(yBase64Url),
                 },
-            }),
-            ExpiresAt: null);
+            }));
 
     private static JsonElement SingleKey(byte[] jwkSetBytes)
     {

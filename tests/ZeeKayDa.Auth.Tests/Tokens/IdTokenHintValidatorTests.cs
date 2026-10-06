@@ -25,7 +25,10 @@ public sealed class IdTokenHintValidatorTests
     private static readonly RSA ForeignKey = RSA.Create(2048);
 
     private static readonly SigningKeyRing Ring = TestSigningKeys.Ring(
-        SourceKeySet.Create(RsaSourceKey("previous", PreviousKey), RsaSourceKey("current", CurrentKey), next: null),
+        [
+            RsaSourceKey("previous", PreviousKey, TestSigningKeys.RetiringNotBefore),
+            RsaSourceKey("current", CurrentKey, TestSigningKeys.SigningNotBefore),
+        ],
         CurrentKey);
 
     private static SigningKeySet KeySet => Ring.Current;
@@ -38,8 +41,8 @@ public sealed class IdTokenHintValidatorTests
 
     private sealed class RsaSource(RSA rsa) : ISigningKeySource
     {
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, RsaSourceKey("current", rsa), next: null));
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SourceKey>>([RsaSourceKey("current", rsa)]);
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
@@ -66,11 +69,11 @@ public sealed class IdTokenHintValidatorTests
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
-    private static SourceKey RsaSourceKey(string id, RSA rsa) => new(
+    private static SourceKey RsaSourceKey(string id, RSA rsa, DateTimeOffset? notBefore = null) => new(
         new SourceKeyId(id),
         SigningAlgorithm.RS256,
         PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)),
-        ExpiresAt: null);
+        notBefore);
 
     private static IdTokenHintValidator CreateValidator(SigningKeyRing? ring = null) =>
         new(ring ?? Ring, Options.Create(new AuthorizationServerOptions { Issuer = Issuer }));
@@ -92,7 +95,7 @@ public sealed class IdTokenHintValidatorTests
     };
 
     private static SigningKeyRing EcRing(ECDsa ec) => TestSigningKeys.Ring(
-        SourceKeySet.Create(previous: null, TestSigningKeys.SourceKey("current", SigningAlgorithm.ES256, ec), next: null),
+        [TestSigningKeys.SourceKey("current", SigningAlgorithm.ES256, ec)],
         ec);
 
     /// <summary>Signs exactly the header and payload given, RS256 with the current key unless told otherwise.</summary>
@@ -126,7 +129,7 @@ public sealed class IdTokenHintValidatorTests
     [Fact]
     public async Task Validate_accepts_an_id_token_issued_by_JwtTokenIssuer()
     {
-        using var ring = new SigningKeyRing(new RsaSource(CurrentKey), new FakeTimeProvider());
+        using var ring = new SigningKeyRing(new RsaSource(CurrentKey), new FakeTimeProvider(), TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         var issued = await new JwtTokenIssuer(ring).IssueAsync(
             new IdTokenIssuanceContext(new HintClient(), new IssuedToken("access", TokenKind.AccessToken)),
@@ -306,8 +309,7 @@ public sealed class IdTokenHintValidatorTests
     [Fact]
     public void Validate_refuses_a_hint_signed_by_a_key_the_server_does_not_publish()
     {
-        var foreignKid = SigningKeySetBuilder.Build(SourceKeySet.Create(
-            previous: null, RsaSourceKey("current", ForeignKey), next: null)).SigningKey.Kid;
+        var foreignKid = TestSigningKeys.Ring([RsaSourceKey("current", ForeignKey)], ForeignKey).Current.SigningKey.Kid;
         var token = Sign(Header(foreignKid), Claims(), input => SignRs256(ForeignKey, input));
 
         var hint = CreateValidator().Validate(token, ClientId);

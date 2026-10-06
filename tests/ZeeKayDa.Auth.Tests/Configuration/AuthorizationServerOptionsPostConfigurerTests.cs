@@ -14,6 +14,68 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
         return options;
     }
 
+    // ── Defaults that depend on other settings ───────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(30, 5, 30)]
+    [InlineData(5, 45, 45)]
+    public void PostConfigure_defaults_RetainRetiredKeysFor_to_the_longer_token_lifetime_plus_the_clock_skew_tolerance(
+        int accessTokenMinutes, int idTokenMinutes, int expectedMinutes)
+    {
+        var options = new AuthorizationServerOptions
+        {
+            ClockSkewTolerance = TimeSpan.FromSeconds(7),
+            TokenEndpoint =
+            {
+                AccessTokenLifetime = TimeSpan.FromMinutes(accessTokenMinutes),
+                IdTokenLifetime = TimeSpan.FromMinutes(idTokenMinutes),
+            },
+        };
+
+        PostConfigure(options).SigningKeys.RetainRetiredKeysFor
+            .Should().Be(TimeSpan.FromMinutes(expectedMinutes) + TimeSpan.FromSeconds(7));
+    }
+
+    [Fact]
+    public void PostConfigure_saturates_the_default_RetainRetiredKeysFor_for_an_unbounded_token_lifetime()
+    {
+        var options = new AuthorizationServerOptions { TokenEndpoint = { AccessTokenLifetime = TimeSpan.MaxValue } };
+
+        PostConfigure(options).SigningKeys.RetainRetiredKeysFor.Should().Be(TimeSpan.MaxValue);
+    }
+
+    [Fact]
+    public void PostConfigure_with_a_negative_ClockSkewTolerance_leaves_the_failure_to_validation()
+    {
+        var options = new AuthorizationServerOptions { ClockSkewTolerance = TimeSpan.FromSeconds(-1) };
+
+        var act = () => PostConfigure(options);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void PostConfigure_with_negative_lifetimes_and_skew_beyond_TimeSpan_MinValue_leaves_the_failures_to_validation()
+    {
+        var options = new AuthorizationServerOptions
+        {
+            ClockSkewTolerance = TimeSpan.MinValue,
+            TokenEndpoint = { AccessTokenLifetime = TimeSpan.FromDays(-1), IdTokenLifetime = TimeSpan.FromDays(-1) },
+        };
+
+        var act = () => PostConfigure(options);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void PostConfigure_keeps_an_explicit_RetainRetiredKeysFor()
+    {
+        var options = new AuthorizationServerOptions { SigningKeys = { RetainRetiredKeysFor = TimeSpan.FromDays(3) } };
+
+        PostConfigure(options).SigningKeys.RetainRetiredKeysFor.Should().Be(TimeSpan.FromDays(3));
+    }
+
     // ── Every collection ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
