@@ -21,9 +21,8 @@ at independently:
   constructor is internal, so "hash the handle before you key anything on it" is unrepresentable in
   third-party code rather than documented.
 - **Source versus ring.** `ISigningKeySource` is public and third-party-implementable; the
-  `ISigningKeyRing` it feeds is framework-sealed (`InitializeAsync` and `CurrentOrNull` are
-  `internal`), so a source can never bypass the startup self-test by implementing the ring itself
-  (`signing-keys.md`).
+  `SigningKeyRing` it feeds is a sealed class with an internal constructor, so nothing can stand in
+  for the ring and skip the startup self-test (`signing-keys.md`).
 
 Reach for this before reaching for a doc comment. It is what the register means by making the wrong
 thing impossible instead of forbidden.
@@ -32,8 +31,9 @@ thing impossible instead of forbidden.
 implementable directly, so a provider bypassing the framework base class also bypassed the derived
 `kid`, the load-time key validation and the active-signer self-test; the mitigation was a runtime
 warning naming the concrete type. #511 deleted that contract. `ISigningKeySource` reports data and
-lends a signer, and `ISigningKeyRing` — which owns selection, `kid` derivation, validation and the
-self-test — is framework-sealed, so the bypass is now unrepresentable rather than warned about.
+lends a signer, and `SigningKeyRing` — which owns selection, `kid` derivation, validation and the
+self-test — is a sealed class only the framework constructs, so the bypass is now unrepresentable rather
+than warned about.
 
 **`internal` plus `InternalsVisibleTo` is a correctness boundary, not a security one.** The assemblies
 are not strong-named and the attribute matches on simple assembly name alone, so anything that can

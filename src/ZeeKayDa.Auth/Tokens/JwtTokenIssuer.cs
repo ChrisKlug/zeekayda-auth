@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// The <see cref="ITokenIssuer"/> that issues JWTs: serializes the payload's claims to JSON, signs
-/// them through the <see cref="ISigningKeyRing"/>, and assembles the RFC 7515 §5.1 compact
+/// them through the <see cref="SigningKeyRing"/>, and assembles the RFC 7515 §5.1 compact
 /// serialization.
 /// </summary>
 /// <remarks>
@@ -37,7 +37,7 @@ public sealed class JwtTokenIssuer : ITokenIssuer
     private const string IdTokenType = "JWT";
     private const string AccessTokenHashClaim = "at_hash";
 
-    private readonly ISigningKeyRing _ring;
+    private readonly SigningKeyRing _ring;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="JwtTokenIssuer"/> class.
@@ -46,7 +46,7 @@ public sealed class JwtTokenIssuer : ITokenIssuer
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="keyRing"/> is <see langword="null"/>.
     /// </exception>
-    public JwtTokenIssuer(ISigningKeyRing keyRing)
+    public JwtTokenIssuer(SigningKeyRing keyRing)
     {
         ArgumentNullException.ThrowIfNull(keyRing);
         _ring = keyRing;

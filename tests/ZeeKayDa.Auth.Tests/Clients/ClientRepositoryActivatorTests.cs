@@ -3,6 +3,7 @@ using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Scopes;
 using ZeeKayDa.Auth.StartupVerification;
+using ZeeKayDa.Auth.Tests.Tokens;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Clients;
@@ -89,16 +90,16 @@ public sealed class ClientRepositoryActivatorTests
     {
         // The client subset check validates against the advertised algorithms, so it asks for them
         // rather than assuming it runs after the ring's own activator.
-        var ring = new RecordingSigningKeyRing(failure: null);
+        using var ring = TestSigningKeys.Uninitialized(SigningAlgorithm.RS256);
         var services = new ServiceCollection();
         services.AddSingleton<IClientRepository, CustomClientRepository>();
-        services.AddSingleton<ISigningKeyRing>(ring);
+        services.AddSingleton<SigningKeyRing>(ring);
         using var provider = services.BuildServiceProvider();
         var context = new StartupVerificationContext();
 
         await CreateSut(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
-        ring.EnsureInitializedCallCount.Should().Be(1);
+        ring.CurrentOrNull.Should().NotBeNull();
     }
 
     [Fact]
@@ -107,11 +108,11 @@ public sealed class ClientRepositoryActivatorTests
         // The ring's own activator reports the same failure, and the runner collapses identical
         // failures within a phase. Catching it here would encode an assumption about what another
         // check reports — and would swallow it entirely if that check were ever absent.
-        var ring = new RecordingSigningKeyRing(
+        using var ring = TestSigningKeys.Failing(
             new ZeeKayDaConfigurationFailure("signing.source_unavailable", "Simulated."));
         var services = new ServiceCollection();
         services.AddSingleton<IClientRepository, CustomClientRepository>();
-        services.AddSingleton<ISigningKeyRing>(ring);
+        services.AddSingleton<SigningKeyRing>(ring);
         using var provider = services.BuildServiceProvider();
         var context = new StartupVerificationContext();
 
@@ -134,30 +135,6 @@ public sealed class ClientRepositoryActivatorTests
         await CreateSut(provider).VerifyAsync(context, TestContext.Current.CancellationToken);
 
         context.Warnings.Should().ContainSingle().Which.Code.Should().Be("clients.inmemory_shadowed");
-    }
-
-    private sealed class RecordingSigningKeyRing(ZeeKayDaConfigurationFailure? failure) : ISigningKeyRing
-    {
-        public int EnsureInitializedCallCount { get; private set; }
-
-        public SigningKeySet Current => throw new NotSupportedException();
-
-        public Task<SigningOutcome> SignAsync<TState>(
-            TState state,
-            Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
-        {
-            EnsureInitializedCallCount++;
-
-            return failure is null
-                ? Task.CompletedTask
-                : throw new ZeeKayDaConfigurationException(failure);
-        }
-
-        SigningKeySet? ISigningKeyRing.CurrentOrNull => null;
     }
 
     private static ClientRepositoryActivator CreateSut(IServiceProvider provider) =>

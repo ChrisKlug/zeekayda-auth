@@ -65,7 +65,7 @@ public sealed class FileSigningIntegrationTests
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle("the single configured slot's public key must be published");
         ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
@@ -102,7 +102,7 @@ public sealed class FileSigningIntegrationTests
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().HaveCount(3, "every configured slot is published so relying parties can cache it");
         ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(current.GetRSAPublicKey()!.ExportParameters(false)));
@@ -130,7 +130,7 @@ public sealed class FileSigningIntegrationTests
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
         var publishedAtStartup = ring.Current.Published.Select(k => k.Kid).ToArray();
 
         File.Delete(currentPath);
@@ -217,7 +217,7 @@ public sealed class FileSigningIntegrationTests
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle();
         ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
@@ -252,7 +252,7 @@ public sealed class FileSigningIntegrationTests
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().HaveCount(3, "every configured slot is published, each opened with its own password");
         ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(current.GetRSAPublicKey()!.ExportParameters(false)));
@@ -278,7 +278,7 @@ public sealed class FileSigningIntegrationTests
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
         var publishedAtStartup = ring.Current.Published.Select(k => k.Kid).ToArray();
 
         File.Delete(currentPath);

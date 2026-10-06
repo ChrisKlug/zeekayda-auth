@@ -12,13 +12,13 @@ registration. Health reporting and signing configuration are independent decisio
 separately.
 
 **A health check never registers the thing it reports on.** `AddZeeKayDaSigningKeys()` registers no
-`ISigningKeyRing` and no `ISigningKeySource` — only the check itself, its options, and a
+`SigningKeyRing` and no `ISigningKeySource` — only the check itself, its options, and a
 `TimeProvider` fallback. An application that adds only the health check still starts; the probe
 reports `Unhealthy` naming the missing registration rather than throwing. Call
 `builder.AddSigningKeySource<TSource>()` (or a provider's own method) separately to give it something to report on.
 
 **The dependency it reports on is resolved as an optional `GetService`, not `GetRequiredService`.**
-`SigningKeyExpiryHealthCheck`'s constructor takes `ISigningKeyRing?`. A health check that cannot
+`SigningKeyExpiryHealthCheck`'s constructor takes `SigningKeyRing?`. A health check that cannot
 resolve a legitimately-optional dependency must not take down the whole health report by throwing
 during DI activation — `Unhealthy` is itself the correct signal for "not configured."
 

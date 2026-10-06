@@ -18,7 +18,7 @@ namespace ZeeKayDa.Auth.FileSystem.Tests;
 /// change-detection surface here — a replaced, deleted, or newly-added file is never picked up
 /// without a restart. Which key signs is decided entirely by which slot it is configured in, never
 /// by the clock, so this type holds no <c>TimeProvider</c>: the one clock check that remains, on the
-/// signing key's own validity window, belongs to <c>StaticSigningKeyRing</c> and is tested there.
+/// signing key's own validity window, belongs to <c>SigningKeyRing</c> and is tested there.
 /// </remarks>
 public sealed class PemFileSigningKeySourceTests
 {

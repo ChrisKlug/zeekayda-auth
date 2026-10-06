@@ -14,13 +14,13 @@ namespace ZeeKayDa.Auth.Tests.Extensions;
 public sealed class ZeeKayDaSigningKeyHealthChecksBuilderExtensionsTests
 {
     [Fact]
-    public void AddZeeKayDaSigningKeys_does_not_register_an_ISigningKeyRing()
+    public void AddZeeKayDaSigningKeys_does_not_register_an_SigningKeyRing()
     {
         var services = new ServiceCollection();
 
         services.AddHealthChecks().AddZeeKayDaSigningKeys();
 
-        services.Should().NotContain(d => d.ServiceType == typeof(ISigningKeyRing));
+        services.Should().NotContain(d => d.ServiceType == typeof(SigningKeyRing));
     }
 
     [Fact]

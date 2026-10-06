@@ -43,14 +43,14 @@ public sealed class ThirdPartySigningKeySourceRegistrationTests
     }
 
     [Fact]
-    public void AddSigningKeySource_registers_an_ISigningKeyRing_for_a_third_party_source()
+    public void AddSigningKeySource_registers_an_SigningKeyRing_for_a_third_party_source()
     {
         var services = new ServiceCollection();
 
         services.AddZeeKayDaAuthCoreForTesting().AddSigningKeySource<ExternalSigningKeySource>();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISigningKeyRing>().Should().NotBeNull();
+        provider.GetRequiredService<SigningKeyRing>().Should().NotBeNull();
     }
 
     [Fact]

@@ -6,11 +6,11 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Tests.Tokens;
 
 /// <summary>
-/// Exercises <see cref="StaticSigningKeyRing"/>: the one-time startup read, the signing key's
-/// expiry and signer-open/self-test checks that fail startup, <see cref="ISigningKeyRing.SignAsync{TState}"/>,
+/// Exercises <see cref="SigningKeyRing"/>: the one-time startup read, the signing key's
+/// expiry and signer-open/self-test checks that fail startup, <see cref="SigningKeyRing.SignAsync{TState}"/>,
 /// and ownership of the one <see cref="ISigner"/> it opens for the process lifetime.
 /// </summary>
-public sealed class StaticSigningKeyRingTests
+public sealed class SigningKeyRingTests
 {
     private static readonly DateTimeOffset Epoch = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
@@ -180,7 +180,7 @@ public sealed class StaticSigningKeyRingTests
     [Fact]
     public void Current_throws_InvalidOperationException_before_initialization()
     {
-        using var ring = new StaticSigningKeyRing(NeverCalledSource(), new FakeTimeProvider(Epoch));
+        using var ring = new SigningKeyRing(NeverCalledSource(), new FakeTimeProvider(Epoch));
 
         var act = () => ring.Current;
 
@@ -192,7 +192,7 @@ public sealed class StaticSigningKeyRingTests
     {
         // No token is ever signed by a signer that has not passed the self-test: before
         // initialization there is no signer at all, and signing refuses rather than opening one.
-        ISigningKeyRing ring = new StaticSigningKeyRing(NeverCalledSource(), new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(NeverCalledSource(), new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.SignAsync(0, static (_, _) => new ReadOnlyMemory<byte>([1, 2, 3]), TestContext.Current.CancellationToken);
 
@@ -202,7 +202,7 @@ public sealed class StaticSigningKeyRingTests
     [Fact]
     public void CurrentOrNull_is_null_before_initialization()
     {
-        ISigningKeyRing ring = new StaticSigningKeyRing(NeverCalledSource(), new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(NeverCalledSource(), new FakeTimeProvider(Epoch));
 
         ring.CurrentOrNull.Should().BeNull();
     }
@@ -214,7 +214,7 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var (source, current) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -228,8 +228,8 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var (source, current) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90));
-        using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
-        await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         var outcome = await ring.SignAsync(
             "payload"u8.ToArray(),
@@ -246,8 +246,8 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90));
-        using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
-        await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         ((IDisposable)ring).Dispose();
 
         var act = async () => await ring.SignAsync(
@@ -275,8 +275,8 @@ public sealed class StaticSigningKeyRingTests
                     new TrackingSigner(new LocalSigner(SigningAlgorithm.RS256, signerRsa), () => disposeCount++));
             });
 
-        using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
-        await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         ((IDisposable)ring).Dispose();
         ((IDisposable)ring).Dispose();
@@ -369,7 +369,7 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(-1));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -383,7 +383,7 @@ public sealed class StaticSigningKeyRingTests
         using var rsa = RSA.Create(2048);
         // A day out, far beyond the clock-skew grace: a real misconfiguration, not a drifting clock.
         var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90), notBefore: Epoch.AddDays(1));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -400,7 +400,7 @@ public sealed class StaticSigningKeyRingTests
         using var rsa = RSA.Create(2048);
         var (source, _) = CreateSuccessfulSource(
             rsa, expiresAt: Epoch.AddDays(90), notBefore: Epoch.AddMinutes(4));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -413,7 +413,7 @@ public sealed class StaticSigningKeyRingTests
         using var rsa = RSA.Create(2048);
         var (source, _) = CreateSuccessfulSource(
             rsa, expiresAt: Epoch.AddDays(90), notBefore: Epoch.AddMinutes(6));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -432,7 +432,7 @@ public sealed class StaticSigningKeyRingTests
         using var rsa = RSA.Create(2048);
         var (source, _) = CreateSuccessfulSource(
             rsa, expiresAt: Epoch.AddDays(90), notBefore: DateTimeOffset.MinValue);
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -446,7 +446,7 @@ public sealed class StaticSigningKeyRingTests
         using var rsa = RSA.Create(2048);
         var (source, _) = CreateSuccessfulSource(
             rsa, expiresAt: DateTimeOffset.MaxValue, notBefore: DateTimeOffset.MaxValue);
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -461,7 +461,7 @@ public sealed class StaticSigningKeyRingTests
         // exact. One second past expiry is rejected, with no counterpart to the not-before grace.
         using var rsa = RSA.Create(2048);
         var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddSeconds(-1));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -474,7 +474,7 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90), notBefore: Epoch.AddDays(-1));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -495,11 +495,11 @@ public sealed class StaticSigningKeyRingTests
             ExpiresAt: Epoch.AddDays(400),
             NotBefore: Epoch.AddDays(30));
         var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90), next: next);
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
-        ((StaticSigningKeyRing)ring).Current.Published.Should().HaveCount(2);
+        ring.Current.Published.Should().HaveCount(2);
     }
 
     [Fact]
@@ -508,7 +508,7 @@ public sealed class StaticSigningKeyRingTests
         using var rsa = RSA.Create(2048);
         var (source, current) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90));
         current.NotBefore.Should().BeNull("a source whose keys carry no validity window reports null");
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -521,7 +521,7 @@ public sealed class StaticSigningKeyRingTests
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, null, null)), // no Current
             (_, _) => throw new NotSupportedException("must not be reached"));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -538,7 +538,7 @@ public sealed class StaticSigningKeyRingTests
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => throw new InvalidOperationException("simulated: key vault unreachable"));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -556,7 +556,7 @@ public sealed class StaticSigningKeyRingTests
             _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => Task.FromResult<ISigner>(
                 new WrongAlgorithmSigner(new LocalSigner(SigningAlgorithm.RS256, RSA.Create(2048)), SigningAlgorithm.RS384)));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -574,7 +574,7 @@ public sealed class StaticSigningKeyRingTests
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, otherRsa)));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -597,14 +597,14 @@ public sealed class StaticSigningKeyRingTests
         Task<ISigner> LendSharedSigner(SourceKeyId _, CancellationToken __) => Task.FromResult<ISigner>(sharedSigner);
 
         var firstSource = new FakeSigningKeySource(t => Task.FromResult<SourceKeySet>(ReadCurrent(t)), LendSharedSigner);
-        ISigningKeyRing firstRing = new StaticSigningKeyRing(firstSource, new FakeTimeProvider(Epoch));
+        SigningKeyRing firstRing = new SigningKeyRing(firstSource, new FakeTimeProvider(Epoch));
 
         // Succeeds: the shared signer's very first call is a genuine sign over this self-test's own
         // random nonce, so it verifies and the cache is primed with a correct-for-that-nonce signature.
         await firstRing.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         var secondSource = new FakeSigningKeySource(t => Task.FromResult<SourceKeySet>(ReadCurrent(t)), LendSharedSigner);
-        ISigningKeyRing secondRing = new StaticSigningKeyRing(secondSource, new FakeTimeProvider(Epoch));
+        SigningKeyRing secondRing = new SigningKeyRing(secondSource, new FakeTimeProvider(Epoch));
 
         // A second, independent self-test generates a different random nonce, but the shared signer
         // returns the signature it cached for the first ring's nonce — this must fail verification.
@@ -626,7 +626,7 @@ public sealed class StaticSigningKeyRingTests
             _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => Task.FromResult<ISigner>(
                 new TrackingSigner(new LocalSigner(SigningAlgorithm.RS256, otherRsa), () => disposeCount++)));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
@@ -647,7 +647,7 @@ public sealed class StaticSigningKeyRingTests
                 new TrackingSigner(
                     new WrongAlgorithmSigner(new LocalSigner(SigningAlgorithm.RS256, RSA.Create(2048)), SigningAlgorithm.RS384),
                     () => disposeCount++)));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
@@ -661,7 +661,7 @@ public sealed class StaticSigningKeyRingTests
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<SourceKeySet>((SourceKeySet)null!),
             (_, _) => throw new NotSupportedException("must not be reached"));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -678,7 +678,7 @@ public sealed class StaticSigningKeyRingTests
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => Task.FromResult<ISigner>((ISigner)null!));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -696,7 +696,7 @@ public sealed class StaticSigningKeyRingTests
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => throw new InvalidOperationException($"GET https://contoso-prod.vault.azure.net/keys/signing 401; {secret}"));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -716,7 +716,7 @@ public sealed class StaticSigningKeyRingTests
             _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
             (_, _) => throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure("provider.custom_failure", "a provider-specific failure")));
-        ISigningKeyRing ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
@@ -731,11 +731,11 @@ public sealed class StaticSigningKeyRingTests
         // relying on running after the ring's own activator.
         using var rsa = RSA.Create(2048);
         var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90));
-        using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
-        await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         var firstCurrent = ring.Current;
 
-        await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         source.ReadAsyncCallCount.Should().Be(1);
         source.CreateSignerAsyncCallCount.Should().Be(1);
@@ -747,10 +747,10 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90));
-        using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
         await Task.WhenAll(Enumerable.Range(0, 8).Select(_ =>
-            ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken)));
+            ring.EnsureInitializedAsync(TestContext.Current.CancellationToken)));
 
         source.ReadAsyncCallCount.Should().Be(1);
         source.CreateSignerAsyncCallCount.Should().Be(1);
@@ -765,12 +765,12 @@ public sealed class StaticSigningKeyRingTests
             _ => throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure("signing.source_unavailable", "Simulated failure.")),
             (_, _) => throw new NotSupportedException());
-        using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
 
-        var first = async () => await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        var first = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         await first.Should().ThrowAsync<ZeeKayDaConfigurationException>();
 
-        var second = async () => await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        var second = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         (await second.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*source_unavailable*");
@@ -782,8 +782,8 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90));
-        using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
-        await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         var act = async () => await ring.SignAsync<byte[]>(
             [], null!, TestContext.Current.CancellationToken);
@@ -796,8 +796,8 @@ public sealed class StaticSigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90));
-        using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
-        await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         var mutableBuffer = "payload"u8.ToArray();
 
         var outcome = await ring.SignAsync(
@@ -826,8 +826,8 @@ public sealed class StaticSigningKeyRingTests
                 reusingSigner = new BufferReusingSigner(new LocalSigner(SigningAlgorithm.RS256, signerRsa));
                 return Task.FromResult<ISigner>(reusingSigner);
             });
-        using var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
-        await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         var outcome = await ring.SignAsync(
             "payload"u8.ToArray(), static (_, state) => state, TestContext.Current.CancellationToken);
@@ -909,12 +909,12 @@ public sealed class StaticSigningKeyRingTests
     }
 
     /// <summary>
-    /// Builds and initializes a <see cref="StaticSigningKeyRing"/> over a source created by
+    /// Builds and initializes a <see cref="SigningKeyRing"/> over a source created by
     /// <paramref name="createSource"/> from a successful, disposal-tracking read/signer pair,
     /// collapsing the arrange steps shared by every disposal-ordering test into one call so each test
     /// differs only in the source shape it builds and what it asserts afterwards.
     /// </summary>
-    private static async Task<StaticSigningKeyRing> CreateInitializedRingAsync(
+    private static async Task<SigningKeyRing> CreateInitializedRingAsync(
         List<string> disposalOrder,
         Func<
             Func<CancellationToken, Task<SourceKeySet>>,
@@ -926,8 +926,8 @@ public sealed class StaticSigningKeyRingTests
         var (read, createSigner, _) = CreateSuccessfulReadAndSigner(
             new ReadAndSignerRequest(rsa, Epoch.AddDays(90), disposalOrder, signerThrowsOnDispose));
         var source = createSource(read, createSigner);
-        var ring = new StaticSigningKeyRing(source, new FakeTimeProvider(Epoch));
-        await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         return ring;
     }
 }

@@ -3,7 +3,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <summary>
 /// Produces signature bytes over a formed JWS signing input for exactly one activation of one
 /// signing key. Returned by <see cref="ISigningKeySource.CreateSignerAsync"/> for the key a
-/// <see cref="StaticSigningKeyRing"/> has selected as its signer.
+/// <see cref="SigningKeyRing"/> has selected as its signer.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -15,7 +15,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </para>
 /// <para>
 /// <b><see cref="IDisposable.Dispose"/> is a normative contract, not advisory prose.</b> A
-/// <see cref="StaticSigningKeyRing"/> calls <see cref="ISigningKeySource.CreateSignerAsync"/>
+/// <see cref="SigningKeyRing"/> calls <see cref="ISigningKeySource.CreateSignerAsync"/>
 /// exactly once, at startup, and owns the returned instance for the process lifetime, disposing it
 /// exactly once, at shutdown. <c>Dispose</c> on an implementation of this interface <b>MUST</b>
 /// release only the per-activation handle or resource this specific instance introduced. A remote
@@ -31,7 +31,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <see cref="ISigningKeySource.CreateSignerAsync"/> <b>MUST</b> return a freshly created
 /// <see cref="ISigner"/> instance that is exclusively owned by the caller; it <b>MUST NOT</b> cache
 /// a previously returned instance and re-lend it from a second call. A
-/// <see cref="StaticSigningKeyRing"/> hands the instance to every <c>SignAsync</c> call for the
+/// <see cref="SigningKeyRing"/> hands the instance to every <c>SignAsync</c> call for the
 /// rest of the process, and assumes the instance handed back has no other live holder.
 /// </para>
 /// </remarks>
@@ -61,7 +61,7 @@ public interface ISigner : IDisposable
     /// This MUST be the true algorithm <see cref="SignAsync"/> uses to produce its signature bytes —
     /// not merely the algorithm the provider intended or was asked for. Immediately after
     /// <see cref="ISigningKeySource.CreateSignerAsync"/> returns an <see cref="ISigner"/> for a given
-    /// key, <see cref="StaticSigningKeyRing"/> compares this property against that same key's
+    /// key, <see cref="SigningKeyRing"/> compares this property against that same key's
     /// <see cref="SigningKey.Algorithm"/> — already validated for algorithm/key-strength
     /// compatibility when the set was built — and rejects the signer on any mismatch. Without this check a provider bug could silently produce a JWS
     /// whose header names one algorithm while the signature bytes were actually produced under

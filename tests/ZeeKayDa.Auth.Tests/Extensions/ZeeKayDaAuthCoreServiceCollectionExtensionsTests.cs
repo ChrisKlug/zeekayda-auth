@@ -8,6 +8,7 @@ using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.StartupVerification;
+using ZeeKayDa.Auth.Tests.Tokens;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
@@ -134,20 +135,6 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
 
     // ── Issue #521: TokenKind-to-issuer dispatch via keyed DI ────────────────────────────────────
 
-    private sealed class StubRing : ISigningKeyRing
-    {
-        public SigningKeySet Current => throw new InvalidOperationException("not initialized");
-
-        public Task<SigningOutcome> SignAsync<TState>(
-            TState state,
-            Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
-            CancellationToken cancellationToken = default) => throw new InvalidOperationException("not initialized");
-
-        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-        SigningKeySet? ISigningKeyRing.CurrentOrNull => null;
-    }
-
     private sealed class StubIssuer : ITokenIssuer
     {
         public Task<IssuedToken> IssueAsync(
@@ -161,7 +148,7 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     public void AddZeeKayDaAuthCore_registers_JwtTokenIssuer_for_each_TokenKind(TokenKind kind)
     {
         var services = ServicesWithLogging();
-        services.AddSingleton<ISigningKeyRing>(new StubRing());
+        services.AddSingleton<SigningKeyRing>(TestSigningKeys.Uninitialized(SigningAlgorithm.RS256));
 
         services.AddZeeKayDaAuthCore(ValidIssuer);
 
@@ -173,7 +160,7 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     public void AddZeeKayDaAuthCore_keeps_a_hosts_own_issuer_registration_for_a_kind()
     {
         var services = ServicesWithLogging();
-        services.AddSingleton<ISigningKeyRing>(new StubRing());
+        services.AddSingleton<SigningKeyRing>(TestSigningKeys.Uninitialized(SigningAlgorithm.RS256));
         var hostIssuer = new StubIssuer();
         services.AddKeyedSingleton<ITokenIssuer>(TokenKind.AccessToken, hostIssuer);
 

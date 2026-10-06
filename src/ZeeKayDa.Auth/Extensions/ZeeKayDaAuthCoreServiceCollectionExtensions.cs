@@ -117,13 +117,6 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         // host adds after this call too.
         services.TryAddSingleton(_ => new ServiceLifetimeScanner(services));
 
-        // Registered here as well as by AddSigningKeySource for coverage: StaticSigningKeyRing has
-        // a public constructor, so a host can register an ISigningKeyRing itself without going
-        // through AddSigningKeySource, and without this that ring would never be initialized or
-        // self-tested. A silent no-op when no ring is registered at all.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Scoped<IStartupActivator, SigningKeyRingActivator>());
-
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupVerifier, HttpLoopbackIssuerVerifier>());
         services.TryAddEnumerable(
@@ -179,14 +172,14 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupActivator, AdvertisedAuthMethodsActivator>());
 
-        // A factory rather than type activation: the ISigningKeyRing parameter is optional, and DI
+        // A factory rather than type activation: the SigningKeyRing parameter is optional, and DI
         // activation cannot supply a default for a service that is not registered.
         services.TryAddSingleton(sp => new ClientRegistrationValidator(
             sp.GetRequiredService<IOptions<AuthorizationServerOptions>>(),
             sp.GetRequiredService<AdvertisedAuthMethods>(),
             sp.GetRequiredService<ClientSecretHasherRegistry>(),
             sp.GetRequiredService<SanitizingLogger<ClientRegistrationValidator>>(),
-            sp.GetService<ISigningKeyRing>()));
+            sp.GetService<SigningKeyRing>()));
         services.TryAddSingleton<IClientRegistrationValidator>(sp => sp.GetRequiredService<ClientRegistrationValidator>());
 
         services.TryAddSingleton(sp => new FrameworkThenHostValidator(

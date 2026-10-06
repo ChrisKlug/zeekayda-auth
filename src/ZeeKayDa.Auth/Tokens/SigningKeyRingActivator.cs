@@ -6,14 +6,14 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Framework-owned <see cref="IStartupActivator"/> that initializes whatever <see cref="ISigningKeyRing"/>
+/// Framework-owned <see cref="IStartupActivator"/> that initializes whatever <see cref="SigningKeyRing"/>
 /// is registered, once per host startup — so a misconfigured signing key fails the host rather than
 /// the first request — and then reconciles
 /// <see cref="IdTokenOptions.AdvertisedSigningAlgorithms"/> against the key set it built.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A silent no-op when no <see cref="ISigningKeyRing"/> is registered at all: <c>AddZeeKayDaSigningKeys()</c>
+/// A silent no-op when no <see cref="SigningKeyRing"/> is registered at all: <c>AddZeeKayDaSigningKeys()</c>
 /// (the health check registration) deliberately never registers a ring, so a host that adds only the
 /// health check must still start. A host that serves the protocol endpoints is held to the stronger
 /// rule by <c>SigningKeyRingPresenceVerifier</c> instead.
@@ -28,14 +28,14 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </remarks>
 internal sealed class SigningKeyRingActivator(
     IOptions<AuthorizationServerOptions> options,
-    ISigningKeyRing? ring = null) : IStartupActivator
+    SigningKeyRing? ring = null) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "SigningKeyRing";
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Delegates to the internal <c>ISigningKeyRing.EnsureInitializedAsync</c> and lets any thrown
+    /// Delegates to the internal <c>SigningKeyRing.EnsureInitializedAsync</c> and lets any thrown
     /// <see cref="ZeeKayDaConfigurationException"/> propagate — the runner treats it as if its
     /// <see cref="ZeeKayDaConfigurationException.AggregatedFailures"/> had already been added to
     /// <paramref name="context"/>.
@@ -53,10 +53,10 @@ internal sealed class SigningKeyRingActivator(
     /// <summary>
     /// Reconciles the operator's optional narrowing filter with the key set the ring just built, and
     /// checks the resulting advertised set against what OpenID Connect Discovery requires of it.
-    /// Runs after <c>EnsureInitializedAsync</c>, which is what makes <see cref="ISigningKeyRing.Current"/>
+    /// Runs after <c>EnsureInitializedAsync</c>, which is what makes <see cref="SigningKeyRing.Current"/>
     /// safe to read here.
     /// </summary>
-    private void VerifyAdvertisedAlgorithms(StartupVerificationContext context, ISigningKeyRing ring)
+    private void VerifyAdvertisedAlgorithms(StartupVerificationContext context, SigningKeyRing ring)
     {
         var filter = options.Value.IdToken.AdvertisedSigningAlgorithms;
         var keySet = ring.Current;

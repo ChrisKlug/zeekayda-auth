@@ -35,7 +35,7 @@ internal readonly record struct NumericDate(bool Present, DateTimeOffset? Value)
 /// requires — is the endpoint's question, not this type's.
 /// </remarks>
 internal sealed class AccessTokenValidator(
-    ISigningKeyRing keyRing,
+    SigningKeyRing keyRing,
     IOptions<AuthorizationServerOptions> options,
     TimeProvider time)
 {

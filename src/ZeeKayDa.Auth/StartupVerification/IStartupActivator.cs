@@ -20,7 +20,7 @@ namespace ZeeKayDa.Auth.StartupVerification;
 /// point of the phase: an application with a broken issuer should not open a remote connection to
 /// a key vault before it is told about the issuer. Within the phase, execution order is
 /// registration order and must not be relied on — a check needing another's work done first asks
-/// for it, rather than assuming a position. That is why <c>ISigningKeyRing</c> exposes an
+/// for it, rather than assuming a position. That is why <c>SigningKeyRing</c> exposes an
 /// idempotent initialization call instead of requiring its activator to run first.
 /// </para>
 /// <para>

@@ -20,7 +20,7 @@ internal sealed partial class ClientRegistrationValidator(
     AdvertisedAuthMethods advertisedAuthMethods,
     ClientSecretHasherRegistry registry,
     SanitizingLogger<ClientRegistrationValidator> logger,
-    ISigningKeyRing? keyRing) : IClientRegistrationValidator
+    SigningKeyRing? keyRing) : IClientRegistrationValidator
 {
     // The resolver validates on every lookup, so an advisory written each time would let anyone
     // who knows a client_id repeat it per request. Keyed by what the store returned, never by

@@ -128,7 +128,7 @@ public sealed class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensionsTests
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+        provider.GetRequiredService<SigningKeyRing>().Should().BeOfType<SigningKeyRing>();
         provider.GetService<ISigningKeySource>().Should().BeNull(
             "the ring constructs and owns the one source instance — nothing may reach it through the container");
     }
@@ -275,7 +275,7 @@ public sealed class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensionsTests
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+        provider.GetRequiredService<SigningKeyRing>().Should().BeOfType<SigningKeyRing>();
         provider.GetService<ISigningKeySource>().Should().BeNull(
             "the ring constructs and owns the one source instance — nothing may reach it through the container");
     }

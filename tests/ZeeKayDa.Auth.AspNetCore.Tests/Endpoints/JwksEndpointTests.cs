@@ -158,7 +158,7 @@ public sealed class JwksEndpointTests
 
         var doc = await GetDocumentAsync(host);
 
-        var ring = host.Resolve<ISigningKeyRing>();
+        var ring = host.Resolve<SigningKeyRing>();
         doc.GetProperty("keys").EnumerateArray()
             .Select(jwk => jwk.GetProperty("kid").GetString())
             .Should().Equal(ring.Current.Published.Select(key => key.Kid));
@@ -215,7 +215,7 @@ public sealed class JwksEndpointTests
             .Select(jwk => jwk.GetProperty("kid").GetString())
             .ToList();
 
-        var ring = host.Resolve<ISigningKeyRing>();
+        var ring = host.Resolve<SigningKeyRing>();
         var currentKid = ring.Current.SigningKey.Kid;
         var tokenKid = await IssueIdTokenAndReadHeaderKid(host.Services);
 

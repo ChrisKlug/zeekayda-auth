@@ -30,7 +30,7 @@ internal static class TestSigningKeyRegistration
 {
     public static ZeeKayDaAuthBuilder AddTestSigningKeys(this ZeeKayDaAuthBuilder builder)
     {
-        if (builder.Services.Any(d => d.ServiceType == typeof(ISigningKeyRing)))
+        if (builder.Services.Any(d => d.ServiceType == typeof(SigningKeyRing)))
             return builder;
 
         builder.AddSigningKeySource<TestSigningKeySource>();

@@ -67,7 +67,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningExtensionsTests
         builder.AddInMemoryDevelopmentSigning();
 
         await using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+        provider.GetRequiredService<SigningKeyRing>().Should().BeOfType<SigningKeyRing>();
         provider.GetRequiredService<SigningKeySourceRegistration>().SourceType
             .Should().Be<DevelopmentSigningKeySource>();
     }

@@ -981,8 +981,8 @@ construction-time resources they acquire. Neither the premise nor the residual n
 but every one of them now throws on resolve, so the count is inert rather than a working last-wins
 selection. [no longer true after #824, which removed the throw]. (b) A manual `ISigningKeyRing` registered *after* `AddZeeKayDaSigningKeySource` has run is
 still neither observed nor rejected, and still wins last-wins resolution — proven by
-`A_manual_ISigningKeyRing_registration_added_after_AddSigningKeySource_wins_and_is_not_rejected`
-[renamed by #824 from A_manual_ISigningKeyRing_registration_added_after_AddZeeKayDaSigningKeySource_wins_and_is_not_rejected].
+A_manual_ISigningKeyRing_registration_added_after_AddSigningKeySource_wins_and_is_not_rejected
+[removed by #823: the ring is a sealed class with an internal constructor, so no host can register one by hand] [renamed by #824 from A_manual_ISigningKeyRing_registration_added_after_AddZeeKayDaSigningKeySource_wins_and_is_not_rejected].
 That residual stands unchanged, as does the `CHANGELOG.md`/`signing-keys.md` correction made for it.
 
 The enumerating path the original residual was written about is covered directly: three composed
@@ -1034,7 +1034,8 @@ on a real host that the source is never constructed, read, or asked for a signer
 Two controls this work nearly lost, both caught in review and fixed before merge, recorded because
 each was a control silently removed rather than a bug introduced. Dropping the ring activator from
 `AddZeeKayDaAuthCore` left a host-registered `ISigningKeyRing` never initialized or self-tested —
-closed, proven by `AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring`.
+closed, proven by AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring
+[removed by #823 with that registration: the ring's constructor is internal, so no host-registered ring exists to initialize].
 The gate-warning flush justified itself from the sanitizing-logger gate's registration position, so a
 gate inserted ahead of it would have logged through a logger proved shadowed — now tracked explicitly,
 proven by StartAsync_discards_warnings_buffered_before_the_logger_gate_fails. [Retired with the gate
@@ -1532,7 +1533,8 @@ chose over factories on a nullable slot, verified by the architecture lens.
   the hash follows that key's algorithm. Closed —
   `An_ID_token_carries_at_hash_over_the_access_token_with_the_hash_the_key_implies`,
   `An_ID_token_signed_with_ES384_hashes_the_access_token_with_SHA_384`,
-  `An_ID_token_reads_the_key_only_inside_the_callback_and_resolves_it_once`,
+  `An_ID_token_resolves_the_key_once` [renamed by #823 from An_ID_token_reads_the_key_only_inside_the_callback_and_resolves_it_once;
+  the "only inside the callback" half needed a fake ring and is not observable against the real one],
   `The_ID_token_is_bound_to_the_access_token_by_at_hash`.
 - An unbound ID token is unrepresentable; a payload claiming `at_hash`, a non-ASCII access token or
   a companion of the wrong kind is refused before anything signs. Closed —
@@ -1544,7 +1546,8 @@ chose over factories on a nullable slot, verified by the architecture lens.
   so nothing is issued for a client the signing key cannot serve. Closed —
   `A_client_whose_allowed_algorithms_exclude_the_current_signing_key_fails_registration`,
   `A_client_pinned_to_an_algorithm_the_current_key_does_not_use_fails_startup`,
-  `A_key_the_client_no_longer_accepts_is_refused_before_any_token_is_issued`,
+  `A_signing_key_the_client_does_not_allow_is_not_accepted` [replaced by #823 A_key_the_client_no_longer_accepts_is_refused_before_any_token_is_issued,
+  which rotated a fake ring mid-request; the grant's check is now unit-tested until live rotation (#527) can reach it end to end],
   `A_client_whose_allowed_algorithms_exclude_the_signing_key_is_refused_before_the_signer_is_touched`,
   `The_algorithm_policy_does_not_apply_to_access_tokens`.
 - The context never prints the token it carries. Closed —
@@ -1933,7 +1936,7 @@ AddZeeKayDaAuth(configure) calls it and adds only the HTTP surface. Closed — p
 `A_core_only_host_validates_the_server_options_at_startup`,
 AddZeeKayDaAuthCore_registers_the_sanitizing_logger_gate_first_and_the_options_gate_second [retired with
 the gate phase in #771; options still validate first — `StartAsync_validates_options_before_constructing_any_verifier`],
-`AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring`.
+AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring [removed by #823: no host-registered ring can exist].
 The startup runner and its gates have one registration site, AddZeeKayDaAuthCore(configure);
 ValidateWithZeeKayDa() registers none, and every ZeeKayDaAuthBuilder comes from Core (internal
 constructor), so no supported host has an empty gate collection — proven by

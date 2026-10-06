@@ -7,7 +7,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <para>
 /// This is the shape-agnostic seam between deciding a token's contents and producing its wire
 /// form. Nothing in the contract is JWS-specific: the shipped <see cref="JwtTokenIssuer"/> signs
-/// a JWT via the <see cref="ISigningKeyRing"/>, and a reference-token issuer can return an opaque
+/// a JWT via the <see cref="SigningKeyRing"/>, and a reference-token issuer can return an opaque
 /// handle from a store without touching a signing type.
 /// </para>
 /// <para>

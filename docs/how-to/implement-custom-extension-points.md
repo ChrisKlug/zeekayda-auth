@@ -559,7 +559,7 @@ Security contract:
 |---|---|
 | Echo `context.Kind` in `IssuedToken.Kind`, always. | The call site asserts it received the kind it asked for; a mismatch must surface as a bug, not a mis-typed token. |
 | Never log or embed `IssuedToken.Value`; it is a live credential. | The framework's own record prints only the value's length for this reason. |
-| A JWT issuer MUST sign via `ISigningKeyRing.SignAsync` and build its JOSE header **inside the callback**, from the `SigningKey` the ring supplies. | The header's `kid`/`alg` and the signature then come from the same resolved key — disagreement is structurally impossible. Resolving key material any other way (for example via `ISigningKeySource` directly) reintroduces exactly that disagreement. |
+| A JWT issuer MUST sign via `SigningKeyRing.SignAsync` and build its JOSE header **inside the callback**, from the `SigningKey` the ring supplies. | The header's `kid`/`alg` and the signature then come from the same resolved key — disagreement is structurally impossible. Resolving key material any other way (for example via `ISigningKeySource` directly) reintroduces exactly that disagreement. |
 | Resolve the key at most once per token. | Two resolutions can straddle a key change; the callback shape gives you one for free. |
 | Claim values must be JSON primitives, arrays of them, or purpose-built claim shapes. | Values serialize by runtime type, whole object graph included — a domain object puts every property it references inside a token readable by whoever holds it. |
 

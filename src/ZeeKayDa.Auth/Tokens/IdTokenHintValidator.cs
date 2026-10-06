@@ -23,7 +23,7 @@ internal sealed record IdTokenHint(string ClientId, string Subject);
 /// which has usually expired by the time the user signs out, and the hint only has to prove where
 /// it came from.
 /// </remarks>
-internal sealed class IdTokenHintValidator(ISigningKeyRing keyRing, IOptions<AuthorizationServerOptions> options)
+internal sealed class IdTokenHintValidator(SigningKeyRing keyRing, IOptions<AuthorizationServerOptions> options)
 {
     private static readonly string[] IdTokenTypes = ["JWT"];
 

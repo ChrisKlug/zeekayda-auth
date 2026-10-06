@@ -2,7 +2,7 @@
 
 ## Decisions in force
 
-**One key ring, two source methods, and callers never hold a key.** `ISigningKeyRing` lives in core; signing
+**One key ring, two source methods, and callers never hold a key.** `SigningKeyRing` lives in core; signing
 is a protocol concern, not a web one. A provider implements `ISigningKeySource`: `ReadAsync` returns
 public-only slots, `CreateSignerAsync` lends a signer for the one key the ring selected. Since a provider
 never holds a private-key object, aliasing one across reads is unrepresentable. `ISigner.Dispose` releases
@@ -13,10 +13,10 @@ only the handle that instance introduced, so a signer over a shared SDK client m
 optional.** `SourceKeySet.Create` rejects a missing `Current`, so a provider cannot express "no signer".
 `SigningKeySetBuilder.Build` is the single pure choke point `SourceKeySet` → `SigningKeySet`: no clock, no
 policy, no I/O, always derives `kid` via `JwkThumbprint`, rejections throwing
-`ZeeKayDaConfigurationException` before private material exists. `StaticSigningKeyRing` reads its source
+`ZeeKayDaConfigurationException` before private material exists. `SigningKeyRing` reads its source
 once at startup, self-tests the signer, and owns it for the process lifetime. `SigningKeySet.SigningKey`
-stays non-nullable: no reachable state lacks a signing key, and `ISigningKeyRing` being framework-sealed
-lets a polling ring add `SigningKeyOrNull` later.
+stays non-nullable: no reachable state lacks a signing key, and the ring being a sealed class with an
+internal constructor lets live rotation (#527) add `SigningKeyOrNull` later.
 
 **Slots decide activation; there is no bootstrap exemption.** The operator names `Current`, so a lone
 configured key is active through ordinary selection, and the ring rejects a `Current` whose validity window
@@ -50,7 +50,7 @@ published-only version's key never enters the process.
 MAC against the password, takes the certificate the key bag's `localKeyId` names — PKCS#12 has no bag
 ordering — and imports no key at all.
 
-**Every signer handoff is self-tested before the signer is used.** `StaticSigningKeyRing` signs a
+**Every signer handoff is self-tested before the signer is used.** `SigningKeyRing` signs a
 non-JWS-shaped constant prefix plus a fresh 32-byte nonce and verifies it against that key's own published
 public key, in the single choke point every handoff passes through; the nonce defeats a memoising signer or
 caching proxy, and materialization alone proves nothing, since a signer can construct over material that
@@ -91,7 +91,7 @@ enforces this with an internal marker: a second call on the same collection thro
 provider configures options beside its source, so a "harmless" duplicate would still apply a second callback.
 `ISigningKeySource` itself is never registered: the ring constructs the source directly (unreachable from the
 container) and owns its lifetime alongside the signer's. A source implementing `IAsyncDisposable` without
-`IDisposable` is refused at registration. A manual `ISigningKeyRing` is not policed.
+`IDisposable` is refused at registration.
 
 **A client's allowed algorithms are an acceptance list, not a selector.** The ring owns one key set and
 signs with one key; a client whose list excludes that key's algorithm fails closed (`token-contents.md`).

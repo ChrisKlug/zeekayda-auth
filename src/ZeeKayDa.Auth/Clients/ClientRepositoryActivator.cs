@@ -21,7 +21,7 @@ namespace ZeeKayDa.Auth.Clients;
 internal sealed class ClientRepositoryActivator(
     IServiceProvider services,
     ValidatedScopeCatalog scopeCatalog,
-    ISigningKeyRing? ring = null,
+    SigningKeyRing? ring = null,
     InMemoryClientRegistrationOptions? inMemoryOptions = null) : IStartupActivator
 {
     /// <inheritdoc/>
