@@ -197,6 +197,18 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
+    public void Build_keeps_the_newest_live_predecessor_published_when_a_long_expired_key_sits_between_it_and_the_signing_key()
+    {
+        var predecessor = CreateRsaSourceKey("predecessor", notBefore: Now.AddDays(-100));
+        var expired = CreateRsaSourceKey("expired", notBefore: Now.AddDays(-50), expiresAt: Now.AddDays(-30));
+        var signing = CreateRsaSourceKey("signing", notBefore: Now.AddDays(-10));
+
+        var set = Build(predecessor, expired, signing);
+
+        set.Published.Select(k => k.SourceId).Should().Equal(predecessor.Id, signing.Id);
+    }
+
+    [Fact]
     public void Build_does_not_overflow_when_lead_time_plus_retention_exceeds_TimeSpan_MaxValue()
     {
         var oldest = CreateRsaSourceKey("oldest", notBefore: Now.AddDays(-30));

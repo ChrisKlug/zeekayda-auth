@@ -45,6 +45,16 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     }
 
     [Fact]
+    public void PostConfigure_with_a_negative_ClockSkewTolerance_leaves_the_failure_to_validation()
+    {
+        var options = new AuthorizationServerOptions { ClockSkewTolerance = TimeSpan.FromSeconds(-1) };
+
+        var act = () => PostConfigure(options);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void PostConfigure_keeps_an_explicit_RetainRetiredKeysFor()
     {
         var options = new AuthorizationServerOptions { SigningKeys = { RetainRetiredKeysFor = TimeSpan.FromDays(3) } };

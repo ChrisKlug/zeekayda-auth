@@ -181,16 +181,14 @@ internal static partial class SigningKeySetBuilder
                 $"{nameof(SigningKeyOptions.RetainRetiredKeysFor)} is resolved when the options are configured.");
         var supersededAfter = TokenLifetimes.Sum(options.LeadTime, retention);
 
-        var predecessor = oldestFirst.IndexOf(signingKey) - 1;
-        var newestEstablished = oldestFirst.FindLastIndex(key => now - key.NotBefore >= supersededAfter);
+        // A key that expired more than the retention ago is gone first, so it can never stand in for
+        // the signing key's predecessor.
+        var live = oldestFirst.Where(key => key == signingKey || now - key.ExpiresAt < retention).ToList();
+        var predecessor = live.IndexOf(signingKey) - 1;
+        var newestEstablished = live.FindLastIndex(key => now - key.NotBefore >= supersededAfter);
         var firstKept = Math.Min(predecessor, newestEstablished);
 
-        return
-        [
-            .. oldestFirst
-                .Skip(Math.Max(firstKept, 0))
-                .Where(key => key == signingKey || now - key.ExpiresAt < retention),
-        ];
+        return [.. live.Skip(Math.Max(firstKept, 0))];
     }
 
     private static SigningKey BuildAndValidate(

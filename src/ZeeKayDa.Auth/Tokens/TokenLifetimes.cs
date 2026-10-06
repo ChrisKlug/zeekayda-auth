@@ -32,9 +32,10 @@ internal static class TokenLifetimes
     }
 
     /// <summary>
-    /// Two non-negative durations added together, saturating at <see cref="TimeSpan.MaxValue"/>
-    /// rather than throwing.
+    /// Two durations added together, saturating at <see cref="TimeSpan.MaxValue"/> rather than
+    /// throwing. A negative <paramref name="second"/> cannot overflow upwards and is added as is,
+    /// so a negative setting reaches its own validation rule.
     /// </summary>
     public static TimeSpan Sum(TimeSpan first, TimeSpan second) =>
-        first > TimeSpan.MaxValue - second ? TimeSpan.MaxValue : first + second;
+        second > TimeSpan.Zero && first > TimeSpan.MaxValue - second ? TimeSpan.MaxValue : first + second;
 }
