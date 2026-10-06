@@ -27,38 +27,44 @@ internal static partial class SigningKeySetBuilder
     /// </exception>
     internal static void ValidateKeyStrength(SourceKey key)
     {
-        var publicKey = key.PublicKey;
-        if (publicKey.KeyType == SigningKeyType.Rsa)
+        switch (key.PublicKey.KeyType)
         {
-            var modulus = publicKey.RsaPublicParameters!.Value.Modulus;
-            var bitLength = modulus is not null ? CountSignificantBits(modulus) : 0;
+            case SigningKeyType.Rsa:
+                ValidateRsaModulusSize(key);
+                break;
+            case SigningKeyType.Ec:
+                ValidateEcCurve(key);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(key), key.PublicKey.KeyType, $"Unknown {nameof(SigningKeyType)} value.");
+        }
+    }
 
-            if (bitLength < 2048)
-            {
-                throw new ZeeKayDaConfigurationException(
-                    new ZeeKayDaConfigurationFailure(
-                        "signing.rsa_key_too_small",
-                        $"RSA key '{key.Id.Value}' is {bitLength} bits. Minimum key size is 2048 bits per NIST SP 800-57."));
-            }
-        }
-        else if (publicKey.KeyType == SigningKeyType.Ec)
-        {
-            var curveOid = publicKey.EcPublicParameters!.Value.Curve.Oid?.Value;
+    private static void ValidateRsaModulusSize(SourceKey key)
+    {
+        var modulus = key.PublicKey.RsaPublicParameters!.Value.Modulus;
+        var bitLength = modulus is not null ? CountSignificantBits(modulus) : 0;
+        if (bitLength >= 2048)
+            return;
 
-            if (!AcceptedEcCurveOids.Contains(curveOid ?? string.Empty))
-            {
-                throw new ZeeKayDaConfigurationException(
-                    new ZeeKayDaConfigurationFailure(
-                        "signing.ec_unsupported_curve",
-                        $"EC key '{key.Id.Value}' uses curve OID '{curveOid ?? "unknown"}'. " +
-                        "Only NIST P-256, P-384, and P-521 are accepted."));
-            }
-        }
-        else
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(key), publicKey.KeyType, $"Unknown {nameof(SigningKeyType)} value.");
-        }
+        throw new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure(
+                "signing.rsa_key_too_small",
+                $"RSA key '{key.Id.Value}' is {bitLength} bits. Minimum key size is 2048 bits per NIST SP 800-57."));
+    }
+
+    private static void ValidateEcCurve(SourceKey key)
+    {
+        var curveOid = key.PublicKey.EcPublicParameters!.Value.Curve.Oid?.Value;
+        if (AcceptedEcCurveOids.Contains(curveOid ?? string.Empty))
+            return;
+
+        throw new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure(
+                "signing.ec_unsupported_curve",
+                $"EC key '{key.Id.Value}' uses curve OID '{curveOid ?? "unknown"}'. " +
+                "Only NIST P-256, P-384, and P-521 are accepted."));
     }
 
     /// <summary>

@@ -1539,17 +1539,21 @@ public sealed class AuthorizationServerOptionsValidatorTests
         failures.Should().NotContain(f => f.Code.StartsWith("configuration.signing_keys", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public void Validate_fails_with_lead_time_negative_and_not_the_cache_rule_when_LeadTime_is_negative()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_fails_with_lead_time_not_positive_and_not_the_cache_rule_when_LeadTime_is_not_positive(int seconds)
     {
+        // Zero passes the cache rule when CacheMaxAge is also zero, but there is no lead-time-zero escape hatch.
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            SigningKeys = { LeadTime = TimeSpan.FromSeconds(-1) },
+            JwksEndpoint = { CacheMaxAge = TimeSpan.Zero },
+            SigningKeys = { LeadTime = TimeSpan.FromSeconds(seconds) },
         });
 
         failures.Where(f => f.Code.StartsWith("configuration.signing_keys", StringComparison.Ordinal))
-            .Should().ContainSingle(f => f.Code == "configuration.signing_keys.lead_time.negative");
+            .Should().ContainSingle(f => f.Code == "configuration.signing_keys.lead_time.not_positive");
     }
 
     [Fact]

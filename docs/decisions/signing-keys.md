@@ -14,11 +14,11 @@ only the handle that instance introduced, so a signer over a shared SDK client m
 `SigningKeySetBuilder.Build(keys, now, options, logger)` is the single choke point: it validates every key on
 public data, derives every `kid` via `JwkThumbprint`, then decides from the dates alone. Every unexpired key
 is published, oldest first. The newest key whose `NotBefore` is at least `SigningKeys.LeadTime` (default one
-day, never below `JwksEndpoint.CacheMaxAge`) in the past signs; if none is, the oldest valid key signs and a
+day, positive, never below `JwksEndpoint.CacheMaxAge`) in the past signs; if none is, the oldest valid key signs and a
 Warning says relying parties may reject its tokens until they refresh. Keys are read only at startup, so a
-successor takes over at a restart, possibly long after its lead time: the signing key's predecessor stays published
+successor takes over at a restart, possibly long after its lead time: the unexpired predecessor stays published
 while it signs; an older key until a newer one is `LeadTime + RetainRetiredKeysFor` old; an expired key (which
-never signs) until `RetainRetiredKeysFor` after expiry. Retention defaults to the longer server-wide token lifetime
+never signs) until `RetainRetiredKeysFor` after expiry, whatever its age. Retention defaults to the longer server-wide token lifetime
 plus `ClockSkewTolerance` (per-client overrides are invisible at startup); sums saturate. Ties on `NotBefore` go to
 the ordinally greater source id. One rule covers a first deployment, a normal rotation and an emergency (remove the
 key, restart). `SigningKeySet.SigningKey` is non-nullable and always published.

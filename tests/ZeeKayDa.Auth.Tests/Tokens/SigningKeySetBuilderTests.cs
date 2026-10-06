@@ -209,6 +209,30 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
+    public void Build_keeps_a_recently_expired_key_published_even_when_it_is_older_than_the_predecessor()
+    {
+        var expired = CreateRsaSourceKey("expired", notBefore: Now.AddDays(-100), expiresAt: Now - Retention + TimeSpan.FromSeconds(1));
+        var predecessor = CreateRsaSourceKey("predecessor", notBefore: Now.AddDays(-50));
+        var signing = CreateRsaSourceKey("signing", notBefore: Now.AddDays(-10));
+
+        var set = Build(expired, predecessor, signing);
+
+        set.Published.Select(k => k.SourceId).Should().Equal(expired.Id, predecessor.Id, signing.Id);
+    }
+
+    [Fact]
+    public void Build_keeps_the_unexpired_predecessor_published_when_a_recently_expired_key_sits_between_it_and_the_signing_key()
+    {
+        var predecessor = CreateRsaSourceKey("predecessor", notBefore: Now.AddDays(-100));
+        var expired = CreateRsaSourceKey("expired", notBefore: Now.AddDays(-50), expiresAt: Now.AddMinutes(-1));
+        var signing = CreateRsaSourceKey("signing", notBefore: Now.AddDays(-10));
+
+        var set = Build(predecessor, expired, signing);
+
+        set.Published.Select(k => k.SourceId).Should().Equal(predecessor.Id, expired.Id, signing.Id);
+    }
+
+    [Fact]
     public void Build_does_not_overflow_when_lead_time_plus_retention_exceeds_TimeSpan_MaxValue()
     {
         var oldest = CreateRsaSourceKey("oldest", notBefore: Now.AddDays(-30));

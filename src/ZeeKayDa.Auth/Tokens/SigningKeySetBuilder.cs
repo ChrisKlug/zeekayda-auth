@@ -169,9 +169,10 @@ internal static partial class SigningKeySetBuilder
     }
 
     /// <summary>
-    /// Drops a key only once no token it signed can still be in force: it expired more than the
-    /// retention ago, or it is older than the signing key's predecessor and a newer key is past the
-    /// lead time plus the retention.
+    /// Keeps every key a token still in force may name. Two independent rules: a key that expired
+    /// less than the retention ago stays, whatever its age; among unexpired keys, the signing key's
+    /// predecessor stays, and an older key stays until a newer key is past the lead time plus the
+    /// retention.
     /// </summary>
     private static ImmutableArray<SigningKey> WithoutRetiredKeys(
         List<SigningKey> oldestFirst, SigningKey signingKey, DateTimeOffset now, SigningKeyOptions options)
@@ -181,14 +182,17 @@ internal static partial class SigningKeySetBuilder
                 $"{nameof(SigningKeyOptions.RetainRetiredKeysFor)} is resolved when the options are configured.");
         var supersededAfter = TokenLifetimes.Sum(options.LeadTime, retention);
 
-        // A key that expired more than the retention ago is gone first, so it can never stand in for
-        // the signing key's predecessor.
-        var live = oldestFirst.Where(key => key == signingKey || now - key.ExpiresAt < retention).ToList();
-        var predecessor = live.IndexOf(signingKey) - 1;
-        var newestEstablished = live.FindLastIndex(key => now - key.NotBefore >= supersededAfter);
-        var firstKept = Math.Min(predecessor, newestEstablished);
+        // An expired key cannot stand in for the signing key's predecessor, so the age rule runs over
+        // the unexpired keys alone.
+        var unexpired = oldestFirst.Where(key => key == signingKey || key.ExpiresAt > now).ToList();
+        var predecessor = unexpired.IndexOf(signingKey) - 1;
+        var newestEstablished = unexpired.FindLastIndex(key => now - key.NotBefore >= supersededAfter);
+        var keptByAge = unexpired.Skip(Math.Max(Math.Min(predecessor, newestEstablished), 0)).ToHashSet();
 
-        return [.. live.Skip(Math.Max(firstKept, 0))];
+        return
+        [
+            .. oldestFirst.Where(key => keptByAge.Contains(key) || (key.ExpiresAt <= now && now - key.ExpiresAt < retention)),
+        ];
     }
 
     private static SigningKey BuildAndValidate(

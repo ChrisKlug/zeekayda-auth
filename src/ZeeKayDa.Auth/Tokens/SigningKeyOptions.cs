@@ -13,7 +13,8 @@ public sealed class SigningKeyOptions
     /// they refresh, so a new key waits this long, counted from its <see cref="SourceKey.NotBefore"/>,
     /// before it takes over. A day covers relying parties that ignore the JWKS
     /// <c>Cache-Control</c> header (Microsoft.IdentityModel refreshes metadata every 12 hours by
-    /// default). Must not be shorter than <see cref="Discovery.JwksEndpointOptions.CacheMaxAge"/>.
+    /// default). Must be greater than zero, and not shorter than
+    /// <see cref="Discovery.JwksEndpointOptions.CacheMaxAge"/>.
     /// </remarks>
     public TimeSpan LeadTime { get; set; } = TimeSpan.FromDays(1);
 

@@ -57,7 +57,7 @@ internal static partial class AuthorizationServerOptionsValidation
     /// </summary>
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateSigningKeyLeadTime(AuthorizationServerOptions options)
     {
-        if (options.SigningKeys.LeadTime >= TimeSpan.Zero && options.SigningKeys.LeadTime < options.JwksEndpoint.CacheMaxAge)
+        if (options.SigningKeys.LeadTime > TimeSpan.Zero && options.SigningKeys.LeadTime < options.JwksEndpoint.CacheMaxAge)
         {
             yield return new(
                 "configuration.signing_keys.lead_time.shorter_than_jwks_cache_max_age",

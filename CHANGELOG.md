@@ -563,7 +563,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `(Id, Algorithm, PublicKey, DateTimeOffset? notBefore = null, DateTimeOffset? expiresAt = null)`,
   and an undated key is accepted only when it is the source's only key. Every unexpired key is
   published; the newest key whose `NotBefore` is at least `AuthorizationServerOptions.SigningKeys.LeadTime`
-  (default one day, never shorter than `JwksEndpoint.CacheMaxAge`) old signs. When none is, the oldest
+  (default one day; positive, and never shorter than `JwksEndpoint.CacheMaxAge`) old signs. When none is, the oldest
   valid key signs and a Warning is logged. Keys are read only at startup, so the signing key's
   predecessor stays published while it signs; an older key stays published until a newer one is
   `LeadTime + SigningKeys.RetainRetiredKeysFor` old, and an expired key (which never signs) until
