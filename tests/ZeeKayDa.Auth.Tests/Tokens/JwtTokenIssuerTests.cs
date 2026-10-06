@@ -483,7 +483,7 @@ public sealed class JwtTokenIssuerTests
     [Fact]
     public async Task A_client_whose_allowed_algorithms_include_the_signing_key_is_issued_an_ID_token()
     {
-        var (issuer, signer) = CreateCountingIssuer();
+        var (issuer, _) = CreateCountingIssuer();
         var client = new RestrictedClient(new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256, SigningAlgorithm.ES256 });
 
         var token = await issuer.IssueAsync(
@@ -498,7 +498,7 @@ public sealed class JwtTokenIssuerTests
     public async Task The_algorithm_policy_does_not_apply_to_access_tokens()
     {
         // An access token's algorithm is the resource server's concern, not the client's.
-        var (issuer, signer) = CreateCountingIssuer();
+        var (issuer, _) = CreateCountingIssuer();
         var client = new RestrictedClient(new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 });
 
         var token = await issuer.IssueAsync(
