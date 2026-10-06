@@ -53,10 +53,10 @@ internal sealed class PfxFileSigningKeySource(
     // validated, so a failed read is never cached and a retry re-reads from disk; once a read has
     // succeeded, no later one can observe a bundle replaced after startup. Read-once is therefore a
     // property of this source, not only of the ring.
-    private SourceKeySet? _keySet;
+    private IReadOnlyList<SourceKey>? _keySet;
 
     /// <inheritdoc/>
-    public async Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
         await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -70,7 +70,7 @@ internal sealed class PfxFileSigningKeySource(
             var current = await ReadSlotAsync(options.Current, options.Algorithm, cancellationToken).ConfigureAwait(false);
             var next = await ReadSlotAsync(options.Next, options.Algorithm, cancellationToken).ConfigureAwait(false);
 
-            return _keySet = SourceKeySet.Create(previous, current, next);
+            return _keySet = [.. new[] { previous, current, next }.OfType<SourceKey>()];
         }
         finally
         {

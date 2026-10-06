@@ -1511,6 +1511,46 @@ public sealed class AuthorizationServerOptionsValidatorTests
         failures.Should().BeEmpty();
     }
 
+    // ── SigningKeys ──────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_fails_when_the_signing_key_LeadTime_is_shorter_than_the_JWKS_CacheMaxAge()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            JwksEndpoint = { CacheMaxAge = TimeSpan.FromHours(2) },
+            SigningKeys = { LeadTime = TimeSpan.FromHours(2) - TimeSpan.FromSeconds(1) },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.signing_keys.lead_time.shorter_than_jwks_cache_max_age");
+    }
+
+    [Fact]
+    public void Validate_accepts_a_signing_key_LeadTime_equal_to_the_JWKS_CacheMaxAge()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            JwksEndpoint = { CacheMaxAge = TimeSpan.FromHours(2) },
+            SigningKeys = { LeadTime = TimeSpan.FromHours(2) },
+        });
+
+        failures.Should().NotContain(f => f.Code.StartsWith("configuration.signing_keys", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_fails_when_RetainRetiredKeysFor_is_negative()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            SigningKeys = { RetainRetiredKeysFor = TimeSpan.FromSeconds(-1) },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.signing_keys.retain_retired_keys_for.negative");
+    }
+
     // ── ClockSkewTolerance — cross-field: must be < AuthorizationCodeLifetime / 2 ───────────────
 
     [Fact]

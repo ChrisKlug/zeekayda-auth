@@ -557,6 +557,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Signing-key sources only list keys; the framework decides from their dates which one signs**
+  (#823). `ISigningKeySource.ReadAsync` returns `IReadOnlyList<SourceKey>`; `SourceKeySet` and its
+  "which key signs" designation are gone. `SourceKey` is
+  `(Id, Algorithm, PublicKey, DateTimeOffset? notBefore = null, DateTimeOffset? expiresAt = null)`,
+  and an undated key is accepted only when it is the source's only key. Every unexpired key is
+  published; the newest key whose `NotBefore` is at least `AuthorizationServerOptions.SigningKeys.LeadTime`
+  (default one day, never shorter than `JwksEndpoint.CacheMaxAge`) old signs. When none is, the oldest
+  valid key signs and a Warning is logged. An older key stays published until a newer one is
+  `LeadTime + SigningKeys.RetainRetiredKeysFor` old; retention defaults to the longer of the server-wide
+  access and ID token lifetimes, and must be raised by hand for longer per-client lifetimes.
+  `ISigner.Algorithm` and `signing.signer_algorithm_mismatch` are removed: the startup self-test,
+  which verifies under the key's own algorithm, rejects a signer signing under another with
+  `signing.self_test_failed`. A signer that links the caller's token to its own is no longer reported
+  as broken on shutdown. The Key Vault sources list every enabled version, dated from the later of its
+  creation and its `nbf`; `PreActivationDelay` and `PreviousVersionsToPublish` are removed. The PEM, PFX
+  and Windows sources report their filled slots as a list, and still open a signer only for `Current`,
+  so a configuration whose dates choose another slot fails startup until those sources become plain
+  lists.
+
 - **Sign-in pages pass a subject, not a hand-built `ClaimsPrincipal`** (#781).
   `LoginInteraction.SignInAsync` and the account-linking call, renamed
   `ProviderSignInInteraction.SignInWithReplacedAccountAsync`, take the subject string, the

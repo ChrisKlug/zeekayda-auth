@@ -3,45 +3,43 @@
 ## Decisions in force
 
 **One key ring, two source methods, and callers never hold a key.** `SigningKeyRing` lives in core; signing
-is a protocol concern, not a web one. A provider implements `ISigningKeySource`: `ReadAsync` returns
-public-only slots, `CreateSignerAsync` lends a signer for the one key the ring selected. Since a provider
+is a protocol concern, not a web one. A provider implements `ISigningKeySource`: `ReadAsync` lists
+public-only keys, `CreateSignerAsync` lends a signer for whichever listed key the ring chose. Since a provider
 never holds a private-key object, aliasing one across reads is unrepresentable. `ISigner.Dispose` releases
 only the handle that instance introduced, so a signer over a shared SDK client must not close it.
 `SigningAlgorithm` has no `none` member.
 
-**Keys are three named slots: `Previous`/`Current`/`Next`, `Current` required, the others independently
-optional.** `SourceKeySet.Create` rejects a missing `Current`, so a provider cannot express "no signer".
-`SigningKeySetBuilder.Build` is the single pure choke point `SourceKeySet` → `SigningKeySet`: no clock, no
-policy, no I/O, always derives `kid` via `JwkThumbprint`, rejections throwing
-`ZeeKayDaConfigurationException` before private material exists. `SigningKeyRing` reads its source
-once at startup, self-tests the signer, and owns it for the process lifetime. `SigningKeySet.SigningKey`
-stays non-nullable: no reachable state lacks a signing key, and the ring being a sealed class with an
-internal constructor lets live rotation (#527) add `SigningKeyOrNull` later.
+**Sources only list keys; core owns all the timing.** A `SourceKey` carries `NotBefore` and `ExpiresAt`
+(undated means `MinValue`/`MaxValue`; an undated key is accepted only as the sole key). The internal
+`SigningKeySetBuilder.Build(keys, now, options, logger)` is the single choke point: it validates every key on
+public data, derives every `kid` via `JwkThumbprint`, then decides from the dates alone. Every unexpired key
+is published, oldest first. The newest key whose `NotBefore` is at least `SigningKeys.LeadTime` (default one
+day, never below `JwksEndpoint.CacheMaxAge`) in the past signs; if none is, the oldest valid key signs and a
+Warning says relying parties may reject its tokens until they refresh. A key stays published until a newer key
+is `LeadTime + RetainRetiredKeysFor` old (retention defaults to the longer server-wide token lifetime; per-client
+overrides are invisible at startup). Ties on `NotBefore` go to the ordinally greater source id. One rule covers a
+first deployment, a normal rotation and an emergency (remove the key, restart), with no exemption.
+`SigningKeyRing` reads once at startup, self-tests the signer, and owns it for the process lifetime;
+`SigningKeySet.SigningKey` stays non-nullable, and live rotation is #527.
 
-**Slots decide activation; there is no bootstrap exemption.** The operator names `Current`, so a lone
-configured key is active through ordinary selection, and the ring rejects a `Current` whose validity window
-has not opened (`NotBefore`) or has closed (`ExpiresAt`) — checked against the signing key alone, since
-staging a key early is what `Next` is for. Rotation is restart-based (#527).
+**A file or store provider's slot names carry no meaning to core.** PEM, PFX and Windows still configure
+`Previous`/`Current`/`Next` and report the filled slots as a list; whichever key the dates choose signs. Each
+still opens a signer only for `Current`, so a configuration in which the dates choose another slot fails
+startup closed until those providers become plain lists.
 
 **The framework derives every `kid`; a provider cannot supply one.** The ring computes an RFC 7638 JWK
 thumbprint over the public key. A provider supplies only its internal `SourceKeyId`, so it cannot leak a
 vault URI, certificate thumbprint, or file path into every issued token.
 
-**The Key Vault sources derive their slots from the vault's own version metadata; nothing is
-slot-configured, and the derivation is one shared function.** One key (remote) or certificate (cached), its
-versions, one selector (`KeyVaultVersionSelector.SelectVersions`): the newest enabled version inside its own
-validity window that has existed for `PreActivationDelay` signs; every enabled version newer than it is
-published as staged, so replicas restarting on either side of a version ripening still publish each other's
-signing key; up to `PreviousVersionsToPublish` older enabled versions stay published. The delay derives from
-Key Vault's durable per-version `CreatedOn`, never first-seen time, so every replica and restart agrees; the
-chronologically-first version recorded is exempt, computed over the full history including disabled versions
-so a stale partial listing cannot promote a young key early. An entry missing `Enabled` or `CreatedOn` is
-rejected, never defaulted. Disabling a version excludes it everywhere — the one revocation lever — and no
-eligible version fails startup closed (`PreActivationDelay = 0` is the escape hatch). The age gate is what
-makes Key Vault rotation — which creates versions with no `nbf` — safe to promote.
+**The Key Vault sources list every enabled version, dated by vault metadata every replica agrees on.** A
+version counts from the later of its `CreatedOn` and its own `nbf`, never first-seen time; its `exp` is its
+expiry. Disabling a version removes it from the listing — the one revocation lever. A listed version whose
+identifier is not pinned to that version is rejected, since the SDK resolves an unpinned URI to whatever
+version is newest at sign time. Every enabled version's public key is fetched at startup; pruning fully
+retired versions before fetching them is a Key Vault optimisation, not part of the contract.
 
-**The cached Key Vault source downloads private material for exactly one version.** Reads publish public
-`Cer` halves only (no `secrets/get`); the signing version's private key is downloaded once, in
+**The cached Key Vault source downloads private material only for the version the ring asks to sign.** Reads
+publish public `Cer` halves only (no `secrets/get`); that version's private key is downloaded once, in
 `CreateSignerAsync`, and cross-checked against the public key the read published — separate vault reads that
 could diverge, so a divergence is named rather than surfacing as a generic self-test failure. A
 published-only version's key never enters the process.
@@ -55,9 +53,10 @@ non-JWS-shaped constant prefix plus a fresh 32-byte nonce and verifies it agains
 public key, in the single choke point every handoff passes through; the nonce defeats a memoising signer or
 caching proxy, and materialization alone proves nothing, since a signer can construct over material that
 does not pair. It is unconditional with no HSM opt-out, and `SigningKeyRingActivator` forces the
-first handoff eagerly, so a misconfigured key fails the host rather than the first request. The ring also
-rejects a signer whose `Algorithm` disagrees with its key. A mismatch, a non-signature and a signer that
-throws each fail closed under their own code, and the signer is disposed. Signed off in `security-sign-offs.md`.
+first handoff eagerly, so a misconfigured key fails the host rather than the first request. Verifying under
+the key's own algorithm also catches a signer signing under another one. A mismatch, a non-signature and a
+signer that throws each fail closed under their own code, and the signer is disposed. A cancellation is the
+caller's whenever the caller's token is cancelled, so a signer linking tokens is not reported as broken. Signed off in `security-sign-offs.md`.
 
 **All load-time validation runs on public data, in one place.** Key/algorithm compatibility, EC curve
 pairing, RSA modulus size (2048-bit minimum), NIST-curve-only EC keys, and rejection of duplicate source ids
@@ -107,24 +106,25 @@ development provider stays in core.
 ## Tried, didn't work
 
 - **`IJwtSigningService` / `JwtSigningService<TOptions>`: a provider base class owning selection, rotation,
-  and signing.** Replaced by the three-slot key ring. A provider had to be a subclass rather than an
+  and signing.** Replaced by the key ring. A provider had to be a subclass rather than an
   implementation, and the base carried a timeline engine, borrow/refcount machinery, and a producibility
   surface the slot model makes unnecessary rather than reimplements.
 - **A two-tier options hierarchy: `KeySetOptions` for a fixed set, `KeySourceOptions` for a polled one.**
   The tiers duplicated slot shape and validation while differing only in who refreshes — now the source's
-  own concern. One `ISigningKeySource` with three slots covers both.
-- **`PublicationLead` as a setting, with `PublishAt = ActivateAt − PublicationLead`.** A derived timeline
-  needs a clock inside the pure builder. Publication is now structural: every configured slot is published,
-  so staging a key *is* filling `Next`.
+  own concern. One `ISigningKeySource` covers both.
+- **A per-key `ActivateAt` with `PublishAt = ActivateAt − PublicationLead`.** The operator scheduled each
+  activation by hand. Now a key's own `NotBefore` is its publication date and one `LeadTime` derives the rest.
 - **A single rotating-source tier with one shared check interval.** Ratified and shipped, reversed two weeks
   later. File/PFX/certificate-store and Key Vault share no model — only a *name*, covering both an internal
   clock tick over a fixed timeline and a real external poll cadence.
-- **A derived `RetirementWindow` and an `ISigningKeyRetirementWindowProvider` to compute it.** Under the
-  three-slot model nothing consumes it: the published set is every configured slot, so retirement is the
-  operator emptying a slot, not a computed instant.
-- **The single-key bootstrap exemption.** Its justification — "no prior published JWKS state any RP could
-  have cached" — is false after any restart, and a key with no `ActivateAt` is active immediately through
-  ordinary selection anyway. Deleted, not moved.
+- **An `ISigningKeyRetirementWindowProvider` computing retirement per provider.** Retention is one core
+  setting applied to dates every provider already reports.
+- **Bootstrap exemptions — the single-key one, and Key Vault's "first version ever" one.** "No relying party
+  could have cached anything" is false after any restart; a lone key signs at once through the ordinary
+  oldest-valid-key fallback anyway. Deleted, not moved.
+- **Timing owned by each provider: three operator-filled slots, and Key Vault's `KeyVaultVersionSelector`
+  with `PreActivationDelay` and `PreviousVersionsToPublish`.** A provider author had to understand rotation
+  to write a provider, and the one real implementation of the rules sat inside one provider package.
 - **A startup cross-check between advertised and producible algorithms
   (`AdvertisedSigningAlgorithmVerifier`, `ISigningKeyProducibility`).** Detecting a disagreement the
   configuration should not express. #515 derives the advertised set from the published set instead, making

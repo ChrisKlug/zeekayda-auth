@@ -1,0 +1,55 @@
+namespace ZeeKayDa.Auth.AzureKeyVault;
+
+/// <summary>
+/// Turns a Key Vault object's versions into the keys a source lists: every enabled version, dated
+/// by vault metadata every replica agrees on.
+/// </summary>
+internal static class KeyVaultVersions
+{
+    /// <summary>
+    /// Returns every enabled version. Disabling a version is the operator's revocation lever, so a
+    /// disabled version is never listed.
+    /// </summary>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// Thrown with failure code <c>signing.azure_key_vault.no_active_key</c> when no version is
+    /// enabled, or <c>signing.azure_key_vault.unversioned_key_uri</c> when a version's identifier is
+    /// not pinned to that version.
+    /// </exception>
+    public static IReadOnlyList<TVersion> Enabled<TVersion>(
+        IReadOnlyList<TVersion> allVersions, string objectKind, string objectName, Uri vaultUri)
+        where TVersion : IKeyVaultVersionInfo
+    {
+        var enabled = allVersions.Where(v => v.Enabled).ToList();
+        if (enabled.Count == 0)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.no_active_key",
+                    $"No enabled version of Key Vault {objectKind} '{objectName}' in vault " +
+                    $"'{vaultUri}' exists. Verify the {objectKind} has at least one enabled version."));
+        }
+
+        // The SDK's CryptographyClient resolves a versionless URI to the vault's latest version at
+        // sign time — a key the published set may not contain.
+        var unpinnedIndex = enabled.FindIndex(v => !v.Id.AbsolutePath.EndsWith($"/{v.Version}", StringComparison.Ordinal));
+        if (unpinnedIndex >= 0)
+        {
+            var unpinned = enabled[unpinnedIndex];
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.unversioned_key_uri",
+                    $"The identifier URI reported for Key Vault {objectKind} version '{unpinned.Version}' " +
+                    "is not pinned to that version. Signing with an unpinned identifier would use whatever " +
+                    "version is newest at sign time rather than the version whose public half was published."));
+        }
+
+        return enabled;
+    }
+
+    /// <summary>
+    /// A version is published from its creation and may not sign before its own <c>nbf</c>, so it
+    /// counts as dated from the later of the two.
+    /// </summary>
+    public static DateTimeOffset NotBefore(IKeyVaultVersionInfo version) =>
+        version.NotBefore is { } notBefore && notBefore > version.CreatedOn ? notBefore : version.CreatedOn;
+}

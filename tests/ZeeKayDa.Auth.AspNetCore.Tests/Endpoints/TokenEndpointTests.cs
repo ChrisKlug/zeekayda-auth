@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
@@ -470,8 +471,9 @@ public sealed class TokenEndpointTests : IDisposable
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var key = new SourceKey(
             new SourceKeyId("current"), SigningAlgorithm.ES256,
-            PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: false)), ExpiresAt: null);
-        return SigningKeySetBuilder.Build(SourceKeySet.Create(previous: null, key, next: null)).SigningKey;
+            PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: false)));
+        return SigningKeySetBuilder.Build(
+            [key], DateTimeOffset.UtcNow, new SigningKeyOptions { RetainRetiredKeysFor = TimeSpan.Zero }, NullLogger.Instance).SigningKey;
     }
 
     // ── Lifetimes ─────────────────────────────────────────────────────────────────────────────
@@ -1074,13 +1076,15 @@ public sealed class TokenEndpointTests : IDisposable
         private readonly RSA _rsa = RSA.Create(2048);
         private readonly ECDsa _ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             var current = new SourceKey(new SourceKeyId("rsa-current"), SigningAlgorithm.RS256,
-                PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)), ExpiresAt: null);
+                PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)),
+                DateTimeOffset.UtcNow.AddDays(-30));
             var next = new SourceKey(new SourceKeyId("ec-next"), SigningAlgorithm.ES256,
-                PublicKeyParameters.FromEc(_ecdsa.ExportParameters(includePrivateParameters: false)), ExpiresAt: null);
-            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next));
+                PublicKeyParameters.FromEc(_ecdsa.ExportParameters(includePrivateParameters: false)),
+                DateTimeOffset.UtcNow.AddHours(-1));
+            return Task.FromResult<IReadOnlyList<SourceKey>>([current, next]);
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>

@@ -84,14 +84,15 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
             object (key) => new SigningKeyExpiryStatus(
                 key.Kid,
                 IsSigningKey: string.Equals(key.Kid, set.SigningKey.Kid, StringComparison.Ordinal),
-                key.ExpiresAt,
-                RemainingLifetime: key.ExpiresAt is { } expiresAt ? expiresAt - now : null));
+                NeverExpires(key) ? null : key.ExpiresAt,
+                RemainingLifetime: NeverExpires(key) ? null : key.ExpiresAt - now));
 
         var signingKey = set.SigningKey;
 
-        if (signingKey.ExpiresAt is not { } signingKeyExpiresAt)
+        if (NeverExpires(signingKey))
             return HealthCheckResult.Healthy($"Signing key '{signingKey.Kid}' has no expiry.", data);
 
+        var signingKeyExpiresAt = signingKey.ExpiresAt;
         var remaining = signingKeyExpiresAt - now;
 
         if (remaining <= TimeSpan.Zero)
@@ -109,4 +110,6 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
 
         return HealthCheckResult.Healthy($"Signing key '{signingKey.Kid}' expires at {signingKeyExpiresAt:O}.", data);
     }
+
+    private static bool NeverExpires(SigningKey key) => key.ExpiresAt == DateTimeOffset.MaxValue;
 }

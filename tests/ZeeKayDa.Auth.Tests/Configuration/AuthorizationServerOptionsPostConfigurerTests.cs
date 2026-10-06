@@ -14,6 +14,34 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
         return options;
     }
 
+    // ── Defaults that depend on other settings ───────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(30, 5, 30)]
+    [InlineData(5, 45, 45)]
+    public void PostConfigure_defaults_RetainRetiredKeysFor_to_the_longer_of_the_access_and_ID_token_lifetimes(
+        int accessTokenMinutes, int idTokenMinutes, int expectedMinutes)
+    {
+        var options = new AuthorizationServerOptions
+        {
+            TokenEndpoint =
+            {
+                AccessTokenLifetime = TimeSpan.FromMinutes(accessTokenMinutes),
+                IdTokenLifetime = TimeSpan.FromMinutes(idTokenMinutes),
+            },
+        };
+
+        PostConfigure(options).SigningKeys.RetainRetiredKeysFor.Should().Be(TimeSpan.FromMinutes(expectedMinutes));
+    }
+
+    [Fact]
+    public void PostConfigure_keeps_an_explicit_RetainRetiredKeysFor()
+    {
+        var options = new AuthorizationServerOptions { SigningKeys = { RetainRetiredKeysFor = TimeSpan.FromDays(3) } };
+
+        PostConfigure(options).SigningKeys.RetainRetiredKeysFor.Should().Be(TimeSpan.FromDays(3));
+    }
+
     // ── Every collection ─────────────────────────────────────────────────────────────────────────
 
     [Fact]

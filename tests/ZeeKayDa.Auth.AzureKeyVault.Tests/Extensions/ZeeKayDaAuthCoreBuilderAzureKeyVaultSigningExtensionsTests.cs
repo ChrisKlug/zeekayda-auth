@@ -147,8 +147,6 @@ public sealed class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensionsTests
         options.KeyIdentifier.Should().Be(KeyIdentifier);
         options.Algorithm.Should().Be(SigningAlgorithm.ES256);
         options.Credential.Should().BeSameAs(credential);
-        options.PreviousVersionsToPublish.Should().Be(1, "one previous version publishing is the documented default");
-        options.PreActivationDelay.Should().Be(TimeSpan.FromDays(1), "a one-day pre-activation delay is the documented default");
     }
 
     [Fact]
@@ -158,11 +156,11 @@ public sealed class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensionsTests
         var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential(),
-            options => options.PreActivationDelay = TimeSpan.FromHours(2));
+            options => options.Algorithm = SigningAlgorithm.PS256);
 
         await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AzureKeyVaultRemoteSigningOptions>>().Value;
-        options.PreActivationDelay.Should().Be(TimeSpan.FromHours(2));
+        options.Algorithm.Should().Be(SigningAlgorithm.PS256);
     }
 
     // ── XML doc <remarks> verbatim text (issue AC #8) ────────────────────────────────────────────
@@ -294,8 +292,6 @@ public sealed class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensionsTests
         options.CertificateIdentifier.Should().Be(CertificateIdentifier);
         options.Algorithm.Should().Be(SigningAlgorithm.ES256);
         options.Credential.Should().BeSameAs(credential);
-        options.PreviousVersionsToPublish.Should().Be(1, "one previous version publishing is the documented default");
-        options.PreActivationDelay.Should().Be(TimeSpan.FromDays(1), "a one-day pre-activation delay is the documented default");
     }
 
     [Fact]
@@ -305,11 +301,11 @@ public sealed class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensionsTests
         var builder = services.AddZeeKayDaAuthCoreForTesting();
 
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential(),
-            options => options.PreviousVersionsToPublish = 3);
+            options => options.Algorithm = SigningAlgorithm.PS256);
 
         await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<AzureKeyVaultCachedSigningOptions>>().Value;
-        options.PreviousVersionsToPublish.Should().Be(3);
+        options.Algorithm.Should().Be(SigningAlgorithm.PS256);
     }
 
     // ── AddAzureKeyVaultCachedSigning: XML doc <remarks> verbatim text (issue AC #8) ─────────────

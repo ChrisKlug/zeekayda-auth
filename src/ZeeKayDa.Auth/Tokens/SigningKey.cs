@@ -16,8 +16,8 @@ public sealed class SigningKey
         string kid,
         SigningAlgorithm algorithm,
         PublicKeyParameters publicKey,
-        DateTimeOffset? expiresAt,
-        DateTimeOffset? notBefore = null)
+        DateTimeOffset notBefore,
+        DateTimeOffset expiresAt)
     {
         SourceId = sourceId;
         Kid = kid;
@@ -41,13 +41,15 @@ public sealed class SigningKey
     /// <summary>Gets the public key material. Never carries private key material.</summary>
     public PublicKeyParameters PublicKey { get; }
 
-    /// <summary>Gets the key's expiry, or <see langword="null"/> when it never expires.</summary>
-    public DateTimeOffset? ExpiresAt { get; }
+    /// <summary>
+    /// Gets the instant this key becomes valid, carried through from <see cref="SourceKey.NotBefore"/>;
+    /// <see cref="DateTimeOffset.MinValue"/> for an undated key.
+    /// </summary>
+    public DateTimeOffset NotBefore { get; }
 
     /// <summary>
-    /// Gets the instant this key's own credential becomes valid, or <see langword="null"/> when it
-    /// is valid from the moment it exists — carried through from
-    /// <see cref="SourceKey.NotBefore"/>.
+    /// Gets the key's expiry, carried through from <see cref="SourceKey.ExpiresAt"/>;
+    /// <see cref="DateTimeOffset.MaxValue"/> for a key that never expires.
     /// </summary>
-    public DateTimeOffset? NotBefore { get; }
+    public DateTimeOffset ExpiresAt { get; }
 }

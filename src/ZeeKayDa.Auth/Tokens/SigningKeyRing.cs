@@ -1,10 +1,11 @@
+using ZeeKayDa.Auth.Logging;
+
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// What every signing consumer depends on: the current <see cref="SigningKeySet"/>, and the ability
-/// to sign with the key currently designated as the signer. Reads its <see cref="ISigningKeySource"/>
-/// exactly once at startup, builds the key set, opens and self-tests the signer, then never reads
-/// again.
+/// to sign with the key chosen as the signer. Reads its <see cref="ISigningKeySource"/> exactly once
+/// at startup, builds the key set, opens and self-tests the signer, then never reads again.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -32,6 +33,8 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 {
     private readonly ISigningKeySource _source;
     private readonly TimeProvider _timeProvider;
+    private readonly SigningKeyOptions _options;
+    private readonly SanitizingLogger<SigningKeyRing> _logger;
 
     // The signing key set and the signer opened for it, written together exactly once by the one
     // initialization — never as two independently-updated fields — so a consumer can never observe
@@ -49,15 +52,6 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     // the publish, so a losing caller neither re-reads the source nor opens a second signer.
     private Lazy<Task>? _initialization;
 
-    // Tolerance on the not-before end of the signing key's validity window, and on that end only.
-    // No relying party can observe a key's NotBefore — it is not a JWK member (RFC 7517 §4) and no
-    // certificate is published anywhere — so signing a few minutes "early" is undetectable and
-    // harmless, while a host clock trailing the machine that minted the credential would otherwise
-    // turn a correct deployment into a hard startup failure. Fixed and non-configurable: an operator
-    // knob here would only ever be turned up to work around a broken clock. The expiry end has a real
-    // observer, every relying party validating a token, and stays exact.
-    private static readonly TimeSpan NotBeforeGrace = TimeSpan.FromMinutes(5);
-
     /// <summary>
     /// Initialises a <see cref="SigningKeyRing"/> over <paramref name="source"/>. Call
     /// <see cref="EnsureInitializedAsync"/> (done automatically at host startup by
@@ -68,18 +62,24 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// The signing key source to read once. This constructor takes ownership: the ring disposes
     /// <paramref name="source"/> once, at shutdown.
     /// </param>
-    /// <param name="timeProvider">Used to evaluate the signing key's validity window at initialization time.</param>
+    /// <param name="timeProvider">The clock the key set is built against at initialization time.</param>
+    /// <param name="options">The timing rules that choose the signing key and the published keys.</param>
+    /// <param name="logger">Receives the warning when the signing key has not been published for the lead time.</param>
     /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="source"/> or <paramref name="timeProvider"/> is
-    /// <see langword="null"/>.
+    /// Thrown when any argument is <see langword="null"/>.
     /// </exception>
-    internal SigningKeyRing(ISigningKeySource source, TimeProvider timeProvider)
+    internal SigningKeyRing(
+        ISigningKeySource source, TimeProvider timeProvider, SigningKeyOptions options, SanitizingLogger<SigningKeyRing> logger)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(logger);
 
         _source = source;
         _timeProvider = timeProvider;
+        _options = options;
+        _logger = logger;
     }
 
     /// <summary>
@@ -185,40 +185,6 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Rejects a signing key whose own validity window has not opened or has already closed.
-    /// </summary>
-    /// <remarks>
-    /// Checked against <paramref name="signingKey"/> alone and never against the published set: a
-    /// <c>Next</c> key whose window has not opened yet is the entire point of staging one, and a
-    /// <c>Previous</c> key outliving its window is why it is still published.
-    /// </remarks>
-    private static void ValidateSigningKeyWindow(SigningKey signingKey, DateTimeOffset now)
-    {
-        // Written as a difference between the two instants rather than as `notBefore - Grace > now`.
-        // The two are mathematically identical, but subtracting from notBefore underflows for a key
-        // reported with a NotBefore at DateTimeOffset.MinValue — a plausible way for a third-party
-        // source to spell "always valid" — throwing ArgumentOutOfRangeException out of startup
-        // instead of the configuration failure this method exists to raise.
-        if (signingKey.NotBefore is { } notBefore && notBefore - now > NotBeforeGrace)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.signing_key_not_yet_valid",
-                    $"The Current signing key '{signingKey.Kid}' is not valid until {notBefore:O}. " +
-                    "Configure it as Next until then, and leave the key it succeeds as Current."));
-        }
-
-        if (signingKey.ExpiresAt is { } expiresAt && expiresAt <= now)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.signing_key_expired",
-                    $"The Current signing key '{signingKey.Kid}' expired at {expiresAt:O}. An " +
-                    "expired signing key issues tokens no relying party will accept."));
-        }
-    }
-
-    /// <summary>
     /// Reads the source, builds the key set, opens the signer, and self-tests it — once, however
     /// many times this is called.
     /// </summary>
@@ -249,29 +215,18 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                     "must never return null."));
         }
 
-        var set = SigningKeySetBuilder.Build(sourceKeys);
-
-        ValidateSigningKeyWindow(set.SigningKey, _timeProvider.GetUtcNow());
+        var set = SigningKeySetBuilder.Build(sourceKeys, _timeProvider.GetUtcNow(), _options, _logger);
 
         var signer = await OpenSignerAsync(set.SigningKey, cancellationToken).ConfigureAwait(false);
         try
         {
-            if (signer.Algorithm != set.SigningKey.Algorithm)
-            {
-                throw new ZeeKayDaConfigurationException(
-                    new ZeeKayDaConfigurationFailure(
-                        "signing.signer_algorithm_mismatch",
-                        $"The signer opened for key '{set.SigningKey.Kid}' signs under {signer.Algorithm}, " +
-                        $"but the key was reported with algorithm {set.SigningKey.Algorithm}."));
-            }
-
             await SigningSelfTest.RunAsync(signer, set.SigningKey, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
             // A throwing Dispose on a third-party signer must not replace the failure that actually
-            // matters — the operator needs the algorithm mismatch or self-test failure, not whatever
-            // went wrong while cleaning up after it.
+            // matters — the operator needs the self-test failure, not whatever went wrong while
+            // cleaning up after it.
             DisposeQuietly(signer);
             throw;
         }

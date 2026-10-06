@@ -38,14 +38,13 @@ public sealed class JwtTokenIssuerTests
 
     private sealed class WorkingSource(RSA rsa) : ISigningKeySource
     {
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             var current = new SourceKey(
                 new SourceKeyId("current"),
                 SigningAlgorithm.RS256,
-                PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)),
-                ExpiresAt: null);
-            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+                PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)));
+            return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -66,8 +65,6 @@ public sealed class JwtTokenIssuerTests
     {
         public int SignatureCount { get; private set; }
 
-        public SigningAlgorithm Algorithm => inner.Algorithm;
-
         public Task<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
         {
             SignatureCount++;
@@ -84,7 +81,7 @@ public sealed class JwtTokenIssuerTests
         CountingSigner? signer = null;
         using var privateKey = TestSigningKeys.PrivateKey(SigningAlgorithm.RS256);
         var ring = TestSigningKeys.Ring(
-            SourceKeySet.Create(previous: null, TestSigningKeys.SourceKey("current", SigningAlgorithm.RS256, privateKey), next: null),
+            [TestSigningKeys.SourceKey("current", SigningAlgorithm.RS256, privateKey)],
             privateKey,
             decorateSigner: inner => signer = new CountingSigner(inner));
         signer!.Reset();
@@ -121,14 +118,13 @@ public sealed class JwtTokenIssuerTests
     /// <summary>A source over one EC key, for the algorithms whose hash is not SHA-256.</summary>
     private sealed class EcSource(ECDsa ecdsa, SigningAlgorithm algorithm) : ISigningKeySource
     {
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             var current = new SourceKey(
                 new SourceKeyId("current"),
                 algorithm,
-                PublicKeyParameters.FromEc(ecdsa.ExportParameters(includePrivateParameters: false)),
-                ExpiresAt: null);
-            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+                PublicKeyParameters.FromEc(ecdsa.ExportParameters(includePrivateParameters: false)));
+            return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -356,7 +352,7 @@ public sealed class JwtTokenIssuerTests
     public async Task An_ID_token_signed_with_ES384_hashes_the_access_token_with_SHA_384()
     {
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP384);
-        SigningKeyRing ring = new SigningKeyRing(new EcSource(ecdsa, SigningAlgorithm.ES384), new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(new EcSource(ecdsa, SigningAlgorithm.ES384), new FakeTimeProvider(Epoch), TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         var issuer = new JwtTokenIssuer(ring);
         var accessToken = new IssuedToken("header.payload.signature", TokenKind.AccessToken);
@@ -513,7 +509,7 @@ public sealed class JwtTokenIssuerTests
 
     private static async Task<(JwtTokenIssuer Issuer, SigningKeyRing Ring)> CreateIssuerAsync(RSA rsa)
     {
-        SigningKeyRing ring = new SigningKeyRing(new WorkingSource(rsa), new FakeTimeProvider(Epoch));
+        SigningKeyRing ring = new SigningKeyRing(new WorkingSource(rsa), new FakeTimeProvider(Epoch), TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         return (new JwtTokenIssuer(ring), ring);
     }

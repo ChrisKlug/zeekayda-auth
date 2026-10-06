@@ -50,7 +50,7 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
             CreateSignerAsyncCallCount = 0;
         }
 
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             ReadAsyncCallCount++;
             throw new NotSupportedException();

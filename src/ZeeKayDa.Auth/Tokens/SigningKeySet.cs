@@ -21,7 +21,7 @@ public sealed class SigningKeySet
     /// <summary>Gets the key that signs.</summary>
     public SigningKey SigningKey { get; }
 
-    /// <summary>Gets every key to publish, signing key included.</summary>
+    /// <summary>Gets every key to publish, signing key included, oldest first.</summary>
     public IReadOnlyList<SigningKey> Published { get; }
 
     /// <summary>
@@ -31,8 +31,8 @@ public sealed class SigningKeySet
     /// </summary>
     /// <remarks>
     /// Derived from the published set, not from <see cref="SigningKey"/> alone, so an algorithm
-    /// does not drop out of discovery while tokens signed under it are still live (a <c>Previous</c>
-    /// key's algorithm remains advertised for as long as that key is published).
+    /// does not drop out of discovery while tokens signed under it are still live (a retired key's
+    /// algorithm remains advertised for as long as that key is published).
     /// </remarks>
     public IReadOnlyList<SigningAlgorithm> AdvertisedAlgorithms { get; }
 }

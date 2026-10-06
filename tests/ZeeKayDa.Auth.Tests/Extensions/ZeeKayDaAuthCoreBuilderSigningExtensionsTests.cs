@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.StartupVerification;
+using ZeeKayDa.Auth.Tests.Tokens;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
@@ -59,7 +60,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningExtensionsTests
     [Fact]
     public async Task AddInMemoryDevelopmentSigning_registers_the_ring_over_the_development_source()
     {
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddRingDependencies();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment { ContentRootPath = "/app" });
         var builder = new ZeeKayDaAuthCoreBuilder(services);

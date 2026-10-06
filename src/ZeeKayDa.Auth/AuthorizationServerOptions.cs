@@ -119,6 +119,11 @@ public sealed class AuthorizationServerOptions
     public JwksEndpointOptions JwksEndpoint { get; } = new();
 
     /// <summary>
+    /// Gets the signing key timing options.
+    /// </summary>
+    public SigningKeyOptions SigningKeys { get; } = new();
+
+    /// <summary>
     /// Gets the UserInfo endpoint configuration options.
     /// </summary>
     public UserInfoEndpointOptions UserInfoEndpoint { get; } = new();

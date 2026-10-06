@@ -42,10 +42,10 @@ internal sealed class DevelopmentSigningKeySource(
 
     // The one key set this source ever reports. Every read after the first returns it unchanged: a
     // fresh key per read would invalidate every token already issued under the previous one.
-    private SourceKeySet? _keySet;
+    private IReadOnlyList<SourceKey>? _keySet;
 
     /// <inheritdoc/>
-    public async Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
         // Enforced on every read, ahead of the memoized set, so a gate that would reject this host
         // rejects it however often the source is read.
@@ -67,17 +67,15 @@ internal sealed class DevelopmentSigningKeySource(
 
             try
             {
-                // ExpiresAt = null: a dev key never expires — its lifetime is the process's, not a
-                // certificate's.
+                // Undated and never expiring: the one dev key signs at once, for the process's lifetime.
                 var key = new SourceKey(
                     DevKeyId,
                     SigningAlgorithm.RS256,
-                    PublicKeyParameters.FromRsa(rsa.ExportParameters(false)),
-                    ExpiresAt: null);
+                    PublicKeyParameters.FromRsa(rsa.ExportParameters(false)));
 
                 // The set is built before the private key is published, so a failure here can never
                 // leave a disposed key behind for CreateSignerAsync to lend.
-                var keySet = SourceKeySet.Create(previous: null, current: key, next: null);
+                IReadOnlyList<SourceKey> keySet = [key];
 
                 _pendingPrivateKey = rsa;
                 _keySet = keySet;

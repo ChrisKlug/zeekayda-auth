@@ -8,10 +8,6 @@ ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.CertificateIdentif
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.CertificateIdentifier.set -> void
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.Credential.get -> Azure.Core.TokenCredential?
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.Credential.set -> void
-ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.PreActivationDelay.get -> System.TimeSpan
-ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.PreActivationDelay.set -> void
-ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.PreviousVersionsToPublish.get -> int
-ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.PreviousVersionsToPublish.set -> void
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.Algorithm.set -> void
@@ -20,10 +16,6 @@ ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.Credential.get -> 
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.Credential.set -> void
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.KeyIdentifier.get -> Azure.Security.KeyVault.Keys.KeyVaultKeyIdentifier
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.KeyIdentifier.set -> void
-ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.PreActivationDelay.get -> System.TimeSpan
-ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.PreActivationDelay.set -> void
-ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.PreviousVersionsToPublish.get -> int
-ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.PreviousVersionsToPublish.set -> void
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultSigningException
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultSigningException.AzureKeyVaultSigningException(string! message) -> void
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultSigningException.AzureKeyVaultSigningException(string! message, System.Exception! innerException) -> void

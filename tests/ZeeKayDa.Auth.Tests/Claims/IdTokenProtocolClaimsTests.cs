@@ -6,6 +6,7 @@ using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Stores;
+using ZeeKayDa.Auth.Tests.Tokens;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Claims;
@@ -42,7 +43,7 @@ public sealed class IdTokenProtocolClaimsTests
         // Asserting equality fails in both directions: a claim added to the token and not
         // advertised, and a claim advertised that the token stopped carrying.
         using var rsa = RSA.Create(2048);
-        SigningKeyRing ring = new SigningKeyRing(new SingleKeySource(rsa), new FakeTimeProvider(Now));
+        SigningKeyRing ring = new SigningKeyRing(new SingleKeySource(rsa), new FakeTimeProvider(Now), TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         // Everything optional is present, so the token carries every name the set claims it may.
@@ -99,15 +100,14 @@ public sealed class IdTokenProtocolClaimsTests
 
     private sealed class SingleKeySource(RSA rsa) : ISigningKeySource
     {
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<SourceKeySet>(SourceKeySet.Create(
-                previous: null,
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SourceKey>>(
+            [
                 new SourceKey(
                     new SourceKeyId("current"),
                     SigningAlgorithm.RS256,
-                    PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)),
-                    ExpiresAt: null),
-                next: null));
+                    PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false))),
+            ]);
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {

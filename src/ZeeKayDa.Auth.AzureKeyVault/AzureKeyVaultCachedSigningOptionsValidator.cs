@@ -38,21 +38,5 @@ internal sealed class AzureKeyVaultCachedSigningOptionsValidator : ZeeKayDaOptio
                 $"AzureKeyVaultCachedSigningOptions.Algorithm value '{options.Algorithm}' is not a defined " +
                 $"{nameof(SigningAlgorithm)} member.");
         }
-
-        if (options.PreviousVersionsToPublish < 0)
-        {
-            yield return new(
-                "configuration.azure_key_vault_cached_signing.previous_versions_to_publish.negative",
-                $"AzureKeyVaultCachedSigningOptions.PreviousVersionsToPublish ({options.PreviousVersionsToPublish}) " +
-                "must be zero or greater. Use 0 to publish no versions older than the signing one.");
-        }
-
-        if (options.PreActivationDelay < TimeSpan.Zero)
-        {
-            yield return new(
-                "configuration.azure_key_vault_cached_signing.pre_activation_delay.negative",
-                $"AzureKeyVaultCachedSigningOptions.PreActivationDelay ({options.PreActivationDelay}) must be " +
-                "zero or greater. Use TimeSpan.Zero to let a newly created certificate version sign immediately.");
-        }
     }
 }

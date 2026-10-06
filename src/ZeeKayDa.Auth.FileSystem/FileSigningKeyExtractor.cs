@@ -86,8 +86,8 @@ internal static class FileSigningKeyExtractor
             new SourceKeyId(certificatePath),
             algorithm,
             ToPublicKeyParameters(publicKey, keyType),
-            ExpiresAt: new DateTimeOffset(certificate.NotAfter),
-            NotBefore: new DateTimeOffset(certificate.NotBefore));
+            notBefore: new DateTimeOffset(certificate.NotBefore),
+            expiresAt: new DateTimeOffset(certificate.NotAfter));
     }
 
     /// <summary>

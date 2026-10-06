@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
@@ -59,10 +61,12 @@ public static class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.AddSingleton<SigningKeyRing>(sp =>
         {
-            // The clock first: once the source exists, only the ring may own it, so nothing that
-            // can still throw may run between creating it and handing it over.
+            // Its dependencies first: once the source exists, only the ring may own it, so nothing
+            // that can still throw may run between creating it and handing it over.
             var timeProvider = sp.GetRequiredService<TimeProvider>();
-            return new SigningKeyRing(ActivatorUtilities.CreateInstance<TSource>(sp), timeProvider);
+            var options = sp.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value.SigningKeys;
+            var logger = sp.GetRequiredService<SanitizingLogger<SigningKeyRing>>();
+            return new SigningKeyRing(ActivatorUtilities.CreateInstance<TSource>(sp), timeProvider, options, logger);
         });
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupActivator, SigningKeyRingActivator>());

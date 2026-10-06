@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ZeeKayDa.Auth.StartupVerification;
+using ZeeKayDa.Auth.Tests.Tokens;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Extensions;
@@ -25,14 +26,14 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     /// </summary>
     private sealed class ExternalSigningKeySource : ISigningKeySource
     {
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             using var rsa = RSA.Create(2048);
             var current = new SourceKey(
                 new SourceKeyId("current"), SigningAlgorithm.RS256,
-                PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), DateTimeOffset.UtcNow.AddDays(90));
+                PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: DateTimeOffset.UtcNow.AddDays(90));
 
-            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -43,7 +44,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     /// registering a different source than one already registered fails loudly.</summary>
     private sealed class OtherExternalSigningKeySource : ISigningKeySource
     {
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -61,10 +62,10 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
 
         public int CreateSignerAsyncCallCount { get; private set; }
 
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             ReadAsyncCallCount++;
-            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -80,7 +81,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     /// <see cref="IAsyncDisposable"/>, modelling the shape registration must reject.</summary>
     private sealed class AsyncOnlySigningKeySource : ISigningKeySource, IAsyncDisposable
     {
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -107,8 +108,8 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     private sealed class OrderRecordingSigningKeySource(TestKey key, DisposalLog log)
         : ISigningKeySource, IDisposable
     {
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, key.Current, next: null));
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SourceKey>>([key.Current]);
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
@@ -122,8 +123,6 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
 
     private sealed class OrderRecordingSigner(ISigner inner, List<string> disposalOrder) : ISigner
     {
-        public SigningAlgorithm Algorithm => inner.Algorithm;
-
         public Task<ReadOnlyMemory<byte>> SignAsync(
             ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
             => inner.SignAsync(signingInput, cancellationToken);
@@ -140,8 +139,8 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     private sealed class DualDisposableSigningKeySource(TestKey key, DisposalLog log)
         : ISigningKeySource, IDisposable, IAsyncDisposable
     {
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, key.Current, next: null));
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SourceKey>>([key.Current]);
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
@@ -162,7 +161,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     [Fact]
     public void AddSigningKeySource_registers_an_SigningKeyRing()
     {
-        var services = new ServiceCollection();
+        var services = new ServiceCollection().AddRingDependencies();
 
         new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
@@ -376,7 +375,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     {
         public ConstructionRecordingSigningKeySource(ConstructionLog log) => log.Constructed = true;
 
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -388,8 +387,9 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
             new SourceKeyId("current"), SigningAlgorithm.RS256,
-            PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), DateTimeOffset.UtcNow.AddDays(90));
+            PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: DateTimeOffset.UtcNow.AddDays(90));
         var services = new ServiceCollection();
+        services.AddRingDependencies();
         services.AddSingleton(new TestKey(current, rsa.ExportRSAPrivateKeyPem()));
         services.AddSingleton(log);
         return services;
@@ -397,7 +397,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
 
     private abstract class AbstractSigningKeySource : ISigningKeySource
     {
-        public abstract Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default);
+        public abstract Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default);
 
         public abstract Task<ISigner> CreateSignerAsync(
             SourceKeyId id, CancellationToken cancellationToken = default);

@@ -92,8 +92,9 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var now = T0 + TimeSpan.FromDays(30);
         var (services, reader, _) = BuildServices(now);
         reader.AddRsaVersion("v1", createdOn: T0);
-        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
-        reader.AddRsaVersion("v3", createdOn: now - TimeSpan.FromHours(1)); // Younger than the delay -> staged.
+        // Past the one-day lead time, and inside it plus the ten-minute retention: v2 signs, v1 stays published.
+        reader.AddRsaVersion("v2", createdOn: now - TimeSpan.FromDays(1) - TimeSpan.FromMinutes(5));
+        reader.AddRsaVersion("v3", createdOn: now - TimeSpan.FromHours(1)); // Inside the lead time -> staged.
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
@@ -103,7 +104,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().HaveCount(3,
-            "the signing version, one previous version (the default count), and the staged version are all published");
+            "the signing version, its predecessor still inside retention, and the staged version are all published");
         ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")));
         reader.PrivateKeyMaterialCalls.Should().Equal(["v2"],
             "startup — including the ring's signing self-test — downloads private material for the " +

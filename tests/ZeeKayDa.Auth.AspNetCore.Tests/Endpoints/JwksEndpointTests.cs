@@ -52,6 +52,12 @@ public sealed class JwksEndpointTests
 
     private sealed record MultiSlotLayout(bool IncludePrevious, bool IncludeNext);
 
+    /// <summary>
+    /// Just past the default one-day lead time, so the key signs, and well inside the lead time plus
+    /// the default retention (the ten-minute access token lifetime), so the key before it stays published.
+    /// </summary>
+    private static DateTimeOffset SigningNotBefore() => DateTimeOffset.UtcNow.AddDays(-1).AddMinutes(-1);
+
     private sealed class MultiSlotSigningKeySource(MultiSlotLayout layout)
         : ISigningKeySource, IDisposable
     {
@@ -59,34 +65,34 @@ public sealed class JwksEndpointTests
         private readonly RSA _current = RSA.Create(2048);
         private readonly ECDsa _next = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             var previous = layout.IncludePrevious
                 ? new SourceKey(
                     new SourceKeyId("previous-key"),
                     SigningAlgorithm.RS256,
                     PublicKeyParameters.FromRsa(_previous.ExportParameters(includePrivateParameters: false)),
-                    ExpiresAt: null)
+                    DateTimeOffset.UtcNow.AddDays(-10))
                 : null;
             var current = new SourceKey(
                 new SourceKeyId("current-key"),
                 SigningAlgorithm.RS256,
                 PublicKeyParameters.FromRsa(_current.ExportParameters(includePrivateParameters: false)),
-                ExpiresAt: null);
+                SigningNotBefore());
             var next = layout.IncludeNext
                 ? new SourceKey(
                     new SourceKeyId("next-key"),
                     SigningAlgorithm.ES256,
                     PublicKeyParameters.FromEc(_next.ExportParameters(includePrivateParameters: false)),
-                    ExpiresAt: null)
+                    DateTimeOffset.UtcNow.AddHours(-1))
                 : null;
 
-            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous, current, next));
+            return Task.FromResult<IReadOnlyList<SourceKey>>([.. new[] { previous, current, next }.OfType<SourceKey>()]);
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
-            id.Value.Should().Be("current-key", because: "only the Current slot's key ever signs");
+            id.Value.Should().Be("current-key", because: "the newest key past the lead time signs");
 
             // A fresh private key instance: the ring owns and disposes what it is handed.
             var privateKey = RSA.Create(_current.ExportParameters(includePrivateParameters: true));
@@ -404,15 +410,15 @@ public sealed class JwksEndpointTests
                 });
         }
 
-        public Task<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             var publicKey = _rsa is not null
                 ? PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false))
                 : PublicKeyParameters.FromEc(_ecdsa!.ExportParameters(includePrivateParameters: false));
             var current = new SourceKey(
-                new SourceKeyId("current-key"), _algorithm, publicKey, ExpiresAt: null);
+                new SourceKeyId("current-key"), _algorithm, publicKey);
 
-            return Task.FromResult<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
