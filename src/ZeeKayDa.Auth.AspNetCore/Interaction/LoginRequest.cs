@@ -11,7 +11,8 @@ public sealed class LoginRequest
         ClientInformation client,
         IReadOnlyList<ProviderDescriptor> providers,
         bool localLoginEnabled,
-        ProviderReturn? providerReturn)
+        ProviderReturn? providerReturn,
+        string? loginHint)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(providers);
@@ -20,6 +21,7 @@ public sealed class LoginRequest
         Providers = providers;
         LocalLoginEnabled = localLoginEnabled;
         ProviderReturn = providerReturn;
+        LoginHint = loginHint;
     }
 
     /// <summary>The client the user is signing in to.</summary>
@@ -46,4 +48,13 @@ public sealed class LoginRequest
     /// authorization endpoint. Cleared when the user picks a provider again.
     /// </summary>
     public ProviderReturn? ProviderReturn { get; }
+
+    /// <summary>
+    /// The <c>login_hint</c> the client sent (OIDC Core §3.1.2.1) — typically the user's email
+    /// address or phone number — for the page to pre-fill, or <see langword="null"/> when it sent
+    /// none. Verbatim and unverified, at most 256 characters with no control, invisible formatting or line-separator characters: a
+    /// convenience for the user, never an identity, so the page must not sign anyone in, or look
+    /// anyone up, on its strength alone. It is untrusted input: encode it as you would any other.
+    /// </summary>
+    public string? LoginHint { get; }
 }

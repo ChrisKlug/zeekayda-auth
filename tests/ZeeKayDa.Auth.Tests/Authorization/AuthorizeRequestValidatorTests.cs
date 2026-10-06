@@ -673,6 +673,88 @@ public class AuthorizeRequestValidatorTests
         error.RedirectUri.Should().NotContain("..");
     }
 
+    [Fact]
+    public async Task Phase2_login_hint_longer_than_the_limit_is_invalid_request()
+    {
+        var parameters = ValidParameters();
+        parameters["login_hint"] = [new string('a', AuthorizeRequestValidator.MaxLoginHintLength + 1)];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_request");
+    }
+
+    [Fact]
+    public async Task A_login_hint_at_the_limit_is_carried_verbatim()
+    {
+        var hint = "user+tag@example.com" + new string('x', AuthorizeRequestValidator.MaxLoginHintLength - 20);
+        var parameters = ValidParameters();
+        parameters["login_hint"] = [hint];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.LoginHint.Should().Be(hint);
+    }
+
+    [Theory]
+    [InlineData("alice\n@example.com")]
+    [InlineData("alice\u0000")]
+    [InlineData("\u202Ealice")]
+    [InlineData("alice\U000E0041")]
+    [InlineData("alice\u2028x")]
+    [InlineData("alice\u2029x")]
+    public async Task Phase2_login_hint_with_a_control_or_format_character_is_invalid_request(string hint)
+    {
+        var parameters = ValidParameters();
+        parameters["login_hint"] = [hint];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_request");
+    }
+
+    [Theory]
+    [InlineData("\u0645\u06CC\u200C\u0644@example.com")]
+    [InlineData("\u0915\u094D\u200D\u0937@example.com")]
+    public async Task A_login_hint_with_a_zero_width_joiner_is_kept(string hint)
+    {
+        // Internationalized email addresses in Persian and several Indic scripts need them (RFC 5892 CONTEXTJ).
+        var parameters = ValidParameters();
+        parameters["login_hint"] = [hint];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.LoginHint.Should().Be(hint);
+    }
+
+    [Fact]
+    public async Task A_login_hint_with_ordinary_spaces_is_kept()
+    {
+        var parameters = ValidParameters();
+        parameters["login_hint"] = ["+46 70 123 45 67"];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.LoginHint.Should().Be("+46 70 123 45 67");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task An_absent_empty_or_whitespace_login_hint_is_carried_as_none(string? hint)
+    {
+        var parameters = ValidParameters();
+        if (hint is not null)
+            parameters["login_hint"] = [hint];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.LoginHint.Should().BeNull();
+    }
+
     // ── Valid request ─────────────────────────────────────────────────────────────────────────
 
     [Fact]

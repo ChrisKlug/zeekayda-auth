@@ -3,14 +3,14 @@ using System.Text;
 namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
-/// Encodes an <see cref="AuthorizationRequestContext"/> to the compact binary form carried in the
-/// interaction cookie, and decodes it back.
+/// Encodes an <see cref="AuthorizationRequestContext"/> to the compact binary form held in the
+/// interaction store, and decodes it back.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The format is positional — a version byte followed by length-prefixed fields in a fixed order —
 /// rather than JSON. Field names would be roughly 200 bytes of pure overhead on a payload of about
-/// 400, and the cookie is re-sent on every request to its path. Nothing is lost by dropping
+/// 400, and the store holds one per interaction in flight. Nothing is lost by dropping
 /// self-description from a payload only this framework reads.
 /// </para>
 /// <para>
@@ -29,7 +29,7 @@ internal static class AuthorizationRequestContextSerializer
     /// The format version. A payload carrying any other value is refused rather than misread —
     /// positional formats have no way to detect a field that moved.
     /// </summary>
-    private const byte Version = 4;
+    private const byte Version = 5;
 
     public static byte[] Encode(AuthorizationRequestContext context)
     {
@@ -65,6 +65,7 @@ internal static class AuthorizationRequestContextSerializer
         WriteNullableStrings(writer, context.GrantedScopes);
         WriteNullableTimestamp(writer, context.ConsentedAt);
         WriteProviderAttempt(writer, context.ProviderAttempt);
+        WriteNullableString(writer, context.LoginHint);
 
         writer.Flush();
         return buffer.ToArray();
@@ -150,9 +151,10 @@ internal static class AuthorizationRequestContextSerializer
             ConsentedAt = ReadNullableTimestamp(reader),
         };
 
-        return TryReadProviderAttempt(reader, out var attempt)
-            ? context with { ProviderAttempt = attempt }
-            : null;
+        if (!TryReadProviderAttempt(reader, out var attempt))
+            return null;
+
+        return context with { ProviderAttempt = attempt, LoginHint = ReadNullableString(reader) };
     }
 
     /// <summary>

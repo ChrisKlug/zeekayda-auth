@@ -44,4 +44,11 @@ internal sealed record ValidatedAuthorizeRequest
 
     /// <summary>The parsed <c>max_age</c> in seconds, or <see langword="null"/> when absent.</summary>
     public required TimeSpan? MaxAge { get; init; }
+
+    /// <summary>
+    /// The <c>login_hint</c> (OIDC Core §3.1.2.1) as the client sent it, at most
+    /// <see cref="AuthorizeRequestValidator.MaxLoginHintLength"/> characters with no control, format
+    /// (bar the zero-width joiners) or line-separator characters, or <see langword="null"/> when absent, empty or whitespace. A hint, never an identity.
+    /// </summary>
+    public required string? LoginHint { get; init; }
 }

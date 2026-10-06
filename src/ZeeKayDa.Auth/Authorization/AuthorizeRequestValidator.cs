@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Clients;
@@ -58,6 +60,7 @@ internal sealed partial class AuthorizeRequestValidator(
         PromptValuesAreCoherent,
         PromptValuesArePermittedForTheClient,
         MaxAgeIsWellFormed,
+        LoginHintIsWellFormed,
     ];
 
     private readonly ValidatedScopeCatalog _scopes = scopes;
@@ -405,6 +408,28 @@ internal sealed partial class AuthorizeRequestValidator(
         return null;
     }
 
+    /// <summary>
+    /// The most a <c>login_hint</c> may hold. Generous for an email address or a phone number, and
+    /// a bound on what an unauthenticated request may make the interaction carry to the login page.
+    /// </summary>
+    internal const int MaxLoginHintLength = 256;
+
+    /// <summary>
+    /// Within the length cap and free of control, format and line or paragraph separator characters —
+    /// a line break a page could carry into a log line, a bidi override or an invisible tag that makes
+    /// the pre-filled field display misleadingly. Checked per Unicode scalar, so a character outside
+    /// the Basic Multilingual Plane is not split into halves that each pass. Ordinary spaces are kept,
+    /// as phone numbers carry them, and so are the zero-width joiner and non-joiner, which
+    /// internationalized email addresses in several scripts need (RFC 5892 CONTEXTJ).
+    /// </summary>
+    private static Problem? LoginHintIsWellFormed(RequestContext context) =>
+        context.Single("login_hint") switch
+        {
+            { Length: > MaxLoginHintLength } => InvalidRequest("The login_hint parameter is too long."),
+            { } hint when hint.EnumerateRunes().Any(IsRefusedInLoginHint) => InvalidRequest("The login_hint parameter is malformed."),
+            _ => null,
+        };
+
     // ---- Helpers ----
 
     private static ValidatedAuthorizeRequest Build(RequestContext context, string redirectUri, string? state) =>
@@ -418,6 +443,7 @@ internal sealed partial class AuthorizeRequestValidator(
             Pkce = context.CodeChallenge is { } challenge ? new PkceChallenge(challenge, CodeChallengeMethod.S256) : null,
             Prompts = context.Prompts,
             MaxAge = context.MaxAge,
+            LoginHint = context.Single("login_hint") is { } hint && !string.IsNullOrWhiteSpace(hint) ? hint : null,
         };
 
     /// <summary>The request's <c>nonce</c>, or <see langword="null"/> when it carried none.</summary>
@@ -455,6 +481,17 @@ internal sealed partial class AuthorizeRequestValidator(
         Error = AuthorizeRequestErrors.InvalidRequest,
         Description = LocalErrorDescription,
     };
+
+    private static bool IsRefusedInLoginHint(Rune rune) =>
+        Rune.GetUnicodeCategory(rune) switch
+        {
+            UnicodeCategory.Control or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator => true,
+            UnicodeCategory.Format => rune.Value is not (ZeroWidthNonJoiner or ZeroWidthJoiner),
+            _ => false,
+        };
+
+    private const int ZeroWidthNonJoiner = 0x200C;
+    private const int ZeroWidthJoiner = 0x200D;
 
     private static bool ContainsControlOrWhitespace(string value) =>
         value.Any(c => char.IsControl(c) || char.IsWhiteSpace(c));

@@ -84,6 +84,7 @@ internal sealed class AuthorizationFlow(
             Pkce = request.Pkce,
             Prompts = request.Prompts,
             MaxAge = request.MaxAge,
+            LoginHint = request.LoginHint,
             IssuedAt = now,
             ExpiresAt = now + AuthorizationRequestContextStore.Lifetime,
             SsoSessionId = session?.SessionId,
