@@ -101,7 +101,7 @@ public sealed class LocalSignerTests
     }
 
     [Fact]
-    public void FromCertificate_rejects_an_undefined_algorithm_before_opening_the_private_key()
+    public void FromCertificate_rejects_an_undefined_algorithm()
     {
         using var certificate = SelfSigned(RSA.Create(2048));
 
