@@ -35,7 +35,7 @@ fi
 
 # Per-lens defaults. Override per run with --model / --effort.
 case "$lens" in
-  code)         : "${model:=gpt-5.6-terra}"; : "${effort:=high}" ;;
+  code)         : "${model:=gpt-6.1-sol}";   : "${effort:=high}" ;;
   security)     : "${model:=gpt-6.1-sol}";   : "${effort:=high}" ;;
   architecture) : "${model:=gpt-6.1-sol}";   : "${effort:=high}" ;;
   text)         : "${model:=gpt-6.1-sol}";   : "${effort:=medium}" ;;
