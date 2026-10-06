@@ -701,6 +701,9 @@ public class AuthorizeRequestValidatorTests
     [InlineData("alice\n@example.com")]
     [InlineData("alice\u0000")]
     [InlineData("\u202Ealice")]
+    [InlineData("alice\U000E0041")]
+    [InlineData("alice\u2028x")]
+    [InlineData("alice\u2029x")]
     public async Task Phase2_login_hint_with_a_control_or_format_character_is_invalid_request(string hint)
     {
         var parameters = ValidParameters();
@@ -710,6 +713,20 @@ public class AuthorizeRequestValidatorTests
 
         result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
             .Subject.Error.Should().Be("invalid_request");
+    }
+
+    [Theory]
+    [InlineData("\u0645\u06CC\u200C\u0644@example.com")]
+    [InlineData("\u0915\u094D\u200D\u0937@example.com")]
+    public async Task A_login_hint_with_a_zero_width_joiner_is_kept(string hint)
+    {
+        // Internationalized email addresses in Persian and several Indic scripts need them (RFC 5892 CONTEXTJ).
+        var parameters = ValidParameters();
+        parameters["login_hint"] = [hint];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.LoginHint.Should().Be(hint);
     }
 
     [Fact]

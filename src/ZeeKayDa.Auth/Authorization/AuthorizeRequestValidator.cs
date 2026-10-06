@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Clients;
@@ -413,15 +415,18 @@ internal sealed partial class AuthorizeRequestValidator(
     internal const int MaxLoginHintLength = 256;
 
     /// <summary>
-    /// Within the length cap and free of control and format characters — a line break a page could
-    /// carry into a log line, a bidi override that makes the pre-filled field display misleadingly.
-    /// Ordinary spaces are kept: phone numbers carry them.
+    /// Within the length cap and free of control, format and line or paragraph separator characters —
+    /// a line break a page could carry into a log line, a bidi override or an invisible tag that makes
+    /// the pre-filled field display misleadingly. Checked per Unicode scalar, so a character outside
+    /// the Basic Multilingual Plane is not split into halves that each pass. Ordinary spaces are kept,
+    /// as phone numbers carry them, and so are the zero-width joiner and non-joiner, which
+    /// internationalized email addresses in several scripts need (RFC 5892 CONTEXTJ).
     /// </summary>
     private static Problem? LoginHintIsWellFormed(RequestContext context) =>
         context.Single("login_hint") switch
         {
             { Length: > MaxLoginHintLength } => InvalidRequest("The login_hint parameter is too long."),
-            { } hint when hint.Any(IsControlOrFormat) => InvalidRequest("The login_hint parameter is malformed."),
+            { } hint when hint.EnumerateRunes().Any(IsRefusedInLoginHint) => InvalidRequest("The login_hint parameter is malformed."),
             _ => null,
         };
 
@@ -477,8 +482,16 @@ internal sealed partial class AuthorizeRequestValidator(
         Description = LocalErrorDescription,
     };
 
-    private static bool IsControlOrFormat(char c) =>
-        char.IsControl(c) || char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Format;
+    private static bool IsRefusedInLoginHint(Rune rune) =>
+        Rune.GetUnicodeCategory(rune) switch
+        {
+            UnicodeCategory.Control or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator => true,
+            UnicodeCategory.Format => rune.Value is not (ZeroWidthNonJoiner or ZeroWidthJoiner),
+            _ => false,
+        };
+
+    private const int ZeroWidthNonJoiner = 0x200C;
+    private const int ZeroWidthJoiner = 0x200D;
 
     private static bool ContainsControlOrWhitespace(string value) =>
         value.Any(c => char.IsControl(c) || char.IsWhiteSpace(c));
