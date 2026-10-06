@@ -35,7 +35,7 @@ public sealed class ClientRegistrationValidatorTests
         IClientSecretHasher? hasher = null,
         SanitizingLogger<ClientRegistrationValidator>? logger = null,
         AuthorizationServerOptions? serverOptions = null,
-        SigningKeySet? keySet = null,
+        SigningKeyRing? ring = null,
         bool withKeyRing = true)
     {
         var opts = serverOptions ?? BuildDefaultServerOptions();
@@ -46,27 +46,7 @@ public sealed class ClientRegistrationValidatorTests
             TestAuthMethods.Advertised(opts),
             composite,
             logger ?? NullSanitizingLogger<ClientRegistrationValidator>.Instance,
-            withKeyRing ? new FakeSigningKeyRing(keySet) : null);
-    }
-
-    /// <summary>
-    /// A ring whose <c>CurrentOrNull</c> is whatever the test supplies — <see langword="null"/>
-    /// standing for a ring that has not yet read its source.
-    /// </summary>
-    private sealed class FakeSigningKeyRing(SigningKeySet? current) : ISigningKeyRing
-    {
-        public SigningKeySet Current => current ?? throw new InvalidOperationException();
-
-        public Task<SigningOutcome> SignAsync<TState>(
-            TState state,
-            Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        SigningKeySet? ISigningKeyRing.CurrentOrNull => current;
+            withKeyRing ? ring ?? TestSigningKeys.Uninitialized(SigningAlgorithm.RS256) : null);
     }
 
     /// <summary>
@@ -383,7 +363,7 @@ public sealed class ClientRegistrationValidatorTests
     public void The_unread_key_ring_warning_is_written_once_per_client()
     {
         var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
-        var validator = MakeValidator(logger: logger, keySet: null);
+        var validator = MakeValidator(logger: logger);
         var client = MakeValidPublicClient() with
         {
             AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 }
@@ -1162,7 +1142,7 @@ public sealed class ClientRegistrationValidatorTests
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         var validator = MakeValidator(
             serverOptions: opts,
-            keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
+            ring: TestSigningKeys.Ring(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
 
         var client = MakeValidPublicClient() with
         {
@@ -1179,7 +1159,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         var validator = MakeValidator(
-            serverOptions: opts, keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256));
+            serverOptions: opts, ring: TestSigningKeys.Ring(SigningAlgorithm.RS256));
 
         var client = MakeValidPublicClient() with
         {
@@ -1198,7 +1178,7 @@ public sealed class ClientRegistrationValidatorTests
         opts.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
         var validator = MakeValidator(
             serverOptions: opts,
-            keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
+            ring: TestSigningKeys.Ring(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
 
         var client = MakeValidPublicClient() with
         {
@@ -1216,7 +1196,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         opts.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
-        var validator = MakeValidator(serverOptions: opts, keySet: null);
+        var validator = MakeValidator(serverOptions: opts);
 
         var client = MakeValidPublicClient() with
         {
@@ -1236,7 +1216,7 @@ public sealed class ClientRegistrationValidatorTests
         // passed over in silence.
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
-        var validator = MakeValidator(logger: logger, serverOptions: opts, keySet: null);
+        var validator = MakeValidator(logger: logger, serverOptions: opts);
 
         var client = MakeValidPublicClient() with
         {
@@ -2085,8 +2065,7 @@ public sealed class ClientRegistrationValidatorTests
     {
         // ES256 is advertised (a published key carries it), so the subset rule passes; but the key
         // that signs today is RS256, and a client pinned to ES256 could never be issued an ID token.
-        var keySet = TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256);
-        var validator = MakeValidator(keySet: keySet);
+        var validator = MakeValidator(ring: TestSigningKeys.Ring(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
         var client = MakeValidPublicClient() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 } };
 
         var failures = validator.Validate(client);
@@ -2097,8 +2076,7 @@ public sealed class ClientRegistrationValidatorTests
     [Fact]
     public void A_client_whose_allowed_algorithms_include_the_current_signing_key_passes()
     {
-        var keySet = TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256);
-        var validator = MakeValidator(keySet: keySet);
+        var validator = MakeValidator(ring: TestSigningKeys.Ring(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
         var client = MakeValidPublicClient() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } };
 
         var failures = validator.Validate(client);

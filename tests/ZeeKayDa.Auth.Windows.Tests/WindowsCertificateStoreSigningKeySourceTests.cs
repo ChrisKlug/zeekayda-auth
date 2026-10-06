@@ -20,7 +20,7 @@ namespace ZeeKayDa.Auth.Windows.Tests;
 /// change-detection surface here — a rotated-in, removed, or replaced certificate is never picked up
 /// without a restart. Which key signs is decided entirely by which slot it is configured in, never
 /// by the clock, so this type holds no <c>TimeProvider</c>: the one clock check that remains, on the
-/// signing key's own validity window, belongs to <c>StaticSigningKeyRing</c> and is tested there.
+/// signing key's own validity window, belongs to <c>SigningKeyRing</c> and is tested there.
 /// The source depends only on <see cref="ICertificateStoreReader"/>, so these tests run on any OS,
 /// unlike <c>Integration/WindowsCertificateStoreSigningIntegrationTests</c>.
 /// </remarks>

@@ -228,7 +228,7 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
         builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         await using var provider = builder.Services.BuildServiceProvider();
-        provider.GetService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+        provider.GetService<SigningKeyRing>().Should().BeOfType<SigningKeyRing>();
     }
 
     [Fact]
@@ -281,7 +281,7 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
         builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
 
         await using var provider = builder.Services.BuildServiceProvider();
-        provider.GetService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+        provider.GetService<SigningKeyRing>().Should().BeOfType<SigningKeyRing>();
     }
 
     [Fact]

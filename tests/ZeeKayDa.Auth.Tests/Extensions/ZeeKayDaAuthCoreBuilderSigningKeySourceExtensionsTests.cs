@@ -39,22 +39,6 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
             => throw new NotSupportedException();
     }
 
-    /// <summary>A minimal <see cref="ISigningKeyRing"/> standing in for a manual registration, so a
-    /// test can prove which registered instance a resolution actually returns.</summary>
-    private sealed class FakeSigningKeyRing : ISigningKeyRing
-    {
-        public SigningKeySet Current => throw new NotSupportedException();
-
-        public Task<SigningOutcome> SignAsync<TState>(
-            TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-
-        SigningKeySet? ISigningKeyRing.CurrentOrNull => null;
-    }
-
     /// <summary>A second, distinct <see cref="ISigningKeySource"/> implementation, for proving that
     /// registering a different source than one already registered fails loudly.</summary>
     private sealed class OtherExternalSigningKeySource : ISigningKeySource
@@ -176,14 +160,14 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     }
 
     [Fact]
-    public void AddSigningKeySource_registers_an_ISigningKeyRing()
+    public void AddSigningKeySource_registers_an_SigningKeyRing()
     {
         var services = new ServiceCollection();
 
         new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+        provider.GetRequiredService<SigningKeyRing>().Should().BeOfType<SigningKeyRing>();
     }
 
     [Fact]
@@ -232,7 +216,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
         var act = () => new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
 
         act.Should().Throw<InvalidOperationException>();
-        services.Should().ContainSingle(d => d.ServiceType == typeof(ISigningKeyRing));
+        services.Should().ContainSingle(d => d.ServiceType == typeof(SigningKeyRing));
         services.Should().ContainSingle(d => d.ServiceType == typeof(SigningKeySourceRegistration));
     }
 
@@ -310,7 +294,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
         new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<OrderRecordingSigningKeySource>();
         using (var provider = services.BuildServiceProvider())
         {
-            await provider.GetRequiredService<ISigningKeyRing>().EnsureInitializedAsync(TestContext.Current.CancellationToken);
+            await provider.GetRequiredService<SigningKeyRing>().EnsureInitializedAsync(TestContext.Current.CancellationToken);
         }
 
         log.Order.Should().Equal("signer", "source");
@@ -324,7 +308,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
         new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<DualDisposableSigningKeySource>();
         using (var provider = services.BuildServiceProvider())
         {
-            await provider.GetRequiredService<ISigningKeyRing>().EnsureInitializedAsync(TestContext.Current.CancellationToken);
+            await provider.GetRequiredService<SigningKeyRing>().EnsureInitializedAsync(TestContext.Current.CancellationToken);
         }
 
         log.SyncDisposed.Should().BeTrue();
@@ -340,7 +324,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
         var provider = services.BuildServiceProvider();
         try
         {
-            await provider.GetRequiredService<ISigningKeyRing>().EnsureInitializedAsync(TestContext.Current.CancellationToken);
+            await provider.GetRequiredService<SigningKeyRing>().EnsureInitializedAsync(TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -377,7 +361,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
         new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ConstructionRecordingSigningKeySource>();
         using var provider = services.BuildServiceProvider();
 
-        var act = () => provider.GetRequiredService<ISigningKeyRing>();
+        var act = () => provider.GetRequiredService<SigningKeyRing>();
 
         act.Should().Throw<InvalidOperationException>();
         log.Constructed.Should().BeFalse();
@@ -399,37 +383,6 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
             => throw new NotSupportedException();
     }
 
-    [Fact]
-    public void AddSigningKeySource_overrides_a_manual_ISigningKeyRing_registered_before_it()
-    {
-        // The framework's ring is added with AddSingleton, so under MS DI's last-wins resolution it
-        // replaces a hand-registered ring that came first; the call does not reject it.
-        var services = new ServiceCollection();
-        services.AddSingleton<ISigningKeyRing>(new FakeSigningKeyRing());
-
-        var act = () => new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
-
-        act.Should().NotThrow();
-        using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
-    }
-
-    [Fact]
-    public void A_manual_ISigningKeyRing_registration_added_after_AddSigningKeySource_wins_and_is_not_rejected()
-    {
-        // MS DI resolves ISigningKeyRing last-wins, so a ring registered after AddSigningKeySource
-        // replaces the framework's; nothing detects it.
-        var manualRing = new FakeSigningKeyRing();
-        var services = new ServiceCollection();
-        new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<ExternalSigningKeySource>();
-
-        var act = () => services.AddSingleton<ISigningKeyRing>(manualRing);
-
-        act.Should().NotThrow();
-        using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISigningKeyRing>().Should().BeSameAs(manualRing);
-    }
-
     private static ServiceCollection ServicesWithTestKey(DisposalLog log)
     {
         using var rsa = RSA.Create(2048);
@@ -448,20 +401,5 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
 
         public abstract Task<ISigner> CreateSignerAsync(
             SourceKeyId id, CancellationToken cancellationToken = default);
-    }
-
-    [Fact]
-    public void AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring()
-    {
-        // StaticSigningKeyRing has a public constructor, so a host can register an ISigningKeyRing
-        // without AddSigningKeySource. Without this registration that ring would never be
-        // initialized or self-tested, and the host would start with an uninitialized ring.
-        var services = new ServiceCollection();
-
-        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://issuer.test");
-
-        services.Should().Contain(
-            d => d.ServiceType == typeof(IStartupActivator)
-                 && d.ImplementationType == typeof(SigningKeyRingActivator));
     }
 }

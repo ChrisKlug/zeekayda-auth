@@ -138,7 +138,7 @@ public sealed class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
         builder.AddWindowsCertificateStoreSigning(Certificate(), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = builder.Services.BuildServiceProvider();
-        provider.GetService<ISigningKeyRing>().Should().BeOfType<StaticSigningKeyRing>();
+        provider.GetService<SigningKeyRing>().Should().BeOfType<SigningKeyRing>();
     }
 
     [Fact]

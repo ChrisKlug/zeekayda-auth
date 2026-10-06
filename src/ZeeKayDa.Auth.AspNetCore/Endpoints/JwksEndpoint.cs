@@ -12,7 +12,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// published keys as an RFC 7517 JWK Set.
 /// </summary>
 /// <remarks>
-/// The response body is derived lazily from <see cref="ISigningKeyRing.Current"/> and reused for
+/// The response body is derived lazily from <see cref="SigningKeyRing.Current"/> and reused for
 /// as long as the ring returns the same <see cref="SigningKeySet"/> instance, checked by reference
 /// on every request. No observer wiring: under the read-once ring the set never changes for the
 /// process lifetime, and a ring that swaps its set at runtime is picked up on the next request
@@ -48,7 +48,7 @@ internal sealed class JwksEndpoint(IOptions<AuthorizationServerOptions> options,
     // [FromServices] because the ring is conditionally registered: without it, a host with no
     // signing source would fail at route mapping with a body-inference error instead of reaching
     // the startup check that names the actual problem.
-    internal IResult Handle([FromServices] ISigningKeyRing ring, HttpContext context)
+    internal IResult Handle([FromServices] SigningKeyRing ring, HttpContext context)
     {
         PublicMetadataHeaders.Apply(
             context, options.Value.JwksEndpoint.CacheMaxAge, allowedOrigins);

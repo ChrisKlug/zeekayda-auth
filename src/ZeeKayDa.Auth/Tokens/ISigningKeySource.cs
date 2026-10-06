@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Identical whether a source is read once (<see cref="StaticSigningKeyRing"/>) or polled on a
+/// Identical whether a source is read once (<see cref="SigningKeyRing"/>) or polled on a
 /// cadence, so a future polling ring can be added without changing a single implementation of this
 /// interface.
 /// </para>
@@ -16,7 +16,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>InternalsVisibleTo</c> grant required.
 /// </para>
 /// <para>
-/// The <see cref="ISigningKeyRing"/> constructs and owns the one instance it reads from — nothing
+/// The <see cref="SigningKeyRing"/> constructs and owns the one instance it reads from — nothing
 /// registers an <see cref="ISigningKeySource"/> in the container, so no application code can reach
 /// it. The ring disposes it once, at shutdown, after the <see cref="ISigner"/> it opened. Implement
 /// <see cref="IDisposable"/> if the source holds a handle — a client, a connection — that needs

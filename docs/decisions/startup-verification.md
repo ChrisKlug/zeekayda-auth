@@ -22,7 +22,7 @@ itself registered is an `IStartupVerifier`; one resolving or calling anything el
 phase, so a cheap failure and an activator failure need two restarts.
 
 **Order within a phase is not a guarantee; a check needing another's work asks for it.**
-`ISigningKeyRing.EnsureInitializedAsync` is idempotent so the client-repository activator can call it
+`SigningKeyRing.EnsureInitializedAsync` is idempotent so the client-repository activator can call it
 rather than assume it runs second — the answer to any request for an ordering knob.
 
 **The sanitizing logger cannot be substituted, so nothing has to check that it was not.**
@@ -108,7 +108,7 @@ refuses to start before Kestrel accepts a connection. Re-running activators — 
 a real vault sign — is actively wrong. A check wanting a health entry implements both interfaces.
 
 **The signing key ring activator takes its ring as optional and no-ops when there is none.**
-`SigningKeyRingActivator` injects `ISigningKeyRing` with a `null` default and returns silently
+`SigningKeyRingActivator` injects `SigningKeyRing` with a `null` default and returns silently
 when absent. When a ring *is* registered it forces `EnsureInitializedAsync` — the source read, set
 build, and signer self-test — so a misconfigured key fails the host rather than the first request; the
 self-test is inside the framework-sealed ring, so none can skip it. `SigningKeyRingPresenceVerifier` is

@@ -1,7 +1,7 @@
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// The result of <see cref="ISigningKeyRing.SignAsync{TState}"/>: the exact bytes that were signed,
+/// The result of <see cref="SigningKeyRing.SignAsync{TState}"/>: the exact bytes that were signed,
 /// the resulting signature, and the key that signed them.
 /// </summary>
 /// <param name="SigningInput">
@@ -18,13 +18,13 @@ public readonly record struct SigningOutcome(ReadOnlyMemory<byte> SigningInput, 
     /// <summary>Gets the key that signed <see cref="SigningInput"/>.</summary>
     /// <exception cref="InvalidOperationException">
     /// Thrown when this instance is <see langword="default"/>(<see cref="SigningOutcome"/>) rather
-    /// than one returned by <see cref="ISigningKeyRing.SignAsync{TState}"/>.
+    /// than one returned by <see cref="SigningKeyRing.SignAsync{TState}"/>.
     /// </exception>
     public SigningKey Key
     {
         get => _key ?? throw new InvalidOperationException(
             $"{nameof(SigningOutcome)} was default-initialized; it must be obtained from " +
-            $"{nameof(ISigningKeyRing)}.{nameof(ISigningKeyRing.SignAsync)}.");
+            $"{nameof(SigningKeyRing)}.{nameof(SigningKeyRing.SignAsync)}.");
         init => _key = value;
     }
 

@@ -5,7 +5,7 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// Reports whether the current signing key is approaching or past its expiry — the only thing
-/// watching once <see cref="StaticSigningKeyRing"/> has finished its one-time startup read, since a
+/// watching once <see cref="SigningKeyRing"/> has finished its one-time startup read, since a
 /// static ring never notices the signing key expiring after that.
 /// </summary>
 /// <remarks>
@@ -18,7 +18,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </remarks>
 public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
 {
-    private readonly ISigningKeyRing? _ring;
+    private readonly SigningKeyRing? _ring;
     private readonly TimeProvider _timeProvider;
     private readonly IOptions<SigningKeyExpiryHealthCheckOptions> _options;
 
@@ -27,7 +27,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
     /// </summary>
     /// <param name="ring">
     /// The signing key ring to report on, or <see langword="null"/> when no
-    /// <see cref="ISigningKeyRing"/> is registered — this health check can be registered
+    /// <see cref="SigningKeyRing"/> is registered — this health check can be registered
     /// independently of a ring, and must not itself fail host startup or resolution when one is
     /// absent.
     /// </param>
@@ -38,7 +38,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
     /// <see langword="null"/>.
     /// </exception>
     public SigningKeyExpiryHealthCheck(
-        ISigningKeyRing? ring, TimeProvider timeProvider, IOptions<SigningKeyExpiryHealthCheckOptions> options)
+        SigningKeyRing? ring, TimeProvider timeProvider, IOptions<SigningKeyExpiryHealthCheckOptions> options)
     {
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(options);
@@ -55,7 +55,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
         if (_ring is null)
         {
             return Task.FromResult(HealthCheckResult.Unhealthy(
-                "No ISigningKeyRing is registered. Call builder.AddSigningKeySource<TSource>() to " +
+                "No SigningKeyRing is registered. Call builder.AddSigningKeySource<TSource>() to " +
                 "register a signing key source."));
         }
 

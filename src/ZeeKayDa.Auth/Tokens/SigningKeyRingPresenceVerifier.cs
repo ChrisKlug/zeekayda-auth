@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// Verifies at application startup that a signing key source — and therefore an
-/// <see cref="ISigningKeyRing"/> — has been registered.
+/// <see cref="SigningKeyRing"/> — has been registered.
 /// </summary>
 /// <remarks>
 /// An authorization server cannot issue an ID token without one, and cannot publish
@@ -53,7 +53,7 @@ internal sealed class SigningKeyRingPresenceVerifier(IServiceProvider services) 
     }
 
     /// <summary>
-    /// Whether an <see cref="ISigningKeyRing"/> is registered — which is not the same question as
+    /// Whether a <see cref="SigningKeyRing"/> is registered — which is not the same question as
     /// whether one can be built.
     /// </summary>
     /// <remarks>
@@ -68,11 +68,11 @@ internal sealed class SigningKeyRingPresenceVerifier(IServiceProvider services) 
     private bool IsSigningKeyRingRegistered()
     {
         if (services.GetService<IServiceProviderIsService>() is { } isService)
-            return isService.IsService(typeof(ISigningKeyRing));
+            return isService.IsService(typeof(SigningKeyRing));
 
         try
         {
-            return services.GetService<ISigningKeyRing>() is not null;
+            return services.GetService<SigningKeyRing>() is not null;
         }
         catch (ZeeKayDaConfigurationException)
         {

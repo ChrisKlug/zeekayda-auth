@@ -86,7 +86,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle();
         ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial(version)),
@@ -119,7 +119,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().HaveCount(3,
             "the signing version, one previous version (the default count), and the staged version are all published");
@@ -139,7 +139,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
         var publishedAtStartup = ring.Current.Published.Select(k => k.Kid).ToArray();
 
         reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromMinutes(1));

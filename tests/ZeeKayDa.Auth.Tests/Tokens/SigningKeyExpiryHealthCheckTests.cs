@@ -16,19 +16,6 @@ public sealed class SigningKeyExpiryHealthCheckTests
     private static readonly DateTimeOffset Now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan DegradedThreshold = TimeSpan.FromDays(14);
 
-    private sealed class FakeSigningKeyRing(SigningKeySet? current) : ISigningKeyRing
-    {
-        public SigningKeySet Current => current ?? throw new InvalidOperationException();
-
-        public Task<SigningOutcome> SignAsync<TState>(
-            TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-
-        SigningKeySet? ISigningKeyRing.CurrentOrNull => current;
-    }
-
     // ── Evaluate — pure boundary behaviour ───────────────────────────────────────────────────────
 
     [Fact]
@@ -160,14 +147,15 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var result = await sut.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         result.Status.Should().Be(HealthStatus.Unhealthy);
-        result.Description.Should().Contain("No ISigningKeyRing is registered");
+        result.Description.Should().Contain("No SigningKeyRing is registered");
     }
 
     [Fact]
     public async Task CheckHealthAsync_reports_Unhealthy_when_the_ring_has_not_completed_initialization()
     {
+        using var ring = TestSigningKeys.Uninitialized(SigningAlgorithm.RS256);
         var sut = new SigningKeyExpiryHealthCheck(
-            new FakeSigningKeyRing(current: null), new FakeTimeProvider(Now), Options.Create(new SigningKeyExpiryHealthCheckOptions()));
+            ring, new FakeTimeProvider(Now), Options.Create(new SigningKeyExpiryHealthCheckOptions()));
 
         var result = await sut.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
@@ -177,9 +165,12 @@ public sealed class SigningKeyExpiryHealthCheckTests
     [Fact]
     public async Task CheckHealthAsync_reports_the_ring_s_current_set_health()
     {
-        var set = BuildSet(signingKeyExpiresAt: Now.AddDays(90));
+        using var privateKey = TestSigningKeys.PrivateKey(SigningAlgorithm.RS256);
+        var current = TestSigningKeys.SourceKey("current", SigningAlgorithm.RS256, privateKey) with { ExpiresAt = Now.AddDays(90) };
+        var timeProvider = new FakeTimeProvider(Now);
+        using var ring = TestSigningKeys.Ring(SourceKeySet.Create(previous: null, current, next: null), privateKey, timeProvider);
         var sut = new SigningKeyExpiryHealthCheck(
-            new FakeSigningKeyRing(set), new FakeTimeProvider(Now), Options.Create(new SigningKeyExpiryHealthCheckOptions()));
+            ring, timeProvider, Options.Create(new SigningKeyExpiryHealthCheckOptions()));
 
         var result = await sut.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
@@ -195,8 +186,8 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
         var source = new CountingSigningKeySource(current, privateKeyPem);
         var timeProvider = new FakeTimeProvider(Now);
-        var ring = new StaticSigningKeyRing(source, timeProvider);
-        await ((ISigningKeyRing)ring).EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        var ring = new SigningKeyRing(source, timeProvider);
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         timeProvider.SetUtcNow(Now.AddDays(2)); // advance past the signing key's expiry
         var sut = new SigningKeyExpiryHealthCheck(ring, timeProvider, Options.Create(new SigningKeyExpiryHealthCheckOptions()));
@@ -208,7 +199,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
     }
 
     /// <summary>Real <see cref="ISigningKeySource"/> tracking how many times <see cref="ReadAsync"/>
-    /// was called — the defining property of <see cref="StaticSigningKeyRing"/> is that it never
+    /// was called — the defining property of <see cref="SigningKeyRing"/> is that it never
     /// re-reads, so a health check probing it repeatedly must not move this count.</summary>
     private sealed class CountingSigningKeySource(SourceKey current, string privateKeyPem) : ISigningKeySource
     {

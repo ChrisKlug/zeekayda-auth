@@ -42,7 +42,7 @@ public sealed class IdTokenProtocolClaimsTests
         // Asserting equality fails in both directions: a claim added to the token and not
         // advertised, and a claim advertised that the token stopped carrying.
         using var rsa = RSA.Create(2048);
-        ISigningKeyRing ring = new StaticSigningKeyRing(new SingleKeySource(rsa), new FakeTimeProvider(Now));
+        SigningKeyRing ring = new SigningKeyRing(new SingleKeySource(rsa), new FakeTimeProvider(Now));
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         // Everything optional is present, so the token carries every name the set claims it may.

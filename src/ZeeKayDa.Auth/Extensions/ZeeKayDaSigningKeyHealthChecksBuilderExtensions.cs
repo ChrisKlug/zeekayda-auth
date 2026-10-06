@@ -28,7 +28,7 @@ public static class ZeeKayDaSigningKeyHealthChecksBuilderExtensions
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
     /// <remarks>
-    /// Registers no <see cref="ISigningKeyRing"/> and no <see cref="ISigningKeySource"/> — an
+    /// Registers no <see cref="SigningKeyRing"/> and no <see cref="ISigningKeySource"/> — an
     /// application that adds only this health check still starts, and the probe reports
     /// <see cref="HealthStatus.Unhealthy"/> naming the missing registration rather than throwing.
     /// Call <see cref="ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions.AddSigningKeySource{TSource}(ZeeKayDaAuthCoreBuilder)"/>
@@ -54,7 +54,7 @@ public static class ZeeKayDaSigningKeyHealthChecksBuilderExtensions
         return builder.Add(new HealthCheckRegistration(
             name,
             static serviceProvider => new SigningKeyExpiryHealthCheck(
-                serviceProvider.GetService<ISigningKeyRing>(),
+                serviceProvider.GetService<SigningKeyRing>(),
                 serviceProvider.GetRequiredService<TimeProvider>(),
                 serviceProvider.GetRequiredService<IOptions<SigningKeyExpiryHealthCheckOptions>>()),
             failureStatus,

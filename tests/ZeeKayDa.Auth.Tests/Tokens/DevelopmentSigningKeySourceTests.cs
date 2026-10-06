@@ -260,8 +260,8 @@ public sealed class DevelopmentSigningKeySourceTests
     public async Task Development_keys_are_served_through_the_ring_and_can_sign_a_jws()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var ring = new StaticSigningKeyRing(BuildEphemeral(), new FakeTimeProvider());
-        await ((ISigningKeyRing)ring).EnsureInitializedAsync(ct);
+        using var ring = new SigningKeyRing(BuildEphemeral(), new FakeTimeProvider());
+        await ring.EnsureInitializedAsync(ct);
 
         var outcome = await ring.SignAsync(
             """{"sub":"alice"}"""u8.ToArray(),

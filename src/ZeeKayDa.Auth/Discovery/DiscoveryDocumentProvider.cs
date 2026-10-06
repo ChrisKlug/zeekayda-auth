@@ -22,7 +22,7 @@ namespace ZeeKayDa.Auth.Discovery;
 /// <see cref="EndSessionEndpointOptions.Uri"/>, <see cref="Claims.UserInfoEndpointOptions.Uri"/>).
 /// Scope names published in <c>scopes_supported</c> are sourced from the configured
 /// <see cref="Scopes.IScopeRepository"/>. <c>id_token_signing_alg_values_supported</c> is derived
-/// from the <see cref="ISigningKeyRing"/>'s current key set on every read — never from operator
+/// from the <see cref="SigningKeyRing"/>'s current key set on every read — never from operator
 /// configuration alone — so the server cannot advertise an algorithm it has no key for. A host with
 /// no signing key source registered fails startup (<c>signing.key_ring.missing</c>) rather than
 /// reaching this type. <c>token_endpoint_auth_methods_supported</c> is likewise derived, from the
@@ -39,13 +39,13 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
 
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly ValidatedScopeCatalog _scopes;
-    private readonly ISigningKeyRing _keyRing;
+    private readonly SigningKeyRing _keyRing;
     private readonly AdvertisedAuthMethods _authMethods;
 
     public DiscoveryDocumentProvider(
         IOptions<AuthorizationServerOptions> options,
         ValidatedScopeCatalog scopes,
-        ISigningKeyRing keyRing,
+        SigningKeyRing keyRing,
         AdvertisedAuthMethods authMethods)
     {
         _options = options;

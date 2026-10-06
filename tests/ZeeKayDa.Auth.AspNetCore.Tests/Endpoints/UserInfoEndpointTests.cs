@@ -466,7 +466,7 @@ public sealed class UserInfoEndpointTests : IDisposable
     private async Task<string> MintAccessTokenAsync(string scope, string? audience = null)
     {
         await _host.EnsureStartedAsync();
-        var ring = _host.Resolve<ISigningKeyRing>();
+        var ring = _host.Resolve<SigningKeyRing>();
         var claims = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["iss"] = Issuer,

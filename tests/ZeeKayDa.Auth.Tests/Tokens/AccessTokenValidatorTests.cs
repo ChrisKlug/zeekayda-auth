@@ -29,30 +29,12 @@ public sealed class AccessTokenValidatorTests
     private static readonly RSA CurrentKey = RSA.Create(2048);
     private static readonly RSA ForeignKey = RSA.Create(2048);
 
-    private static readonly SigningKeySet KeySet = SigningKeySetBuilder.Build(SourceKeySet.Create(
-        previous: null,
-        RsaSourceKey("current", CurrentKey),
-        next: null));
+    private static readonly SigningKeyRing Ring = TestSigningKeys.Ring(
+        SourceKeySet.Create(previous: null, RsaSourceKey("current", CurrentKey), next: null), CurrentKey);
 
-    private static string CurrentKid => KeySet.SigningKey.Kid;
+    private static string CurrentKid => Ring.Current.SigningKey.Kid;
 
     // ── Fakes and helpers ────────────────────────────────────────────────────────────────────────
-
-    private sealed class FakeSigningKeyRing(SigningKeySet current) : ISigningKeyRing
-    {
-        public SigningKeySet Current => current;
-
-        public Task<SigningOutcome> SignAsync<TState>(
-            TState state,
-            Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        Task ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        SigningKeySet? ISigningKeyRing.CurrentOrNull => current;
-    }
 
     private static SourceKey RsaSourceKey(string id, RSA rsa) => new(
         new SourceKeyId(id),
@@ -66,7 +48,7 @@ public sealed class AccessTokenValidatorTests
         time.SetUtcNow(Now);
 
         return new AccessTokenValidator(
-            new FakeSigningKeyRing(KeySet),
+            Ring,
             Options.Create(new AuthorizationServerOptions
             {
                 Issuer = Issuer,

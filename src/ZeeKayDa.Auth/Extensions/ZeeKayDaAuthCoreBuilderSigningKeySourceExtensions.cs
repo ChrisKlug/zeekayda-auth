@@ -12,7 +12,7 @@ public static class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions
 {
     /// <summary>
     /// Registers <typeparamref name="TSource"/> as the application's signing key source, a
-    /// <see cref="StaticSigningKeyRing"/> over it, and the startup check that reads the source and
+    /// <see cref="SigningKeyRing"/> over it, and the startup check that reads the source and
     /// self-tests its signer once at host startup.
     /// </summary>
     /// <typeparam name="TSource">The <see cref="ISigningKeySource"/> implementation to register.</typeparam>
@@ -57,12 +57,12 @@ public static class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions
 
         services.AddSingleton(new SigningKeySourceRegistration(typeof(TSource)));
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
-        services.AddSingleton<ISigningKeyRing>(sp =>
+        services.AddSingleton<SigningKeyRing>(sp =>
         {
             // The clock first: once the source exists, only the ring may own it, so nothing that
             // can still throw may run between creating it and handing it over.
             var timeProvider = sp.GetRequiredService<TimeProvider>();
-            return new StaticSigningKeyRing(ActivatorUtilities.CreateInstance<TSource>(sp), timeProvider);
+            return new SigningKeyRing(ActivatorUtilities.CreateInstance<TSource>(sp), timeProvider);
         });
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupActivator, SigningKeyRingActivator>());
