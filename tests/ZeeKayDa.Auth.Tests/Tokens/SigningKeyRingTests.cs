@@ -284,6 +284,43 @@ public sealed class SigningKeyRingTests
         disposeCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task Dispose_racing_initialization_disposes_the_signer_exactly_once()
+    {
+        // Dispose and the initialization's commit can each observe the other, so both reach for the
+        // signer; the race window is narrow, hence many rounds.
+        using var rsa = RSA.Create(2048);
+        var current = new SourceKey(
+            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), Epoch.AddDays(90));
+        var privateKey = rsa.ExportParameters(includePrivateParameters: true);
+
+        for (var round = 0; round < 500; round++)
+        {
+            var disposeCount = 0;
+            var source = new FakeSigningKeySource(
+                _ => Task.FromResult<SourceKeySet>(SourceKeySet.Create(null, current, null)),
+                (_, _) => Task.FromResult<ISigner>(new TrackingSigner(
+                    new LocalSigner(SigningAlgorithm.RS256, RSA.Create(privateKey)),
+                    () => Interlocked.Increment(ref disposeCount))));
+            var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch));
+            using var start = new Barrier(2);
+
+            var initialization = Task.Run(async () =>
+            {
+                start.SignalAndWait(TestContext.Current.CancellationToken);
+                await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+            }, TestContext.Current.CancellationToken);
+            var disposal = Task.Run(() =>
+            {
+                start.SignalAndWait(TestContext.Current.CancellationToken);
+                ((IDisposable)ring).Dispose();
+            }, TestContext.Current.CancellationToken);
+            await Task.WhenAll(initialization, disposal);
+
+            disposeCount.Should().Be(1, $"round {round} disposed the signer {disposeCount} times");
+        }
+    }
+
     /// <summary>The shape of the disposal call(s) a disposal-ordering theory case exercises against
     /// the ring: synchronous only, asynchronous only, or a synchronous call followed by an
     /// asynchronous one — the ring's idempotent-disposal guard means only the first call's own

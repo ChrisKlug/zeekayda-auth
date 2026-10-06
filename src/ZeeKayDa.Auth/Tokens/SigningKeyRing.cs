@@ -41,6 +41,10 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     // 0 = live, 1 = disposed. int so Interlocked.Exchange makes the transition atomic.
     private int _disposed;
 
+    // 0 = the committed signer is live, 1 = released. Dispose and an initialization committing
+    // concurrently with it can each see the other's write, so both may try to release the signer.
+    private int _signerReleased;
+
     // The one initialization, published exactly once. Lazy defers starting it until a caller has won
     // the publish, so a losing caller neither re-reads the source nor opens a second signer.
     private Lazy<Task>? _initialization;
@@ -150,7 +154,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             return;
 
         if (_binding is { } binding)
-            DisposeQuietly(binding.Signer);
+            ReleaseCommittedSigner(binding.Signer);
 
         if (_source is IDisposable disposable)
             disposable.Dispose();
@@ -165,7 +169,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             return ValueTask.CompletedTask;
 
         if (_binding is { } binding)
-            DisposeQuietly(binding.Signer);
+            ReleaseCommittedSigner(binding.Signer);
 
         return DisposeSourceAsync();
     }
@@ -280,6 +284,12 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         // constructed and _binding being committed. Re-check now rather than leaving a live signer
         // handle reachable behind a ring that has already reported itself disposed.
         if (Volatile.Read(ref _disposed) != 0)
+            ReleaseCommittedSigner(signer);
+    }
+
+    private void ReleaseCommittedSigner(ISigner signer)
+    {
+        if (Interlocked.Exchange(ref _signerReleased, 1) == 0)
             DisposeQuietly(signer);
     }
 
