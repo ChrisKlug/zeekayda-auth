@@ -112,8 +112,7 @@ public sealed class WindowsCertificateKeyExtractorTests
         var message = act.Should().Throw<ZeeKayDaConfigurationException>()
             .WithMessage("*private_key_not_found*").Which.Message;
         message.Should().Contain("AABBCC").And.Contain("no private key installed")
-            .And.Contain("AddWindowsCertificateStoreSigning")
-            .And.Contain("accessible private key");
+            .And.Contain("Every listed certificate");
         message.Should().NotContain("running as");
     }
 

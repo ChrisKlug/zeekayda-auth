@@ -55,11 +55,14 @@ internal static class KeyVaultVersions
     /// <summary>
     /// Returns the <paramref name="maxVersions"/> newest of <paramref name="enabled"/>, by
     /// <see cref="NotBefore"/>, or all of them when <paramref name="maxVersions"/> is
-    /// <see langword="null"/>.
+    /// <see langword="null"/>. Equal dates go to the ordinally greater version, as in the core, so every
+    /// replica cuts at the same version whatever order the vault lists them in.
     /// </summary>
     public static IReadOnlyList<TVersion> Newest<TVersion>(IReadOnlyList<TVersion> enabled, int? maxVersions)
         where TVersion : IKeyVaultVersionInfo =>
-        maxVersions is { } max ? [.. enabled.OrderByDescending(v => NotBefore(v)).Take(max)] : enabled;
+        maxVersions is { } max
+            ? [.. enabled.OrderByDescending(v => NotBefore(v)).ThenByDescending(v => v.Version, StringComparer.Ordinal).Take(max)]
+            : enabled;
 
     /// <summary>
     /// A version is published from its creation and may not sign before its own <c>nbf</c>, so it

@@ -68,6 +68,19 @@ public sealed class SourceKeyFromCertificateTests
     }
 
     [Fact]
+    public void FromCertificate_rejects_a_key_that_does_not_suit_the_algorithm_naming_the_id()
+    {
+        using var rsa = RSA.Create(2048);
+        using var certificate = SelfSigned(rsa);
+
+        var act = () => SourceKey.FromCertificate(certificate, KeyId, SigningAlgorithm.ES256);
+
+        var exception = act.Should().Throw<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
+        exception.Which.Message.Should().Contain(KeyId.Value);
+    }
+
+    [Fact]
     public void FromCertificate_rejects_an_undefined_algorithm()
     {
         using var rsa = RSA.Create(2048);

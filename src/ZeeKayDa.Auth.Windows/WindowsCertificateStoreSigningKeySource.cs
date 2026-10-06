@@ -40,6 +40,12 @@ internal sealed class WindowsCertificateStoreSigningKeySource(
         foreach (var lookup in options.Certificates)
         {
             using var certificate = storeReader.GetCertificate(lookup.NormalizedThumbprint, options.StoreLocation, options.StoreName);
+
+            // Checked without extracting a handle: any listed certificate may be chosen to sign, so one
+            // that cannot fails now rather than at the restart that chooses it.
+            if (!certificate.HasPrivateKey)
+                throw WindowsCertificateKeyExtractor.NoPrivateKey(lookup.NormalizedThumbprint);
+
             keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(lookup.NormalizedThumbprint), options.Algorithm));
         }
 

@@ -89,7 +89,7 @@ public sealed class PemFileSigningKeySourceTests
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         var path = tempDir.WriteTextFile("dsa.pem", DsaCertificatePem);
-        var sut = BuildSource(new PemSigningFile(path));
+        var sut = BuildSource(new PemSigningFile(path, tempDir.WriteTextFile("dsa.key", "unread")));
 
         var act = () => sut.ReadAsync(ct);
 
@@ -176,10 +176,10 @@ public sealed class PemFileSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_never_reads_a_separate_key_file_for_any_listed_file()
+    public async Task ReadAsync_never_parses_a_separate_key_file_for_any_listed_file()
     {
-        // Listing needs only public material: the key files named here do not exist, and the read
-        // still succeeds for every file.
+        // Listing needs only public material: the key files named here hold no PEM at all, and the
+        // read still succeeds for every file.
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var firstCertificate = CreateRsaCertificate();
@@ -188,8 +188,8 @@ public sealed class PemFileSigningKeySourceTests
         var secondPath = tempDir.WriteCertificateOnlyPemFile("second.crt", secondCertificate);
         var sut = BuildSource(
         [
-            new PemSigningFile(firstPath, tempDir.GetPath("first.key")),
-            new PemSigningFile(secondPath, tempDir.GetPath("second.key")),
+            new PemSigningFile(firstPath, tempDir.WriteTextFile("first.key", "not a key")),
+            new PemSigningFile(secondPath, tempDir.WriteTextFile("second.key", "not a key")),
         ]);
 
         var keySet = await sut.ReadAsync(ct);
@@ -427,47 +427,69 @@ public sealed class PemFileSigningKeySourceTests
     }
 
     [Fact]
-    public async Task CreateSignerAsync_throws_when_the_separate_key_file_is_broader_than_0600_on_Unix()
+    public async Task ReadAsync_rejects_a_separate_key_file_broader_than_0600_on_Unix_even_for_a_file_that_does_not_sign()
     {
+        // The staged file never signs at this read, but its public key is published, so a readable
+        // private key would let anyone forge tokens that verify.
         Assert.SkipWhen(OperatingSystem.IsWindows(), "0600-mode enforcement is the Unix permission model.");
 
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        using var certificate = CreateRsaCertificate();
-        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
-        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
-        tempDir.MakeTooPermissive(keyPath);
-        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
-        var keySet = await sut.ReadAsync(ct);
+        using var incumbent = CreateRsaCertificate();
+        using var staged = CreateRsaCertificate();
+        var incumbentPath = tempDir.WritePemFile("incumbent.pem", incumbent);
+        var stagedPath = tempDir.WriteCertificateOnlyPemFile("staged.crt", staged);
+        var stagedKeyPath = tempDir.WriteKeyOnlyPemFile("staged.key", staged);
+        tempDir.MakeTooPermissive(stagedKeyPath);
+        var sut = BuildSource([new PemSigningFile(incumbentPath), new PemSigningFile(stagedPath, stagedKeyPath)]);
 
-        var act = async () => await sut.CreateSignerAsync(keySet.Single().Id, ct);
+        var act = async () => await sut.ReadAsync(ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
     }
 
     [Fact]
-    public async Task CreateSignerAsync_throws_when_the_separate_key_files_ACL_grants_a_broad_principal_on_Windows()
+    public async Task ReadAsync_rejects_a_separate_key_files_ACL_granting_a_broad_principal_on_Windows_even_for_a_file_that_does_not_sign()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "broad-principal ACL enforcement is the Windows permission model.");
 
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        using var certificate = CreateRsaCertificate();
-        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
-        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
-        tempDir.MakeTooPermissive(keyPath);
-        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
-        var keySet = await sut.ReadAsync(ct);
+        using var incumbent = CreateRsaCertificate();
+        using var staged = CreateRsaCertificate();
+        var incumbentPath = tempDir.WritePemFile("incumbent.pem", incumbent);
+        var stagedPath = tempDir.WriteCertificateOnlyPemFile("staged.crt", staged);
+        var stagedKeyPath = tempDir.WriteKeyOnlyPemFile("staged.key", staged);
+        tempDir.MakeTooPermissive(stagedKeyPath);
+        var sut = BuildSource([new PemSigningFile(incumbentPath), new PemSigningFile(stagedPath, stagedKeyPath)]);
 
-        var act = async () => await sut.CreateSignerAsync(keySet.Single().Id, ct);
+        var act = async () => await sut.ReadAsync(ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
     }
 
     [Fact]
-    public async Task CreateSignerAsync_throws_when_the_separate_key_file_does_not_exist()
+    public async Task ReadAsync_rejects_a_combined_file_that_carries_no_private_key_block()
+    {
+        // No KeyPath, so the file itself must carry the key; it is checked for a key block without
+        // the key being parsed.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WriteCertificateOnlyPemFile("cert-only.pem", certificate);
+        var sut = BuildSource(new PemSigningFile(path));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.certificate.private_key_not_found");
+        exception.Which.Message.Should().Contain(path);
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_listed_file_whose_separate_key_file_does_not_exist()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -475,29 +497,12 @@ public sealed class PemFileSigningKeySourceTests
         var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
         var missingKeyPath = tempDir.GetPath("does-not-exist.key");
         var sut = BuildSource(new PemSigningFile(certPath, missingKeyPath));
-        var keySet = await sut.ReadAsync(ct);
 
-        var act = async () => await sut.CreateSignerAsync(keySet.Single().Id, ct);
+        var act = async () => await sut.ReadAsync(ct);
 
         var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_not_found");
         exception.Which.Message.Should().Contain(missingKeyPath);
-    }
-
-    [Fact]
-    public async Task ReadAsync_succeeds_even_when_a_listed_files_separate_key_file_is_missing()
-    {
-        // Least privilege: building the published key set must never require private material, not
-        // even for the file that signs.
-        var ct = TestContext.Current.CancellationToken;
-        using var tempDir = new TempSigningKeyDirectory();
-        using var certificate = CreateRsaCertificate();
-        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
-        var sut = BuildSource(new PemSigningFile(certPath, tempDir.GetPath("does-not-exist.key")));
-
-        var keySet = await sut.ReadAsync(ct);
-
-        keySet.Single().PublicKey.RsaPublicParameters.Should().NotBeNull();
     }
 
     // ── EC certificates ──────────────────────────────────────────────────────────────────────────
@@ -537,19 +542,19 @@ public sealed class PemFileSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_reports_a_mismatched_algorithm_verbatim()
+    public async Task ReadAsync_rejects_a_certificate_whose_key_does_not_suit_the_algorithm_naming_the_file()
     {
-        // This source performs no key-pairing check of its own; startup rejects the mismatch, naming
-        // the file (FileSigningIntegrationTests).
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePemFile("current.pem", certificate);
         var sut = BuildSource(new PemSigningFile(path), algorithm: SigningAlgorithm.ES256);
 
-        var keySet = await sut.ReadAsync(ct);
+        var act = async () => await sut.ReadAsync(ct);
 
-        keySet.Single().Algorithm.Should().Be(SigningAlgorithm.ES256);
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
+        exception.Which.Message.Should().Contain(path);
     }
 
     // ── CreateSignerAsync opens any listed file, and only a listed one ───────────────────────────

@@ -26,8 +26,8 @@ key, restart). `SigningKeySet.SigningKey` is non-nullable and always published.
 **File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list
 `Files`/`Certificates` with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`. A
 certificate's `NotBefore` is its publication date; a CA sets it at issuance, so one listed more than the lead time
-after issuance signs at the next restart unpublished. A keyless PFX bundle fails at read; PEM reads no key file
-until that file is chosen. Sources keep no read lock or cache: only the ring calls them, once.
+after issuance signs at the next restart unpublished. Listing checks every entry can sign without importing a
+key: PFX key bags, PEM key files (permissions) and blocks, Windows `HasPrivateKey`. No read lock or cache.
 
 **The framework derives every `kid`; a provider cannot supply one.** The ring computes an RFC 7638 JWK
 thumbprint over the public key. A provider supplies only its internal `SourceKeyId`, so it cannot leak a

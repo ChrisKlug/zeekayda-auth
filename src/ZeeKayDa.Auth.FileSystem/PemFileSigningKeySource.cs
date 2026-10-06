@@ -12,8 +12,9 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="ReadAsync"/> parses only each file's certificate — no private key material is read.
-/// Only <see cref="CreateSignerAsync"/> reads private material, and only for the key it is asked for.
+/// <see cref="ReadAsync"/> parses only each file's certificate — no private key is parsed or imported —
+/// but checks that every file can sign: a separate key file's permissions, or a combined file's private
+/// key block. Only <see cref="CreateSignerAsync"/> imports a private key, for the key it is asked for.
 /// </para>
 /// <para>
 /// This source performs no algorithm/key-type check of its own.
@@ -33,10 +34,9 @@ internal sealed class PemFileSigningKeySource(
         var options = _options.Value;
         var keys = new List<SourceKey>(options.Files.Count);
 
-        // Each file is read by certificate path alone; a separate KeyPath is deliberately not read here.
         foreach (var file in options.Files)
         {
-            using var certificate = await LoadPublicCertificateAsync(file.Path, cancellationToken).ConfigureAwait(false);
+            using var certificate = await LoadPublicCertificateAsync(file, cancellationToken).ConfigureAwait(false);
             keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(file.Path), options.Algorithm));
         }
 
@@ -56,20 +56,24 @@ internal sealed class PemFileSigningKeySource(
     }
 
     /// <summary>
-    /// Parses only the certificate at <paramref name="certificatePath"/> — no private key material is
-    /// read or parsed.
+    /// Parses only the certificate of <paramref name="file"/>, and checks that the file can sign
+    /// without parsing or importing its private key: any listed file may be chosen to sign, so one
+    /// that cannot fails now rather than at the restart that chooses it.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
-    /// The file does not contain a valid PEM-encoded certificate.
+    /// The file does not contain a valid PEM-encoded certificate; a combined file carries no private
+    /// key block; or a separate key file is missing, symlinked or too permissive.
     /// </exception>
     private async ValueTask<X509Certificate2> LoadPublicCertificateAsync(
-        string certificatePath, CancellationToken cancellationToken)
+        PemSigningFile file, CancellationToken cancellationToken)
     {
+        var certificatePath = file.Path;
         var certPem = await reader.ReadPemTextAsync(certificatePath, cancellationToken).ConfigureAwait(false);
 
+        X509Certificate2 certificate;
         try
         {
-            return X509Certificate2.CreateFromPem(certPem);
+            certificate = X509Certificate2.CreateFromPem(certPem);
         }
         catch (Exception ex) when (ex is CryptographicException or ArgumentException or FormatException)
         {
@@ -85,6 +89,24 @@ internal sealed class PemFileSigningKeySource(
                     "the root cause."),
                 ex);
         }
+
+        // A separate key file is held to the permission and symlink rules without being read; a
+        // combined file must at least carry a private key block. Every listed key is published, so a
+        // readable or missing key matters whether or not it signs today.
+        try
+        {
+            if (file.KeyPath is not null)
+                reader.Validate(file.KeyPath);
+            else if (!certPem.Contains("PRIVATE KEY-----", StringComparison.Ordinal))
+                throw NoPrivateKey(certificatePath);
+        }
+        catch
+        {
+            certificate.Dispose();
+            throw;
+        }
+
+        return certificate;
     }
 
     /// <summary>
@@ -131,4 +153,10 @@ internal sealed class PemFileSigningKeySource(
                 ex);
         }
     }
+
+    private static ZeeKayDaConfigurationException NoPrivateKey(string path) =>
+        new(new ZeeKayDaConfigurationFailure(
+            "signing.certificate.private_key_not_found",
+            $"The PEM file at '{path}' carries no private key block and names no separate KeyPath. Every " +
+            "listed file must carry its private key, because any of them may be chosen to sign."));
 }

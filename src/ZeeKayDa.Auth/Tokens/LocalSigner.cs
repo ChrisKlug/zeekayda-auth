@@ -54,13 +54,18 @@ public sealed class LocalSigner : ISigner
     /// </exception>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown with failure code <c>signing.certificate.private_key_not_found</c> when the certificate
-    /// carries no private key, or one this process cannot access.
+    /// carries no private key, or one this process cannot access; or with the codes
+    /// <see cref="SourceKey.FromCertificate"/> raises when its key does not suit <paramref name="algorithm"/>.
     /// </exception>
     public static LocalSigner FromCertificate(X509Certificate2 certificate, SigningAlgorithm algorithm)
     {
         ArgumentNullException.ThrowIfNull(certificate);
         if (!Enum.IsDefined(algorithm))
             throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, $"Not a defined {nameof(SigningAlgorithm)} member.");
+
+        // Rejects a key type or curve that does not suit the algorithm, by the same rule the key set
+        // applies, before any private key is opened.
+        _ = SourceKey.FromCertificate(certificate, new SourceKeyId(certificate.Thumbprint), algorithm);
 
         if (!certificate.HasPrivateKey)
             throw PrivateKeyNotFound(certificate, "carries no private key");

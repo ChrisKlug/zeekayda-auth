@@ -684,19 +684,19 @@ public sealed class PfxFileSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_reports_a_mismatched_algorithm_verbatim()
+    public async Task ReadAsync_rejects_a_certificate_whose_key_does_not_suit_the_algorithm_naming_the_bundle()
     {
-        // This source performs no key-pairing check of its own; startup rejects the mismatch, naming
-        // the bundle (FileSigningIntegrationTests).
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
         var sut = BuildSource(new PfxFile(path, Password()), algorithm: SigningAlgorithm.ES256);
 
-        var keySet = await sut.ReadAsync(ct);
+        var act = async () => await sut.ReadAsync(ct);
 
-        keySet.Single().Algorithm.Should().Be(SigningAlgorithm.ES256);
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
+        exception.Which.Message.Should().Contain(path);
     }
 
     // ── CreateSignerAsync opens any listed file, and only a listed one ───────────────────────────

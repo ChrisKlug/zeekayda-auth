@@ -5,10 +5,8 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Windows;
 
 /// <summary>
-/// Extracts a private key handle from an already-obtained <see cref="X509Certificate2"/>.
-/// This seam exists so tests can exercise a private key handle that does not pair with the
-/// certificate's own public key — a state a genuine Windows Certificate Store entry can reach if
-/// its key-container association is repointed post-startup (e.g. via <c>certutil -repairstore</c>).
+/// Extracts a private key handle from an already-obtained <see cref="X509Certificate2"/>. A seam so
+/// tests can observe which certificate a handle is extracted for, and substitute a handle.
 /// </summary>
 internal interface ICertificateKeyExtractor
 {

@@ -585,7 +585,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   helpers `SourceKey.FromCertificate` and `LocalSigner.FromCertificate` build a key and a signer from an
   `X509Certificate2`, converting its local-time dates correctly; their failures are
   `signing.certificate.unsupported_key_type` and `signing.certificate.private_key_not_found`, replacing the
-  `signing.file_signing.*` codes of the same name. No source keeps a read lock or a cached key set any more.
+  `signing.file_signing.*` codes of the same name and `signing.windows_certificate_store.unsupported_key_type`.
+  Every listed entry is checked at startup for a usable private key — a PEM key file's permissions or a combined
+  file's key block, a Windows certificate's installed key — without importing it. No source keeps a read lock or a cached key set any more.
   Both Key Vault sources gain `MaxVersions` (default all enabled versions, minimum 3) to fetch public keys for
   only the newest N versions, and the cached source's own pairing check, `signing.azure_key_vault.secret_cer_mismatch`,
   is removed: the startup self-test rejects the same divergence as `signing.self_test_failed`.

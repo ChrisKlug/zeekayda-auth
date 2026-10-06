@@ -403,6 +403,32 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_with_MaxVersions_breaks_a_tie_on_NotBefore_by_the_ordinally_greater_version_whatever_the_listing_order()
+    {
+        // Two versions created in the same second straddle the cut. Every replica must keep the same
+        // one, so the vault's listing order cannot decide.
+        var ct = TestContext.Current.CancellationToken;
+        var listedFirst = new FakeKeyVaultCertificateReader();
+        listedFirst.AddRsaVersion("v1", createdOn: T0);
+        listedFirst.AddRsaVersion("va", createdOn: T0 + TimeSpan.FromDays(1));
+        listedFirst.AddRsaVersion("vb", createdOn: T0 + TimeSpan.FromDays(1));
+        listedFirst.AddRsaVersion("v3", createdOn: T0 + TimeSpan.FromDays(2));
+        listedFirst.AddRsaVersion("v4", createdOn: T0 + TimeSpan.FromDays(3));
+        var listedSecond = new FakeKeyVaultCertificateReader();
+        listedSecond.AddRsaVersion("v4", createdOn: T0 + TimeSpan.FromDays(3));
+        listedSecond.AddRsaVersion("v3", createdOn: T0 + TimeSpan.FromDays(2));
+        listedSecond.AddRsaVersion("vb", createdOn: T0 + TimeSpan.FromDays(1));
+        listedSecond.AddRsaVersion("va", createdOn: T0 + TimeSpan.FromDays(1));
+        listedSecond.AddRsaVersion("v1", createdOn: T0);
+
+        var first = await BuildSource(listedFirst, maxVersions: 3).ReadAsync(ct);
+        var second = await BuildSource(listedSecond, maxVersions: 3).ReadAsync(ct);
+
+        PublishedIds(first).Should().BeEquivalentTo(["v4", "v3", "vb"]);
+        PublishedIds(second).Should().BeEquivalentTo(["v4", "v3", "vb"]);
+    }
+
+    [Fact]
     public async Task ReadAsync_with_MaxVersions_orders_by_NotBefore_not_by_creation()
     {
         var ct = TestContext.Current.CancellationToken;

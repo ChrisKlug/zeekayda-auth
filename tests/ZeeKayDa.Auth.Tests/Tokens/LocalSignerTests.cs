@@ -101,6 +101,17 @@ public sealed class LocalSignerTests
     }
 
     [Fact]
+    public void FromCertificate_rejects_an_EC_certificate_for_an_RSA_algorithm()
+    {
+        using var certificate = SelfSigned(ECDsa.Create(ECCurve.NamedCurves.nistP256));
+
+        var act = () => LocalSigner.FromCertificate(certificate, SigningAlgorithm.RS256);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
+    }
+
+    [Fact]
     public void FromCertificate_rejects_an_undefined_algorithm()
     {
         using var certificate = SelfSigned(RSA.Create(2048));

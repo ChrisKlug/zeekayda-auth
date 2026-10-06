@@ -261,36 +261,23 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_succeeds_for_a_certificate_with_no_private_key()
+    public async Task ReadAsync_rejects_a_listed_certificate_with_no_private_key_without_extracting_one()
     {
-        // A read only ever needs public material, so a certificate installed without its private key
-        // still publishes. The failure belongs at the point signing is attempted, not before.
+        // Any listed certificate may be chosen to sign, so one installed without its private key fails
+        // at the read rather than at the restart that chooses it. No handle is extracted to find out.
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         using var certificate = CreateRsaCertificate(withPrivateKey: false);
         reader.AddCertificate(CurrentThumbprint, certificate);
-        var sut = BuildSource(reader);
+        var extractor = new FakeCertificateKeyExtractor();
+        var sut = BuildSource(reader, keyExtractor: extractor);
 
-        var keySet = await sut.ReadAsync(ct);
-
-        keySet.Single().PublicKey.RsaPublicParameters.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task CreateSignerAsync_throws_when_the_requested_certificate_has_no_private_key()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var reader = new FakeCertificateStoreReader();
-        using var certificate = CreateRsaCertificate(withPrivateKey: false);
-        reader.AddCertificate(CurrentThumbprint, certificate);
-        var sut = BuildSource(reader);
-        var keySet = await sut.ReadAsync(ct);
-
-        var act = async () => await sut.CreateSignerAsync(keySet.Single().Id, ct);
+        var act = async () => await sut.ReadAsync(ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .Which.AggregatedFailures.Should()
             .ContainSingle(f => f.Code == "signing.windows_certificate_store.private_key_not_found");
+        extractor.PrivateKeyExtractions.Should().BeEmpty();
     }
 
     // ── EC certificates ──────────────────────────────────────────────────────────────────────────
@@ -334,21 +321,19 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
     // ── Algorithm/key-type mismatch is the key set builder's call, not this source's ─────────────
 
     [Fact]
-    public async Task ReadAsync_reports_a_mismatched_algorithm_verbatim_and_leaves_the_rejection_to_the_key_set_builder()
+    public async Task ReadAsync_rejects_a_certificate_whose_key_does_not_suit_the_algorithm_naming_its_thumbprint()
     {
-        // The provider's own algorithm/key-type check is deliberately gone: SigningKeySetBuilder
-        // rejects the same mismatch centrally, plus EC curve pairing the local check never covered,
-        // keyed on the source id — the thumbprint — so its failure still names the certificate.
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         using var certificate = CreateRsaCertificate();
         reader.AddCertificate(CurrentThumbprint, certificate);
         var sut = BuildSource(reader, algorithm: SigningAlgorithm.ES256);
 
-        var keySet = await sut.ReadAsync(ct);
+        var act = async () => await sut.ReadAsync(ct);
 
-        keySet.Single().Algorithm.Should().Be(SigningAlgorithm.ES256, "the source reports what it was configured with");
-        keySet.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Rsa, "and the key type it actually found");
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
+        exception.Which.Message.Should().Contain(CurrentThumbprint);
     }
 
     // ── CreateSignerAsync opens any listed certificate, and only a listed one ────────────────────

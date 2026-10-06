@@ -54,7 +54,8 @@ public sealed record SourceKey
     /// </exception>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown with failure code <c>signing.certificate.unsupported_key_type</c> when the certificate
-    /// carries neither an RSA nor an EC public key.
+    /// carries neither an RSA nor an EC public key, or <c>signing.key_algorithm_mismatch</c> /
+    /// <c>signing.ec_curve_algorithm_mismatch</c> when its key does not suit <paramref name="algorithm"/>.
     /// </exception>
     public static SourceKey FromCertificate(X509Certificate2 certificate, SourceKeyId id, SigningAlgorithm algorithm)
     {
@@ -64,12 +65,15 @@ public sealed record SourceKey
 
         // X509Certificate2 reports both ends of the validity window as local-kind DateTime, so
         // DateTimeOffset applies the local offset rather than reinterpreting them as UTC.
-        return new SourceKey(
+        var key = new SourceKey(
             id,
             algorithm,
             PublicKeyOf(certificate, id),
             notBefore: new DateTimeOffset(certificate.NotBefore),
             expiresAt: new DateTimeOffset(certificate.NotAfter));
+
+        SigningKeySetBuilder.ValidateKeyAlgorithmCompatibility(key);
+        return key;
     }
 
     private static PublicKeyParameters PublicKeyOf(X509Certificate2 certificate, SourceKeyId id)
