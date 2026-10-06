@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Windows.Tests;
 /// </summary>
 /// <remarks>
 /// There is no empty-thumbprint case here any more: <see cref="CertificateLookup.ByThumbprint"/>
-/// rejects a thumbprint with no hex digits at construction, so a configured slot always holds a
+/// rejects a thumbprint with no hex digits at construction, so a listed certificate always holds a
 /// usable one and the validator has nothing left to check on that front. That rejection is covered
 /// by <c>CertificateLookupTests</c>.
 /// </remarks>
@@ -17,11 +17,17 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
     private const string CurrentThumbprint = "AABBCCDDEEFF00112233445566778899AABBCCD";
     private const string OtherThumbprint = "1111111111111111111111111111111111111A";
 
-    private static WindowsCertificateStoreSigningOptions ValidOptions() => new()
+    private static WindowsCertificateStoreSigningOptions ValidOptions() =>
+        Options(CertificateLookup.ByThumbprint(CurrentThumbprint));
+
+    private static WindowsCertificateStoreSigningOptions Options(params CertificateLookup?[] lookups)
     {
-        Current = CertificateLookup.ByThumbprint(CurrentThumbprint),
-        Algorithm = SigningAlgorithm.RS256,
-    };
+        var options = new WindowsCertificateStoreSigningOptions { Algorithm = SigningAlgorithm.RS256 };
+        foreach (var lookup in lookups)
+            options.Certificates.Add(lookup!);
+
+        return options;
+    }
 
     private static WindowsCertificateStoreSigningOptionsValidator Validator() => new();
 
@@ -45,36 +51,35 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_succeeds_when_only_Current_is_configured()
+    public void Validate_succeeds_with_several_different_certificates()
     {
-        var options = ValidOptions();
-
-        Validate(options).Should().BeEmpty("Previous and Next are independently optional");
-    }
-
-    [Fact]
-    public void Validate_succeeds_with_all_three_slots_naming_different_certificates()
-    {
-        var options = ValidOptions();
-        options.Previous = CertificateLookup.ByThumbprint(OtherThumbprint);
-        options.Next = CertificateLookup.ByThumbprint("2222222222222222222222222222222222222B");
+        var options = Options(
+            CertificateLookup.ByThumbprint(CurrentThumbprint),
+            CertificateLookup.ByThumbprint(OtherThumbprint),
+            CertificateLookup.ByThumbprint("2222222222222222222222222222222222222B"));
 
         Validate(options).Should().BeEmpty();
     }
 
     [Fact]
-    public void Validate_fails_when_no_Current_is_configured()
+    public void Validate_fails_when_no_certificate_is_listed()
     {
-        var options = new WindowsCertificateStoreSigningOptions
-        {
-            Previous = CertificateLookup.ByThumbprint(OtherThumbprint),
-            Algorithm = SigningAlgorithm.RS256,
-        };
+        var failures = Validate(Options());
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.certificates.empty")
+            .Which.Message.Should().Contain("at least one certificate");
+    }
+
+    [Fact]
+    public void Validate_fails_when_a_listed_entry_is_null()
+    {
+        var options = ValidOptions();
+        options.Certificates.Add(null!);
 
         var failures = Validate(options);
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.current.missing")
-            .Which.Message.Should().Contain("Current");
+        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.certificates.null_entry")
+            .Which.Message.Should().Contain("Certificates[1]");
     }
 
     [Fact]
@@ -90,52 +95,39 @@ public sealed class WindowsCertificateStoreSigningOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_when_Previous_names_the_same_certificate_as_Current()
+    public void Validate_fails_when_the_same_certificate_is_listed_twice()
     {
-        var options = ValidOptions();
-        options.Previous = CertificateLookup.ByThumbprint(CurrentThumbprint);
+        var options = Options(
+            CertificateLookup.ByThumbprint(CurrentThumbprint),
+            CertificateLookup.ByThumbprint(OtherThumbprint),
+            CertificateLookup.ByThumbprint(CurrentThumbprint));
 
         var failures = Validate(options);
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.slots.duplicate_certificate")
-            .Which.Message.Should().Contain("Previous").And.Contain("Current");
+        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.certificates.duplicate")
+            .Which.Message.Should().Contain(CurrentThumbprint).And.Contain("2 times");
     }
 
     [Fact]
-    public void Validate_fails_when_Next_names_the_same_certificate_as_Current()
+    public void Validate_detects_a_duplicate_however_the_thumbprint_was_written()
     {
-        var options = ValidOptions();
-        options.Next = CertificateLookup.ByThumbprint(CurrentThumbprint);
-
-        var failures = Validate(options);
-
-        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.slots.duplicate_certificate")
-            .Which.Message.Should().Contain("Current").And.Contain("Next");
-    }
-
-    [Fact]
-    public void Validate_fails_when_Previous_and_Next_name_the_same_certificate_as_each_other()
-    {
-        var options = ValidOptions();
-        options.Previous = CertificateLookup.ByThumbprint(OtherThumbprint);
-        options.Next = CertificateLookup.ByThumbprint(OtherThumbprint);
-
-        var failures = Validate(options);
-
-        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.slots.duplicate_certificate")
-            .Which.Message.Should().Contain("Previous").And.Contain("Next");
-    }
-
-    [Fact]
-    public void Validate_detects_a_duplicate_slot_however_the_thumbprint_was_written()
-    {
-        // The validator compares the slots as lookups, and lookup equality is over the normalized
+        // The validator compares the entries as lookups, and lookup equality is over the normalized
         // thumbprint — so a duplicate is caught whichever way each thumbprint was pasted in.
-        var options = ValidOptions();
-        options.Previous = CertificateLookup.ByThumbprint("  aa bb cc dd ee ff 00 11 22 33 44 55 66 77 88 99 aa bb cc d  ");
+        var options = Options(
+            CertificateLookup.ByThumbprint(CurrentThumbprint),
+            CertificateLookup.ByThumbprint("  aa bb cc dd ee ff 00 11 22 33 44 55 66 77 88 99 aa bb cc d  "));
 
         var failures = Validate(options);
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.slots.duplicate_certificate");
+        failures.Should().ContainSingle(f => f.Code == "configuration.windows_certificate_store_signing.certificates.duplicate");
+    }
+
+    [Fact]
+    public void Validate_reports_every_problem_at_once()
+    {
+        var options = Options();
+        options.Algorithm = (SigningAlgorithm)999;
+
+        Validate(options).Should().HaveCount(2);
     }
 }

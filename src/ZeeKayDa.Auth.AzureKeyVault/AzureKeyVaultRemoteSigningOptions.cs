@@ -8,10 +8,9 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// Configuration options for <c>AddAzureKeyVaultRemoteSigning</c>.
 /// </summary>
 /// <remarks>
-/// Key Vault owns the key's version history, and the provider lists every enabled version, dated
-/// from the vault's own per-version metadata — there are no <c>Previous</c>/<c>Current</c>/<c>Next</c>
-/// properties to configure here. The vault is read exactly once, at startup: rotation is picked up
-/// by restarting the host. Rotate by creating a new key version; the framework decides from the
+/// Key Vault owns the key's version history, and the provider lists its enabled versions, dated from
+/// the vault's own per-version metadata. The vault is read once, at startup: rotation is picked up by
+/// restarting the host. Rotate by creating a new key version; the framework decides from the
 /// versions' dates when it takes over.
 /// </remarks>
 public sealed class AzureKeyVaultRemoteSigningOptions
@@ -37,4 +36,25 @@ public sealed class AzureKeyVaultRemoteSigningOptions
     /// algorithms for RSA/RSA-HSM keys, EC algorithms for EC/EC-HSM keys).
     /// </summary>
     public SigningAlgorithm Algorithm { get; set; }
+
+    /// <summary>
+    /// Gets or sets how many of the newest enabled versions to list, or <see langword="null"/> (the
+    /// default) to list every enabled version. Must be at least 3 when set.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every listed version costs one public-key request at startup, and a key on a rotation policy
+    /// keeps every old version, so this caps that cost. The newest versions are found from the vault's
+    /// version metadata, which is one paged request whatever the count.
+    /// </para>
+    /// <para>
+    /// A normal rotation has three versions live at once: the new one, published but not yet signing;
+    /// the one signing; and the one before it, kept until the tokens it signed have expired. Add one
+    /// for every further rotation that can happen within the signing-key lead time plus the
+    /// retention — an emergency rotation, or two rotations close together. A value too high only costs
+    /// startup requests; a value too low drops a version whose tokens are still in use, and those
+    /// tokens then fail verification. When unsure, choose the higher number.
+    /// </para>
+    /// </remarks>
+    public int? MaxVersions { get; set; }
 }

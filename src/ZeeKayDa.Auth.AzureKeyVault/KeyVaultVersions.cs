@@ -7,6 +7,12 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 internal static class KeyVaultVersions
 {
     /// <summary>
+    /// The smallest <c>MaxVersions</c> a source accepts: a rotation has a staged, a signing and a
+    /// previous version live at once.
+    /// </summary>
+    public const int MinimumMaxVersions = 3;
+
+    /// <summary>
     /// Returns every enabled version. Disabling a version is the operator's revocation lever, so a
     /// disabled version is never listed.
     /// </summary>
@@ -45,6 +51,15 @@ internal static class KeyVaultVersions
 
         return enabled;
     }
+
+    /// <summary>
+    /// Returns the <paramref name="maxVersions"/> newest of <paramref name="enabled"/>, by
+    /// <see cref="NotBefore"/>, or all of them when <paramref name="maxVersions"/> is
+    /// <see langword="null"/>.
+    /// </summary>
+    public static IReadOnlyList<TVersion> Newest<TVersion>(IReadOnlyList<TVersion> enabled, int? maxVersions)
+        where TVersion : IKeyVaultVersionInfo =>
+        maxVersions is { } max ? [.. enabled.OrderByDescending(v => NotBefore(v)).Take(max)] : enabled;
 
     /// <summary>
     /// A version is published from its creation and may not sign before its own <c>nbf</c>, so it

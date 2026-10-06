@@ -574,10 +574,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `signing.self_test_failed`. A signer that links the caller's token to its own is no longer reported
   as broken on shutdown. The Key Vault sources list every enabled version, dated from the later of its
   creation and its `nbf`; `PreActivationDelay` and `PreviousVersionsToPublish` are removed, and
-  `signing.azure_key_vault.no_active_key` is renamed `signing.azure_key_vault.no_enabled_version`. The PEM, PFX
-  and Windows sources report their filled slots as a list, and still open a signer only for `Current`,
-  so a configuration whose dates choose another slot fails startup until those sources become plain
-  lists.
+  `signing.azure_key_vault.no_active_key` is renamed `signing.azure_key_vault.no_enabled_version`.
+
+- **The PEM, PFX and Windows signing sources take a list instead of three slots** (#823).
+  `PemFileSigningOptions.Files`, `PfxFileSigningOptions.Files` and
+  `WindowsCertificateStoreSigningOptions.Certificates` replace `Previous`/`Current`/`Next`, and
+  `PemCertificateFile` is removed. Any listed key may sign, so every entry must carry its private key; a PFX
+  bundle without one fails at startup. The single-file registration overloads are unchanged. A certificate's
+  `NotBefore` counts as its publication date: list a new certificate as soon as it is issued. New public
+  helpers `SourceKey.FromCertificate` and `LocalSigner.FromCertificate` build a key and a signer from an
+  `X509Certificate2`, converting its local-time dates correctly; their failures are
+  `signing.certificate.unsupported_key_type` and `signing.certificate.private_key_not_found`, replacing the
+  `signing.file_signing.*` codes of the same name. No source keeps a read lock or a cached key set any more.
+  Both Key Vault sources gain `MaxVersions` (default all enabled versions, minimum 3) to fetch public keys for
+  only the newest N versions, and the cached source's own pairing check, `signing.azure_key_vault.secret_cer_mismatch`,
+  is removed: the startup self-test rejects the same divergence as `signing.self_test_failed`.
 
 - **Sign-in pages pass a subject, not a hand-built `ClaimsPrincipal`** (#781).
   `LoginInteraction.SignInAsync` and the account-linking call, renamed

@@ -21,3 +21,7 @@ ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultSigningException.AzureKeyVaultSigningEx
 ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultSigningException.AzureKeyVaultSigningException(string! message, System.Exception! innerException) -> void
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions.AddAzureKeyVaultCachedSigning<TBuilder>(this TBuilder! builder, Azure.Security.KeyVault.Certificates.KeyVaultCertificateIdentifier certificateIdentifier, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, Azure.Core.TokenCredential! credential, System.Action<ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions!>? configure = null) -> TBuilder!
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions.AddAzureKeyVaultRemoteSigning<TBuilder>(this TBuilder! builder, Azure.Security.KeyVault.Keys.KeyVaultKeyIdentifier keyIdentifier, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, Azure.Core.TokenCredential! credential, System.Action<ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions!>? configure = null) -> TBuilder!
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.MaxVersions.get -> int?
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultCachedSigningOptions.MaxVersions.set -> void
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.MaxVersions.get -> int?
+ZeeKayDa.Auth.AzureKeyVault.AzureKeyVaultRemoteSigningOptions.MaxVersions.set -> void

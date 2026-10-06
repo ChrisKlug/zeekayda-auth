@@ -166,7 +166,7 @@ internal static class AdversarialPkcs12Factory
     /// <summary>
     /// The shape <c>openssl pkcs12 -export -nokeys</c> produces for a chain: no key bag at all, the
     /// issuer's certificate unmarked, and the leaf carrying the <c>localKeyId</c> of the key that was
-    /// stripped. The right shape for a published-only slot.
+    /// stripped. A bundle the source now rejects, because it can never sign.
     /// </summary>
     /// <returns>The bundle, and the public key of the certificate that should be selected.</returns>
     public static (byte[] Bundle, RSAParameters ExpectedPublicKey) CertificateOnlyChainWithMarkedLeaf(
@@ -266,9 +266,10 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
-    /// A bundle carrying two certificates and no key bag, so nothing identifies which one signs.
+    /// A bundle carrying two certificates and one private key with no <c>localKeyId</c>, so nothing
+    /// identifies which certificate the key belongs to.
     /// </summary>
-    public static byte[] TwoCertificatesNoKey(
+    public static byte[] TwoCertificatesUnmarkedKey(
         string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
     {
         using var firstKey = RSA.Create(2048);
@@ -282,8 +283,12 @@ internal static class AdversarialPkcs12Factory
         certificates.AddCertificate(first);
         certificates.AddCertificate(second);
 
+        var keys = new Pkcs12SafeContents();
+        keys.AddShroudedKey(firstKey, password, Pbe);
+
         var builder = new Pkcs12Builder();
         builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
         builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
 
         return builder.Encode();

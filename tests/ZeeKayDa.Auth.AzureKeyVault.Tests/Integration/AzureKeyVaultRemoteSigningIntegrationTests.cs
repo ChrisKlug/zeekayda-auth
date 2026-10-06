@@ -9,9 +9,8 @@
 // follow-up — this file is not equivalent to that coverage, only to the DI-wiring/ring-behavior
 // slice that fakes can exercise.
 //
-// The vault is read exactly once, at startup, and never re-read, so there is no reload or
-// change-detection surface here — which is itself asserted below, by rotating a new version into
-// the fake vault after startup and observing that nothing published changes.
+// The ring reads the vault once, at startup — asserted below by rotating a new version into the fake
+// vault after startup and observing that nothing published changes until the next read.
 
 using System.Security.Cryptography;
 using Azure.Security.KeyVault.Keys;
@@ -147,7 +146,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         timeProvider.SetUtcNow(T0 + TimeSpan.FromDays(30));
 
         ring.Current.Published.Select(k => k.Kid).Should().Equal(publishedAtStartup,
-            "the vault is read exactly once, at startup — a rotation is only picked up by restarting the host");
+            "the ring reads the source once, at startup — a rotation is only picked up when it next reads");
     }
 
     // ── Startup failure propagation ───────────────────────────────────────────────────────────────

@@ -12,15 +12,11 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Read once, never re-read: the ring reads this source exactly once at startup, and the read is
-/// memoized here too, so a version added, disabled, or replaced after startup has no effect until
-/// the host restarts.
-/// </para>
-/// <para>
-/// Lists every enabled version, dated by the vault's own durable metadata (see
-/// <see cref="KeyVaultVersions"/>), so every replica and every restart lists the same keys with no
-/// local state. The framework decides which version signs. Disabling a version in the vault is the
-/// operator's revocation lever: a disabled version is never listed.
+/// Lists every enabled version, or the newest <see cref="AzureKeyVaultRemoteSigningOptions.MaxVersions"/>
+/// of them, dated by the vault's own durable metadata (see <see cref="KeyVaultVersions"/>), so every
+/// replica and every restart lists the same keys with no local state. The framework decides which
+/// version signs. Disabling a version in the vault is the operator's revocation lever: a disabled
+/// version is never listed.
 /// </para>
 /// <para>
 /// A failed or empty vault read always throws — never a partial key set — so a vault outage is
@@ -42,61 +38,40 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
     private readonly IOptions<AzureKeyVaultRemoteSigningOptions> _options = options;
     private readonly IKeyVaultSigner _signer = signer;
 
-    // Serialises reads so the vault is read exactly once even if two callers read concurrently —
-    // "only the ring calls this" is not something this type can enforce. Deliberately not disposed:
-    // disposing it would make a read already in flight at shutdown throw from its own Release, and
-    // would strand any reader queued behind it.
-    private readonly SemaphoreSlim _readGate = new(1, 1);
-
-    // The one key set this source ever reports. Assigned only after every listed version's public
-    // material has been fetched, so a failed read is never cached and a retry re-reads the vault;
-    // once a read has succeeded, no later one can observe a version rotated in after startup.
-    private IReadOnlyList<SourceKey>? _keySet;
-
-    // The versioned key URI of every version the memoized read listed, by version. volatile: written
-    // under _readGate, read by CreateSignerAsync without it.
+    // The versioned key URI of every version the latest read listed, by version, so a signer is
+    // opened only for a version that was listed. volatile: CreateSignerAsync may run on another thread.
     private volatile IReadOnlyDictionary<string, Uri>? _listedVersions;
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
-        await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        var options = _options.Value;
+
+        var allVersions = new List<KeyVaultKeyVersionInfo>();
+        await foreach (var version in keyReader.GetKeyVersionsAsync(cancellationToken).ConfigureAwait(false))
+            allVersions.Add(version);
+
+        if (allVersions.Count == 0)
         {
-            if (_keySet is not null)
-                return _keySet;
-
-            var options = _options.Value;
-
-            var allVersions = new List<KeyVaultKeyVersionInfo>();
-            await foreach (var version in keyReader.GetKeyVersionsAsync(cancellationToken).ConfigureAwait(false))
-                allVersions.Add(version);
-
-            if (allVersions.Count == 0)
-            {
-                throw new ZeeKayDaConfigurationException(
-                    new ZeeKayDaConfigurationFailure(
-                        "signing.azure_key_vault.no_key_versions",
-                        $"Key Vault key '{options.KeyIdentifier.Name}' in vault '{options.KeyIdentifier.VaultUri}' " +
-                        "has no versions. Create at least one key version before starting the host."));
-            }
-
-            var enabled = KeyVaultVersions.Enabled(
-                allVersions, "key", options.KeyIdentifier.Name, options.KeyIdentifier.VaultUri);
-
-            var keys = new List<SourceKey>(enabled.Count);
-            foreach (var version in enabled)
-                keys.Add(await ToSourceKeyAsync(version, options, cancellationToken).ConfigureAwait(false));
-
-            // Committed only after nothing can throw any more, so a failed read can never leave a
-            // signer openable for a version that was never listed.
-            _listedVersions = enabled.ToDictionary(v => v.Version, v => v.Id, StringComparer.Ordinal);
-            return _keySet = keys;
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.no_key_versions",
+                    $"Key Vault key '{options.KeyIdentifier.Name}' in vault '{options.KeyIdentifier.VaultUri}' " +
+                    "has no versions. Create at least one key version before starting the host."));
         }
-        finally
-        {
-            _readGate.Release();
-        }
+
+        var listed = KeyVaultVersions.Newest(
+            KeyVaultVersions.Enabled(allVersions, "key", options.KeyIdentifier.Name, options.KeyIdentifier.VaultUri),
+            options.MaxVersions);
+
+        var keys = new List<SourceKey>(listed.Count);
+        foreach (var version in listed)
+            keys.Add(await ToSourceKeyAsync(version, options, cancellationToken).ConfigureAwait(false));
+
+        // Committed only after nothing can throw any more, so a failed read can never leave a
+        // signer openable for a version that was never listed.
+        _listedVersions = listed.ToDictionary(v => v.Version, v => v.Id, StringComparer.Ordinal);
+        return keys;
     }
 
     /// <inheritdoc/>
@@ -110,8 +85,7 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
         {
             throw new InvalidOperationException(
                 $"{nameof(CreateSignerAsync)} was called for key '{id.Value}', which is not a Key Vault " +
-                "key version this source listed. This source reads the vault exactly once, so the listed " +
-                "versions cannot change after startup.");
+                "key version this source listed.");
         }
 
         return Task.FromResult<ISigner>(new KeyVaultRemoteSigner(

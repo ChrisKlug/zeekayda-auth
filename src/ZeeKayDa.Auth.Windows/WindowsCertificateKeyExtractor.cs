@@ -5,31 +5,15 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Windows;
 
 /// <summary>
-/// Extracts public and private key handles from an already-obtained <see cref="X509Certificate2"/>.
+/// Extracts a private key handle from an already-obtained <see cref="X509Certificate2"/>.
 /// </summary>
 /// <remarks>
-/// Uses only <c>GetRSAPublicKey()</c> / <c>GetRSAPrivateKey()</c> / <c>GetECDsaPublicKey()</c> /
-/// <c>GetECDsaPrivateKey()</c> — never <c>.PrivateKey</c> or <c>ExportParameters(true)</c>. These
+/// Uses only <c>GetRSAPrivateKey()</c> / <c>GetECDsaPrivateKey()</c> — never <c>.PrivateKey</c> or <c>ExportParameters(true)</c>. These
 /// accessors return handles that remain valid after the parent <see cref="X509Certificate2"/> is
 /// disposed, which is what lets the caller dispose the certificate once handles are extracted.
 /// </remarks>
 internal static class WindowsCertificateKeyExtractor
 {
-    /// <summary>Extracts a public-only key handle and its key type from a certificate.</summary>
-    public static (AsymmetricAlgorithm PublicKey, SigningKeyType KeyType) ExtractPublicKey(
-        X509Certificate2 certificate, string thumbprint)
-    {
-        var rsa = certificate.GetRSAPublicKey();
-        if (rsa is not null)
-            return (rsa, SigningKeyType.Rsa);
-
-        var ec = certificate.GetECDsaPublicKey();
-        if (ec is not null)
-            return (ec, SigningKeyType.Ec);
-
-        throw UnsupportedKeyType(thumbprint);
-    }
-
     /// <summary>Extracts a private key handle and its key type from a certificate.</summary>
     public static (AsymmetricAlgorithm PrivateKey, SigningKeyType KeyType) ExtractPrivateKey(
         X509Certificate2 certificate, string thumbprint)
@@ -62,9 +46,4 @@ internal static class WindowsCertificateKeyExtractor
             "MMC snap-in's 'Manage Private Keys', or 'certutil -repairstore')."));
     }
 
-    private static ZeeKayDaConfigurationException UnsupportedKeyType(string thumbprint) =>
-        new(new ZeeKayDaConfigurationFailure(
-            "signing.windows_certificate_store.unsupported_key_type",
-            $"Certificate '{thumbprint}' does not carry an RSA or EC public key. Only RSA and EC " +
-            "certificates are supported for JWT signing."));
 }

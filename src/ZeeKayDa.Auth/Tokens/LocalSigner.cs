@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 
 namespace ZeeKayDa.Auth.Tokens;
 
@@ -39,6 +40,38 @@ public sealed class LocalSigner : ISigner
         _algorithm = algorithm;
         _privateKey = privateKey;
     }
+
+    /// <summary>
+    /// Creates a <see cref="LocalSigner"/> over a certificate's private key.
+    /// </summary>
+    /// <param name="certificate">
+    /// The certificate. The returned signer owns its own handle to the private key, so the caller may
+    /// dispose <paramref name="certificate"/> straight away.
+    /// </param>
+    /// <param name="algorithm">The signing algorithm to use.</param>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// Thrown with failure code <c>signing.certificate.private_key_not_found</c> when the certificate
+    /// carries no private key, or one this process cannot access.
+    /// </exception>
+    public static LocalSigner FromCertificate(X509Certificate2 certificate, SigningAlgorithm algorithm)
+    {
+        ArgumentNullException.ThrowIfNull(certificate);
+
+        if (!certificate.HasPrivateKey)
+            throw PrivateKeyNotFound(certificate, "carries no private key");
+
+        AsymmetricAlgorithm? privateKey = certificate.GetRSAPrivateKey();
+        privateKey ??= certificate.GetECDsaPrivateKey();
+        return privateKey is not null
+            ? new LocalSigner(algorithm, privateKey)
+            : throw PrivateKeyNotFound(certificate, "has a private key, but it could not be accessed");
+    }
+
+    private static ZeeKayDaConfigurationException PrivateKeyNotFound(X509Certificate2 certificate, string problem) =>
+        new(new ZeeKayDaConfigurationFailure(
+            "signing.certificate.private_key_not_found",
+            $"Certificate '{certificate.Subject}' (thumbprint {certificate.Thumbprint}) {problem}. Every listed " +
+            "signing certificate must carry a private key this process can use, because any of them may be chosen to sign."));
 
     /// <inheritdoc/>
     public Task<ReadOnlyMemory<byte>> SignAsync(

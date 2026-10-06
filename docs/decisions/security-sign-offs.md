@@ -1650,7 +1650,8 @@ non-JWS prefix plus a fresh 32-byte nonce, not a fixed constant.
   `VerifyAsync_propagates_a_failure_from_InitializeAsync_unmodified`.
 - Residual, accepted: pairing is proven at the handoff only, so a custom signer re-resolving its key
   per call drifts undetected; the shipped Key Vault signer pins the version —
-  `ReadAsync_reads_the_vault_exactly_once_and_ignores_versions_rotated_in_afterwards`.
+  `CreateSignerAsync_opens_a_signer_for_any_listed_version_pinned_to_that_version`
+  [repointed by #823 PR 2 from ReadAsync_reads_the_vault_exactly_once_and_ignores_versions_rotated_in_afterwards, removed with the source's read cache].
 
 ## 2026-09-15 — a confidential client may use the OIDC nonce instead of PKCE (#662)
 
@@ -2169,6 +2170,6 @@ code lens on `6db3887`, and the PR's Copilot and CodeScene review; no Critical; 
 - **Accepted residuals (maintainer):** a key signs up to five minutes before its `NotBefore` (`Future_a_key_valid_up_to_five_minutes_from_now_signs_to_tolerate_clock_skew`);
   a key expiring while the process runs signs until restart, with no test pinning that; the health check reports it Unhealthy
   (`CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source`);
-  file and Windows sources sign only with Current until PR 2 (`CreateSignerAsync_throws_when_called_for_the_Next_slot`); per-client lifetimes are invisible at startup,
+  file and Windows sources sign only with Current until PR 2 (CreateSignerAsync_throws_when_called_for_the_Next_slot [removed by #823 PR 2, which lets every listed file sign: `CreateSignerAsync_opens_a_signer_for_any_listed_file`]); per-client lifetimes are invisible at startup,
   so the operator raises the retention, with no test for the default ignoring them (`PostConfigure_keeps_an_explicit_RetainRetiredKeysFor` proves the lever); a hint whose key is retired is refused, #899
   (`Validate_refuses_a_hint_signed_by_a_key_the_server_does_not_publish`).

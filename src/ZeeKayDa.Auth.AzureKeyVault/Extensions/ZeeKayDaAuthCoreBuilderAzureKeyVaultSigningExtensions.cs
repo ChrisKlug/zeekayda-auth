@@ -31,10 +31,11 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
     /// <para>
     /// The vault is read exactly once, at startup — rotation is picked up by restarting the host.
     /// Rotate by creating a new version of the key (Key Vault's automatic rotation policy does
-    /// exactly that). Every enabled version is listed, dated from its creation; the framework's
-    /// <see cref="ZeeKayDa.Auth.Tokens.SigningKeyOptions"/> decide which one signs and how long the
-    /// versions it succeeds stay published. Disabling a version in the vault removes it from
-    /// publication unconditionally.
+    /// exactly that). Every enabled version is listed, or the newest
+    /// <see cref="AzureKeyVaultRemoteSigningOptions.MaxVersions"/> of them, dated from its creation;
+    /// the framework's <see cref="ZeeKayDa.Auth.Tokens.SigningKeyOptions"/> decide which one signs and
+    /// how long the versions it succeeds stay published. Disabling a version in the vault removes it
+    /// from publication unconditionally.
     /// </para>
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
@@ -111,10 +112,11 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
     /// </para>
     /// <para>
     /// The vault is read exactly once, at startup — rotation is picked up by restarting the host.
-    /// Rotate by creating a new version of the certificate. Every enabled version is listed, dated
-    /// from its creation; the framework's <see cref="ZeeKayDa.Auth.Tokens.SigningKeyOptions"/>
-    /// decide which one signs and how long the versions it succeeds stay published. Disabling a
-    /// version in the vault removes it from publication unconditionally.
+    /// Rotate by creating a new version of the certificate. Every enabled version is listed, or the
+    /// newest <see cref="AzureKeyVaultCachedSigningOptions.MaxVersions"/> of them, dated from its
+    /// creation; the framework's <see cref="ZeeKayDa.Auth.Tokens.SigningKeyOptions"/> decide which one
+    /// signs and how long the versions it succeeds stay published. Disabling a version in the vault
+    /// removes it from publication unconditionally.
     /// </para>
     /// <para>
     /// Private key material is downloaded for exactly one version — the signing one. Every other

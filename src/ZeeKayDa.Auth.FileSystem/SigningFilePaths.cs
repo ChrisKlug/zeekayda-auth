@@ -6,9 +6,8 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Shared by the PEM and PFX options validators, which need the identical rule: two slots sharing a
-/// file would publish one key twice under two slot names, or make the same file both the outgoing and
-/// the incoming key of a rotation.
+/// Shared by the PEM and PFX options validators, which need the identical rule: two entries sharing a
+/// file would list one key twice under two source ids.
 /// </para>
 /// <para>
 /// Each non-empty path is normalized via <see cref="Path.GetFullPath(string)"/> before comparison, so
@@ -28,12 +27,12 @@ internal static class SigningFilePaths
     /// <param name="optionsTypeName">The options type to name in the failures, as the operator configured it.</param>
     /// <param name="codePrefix">The code prefix the caller's path failures carry.</param>
     /// <param name="distinctnessRequirement">
-    /// How the caller's own configuration spells the rule — PEM has a <c>KeyPath</c> beside its slot
-    /// paths, PFX does not — so the error names the properties the operator actually set.
+    /// How the caller's own configuration spells the rule — PEM has a <c>KeyPath</c> beside each
+    /// path, PFX does not — so the error names the properties the operator actually set.
     /// </param>
     /// <param name="paths">
     /// Every path the configuration names. A <see langword="null"/>, empty, or whitespace-only entry
-    /// is ignored: the caller reports those under its own slot-specific message, and two
+    /// is ignored: the caller reports those under its own per-entry message, and two
     /// independently empty values are not "the same path".
     /// </param>
     public static List<ZeeKayDaConfigurationFailure> PathFailures(
@@ -77,7 +76,7 @@ internal static class SigningFilePaths
         {
             failures.Add(new(
                 $"{codePrefix}.unresolvable",
-                $"A {optionsTypeName} slot names a path the operating system cannot resolve — it " +
+                $"A {optionsTypeName} entry names a path the operating system cannot resolve — it " +
                 "contains an invalid character (such as an embedded NUL) or exceeds the platform's " +
                 "maximum path length."));
         }
@@ -86,7 +85,7 @@ internal static class SigningFilePaths
         {
             failures.Add(new(
                 $"{codePrefix}.duplicate",
-                $"Two {optionsTypeName} slots reference the same file. {distinctnessRequirement}"));
+                $"Two {optionsTypeName} entries reference the same file. {distinctnessRequirement}"));
         }
 
         return failures;

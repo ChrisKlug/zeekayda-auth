@@ -1,14 +1,14 @@
 namespace ZeeKayDa.Auth.Windows;
 
 /// <summary>
-/// How to find one certificate in the configured Windows Certificate Store — the value configured
-/// into each of <see cref="WindowsCertificateStoreSigningOptions"/>'s three signing key slots.
+/// How to find one certificate in the configured Windows Certificate Store — one entry of
+/// <see cref="WindowsCertificateStoreSigningOptions.Certificates"/>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// A lookup names a certificate; it is not the certificate itself, and it carries no key material.
 /// The store to search is not part of it: <see cref="WindowsCertificateStoreSigningOptions.StoreLocation"/>
-/// and <see cref="WindowsCertificateStoreSigningOptions.StoreName"/> apply to every slot alike.
+/// and <see cref="WindowsCertificateStoreSigningOptions.StoreName"/> apply to every listed certificate alike.
 /// </para>
 /// <para>
 /// One lookup mode ships today, <see cref="ByThumbprint"/>, returning a

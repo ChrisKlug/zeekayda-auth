@@ -99,19 +99,6 @@ public sealed class WindowsCertificateKeyExtractorTests
     }
 
     [Fact]
-    public void ExtractPublicKey_handle_remains_usable_after_the_parent_certificate_is_disposed()
-    {
-        var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-        using var publicKey = WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, "AABBCC").PublicKey;
-
-        certificate.Dispose();
-
-        var act = () => ((RSA)publicKey).ExportParameters(includePrivateParameters: false);
-
-        act.Should().NotThrow("a non-active included certificate's public-only handle must also survive disposal of its parent certificate");
-    }
-
-    [Fact]
     public void ExtractPrivateKey_throws_private_key_not_found_when_certificate_has_no_private_key()
     {
         // Distinct from the "key exists but this process cannot access it" branch below, which
@@ -151,35 +138,8 @@ public sealed class WindowsCertificateKeyExtractorTests
             .And.Contain("Manage Private Keys");
     }
 
-    [Fact]
-    public void ExtractPublicKey_throws_unsupported_key_type_for_a_certificate_that_is_neither_RSA_nor_EC()
-    {
-        using var certificate = TestCertificateFactory.CreateUnsupportedKeyTypeSelfSigned(
-            "test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
-
-        var act = () => WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, "AABBCC");
-
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .WithMessage("*unsupported_key_type*")
-            .Which.Message.Should().Contain("AABBCC").And.Contain("does not carry an RSA or EC public key")
-            .And.Contain("Only RSA and EC");
-    }
-
     // FormatIdentitySuffix/TryResolveProcessIdentity now live in the shared
     // ZeeKayDa.Auth.ProcessIdentityHelper (consolidated with ZeeKayDa.Auth.FileSystem's identical
     // copy per PR #410's review) — see ProcessIdentityHelperTests in ZeeKayDa.Auth.Tests for their
     // tests.
-
-    [Fact]
-    public void ExtractPublicKey_succeeds_for_a_certificate_with_no_private_key()
-    {
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned(
-            "test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365), withPrivateKey: false);
-
-        var (publicKey, keyType) = WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, "AABBCC");
-
-        keyType.Should().Be(SigningKeyType.Rsa);
-        publicKey.Should().NotBeNull();
-        publicKey.Dispose();
-    }
 }
