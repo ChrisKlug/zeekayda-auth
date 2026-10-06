@@ -21,8 +21,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// A page that only collects what the provider did not supply passes the collected claims to
 /// <see cref="SignInAsync"/>, and the framework builds the session principal the way it does when
 /// no page is involved: the provider's claims under the derived subject, never the upstream one.
-/// A page that links the external identity to a local account passes that account's own
-/// principal to <see cref="SignInWithReplacedPrincipalAsync"/>.
+/// A page that links the external identity to a local account passes that account's subject to
+/// <see cref="SignInWithReplacedAccountAsync(string, IEnumerable{string}, Claim[])"/>.
 /// </para>
 /// <para>
 /// <strong>Nothing to continue is answered, not thrown.</strong> When a terminal method finds no
@@ -109,9 +109,11 @@ public sealed class ProviderSignInInteraction
     /// </summary>
     /// <param name="additionalClaims">
     /// What the page collected, added alongside the provider's claims — only the additions, not
-    /// the provider's claims over again. The subject is the framework's: a <c>sub</c> or
-    /// <see cref="ClaimTypes.NameIdentifier"/> claim is refused, and claims in the reserved
-    /// <c>zkd:</c> namespace are stripped. Pass none to promote the parked principal as it is.
+    /// the provider's claims over again. Held on the SSO session only: tokens and userinfo get
+    /// their claims from <c>IClaimsProvider</c>, never from here. The subject is the framework's:
+    /// a <c>sub</c> or <see cref="ClaimTypes.NameIdentifier"/> claim is refused, and claims in the
+    /// reserved <c>zkd:</c> namespace are stripped. Pass none to promote the parked principal as
+    /// it is.
     /// </param>
     /// <remarks>
     /// <para>
@@ -161,25 +163,7 @@ public sealed class ProviderSignInInteraction
     /// </exception>
     public async Task SignInAsync(params Claim[] additionalClaims)
     {
-        ArgumentNullException.ThrowIfNull(additionalClaims);
-
-        // A snapshot of the caller's array: what is validated is what is promoted, however the
-        // caller's copy changes while the store is awaited. The subject is refused rather than
-        // dropped: a page passing one expects it to be used, and silently replacing it would
-        // hide the mistake this service exists to prevent.
-        var collected = additionalClaims.ToArray();
-        if (collected.Any(claim => claim is null))
-            throw new ArgumentException("An entry in the additional claims is null.", nameof(additionalClaims));
-
-        if (collected.Any(claim => ExternalSubject.IsSubjectClaimType(claim.Type)))
-        {
-            throw new ArgumentException(
-                "An additional claim names the subject. The session subject of an external sign-in is " +
-                "derived by the framework from the provider, the issuer and the upstream subject; a " +
-                "page that links the external identity to a local account passes that account's " +
-                "principal to SignInWithReplacedPrincipalAsync instead.",
-                nameof(additionalClaims));
-        }
+        var collected = SessionPrincipal.AdditionalClaims(additionalClaims);
 
         var context = RequireStateChangingRequest();
         await _services.NothingToContinue.SignInStepAsync(context, Page, () => SignInWithParkedAsync(context, collected)).ConfigureAwait(false);
@@ -194,7 +178,7 @@ public sealed class ProviderSignInInteraction
         Promote(parked);
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
         var promoted = Promote(taken);
-        ((ClaimsIdentity)promoted.Identity!).AddClaims(additionalClaims.Where(claim => !ReservedClaims.IsReserved(claim)));
+        ((ClaimsIdentity)promoted.Identity!).AddClaims(additionalClaims);
 
         // Nothing is stated about how the user proved who they are at the provider, as for an
         // external sign-in that involved no page.
@@ -203,21 +187,71 @@ public sealed class ProviderSignInInteraction
     }
 
     /// <summary>
-    /// Establishes the SSO session for <paramref name="principal"/> in place of the parked one —
-    /// a local account the page linked the external identity to — and continues the authorization
-    /// request that led here.
+    /// Establishes the SSO session for <paramref name="subject"/>, a local account, in place of
+    /// the parked principal, and continues the authorization request that led here.
     /// </summary>
-    /// <param name="principal">
-    /// The account the session is for, replacing the parked principal entirely: nothing the
-    /// provider returned is carried into the session. Must carry a <c>sub</c> or
-    /// <see cref="ClaimTypes.NameIdentifier"/> claim; that subject must not be the upstream one
-    /// the provider returned, and claims in the framework's reserved <c>zkd:</c> namespace are
-    /// stripped.
+    /// <param name="subject">
+    /// The local account the session is for. It must not be the upstream subject the provider
+    /// returned.
+    /// </param>
+    /// <param name="authenticationMethod">
+    /// How the user proved who they are, reported to the client in the <c>amr</c> claim. Use
+    /// <see cref="AuthenticationMethods"/> for the registered values, or pass your own string for
+    /// a method the registry does not name. A sign-in that used several takes the overload with a
+    /// list.
+    /// </param>
+    /// <param name="additionalClaims">
+    /// Claims held on the SSO session alongside the subject. Held on the session only: tokens and
+    /// userinfo get their claims from <c>IClaimsProvider</c>, never from here. A <c>sub</c> or
+    /// <see cref="ClaimTypes.NameIdentifier"/> claim is refused, and claims in the reserved
+    /// <c>zkd:</c> namespace are stripped.
+    /// </param>
+    /// <remarks>
+    /// Exactly the overload taking a list of methods, with one method in it.
+    /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// The parked principal's provider is no longer registered, or <paramref name="subject"/> is
+    /// the upstream subject the provider returned.
+    /// </exception>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store or the authorization code store could not be reached before the
+    /// session was established. Fail-closed: nothing was signed in or issued. A store fault
+    /// after that point is answered to the client as <c>server_error</c> rather than thrown,
+    /// with the session already established.
+    /// </exception>
+    /// <exception cref="ArgumentNullException"><paramref name="additionalClaims"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="subject"/> or <paramref name="authenticationMethod"/> is null or blank, or
+    /// an entry in <paramref name="additionalClaims"/> is null or names the subject.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The request is not a <c>POST</c>, or there is no active HTTP request.
+    /// </exception>
+    public Task SignInWithReplacedAccountAsync(string subject, string authenticationMethod, params Claim[] additionalClaims)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(authenticationMethod);
+
+        return SignInWithReplacedAccountAsync(subject, [authenticationMethod], additionalClaims);
+    }
+
+    /// <summary>
+    /// Establishes the SSO session for <paramref name="subject"/>, a local account, in place of
+    /// the parked principal, and continues the authorization request that led here.
+    /// </summary>
+    /// <param name="subject">
+    /// The local account the session is for. It must not be the upstream subject the provider
+    /// returned.
     /// </param>
     /// <param name="authenticationMethods">
     /// How the user proved who they are, reported to the client in the <c>amr</c> claim. Use
     /// <see cref="AuthenticationMethods"/> for the registered values, or pass your own string for
-    /// a method the registry does not name. Passing none omits the claim.
+    /// a method the registry does not name. An empty list omits the claim.
+    /// </param>
+    /// <param name="additionalClaims">
+    /// Claims held on the SSO session alongside the subject. Held on the session only: tokens and
+    /// userinfo get their claims from <c>IClaimsProvider</c>, never from here. A <c>sub</c> or
+    /// <see cref="ClaimTypes.NameIdentifier"/> claim is refused, and claims in the reserved
+    /// <c>zkd:</c> namespace are stripped.
     /// </param>
     /// <remarks>
     /// <para>
@@ -228,12 +262,17 @@ public sealed class ProviderSignInInteraction
     /// started.
     /// </para>
     /// <para>
-    /// Linking can be more involved than adding a claim — matching an existing account, creating
-    /// one, asking the user to sign in locally first — so the session holds the principal the
-    /// page built, subject included, exactly as the login page's sign-in does. The parked
-    /// principal is consumed, and the provider that parked it is recorded on the request. What
-    /// it is not for is passing the parked principal back: the session subject of an external
-    /// sign-in is never the upstream subject verbatim, and a replacement carrying it is refused.
+    /// This is account linking: the page decided the external identity belongs to one of the
+    /// host's own accounts — a stored link, a matched verified email, a local password entered
+    /// once — and the session is for that account. Nothing the provider returned is carried into
+    /// the session. The parked principal is consumed, and the provider that parked it is recorded
+    /// on the request. What it is not for is passing the upstream subject back: the session
+    /// subject of an external sign-in is never the upstream subject verbatim, and a replacement
+    /// naming it is refused.
+    /// </para>
+    /// <para>
+    /// The arguments are copied when the call is made: what was validated is what is signed in,
+    /// whatever the page does to them afterwards.
     /// </para>
     /// <para>
     /// Every refusal of the sign-in itself is decided before the parked principal is taken, so
@@ -248,8 +287,8 @@ public sealed class ProviderSignInInteraction
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// The parked principal's provider is no longer registered. Or <paramref name="principal"/>
-    /// carries no subject, or its subject is the upstream subject the provider returned.
+    /// The parked principal's provider is no longer registered, or <paramref name="subject"/> is
+    /// the upstream subject the provider returned.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached before the
@@ -258,37 +297,19 @@ public sealed class ProviderSignInInteraction
     /// with the session already established.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="principal"/> or <paramref name="authenticationMethods"/> is null.
+    /// <paramref name="authenticationMethods"/> or <paramref name="additionalClaims"/> is null.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// An entry in <paramref name="authenticationMethods"/> is null or blank.
+    /// <paramref name="subject"/> or an entry in <paramref name="authenticationMethods"/> is null
+    /// or blank, or an entry in <paramref name="additionalClaims"/> is null or names the subject.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request.
     /// </exception>
-    public async Task SignInWithReplacedPrincipalAsync(ClaimsPrincipal principal, params string[] authenticationMethods)
+    public async Task SignInWithReplacedAccountAsync(string subject, IEnumerable<string> authenticationMethods, params Claim[] additionalClaims)
     {
-        ArgumentNullException.ThrowIfNull(principal);
-        ArgumentNullException.ThrowIfNull(authenticationMethods);
-
-        var methods = authenticationMethods.ToArray();
-        if (methods.Any(string.IsNullOrWhiteSpace))
-            throw new ArgumentException(
-                "An authentication method reference is null or blank. Pass a value such as "
-                + "AuthenticationMethods.Password, or pass none to omit the amr claim.",
-                nameof(authenticationMethods));
-
-        // A snapshot, rebuilt on the framework's own identity type: what is validated is what is
-        // promoted, whatever the page does to its principal afterwards. Checked before the parked
-        // principal is taken: a principal the session would refuse must not cost the page the one
-        // thing it needs to try again.
-        var replacement = ReservedClaims.Snapshot(principal);
-        if (!HasSubject(replacement))
-        {
-            throw new ZeeKayDaInteractionException(
-                "The principal passed to SignInWithReplacedPrincipalAsync carries no subject. Add a 'sub' or " +
-                $"'{ClaimTypes.NameIdentifier}' claim identifying the user.");
-        }
+        var methods = SessionPrincipal.Methods(authenticationMethods);
+        var replacement = SessionPrincipal.Build(subject, additionalClaims);
 
         var context = RequireStateChangingRequest();
         await _services.NothingToContinue.SignInStepAsync(context, Page, () => SignInAsReplacementAsync(context, replacement, methods)).ConfigureAwait(false);
@@ -298,6 +319,8 @@ public sealed class ProviderSignInInteraction
     {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
+        // Checked before the parked principal is taken: a replacement the session would refuse
+        // must not cost the page the one thing it needs to try again.
         RequireRegistered(parked);
         if (CarriesUpstreamSubject(replacement, parked.Principal))
             throw UpstreamSubjectRefused();
@@ -388,9 +411,9 @@ public sealed class ProviderSignInInteraction
         ?? throw NothingParked();
 
     private static ZeeKayDaInteractionException UpstreamSubjectRefused() => new(
-        "The replacement principal's subject is the upstream subject the provider returned. The " +
+        "The replacement account's subject is the upstream subject the provider returned. The " +
         "session subject of an external sign-in is never the upstream one verbatim: pass a local " +
-        "account's own principal, or let SignInAsync derive the subject.");
+        "account's own subject, or let SignInAsync derive the subject.");
 
     private static NothingToContinueException NothingParked() => new(
         NothingToContinueReason.NothingParked,
@@ -420,17 +443,9 @@ public sealed class ProviderSignInInteraction
     }
 
     /// <summary>
-    /// Selected as the session selects it — the first claim of each type, in order — so a
-    /// principal that passes here is one the session will accept after the take.
-    /// </summary>
-    private static bool HasSubject(ClaimsPrincipal principal) =>
-        ExternalSubject.SubjectClaimTypes.Any(type => !string.IsNullOrEmpty(principal.FindFirstValue(type)));
-
-    /// <summary>
-    /// Whether the replacement names, as its subject, a subject the provider returned — the
-    /// literal pass-through of the parked principal, or a copy of its subject claim. Compared by
-    /// value: a host keying local accounts by the upstream subject verbatim is the very thing
-    /// the derived subject exists to prevent.
+    /// Whether the replacement's subject is a subject the provider returned. Compared by value: a
+    /// host keying local accounts by the upstream subject verbatim is the very thing the derived
+    /// subject exists to prevent.
     /// </summary>
     private static bool CarriesUpstreamSubject(ClaimsPrincipal replacement, ClaimsPrincipal parked) =>
         SubjectValues(replacement).Intersect(SubjectValues(parked), StringComparer.Ordinal).Any();
@@ -459,7 +474,7 @@ public sealed class ProviderSignInInteraction
         {
             throw new InvalidOperationException(
                 "A sign-in or cancellation must come from a POST — the page's form submission — not " +
-                "from the request that renders the page. Wire SignInAsync, SignInWithReplacedPrincipalAsync " +
+                "from the request that renders the page. Wire SignInAsync, SignInWithReplacedAccountAsync " +
                 "and DenyAsync to the form's post handlers.");
         }
 

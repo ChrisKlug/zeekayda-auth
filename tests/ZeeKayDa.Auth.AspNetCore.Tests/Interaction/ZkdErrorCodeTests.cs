@@ -92,7 +92,7 @@ public sealed class ZkdErrorCodeTests
                 return;
             }
 
-            await login.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")), AuthenticationMethods.Password);
+            await login.SignInAsync("user-1", AuthenticationMethods.Password);
         });
 
         endpoints.MapPost(LoginPath + "/cancel", (LoginInteraction login) => login.DenyAsync());

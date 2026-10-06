@@ -175,9 +175,7 @@ public sealed class UserInfoEndpointHostTests(
 
     private static void MapLoginPage(IEndpointRouteBuilder endpoints) =>
         endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
-            await login.SignInAsync(
-                new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", Subject)], "test")),
-                AuthenticationMethods.Password));
+            await login.SignInAsync(Subject, AuthenticationMethods.Password));
 
     private static async Task<JsonElement> ExchangeAsync(HttpClient client, string scope)
     {

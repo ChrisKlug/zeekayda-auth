@@ -97,12 +97,6 @@ internal static class ProviderTestHost
         };
     }
 
-    /// <summary>An identity whose <c>Clone</c> returns itself — a copy site that trusts the virtual gets an alias.</summary>
-    public sealed class SelfCloningIdentity(IEnumerable<Claim> claims, string authenticationType) : ClaimsIdentity(claims, authenticationType)
-    {
-        public override ClaimsIdentity Clone() => this;
-    }
-
     public static HttpClient NewClient(TestWebAppFactory factory) => factory.CreateClient(new()
     {
         BaseAddress = new Uri("https://test.example.com"),
@@ -139,9 +133,7 @@ internal static class ProviderTestHost
             }
 
             var subject = form["sub"].FirstOrDefault() ?? "user-1";
-            await login.SignInAsync(
-                new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", subject)], "test")),
-                AuthenticationMethods.Password);
+            await login.SignInAsync(subject, AuthenticationMethods.Password);
         });
 
         endpoints.MapPost("/account/login/cancel", (LoginInteraction login) => login.DenyAsync());
@@ -184,28 +176,29 @@ internal static class ProviderTestHost
             var pending = await signIn.GetPendingPrincipalAsync()
                 ?? throw new InvalidOperationException("Nothing is parked for this page.");
 
-            await signIn.SignInWithReplacedPrincipalAsync(
-                new ClaimsPrincipal(new ClaimsIdentity(
-                    [new Claim("sub", "mapped-" + pending.Principal.FindFirstValue("sub"))], "test")),
-                AuthenticationMethods.Password);
+            await signIn.SignInWithReplacedAccountAsync("mapped-" + pending.Principal.FindFirstValue("sub"), AuthenticationMethods.Password);
         });
 
-        // The mistake the service exists to refuse: passing the parked principal straight back.
+        // The mistake the service exists to refuse: passing the upstream subject straight back.
         endpoints.MapPost(CollectMorePath + "/link-passthrough", async (ProviderSignInInteraction signIn) =>
         {
             var pending = await signIn.GetPendingPrincipalAsync()
                 ?? throw new InvalidOperationException("Nothing is parked for this page.");
 
-            await signIn.SignInWithReplacedPrincipalAsync(pending.Principal, AuthenticationMethods.Password);
+            await signIn.SignInWithReplacedAccountAsync(pending.Principal.FindFirstValue("sub")!, AuthenticationMethods.Password);
         });
 
-        // Linking straight from the form, without reading first: the service's own refusals.
+        // Linking straight from the form, without reading first: the service's own refusals. The
+        // "subject" field is the subject; every other field becomes an additional claim.
         endpoints.MapPost(CollectMorePath + "/link-direct", async (HttpContext context, ProviderSignInInteraction signIn) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
-            var claims = form.SelectMany(field => field.Value.Select(value => new Claim(field.Key, value ?? string.Empty))).ToArray();
+            var claims = form
+                .Where(field => field.Key != "subject")
+                .SelectMany(field => field.Value.Select(value => new Claim(field.Key, value ?? string.Empty)))
+                .ToArray();
 
-            await signIn.SignInWithReplacedPrincipalAsync(new ClaimsPrincipal(new ClaimsIdentity(claims, "test")), AuthenticationMethods.Password);
+            await signIn.SignInWithReplacedAccountAsync(form["subject"].FirstOrDefault() ?? string.Empty, AuthenticationMethods.Password, claims);
         });
 
         endpoints.MapPost(CollectMorePath + "/cancel", (ProviderSignInInteraction signIn) => signIn.DenyAsync());

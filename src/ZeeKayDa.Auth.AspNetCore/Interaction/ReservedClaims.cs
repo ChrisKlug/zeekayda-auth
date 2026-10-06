@@ -51,7 +51,7 @@ internal static class ReservedClaims
     /// so the members are read one by one; the properties dictionary is copied, since it is the
     /// one mutable part of a claim.
     /// </summary>
-    private static Claim Materialize(Claim claim)
+    public static Claim Materialize(Claim claim)
     {
         var copy = new Claim(claim.Type, claim.Value, claim.ValueType, claim.Issuer, claim.OriginalIssuer);
         foreach (var (key, value) in claim.Properties)

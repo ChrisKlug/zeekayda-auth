@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Authorization;
 /// <para>
 /// These exist so a host never has to know that the claim is spelled <c>amr</c> or that a password
 /// is spelled <c>pwd</c>. Pass them to
-/// <c>LoginInteraction.SignInAsync</c>: <c>SignInAsync(user, AuthenticationMethods.Password)</c>.
+/// <c>LoginInteraction.SignInAsync</c>: <c>SignInAsync(user.Subject, AuthenticationMethods.Password)</c>.
 /// </para>
 /// <para>
 /// These are the values with real-world traction, not the whole of RFC 8176 — the registry also
@@ -37,10 +37,8 @@ public static class AuthenticationMethods
     /// set is open, and a named pair would hide the factors that are the useful part.
     /// <code>
     /// await login.SignInAsync(
-    ///     user,
-    ///     AuthenticationMethods.MultiFactor,
-    ///     AuthenticationMethods.Password,
-    ///     AuthenticationMethods.OneTimePassword);
+    ///     user.Subject,
+    ///     [AuthenticationMethods.MultiFactor, AuthenticationMethods.Password, AuthenticationMethods.OneTimePassword]);
     /// </code>
     /// </summary>
     public const string MultiFactor = "mfa";
@@ -91,7 +89,7 @@ public static class AuthenticationMethods
     /// to <c>LoginInteraction.SignInAsync</c>:
     /// <code>
     /// await login.SignInAsync(
-    ///     user,
+    ///     user.Subject,
     ///     AuthenticationMethods.Mfa(
     ///         AuthenticationMethods.Password,
     ///         AuthenticationMethods.OneTimePassword));
