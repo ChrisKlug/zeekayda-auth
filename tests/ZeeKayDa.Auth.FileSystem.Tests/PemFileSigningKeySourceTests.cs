@@ -489,6 +489,25 @@ public sealed class PemFileSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_rejects_a_combined_file_whose_only_key_block_is_encrypted()
+    {
+        // An encrypted key block cannot be imported, so the file could never sign.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        using var key = certificate.GetRSAPrivateKey()!;
+        var encryptedKey = key.ExportEncryptedPkcs8PrivateKeyPem(
+            "password", new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 100_000));
+        var path = tempDir.WriteTextFile("encrypted.pem", certificate.ExportCertificatePem() + "\n" + encryptedKey);
+        var sut = BuildSource(new PemSigningFile(path));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.certificate.private_key_not_found");
+    }
+
+    [Fact]
     public async Task ReadAsync_rejects_a_listed_file_whose_separate_key_file_does_not_exist()
     {
         var ct = TestContext.Current.CancellationToken;

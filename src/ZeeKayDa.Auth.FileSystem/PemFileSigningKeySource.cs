@@ -28,6 +28,11 @@ internal sealed class PemFileSigningKeySource(
 {
     private readonly IOptions<PemFileSigningOptions> _options = options;
 
+    // The key blocks X509Certificate2.CreateFromPem can import. An ENCRYPTED PRIVATE KEY block is not
+    // one of them, so a combined file carrying only that cannot sign.
+    private static readonly string[] UnencryptedPrivateKeyLabels =
+        ["-----BEGIN PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN EC PRIVATE KEY-----"];
+
     /// <inheritdoc/>
     public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
@@ -97,7 +102,7 @@ internal sealed class PemFileSigningKeySource(
         {
             if (file.KeyPath is not null)
                 reader.Validate(file.KeyPath);
-            else if (!certPem.Contains("PRIVATE KEY-----", StringComparison.Ordinal))
+            else if (!UnencryptedPrivateKeyLabels.Any(label => certPem.Contains(label, StringComparison.Ordinal)))
                 throw NoPrivateKey(certificatePath);
         }
         catch
