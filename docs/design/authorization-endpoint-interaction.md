@@ -444,11 +444,15 @@ public sealed class LoginInteraction   // singleton over IHttpContextAccessor, a
     Task<LoginRequest> GetRequestAsync(CancellationToken cancellationToken = default);
     Task<LoginRequest?> TryGetRequestAsync(CancellationToken cancellationToken = default);
 
-    // Promotes principal to SSO session, continues the flow (consent → code → redirect).
+    // The framework builds the session principal from subject plus additionalClaims (a sub or
+    // NameIdentifier claim is refused; zkd:* is stripped) and promotes it to the SSO session,
+    // continues the flow (consent → code → redirect). The claims are held on the session only —
+    // tokens and userinfo get theirs from IClaimsProvider. [] omits amr.
     // Auto-consumes a principal parked for the interaction. Terminal. Throws ZeeKayDaInteractionException
     // when the request carries no zkd_i, when there is no interaction context, or when the two
     // name different interactions (see #593 for the future [Authorize]-driven mode).
-    Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
+    Task SignInAsync(string subject, string authenticationMethod, params Claim[] additionalClaims);
+    Task SignInAsync(string subject, IEnumerable<string> authenticationMethods, params Claim[] additionalClaims);
 
     // The Cancel button. Ends the request with error=access_denied at the registered redirect
     // URI, establishing no session and leaving an existing one alone. Terminal, zkd_i-bound on
@@ -471,14 +475,16 @@ public sealed class ProviderSignInInteraction       // built (#603); the page Re
 
     // Terminal. The framework builds the session principal as auto-promotion would — the derived
     // subject, the provider's claims — plus these additions. A sub or NameIdentifier claim is
-    // refused; zkd:* is stripped. No amr. zkd_i-bound on SignInAsync's terms.
+    // refused; zkd:* is stripped; held on the session only, as at login. No amr. zkd_i-bound on
+    // SignInAsync's terms.
     Task SignInAsync(params Claim[] additionalClaims);
 
-    // Terminal. The host's own principal in place of the parked one — a linked local account —
-    // exactly as LoginInteraction.SignInAsync takes it, except that a subject equal to the
+    // Terminal. A local account in place of the parked principal — account linking — taking
+    // exactly what LoginInteraction.SignInAsync takes, except that a subject equal to the
     // upstream one the provider returned is refused: the session subject is never the upstream
     // subject verbatim.
-    Task SignInWithReplacedPrincipalAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
+    Task SignInWithReplacedAccountAsync(string subject, string authenticationMethod, params Claim[] additionalClaims);
+    Task SignInWithReplacedAccountAsync(string subject, IEnumerable<string> authenticationMethods, params Claim[] additionalClaims);
 
     // Terminal. error=access_denied naming the provider stage — ProviderSignInContext.DenyAsync's
     // exact description — discarding the interaction and the parked principal.
@@ -568,9 +574,8 @@ that maps external identities onto its own users does so on the page `RedirectTo
 through that page's own service: `ProviderSignInInteraction.SignInAsync(params Claim[])` has the
 framework build the promoted principal — the derived subject, the provider's claims, plus what the
 page collected — and refuses a subject claim, so the page cannot put the raw upstream `sub` into
-the session; `SignInWithReplacedPrincipalAsync` is for linking to a local account, where the host's
-own principal, subject included, replaces the parked one — and is refused when that subject is the
-upstream one. Both consume the parked principal. One service per host page: the login page's
+the session; `SignInWithReplacedAccountAsync` is for linking to a local account, whose subject
+replaces the parked principal — and is refused when that subject is the upstream one. Both consume the parked principal. One service per host page: the login page's
 `LoginInteraction` does not read the parked principal.
 `OnSigningIn` — **unbuilt** — will fire for every sign-in just before promotion, no interrupt,
 and shapes the *session* principal only: token claims never come from the session, they are

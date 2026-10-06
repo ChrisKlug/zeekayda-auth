@@ -10,7 +10,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 public sealed class TerminalCallController(LoginInteraction login) : ControllerBase
 {
     [HttpPost("sign-in")]
-    public Task SignIn() => login.SignInAsync(TerminalCallModel.TestUser(), AuthenticationMethods.Password);
+    public Task SignIn() => login.SignInAsync(TerminalCallModel.TestUser, AuthenticationMethods.Password);
 
     [HttpPost("cancel")]
     public Task Cancel() => login.DenyAsync();

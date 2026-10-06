@@ -138,22 +138,70 @@ public sealed class LoginInteraction
             : null;
 
     /// <summary>
-    /// Establishes the SSO session for <paramref name="principal"/> and continues the
-    /// authorization request that led here.
+    /// Establishes the SSO session for <paramref name="subject"/>, authenticated by
+    /// <paramref name="authenticationMethod"/>, and continues the authorization request that led
+    /// here.
     /// </summary>
-    /// <param name="principal">
-    /// The authenticated user. Must carry a <c>sub</c> or
-    /// <see cref="ClaimTypes.NameIdentifier"/> claim; claims in the framework's reserved
-    /// <c>zkd:</c> namespace are stripped. Copied when the call is made, as
-    /// <paramref name="authenticationMethods"/> is: what was validated is what is signed in,
-    /// whatever the page does to either afterwards.
+    /// <param name="subject">
+    /// The user's identifier, which the client receives as <c>sub</c>: stable for the life of the
+    /// account and never reassigned (OpenID Connect Core §2).
+    /// </param>
+    /// <param name="authenticationMethod">
+    /// How the user proved who they are, reported to the client in the <c>amr</c> claim. Use
+    /// <see cref="AuthenticationMethods"/> for the registered values —
+    /// <c>SignInAsync(user.Subject, AuthenticationMethods.Password)</c> — or pass your own string
+    /// for a method the registry does not name. A sign-in that used several takes the overload
+    /// with a list.
+    /// </param>
+    /// <param name="additionalClaims">
+    /// Claims held on the SSO session alongside the subject. Held on the session only: tokens and
+    /// userinfo get their claims from <c>IClaimsProvider</c>, never from here. A <c>sub</c> or
+    /// <see cref="ClaimTypes.NameIdentifier"/> claim is refused, and claims in the reserved
+    /// <c>zkd:</c> namespace are stripped.
+    /// </param>
+    /// <remarks>
+    /// Exactly the overload taking a list of methods, with one method in it.
+    /// </remarks>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store or the authorization code store could not be reached. Fail-closed:
+    /// nothing was signed in or issued.
+    /// </exception>
+    /// <exception cref="ArgumentNullException"><paramref name="additionalClaims"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="subject"/> or <paramref name="authenticationMethod"/> is null or blank, or
+    /// an entry in <paramref name="additionalClaims"/> is null or names the subject.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The request is not a <c>POST</c> — only the login form's submission may sign in, and that
+    /// is checked before anything is read — or there is no active HTTP request.
+    /// </exception>
+    public Task SignInAsync(string subject, string authenticationMethod, params Claim[] additionalClaims)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(authenticationMethod);
+
+        return SignInAsync(subject, [authenticationMethod], additionalClaims);
+    }
+
+    /// <summary>
+    /// Establishes the SSO session for <paramref name="subject"/> and continues the authorization
+    /// request that led here.
+    /// </summary>
+    /// <param name="subject">
+    /// The user's identifier, which the client receives as <c>sub</c>: stable for the life of the
+    /// account and never reassigned (OpenID Connect Core §2).
     /// </param>
     /// <param name="authenticationMethods">
     /// How the user proved who they are, reported to the client in the <c>amr</c> claim. Use
-    /// <see cref="AuthenticationMethods"/> for the registered values —
-    /// <c>SignInAsync(user, AuthenticationMethods.Password)</c> — or pass your own string for a
-    /// method the registry does not name. Several may be given, and RFC 8176 §2 asks that they be:
-    /// a multi-factor sign-in reports <c>MultiFactor</c> alongside the individual factors.
+    /// <see cref="AuthenticationMethods"/> for the registered values, or pass your own string for a
+    /// method the registry does not name. RFC 8176 §2 asks that a multi-factor sign-in report
+    /// <c>MultiFactor</c> alongside the individual factors:
+    /// <c>SignInAsync(user.Subject, [AuthenticationMethods.MultiFactor, AuthenticationMethods.Password, AuthenticationMethods.OneTimePassword])</c>.
+    /// </param>
+    /// <param name="additionalClaims">
+    /// Claims held on the SSO session alongside the subject. Held on the session only: tokens and
+    /// userinfo get their claims from <c>IClaimsProvider</c>, never from here. A <c>sub</c> or
+    /// <see cref="ClaimTypes.NameIdentifier"/> claim is refused, and claims in the reserved
+    /// <c>zkd:</c> namespace are stripped.
     /// </param>
     /// <remarks>
     /// <para>
@@ -164,12 +212,16 @@ public sealed class LoginInteraction
     /// started.
     /// </para>
     /// <para>
-    /// A principal an external provider parked for this interaction — one the host's page did
-    /// not finish with — is discarded: the session holds <paramref name="principal"/>, and a
-    /// local sign-in records no provider.
+    /// The arguments are copied when the call is made: what was validated is what is signed in,
+    /// whatever the page does to them afterwards.
     /// </para>
     /// <para>
-    /// Passing none omits the <c>amr</c> claim rather than assuming a password. The claim is
+    /// A principal an external provider parked for this interaction — one the host's page did
+    /// not finish with — is discarded: the session holds <paramref name="subject"/>, and a local
+    /// sign-in records no provider.
+    /// </para>
+    /// <para>
+    /// An empty list omits the <c>amr</c> claim rather than assuming a password. The claim is
     /// optional in OpenID Connect, and a relying party may gate a sensitive operation on what it
     /// says — so the framework states nothing about a sign-in it was told nothing about, instead
     /// of guessing a method that may not be the one used.
@@ -183,32 +235,21 @@ public sealed class LoginInteraction
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// nothing was signed in or issued.
     /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="authenticationMethods"/> or <paramref name="additionalClaims"/> is null.
+    /// </exception>
     /// <exception cref="ArgumentException">
-    /// An entry in <paramref name="authenticationMethods"/> is null or blank.
+    /// <paramref name="subject"/> or an entry in <paramref name="authenticationMethods"/> is null
+    /// or blank, or an entry in <paramref name="additionalClaims"/> is null or names the subject.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c> — only the login form's submission may sign in, and that
     /// is checked before anything is read — or there is no active HTTP request.
     /// </exception>
-    public async Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods)
+    public async Task SignInAsync(string subject, IEnumerable<string> authenticationMethods, params Claim[] additionalClaims)
     {
-        ArgumentNullException.ThrowIfNull(principal);
-        ArgumentNullException.ThrowIfNull(authenticationMethods);
-
-        // Copies, validated and then used: both arguments are the caller's, and what was checked
-        // before the store is awaited must be what is signed in after it — as the provider
-        // sign-in service does. Caught here rather than at the claim write so the blame lands on
-        // the caller's argument, not on a malformed session cookie several frames later.
-        var methods = authenticationMethods.ToArray();
-        if (methods.Any(string.IsNullOrWhiteSpace))
-            throw new ArgumentException(
-                "An authentication method reference is null or blank. Pass a value such as "
-                + "AuthenticationMethods.Password, or pass none to omit the amr claim.",
-                nameof(authenticationMethods));
-
-        // Rebuilt on the framework's own identity type, not cloned: a copy that shares nothing
-        // with the caller and calls none of the caller's virtuals.
-        var user = ReservedClaims.Snapshot(principal);
+        var methods = SessionPrincipal.Methods(authenticationMethods);
+        var user = SessionPrincipal.Build(subject, additionalClaims);
 
         var context = RequireStateChangingRequest();
         await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
@@ -216,8 +257,8 @@ public sealed class LoginInteraction
             var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
 
             // A principal an external provider parked for this interaction is discarded, not
-            // adopted: the login page signs in the host's own principal, and a local sign-in
-            // records no provider.
+            // adopted: the login page signs in the host's own user, and a local sign-in records
+            // no provider.
             await _services.Flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
             await _services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(user, methods, ProviderScheme: null))
                 .ConfigureAwait(false);

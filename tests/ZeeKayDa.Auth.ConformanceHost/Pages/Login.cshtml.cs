@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
@@ -33,7 +32,6 @@ internal sealed class LoginModel(UserStore users, LoginInteraction login) : Page
 
         // Terminal too: the framework establishes the session and continues the authorization
         // request, writing the response itself.
-        var identity = new ClaimsIdentity([new Claim("sub", user.Subject)], "pwd");
-        await login.SignInAsync(new ClaimsPrincipal(identity), AuthenticationMethods.Password);
+        await login.SignInAsync(user.Subject, AuthenticationMethods.Password);
     }
 }

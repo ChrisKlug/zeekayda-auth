@@ -265,9 +265,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   Claim[] additionalClaims)` has the framework build the session principal the way it does when
   no page is involved — the subject derived from the provider, the issuer and the upstream
   subject, the provider's claims, plus what the page collected — and refuses a subject claim;
-  `SignInWithReplacedPrincipalAsync(ClaimsPrincipal, params string[])` links the external
-  identity to a local account, with the host's own principal replacing the parked one, and
-  refuses a principal whose subject is the upstream one the provider returned. Between them, a
+  `SignInWithReplacedAccountAsync(subject, authenticationMethod, params Claim[])` links the
+  external identity to a local account, whose subject replaces the parked principal, and refuses
+  a subject that is the upstream one the provider returned. Between them, a
   page can no longer put the raw upstream `sub` into the session. `DenyAsync` refuses with the
   same `access_denied` the `OnProviderSignIn` handler's refusal sends. Both sign-ins refuse when
   nothing is parked for the interaction or its provider is no longer registered, and every
@@ -449,10 +449,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
   `/connect/authorize` no longer stops at `501` for a request that needs a user. With no session it
   redirects to the new `AuthorizationEndpoint.Interaction.LoginPath`, and the host's login page ends
-  by calling the new `ILoginInteraction.SignInAsync(principal, params authenticationMethods)` — a
+  by calling the new `LoginInteraction.SignInAsync(subject, authenticationMethod)` — a
   terminal call that establishes the SSO session and continues the request. The methods are the
   `amr` the client is told about; `AuthenticationMethods` names the RFC 8176 values, several may be
-  given for a multi-factor sign-in, and passing none omits the claim rather than assuming a
+  given for a multi-factor sign-in, and passing `[]` omits the claim rather than assuming a
   password. The page needs no `ReturnUrl`, no scheme
   name and no cookie name; the one thing it must preserve is the `zkd_i` query parameter it was
   reached with, which an ordinary `<form method="post">` does by default. A request that arrives on
@@ -556,6 +556,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   host's disposal path selects.
 
 ### Changed
+
+- **Sign-in pages pass a subject, not a hand-built `ClaimsPrincipal`** (#781).
+  `LoginInteraction.SignInAsync` and the account-linking call, renamed
+  `ProviderSignInInteraction.SignInWithReplacedAccountAsync`, take the subject string, the
+  authentication method — or, in a second overload, a list of them, `[]` omitting `amr` — and
+  optional `params Claim[] additionalClaims`; the framework builds the session principal:
+  `await login.SignInAsync(user.Subject, AuthenticationMethods.Password)`. A blank subject or
+  method, and a `sub` or `NameIdentifier` among the additional claims, are refused with
+  `ArgumentException`; `zkd:` claims are stripped. Additional claims, here and on
+  `ProviderSignInInteraction.SignInAsync`, are held on the SSO session only: tokens and userinfo
+  get their claims from `IClaimsProvider`. The session now reads its subject from `sub` alone.
 
 - **The advertised token endpoint auth methods are derived from the registered authenticators**
   (#778). `TokenEndpoint.AuthMethodsSupported` is replaced by `TokenEndpoint.AdvertisedAuthMethods`

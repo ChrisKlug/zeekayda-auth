@@ -398,9 +398,7 @@ public sealed class EndSessionEndpointHostTests
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var subject = form["sub"].FirstOrDefault() ?? "user-1";
 
-            await login.SignInAsync(
-                new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", subject)], "test")),
-                AuthenticationMethods.Password);
+            await login.SignInAsync(subject, AuthenticationMethods.Password);
         });
 
         endpoints.MapGet(LogoutPath, async (HttpContext context, LogoutInteraction logout) =>

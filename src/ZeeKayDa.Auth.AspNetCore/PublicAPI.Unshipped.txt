@@ -58,12 +58,14 @@ const ZeeKayDa.Auth.AspNetCore.ZeeKayDaSchemes.External = "zkd.external" -> stri
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.ChallengeAsync(string! provider) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.DenyAsync() -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.SignInAsync(System.Security.Claims.ClaimsPrincipal! principal, params string![]! authenticationMethods) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.SignInAsync(string! subject, string! authenticationMethod, params System.Security.Claims.Claim![]! additionalClaims) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.SignInAsync(string! subject, System.Collections.Generic.IEnumerable<string!>! authenticationMethods, params System.Security.Claims.Claim![]! additionalClaims) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.DenyAsync() -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.GetPendingPrincipalAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal?>!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.SignInAsync(params System.Security.Claims.Claim![]! additionalClaims) -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.SignInWithReplacedPrincipalAsync(System.Security.Claims.ClaimsPrincipal! principal, params string![]! authenticationMethods) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.SignInWithReplacedAccountAsync(string! subject, string! authenticationMethod, params System.Security.Claims.Claim![]! additionalClaims) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.SignInWithReplacedAccountAsync(string! subject, System.Collections.Generic.IEnumerable<string!>! authenticationMethods, params System.Security.Claims.Claim![]! additionalClaims) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal
 ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal.Principal.get -> System.Security.Claims.ClaimsPrincipal!
 ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal.Provider.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor!

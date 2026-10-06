@@ -361,9 +361,7 @@ public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHost
     /// <summary>The host's pages, written as a host that renders its own "nothing here" would write them.</summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(LoginPath, (LoginInteraction login) => login.SignInAsync(
-            new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
-            AuthenticationMethods.Password));
+        endpoints.MapPost(LoginPath, (LoginInteraction login) => login.SignInAsync("user-1", AuthenticationMethods.Password));
 
         endpoints.MapGet(LoginPath, async (HttpContext context, LoginInteraction login) =>
         {

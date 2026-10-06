@@ -63,7 +63,7 @@ across re-authentication (`prompt=login` and `max_age` refresh `auth_time` only)
 or a changed subject mints a new one. None of those properties may be traded away: one derived from
 the cookie value breaks every binding the moment the cookie rotates, and one tracking authentication
 events could never key a denylist. Claims in the reserved `zkd:` namespace are stripped from the
-host's principal, or a host copying claims from an inbound token could choose its own identifier.
+claims a host supplies, or a host copying claims from an inbound token could choose its own identifier.
 
 **Framework cookie names are reserved, the `zkd.interaction.` and `zkd.challenge.` prefixes included; a host
 registering one fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and the

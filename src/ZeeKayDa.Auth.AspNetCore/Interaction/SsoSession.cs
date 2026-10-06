@@ -60,11 +60,10 @@ internal sealed record SsoSessionState
 internal sealed class SsoSession(TimeProvider timeProvider)
 {
     /// <summary>
-    /// The claim the subject is read from, in order. <c>sub</c> is what a host that thinks in
-    /// OpenID Connect reaches for; <see cref="ClaimTypes.NameIdentifier"/> is what ASP.NET Core
-    /// Identity writes.
+    /// The one claim the subject is read from. Every principal promoted here is built by the
+    /// framework with it, so the session has a single subject source.
     /// </summary>
-    private static readonly string[] SubjectClaimTypes = ["sub", ClaimTypes.NameIdentifier];
+    private const string SubjectClaimType = "sub";
 
     /// <summary>
     /// Reads the established session, or <see langword="null"/> when there is none, when the
@@ -94,12 +93,12 @@ internal sealed class SsoSession(TimeProvider timeProvider)
     }
 
     /// <summary>
-    /// Promotes a host-supplied principal to an SSO session, writing a fresh session cookie.
+    /// Promotes a framework-built principal to an SSO session, writing a fresh session cookie.
     /// Reuses the current session's identifier when the subject is unchanged, so that
     /// re-authentication refreshes <c>auth_time</c> without severing existing bindings.
     /// </summary>
-    /// <exception cref="ZeeKayDaInteractionException">
-    /// The principal carries no subject claim, so there is no user to establish a session for.
+    /// <exception cref="InvalidOperationException">
+    /// The principal carries no <c>sub</c> — a framework bug, since every caller builds it with one.
     /// </exception>
     public async Task<SsoSessionState> PromoteAsync(
         HttpContext context,
@@ -111,9 +110,7 @@ internal sealed class SsoSession(TimeProvider timeProvider)
         ArgumentNullException.ThrowIfNull(authenticationMethods);
 
         var subject = ReadSubject(principal)
-            ?? throw new ZeeKayDaInteractionException(
-                "The principal passed to SignInAsync carries no subject. Add a 'sub' or " +
-                $"'{ClaimTypes.NameIdentifier}' claim identifying the user.");
+            ?? throw new InvalidOperationException("The principal to promote carries no 'sub' claim.");
 
         var current = await ReadAsync(context).ConfigureAwait(false);
         var sessionId = current is not null && string.Equals(current.Subject, subject, StringComparison.Ordinal)
@@ -161,9 +158,8 @@ internal sealed class SsoSession(TimeProvider timeProvider)
         return new ClaimsPrincipal(new ClaimsIdentity(claims, ZeeKayDaCookies.Session));
     }
 
-    private static string? ReadSubject(ClaimsPrincipal principal) => SubjectClaimTypes
-        .Select(principal.FindFirstValue)
-        .FirstOrDefault(value => !string.IsNullOrEmpty(value));
+    private static string? ReadSubject(ClaimsPrincipal principal) =>
+        principal.FindFirstValue(SubjectClaimType) is { Length: > 0 } subject ? subject : null;
 
     /// <summary>
     /// Reads <c>auth_time</c>, falling back to <see cref="DateTimeOffset.MinValue"/> when the
