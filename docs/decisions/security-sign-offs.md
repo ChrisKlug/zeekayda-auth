@@ -2124,3 +2124,18 @@ of each round, and the PR's Copilot, CodeQL and CodeScene review; no Critical.
   `An_empty_grant_grants_openid_alone`, `A_grant_naming_scopes_the_request_never_carried_issues_only_what_was_asked`.
 - **Accepted (maintainer):** the stage is visible to every client in `error_description`; the flag buys a stable value, not the
   information. No test needed beyond the description test above.
+
+## 2026-10-06 — the login page reads the client's `login_hint` (#782, code frozen at `6857d21`)
+Copilot code and security lenses, the security agent, its verification of the first fix round, and the PR's Copilot,
+CodeQL and CodeScene review; no Critical. The last fix round (`6857d21`) was read by the main session only.
+- A hint over 256 characters, or with a control, format or line-separator character, is refused before anything is stored.
+  Closed — `Phase2_login_hint_longer_than_the_limit_is_invalid_request`,
+  `Phase2_login_hint_with_a_control_or_format_character_is_invalid_request`.
+- Ordinary spaces and the zero-width joiners survive; a whitespace-only hint is absent. Closed —
+  `A_login_hint_with_ordinary_spaces_is_kept`, `A_login_hint_with_a_zero_width_joiner_is_kept`,
+  `An_absent_empty_or_whitespace_login_hint_is_carried_as_none`.
+- The hint reaches only the login page, verbatim. Closed — `GetRequestAsync_reports_the_login_hint_the_client_sent`,
+  `A_login_hint_at_the_limit_is_carried_verbatim`.
+- `login_hint` is redacted as personal data. Closed — `SensitiveKeys_contains_expected_keys`.
+- **Residual:** the page must encode the hint; the framework cannot know the output context. Documented on
+  `LoginRequest.LoginHint`; no test.
