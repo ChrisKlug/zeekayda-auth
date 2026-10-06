@@ -70,17 +70,17 @@ Defaults per lens; both overridable per run. Choose per task — the main sessio
 
 | Lens | Model | Effort | Why |
 |---|---|---|---|
-| `code` | `gpt-5.6-terra` | `high` | code-specialised; correctness and test adequacy |
-| `security` | `gpt-5.6-sol` | `high` | reasoning-heavy; `xhigh` for trust-boundary changes |
-| `architecture` | `gpt-5.6-sol` | `high` | reasoning-heavy |
-| `text` | `gpt-5.6-sol` | `medium` | reads prose against the repository; no code to trace |
+| `code` | `gpt-6.1-sol` | `high` | correctness and test adequacy; replaces `gpt-5.6-terra` until a Terra 6+ is cheaper — measured on one diff at ~8% more for a deeper read |
+| `security` | `gpt-6.1-sol` | `high` | reasoning-heavy; `xhigh` for trust-boundary changes |
+| `architecture` | `gpt-6.1-sol` | `high` | reasoning-heavy |
+| `text` | `gpt-6.1-sol` | `medium` | reads prose against the repository; no code to trace |
 
 Raise to `xhigh` when the change touches a trust boundary (anything that would earn a
 `security-sign-offs.md` entry). Drop to `medium` for a small mechanical diff where the lens is
 running only because every change gets the code lens. Effort levels are `none`, `minimal`, `low`,
 `medium`, `high`, `xhigh`, `max`.
 
-Model IDs known to work on this account as of 2026-09-02: `gpt-5.6-sol`, `gpt-5.6-terra`,
+Model IDs known to work on this account as of 2026-10-06: `gpt-6.1-sol`, `gpt-5.6-sol`, `gpt-5.6-terra`,
 `gpt-5.5`, `gpt-5.4`, `gpt-5.3-codex`. Not available: Gemini, Claude, and the `-spark` variants.
 `auto` lets Copilot choose.
 
