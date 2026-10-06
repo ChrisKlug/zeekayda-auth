@@ -68,6 +68,17 @@ public sealed class SourceKeyFromCertificateTests
     }
 
     [Fact]
+    public void FromCertificate_rejects_an_undefined_algorithm()
+    {
+        using var rsa = RSA.Create(2048);
+        using var certificate = SelfSigned(rsa);
+
+        var act = () => SourceKey.FromCertificate(certificate, KeyId, (SigningAlgorithm)999);
+
+        act.Should().Throw<ArgumentOutOfRangeException>().Which.ParamName.Should().Be("algorithm");
+    }
+
+    [Fact]
     public void FromCertificate_reads_a_certificate_without_a_private_key()
     {
         using var rsa = RSA.Create(2048);

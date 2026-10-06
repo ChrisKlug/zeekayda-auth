@@ -129,6 +129,27 @@ public sealed class PfxFileSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_lists_a_bundle_whose_key_bag_cannot_be_decrypted_because_it_never_imports_the_key()
+    {
+        // The key bag is shrouded under a different password from the one configured, so any import
+        // of the key fails. The read still succeeds, which it could not if it imported the key; the
+        // signer, which does import it, is where the failure surfaces.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var bundle = AdversarialPkcs12Factory.KeyBagUnderAnotherPassword(
+            CorrectPassword, "another-password", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxFile(path, Password()));
+
+        var keySet = await sut.ReadAsync(ct);
+
+        keySet.Should().ContainSingle();
+        var act = async () => await sut.CreateSignerAsync(keySet.Single().Id, ct);
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+    }
+
+    [Fact]
     public async Task ReadAsync_rejects_a_bundle_that_carries_no_private_key()
     {
         // The shape `openssl pkcs12 -export -nokeys` produces. Any listed bundle may be chosen to

@@ -432,15 +432,16 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         // core picks the signer by NotBefore, so that is the order MaxVersions must trim by.
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeKeyVaultKeyReader();
-        reader.AddRsaVersion("v1", createdOn: T0);
+        // v1 is the oldest by creation, so ordering by creation would drop it; by NotBefore it is the newest.
+        reader.AddRsaVersion("v1", createdOn: T0, notBefore: T0 + TimeSpan.FromDays(100));
         reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(1));
         reader.AddRsaVersion("v3", createdOn: T0 + TimeSpan.FromDays(2));
-        reader.AddRsaVersion("v4", createdOn: T0 + TimeSpan.FromDays(3), notBefore: T0 + TimeSpan.FromDays(100));
+        reader.AddRsaVersion("v4", createdOn: T0 + TimeSpan.FromDays(3));
         var sut = BuildSource(reader, maxVersions: 3);
 
         var keySet = await sut.ReadAsync(ct);
 
-        PublishedIds(keySet).Should().BeEquivalentTo(["v2", "v3", "v4"]);
+        PublishedIds(keySet).Should().BeEquivalentTo(["v1", "v3", "v4"]);
     }
 
     [Fact]

@@ -59,6 +59,36 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
+    /// A bundle whose MAC and certificate safe are under <paramref name="password"/> but whose
+    /// shrouded key bag is under <paramref name="keyPassword"/>. Reading the certificate succeeds;
+    /// importing the key with <paramref name="password"/> fails, so a read that imports the key fails.
+    /// </summary>
+    public static byte[] KeyBagUnderAnotherPassword(
+        string password, string keyPassword, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=test-key-bag-other-password", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var certificate = request.CreateSelfSigned(notBefore, notAfter);
+        using var publicOnly = X509CertificateLoader.LoadCertificate(certificate.Export(X509ContentType.Cert));
+
+        var localKeyId = new byte[] { 0x01 };
+
+        var certificates = new Pkcs12SafeContents();
+        certificates.AddCertificate(publicOnly).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var keys = new Pkcs12SafeContents();
+        keys.AddShroudedKey(key, keyPassword, Pbe).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
+        builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+        return builder.Encode();
+    }
+
+    /// <summary>
     /// A bundle whose certificate safe is <em>unencrypted</em> while its key bag is shrouded, sealed
     /// with a MAC under <paramref name="macPassword"/>. Reaching the certificate needs no password at
     /// all, so only the MAC can tell whether the file is the one the operator configured.

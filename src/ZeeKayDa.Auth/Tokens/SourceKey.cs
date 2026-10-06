@@ -49,6 +49,9 @@ public sealed record SourceKey
     /// <param name="id">The source's own stable identifier for this key, named in every
     /// configuration failure about it.</param>
     /// <param name="algorithm">The signing algorithm this key is used with.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="algorithm"/> is not a defined <see cref="SigningAlgorithm"/> member.
+    /// </exception>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown with failure code <c>signing.certificate.unsupported_key_type</c> when the certificate
     /// carries neither an RSA nor an EC public key.
@@ -56,6 +59,8 @@ public sealed record SourceKey
     public static SourceKey FromCertificate(X509Certificate2 certificate, SourceKeyId id, SigningAlgorithm algorithm)
     {
         ArgumentNullException.ThrowIfNull(certificate);
+        if (!Enum.IsDefined(algorithm))
+            throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, $"Not a defined {nameof(SigningAlgorithm)} member.");
 
         // X509Certificate2 reports both ends of the validity window as local-kind DateTime, so
         // DateTimeOffset applies the local offset rather than reinterpreting them as UTC.

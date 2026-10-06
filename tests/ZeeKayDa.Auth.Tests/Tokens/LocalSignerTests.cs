@@ -101,6 +101,16 @@ public sealed class LocalSignerTests
     }
 
     [Fact]
+    public void FromCertificate_rejects_an_undefined_algorithm_before_opening_the_private_key()
+    {
+        using var certificate = SelfSigned(RSA.Create(2048));
+
+        var act = () => LocalSigner.FromCertificate(certificate, (SigningAlgorithm)999);
+
+        act.Should().Throw<ArgumentOutOfRangeException>().Which.ParamName.Should().Be("algorithm");
+    }
+
+    [Fact]
     public async Task FromCertificate_signs_a_payload_that_verifies_with_an_RSA_certificates_public_key()
     {
         using var certificate = SelfSigned(RSA.Create(2048));
