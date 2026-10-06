@@ -131,15 +131,28 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
-    public void Build_does_not_sign_with_or_publish_an_expired_key()
+    public void Build_does_not_publish_a_key_that_expired_the_retention_or_more_ago()
     {
-        var expired = CreateRsaSourceKey("expired", notBefore: Now.AddDays(-2), expiresAt: Now);
+        var expired = CreateRsaSourceKey("expired", notBefore: Now.AddDays(-2), expiresAt: Now - Retention);
         var older = CreateRsaSourceKey("older", notBefore: Now.AddDays(-30));
 
         var set = Build(older, expired);
 
         set.SigningKey.SourceId.Should().Be(older.Id);
         set.Published.Select(k => k.SourceId).Should().Equal(older.Id);
+    }
+
+    [Fact]
+    public void Build_publishes_a_key_that_expired_less_than_the_retention_ago_but_never_signs_with_it()
+    {
+        // A token it signed just before expiring is still in force for up to a token lifetime.
+        var expired = CreateRsaSourceKey("expired", notBefore: Now.AddDays(-2), expiresAt: Now - Retention + TimeSpan.FromSeconds(1));
+        var older = CreateRsaSourceKey("older", notBefore: Now.AddDays(-30));
+
+        var set = Build(older, expired);
+
+        set.SigningKey.SourceId.Should().Be(older.Id);
+        set.Published.Select(k => k.SourceId).Should().Equal(older.Id, expired.Id);
     }
 
     // ── Which keys are published ─────────────────────────────────────────────────────────────────
@@ -157,14 +170,43 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
-    public void Build_drops_an_old_key_once_its_successor_is_past_the_lead_time_plus_retention()
+    public void Build_drops_a_key_older_than_the_predecessor_once_a_newer_key_is_past_the_lead_time_plus_retention()
     {
-        var old = CreateRsaSourceKey("old", notBefore: Now.AddDays(-30));
-        var successor = CreateRsaSourceKey("successor", notBefore: Now - LeadTime - Retention);
+        var oldest = CreateRsaSourceKey("oldest", notBefore: Now.AddDays(-30));
+        var predecessor = CreateRsaSourceKey("predecessor", notBefore: Now.AddDays(-20));
+        var signing = CreateRsaSourceKey("signing", notBefore: Now - LeadTime - Retention);
 
-        var set = Build(old, successor);
+        var set = Build(oldest, predecessor, signing);
 
-        set.Published.Select(k => k.SourceId).Should().Equal(successor.Id);
+        set.SigningKey.SourceId.Should().Be(signing.Id);
+        set.Published.Select(k => k.SourceId).Should().Equal(predecessor.Id, signing.Id);
+    }
+
+    [Fact]
+    public void Build_keeps_the_signing_keys_predecessor_published_however_long_the_signing_key_has_been_ready()
+    {
+        // The ring reads keys only at startup: the successor took over at this restart, not when its
+        // lead time ended, so the predecessor may have signed tokens until a moment ago.
+        var predecessor = CreateRsaSourceKey("predecessor", notBefore: Now.AddDays(-30));
+        var signing = CreateRsaSourceKey("signing", notBefore: Now.AddDays(-10));
+
+        var set = Build(predecessor, signing);
+
+        set.SigningKey.SourceId.Should().Be(signing.Id);
+        set.Published.Select(k => k.SourceId).Should().Equal(predecessor.Id, signing.Id);
+    }
+
+    [Fact]
+    public void Build_does_not_overflow_when_lead_time_plus_retention_exceeds_TimeSpan_MaxValue()
+    {
+        var oldest = CreateRsaSourceKey("oldest", notBefore: Now.AddDays(-30));
+        var predecessor = CreateRsaSourceKey("predecessor", notBefore: Now.AddDays(-20));
+        var signing = CreateRsaSourceKey("signing", notBefore: Now.AddDays(-10));
+        var options = new SigningKeyOptions { LeadTime = LeadTime, RetainRetiredKeysFor = TimeSpan.MaxValue };
+
+        var set = SigningKeySetBuilder.Build([oldest, predecessor, signing], Now, options, NullLogger.Instance);
+
+        set.Published.Should().HaveCount(3, "a saturated retention never retires a key");
     }
 
     [Fact]

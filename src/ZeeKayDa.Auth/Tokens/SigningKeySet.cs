@@ -5,14 +5,17 @@ namespace ZeeKayDa.Auth.Tokens;
 /// which one signs, and which algorithms to advertise.
 /// </summary>
 /// <remarks>
-/// The only way to obtain an instance is <see cref="SigningKeySetBuilder.Build"/>, and its
-/// constructor is <see langword="internal"/>.
+/// Only the framework constructs one, and <see cref="SigningKey"/> is always among
+/// <see cref="Published"/>.
 /// </remarks>
 public sealed class SigningKeySet
 {
     internal SigningKeySet(
         SigningKey signingKey, IReadOnlyList<SigningKey> published, IReadOnlyList<SigningAlgorithm> advertisedAlgorithms)
     {
+        if (!published.Any(key => string.Equals(key.Kid, signingKey.Kid, StringComparison.Ordinal)))
+            throw new ArgumentException("The signing key must be among the published keys.", nameof(published));
+
         SigningKey = signingKey;
         Published = published;
         AdvertisedAlgorithms = advertisedAlgorithms;

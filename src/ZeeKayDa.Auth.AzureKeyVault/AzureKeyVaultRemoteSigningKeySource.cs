@@ -171,7 +171,5 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
         {
             // Intentionally empty — see the class remarks.
         }
-
-        public SigningAlgorithm Algorithm => algorithm;
     }
 }

@@ -564,14 +564,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   and an undated key is accepted only when it is the source's only key. Every unexpired key is
   published; the newest key whose `NotBefore` is at least `AuthorizationServerOptions.SigningKeys.LeadTime`
   (default one day, never shorter than `JwksEndpoint.CacheMaxAge`) old signs. When none is, the oldest
-  valid key signs and a Warning is logged. An older key stays published until a newer one is
-  `LeadTime + SigningKeys.RetainRetiredKeysFor` old; retention defaults to the longer of the server-wide
-  access and ID token lifetimes, and must be raised by hand for longer per-client lifetimes.
+  valid key signs and a Warning is logged. Keys are read only at startup, so the signing key's
+  predecessor stays published while it signs; an older key stays published until a newer one is
+  `LeadTime + SigningKeys.RetainRetiredKeysFor` old, and an expired key (which never signs) until
+  `RetainRetiredKeysFor` after expiry. Retention defaults to the longer of the server-wide access and ID
+  token lifetimes plus `ClockSkewTolerance`, and must be raised by hand for longer per-client lifetimes.
   `ISigner.Algorithm` and `signing.signer_algorithm_mismatch` are removed: the startup self-test,
   which verifies under the key's own algorithm, rejects a signer signing under another with
   `signing.self_test_failed`. A signer that links the caller's token to its own is no longer reported
   as broken on shutdown. The Key Vault sources list every enabled version, dated from the later of its
-  creation and its `nbf`; `PreActivationDelay` and `PreviousVersionsToPublish` are removed. The PEM, PFX
+  creation and its `nbf`; `PreActivationDelay` and `PreviousVersionsToPublish` are removed, and
+  `signing.azure_key_vault.no_active_key` is renamed `signing.azure_key_vault.no_enabled_version`. The PEM, PFX
   and Windows sources report their filled slots as a list, and still open a signer only for `Current`,
   so a configuration whose dates choose another slot fails startup until those sources become plain
   lists.

@@ -10,10 +10,17 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The newest key published for at least <see cref="SigningKeyOptions.LeadTime"/> signs. When no
-/// key has been, the oldest valid key signs and a Warning is logged. A key stays published until a
-/// newer key has been signing for <see cref="SigningKeyOptions.RetainRetiredKeysFor"/>. "Newer"
-/// means a later <see cref="SourceKey.NotBefore"/>; on equal dates, the ordinally greater source id.
+/// The newest valid key published for at least <see cref="SigningKeyOptions.LeadTime"/> signs. When
+/// no key has been, the oldest valid key signs and a Warning is logged. "Newer" means a later
+/// <see cref="SourceKey.NotBefore"/>; on equal dates, the ordinally greater source id.
+/// </para>
+/// <para>
+/// Retention keeps every key that may have signed a token still in force. The ring reads keys only
+/// at startup, so a successor takes over at the first restart after its lead time, not at the
+/// instant the lead time ends: the signing key's predecessor therefore stays published for as long
+/// as the signing key signs. An older key stays published until a newer key is
+/// <see cref="SigningKeyOptions.LeadTime"/> plus <see cref="SigningKeyOptions.RetainRetiredKeysFor"/>
+/// old, and an expired key until <see cref="SigningKeyOptions.RetainRetiredKeysFor"/> after it expired.
 /// </para>
 /// <para>
 /// Every <c>kid</c> is derived from the key's own public material via <see cref="JwkThumbprint"/> —
@@ -51,13 +58,12 @@ internal static partial class SigningKeySetBuilder
         ArgumentNullException.ThrowIfNull(logger);
 
         var oldestFirst = BuildAll(keys)
-            .Where(key => key.ExpiresAt > now)
             .OrderBy(key => key.NotBefore)
             .ThenBy(key => key.SourceId.Value, StringComparer.Ordinal)
             .ToList();
 
-        var signingKey = ChooseSigningKey(oldestFirst, keys, now, options, logger);
-        var published = WithoutRetiredKeys(oldestFirst, now, options);
+        var signingKey = ChooseSigningKey(oldestFirst, now, options, logger);
+        var published = WithoutRetiredKeys(oldestFirst, signingKey, now, options);
         var advertisedAlgorithms = published
             .Select(k => k.Algorithm)
             .Distinct()
@@ -122,12 +128,12 @@ internal static partial class SigningKeySetBuilder
     }
 
     private static SigningKey ChooseSigningKey(
-        List<SigningKey> oldestFirst, IReadOnlyList<SourceKey> listed, DateTimeOffset now, SigningKeyOptions options, ILogger logger)
+        List<SigningKey> oldestFirst, DateTimeOffset now, SigningKeyOptions options, ILogger logger)
     {
         // Written as a difference rather than `NotBefore - grace`, which underflows for an undated key.
-        var valid = oldestFirst.Where(key => key.NotBefore - now <= NotBeforeGrace).ToList();
+        var valid = oldestFirst.Where(key => key.NotBefore - now <= NotBeforeGrace && key.ExpiresAt > now).ToList();
         if (valid.Count == 0)
-            throw NoValidKey(oldestFirst, listed);
+            throw NoValidKey(oldestFirst, now);
 
         var newestReady = valid.LastOrDefault(key => now - key.NotBefore >= options.LeadTime);
         if (newestReady is not null)
@@ -141,19 +147,20 @@ internal static partial class SigningKeySetBuilder
         return oldest;
     }
 
-    private static ZeeKayDaConfigurationException NoValidKey(List<SigningKey> unexpiredOldestFirst, IReadOnlyList<SourceKey> listed)
+    private static ZeeKayDaConfigurationException NoValidKey(List<SigningKey> oldestFirst, DateTimeOffset now)
     {
-        if (unexpiredOldestFirst.Count == 0)
+        var unexpired = oldestFirst.Where(key => key.ExpiresAt > now).ToList();
+        if (unexpired.Count == 0)
         {
-            var newest = listed.MaxBy(key => key.ExpiresAt)!;
+            var last = oldestFirst.MaxBy(key => key.ExpiresAt)!;
             return new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.signing_key_expired",
-                    $"Every listed signing key has expired; the last, '{newest.Id.Value}', expired at {newest.ExpiresAt:O}. " +
+                    $"Every listed signing key has expired; the last, '{last.SourceId.Value}', expired at {last.ExpiresAt:O}. " +
                     "An expired key issues tokens no relying party will accept."));
         }
 
-        var earliest = unexpiredOldestFirst[0];
+        var earliest = unexpired[0];
         return new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(
                 "signing.signing_key_not_yet_valid",
@@ -162,18 +169,28 @@ internal static partial class SigningKeySetBuilder
     }
 
     /// <summary>
-    /// Every key older than the newest key that has been signing for the whole retention period is
-    /// retired: no token it signed can still be valid.
+    /// Drops a key only once no token it signed can still be in force: it expired more than the
+    /// retention ago, or it is older than the signing key's predecessor and a newer key is past the
+    /// lead time plus the retention.
     /// </summary>
     private static ImmutableArray<SigningKey> WithoutRetiredKeys(
-        List<SigningKey> oldestFirst, DateTimeOffset now, SigningKeyOptions options)
+        List<SigningKey> oldestFirst, SigningKey signingKey, DateTimeOffset now, SigningKeyOptions options)
     {
-        var retainedFor = options.LeadTime + (options.RetainRetiredKeysFor
+        var retention = options.RetainRetiredKeysFor
             ?? throw new InvalidOperationException(
-                $"{nameof(SigningKeyOptions.RetainRetiredKeysFor)} is resolved when the options are configured."));
+                $"{nameof(SigningKeyOptions.RetainRetiredKeysFor)} is resolved when the options are configured.");
+        var supersededAfter = TokenLifetimes.Sum(options.LeadTime, retention);
 
-        var newestEstablished = oldestFirst.FindLastIndex(key => now - key.NotBefore >= retainedFor);
-        return [.. oldestFirst.Skip(Math.Max(newestEstablished, 0))];
+        var predecessor = oldestFirst.IndexOf(signingKey) - 1;
+        var newestEstablished = oldestFirst.FindLastIndex(key => now - key.NotBefore >= supersededAfter);
+        var firstKept = Math.Min(predecessor, newestEstablished);
+
+        return
+        [
+            .. oldestFirst
+                .Skip(Math.Max(firstKept, 0))
+                .Where(key => key == signingKey || now - key.ExpiresAt < retention),
+        ];
     }
 
     private static SigningKey BuildAndValidate(

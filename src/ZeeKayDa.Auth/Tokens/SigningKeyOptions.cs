@@ -18,14 +18,17 @@ public sealed class SigningKeyOptions
     public TimeSpan LeadTime { get; set; } = TimeSpan.FromDays(1);
 
     /// <summary>
-    /// Gets or sets how long a key stays published after its successor takes over, so tokens it
-    /// signed can still be verified. Defaults to the larger of
+    /// Gets or sets how long a key stays published after its successor takes over, or after it
+    /// expires, so tokens it signed can still be verified. Defaults to the larger of
     /// <see cref="TokenEndpointOptions.AccessTokenLifetime"/> and
-    /// <see cref="TokenEndpointOptions.IdTokenLifetime"/>.
+    /// <see cref="TokenEndpointOptions.IdTokenLifetime"/>, plus
+    /// <see cref="AuthorizationServerOptions.ClockSkewTolerance"/>.
     /// </summary>
     /// <remarks>
     /// A client can override its token lifetimes, but clients may come from a database and are not
-    /// known at startup. Raise this setting to the longest lifetime any client uses.
+    /// known at startup. Raise this setting to the longest lifetime any client uses. Keys are read
+    /// only at startup, so a successor takes over at a restart, possibly long after its lead time:
+    /// the key it replaced therefore stays published for as long as the successor signs.
     /// </remarks>
     public TimeSpan? RetainRetiredKeysFor { get; set; }
 }

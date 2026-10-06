@@ -20,7 +20,9 @@ public sealed record SourceKey
     /// <param name="publicKey">The public key material. Never carries private key material.</param>
     /// <param name="notBefore">
     /// The instant the key becomes valid, or <see langword="null"/> for a key with no date. An
-    /// undated key is accepted only when it is the only key the source lists.
+    /// undated key is accepted only when it is the only key the source lists. The framework signs
+    /// with a key up to five minutes before this instant, to tolerate a host clock running behind
+    /// the machine that minted the credential.
     /// </param>
     /// <param name="expiresAt">The key's expiry, or <see langword="null"/> when it never expires.</param>
     public SourceKey(

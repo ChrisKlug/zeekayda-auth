@@ -11,7 +11,7 @@ internal static class KeyVaultVersions
     /// disabled version is never listed.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
-    /// Thrown with failure code <c>signing.azure_key_vault.no_active_key</c> when no version is
+    /// Thrown with failure code <c>signing.azure_key_vault.no_enabled_version</c> when no version is
     /// enabled, or <c>signing.azure_key_vault.unversioned_key_uri</c> when a version's identifier is
     /// not pinned to that version.
     /// </exception>
@@ -24,7 +24,7 @@ internal static class KeyVaultVersions
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
-                    "signing.azure_key_vault.no_active_key",
+                    "signing.azure_key_vault.no_enabled_version",
                     $"No enabled version of Key Vault {objectKind} '{objectName}' in vault " +
                     $"'{vaultUri}' exists. Verify the {objectKind} has at least one enabled version."));
         }

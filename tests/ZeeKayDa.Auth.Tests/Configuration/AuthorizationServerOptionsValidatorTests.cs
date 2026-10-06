@@ -1540,6 +1540,19 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_fails_with_lead_time_negative_and_not_the_cache_rule_when_LeadTime_is_negative()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            SigningKeys = { LeadTime = TimeSpan.FromSeconds(-1) },
+        });
+
+        failures.Where(f => f.Code.StartsWith("configuration.signing_keys", StringComparison.Ordinal))
+            .Should().ContainSingle(f => f.Code == "configuration.signing_keys.lead_time.negative");
+    }
+
+    [Fact]
     public void Validate_fails_when_RetainRetiredKeysFor_is_negative()
     {
         var failures = Validate(new AuthorizationServerOptions

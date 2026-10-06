@@ -13,8 +13,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// signing key's expiry has passed, <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded"/>
 /// within the configured <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> of it,
 /// otherwise <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy"/> —
-/// including when the signing key has no expiry at all. <c>Previous</c>/<c>Next</c> keys are
-/// reported in the result data but never drive the verdict; only the key that actually signs does.
+/// including when the signing key has no expiry at all. Every other published key appears in the
+/// result data but never drives the verdict; only the key that actually signs does.
 /// </remarks>
 public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
 {

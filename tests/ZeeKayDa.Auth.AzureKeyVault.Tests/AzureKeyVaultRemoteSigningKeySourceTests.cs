@@ -161,7 +161,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         var act = async () => await sut.ReadAsync(ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*no_active_key*");
+            .WithMessage("*no_enabled_version*");
     }
 
     [Fact]

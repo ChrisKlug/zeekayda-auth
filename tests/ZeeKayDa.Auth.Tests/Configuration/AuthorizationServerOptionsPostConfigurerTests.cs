@@ -19,11 +19,12 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     [Theory]
     [InlineData(30, 5, 30)]
     [InlineData(5, 45, 45)]
-    public void PostConfigure_defaults_RetainRetiredKeysFor_to_the_longer_of_the_access_and_ID_token_lifetimes(
+    public void PostConfigure_defaults_RetainRetiredKeysFor_to_the_longer_token_lifetime_plus_the_clock_skew_tolerance(
         int accessTokenMinutes, int idTokenMinutes, int expectedMinutes)
     {
         var options = new AuthorizationServerOptions
         {
+            ClockSkewTolerance = TimeSpan.FromSeconds(7),
             TokenEndpoint =
             {
                 AccessTokenLifetime = TimeSpan.FromMinutes(accessTokenMinutes),
@@ -31,7 +32,16 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
             },
         };
 
-        PostConfigure(options).SigningKeys.RetainRetiredKeysFor.Should().Be(TimeSpan.FromMinutes(expectedMinutes));
+        PostConfigure(options).SigningKeys.RetainRetiredKeysFor
+            .Should().Be(TimeSpan.FromMinutes(expectedMinutes) + TimeSpan.FromSeconds(7));
+    }
+
+    [Fact]
+    public void PostConfigure_saturates_the_default_RetainRetiredKeysFor_for_an_unbounded_token_lifetime()
+    {
+        var options = new AuthorizationServerOptions { TokenEndpoint = { AccessTokenLifetime = TimeSpan.MaxValue } };
+
+        PostConfigure(options).SigningKeys.RetainRetiredKeysFor.Should().Be(TimeSpan.MaxValue);
     }
 
     [Fact]

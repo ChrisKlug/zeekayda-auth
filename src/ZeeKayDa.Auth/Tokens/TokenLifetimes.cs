@@ -2,7 +2,7 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// The arithmetic every token lifetime shares: a client override that inherits the server value
-/// when <see langword="null"/>, and an expiry that saturates instead of throwing.
+/// when <see langword="null"/>, and expiries and sums that saturate instead of throwing.
 /// </summary>
 internal static class TokenLifetimes
 {
@@ -30,4 +30,11 @@ internal static class TokenLifetimes
             return DateTimeOffset.MaxValue;
         }
     }
+
+    /// <summary>
+    /// Two non-negative durations added together, saturating at <see cref="TimeSpan.MaxValue"/>
+    /// rather than throwing.
+    /// </summary>
+    public static TimeSpan Sum(TimeSpan first, TimeSpan second) =>
+        first > TimeSpan.MaxValue - second ? TimeSpan.MaxValue : first + second;
 }

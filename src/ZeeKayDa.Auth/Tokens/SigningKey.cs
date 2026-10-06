@@ -4,10 +4,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// One key's identity and public material, as the framework sees it — never private key material.
 /// </summary>
 /// <remarks>
-/// The only way to obtain an instance is <see cref="SigningKeySetBuilder.Build"/>, and its
-/// constructor is <see langword="internal"/>, so nothing outside this assembly can produce a
-/// <see cref="SigningKey"/> whose <see cref="Kid"/> disagrees with <see cref="PublicKey"/> — the
-/// builder always derives <see cref="Kid"/> via <see cref="JwkThumbprint"/>.
+/// Only the framework constructs one, so nothing outside it can produce a <see cref="SigningKey"/>
+/// whose <see cref="Kid"/> disagrees with <see cref="PublicKey"/>: the framework always derives
+/// <see cref="Kid"/> via <see cref="JwkThumbprint"/>.
 /// </remarks>
 public sealed class SigningKey
 {

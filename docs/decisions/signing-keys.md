@@ -15,12 +15,13 @@ only the handle that instance introduced, so a signer over a shared SDK client m
 public data, derives every `kid` via `JwkThumbprint`, then decides from the dates alone. Every unexpired key
 is published, oldest first. The newest key whose `NotBefore` is at least `SigningKeys.LeadTime` (default one
 day, never below `JwksEndpoint.CacheMaxAge`) in the past signs; if none is, the oldest valid key signs and a
-Warning says relying parties may reject its tokens until they refresh. A key stays published until a newer key
-is `LeadTime + RetainRetiredKeysFor` old (retention defaults to the longer server-wide token lifetime; per-client
-overrides are invisible at startup). Ties on `NotBefore` go to the ordinally greater source id. One rule covers a
-first deployment, a normal rotation and an emergency (remove the key, restart), with no exemption.
-`SigningKeyRing` reads once at startup, self-tests the signer, and owns it for the process lifetime;
-`SigningKeySet.SigningKey` stays non-nullable, and live rotation is #527.
+Warning says relying parties may reject its tokens until they refresh. Keys are read only at startup, so a
+successor takes over at a restart, possibly long after its lead time: the signing key's predecessor stays published
+while it signs; an older key until a newer one is `LeadTime + RetainRetiredKeysFor` old; an expired key (which
+never signs) until `RetainRetiredKeysFor` after expiry. Retention defaults to the longer server-wide token lifetime
+plus `ClockSkewTolerance` (per-client overrides are invisible at startup); sums saturate. Ties on `NotBefore` go to
+the ordinally greater source id. One rule covers a first deployment, a normal rotation and an emergency (remove the
+key, restart). `SigningKeySet.SigningKey` is non-nullable and always published.
 
 **A file or store provider's slot names carry no meaning to core.** PEM, PFX and Windows still configure
 `Previous`/`Current`/`Next` and report the filled slots as a list; whichever key the dates choose signs. Each
