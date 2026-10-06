@@ -101,8 +101,8 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
             // multi-factor one.
             if (form.ContainsKey("amr_omit"))
                 await login.SignInAsync(subject, [], [.. claims]);
-            else if (form.ContainsKey("amr"))
-                await login.SignInAsync(subject, [.. form["amr"].Select(value => value ?? string.Empty)], [.. claims]);
+            else if (form.TryGetValue("amr", out var methods))
+                await login.SignInAsync(subject, [.. methods.Select(value => value ?? string.Empty)], [.. claims]);
             else
                 await login.SignInAsync(subject, form["amr_one"].FirstOrDefault() ?? AuthenticationMethods.Password, [.. claims]);
         });
