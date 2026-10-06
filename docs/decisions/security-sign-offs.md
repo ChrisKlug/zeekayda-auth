@@ -2151,3 +2151,24 @@ CodeQL and CodeScene review; no Critical. The last fix round (`6857d21`) was rea
 - `login_hint` is redacted as personal data. Closed — `SensitiveKeys_contains_expected_keys`.
 - **Residual:** the page must encode the hint; the framework cannot know the output context. Documented on
   `LoginRequest.LoginHint`; no test.
+
+## 2026-10-06 — signing-key sources only list keys; core picks the signer and the published set from dates (#823 PR 1, code frozen at `6db3887`)
+Copilot code, security (xhigh) and architecture lenses, the security and architect agents and their verification of the first
+fix round (`9148a31`), the code lens on the PR-feedback fix (`6db3887`), and the PR's Copilot and CodeScene review; no Critical.
+The one High (retention counted from an assumed takeover) is fixed. `3f27287` was read by the main session only.
+- Every listed key is checked for strength, algorithm match and structure, and gets a derived `kid`, before any signer opens.
+  Closed — `Build_throws_when_the_EC_algorithm_does_not_match_the_key_curve`, `Build_throws_when_two_distinct_source_ids_derive_the_same_kid`.
+- A signer that signs under another algorithm than its key declares fails startup. Closed — `InitializeAsync_throws_self_test_failed_when_the_signer_signs_under_another_algorithm`.
+- An expired key never signs, but stays published for the retention. Closed — `Expiry_a_key_that_just_expired_never_signs_but_stays_published_for_the_retention`.
+- The signing key's predecessor stays published however late the restart that switched to the new key. Closed —
+  `Rotation_restart_weeks_after_the_lead_time_still_keeps_the_predecessor_published`,
+  `Build_keeps_the_unexpired_predecessor_published_when_a_recently_expired_key_sits_between_it_and_the_signing_key`.
+- Retention defaults to the longer token lifetime plus clock skew, and no option combination overflows. Closed —
+  `PostConfigure_defaults_RetainRetiredKeysFor_to_the_longer_token_lifetime_plus_the_clock_skew_tolerance`,
+  `Build_does_not_overflow_when_lead_time_plus_retention_exceeds_TimeSpan_MaxValue`.
+- Key Vault refuses a listed version whose URI is not pinned to that version. Closed — `ReadAsync_throws_when_a_listed_versions_identifier_uri_is_not_version_pinned`.
+- **Accepted residuals (maintainer):** a key signs up to five minutes before its `NotBefore`
+  (`Future_a_key_valid_up_to_five_minutes_from_now_signs_to_tolerate_clock_skew`); file and Windows sources still sign only
+  with Current until PR 2, failing startup otherwise (`CreateSignerAsync_throws_when_called_for_the_Next_slot`); per-client
+  token lifetimes are invisible at startup, so the operator raises the retention; an `id_token_hint` stops verifying once its
+  key is retired (#899). No test for the last two.
