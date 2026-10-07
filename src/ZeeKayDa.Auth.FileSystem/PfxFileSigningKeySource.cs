@@ -35,6 +35,9 @@ internal sealed class PfxFileSigningKeySource(
     private readonly IOptions<PfxFileSigningOptions> _options = options;
 
     /// <inheritdoc/>
+    public SigningAlgorithm Algorithm => _options.Value.Algorithm;
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
         var options = _options.Value;
@@ -43,7 +46,7 @@ internal sealed class PfxFileSigningKeySource(
         foreach (var file in options.Files)
         {
             using var certificate = await LoadPublicCertificateAsync(file, cancellationToken).ConfigureAwait(false);
-            keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(file.Path), options.Algorithm));
+            keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(file.Path)));
         }
 
         return keys;

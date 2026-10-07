@@ -10,28 +10,27 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.AspNetCore.Tests.ClientAuthentication;
 
 /// <summary>
-/// End-to-end proof that a client declaring a signing algorithm the server does not advertise fails
-/// host startup (#515). The check depends on the signing key ring having read its source before
+/// End-to-end proof that a client excluding the algorithm the server signs with fails host startup. The check depends on the signing key ring having read its source before
 /// client registrations are validated; an ordering regression would silently downgrade it to a
 /// no-op, which a unit test on the validator alone cannot see.
 /// </summary>
 public sealed class ClientSigningAlgorithmStartupIntegrationTests
 {
     [Fact]
-    public void Host_startup_throws_when_a_client_allows_an_algorithm_the_server_does_not_advertise()
+    public void Host_startup_throws_when_a_client_excludes_the_algorithm_the_server_signs_with()
     {
-        // The test signing key source publishes RS256 only; the client asks for ES512.
-        using var factory = new UnadvertisedAlgorithmWebAppFactory();
+        // The test signing key source signs RS256; the client accepts only ES512.
+        using var factory = new ExcludedAlgorithmWebAppFactory();
 
         var act = () => factory.CreateClient();
 
         var ex = act.Should().Throw<Exception>().Which;
         ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(ex)!
-            .AggregatedFailures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset");
+            .AggregatedFailures.Should().Contain(f => f.Code == "client.signing_algorithms.excludes_signing_key");
     }
 
-    private sealed class UnadvertisedAlgorithmWebAppFactory
-        : WebApplicationFactory<UnadvertisedAlgorithmWebAppFactory>
+    private sealed class ExcludedAlgorithmWebAppFactory
+        : WebApplicationFactory<ExcludedAlgorithmWebAppFactory>
     {
         protected override IHostBuilder CreateHostBuilder()
             => Host.CreateDefaultBuilder()

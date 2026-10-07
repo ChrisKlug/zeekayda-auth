@@ -114,7 +114,7 @@ public sealed class PemFileSigningKeySourceTests
 
         keySet.Should().ContainSingle();
         keySet.Single().Id.Should().Be(new SourceKeyId(path));
-        keySet.Single().Algorithm.Should().Be(SigningAlgorithm.RS256);
+        sut.Algorithm.Should().Be(SigningAlgorithm.RS256);
         keySet.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
         keySet.Single().PublicKey.RsaPublicParameters.Should().NotBeNull(
             "only public material may ever leave this source's read path");
@@ -557,7 +557,7 @@ public sealed class PemFileSigningKeySourceTests
 
         keySet.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Ec);
         keySet.Single().PublicKey.EcPublicParameters.Should().NotBeNull();
-        keySet.Single().Algorithm.Should().Be(SigningAlgorithm.ES256);
+        sut.Algorithm.Should().Be(SigningAlgorithm.ES256);
     }
 
     [Fact]
@@ -576,22 +576,6 @@ public sealed class PemFileSigningKeySourceTests
 
         using var ecdsa = ECDsa.Create(keySet.Single().PublicKey.EcPublicParameters!.Value);
         ecdsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256).Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task ReadAsync_rejects_a_certificate_whose_key_does_not_suit_the_algorithm_naming_the_file()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var tempDir = new TempSigningKeyDirectory();
-        using var certificate = CreateRsaCertificate();
-        var path = tempDir.WritePemFile("current.pem", certificate);
-        var sut = BuildSource(new PemSigningFile(path), algorithm: SigningAlgorithm.ES256);
-
-        var act = async () => await sut.ReadAsync(ct);
-
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
-        exception.Which.Message.Should().Contain(path);
     }
 
     // ── CreateSignerAsync opens any listed file, and only a listed one ───────────────────────────

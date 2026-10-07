@@ -56,7 +56,7 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
 
         keySet.Should().ContainSingle();
         keySet.Single().Id.Should().Be(new SourceKeyId("v1"));
-        keySet.Single().Algorithm.Should().Be(SigningAlgorithm.RS256);
+        sut.Algorithm.Should().Be(SigningAlgorithm.RS256);
         keySet.Single().PublicKey.RsaPublicParameters.Should().NotBeNull(
             "only public material may ever leave this source's read path");
         keySet.Single().NotBefore.Should().Be(notBefore);

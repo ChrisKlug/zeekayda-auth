@@ -9,10 +9,14 @@ never holds a private-key object, aliasing one across reads is unrepresentable. 
 only the handle that instance introduced, so a signer over a shared SDK client must not close it.
 `SigningAlgorithm` has no `none` member.
 
+**A source declares one algorithm, and every key it lists signs under it.** `ISigningKeySource.Algorithm`,
+never per key, so a key change is never an algorithm change; discovery advertises that one algorithm.
+Changing it is a new source and a restart; multi-algorithm support would be a ring per algorithm, never a mixed one.
+
 **Sources only list keys; core owns all the timing.** A `SourceKey` carries `NotBefore` and `ExpiresAt`
 (undated means `MinValue`/`MaxValue`; an undated key is accepted only as the sole key). The internal
-`SigningKeySetBuilder.Build(keys, now, options, logger)` is the single choke point: it validates every key on
-public data, derives every `kid` via `JwkThumbprint`, then decides from the dates alone. Every unexpired key
+`SigningKeySetBuilder.Build(keys, algorithm, now, options, logger)` is the single choke point: it validates every key on
+public data against the source's algorithm, derives every `kid` via `JwkThumbprint`, then decides from the dates alone. Every unexpired key
 is published, oldest first. The newest key whose `NotBefore` is at least `SigningKeys.LeadTime` (default one
 day, positive, never below `JwksEndpoint.CacheMaxAge`) in the past signs; if none is, the oldest valid key signs and a
 Warning says relying parties may reject its tokens until they refresh. Keys are read only at startup, so a
@@ -113,9 +117,8 @@ development provider stays in core.
   own concern. One `ISigningKeySource` covers both.
 - **A per-key `ActivateAt` with `PublishAt = ActivateAt − PublicationLead`.** The operator scheduled each
   activation by hand. Now a key's own `NotBefore` is its publication date and one `LeadTime` derives the rest.
-- **A single rotating-source tier with one shared check interval.** Ratified and shipped, reversed two weeks
-  later. File/PFX/certificate-store and Key Vault share no model — only a *name*, covering both an internal
-  clock tick over a fixed timeline and a real external poll cadence.
+- **A single rotating-source tier with one shared check interval.** Shipped, then reversed: file/store and Key
+  Vault share only a *name*, covering both a clock tick over a fixed timeline and a real external poll.
 - **An `ISigningKeyRetirementWindowProvider` computing retirement per provider.** Retention is one core
   setting applied to dates every provider already reports.
 - **Bootstrap exemptions — the single-key one, and Key Vault's "first version ever" one.** "No relying party
@@ -126,10 +129,8 @@ development provider stays in core.
   to write a provider, and the one real implementation of the rules sat inside one provider package.
 - **Key Vault pruning by asking core which versions it keeps, or from a rotation period.** The first is custom
   handling of a first-party package; the second miscounts after an emergency rotation.
-- **A startup cross-check between advertised and producible algorithms
-  (`AdvertisedSigningAlgorithmVerifier`, `ISigningKeyProducibility`).** Detecting a disagreement the
-  configuration should not express. #515 derives the advertised set from the published set instead, making
-  it unrepresentable.
+- **Per-key algorithms, an advertised set derived from them, and an `AdvertisedSigningAlgorithms` filter.**
+  Any key change could change algorithm, so client checks had to forecast every future signer.
 - **An `Enabled` flag, or a whole-set change-detection hook, on the provider contract.** The flag only
   ever meant "this Key Vault version is enabled"; the hook became the default once listings were public-only.
 - **`InternalsVisibleTo` for the shared signing helpers.** The Azure Key Vault provider's first attempt. It

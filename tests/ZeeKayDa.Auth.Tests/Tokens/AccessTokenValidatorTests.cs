@@ -38,7 +38,6 @@ public sealed class AccessTokenValidatorTests
 
     private static SourceKey RsaSourceKey(string id, RSA rsa, DateTimeOffset? notBefore = null) => new(
         new SourceKeyId(id),
-        SigningAlgorithm.RS256,
         PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)),
         notBefore);
 

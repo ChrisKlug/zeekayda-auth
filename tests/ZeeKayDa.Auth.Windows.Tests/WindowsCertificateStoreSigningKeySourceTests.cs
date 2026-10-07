@@ -67,7 +67,7 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
 
         keySet.Should().ContainSingle();
         keySet.Single().Id.Should().Be(new SourceKeyId(CurrentThumbprint));
-        keySet.Single().Algorithm.Should().Be(SigningAlgorithm.RS256);
+        sut.Algorithm.Should().Be(SigningAlgorithm.RS256);
         keySet.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
         keySet.Single().PublicKey.RsaPublicParameters.Should().NotBeNull(
             "only public material may ever leave this source's read path");
@@ -295,7 +295,7 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
         var keySet = await sut.ReadAsync(ct);
 
         keySet.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Ec);
-        keySet.Single().Algorithm.Should().Be(SigningAlgorithm.ES256);
+        sut.Algorithm.Should().Be(SigningAlgorithm.ES256);
     }
 
     [Fact]
@@ -321,7 +321,7 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
     // ── Algorithm/key-type mismatch is the key set builder's call, not this source's ─────────────
 
     [Fact]
-    public async Task ReadAsync_rejects_a_certificate_whose_key_does_not_suit_the_algorithm_naming_its_thumbprint()
+    public async Task ReadAsync_lists_a_certificate_whose_key_does_not_suit_the_algorithm_for_the_builder_to_reject()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
@@ -329,11 +329,10 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
         reader.AddCertificate(CurrentThumbprint, certificate);
         var sut = BuildSource(reader, algorithm: SigningAlgorithm.ES256);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
-        exception.Which.Message.Should().Contain(CurrentThumbprint);
+        keys.Should().ContainSingle().Which.Id.Should().Be(new SourceKeyId(CurrentThumbprint));
+        sut.Algorithm.Should().Be(SigningAlgorithm.ES256);
     }
 
     // ── CreateSignerAsync opens any listed certificate, and only a listed one ────────────────────

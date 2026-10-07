@@ -31,6 +31,9 @@ internal sealed class WindowsCertificateStoreSigningKeySource(
     private readonly IOptions<WindowsCertificateStoreSigningOptions> _options = options;
 
     /// <inheritdoc/>
+    public SigningAlgorithm Algorithm => _options.Value.Algorithm;
+
+    /// <inheritdoc/>
     public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -46,7 +49,7 @@ internal sealed class WindowsCertificateStoreSigningKeySource(
             if (!certificate.HasPrivateKey)
                 throw WindowsCertificateKeyExtractor.NoPrivateKey(lookup.NormalizedThumbprint);
 
-            keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(lookup.NormalizedThumbprint), options.Algorithm));
+            keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(lookup.NormalizedThumbprint)));
         }
 
         return Task.FromResult<IReadOnlyList<SourceKey>>(keys);

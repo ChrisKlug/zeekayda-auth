@@ -26,11 +26,13 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     /// </summary>
     private sealed class ExternalSigningKeySource : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             using var rsa = RSA.Create(2048);
             var current = new SourceKey(
-                new SourceKeyId("current"), SigningAlgorithm.RS256,
+                new SourceKeyId("current"),
                 PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: DateTimeOffset.UtcNow.AddDays(90));
 
             return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
@@ -44,6 +46,8 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     /// registering a different source than one already registered fails loudly.</summary>
     private sealed class OtherExternalSigningKeySource : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
@@ -58,6 +62,8 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     /// </summary>
     private sealed class CountingSigningKeySource(SourceKey current, string privateKeyPem) : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public int ReadAsyncCallCount { get; private set; }
 
         public int CreateSignerAsyncCallCount { get; private set; }
@@ -81,6 +87,8 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     /// <see cref="IAsyncDisposable"/>, modelling the shape registration must reject.</summary>
     private sealed class AsyncOnlySigningKeySource : ISigningKeySource, IAsyncDisposable
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
@@ -108,6 +116,8 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     private sealed class OrderRecordingSigningKeySource(TestKey key, DisposalLog log)
         : ISigningKeySource, IDisposable
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<SourceKey>>([key.Current]);
 
@@ -139,6 +149,8 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     private sealed class DualDisposableSigningKeySource(TestKey key, DisposalLog log)
         : ISigningKeySource, IDisposable, IAsyncDisposable
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<SourceKey>>([key.Current]);
 
@@ -373,6 +385,8 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
 
     private sealed class ConstructionRecordingSigningKeySource : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public ConstructionRecordingSigningKeySource(ConstructionLog log) => log.Constructed = true;
 
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
@@ -386,7 +400,7 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256,
+            new SourceKeyId("current"),
             PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: DateTimeOffset.UtcNow.AddDays(90));
         var services = new ServiceCollection();
         services.AddRingDependencies();
@@ -397,6 +411,8 @@ public sealed class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensionsTests
 
     private abstract class AbstractSigningKeySource : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public abstract Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default);
 
         public abstract Task<ISigner> CreateSignerAsync(

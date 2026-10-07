@@ -426,6 +426,271 @@ needs a credential.
 
 ---
 
+### ID token signing algorithm
+
+There is no option for it. `id_token_signing_alg_values_supported` publishes the one algorithm the
+signing source was registered for — `AddPemFileSigning(SigningAlgorithm.RS256, …)` and its siblings
+take it — and every key that source lists signs under it, so the advertised value never changes
+during a key rotation. Changing algorithm means registering a source for the new one and restarting.
+
+| Code | Meaning |
+|---|---|
+| `signing.advertised_algorithms.rs256_absent` | The source signs with something other than `RS256`, which [OpenID Connect Discovery 1.0 §3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata) requires in the list. A startup warning: the framework does not advertise an algorithm it never signs with. |
+
+| Enum value | JSON serialization |
+|---|---|
+| `CodeChallengeMethod.S256` | `"S256"` |
+
+The `plain` challenge method is intentionally absent from `CodeChallengeMethod`. RFC 9700 §2.1.1
+explicitly prohibits its use: advertising `plain` would negate PKCE's security benefit because the
+challenge is identical to the verifier and provides no protection against interception.
+
+Startup validation rejects a non-null empty collection (e.g. `= []`), which would publish
+`"code_challenge_methods_supported": []` — advertising PKCE support with no usable method — and
+rejects `null` or a collection without `S256` on a host that serves the authorization code grant.
+
+Maps to `code_challenge_methods_supported` as defined in
+[RFC 7636 §4.3](https://www.rfc-editor.org/rfc/rfc7636#section-4.3) and
+[RFC 8414 §2](https://www.rfc-editor.org/rfc/rfc8414#section-2).
+
+---
+
+### `TokenEndpoint`
+
+| Attribute | Value |
+|---|---|
+| Type | `TokenEndpointOptions` |
+| Default | `new TokenEndpointOptions()` |
+| Required | No |
+
+Group for token endpoint settings.
+
+`TokenEndpoint.Uri` overrides the `token_endpoint` value published in the discovery document. When
+`null`, ZeeKayDa.Auth derives the URL from `Issuer` as `{issuer}/connect/token`.
+
+The value must be an absolute HTTPS URI without user information or fragment.
+The override must use the same authority as `Issuer`.
+
+```csharp
+options.TokenEndpoint.Uri = "https://id.example.com/tenant-a/custom/token";
+```
+
+`TokenEndpoint.AccessTokenLifetime` (default ten minutes) and `TokenEndpoint.IdTokenLifetime`
+(default five minutes) are the server-wide lifetimes of the tokens the endpoint issues. Both must be
+greater than zero; there is no upper bound, but a value longer than
+`TokenEndpoint.AbsoluteFamilyLifetime` logs a startup warning. A client registration may override
+either through its own `AccessTokenLifetime` and `IdTokenLifetime`, where `null` (the default) means
+the server value.
+
+```csharp
+options.TokenEndpoint.AccessTokenLifetime = TimeSpan.FromMinutes(30);
+options.TokenEndpoint.IdTokenLifetime = TimeSpan.FromMinutes(2);
+```
+
+The access-token default is short because the token is a self-contained JWT: nothing checks it
+against a store, so a resource server keeps accepting it until it expires however the grant behind
+it ended — revoked, signed out, or deleted. `AccessTokenLifetime` is that window, and every minute
+added to it is a minute added to the window. Budget for a little more than the value you set: a
+resource server applies its own clock-skew tolerance to `exp`, five minutes being a common default,
+and that tolerance is added to this lifetime. [RFC 7009
+§3](https://www.rfc-editor.org/rfc/rfc7009#section-3) sanctions that trade for self-contained
+tokens: keep them short and renew them.
+
+Renewal today is a fresh authorization request the client starts itself, by redirecting through the
+authorization endpoint roughly every ten minutes instead of every hour. That is the path [RFC 9700
+§4.14.2](https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2) describes for a server that issues
+no refresh token: the client obtains a new access token through another grant, and the server uses
+the sign-in session to keep that cheap. A browser that still holds
+its sign-in session is not asked to sign in again, but it **is** asked for consent again: consent is
+not remembered between requests, so a client left at the default `RequireConsent = true` prompts the
+user on every renewal, and a renewal sent with `prompt=none` is answered `consent_required`. Only a
+client registered with `RequireConsent = false` renews without the user seeing anything. Turn
+consent off for that reason alone only for your own first-party applications — it is the control
+that lets a user notice an authorization request they never started. The refresh-token grant is not
+served yet, so putting `GrantType.RefreshToken` in `GrantTypesSupported` advertises it in discovery
+without making it work.
+
+---
+
+### `JwksEndpoint`
+
+| Attribute | Value |
+|---|---|
+| Type | `JwksEndpointOptions` |
+| Default | `new JwksEndpointOptions()` |
+| Required | No |
+
+Group for JSON Web Key Set endpoint settings.
+
+`JwksEndpoint.Uri` overrides the `jwks_uri` value published in the discovery document. When `null`,
+ZeeKayDa.Auth derives the URL from `Issuer` as `{issuer}/connect/jwks`.
+
+The value must be an absolute HTTPS URI without user information, query, or fragment.
+The override must use the same authority as `Issuer`.
+
+```csharp
+options.JwksEndpoint.Uri = "https://id.example.com/tenant-a/custom/jwks";
+```
+
+`JwksEndpoint.CacheMaxAge` (`TimeSpan`, default one hour) sets the `max-age` duration for the JWKS
+response's `Cache-Control` header, emitted in whole seconds exactly like
+[`DiscoveryDocument.CacheMaxAge`](#discoverydocumentcachemaxage): `public, max-age=3600,
+must-revalidate` by default, `no-store` below one second, and negative values fail startup
+validation. This value governs how long a relying party may keep trusting a cached key set —
+including a key that has since been removed from configuration — so a shorter TTL shortens that
+revocation window at the cost of more JWKS traffic.
+
+See the [JWKS endpoint reference](jwks-endpoint.md) for the response format.
+
+---
+
+### `UserInfoEndpoint`
+
+| Attribute | Value |
+|---|---|
+| Type | `UserInfoEndpointOptions` |
+| Default | `new UserInfoEndpointOptions()` |
+| Required | No |
+
+Group for UserInfo endpoint settings.
+
+`UserInfoEndpoint.Uri` overrides the `userinfo_endpoint` value published in the discovery document.
+When `null`, ZeeKayDa.Auth derives the URL from `Issuer` as `{issuer}/connect/userinfo`.
+
+The value must be an absolute HTTPS URI without user information, query, or fragment, and must use
+the same authority as `Issuer`.
+
+```csharp
+options.UserInfoEndpoint.Uri = "https://id.example.com/tenant-a/custom/userinfo";
+```
+
+The endpoint is served, and its URL published, only when `GrantTypesSupported` includes
+`AuthorizationCode`. The browser origins allowed to read its responses are [`CorsOrigins`](#corsorigins).
+
+See the [UserInfo endpoint reference](userinfo-endpoint.md) for the token, response and error
+contract.
+
+---
+
+### `Response.TypesSupported`
+
+| Attribute | Value |
+|---|---|
+| Type | `ICollection<ResponseType>` |
+| Default | `[ResponseType.Code]` |
+| Required | Yes (must not be null or empty) |
+
+The response types this server supports. Published as `response_types_supported` in the discovery
+document. This value lives in the `Response` options group.
+
+| Enum value | JSON serialization |
+|---|---|
+| `ResponseType.Code` | `"code"` |
+
+Hybrid and implicit response types are not supported by ZeeKayDa.Auth. The library intentionally
+publishes code flow only, aligned with OAuth 2.1 §3.3 and RFC 9700 §2.1.2.
+
+`response_types_supported` is a required field in the discovery document per
+[OpenID Connect Discovery 1.0 §3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata).
+
+---
+
+### `Response.ModesSupported`
+
+| Attribute | Value |
+|---|---|
+| Type | `ICollection<ResponseMode>` |
+| Default | `[ResponseMode.Query]` |
+| Required | Yes (must not be null) |
+
+The response modes this server supports. Published as `response_modes_supported` in the discovery
+document. This value lives in the `Response` options group.
+
+| Enum value | JSON serialization |
+|---|---|
+| `ResponseMode.Query` | `"query"` |
+
+---
+
+### `GrantTypesSupported`
+
+| Attribute | Value |
+|---|---|
+| Type | `ICollection<GrantType>` |
+| Default | `[GrantType.AuthorizationCode]` |
+| Required | Yes (must not be null) |
+
+The grant types this server supports. Published as `grant_types_supported` in the discovery
+document.
+
+| Enum value | JSON serialization |
+|---|---|
+| `GrantType.AuthorizationCode` | `"authorization_code"` |
+
+`grant_types_supported` is an authorization server metadata field defined by
+[RFC 8414 §2](https://www.rfc-editor.org/rfc/rfc8414#section-2).
+
+---
+
+### `TokenEndpoint.AdvertisedAuthMethods`
+
+| Attribute | Value |
+|---|---|
+| Type | `ICollection<string>?` |
+| Default | `null` |
+| Required | No |
+
+An optional filter on the client authentication methods the token endpoint advertises and accepts.
+Published, after filtering, as `token_endpoint_auth_methods_supported` in the discovery document.
+
+The advertised set is **derived**, not configured: every method a registered `IClientAuthenticator`
+declares in its `AuthenticationMethods`, plus `"none"`, which the framework handles itself. With the
+built-in authenticator that is `client_secret_basic`, `client_secret_post` and `none`. A host with a
+public client therefore needs no server-wide setting.
+
+The filter can only withhold a method, never add one:
+
+- An entry no authenticator performs (e.g. `"private_key_jwt"` with no authenticator for it) has no
+  effect and logs a startup warning (`token_endpoint.advertised_auth_methods.unperformable`).
+- A filter that leaves nothing the server performs fails startup
+  (`token_endpoint.advertised_auth_methods.none_performable`).
+- An entry that differs from a performed method only in casing (`Client_Secret_Basic`) fails startup
+  (`token_endpoint.advertised_auth_methods.casing`).
+- An empty filter fails startup; `null` advertises everything.
+- Each entry must be a non-empty string with no surrounding whitespace and no control characters.
+
+If `GrantTypesSupported` includes `GrantType.ClientCredentials`, at least one method other than
+`"none"` must be advertised ([RFC 6749 §4.4](https://www.rfc-editor.org/rfc/rfc6749#section-4.4),
+[RFC 9700 §2.6](https://www.rfc-editor.org/rfc/rfc9700#section-2.6)); otherwise startup fails with
+`token_endpoint.advertised_auth_methods.only_none_with_client_credentials`.
+
+| `TokenEndpointAuthMethods` constant | String value |
+|---|---|
+| `ClientSecretBasic` | `"client_secret_basic"` |
+| `ClientSecretPost` | `"client_secret_post"` |
+| `None` | `"none"` |
+
+Custom methods (e.g. `"tls_client_auth"`) are plain strings, declared by the authenticator that
+performs them.
+
+```csharp
+// Refuse public clients: a public client registration then fails startup.
+options.TokenEndpoint.AdvertisedAuthMethods = [TokenEndpointAuthMethods.ClientSecretBasic];
+```
+
+`token_endpoint_auth_methods_supported` is defined by
+[RFC 8414 §2](https://www.rfc-editor.org/rfc/rfc8414#section-2).
+
+#### `"none"` and PKCE
+
+`TokenEndpointAuthMethods.None` (`"none"`) represents **public clients** — clients with no client
+secret. Public clients cannot securely transmit credentials at the token endpoint, so they MUST use
+PKCE ([RFC 9700 §2.1.1](https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1)). The framework
+requires `S256` for every authorization code exchange, and a public client can use no grant that
+needs a credential.
+
+---
+
 ### `IdToken.AdvertisedSigningAlgorithms`
 
 | Attribute | Value |
@@ -645,7 +910,6 @@ startup output and host logs.
 | `configuration.token_endpoint.refresh_token_lifetime.not_positive` | `TokenEndpoint.RefreshTokenLifetime` is zero or negative |
 | `configuration.token_endpoint.refresh_token_lifetime.shorter_than_code_lifetime` | `TokenEndpoint.RefreshTokenLifetime` is shorter than `AuthorizationEndpoint.AuthorizationCodeLifetime` |
 | `configuration.token_endpoint.absolute_family_lifetime.not_positive` | `TokenEndpoint.AbsoluteFamilyLifetime` is zero or negative |
-| `configuration.id_token.advertised_signing_algorithms.empty` | `IdToken.AdvertisedSigningAlgorithms` is a non-null empty collection |
 | `configuration.discovery_document.cache_max_age.negative` | `DiscoveryDocument.CacheMaxAge` is negative |
 | `configuration.jwks_endpoint.cache_max_age.negative` | `JwksEndpoint.CacheMaxAge` is negative |
 | `configuration.cors_origins.null` | `CorsOrigins` is `null` |

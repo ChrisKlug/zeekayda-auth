@@ -38,10 +38,6 @@ internal static class AuthorizationServerOptionsBinder
         var token = section.GetSection(nameof(options.TokenEndpoint));
         if (IsConfigured(token, nameof(TokenEndpointOptions.AdvertisedAuthMethods)))
             options.TokenEndpoint.AdvertisedAuthMethods = [];
-
-        var idToken = section.GetSection(nameof(options.IdToken));
-        if (IsConfigured(idToken, nameof(IdTokenOptions.AdvertisedSigningAlgorithms)))
-            options.IdToken.AdvertisedSigningAlgorithms = [];
     }
 
     private static bool IsConfigured(IConfiguration section, string key) => section.GetSection(key).Exists();

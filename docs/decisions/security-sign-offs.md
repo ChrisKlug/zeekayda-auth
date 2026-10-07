@@ -1003,12 +1003,15 @@ written.
 `id_token_signing_alg_values_supported` is derived from the published key set rather than declared
 beside it, and the operator's `IdToken.AdvertisedSigningAlgorithms` filter intersects that set rather
 than replacing it — so no configuration expresses an algorithm the server holds no key for. Closed —
-proven by `GetDocument_never_advertises_an_algorithm_the_filter_names_but_no_key_uses`.
+proven by GetDocument_never_advertises_an_algorithm_the_filter_names_but_no_key_uses. [Since #905 the
+filter is gone and a source declares one algorithm, which is all discovery advertises — now proven by
+`GetDocument_advertises_one_algorithm_however_many_keys_are_published`.]
 
 Note the changed distinction: the advertised set is what the server holds a **key** for, not what it
 can currently **produce**. `Previous` and `Next` keys are advertised deliberately, so an algorithm no
 longer signing is still advertised while tokens signed under it are live — proven by
-`GetDocument_advertises_every_published_slots_algorithm_not_only_the_signers`.
+GetDocument_advertises_every_published_slots_algorithm_not_only_the_signers. [Moot since #905: every
+published key shares the source's one algorithm.]
 
 One residual is opened, not closed: a filter may withhold an algorithm a published key still uses,
 breaking relying parties that pin acceptance to discovery. It is recorded at `Information` rather
@@ -2186,7 +2189,9 @@ Copilot code, security (xhigh) and architecture lenses, the security and archite
 - Listing imports no private key. Closed — `ReadAsync_lists_a_bundle_whose_key_bag_cannot_be_decrypted_because_it_never_imports_the_key`,
   `ReadAsync_never_parses_a_separate_key_file_for_any_listed_file`.
 - Both certificate helpers reject an undefined algorithm and a key that does not suit it. Closed — `FromCertificate_rejects_an_undefined_algorithm`
-  (both), `FromCertificate_rejects_an_EC_certificate_for_an_RSA_algorithm`, `FromCertificate_rejects_a_key_that_does_not_suit_the_algorithm_naming_the_id`.
+  (both), `FromCertificate_rejects_an_EC_certificate_for_an_RSA_algorithm`, FromCertificate_rejects_a_key_that_does_not_suit_the_algorithm_naming_the_id.
+  [Since #905 `SourceKey.FromCertificate` takes no algorithm; the builder checks every key against the source's —
+  `Build_throws_when_an_EC_algorithm_is_declared_over_an_RSA_public_key`, `Build_throws_when_the_EC_algorithm_does_not_match_the_key_curve`.]
 - Removing the cached Key Vault pairing check leaves a divergence failing startup. Closed — `Startup_fails_closed_when_the_secret_and_the_Cer_diverge_because_the_self_test_catches_it`.
 - `MaxVersions` fetches only the newest N, cuts identically on every replica, and is never below 3. Closed —
   `ReadAsync_with_MaxVersions_fetches_public_material_only_for_the_listed_versions`, `Validate_rejects_a_MaxVersions_below_three`,

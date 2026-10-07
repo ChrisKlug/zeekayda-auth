@@ -215,7 +215,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                     "must never return null."));
         }
 
-        var set = SigningKeySetBuilder.Build(sourceKeys, _timeProvider.GetUtcNow(), _options, _logger);
+        var set = SigningKeySetBuilder.Build(sourceKeys, _source.Algorithm, _timeProvider.GetUtcNow(), _options, _logger);
 
         var signer = await OpenSignerAsync(set.SigningKey, cancellationToken).ConfigureAwait(false);
         try

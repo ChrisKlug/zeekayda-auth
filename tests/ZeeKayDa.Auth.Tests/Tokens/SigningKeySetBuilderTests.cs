@@ -240,7 +240,7 @@ public sealed class SigningKeySetBuilderTests
         var signing = CreateRsaSourceKey("signing", notBefore: Now.AddDays(-10));
         var options = new SigningKeyOptions { LeadTime = LeadTime, RetainRetiredKeysFor = TimeSpan.MaxValue };
 
-        var set = SigningKeySetBuilder.Build([oldest, predecessor, signing], Now, options, NullLogger.Instance);
+        var set = SigningKeySetBuilder.Build([oldest, predecessor, signing], SigningAlgorithm.RS256, Now, options, NullLogger.Instance);
 
         set.Published.Should().HaveCount(3, "a saturated retention never retires a key");
     }
@@ -269,26 +269,15 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
-    public void Build_advertised_algorithms_are_the_distinct_published_algorithms_in_ascending_order()
-    {
-        var previous = CreateEcSourceKey("previous", ECCurve.NamedCurves.nistP521, SigningAlgorithm.ES512, Now.AddDays(-10));
-        var current = CreateRsaSourceKey("current", algorithm: SigningAlgorithm.RS256, notBefore: SigningInsideRetention);
-        var next = CreateEcSourceKey("next", ECCurve.NamedCurves.nistP256, SigningAlgorithm.ES256, Now.AddHours(-1));
-
-        var set = Build(previous, current, next);
-
-        set.AdvertisedAlgorithms.Should().Equal(SigningAlgorithm.RS256, SigningAlgorithm.ES256, SigningAlgorithm.ES512);
-    }
-
-    [Fact]
-    public void Build_advertised_algorithms_deduplicates_when_multiple_keys_share_an_algorithm()
+    public void Build_gives_every_key_the_source_algorithm()
     {
         var previous = CreateRsaSourceKey("previous", notBefore: Now.AddDays(-10));
         var current = CreateRsaSourceKey("current", notBefore: SigningInsideRetention);
 
-        var set = Build(previous, current);
+        var set = BuildAs(SigningAlgorithm.PS256, previous, current);
 
-        set.AdvertisedAlgorithms.Should().Equal(SigningAlgorithm.RS256);
+        set.Algorithm.Should().Be(SigningAlgorithm.PS256);
+        set.Published.Should().OnlyContain(key => key.Algorithm == SigningAlgorithm.PS256);
     }
 
     [Fact]
@@ -306,7 +295,7 @@ public sealed class SigningKeySetBuilderTests
     [Fact]
     public void Build_throws_ArgumentNullException_when_keys_is_null()
     {
-        var act = () => SigningKeySetBuilder.Build(null!, Now, Options(), NullLogger.Instance);
+        var act = () => SigningKeySetBuilder.Build(null!, SigningAlgorithm.RS256, Now, Options(), NullLogger.Instance);
 
         act.Should().Throw<ArgumentNullException>();
     }
@@ -389,8 +378,8 @@ public sealed class SigningKeySetBuilderTests
         using var rsa = RSA.Create(2048);
         var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
 
-        var previous = new SourceKey(new SourceKeyId("previous"), SigningAlgorithm.RS256, publicKey, Now.AddDays(-10));
-        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.RS256, publicKey, Now.AddDays(-2));
+        var previous = new SourceKey(new SourceKeyId("previous"), publicKey, Now.AddDays(-10));
+        var current = new SourceKey(new SourceKeyId("current"), publicKey, Now.AddDays(-2));
 
         var act = () => Build(previous, current);
 
@@ -405,7 +394,7 @@ public sealed class SigningKeySetBuilderTests
     {
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
-        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.RS256, publicKey);
+        var current = new SourceKey(new SourceKeyId("current"), publicKey);
         var act = () => Build(current);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
@@ -419,7 +408,7 @@ public sealed class SigningKeySetBuilderTests
         // validation message must be keyed on the id they actually configured.
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
-        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.RS256, publicKey);
+        var current = new SourceKey(new SourceKeyId("current"), publicKey);
         var act = () => Build(current);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
@@ -431,8 +420,8 @@ public sealed class SigningKeySetBuilderTests
     {
         using var rsa = RSA.Create(2048);
         var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
-        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.ES256, publicKey);
-        var act = () => Build(current);
+        var current = new SourceKey(new SourceKeyId("current"), publicKey);
+        var act = () => BuildAs(SigningAlgorithm.ES256, current);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
@@ -442,8 +431,8 @@ public sealed class SigningKeySetBuilderTests
     public void Build_throws_when_the_EC_algorithm_does_not_match_the_key_curve()
     {
         // ES256 requires P-256; the key is P-384.
-        var current = CreateEcSourceKey("current", ECCurve.NamedCurves.nistP384, SigningAlgorithm.ES256);
-        var act = () => Build(current);
+        var current = CreateEcSourceKey("current", ECCurve.NamedCurves.nistP384);
+        var act = () => BuildAs(SigningAlgorithm.ES256, current);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.ec_curve_algorithm_mismatch");
@@ -471,8 +460,8 @@ public sealed class SigningKeySetBuilderTests
     [Fact]
     public void Build_result_is_immune_to_mutating_every_reachable_EC_public_key_accessor()
     {
-        var current = CreateEcSourceKey("current", ECCurve.NamedCurves.nistP256, SigningAlgorithm.ES256);
-        var set = Build(current);
+        var current = CreateEcSourceKey("current", ECCurve.NamedCurves.nistP256);
+        var set = BuildAs(SigningAlgorithm.ES256, current);
         var originalKid = set.SigningKey.Kid;
 
         var ecParams = set.SigningKey.PublicKey.EcPublicParameters!.Value;
@@ -497,8 +486,8 @@ public sealed class SigningKeySetBuilderTests
     [Fact]
     public void Build_throws_when_the_declared_algorithm_is_not_a_defined_SigningAlgorithm_member()
     {
-        var current = CreateRsaSourceKey("current", algorithm: (SigningAlgorithm)999);
-        var act = () => Build(current);
+        var current = CreateRsaSourceKey("current");
+        var act = () => BuildAs((SigningAlgorithm)999, current);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.undefined_algorithm");
@@ -522,8 +511,8 @@ public sealed class SigningKeySetBuilderTests
         };
         offCurveParams.Q.Y![^1] ^= 0x01; // perturb Y so (X, Y) is very unlikely to remain on the curve
         var publicKey = PublicKeyParameters.FromEc(offCurveParams);
-        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.ES256, publicKey);
-        var act = () => Build(current);
+        var current = new SourceKey(new SourceKeyId("current"), publicKey);
+        var act = () => BuildAs(SigningAlgorithm.ES256, current);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.invalid_public_key");
@@ -537,7 +526,7 @@ public sealed class SigningKeySetBuilderTests
             Modulus = new byte[256], // all-zero, 2048 bits by length, structurally not a public key
             Exponent = [0x01, 0x00, 0x01],
         });
-        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.RS256, publicKey);
+        var current = new SourceKey(new SourceKeyId("current"), publicKey);
         var act = () => Build(current);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
@@ -552,7 +541,7 @@ public sealed class SigningKeySetBuilderTests
     {
         using var rsa = RSA.Create(1024);
         var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
-        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.RS256, publicKey);
+        var current = new SourceKey(new SourceKeyId("current"), publicKey);
         var act = () => Build(current);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
@@ -569,7 +558,7 @@ public sealed class SigningKeySetBuilderTests
         var paddedModulus = new byte[256];
         smallModulus.CopyTo(paddedModulus, 256 - smallModulus.Length);
         var publicKey = PublicKeyParameters.FromRsa(new RSAParameters { Modulus = paddedModulus, Exponent = [0x01, 0x00, 0x01] });
-        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.RS256, publicKey);
+        var current = new SourceKey(new SourceKeyId("current"), publicKey);
         var act = () => Build(current);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
@@ -588,8 +577,8 @@ public sealed class SigningKeySetBuilderTests
             Q = ec.ExportParameters(false).Q,
         };
         var publicKey = PublicKeyParameters.FromEc(unsupportedCurveParams);
-        var current = new SourceKey(new SourceKeyId("current"), SigningAlgorithm.ES256, publicKey);
-        var act = () => Build(current);
+        var current = new SourceKey(new SourceKeyId("current"), publicKey);
+        var act = () => BuildAs(SigningAlgorithm.ES256, current);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.ec_unsupported_curve");
@@ -608,7 +597,7 @@ public sealed class SigningKeySetBuilderTests
             Exponent = [1, 0, 1],
         });
 
-        var act = () => SigningKeySetBuilder.ValidateKeyStrength(new SourceKey(new SourceKeyId("test-key"), SigningAlgorithm.RS256, publicKey));
+        var act = () => SigningKeySetBuilder.ValidateKeyStrength(new SourceKey(new SourceKeyId("test-key"), publicKey));
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures[0].Code.Should().Be("signing.rsa_key_too_small");
@@ -629,7 +618,7 @@ public sealed class SigningKeySetBuilderTests
             Exponent = [1, 0, 1],
         });
 
-        var act = () => SigningKeySetBuilder.ValidateKeyStrength(new SourceKey(new SourceKeyId("test-key"), SigningAlgorithm.RS256, publicKey));
+        var act = () => SigningKeySetBuilder.ValidateKeyStrength(new SourceKey(new SourceKeyId("test-key"), publicKey));
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures[0].Code.Should().Be("signing.rsa_key_too_small");
@@ -647,7 +636,8 @@ public sealed class SigningKeySetBuilderTests
         using var ec = ECDsa.Create(ECCurve.CreateFromFriendlyName(curveName));
         var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
 
-        var act = () => SigningKeySetBuilder.ValidateKeyAlgorithmCompatibility(new SourceKey(new SourceKeyId("test-key"), algorithm, publicKey));
+        var act = () => SigningKeySetBuilder.ValidateKeyAlgorithmCompatibility(
+            new SourceKey(new SourceKeyId("test-key"), publicKey), algorithm);
 
         act.Should().NotThrow();
     }
@@ -660,7 +650,8 @@ public sealed class SigningKeySetBuilderTests
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP384);
         var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
 
-        var act = () => SigningKeySetBuilder.ValidateKeyAlgorithmCompatibility(new SourceKey(new SourceKeyId("test-key"), SigningAlgorithm.ES256, publicKey));
+        var act = () => SigningKeySetBuilder.ValidateKeyAlgorithmCompatibility(
+            new SourceKey(new SourceKeyId("test-key"), publicKey), SigningAlgorithm.ES256);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures[0].Code.Should().Be("signing.ec_curve_algorithm_mismatch");
@@ -670,24 +661,26 @@ public sealed class SigningKeySetBuilderTests
 
     private static SigningKeyOptions Options() => new() { LeadTime = LeadTime, RetainRetiredKeysFor = Retention };
 
-    private static SigningKeySet Build(params SourceKey[] keys) => SigningKeySetBuilder.Build(keys, Now, Options(), NullLogger.Instance);
+    private static SigningKeySet Build(params SourceKey[] keys) => BuildAs(SigningAlgorithm.RS256, keys);
+
+    private static SigningKeySet BuildAs(SigningAlgorithm algorithm, params SourceKey[] keys)
+        => SigningKeySetBuilder.Build(keys, algorithm, Now, Options(), NullLogger.Instance);
 
     private static SigningKeySet Build(CapturingSanitizingLogger<SigningKeyRing> logger, params SourceKey[] keys)
-        => SigningKeySetBuilder.Build(keys, Now, Options(), logger);
+        => SigningKeySetBuilder.Build(keys, SigningAlgorithm.RS256, Now, Options(), logger);
 
     private static SourceKey CreateRsaSourceKey(
-        string id, int keySize = 2048, SigningAlgorithm algorithm = SigningAlgorithm.RS256,
-        DateTimeOffset? notBefore = null, DateTimeOffset? expiresAt = null)
+        string id, int keySize = 2048, DateTimeOffset? notBefore = null, DateTimeOffset? expiresAt = null)
     {
         using var rsa = RSA.Create(keySize);
         var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
-        return new SourceKey(new SourceKeyId(id), algorithm, publicKey, notBefore, expiresAt ?? Now.AddDays(90));
+        return new SourceKey(new SourceKeyId(id), publicKey, notBefore, expiresAt ?? Now.AddDays(90));
     }
 
-    private static SourceKey CreateEcSourceKey(string id, ECCurve curve, SigningAlgorithm algorithm, DateTimeOffset? notBefore = null)
+    private static SourceKey CreateEcSourceKey(string id, ECCurve curve, DateTimeOffset? notBefore = null)
     {
         using var ec = ECDsa.Create(curve);
         var publicKey = PublicKeyParameters.FromEc(ec.ExportParameters(false));
-        return new SourceKey(new SourceKeyId(id), algorithm, publicKey, notBefore, Now.AddDays(90));
+        return new SourceKey(new SourceKeyId(id), publicKey, notBefore, Now.AddDays(90));
     }
 }

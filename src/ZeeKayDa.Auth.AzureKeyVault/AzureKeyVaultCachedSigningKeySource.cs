@@ -48,6 +48,9 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
     private volatile IReadOnlySet<string>? _listedVersions;
 
     /// <inheritdoc/>
+    public SigningAlgorithm Algorithm => _options.Value.Algorithm;
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
         var options = _options.Value;
@@ -72,7 +75,7 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
 
         var keys = new List<SourceKey>(listed.Count);
         foreach (var version in listed)
-            keys.Add(await ToSourceKeyAsync(version, options, cancellationToken).ConfigureAwait(false));
+            keys.Add(await ToSourceKeyAsync(version, cancellationToken).ConfigureAwait(false));
 
         // Committed only after nothing can throw any more, so a failed read can never leave a
         // signer openable for a version that was never listed.
@@ -109,7 +112,7 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
     /// secret — so no private material exists in the process during a read.
     /// </summary>
     private async ValueTask<SourceKey> ToSourceKeyAsync(
-        KeyVaultCertificateVersionInfo version, AzureKeyVaultCachedSigningOptions options, CancellationToken cancellationToken)
+        KeyVaultCertificateVersionInfo version, CancellationToken cancellationToken)
     {
         var (rawPublicKey, keyType) = await certificateReader
             .GetPublicKeyMaterialAsync(version.Version, cancellationToken).ConfigureAwait(false);
@@ -118,7 +121,6 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
 
         return new SourceKey(
             new SourceKeyId(version.Version),
-            options.Algorithm,
             ToPublicKeyParameters(publicKey, keyType),
             notBefore: KeyVaultVersions.NotBefore(version),
             expiresAt: version.ExpiresOn);

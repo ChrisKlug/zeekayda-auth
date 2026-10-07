@@ -45,6 +45,9 @@ internal sealed class DevelopmentSigningKeySource(
     private IReadOnlyList<SourceKey>? _keySet;
 
     /// <inheritdoc/>
+    public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
         // Enforced on every read, ahead of the memoized set, so a gate that would reject this host
@@ -70,7 +73,6 @@ internal sealed class DevelopmentSigningKeySource(
                 // Undated and never expiring: the one dev key signs at once, for the process's lifetime.
                 var key = new SourceKey(
                     DevKeyId,
-                    SigningAlgorithm.RS256,
                     PublicKeyParameters.FromRsa(rsa.ExportParameters(false)));
 
                 // The set is built before the private key is published, so a failure here can never

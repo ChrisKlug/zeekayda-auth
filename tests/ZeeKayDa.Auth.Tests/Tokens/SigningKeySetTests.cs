@@ -10,7 +10,18 @@ public sealed class SigningKeySetTests
         var published = TestSigningKeys.KeySet(SigningAlgorithm.RS256).SigningKey;
         var unpublished = TestSigningKeys.KeySet(SigningAlgorithm.RS256).SigningKey;
 
-        var act = () => new SigningKeySet(unpublished, [published], [SigningAlgorithm.RS256]);
+        var act = () => new SigningKeySet(unpublished, [published]);
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Constructor_rejects_a_published_key_under_another_algorithm()
+    {
+        var signing = TestSigningKeys.KeySet(SigningAlgorithm.RS256).SigningKey;
+        var other = TestSigningKeys.KeySet(SigningAlgorithm.ES256).SigningKey;
+
+        var act = () => new SigningKeySet(signing, [signing, other]);
 
         act.Should().Throw<ArgumentException>();
     }

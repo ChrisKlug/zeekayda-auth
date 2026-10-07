@@ -67,6 +67,8 @@ internal sealed class NoClaimsProvider : IClaimsProvider
 /// </summary>
 internal sealed class TestSigningKeySource : ISigningKeySource, IDisposable
 {
+    public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
     private static readonly SourceKeyId KeyId = new("test-signing-key");
 
     // Generating a 2048-bit key takes long enough that doing it per source would dominate the cost
@@ -84,7 +86,6 @@ internal sealed class TestSigningKeySource : ISigningKeySource, IDisposable
     {
         var key = new SourceKey(
             KeyId,
-            SigningAlgorithm.RS256,
             PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)));
 
         return Task.FromResult<IReadOnlyList<SourceKey>>([key]);

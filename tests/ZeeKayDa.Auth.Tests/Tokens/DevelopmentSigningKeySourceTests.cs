@@ -141,13 +141,11 @@ public sealed class DevelopmentSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_reports_the_key_under_RS256()
+    public void Source_signs_under_RS256()
     {
         using var sut = BuildEphemeral();
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
-
-        set.Single().Algorithm.Should().Be(SigningAlgorithm.RS256);
+        sut.Algorithm.Should().Be(SigningAlgorithm.RS256);
     }
 
     [Fact]

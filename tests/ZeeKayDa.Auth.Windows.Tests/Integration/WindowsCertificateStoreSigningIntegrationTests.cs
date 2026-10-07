@@ -88,7 +88,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
         ring.Current.SigningKey.Kid.Should().NotContain(CurrentThumbprint,
             "kid must be the RFC 7638 thumbprint, never the certificate's own store thumbprint");
-        ring.Current.AdvertisedAlgorithms.Should().Equal(SigningAlgorithm.RS256);
+        ring.Current.Algorithm.Should().Be(SigningAlgorithm.RS256);
 
         var signingInput = "header.payload"u8.ToArray();
         var outcome = await ring.SignAsync(signingInput, static (_, input) => input, ct);

@@ -63,27 +63,26 @@ public sealed class JwksEndpointTests
     {
         private readonly RSA _previous = RSA.Create(2048);
         private readonly RSA _current = RSA.Create(2048);
-        private readonly ECDsa _next = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        private readonly RSA _next = RSA.Create(2048);
+
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             var previous = layout.IncludePrevious
                 ? new SourceKey(
                     new SourceKeyId("previous-key"),
-                    SigningAlgorithm.RS256,
                     PublicKeyParameters.FromRsa(_previous.ExportParameters(includePrivateParameters: false)),
                     DateTimeOffset.UtcNow.AddDays(-10))
                 : null;
             var current = new SourceKey(
                 new SourceKeyId("current-key"),
-                SigningAlgorithm.RS256,
                 PublicKeyParameters.FromRsa(_current.ExportParameters(includePrivateParameters: false)),
                 SigningNotBefore());
             var next = layout.IncludeNext
                 ? new SourceKey(
                     new SourceKeyId("next-key"),
-                    SigningAlgorithm.ES256,
-                    PublicKeyParameters.FromEc(_next.ExportParameters(includePrivateParameters: false)),
+                    PublicKeyParameters.FromRsa(_next.ExportParameters(includePrivateParameters: false)),
                     DateTimeOffset.UtcNow.AddHours(-1))
                 : null;
 
@@ -395,6 +394,8 @@ public sealed class JwksEndpointTests
         private readonly RSA? _rsa;
         private readonly ECDsa? _ecdsa;
 
+        public SigningAlgorithm Algorithm => _algorithm;
+
         public SingleAlgorithmSigningKeySource(SingleAlgorithm choice)
         {
             var algorithm = choice.Value;
@@ -416,7 +417,7 @@ public sealed class JwksEndpointTests
                 ? PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false))
                 : PublicKeyParameters.FromEc(_ecdsa!.ExportParameters(includePrivateParameters: false));
             var current = new SourceKey(
-                new SourceKeyId("current-key"), _algorithm, publicKey);
+                new SourceKeyId("current-key"), publicKey);
 
             return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
         }

@@ -47,7 +47,8 @@ public sealed class JwkSetWriterTests
     [Fact]
     public void Write_serialises_the_rfc7517_A1_ec_key_with_its_exact_coordinate_encodings()
     {
-        var keySet = BuildKeySet(current: EcSourceKey("ec", Rfc7517EcXBase64Url, Rfc7517EcYBase64Url));
+        var keySet = BuildKeySet(
+            current: EcSourceKey("ec", Rfc7517EcXBase64Url, Rfc7517EcYBase64Url), algorithm: SigningAlgorithm.ES256);
 
         var jwk = SingleKey(JwkSetWriter.Write(keySet.Published));
 
@@ -68,7 +69,6 @@ public sealed class JwkSetWriterTests
 
         var keySet = BuildKeySet(current: new SourceKey(
             new SourceKeyId("padded"),
-            SigningAlgorithm.RS256,
             PublicKeyParameters.FromRsa(new RSAParameters
             {
                 Modulus = paddedModulus,
@@ -88,19 +88,13 @@ public sealed class JwkSetWriterTests
     {
         using var rsa = RSA.Create(2048);
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var keySet = BuildKeySet(
-            previous: new SourceKey(
-                new SourceKeyId("rsa"),
-                SigningAlgorithm.RS256,
-                PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: true)),
-                TestSigningKeys.RetiringNotBefore),
-            current: new SourceKey(
-                new SourceKeyId("ec"),
-                SigningAlgorithm.ES256,
-                PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: true)),
-                TestSigningKeys.SigningNotBefore));
+        var rsaSet = BuildKeySet(new SourceKey(
+            new SourceKeyId("rsa"), PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: true))));
+        var ecSet = BuildKeySet(
+            new SourceKey(new SourceKeyId("ec"), PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: true))),
+            algorithm: SigningAlgorithm.ES256);
 
-        using var document = JsonDocument.Parse(JwkSetWriter.Write(keySet.Published));
+        using var document = JsonDocument.Parse(JwkSetWriter.Write([.. rsaSet.Published, .. ecSet.Published]));
 
         var allowedMembers = new[] { "kid", "kty", "use", "alg", "n", "e", "crv", "x", "y" };
         foreach (var jwk in document.RootElement.GetProperty("keys").EnumerateArray())
@@ -115,8 +109,7 @@ public sealed class JwkSetWriterTests
     [Fact]
     public void Write_preserves_the_given_key_order()
     {
-        var keySet = TestSigningKeys.KeySet(
-            SigningAlgorithm.RS256, SigningAlgorithm.RS384, SigningAlgorithm.ES256);
+        var keySet = TestSigningKeys.KeySet(SigningAlgorithm.RS256, keyCount: 3);
 
         using var document = JsonDocument.Parse(JwkSetWriter.Write(keySet.Published));
 
@@ -128,7 +121,7 @@ public sealed class JwkSetWriterTests
     [Fact]
     public void Write_produces_byte_identical_output_for_the_same_key_list()
     {
-        var keySet = TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256);
+        var keySet = TestSigningKeys.KeySet(SigningAlgorithm.RS256, keyCount: 2);
 
         var first = JwkSetWriter.Write(keySet.Published);
         var second = JwkSetWriter.Write(keySet.Published);
@@ -138,14 +131,12 @@ public sealed class JwkSetWriterTests
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
-    private static SigningKeySet BuildKeySet(SourceKey current, SourceKey? previous = null)
-        => SigningKeySetBuilder.Build(
-            previous is null ? [current] : [previous, current], DateTimeOffset.UtcNow, TestSigningKeys.Options, NullLogger.Instance);
+    private static SigningKeySet BuildKeySet(SourceKey current, SigningAlgorithm algorithm = SigningAlgorithm.RS256)
+        => SigningKeySetBuilder.Build([current], algorithm, DateTimeOffset.UtcNow, TestSigningKeys.Options, NullLogger.Instance);
 
     private static SourceKey RsaSourceKey(string id, string modulusBase64Url, string exponentBase64Url)
         => new(
             new SourceKeyId(id),
-            SigningAlgorithm.RS256,
             PublicKeyParameters.FromRsa(new RSAParameters
             {
                 Modulus = DecodeBase64Url(modulusBase64Url),
@@ -155,7 +146,6 @@ public sealed class JwkSetWriterTests
     private static SourceKey EcSourceKey(string id, string xBase64Url, string yBase64Url)
         => new(
             new SourceKeyId(id),
-            SigningAlgorithm.ES256,
             PublicKeyParameters.FromEc(new ECParameters
             {
                 Curve = ECCurve.NamedCurves.nistP256,

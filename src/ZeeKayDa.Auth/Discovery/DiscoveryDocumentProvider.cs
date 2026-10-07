@@ -83,8 +83,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
             ResponseModesSupported = interactive.ResponseModesSupported,
             GrantTypesSupported = [.. options.GrantTypesSupported],
             TokenEndpointAuthMethodsSupported = _authMethods.Methods,
-            IdTokenSigningAlgValuesSupported = [.. AdvertisedSigningAlgorithms.Resolve(
-                _keyRing.Current, options.IdToken.AdvertisedSigningAlgorithms)],
+            IdTokenSigningAlgValuesSupported = [_keyRing.Current.Algorithm],
             CodeChallengeMethodsSupported = interactive.CodeChallengeMethodsSupported,
         };
     }

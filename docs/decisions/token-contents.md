@@ -99,8 +99,8 @@ derives from these values — key retirement is an operator emptying a slot, not
 
 **A client whose allowed ID-token algorithms exclude the signing key's algorithm fails closed.** The
 ring signs with one key, so `AllowedSigningAlgorithms` is enforced three times: the registration
-validator requires the current signing key's algorithm in the set once the ring has read its
-source, and that the set is a subset of the advertised algorithms; the token endpoint checks the
+validator requires the server's one algorithm in the set once the ring has read its source (an
+undefined value fails; any other entry only warns, once per client); the token endpoint checks the
 ring's current key against the set before it issues anything, so no access token is ever persisted
 for a client whose ID token would then be refused; and the JWT issuer checks the key the ring
 resolved against the set inside the signing callback, before an ID token is built. That last
@@ -110,9 +110,9 @@ silent failure at theirs. A host that replaces the ID-token issuer takes over th
 check and `at_hash`, which the framework does not verify after the fact; the endpoint's check
 against the ring's current key applies to every issuer, since the policy describes a JWS `alg`
 and the ring is the framework's one signer. ID tokens only, which is what the setting describes — an access
-token's algorithm is the resource server's concern. Ordinary rotation never trips this, since a new
-key keeps its algorithm; only an algorithm migration does, and the operator widens or clears the
-affected sets first. Not a per-algorithm key chooser: several signers would make the self-test, the
+token's algorithm is the resource server's concern. No rotation trips this, since a source signs
+under one algorithm; changing algorithm is a new source and a restart, and the operator widens or
+clears the affected sets first. Not a per-algorithm key chooser: several signers would make the self-test, the
 startup verification and the header-inside-callback guarantee per-key concerns, to serve an event
 most deployments never have.
 

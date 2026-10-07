@@ -100,12 +100,13 @@ public sealed class IdTokenProtocolClaimsTests
 
     private sealed class SingleKeySource(RSA rsa) : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<SourceKey>>(
             [
                 new SourceKey(
                     new SourceKeyId("current"),
-                    SigningAlgorithm.RS256,
                     PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false))),
             ]);
 

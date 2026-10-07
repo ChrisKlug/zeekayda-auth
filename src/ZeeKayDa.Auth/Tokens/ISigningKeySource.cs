@@ -6,6 +6,11 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 /// <remarks>
 /// <para>
+/// A source signs under exactly one <see cref="Algorithm"/>, and so does the server: every key it
+/// lists is used with that algorithm, and a key whose material does not suit it fails startup.
+/// Changing algorithm means a new source and a restart.
+/// </para>
+/// <para>
 /// A source never decides which key signs or which keys are published. The framework decides both
 /// from each key's <see cref="SourceKey.NotBefore"/> and <see cref="SourceKey.ExpiresAt"/>: the
 /// newest key published for at least the lead time signs, and an older key stays published until no
@@ -27,6 +32,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </remarks>
 public interface ISigningKeySource
 {
+    /// <summary>Gets the algorithm every key this source lists signs under.</summary>
+    SigningAlgorithm Algorithm { get; }
+
     /// <summary>
     /// Lists the configured keys' public material.
     /// </summary>

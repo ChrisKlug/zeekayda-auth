@@ -20,6 +20,8 @@ public sealed class SigningKeyRingTests
         Func<CancellationToken, Task<IReadOnlyList<SourceKey>>> read,
         Func<SourceKeyId, CancellationToken, Task<ISigner>> createSigner) : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public int ReadAsyncCallCount { get; private set; }
 
         public int CreateSignerAsyncCallCount { get; private set; }
@@ -114,6 +116,8 @@ public sealed class SigningKeyRingTests
         Func<SourceKeyId, CancellationToken, Task<ISigner>> createSigner,
         Action onDispose) : ISigningKeySource, IDisposable
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -130,6 +134,8 @@ public sealed class SigningKeyRingTests
         Func<SourceKeyId, CancellationToken, Task<ISigner>> createSigner,
         Func<ValueTask> onDisposeAsync) : ISigningKeySource, IAsyncDisposable
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -146,6 +152,8 @@ public sealed class SigningKeyRingTests
         Action onDispose,
         Func<ValueTask> onDisposeAsync) : ISigningKeySource, IDisposable, IAsyncDisposable
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -243,7 +251,7 @@ public sealed class SigningKeyRingTests
         using var rsa = RSA.Create(2048);
         var disposeCount = 0;
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
 
         var source = new FakeSigningKeySource(
@@ -377,7 +385,7 @@ public sealed class SigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<IReadOnlyList<SourceKey>>([current]),
             (_, _) => throw new InvalidOperationException("simulated: key vault unreachable"));
@@ -395,7 +403,7 @@ public sealed class SigningKeyRingTests
         // The right private key under the wrong algorithm: RS384 bytes for a key published as RS256.
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<IReadOnlyList<SourceKey>>([current]),
@@ -432,7 +440,7 @@ public sealed class SigningKeyRingTests
         using var publicRsa = RSA.Create(2048); // published public key
         using var otherRsa = RSA.Create(2048); // signer's actual (mismatched) private key
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(publicRsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(publicRsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<IReadOnlyList<SourceKey>>([current]),
             (_, _) => Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, otherRsa)));
@@ -449,7 +457,7 @@ public sealed class SigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
         var signerRsa = RSA.Create();
         signerRsa.ImportFromPem(privateKeyPem);
@@ -483,7 +491,7 @@ public sealed class SigningKeyRingTests
         using var otherRsa = RSA.Create(2048); // mismatched private key: the self-test must fail
         var disposeCount = 0;
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(publicRsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(publicRsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<IReadOnlyList<SourceKey>>([current]),
             (_, _) => Task.FromResult<ISigner>(
@@ -515,7 +523,7 @@ public sealed class SigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<IReadOnlyList<SourceKey>>([current]),
             (_, _) => Task.FromResult<ISigner>((ISigner)null!));
@@ -533,7 +541,7 @@ public sealed class SigningKeyRingTests
         const string secret = "Authorization: Bearer eyJsecret-token-value";
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<IReadOnlyList<SourceKey>>([current]),
             (_, _) => throw new InvalidOperationException($"GET https://contoso-prod.vault.azure.net/keys/signing 401; {secret}"));
@@ -552,7 +560,7 @@ public sealed class SigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
         var source = new FakeSigningKeySource(
             _ => Task.FromResult<IReadOnlyList<SourceKey>>([current]),
             (_, _) => throw new ZeeKayDaConfigurationException(
@@ -654,7 +662,7 @@ public sealed class SigningKeyRingTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
         BufferReusingSigner? reusingSigner = null;
 
@@ -689,7 +697,7 @@ public sealed class SigningKeyRingTests
         RSA rsa, DateTimeOffset expiresAt, DateTimeOffset? notBefore = null, SourceKey? next = null)
     {
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), notBefore: notBefore, expiresAt: expiresAt);
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), notBefore: notBefore, expiresAt: expiresAt);
 
         // The signer must be opened over a private key matching the published public key, otherwise
         // the self-test itself would fail — CreateSignerAsync gets its own fresh RSA instance
@@ -729,7 +737,7 @@ public sealed class SigningKeyRingTests
         SourceKey Current) CreateSuccessfulReadAndSigner(ReadAndSignerRequest request)
     {
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256,
+            new SourceKeyId("current"),
             PublicKeyParameters.FromRsa(request.Rsa.ExportParameters(false)), expiresAt: request.ExpiresAt);
         var privateKeyPem = request.Rsa.ExportRSAPrivateKeyPem();
 

@@ -92,7 +92,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             "kid must be the RFC 7638 thumbprint of the public key");
         ring.Current.SigningKey.Kid.Should().NotContain("fake-vault").And.NotContain("fake-key").And.NotContain(version,
             "kid must never leak vault, key, or version identifiers");
-        ring.Current.AdvertisedAlgorithms.Should().Equal(SigningAlgorithm.RS256);
+        ring.Current.Algorithm.Should().Be(SigningAlgorithm.RS256);
 
         var signingInput = "header.payload"u8.ToArray();
         var outcome = await ring.SignAsync(signingInput, static (_, input) => input, ct);

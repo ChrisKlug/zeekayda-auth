@@ -2,23 +2,24 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// The immutable state every consumer of the static signing key ring reads: every published key,
-/// which one signs, and which algorithms to advertise.
+/// which one signs, and the one algorithm they all sign under.
 /// </summary>
 /// <remarks>
-/// Only the framework constructs one, and <see cref="SigningKey"/> is always among
-/// <see cref="Published"/>.
+/// Only the framework constructs one, <see cref="SigningKey"/> is always among
+/// <see cref="Published"/>, and every published key has <see cref="Algorithm"/>.
 /// </remarks>
 public sealed class SigningKeySet
 {
-    internal SigningKeySet(
-        SigningKey signingKey, IReadOnlyList<SigningKey> published, IReadOnlyList<SigningAlgorithm> advertisedAlgorithms)
+    internal SigningKeySet(SigningKey signingKey, IReadOnlyList<SigningKey> published)
     {
         if (!published.Any(key => string.Equals(key.Kid, signingKey.Kid, StringComparison.Ordinal)))
             throw new ArgumentException("The signing key must be among the published keys.", nameof(published));
 
+        if (published.Any(key => key.Algorithm != signingKey.Algorithm))
+            throw new ArgumentException("Every published key must share the signing key's algorithm.", nameof(published));
+
         SigningKey = signingKey;
         Published = published;
-        AdvertisedAlgorithms = advertisedAlgorithms;
     }
 
     /// <summary>Gets the key that signs.</summary>
@@ -28,14 +29,9 @@ public sealed class SigningKeySet
     public IReadOnlyList<SigningKey> Published { get; }
 
     /// <summary>
-    /// Gets the distinct algorithms of <see cref="Published"/>, in ascending order by
-    /// <see cref="SigningAlgorithm"/> value — stable across restarts and across replicas with
-    /// differently ordered configuration.
+    /// Gets the algorithm every published key signs under — the source's
+    /// <see cref="ISigningKeySource.Algorithm"/>, and the one value of
+    /// <c>id_token_signing_alg_values_supported</c>.
     /// </summary>
-    /// <remarks>
-    /// Derived from the published set, not from <see cref="SigningKey"/> alone, so an algorithm
-    /// does not drop out of discovery while tokens signed under it are still live (a retired key's
-    /// algorithm remains advertised for as long as that key is published).
-    /// </remarks>
-    public IReadOnlyList<SigningAlgorithm> AdvertisedAlgorithms { get; }
+    public SigningAlgorithm Algorithm => SigningKey.Algorithm;
 }
