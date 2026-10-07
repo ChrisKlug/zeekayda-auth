@@ -2191,6 +2191,8 @@ Copilot code, security (xhigh) and architecture lenses, the security and archite
 - `MaxVersions` fetches only the newest N, cuts identically on every replica, and is never below 3. Closed —
   `ReadAsync_with_MaxVersions_fetches_public_material_only_for_the_listed_versions`, `Validate_rejects_a_MaxVersions_below_three`,
   `ReadAsync_with_MaxVersions_breaks_a_tie_on_NotBefore_by_the_ordinally_greater_version_whatever_the_listing_order`.
-- **Accepted residuals (maintainer):** a CA-issued certificate listed more than the lead time after issuance signs unpublished at the
-  next restart, until live rotation (#527); a `MaxVersions` set too low drops a version whose tokens are live (`Validate_accepts_a_MaxVersions_of_exactly_three`);
-  a private-key accessor that throws is wrapped in `private_key_not_found`, with no in-process test possible. No test for the first and last.
+- **Accepted residual (maintainer):** a `MaxVersions` set too low drops older versions, whose tokens then fail verification —
+  `ReadAsync_with_MaxVersions_lists_only_the_N_newest_enabled_versions`.
+- **Unverified scope limits (maintainer), no test possible:** a CA-issued certificate listed more than the lead time after issuance
+  signs unpublished at the next restart, until live rotation (#527) — no local state records when a file was deployed; the wrapping
+  of a private-key accessor that throws in `private_key_not_found` — no in-process certificate can be made to throw there.
