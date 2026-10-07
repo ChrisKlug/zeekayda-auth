@@ -151,7 +151,7 @@ public sealed class LocalSignerTests
     [Fact]
     public async Task FromCertificate_signer_keeps_signing_after_the_certificate_is_disposed()
     {
-        var certificate = SelfSigned(RSA.Create(2048));
+        using var certificate = SelfSigned(RSA.Create(2048));
         using var publicKey = certificate.GetRSAPublicKey()!;
         using var sut = LocalSigner.FromCertificate(certificate, SigningAlgorithm.RS256);
         certificate.Dispose();

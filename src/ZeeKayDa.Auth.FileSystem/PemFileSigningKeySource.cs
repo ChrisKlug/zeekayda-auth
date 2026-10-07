@@ -30,8 +30,8 @@ internal sealed class PemFileSigningKeySource(
 
     // The key blocks X509Certificate2.CreateFromPem can import. An ENCRYPTED PRIVATE KEY block is not
     // one of them, so a combined file carrying only that cannot sign.
-    private static readonly string[] UnencryptedPrivateKeyLabels =
-        ["-----BEGIN PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN EC PRIVATE KEY-----"];
+    private static readonly HashSet<string> UnencryptedPrivateKeyLabels =
+        new(["PRIVATE KEY", "RSA PRIVATE KEY", "EC PRIVATE KEY"], StringComparer.Ordinal);
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
@@ -102,7 +102,7 @@ internal sealed class PemFileSigningKeySource(
         {
             if (file.KeyPath is not null)
                 reader.Validate(file.KeyPath);
-            else if (!UnencryptedPrivateKeyLabels.Any(label => certPem.Contains(label, StringComparison.Ordinal)))
+            else if (!HasUnencryptedPrivateKeyBlock(certPem))
                 throw NoPrivateKey(certificatePath);
         }
         catch
@@ -157,6 +157,24 @@ internal sealed class PemFileSigningKeySource(
                     "for the root cause."),
                 ex);
         }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="pem"/> holds a complete, well-formed private key block of a kind
+    /// <see cref="X509Certificate2.CreateFromPem(ReadOnlySpan{char}, ReadOnlySpan{char})"/> can import.
+    /// The block is located and its base64 checked, but the key itself is never parsed.
+    /// </summary>
+    private static bool HasUnencryptedPrivateKeyBlock(ReadOnlySpan<char> pem)
+    {
+        while (PemEncoding.TryFind(pem, out var fields))
+        {
+            if (UnencryptedPrivateKeyLabels.Contains(pem[fields.Label].ToString()))
+                return true;
+
+            pem = pem[fields.Location.End..];
+        }
+
+        return false;
     }
 
     private static ZeeKayDaConfigurationException NoPrivateKey(string path) =>

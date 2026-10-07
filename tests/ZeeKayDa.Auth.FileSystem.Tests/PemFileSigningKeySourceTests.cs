@@ -508,6 +508,24 @@ public sealed class PemFileSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_rejects_a_combined_file_whose_key_block_is_truncated()
+    {
+        // The header alone is not a key: only a complete block counts, so a file that could never
+        // sign fails now rather than at the restart that chooses it.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WriteTextFile(
+            "truncated.pem", certificate.ExportCertificatePem() + "\n-----BEGIN PRIVATE KEY-----\nMIIE\n");
+        var sut = BuildSource(new PemSigningFile(path));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.certificate.private_key_not_found");
+    }
+
+    [Fact]
     public async Task ReadAsync_rejects_a_listed_file_whose_separate_key_file_does_not_exist()
     {
         var ct = TestContext.Current.CancellationToken;
