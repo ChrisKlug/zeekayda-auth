@@ -2173,3 +2173,22 @@ code lens on `6db3887`, and the PR's Copilot and CodeScene review; no Critical; 
   file and Windows sources sign only with Current until PR 2 (CreateSignerAsync_throws_when_called_for_the_Next_slot [removed by #823 PR 2, which lets every listed file sign: `CreateSignerAsync_opens_a_signer_for_any_listed_file`]); per-client lifetimes are invisible at startup,
   so the operator raises the retention, with no test for the default ignoring them (`PostConfigure_keeps_an_explicit_RetainRetiredKeysFor` proves the lever); a hint whose key is retired is refused, #899
   (`Validate_refuses_a_hint_signed_by_a_key_the_server_does_not_publish`).
+
+## 2026-10-07 — file and store signing sources take a list; Key Vault `MaxVersions`; certificate helpers (#823 PR 2, code frozen at `449015e`)
+Copilot code, security (xhigh) and architecture lenses, the security and architect agents, fix-diff verification by the code lens
+(`2950d42`), the security lens and the security agent (`6cedee8`), and the PR's Copilot, CodeQL and CodeScene review; no Critical.
+`35ad65f`, `031e59e` and `449015e` were read by the main session only.
+- Every listed entry is checked at startup for a usable key without importing one: a staged PEM key file's permissions, a complete
+  unencrypted key block, a PFX key bag, a Windows key. Closed — `ReadAsync_rejects_a_separate_key_file_broader_than_0600_on_Unix_even_for_a_file_that_does_not_sign`,
+  `ReadAsync_rejects_a_combined_file_whose_key_block_is_truncated`, `ReadAsync_rejects_a_bundle_that_carries_no_private_key`,
+  `ReadAsync_rejects_a_listed_certificate_with_no_private_key_without_extracting_one`.
+- Listing imports no private key. Closed — `ReadAsync_lists_a_bundle_whose_key_bag_cannot_be_decrypted_because_it_never_imports_the_key`,
+  `ReadAsync_never_parses_a_separate_key_file_for_any_listed_file`.
+- The certificate helpers reject an undefined algorithm and a key that does not suit it. Closed — `FromCertificate_rejects_an_EC_certificate_for_an_RSA_algorithm`.
+- Removing the cached Key Vault pairing check leaves a divergence failing startup. Closed — `Startup_fails_closed_when_the_secret_and_the_Cer_diverge_because_the_self_test_catches_it`.
+- `MaxVersions` fetches only the newest N, cuts identically on every replica, and is never below 3. Closed —
+  `ReadAsync_with_MaxVersions_fetches_public_material_only_for_the_listed_versions`, `Validate_rejects_a_MaxVersions_below_three`,
+  `ReadAsync_with_MaxVersions_breaks_a_tie_on_NotBefore_by_the_ordinally_greater_version_whatever_the_listing_order`.
+- **Accepted residuals (maintainer):** a CA-issued certificate listed more than the lead time after issuance signs unpublished at the
+  next restart, until live rotation (#527); a `MaxVersions` set too low drops a version whose tokens are live (`Validate_accepts_a_MaxVersions_of_exactly_three`);
+  a private-key accessor that throws is wrapped in `private_key_not_found`, with no in-process test possible. No test for the first and last.
