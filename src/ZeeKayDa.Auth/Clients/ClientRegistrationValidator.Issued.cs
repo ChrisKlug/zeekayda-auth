@@ -88,17 +88,15 @@ internal sealed partial class ClientRegistrationValidator
     private void WarnUnusedAlgorithms(
         IClientWithCredentials client, IReadOnlySet<SigningAlgorithm> algorithms, SigningAlgorithm signingAlgorithm)
     {
-        foreach (var algorithm in algorithms.Where(algorithm => algorithm != signingAlgorithm))
+        foreach (var algorithm in algorithms.Where(algorithm =>
+            algorithm != signingAlgorithm && FirstTime(client.ClientId, "algorithm-never-signed", algorithm.ToString())))
         {
-            if (FirstTime(client.ClientId, "algorithm-never-signed", algorithm.ToString()))
-            {
-                logger.LogWarning(
-                    "Client '{ClientId}' has AllowedSigningAlgorithms entry '{Algorithm}', which the server never " +
-                    "signs with: it signs only with {SigningAlgorithm}. The entry has no effect.",
-                    client.ClientId,
-                    algorithm,
-                    signingAlgorithm);
-            }
+            logger.LogWarning(
+                "Client '{ClientId}' has AllowedSigningAlgorithms entry '{Algorithm}', which the server never " +
+                "signs with: it signs only with {SigningAlgorithm}. The entry has no effect.",
+                client.ClientId,
+                algorithm,
+                signingAlgorithm);
         }
     }
 
