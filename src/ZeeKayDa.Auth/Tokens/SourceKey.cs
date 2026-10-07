@@ -1,3 +1,5 @@
+using System.Security.Cryptography.X509Certificates;
+
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
@@ -37,6 +39,62 @@ public sealed record SourceKey
         PublicKey = publicKey;
         NotBefore = notBefore ?? DateTimeOffset.MinValue;
         ExpiresAt = expiresAt ?? DateTimeOffset.MaxValue;
+    }
+
+    /// <summary>
+    /// Creates the <see cref="SourceKey"/> for a certificate's public key, dated by the certificate's
+    /// own validity window.
+    /// </summary>
+    /// <param name="certificate">The certificate. Only its public material is read.</param>
+    /// <param name="id">The source's own stable identifier for this key, named in every
+    /// configuration failure about it.</param>
+    /// <param name="algorithm">The signing algorithm this key is used with.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="algorithm"/> is not a defined <see cref="SigningAlgorithm"/> member.
+    /// </exception>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// Thrown with failure code <c>signing.certificate.unsupported_key_type</c> when the certificate
+    /// carries neither an RSA nor an EC public key, or <c>signing.key_algorithm_mismatch</c> /
+    /// <c>signing.ec_curve_algorithm_mismatch</c> when its key does not suit <paramref name="algorithm"/>.
+    /// </exception>
+    public static SourceKey FromCertificate(X509Certificate2 certificate, SourceKeyId id, SigningAlgorithm algorithm)
+    {
+        ArgumentNullException.ThrowIfNull(certificate);
+        if (!Enum.IsDefined(algorithm))
+            throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, $"Not a defined {nameof(SigningAlgorithm)} member.");
+
+        // X509Certificate2 reports both ends of the validity window as local-kind DateTime, so
+        // DateTimeOffset applies the local offset rather than reinterpreting them as UTC.
+        var key = new SourceKey(
+            id,
+            algorithm,
+            PublicKeyOf(certificate, id),
+            notBefore: new DateTimeOffset(certificate.NotBefore),
+            expiresAt: new DateTimeOffset(certificate.NotAfter));
+
+        SigningKeySetBuilder.ValidateKeyAlgorithmCompatibility(key);
+        return key;
+    }
+
+    private static PublicKeyParameters PublicKeyOf(X509Certificate2 certificate, SourceKeyId id)
+    {
+        using (var rsa = certificate.GetRSAPublicKey())
+        {
+            if (rsa is not null)
+                return PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
+        }
+
+        using (var ec = certificate.GetECDsaPublicKey())
+        {
+            if (ec is not null)
+                return PublicKeyParameters.FromEc(ec.ExportParameters(false));
+        }
+
+        throw new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure(
+                "signing.certificate.unsupported_key_type",
+                $"The certificate for key '{id.Value}' does not carry an RSA or EC public key. Only RSA and EC " +
+                "certificates are supported for JWT signing."));
     }
 
     /// <summary>Gets the source's own stable identifier for this key.</summary>

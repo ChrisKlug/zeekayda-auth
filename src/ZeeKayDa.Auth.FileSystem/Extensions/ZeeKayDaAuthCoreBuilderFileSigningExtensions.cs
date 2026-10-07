@@ -18,7 +18,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
 {
     /// <summary>
-    /// Registers a single PEM certificate as the JWT signing key, with no rotation staged. The
+    /// Registers a single PEM certificate as the JWT signing key. The
     /// file(s) identified by <paramref name="path"/> and <paramref name="keyPath"/> are read once at
     /// startup and the private key is used for signing locally, in process.
     /// </summary>
@@ -37,11 +37,9 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// broader-than-expected permission is a hard startup failure, not a warning.
     /// </para>
     /// <para>
-    /// To stage a rotation, use the
+    /// To rotate, use the
     /// <see cref="AddPemFileSigning{TBuilder}(TBuilder,SigningAlgorithm,Action{PemFileSigningOptions})"/>
-    /// overload and fill the <c>Previous</c>/<c>Current</c>/<c>Next</c> slots. This overload takes no
-    /// configuration callback precisely so that the file it names is unambiguously the one that
-    /// signs.
+    /// overload and list both files.
     /// </para>
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
@@ -81,38 +79,33 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
         if (keyPath is not null)
             ArgumentException.ThrowIfNullOrWhiteSpace(keyPath);
 
-        return AddPemFileSigning(builder, algorithm, options => options.Current = new PemSigningFile(path, keyPath));
+        return AddPemFileSigning(builder, algorithm, options => options.Files.Add(new PemSigningFile(path, keyPath)));
     }
 
     /// <summary>
-    /// Registers PEM certificates as the JWT signing keys, configured into the
-    /// <see cref="PemFileSigningOptions.Previous"/>, <see cref="PemFileSigningOptions.Current"/> and
-    /// <see cref="PemFileSigningOptions.Next"/> slots. Every configured slot is read once at startup
-    /// and published; only <c>Current</c>'s private key is ever read, and it signs locally, in
-    /// process.
+    /// Registers the PEM certificates listed in <see cref="PemFileSigningOptions.Files"/> as the JWT
+    /// signing keys. They are read at startup; the framework decides from their validity windows
+    /// which one signs, locally, in process, and which are published.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <see cref="PemFileSigningOptions.Current"/> is required; <c>Previous</c> and <c>Next</c> are
-    /// independently optional. Startup fails when no <c>Current</c> is configured, when two slots
-    /// name the same file, or when <c>Current</c>'s certificate is expired or not valid yet.
+    /// At least one file is required, and every one must carry its private key. Startup fails when
+    /// no file is listed, when two entries name the same file, or when no listed certificate is valid.
     /// </para>
     /// <para>
     /// Filesystem permissions are enforced fail-closed on every loaded file, exactly as for
     /// <see cref="AddPemFileSigning{TBuilder}(TBuilder,string,SigningAlgorithm,string)"/>.
     /// </para>
     /// <para>
-    /// Rotation: stage the successor as <c>Next</c> so its public half is published ahead of time,
-    /// then promote it to <c>Current</c> and demote the key it succeeds to <c>Previous</c>. The slots
-    /// are read once at startup, so each move takes effect on restart. How long a successor must sit
-    /// in <c>Next</c> before promotion is the operator's decision — see
-    /// <see cref="PemFileSigningOptions.Next"/>.
+    /// Rotation: add the successor's file and restart. It is published at once and signs once it has
+    /// been published for the lead time; the file it replaces can be removed once it is no longer
+    /// published. See <see cref="PemFileSigningOptions.Files"/> for how a certificate's dates count.
     /// </para>
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
-    /// <param name="algorithm">The JWS algorithm every configured slot is signed under.</param>
-    /// <param name="configure">A callback that fills the signing key slots.</param>
+    /// <param name="algorithm">The JWS algorithm every listed file is signed under.</param>
+    /// <param name="configure">A callback that lists the signing key files.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> or <paramref name="configure"/> is
@@ -149,7 +142,7 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     }
 
     /// <summary>
-    /// Registers a single PFX/PKCS#12 bundle as the JWT signing key, with no rotation staged. The
+    /// Registers a single PFX/PKCS#12 bundle as the JWT signing key. The
     /// file identified by <paramref name="path"/> is read once at startup and its private key is used
     /// for signing locally, in process.
     /// </summary>
@@ -162,11 +155,9 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// plain <see langword="string"/>.
     /// </para>
     /// <para>
-    /// To stage a rotation, use the
+    /// To rotate, use the
     /// <see cref="AddPfxFileSigning{TBuilder}(TBuilder,SigningAlgorithm,Action{PfxFileSigningOptions})"/>
-    /// overload and fill the <c>Previous</c>/<c>Current</c>/<c>Next</c> slots. This overload takes no
-    /// configuration callback precisely so that the bundle it names is unambiguously the one that
-    /// signs.
+    /// overload and list both bundles.
     /// </para>
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
@@ -197,40 +188,36 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(passwordSource);
 
-        return AddPfxFileSigning(builder, algorithm, options => options.Current = new PfxFile(path, passwordSource));
+        return AddPfxFileSigning(builder, algorithm, options => options.Files.Add(new PfxFile(path, passwordSource)));
     }
 
     /// <summary>
-    /// Registers PFX/PKCS#12 bundles as the JWT signing keys, configured into the
-    /// <see cref="PfxFileSigningOptions.Previous"/>, <see cref="PfxFileSigningOptions.Current"/> and
-    /// <see cref="PfxFileSigningOptions.Next"/> slots. Every configured slot is read once at startup
-    /// and published; only <c>Current</c>'s private key is ever decrypted, and it signs locally, in
-    /// process.
+    /// Registers the PFX/PKCS#12 bundles listed in <see cref="PfxFileSigningOptions.Files"/> as the
+    /// JWT signing keys. They are read at startup; the framework decides from their validity windows
+    /// which one signs, locally, in process, and which are published.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <see cref="PfxFileSigningOptions.Current"/> is required; <c>Previous</c> and <c>Next</c> are
-    /// independently optional. Every slot needs its own password source — a published-only bundle's
-    /// certificate sits inside a password-protected safe — and real-world bundles are frequently
-    /// password-per-file. Startup fails when no <c>Current</c> is configured, when two slots name the
-    /// same file, or when <c>Current</c>'s certificate is expired or not valid yet.
+    /// At least one bundle is required, every one must carry its private key, and every one needs its
+    /// own password source, since real-world bundles are frequently password-per-file. Startup fails
+    /// when no bundle is listed, when two entries name the same file, when a bundle carries no private
+    /// key, or when no listed certificate is valid.
     /// </para>
     /// <para>
-    /// A published-only slot's private key is never decrypted: its certificate is read out of the
-    /// bundle without touching the key bag. See <see cref="PfxFileSigningOptions"/>.
+    /// Listing reads each certificate out of its bundle without decrypting the key bag; only the
+    /// bundle chosen to sign has its private key imported.
     /// </para>
     /// <para>
-    /// Rotation: stage the successor as <c>Next</c> so its public half is published ahead of time,
-    /// then promote it to <c>Current</c> and demote the key it succeeds to <c>Previous</c>. The slots
-    /// are read once at startup, so each move takes effect on restart. How long a successor must sit
-    /// in <c>Next</c> before promotion is the operator's decision — see
-    /// <see cref="PfxFileSigningOptions.Next"/>.
+    /// Rotation: add the successor's bundle and restart. It is published at once and signs once it
+    /// has been published for the lead time; the bundle it replaces can be removed once it is no
+    /// longer published. See <see cref="PfxFileSigningOptions.Files"/> for how a certificate's dates
+    /// count.
     /// </para>
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
-    /// <param name="algorithm">The JWS algorithm every configured slot is signed under.</param>
-    /// <param name="configure">A callback that fills the signing key slots.</param>
+    /// <param name="algorithm">The JWS algorithm every listed bundle is signed under.</param>
+    /// <param name="configure">A callback that lists the signing key bundles.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> or <paramref name="configure"/> is

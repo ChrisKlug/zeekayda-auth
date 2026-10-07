@@ -67,7 +67,7 @@ public sealed class FileSigningIntegrationTests
         await StartHostedServicesAsync(provider, ct);
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
-        ring.Current.Published.Should().ContainSingle("the single configured slot's public key must be published");
+        ring.Current.Published.Should().ContainSingle("the single listed file's public key must be published");
         ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
         ring.Current.AdvertisedAlgorithms.Should().Equal(SigningAlgorithm.RS256);
 
@@ -76,45 +76,70 @@ public sealed class FileSigningIntegrationTests
 
         using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
-            .Should().BeTrue("the ring must sign with the private key of the published Current slot");
+            .Should().BeTrue("the ring must sign with the private key of the published file");
     }
 
     [Fact]
-    public async Task Full_DI_wiring_publishes_every_configured_PEM_slot_and_signs_with_Current()
+    public async Task Full_DI_wiring_publishes_every_listed_PEM_file_and_signs_with_the_newer_one_past_the_lead_time()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        using var previous = TestCertificateFactory.CreateRsaSelfSigned("previous", T0 - TimeSpan.FromDays(400), T0 + TimeSpan.FromDays(30));
-        // Just past the one-day lead time, and inside it plus the ten-minute retention, so Current
-        // signs and Previous stays published.
-        using var current = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(1) - TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(365));
-        using var next = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
-        var previousPath = tempDir.WritePemFile("previous.pem", previous);
-        var currentPath = tempDir.WritePemFile("current.pem", current);
-        var nextPath = tempDir.WritePemFile("next.pem", next);
+        using var older = TestCertificateFactory.CreateRsaSelfSigned("older", T0 - TimeSpan.FromDays(400), T0 + TimeSpan.FromDays(30));
+        // Just past the one-day lead time, so the newer certificate signs and the older one stays
+        // published, still inside its own validity window.
+        using var newer = TestCertificateFactory.CreateRsaSelfSigned("newer", T0 - TimeSpan.FromDays(1) - TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(365));
+        var olderPath = tempDir.WritePemFile("older.pem", older);
+        var newerPath = tempDir.WritePemFile("newer.pem", newer);
         var (services, _) = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
         {
-            options.Previous = new PemCertificateFile(previousPath);
-            options.Current = new PemSigningFile(currentPath);
-            options.Next = new PemCertificateFile(nextPath);
+            options.Files.Add(new PemSigningFile(olderPath));
+            options.Files.Add(new PemSigningFile(newerPath));
         });
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
-        ring.Current.Published.Should().HaveCount(3, "every configured slot is published so relying parties can cache it");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(current.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.Published.Should().HaveCount(2, "every listed file is published so relying parties can cache it");
+        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(newer.GetRSAPublicKey()!.ExportParameters(false)));
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_signs_with_the_older_PEM_file_while_the_newer_one_is_inside_the_lead_time()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var older = TestCertificateFactory.CreateRsaSelfSigned("older", T0 - TimeSpan.FromDays(400), T0 + TimeSpan.FromDays(30));
+        using var newer = TestCertificateFactory.CreateRsaSelfSigned("newer", T0 - TimeSpan.FromHours(1), T0 + TimeSpan.FromDays(365));
+        var olderPath = tempDir.WritePemFile("older.pem", older);
+        var newerPath = tempDir.WritePemFile("newer.pem", newer);
+        var (services, _) = BuildServices(T0);
+
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
+        builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
+        {
+            options.Files.Add(new PemSigningFile(newerPath));
+            options.Files.Add(new PemSigningFile(olderPath));
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        await StartHostedServicesAsync(provider, ct);
+        var ring = provider.GetRequiredService<SigningKeyRing>();
+
+        ring.Current.SigningKey.Kid.Should().Be(
+            JwkThumbprint.Compute(older.GetRSAPublicKey()!.ExportParameters(false)),
+            "a certificate newer than the lead time has not had time to reach relying parties' JWKS caches yet");
+        ring.Current.Published.Should().HaveCount(2);
     }
 
     [Fact]
     public async Task Full_DI_wiring_keeps_publishing_a_PEM_file_that_is_deleted_after_startup()
     {
-        // The source reads its slots once, at startup, and never re-reads them, so nothing that
-        // happens to the files afterwards can change what this process signs with or publishes.
+        // The ring reads the source once, at startup, so nothing that happens to the files afterwards
+        // changes what this process signs with or publishes until it next reads them.
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var current = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
@@ -126,8 +151,8 @@ public sealed class FileSigningIntegrationTests
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
         {
-            options.Current = new PemSigningFile(currentPath);
-            options.Next = new PemCertificateFile(nextPath);
+            options.Files.Add(new PemSigningFile(currentPath));
+            options.Files.Add(new PemSigningFile(nextPath));
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -145,10 +170,10 @@ public sealed class FileSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Full_DI_wiring_fails_startup_when_the_Current_PEM_certificate_is_not_valid_yet()
+    public async Task Full_DI_wiring_fails_startup_when_the_only_PEM_certificate_is_not_valid_yet()
     {
         // The single-key bootstrap exemption is gone: a lone configured file is the active signer
-        // through ordinary slot selection, with no special case that would let a not-yet-valid
+        // through ordinary date-based selection, with no special case that would let a not-yet-valid
         // certificate sign.
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -167,7 +192,7 @@ public sealed class FileSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Full_DI_wiring_fails_startup_when_the_Current_PEM_certificate_has_expired()
+    public async Task Full_DI_wiring_fails_startup_when_the_only_PEM_certificate_has_expired()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -186,21 +211,19 @@ public sealed class FileSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Full_DI_wiring_fails_startup_when_no_Current_PEM_slot_is_configured()
+    public async Task Full_DI_wiring_fails_startup_when_no_PEM_file_is_listed()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var tempDir = new TempSigningKeyDirectory();
-        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
-        var nextPath = tempDir.WritePemFile("next.pem", certificate);
         var (services, _) = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
-        builder.AddPemFileSigning(SigningAlgorithm.RS256, options => options.Next = new PemCertificateFile(nextPath));
+        builder.AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
 
         await using var provider = services.BuildServiceProvider();
         var act = async () => await StartHostedServicesAsync(provider, ct);
 
-        await act.Should().ThrowAsync<Exception>("the options validator rejects a configuration with no Current slot");
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "configuration.pem_file_signing.files.empty");
     }
 
     // ── PFX: end-to-end resolve (AC #4/#8) ──────────────────────────────────────────────────────
@@ -228,38 +251,35 @@ public sealed class FileSigningIntegrationTests
 
         using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
-            .Should().BeTrue("the ring must sign with the private key of the published Current slot");
+            .Should().BeTrue("the ring must sign with the private key of the published file");
     }
 
     [Fact]
-    public async Task Full_DI_wiring_publishes_every_configured_PFX_slot_and_signs_with_Current()
+    public async Task Full_DI_wiring_publishes_every_listed_PFX_file_and_signs_with_the_newer_one_past_the_lead_time()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        using var previous = TestCertificateFactory.CreateRsaSelfSigned("previous", T0 - TimeSpan.FromDays(400), T0 + TimeSpan.FromDays(30));
-        // Just past the one-day lead time, and inside it plus the ten-minute retention, so Current
-        // signs and Previous stays published.
-        using var current = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(1) - TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(365));
-        using var next = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
-        var previousPath = tempDir.WritePfxFile("previous.pfx", previous, "previous-password");
-        var currentPath = tempDir.WritePfxFile("current.pfx", current, CorrectPassword);
-        var nextPath = tempDir.WritePfxFile("next.pfx", next, "next-password");
+        using var older = TestCertificateFactory.CreateRsaSelfSigned("older", T0 - TimeSpan.FromDays(400), T0 + TimeSpan.FromDays(30));
+        // Just past the one-day lead time, so the newer certificate signs and the older one stays
+        // published, still inside its own validity window.
+        using var newer = TestCertificateFactory.CreateRsaSelfSigned("newer", T0 - TimeSpan.FromDays(1) - TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(365));
+        var olderPath = tempDir.WritePfxFile("older.pfx", older, "older-password");
+        var newerPath = tempDir.WritePfxFile("newer.pfx", newer, CorrectPassword);
         var (services, _) = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPfxFileSigning(SigningAlgorithm.RS256, options =>
         {
-            options.Previous = new PfxFile(previousPath, _ => Task.FromResult("previous-password"));
-            options.Current = new PfxFile(currentPath, _ => Task.FromResult(CorrectPassword));
-            options.Next = new PfxFile(nextPath, _ => Task.FromResult("next-password"));
+            options.Files.Add(new PfxFile(olderPath, _ => Task.FromResult("older-password")));
+            options.Files.Add(new PfxFile(newerPath, _ => Task.FromResult(CorrectPassword)));
         });
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
-        ring.Current.Published.Should().HaveCount(3, "every configured slot is published, each opened with its own password");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(current.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.Published.Should().HaveCount(2, "every listed file is published, each opened with its own password");
+        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(newer.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
     [Fact]
@@ -276,8 +296,8 @@ public sealed class FileSigningIntegrationTests
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPfxFileSigning(SigningAlgorithm.RS256, options =>
         {
-            options.Current = new PfxFile(currentPath, _ => Task.FromResult(CorrectPassword));
-            options.Next = new PfxFile(nextPath, _ => Task.FromResult(CorrectPassword));
+            options.Files.Add(new PfxFile(currentPath, _ => Task.FromResult(CorrectPassword)));
+            options.Files.Add(new PfxFile(nextPath, _ => Task.FromResult(CorrectPassword)));
         });
 
         await using var provider = services.BuildServiceProvider();

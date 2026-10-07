@@ -8,33 +8,24 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// An <see cref="ISigningKeySource"/> that reads the PFX/PKCS#12 bundles configured into
-/// <see cref="PfxFileSigningOptions"/>'s three slots and signs locally, in process, with
-/// <see cref="PfxFileSigningOptions.Current"/>'s private key.
+/// An <see cref="ISigningKeySource"/> that lists the PFX/PKCS#12 bundles in
+/// <see cref="PfxFileSigningOptions.Files"/> and signs locally, in process, with whichever of them
+/// the framework chooses.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Read once, never re-read: the slots are fixed at configuration time and the ring reads this
-/// source exactly once at startup. Picking up a replaced or rotated-in bundle requires a restart.
-/// </para>
-/// <para>
-/// <b>A published-only slot's private key is never imported into a key object.</b> PKCS#12 is a
-/// bundled format, so keeping non-active private material out of reach cannot be enforced by the
-/// framework and is this provider's own obligation. <see cref="ReadAsync"/> discharges it by walking
-/// the bundle with <see cref="Pkcs12Info"/>: the password authenticates the file and decrypts the
-/// authenticated safe, the certificate bag is read, and no key bag is ever decrypted or imported.
+/// <b>Listing never imports a private key into a key object.</b> <see cref="ReadAsync"/> walks each
+/// bundle with <see cref="Pkcs12Info"/>: the password authenticates the file and decrypts the
+/// authenticated safe, the certificate bag is read, and no key bag is decrypted or imported.
 /// <c>X509CertificateLoader.LoadPkcs12</c>, which would import one, is reached only from
-/// <see cref="CreateSignerAsync"/>, only for <c>Current</c>. That holds on every platform, and is
-/// what makes the transient key-container residue this provider used to risk unreachable for
-/// <c>Previous</c> and <c>Next</c> rather than merely narrowed. One residue remains and is inherent
-/// to the format: an <i>unshrouded</i> key bag is plaintext PKCS#8 inside the safe, so decrypting the
-/// safe puts those bytes in managed memory. They are never read and never imported.
+/// <see cref="CreateSignerAsync"/>, for the key it is asked for. One residue is inherent to the
+/// format: an <i>unshrouded</i> key bag is plaintext PKCS#8 inside the safe, so decrypting the safe
+/// puts those bytes in managed memory. They are never read and never imported.
 /// </para>
 /// <para>
 /// This source performs no algorithm/key-type check of its own.
-/// <see cref="SigningKeySetBuilder"/> validates every reported key's algorithm against its key type
-/// and EC curve, keyed on the source id — which here is the configured file path, so its failures
-/// still name the offending bundle.
+/// <see cref="SigningKeySetBuilder"/> validates every reported key, keyed on the source id — which
+/// here is the configured file path, so its failures still name the offending bundle.
 /// </para>
 /// </remarks>
 internal sealed class PfxFileSigningKeySource(
@@ -43,93 +34,48 @@ internal sealed class PfxFileSigningKeySource(
 {
     private readonly IOptions<PfxFileSigningOptions> _options = options;
 
-    // Serialises reads so the slots are parsed exactly once even if two callers read concurrently —
-    // "only the ring calls this" is not something this type can enforce. Deliberately not disposed:
-    // disposing it would make a read already in flight at shutdown throw from its own Release, and
-    // would strand any reader queued behind it.
-    private readonly SemaphoreSlim _readGate = new(1, 1);
-
-    // The one key set this source ever reports. Assigned only once every slot has been read and
-    // validated, so a failed read is never cached and a retry re-reads from disk; once a read has
-    // succeeded, no later one can observe a bundle replaced after startup. Read-once is therefore a
-    // property of this source, not only of the ring.
-    private IReadOnlyList<SourceKey>? _keySet;
-
     /// <inheritdoc/>
     public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
-        await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        var options = _options.Value;
+        var keys = new List<SourceKey>(options.Files.Count);
+
+        foreach (var file in options.Files)
         {
-            if (_keySet is not null)
-                return _keySet;
-
-            var options = _options.Value;
-
-            var previous = await ReadSlotAsync(options.Previous, options.Algorithm, cancellationToken).ConfigureAwait(false);
-            var current = await ReadSlotAsync(options.Current, options.Algorithm, cancellationToken).ConfigureAwait(false);
-            var next = await ReadSlotAsync(options.Next, options.Algorithm, cancellationToken).ConfigureAwait(false);
-
-            return _keySet = [.. new[] { previous, current, next }.OfType<SourceKey>()];
+            using var certificate = await LoadPublicCertificateAsync(file, cancellationToken).ConfigureAwait(false);
+            keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(file.Path), options.Algorithm));
         }
-        finally
-        {
-            _readGate.Release();
-        }
+
+        return keys;
     }
 
     /// <inheritdoc/>
     public async Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
     {
         var options = _options.Value;
-        var current = options.Current;
-
-        // Only Current is ever openable for signing. Previous and Next are published, never signed
-        // with, so an id naming either of them is a defect in the caller rather than a request this
-        // source should honour by decrypting a key bag it otherwise never touches.
-        if (current is null || !string.Equals(current.Path, id.Value, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"{nameof(CreateSignerAsync)} was called for key '{id.Value}', which is not the " +
-                $"configured {nameof(PfxFileSigningOptions.Current)} PFX file. This source reads its " +
-                "slots exactly once, so they must not change after startup, and only Current ever " +
-                "signs.");
-        }
+        var file = options.Files.FirstOrDefault(f => string.Equals(f.Path, id.Value, StringComparison.Ordinal))
+            ?? throw new InvalidOperationException(
+                $"{nameof(CreateSignerAsync)} was called for key '{id.Value}', which is not a listed PFX file.");
 
         // The one call in this type that materialises a private key.
-        using var certificate = await LoadSigningCertificateAsync(current, cancellationToken).ConfigureAwait(false);
-        var (privateKey, _) = FileSigningKeyExtractor.ExtractPrivateKey(certificate, current.Path);
-
-        return new LocalSigner(options.Algorithm, privateKey);
-    }
-
-    private async ValueTask<SourceKey?> ReadSlotAsync(
-        PfxFile? slot, SigningAlgorithm algorithm, CancellationToken cancellationToken)
-    {
-        if (slot is null)
-            return null;
-
-        using var certificate = await LoadPublicCertificateAsync(slot, cancellationToken).ConfigureAwait(false);
-
-        return FileSigningKeyExtractor.ToSourceKey(certificate, slot.Path, algorithm);
+        using var certificate = await LoadSigningCertificateAsync(file, cancellationToken).ConfigureAwait(false);
+        return LocalSigner.FromCertificate(certificate, options.Algorithm);
     }
 
     /// <summary>
-    /// Reads the signing certificate out of the PKCS#12 bundle at <paramref name="slot"/> without
-    /// decrypting its key bag, so no private key is imported into a key object for any slot —
-    /// including <c>Current</c>, whose private key is loaded separately and only when its signer is
-    /// opened.
+    /// Reads the signing certificate out of the PKCS#12 bundle <paramref name="file"/> without
+    /// decrypting its key bag, so listing imports no private key into a key object.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The file is not a valid PKCS#12 bundle, is not MAC-protected, fails its integrity check
-    /// (wrong password or tampering), uses an unsupported confidentiality mode, or does not identify
-    /// exactly one signing certificate.
+    /// (wrong password or tampering), uses an unsupported confidentiality mode, carries no private
+    /// key, or does not identify exactly one signing certificate.
     /// </exception>
     private async ValueTask<X509Certificate2> LoadPublicCertificateAsync(
-        PfxFile slot, CancellationToken cancellationToken)
+        PfxFile file, CancellationToken cancellationToken)
     {
-        var bytes = await reader.ReadAllBytesAsync(slot.Path, cancellationToken).ConfigureAwait(false);
-        var password = await slot.PasswordSource(cancellationToken).ConfigureAwait(false);
+        var bytes = await reader.ReadAllBytesAsync(file.Path, cancellationToken).ConfigureAwait(false);
+        var password = await file.PasswordSource(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -138,9 +84,9 @@ internal sealed class PfxFileSigningKeySource(
             // returned below carries its own copy of the DER, so nothing outlives the buffer.
             var info = Pkcs12Info.Decode(bytes, out _, skipCopy: true);
 
-            VerifyIntegrity(info, slot.Path, password);
+            VerifyIntegrity(info, file.Path, password);
 
-            return SelectSigningCertificate(info, slot.Path, password);
+            return SelectSigningCertificate(info, file.Path, password);
         }
         catch (Exception ex) when (ex is CryptographicException or AsnContentException or InvalidOperationException)
         {
@@ -149,7 +95,7 @@ internal sealed class PfxFileSigningKeySource(
             // string that neither by-key redaction nor RedactedExceptionWrapper can reach. The root
             // cause travels as the inner exception instead.
             throw InvalidPfx(
-                slot.Path,
+                file.Path,
                 $"could not be loaded: {ex.GetType().FullName} was thrown. See the inner exception " +
                 "for the root cause. Verify the file is a valid PKCS#12 bundle and that the " +
                 "configured password is correct",
@@ -164,10 +110,9 @@ internal sealed class PfxFileSigningKeySource(
     /// <remarks>
     /// Without this, the password is not a control at all on this path: a bundle whose certificate
     /// sits in an unencrypted safe is never asked for one, so any password — and any substituted
-    /// file — would be accepted. Since <c>Previous</c> and <c>Next</c> are published but never
-    /// signed with, the ring's own self-test would not catch it either: their public keys would
-    /// simply appear in the JWKS as valid verification keys. This is the check that makes the
-    /// password the defense-in-depth the registration documents it as.
+    /// file — would be accepted. The ring's self-test covers only the key that signs, so every other
+    /// listed bundle's public key would simply appear in the JWKS as a valid verification key. This
+    /// is the check that makes the password the defense-in-depth the registration documents it as.
     /// </remarks>
     private static void VerifyIntegrity(Pkcs12Info info, string path, string password)
     {
@@ -252,6 +197,15 @@ internal sealed class PfxFileSigningKeySource(
                 "a certificate and its private key");
         }
 
+        // Checked here, where it costs nothing, rather than when the bundle is first chosen to sign —
+        // possibly at a restart long after it was deployed.
+        if (keyBagCount == 0)
+        {
+            throw InvalidPfx(path,
+                "carries no private key. Every listed bundle must carry one, because any of them may " +
+                "be chosen to sign");
+        }
+
         // The normal case for any bundle carrying a chain: pair on localKeyId.
         if (keyLocalIds.Count > 0)
         {
@@ -284,22 +238,6 @@ internal sealed class PfxFileSigningKeySource(
 
         if (certBags.Count == 1)
             return certBags[0].GetCertificate();
-
-        // No key bag at all — a published-only bundle with its private key stripped, which is the
-        // right shape for a Previous or Next slot. A chain comes with it, so fall back to the one
-        // certificate the exporter marked as the subject of the keypair.
-        //
-        // Gated on there being no key bag rather than on no key bag carrying a localKeyId: a bundle
-        // that does hold a private key, unmarked, alongside a marked chain certificate would
-        // otherwise select the chain certificate here while CreateSignerAsync opens the real key —
-        // publishing one key and signing with another, which no relying party can verify.
-        if (keyBagCount == 0)
-        {
-            var identified = certBags.Where(certBag => LocalKeyIdOf(certBag) is not null).ToList();
-
-            if (identified.Count == 1)
-                return identified[0].GetCertificate();
-        }
 
         throw InvalidPfx(path,
             $"contains {certBags.Count} certificates with nothing identifying which one signs. " +
@@ -339,23 +277,20 @@ internal sealed class PfxFileSigningKeySource(
     }
 
     /// <summary>
-    /// Loads the bundle at <paramref name="slot"/> with its private key. Used only by
-    /// <see cref="CreateSignerAsync"/>, for the <c>Current</c> slot.
+    /// Loads <paramref name="file"/> with its private key. Used only by <see cref="CreateSignerAsync"/>.
     /// </summary>
     /// <remarks>
-    /// The returned certificate carries its private key, so the caller must dispose it as soon as the
-    /// handle has been extracted — <see cref="FileSigningKeyExtractor.ExtractPrivateKey"/> returns a
-    /// handle that outlives the certificate, and ownership transfers to the
-    /// <see cref="LocalSigner"/> built over it.
+    /// The returned certificate carries its private key, so the caller disposes it as soon as the
+    /// <see cref="LocalSigner"/>, which holds its own handle, has been built.
     /// </remarks>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The file is not a valid PKCS#12 bundle, or the configured password is incorrect.
     /// </exception>
     private async ValueTask<X509Certificate2> LoadSigningCertificateAsync(
-        PfxFile slot, CancellationToken cancellationToken)
+        PfxFile file, CancellationToken cancellationToken)
     {
-        var bytes = await reader.ReadAllBytesAsync(slot.Path, cancellationToken).ConfigureAwait(false);
-        var password = await slot.PasswordSource(cancellationToken).ConfigureAwait(false);
+        var bytes = await reader.ReadAllBytesAsync(file.Path, cancellationToken).ConfigureAwait(false);
+        var password = await file.PasswordSource(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -365,7 +300,7 @@ internal sealed class PfxFileSigningKeySource(
         {
             // The exception TYPE is named, never ex.Message — same rule as the read path above.
             throw InvalidPfx(
-                slot.Path,
+                file.Path,
                 $"could not be loaded: {ex.GetType().FullName} was thrown. See the inner exception " +
                 "for the root cause. Verify the file is a valid PKCS#12 bundle and that the " +
                 "configured password is correct",

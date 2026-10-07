@@ -43,12 +43,12 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
 
     // ── AddPemFileSigning: argument validation ───────────────────────────────────────────────────
 
-    // The path overloads are not tested for a null builder: they delegate to the slots overloads,
+    // The path overloads are not tested for a null builder: they delegate to the configure overloads,
     // whose own guard throws the same ArgumentNullException("builder") before anything else runs, so
     // the path overloads' guards only change which of two invalid arguments is reported first.
 
     [Fact]
-    public void AddPemFileSigning_slots_overload_throws_ArgumentNullException_when_builder_is_null()
+    public void AddPemFileSigning_configure_overload_throws_ArgumentNullException_when_builder_is_null()
     {
         var act = () => ((ZeeKayDaAuthCoreBuilder)null!).AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
 
@@ -56,7 +56,7 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
     }
 
     [Fact]
-    public void AddPemFileSigning_slots_overload_throws_ArgumentNullException_when_configure_is_null()
+    public void AddPemFileSigning_configure_overload_throws_ArgumentNullException_when_configure_is_null()
     {
         // Without the eager guard the null callback would only surface when the options pipeline
         // first materialises the value — far from the registration call that caused it.
@@ -68,7 +68,7 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
     }
 
     [Fact]
-    public void AddPfxFileSigning_slots_overload_throws_ArgumentNullException_when_builder_is_null()
+    public void AddPfxFileSigning_configure_overload_throws_ArgumentNullException_when_builder_is_null()
     {
         var act = () => ((ZeeKayDaAuthCoreBuilder)null!).AddPfxFileSigning(SigningAlgorithm.RS256, _ => { });
 
@@ -76,7 +76,7 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
     }
 
     [Fact]
-    public void AddPfxFileSigning_slots_overload_throws_ArgumentNullException_when_configure_is_null()
+    public void AddPfxFileSigning_configure_overload_throws_ArgumentNullException_when_configure_is_null()
     {
         var builder = NewBuilder();
 
@@ -126,7 +126,7 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
     }
 
     [Fact]
-    public async Task AddPemFileSigning_with_keyPath_fills_the_Current_slot_with_both_paths()
+    public async Task AddPemFileSigning_with_keyPath_lists_one_file_with_both_paths()
     {
         var builder = NewBuilder();
         const string keyPath = "/etc/zeekayda/signing.key";
@@ -135,9 +135,7 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
 
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value;
-        options.Current.Should().Be(new PemSigningFile(PemPath, keyPath));
-        options.Previous.Should().BeNull("the path overload stages no rotation");
-        options.Next.Should().BeNull("the path overload stages no rotation");
+        options.Files.Should().Equal(new PemSigningFile(PemPath, keyPath));
     }
 
     // ── AddPfxFileSigning: argument validation ───────────────────────────────────────────────────
@@ -259,17 +257,17 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
     public async Task AddPemFileSigning_does_not_apply_its_options_when_the_source_registration_is_rejected()
     {
         // The source is registered before any configuration callback runs, so a caller that catches
-        // the rejection is not left with the rejected call's slots on the surviving registration.
+        // the rejection is not left with the rejected call's files on the surviving registration.
         var builder = NewBuilder();
         builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
 
         var act = () => builder.AddPemFileSigning(SigningAlgorithm.ES256, options =>
-            options.Current = new PemSigningFile("/etc/zeekayda/rejected.pem"));
+            options.Files.Add(new PemSigningFile("/etc/zeekayda/rejected.pem")));
 
         act.Should().Throw<InvalidOperationException>();
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value;
-        options.Current.Should().Be(new PemSigningFile(PemPath));
+        options.Files.Should().Equal(new PemSigningFile(PemPath));
         options.Algorithm.Should().Be(SigningAlgorithm.RS256);
     }
 
@@ -285,7 +283,7 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
     }
 
     [Fact]
-    public async Task AddPfxFileSigning_fills_the_Current_slot_with_the_path_and_password_source()
+    public async Task AddPfxFileSigning_lists_one_file_with_the_path_and_password_source()
     {
         var builder = NewBuilder();
         var passwordSource = AnyPassword();
@@ -294,33 +292,29 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
 
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<PfxFileSigningOptions>>().Value;
-        options.Current.Should().Be(new PfxFile(PfxPath, passwordSource));
-        options.Previous.Should().BeNull("the path overload stages no rotation");
-        options.Next.Should().BeNull("the path overload stages no rotation");
+        options.Files.Should().Equal(new PfxFile(PfxPath, passwordSource));
     }
 
-    // ── AddPfxFileSigning: the three-slot overload ───────────────────────────────────────────────
+    // ── AddPfxFileSigning: the configure overload ────────────────────────────────────────────────
 
     [Fact]
-    public async Task AddPfxFileSigning_slots_overload_fills_every_slot_the_callback_sets()
+    public async Task AddPfxFileSigning_configure_overload_lists_every_file_the_callback_adds()
     {
         var builder = NewBuilder();
-        var previousPassword = AnyPassword();
-        var currentPassword = AnyPassword();
-        var nextPassword = AnyPassword();
+        var firstPassword = AnyPassword();
+        var secondPassword = AnyPassword();
 
         builder.AddPfxFileSigning(SigningAlgorithm.ES256, options =>
         {
-            options.Previous = new PfxFile("/etc/zeekayda/previous.pfx", previousPassword);
-            options.Current = new PfxFile("/etc/zeekayda/current.pfx", currentPassword);
-            options.Next = new PfxFile("/etc/zeekayda/next.pfx", nextPassword);
+            options.Files.Add(new PfxFile("/etc/zeekayda/first.pfx", firstPassword));
+            options.Files.Add(new PfxFile("/etc/zeekayda/second.pfx", secondPassword));
         });
 
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<PfxFileSigningOptions>>().Value;
-        options.Previous.Should().Be(new PfxFile("/etc/zeekayda/previous.pfx", previousPassword));
-        options.Current.Should().Be(new PfxFile("/etc/zeekayda/current.pfx", currentPassword));
-        options.Next.Should().Be(new PfxFile("/etc/zeekayda/next.pfx", nextPassword));
+        options.Files.Should().Equal(
+            new PfxFile("/etc/zeekayda/first.pfx", firstPassword),
+            new PfxFile("/etc/zeekayda/second.pfx", secondPassword));
         options.Algorithm.Should().Be(SigningAlgorithm.ES256);
     }
 
@@ -335,7 +329,7 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
         var builder = NewBuilder();
 
         builder.AddPfxFileSigning(SigningAlgorithm.ES256, options =>
-            options.Current = new PfxFile("/etc/zeekayda/current.pfx", AnyPassword()));
+            options.Files.Add(new PfxFile("/etc/zeekayda/current.pfx", AnyPassword())));
 
         await using var provider = builder.Services.BuildServiceProvider();
         provider.GetRequiredService<IOptions<PfxFileSigningOptions>>().Value.Algorithm
@@ -357,18 +351,18 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
     public async Task AddPfxFileSigning_does_not_apply_its_options_when_the_source_registration_is_rejected()
     {
         // The source is registered before any configuration callback runs, so a caller that catches
-        // the rejection is not left with the rejected call's slots on the surviving registration.
+        // the rejection is not left with the rejected call's files on the surviving registration.
         var builder = NewBuilder();
         var originalPassword = AnyPassword();
         builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, originalPassword);
 
         var act = () => builder.AddPfxFileSigning(SigningAlgorithm.ES256, options =>
-            options.Current = new PfxFile("/etc/zeekayda/rejected.pfx", AnyPassword()));
+            options.Files.Add(new PfxFile("/etc/zeekayda/rejected.pfx", AnyPassword())));
 
         act.Should().Throw<InvalidOperationException>();
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<PfxFileSigningOptions>>().Value;
-        options.Current.Should().Be(new PfxFile(PfxPath, originalPassword));
+        options.Files.Should().Equal(new PfxFile(PfxPath, originalPassword));
         options.Algorithm.Should().Be(SigningAlgorithm.RS256);
     }
 
@@ -386,7 +380,7 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
     // ── ValidateOnStart wiring: the validators must actually gate host startup ───────────────────
 
     [Fact]
-    public async Task AddPemFileSigning_fails_startup_validation_when_no_Current_slot_is_configured()
+    public async Task AddPemFileSigning_fails_startup_validation_when_no_file_is_listed()
     {
         // Registering the options without their validator, or without AddZeeKayDaOptions, would
         // leave startup nothing to run, and a misconfiguration would surface only on the first
@@ -394,39 +388,38 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
         var act = () => StartAsync(builder => builder.AddPemFileSigning(SigningAlgorithm.RS256, _ => { }));
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Where(e => e.AggregatedFailures.Any(f => f.Code == "configuration.pem_file_signing.current.missing"))
-            .WithMessage("*Current must be set*");
+            .Where(e => e.AggregatedFailures.Any(f => f.Code == "configuration.pem_file_signing.files.empty"))
+            .WithMessage("*at least one PEM file*");
     }
 
     [Fact]
-    public async Task AddPfxFileSigning_fails_startup_validation_when_no_Current_slot_is_configured()
+    public async Task AddPfxFileSigning_fails_startup_validation_when_no_file_is_listed()
     {
         var act = () => StartAsync(builder => builder.AddPfxFileSigning(SigningAlgorithm.RS256, _ => { }));
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Where(e => e.AggregatedFailures.Any(f => f.Code == "configuration.pfx_file_signing.current.missing"))
-            .WithMessage("*Current must be set*");
+            .Where(e => e.AggregatedFailures.Any(f => f.Code == "configuration.pfx_file_signing.files.empty"))
+            .WithMessage("*at least one PFX file*");
     }
 
-    // ── AddPemFileSigning: the three-slot overload ───────────────────────────────────────────────
+    // ── AddPemFileSigning: the configure overload ────────────────────────────────────────────────
 
     [Fact]
-    public async Task AddPemFileSigning_slots_overload_fills_every_slot_the_callback_sets()
+    public async Task AddPemFileSigning_configure_overload_lists_every_file_the_callback_adds()
     {
         var builder = NewBuilder();
 
         builder.AddPemFileSigning(SigningAlgorithm.ES256, options =>
         {
-            options.Previous = new PemCertificateFile("/etc/zeekayda/previous.pem");
-            options.Current = new PemSigningFile("/etc/zeekayda/current.pem");
-            options.Next = new PemCertificateFile("/etc/zeekayda/next.pem");
+            options.Files.Add(new PemSigningFile("/etc/zeekayda/first.pem"));
+            options.Files.Add(new PemSigningFile("/etc/zeekayda/second.crt", "/etc/zeekayda/second.key"));
         });
 
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value;
-        options.Previous.Should().Be(new PemCertificateFile("/etc/zeekayda/previous.pem"));
-        options.Current.Should().Be(new PemSigningFile("/etc/zeekayda/current.pem"));
-        options.Next.Should().Be(new PemCertificateFile("/etc/zeekayda/next.pem"));
+        options.Files.Should().Equal(
+            new PemSigningFile("/etc/zeekayda/first.pem"),
+            new PemSigningFile("/etc/zeekayda/second.crt", "/etc/zeekayda/second.key"));
         options.Algorithm.Should().Be(SigningAlgorithm.ES256);
     }
 
@@ -444,7 +437,7 @@ public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
         var builder = NewBuilder();
 
         builder.AddPemFileSigning(SigningAlgorithm.ES256, options =>
-            options.Current = new PemSigningFile("/etc/zeekayda/current.pem"));
+            options.Files.Add(new PemSigningFile("/etc/zeekayda/current.pem")));
 
         await using var provider = builder.Services.BuildServiceProvider();
         provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value.Algorithm

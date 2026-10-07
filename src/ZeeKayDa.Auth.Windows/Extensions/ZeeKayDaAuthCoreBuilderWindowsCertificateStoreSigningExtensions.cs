@@ -14,8 +14,8 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensions
 {
     /// <summary>
-    /// Registers a single certificate from a Windows Certificate Store as the JWT signing key, with
-    /// no rotation staged. The certificate <paramref name="certificate"/> finds is read once at
+    /// Registers a single certificate from a Windows Certificate Store as the JWT signing key. The
+    /// certificate <paramref name="certificate"/> finds is read once at
     /// startup and its private key is used for signing locally, in process.
     /// </summary>
     /// <remarks>
@@ -28,11 +28,9 @@ public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
     /// certificate has no effect until the host restarts.
     /// </para>
     /// <para>
-    /// To stage a rotation, use the
+    /// To rotate, use the
     /// <see cref="AddWindowsCertificateStoreSigning{TBuilder}(TBuilder,SigningAlgorithm,StoreLocation,StoreName,Action{WindowsCertificateStoreSigningOptions})"/>
-    /// overload and fill the <c>Previous</c>/<c>Current</c>/<c>Next</c> slots. This overload takes no
-    /// configuration callback precisely so that the certificate it names is unambiguously the one
-    /// that signs.
+    /// overload and list both certificates.
     /// </para>
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
@@ -68,16 +66,14 @@ public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
         ArgumentNullException.ThrowIfNull(certificate);
 
         return AddWindowsCertificateStoreSigning(
-            builder, algorithm, storeLocation, storeName, options => options.Current = certificate);
+            builder, algorithm, storeLocation, storeName, options => options.Certificates.Add(certificate));
     }
 
     /// <summary>
-    /// Registers certificates from a Windows Certificate Store as the JWT signing keys, configured
-    /// into the <see cref="WindowsCertificateStoreSigningOptions.Previous"/>,
-    /// <see cref="WindowsCertificateStoreSigningOptions.Current"/> and
-    /// <see cref="WindowsCertificateStoreSigningOptions.Next"/> slots. Every configured slot is read
-    /// once at startup and published; only <c>Current</c>'s private key is ever opened, and it signs
-    /// locally, in process.
+    /// Registers the certificates listed in <see cref="WindowsCertificateStoreSigningOptions.Certificates"/>
+    /// from a Windows Certificate Store as the JWT signing keys. They are read at startup; the
+    /// framework decides from their validity windows which one signs, locally, in process, and which
+    /// are published.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -85,29 +81,24 @@ public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
     /// <see cref="PlatformNotSupportedException"/>.
     /// </para>
     /// <para>
-    /// <see cref="WindowsCertificateStoreSigningOptions.Current"/> is required; <c>Previous</c> and
-    /// <c>Next</c> are independently optional. Startup fails when no <c>Current</c> is configured,
-    /// when two slots name the same certificate, or when <c>Current</c>'s certificate is expired or
-    /// not valid yet.
+    /// At least one certificate is required, and every one must have a private key this process can
+    /// use. Startup fails when none is listed, when one is listed twice, or when no listed
+    /// certificate is valid. Every certificate is looked up in the one
+    /// <paramref name="storeLocation"/>/<paramref name="storeName"/> given here.
     /// </para>
     /// <para>
-    /// Every slot is looked up in the one <paramref name="storeLocation"/>/<paramref name="storeName"/>
-    /// given here, and the store is read exactly once, at startup.
-    /// </para>
-    /// <para>
-    /// Rotation: stage the successor as <c>Next</c> so its public half is published ahead of time,
-    /// then promote it to <c>Current</c> and demote the certificate it succeeds to <c>Previous</c>.
-    /// Each move takes effect on restart. How long a successor must sit in <c>Next</c> before
-    /// promotion is the operator's decision — see
-    /// <see cref="WindowsCertificateStoreSigningOptions.Next"/>.
+    /// Rotation: add the successor and restart. It is published at once and signs once it has been
+    /// published for the lead time; the certificate it replaces can be removed once it is no longer
+    /// published. See <see cref="WindowsCertificateStoreSigningOptions.Certificates"/> for how a
+    /// certificate's dates count.
     /// </para>
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
-    /// <param name="algorithm">The JWS algorithm every configured slot is signed under.</param>
-    /// <param name="storeLocation">The store location every slot is looked up in.</param>
-    /// <param name="storeName">The store name every slot is looked up in.</param>
-    /// <param name="configure">A callback that fills the signing key slots.</param>
+    /// <param name="algorithm">The JWS algorithm every listed certificate is signed under.</param>
+    /// <param name="storeLocation">The store location every certificate is looked up in.</param>
+    /// <param name="storeName">The store name every certificate is looked up in.</param>
+    /// <param name="configure">A callback that lists the signing certificates.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="PlatformNotSupportedException">
     /// Thrown when called on a non-Windows runtime.

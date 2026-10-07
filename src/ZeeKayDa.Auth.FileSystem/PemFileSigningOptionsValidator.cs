@@ -16,20 +16,18 @@ internal sealed class PemFileSigningOptionsValidator : ZeeKayDaOptionsValidator<
         string? name,
         PemFileSigningOptions options)
     {
-        if (options.Current is null)
+        if (options.Files.Count == 0)
         {
             yield return new(
-                "configuration.pem_file_signing.current.missing",
-                "PemFileSigningOptions.Current must be set to the PEM file that signs. Previous and " +
-                "Next are optional; Current is not.");
+                "configuration.pem_file_signing.files.empty",
+                "PemFileSigningOptions.Files must list at least one PEM file.");
         }
 
-        var slotFailures = PathFailure(nameof(PemFileSigningOptions.Previous), options.Previous is not null, options.Previous?.Path)
-            .Concat(PathFailure(nameof(PemFileSigningOptions.Current), options.Current is not null, options.Current?.Path))
-            .Concat(PathFailure(nameof(PemFileSigningOptions.Next), options.Next is not null, options.Next?.Path))
-            .Concat(CurrentKeyPathFailure(options.Current));
-        foreach (var failure in slotFailures)
-            yield return failure;
+        for (var i = 0; i < options.Files.Count; i++)
+        {
+            foreach (var failure in FileFailures(i, options.Files[i]))
+                yield return failure;
+        }
 
         if (!Enum.IsDefined(options.Algorithm))
         {
@@ -39,41 +37,42 @@ internal sealed class PemFileSigningOptionsValidator : ZeeKayDaOptionsValidator<
                 $"{nameof(SigningAlgorithm)} member.");
         }
 
-        foreach (var failure in DuplicatePathFailures(options))
-            yield return failure;
-    }
-
-    // Previous and Next are PemCertificateFile, which has no KeyPath to check — only Current can
-    // name a private key at all, which is why there is no "a published-only slot named a key file"
-    // error to report here. A configured slot whose Path is null is reported like any other unusable
-    // path rather than skipped: the record's Path is non-nullable, so reaching here with null means a
-    // caller suppressed that, and silence would turn it into a confusing failure further in.
-    private static IEnumerable<ZeeKayDaConfigurationFailure> PathFailure(string slotName, bool slotConfigured, string? path)
-    {
-        if (slotConfigured && string.IsNullOrWhiteSpace(path))
-            yield return new(
-                $"configuration.pem_file_signing.{slotName.ToLowerInvariant()}.path.missing",
-                $"PemFileSigningOptions.{slotName}.Path must be set to a non-empty file path.");
-    }
-
-    private static IEnumerable<ZeeKayDaConfigurationFailure> CurrentKeyPathFailure(PemSigningFile? current)
-    {
-        if (current?.KeyPath is { } keyPath && string.IsNullOrWhiteSpace(keyPath))
+        var paths = options.Files.Where(f => f is not null).SelectMany(f => new[] { f.Path, f.KeyPath }).ToArray();
+        foreach (var failure in SigningFilePaths.PathFailures(
+            nameof(PemFileSigningOptions),
+            "configuration.pem_file_signing.paths",
+            "Every Path and KeyPath must be a distinct file.",
+            paths))
         {
-            yield return new(
-                "configuration.pem_file_signing.current.key_path.blank",
-                "PemFileSigningOptions.Current.KeyPath must be null (a combined cert+key Path) or a " +
-                "non-empty file path — never empty/whitespace-only.");
+            yield return failure;
         }
     }
 
-    private static List<ZeeKayDaConfigurationFailure> DuplicatePathFailures(PemFileSigningOptions options) =>
-        SigningFilePaths.PathFailures(
-            nameof(PemFileSigningOptions),
-            "configuration.pem_file_signing.paths",
-            "Every Path, and Current's KeyPath, must be a distinct file.",
-            options.Previous?.Path,
-            options.Current?.Path,
-            options.Current?.KeyPath,
-            options.Next?.Path);
+    // A null Path means a caller suppressed the record's non-nullable annotation; it is reported like
+    // any other unusable path rather than left to fail confusingly further in.
+    private static IEnumerable<ZeeKayDaConfigurationFailure> FileFailures(int index, PemSigningFile? file)
+    {
+        if (file is null)
+        {
+            yield return new(
+                "configuration.pem_file_signing.files.null_entry",
+                $"PemFileSigningOptions.Files[{index}] is null.");
+            yield break;
+        }
+
+        if (string.IsNullOrWhiteSpace(file.Path))
+        {
+            yield return new(
+                "configuration.pem_file_signing.files.path.missing",
+                $"PemFileSigningOptions.Files[{index}].Path must be set to a non-empty file path.");
+        }
+
+        if (file.KeyPath is { } keyPath && string.IsNullOrWhiteSpace(keyPath))
+        {
+            yield return new(
+                "configuration.pem_file_signing.files.key_path.blank",
+                $"PemFileSigningOptions.Files[{index}].KeyPath must be null (a combined cert+key Path) or a " +
+                "non-empty file path — never empty/whitespace-only.");
+        }
+    }
 }

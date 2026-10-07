@@ -4,18 +4,24 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.FileSystem.Tests;
 
 /// <summary>
-/// Tests for <see cref="PfxFileSigningOptionsValidator"/>, the startup gate on the three configured
-/// signing key slots.
+/// Tests for <see cref="PfxFileSigningOptionsValidator"/>, the startup gate on the listed signing files.
 /// </summary>
 public sealed class PfxFileSigningOptionsValidatorTests
 {
     private static Func<CancellationToken, Task<string>> Password() =>
         _ => Task.FromResult("a password");
 
-    private static PfxFileSigningOptions ValidOptions() => new()
+    private static PfxFileSigningOptions ValidOptions() =>
+        Options(new PfxFile("/etc/zeekayda/current.pfx", Password()));
+
+    private static PfxFileSigningOptions Options(params PfxFile?[] files)
     {
-        Current = new PfxFile("/etc/zeekayda/current.pfx", Password()),
-    };
+        var options = new PfxFileSigningOptions();
+        foreach (var file in files)
+            options.Files.Add(file!);
+
+        return options;
+    }
 
     private static IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(PfxFileSigningOptions options)
     {
@@ -30,12 +36,12 @@ public sealed class PfxFileSigningOptionsValidatorTests
         }
     }
 
-    // ── Current is required ──────────────────────────────────────────────────────────────────────
+    // ── Files ────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Succeeds_for_a_Current_only_configuration()
+    public void Succeeds_for_a_single_file()
     {
-        Validate(ValidOptions()).Should().BeEmpty("Previous and Next are independently optional");
+        Validate(ValidOptions()).Should().BeEmpty();
     }
 
     [Fact]
@@ -49,70 +55,52 @@ public sealed class PfxFileSigningOptionsValidatorTests
     }
 
     [Fact]
-    public void Fails_when_Current_is_not_configured()
+    public void Succeeds_for_several_files_with_their_own_password_sources()
     {
-        var options = new PfxFileSigningOptions { Current = null };
-
-        Validate(options).Should().ContainSingle(f => f.Code == "configuration.pfx_file_signing.current.missing")
-            .Which.Message.Should().Contain("Current must be set");
-    }
-
-    [Fact]
-    public void Succeeds_when_all_three_slots_are_configured_with_their_own_password_sources()
-    {
-        var options = ValidOptions();
-        options.Previous = new PfxFile("/etc/zeekayda/previous.pfx", _ => Task.FromResult("previous"));
-        options.Next = new PfxFile("/etc/zeekayda/next.pfx", _ => Task.FromResult("next"));
+        var options = Options(
+            new PfxFile("/etc/zeekayda/a.pfx", _ => Task.FromResult("a")),
+            new PfxFile("/etc/zeekayda/b.pfx", _ => Task.FromResult("b")));
 
         Validate(options).Should().BeEmpty();
     }
 
-    // ── Slot paths ───────────────────────────────────────────────────────────────────────────────
+    [Fact]
+    public void Fails_when_no_file_is_listed()
+    {
+        Validate(Options()).Should().ContainSingle(f => f.Code == "configuration.pfx_file_signing.files.empty")
+            .Which.Message.Should().Contain("at least one PFX file");
+    }
+
+    [Fact]
+    public void Fails_when_a_listed_entry_is_null()
+    {
+        var options = ValidOptions();
+        options.Files.Add(null!);
+
+        Validate(options).Should().ContainSingle(f => f.Code == "configuration.pfx_file_signing.files.null_entry")
+            .Which.Message.Should().Contain("Files[1]");
+    }
 
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void Fails_when_Currents_Path_is_empty_or_whitespace(string path)
+    public void Fails_when_a_files_Path_is_empty_or_whitespace(string path)
     {
-        var options = new PfxFileSigningOptions { Current = new PfxFile(path, Password()) };
+        var options = Options(new PfxFile(path, Password()));
 
-        Validate(options).Should().Contain(f => f.Code == "configuration.pfx_file_signing.current.path.missing"
-            && f.Message.Contains("Current.Path must be set"));
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public void Fails_when_a_published_only_slots_Path_is_empty_or_whitespace(string path)
-    {
-        var options = ValidOptions();
-        options.Next = new PfxFile(path, Password());
-
-        Validate(options).Should().Contain(f => f.Code == "configuration.pfx_file_signing.next.path.missing"
-            && f.Message.Contains("Next.Path must be set"));
-    }
-
-    // ── Password sources ─────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Fails_when_Currents_PasswordSource_is_null()
-    {
-        var options = new PfxFileSigningOptions { Current = new PfxFile("/etc/zeekayda/current.pfx", null!) };
-
-        Validate(options).Should().Contain(f => f.Code == "configuration.pfx_file_signing.current.password_source.missing"
-            && f.Message.Contains("Current.PasswordSource must be set"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pfx_file_signing.files.path.missing"
+            && f.Message.Contains("Files[0].Path must be set"));
     }
 
     [Fact]
-    public void Fails_when_a_published_only_slots_PasswordSource_is_null()
+    public void Names_the_index_of_the_file_whose_PasswordSource_is_null()
     {
-        // A published-only bundle still needs its password: the certificate sits inside a
-        // password-protected safe, even though the key bag is never decrypted.
-        var options = ValidOptions();
-        options.Previous = new PfxFile("/etc/zeekayda/previous.pfx", null!);
+        var options = Options(
+            new PfxFile("/etc/zeekayda/ok.pfx", Password()),
+            new PfxFile("/etc/zeekayda/bad.pfx", null!));
 
-        Validate(options).Should().Contain(f => f.Code == "configuration.pfx_file_signing.previous.password_source.missing"
-            && f.Message.Contains("Previous.PasswordSource must be set"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pfx_file_signing.files.password_source.missing"
+            && f.Message.Contains("Files[1].PasswordSource must be set"));
     }
 
     // ── Algorithm ────────────────────────────────────────────────────────────────────────────────
@@ -130,54 +118,38 @@ public sealed class PfxFileSigningOptionsValidatorTests
     // ── Pairwise distinct paths ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Fails_when_Previous_and_Current_name_the_same_file()
+    public void Fails_when_two_files_name_the_same_Path()
     {
-        var options = ValidOptions();
-        options.Previous = new PfxFile("/etc/zeekayda/current.pfx", Password());
+        var options = Options(
+            new PfxFile("/etc/zeekayda/current.pfx", Password()),
+            new PfxFile("/etc/zeekayda/current.pfx", Password()));
 
         Validate(options).Should().Contain(f => f.Code == "configuration.pfx_file_signing.paths.duplicate"
-            && f.Message.Contains("slots reference the same file"));
+            && f.Message.Contains("reference the same file"));
     }
 
     [Fact]
-    public void Fails_when_Current_and_Next_name_the_same_file()
+    public void Fails_when_two_files_name_the_same_file_via_different_but_equivalent_paths()
     {
-        var options = ValidOptions();
-        options.Next = new PfxFile("/etc/zeekayda/current.pfx", Password());
+        var options = Options(
+            new PfxFile(Path.Join(Path.GetTempPath(), "tls.pfx"), Password()),
+            new PfxFile(Path.Join(Path.GetTempPath(), ".", "tls.pfx"), Password()));
 
-        Validate(options).Should().Contain(f => f.Code == "configuration.pfx_file_signing.paths.duplicate"
-            && f.Message.Contains("slots reference the same file"));
-    }
-
-    [Fact]
-    public void Fails_when_two_slots_name_the_same_file_via_different_but_equivalent_paths()
-    {
-        var options = new PfxFileSigningOptions
-        {
-            Current = new PfxFile(Path.Join(Path.GetTempPath(), "tls.pfx"), Password()),
-            Next = new PfxFile(Path.Join(Path.GetTempPath(), ".", "tls.pfx"), Password()),
-        };
-
-        Validate(options).Should().Contain(f => f.Code == "configuration.pfx_file_signing.paths.duplicate"
-            && f.Message.Contains("slots reference the same file"));
+        Validate(options).Should().Contain(f => f.Code == "configuration.pfx_file_signing.paths.duplicate");
     }
 
     [Fact]
     public void Does_not_treat_two_independently_empty_paths_as_duplicates()
     {
-        var options = new PfxFileSigningOptions
-        {
-            Current = new PfxFile("", Password()),
-            Next = new PfxFile("", Password()),
-        };
+        var options = Options(new PfxFile("", Password()), new PfxFile("", Password()));
 
         Validate(options).Should().NotContain(f => f.Code == "configuration.pfx_file_signing.paths.duplicate");
     }
 
     [Fact]
-    public void Fails_with_a_coded_configuration_exception_rather_than_an_unhandled_exception_for_a_slot_path_with_an_embedded_NUL()
+    public void Fails_with_a_coded_configuration_exception_rather_than_an_unhandled_exception_for_a_path_with_an_embedded_NUL()
     {
-        var options = new PfxFileSigningOptions { Current = new PfxFile("/etc/zeekayda/tls\0.pfx", Password()) };
+        var options = Options(new PfxFile("/etc/zeekayda/tls\0.pfx", Password()));
 
         var act = () => ((IValidateOptions<PfxFileSigningOptions>)new PfxFileSigningOptionsValidator()).Validate(null, options);
 
@@ -191,10 +163,7 @@ public sealed class PfxFileSigningOptionsValidatorTests
     [Fact]
     public void Reports_every_problem_at_once_rather_than_stopping_at_the_first()
     {
-        var options = new PfxFileSigningOptions
-        {
-            Current = new PfxFile("", null!),
-        };
+        var options = Options(new PfxFile("", null!));
         options.Algorithm = (SigningAlgorithm)9999;
 
         Validate(options).Should().HaveCount(3);

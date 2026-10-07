@@ -4,73 +4,43 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Windows;
 
 /// <summary>
-/// Configuration options for <c>AddWindowsCertificateStoreSigning</c>: the three named signing key
-/// slots, the store they are all found in, and the algorithm they are signed under.
+/// Configuration options for <c>AddWindowsCertificateStoreSigning</c>: the certificates that hold the
+/// signing keys, the store they are all found in, and the algorithm they are signed under.
 /// </summary>
 /// <remarks>
-/// The slots are read once, at startup, and never re-read — removing or replacing a configured
-/// certificate in the store afterwards has no effect on what the process signs with or publishes.
-/// Rotating means moving a certificate between slots and restarting: stage the successor as
-/// <see cref="Next"/> so its public half is published ahead of time, then promote it to
-/// <see cref="Current"/> and demote the certificate it succeeds to <see cref="Previous"/> so tokens
-/// it signed still verify.
+/// The certificates are read at startup. The framework decides from each certificate's validity
+/// window which one signs and which are published, so rotating means adding the successor and
+/// restarting, then removing the old certificate once it is no longer published.
 /// </remarks>
 public sealed class WindowsCertificateStoreSigningOptions
 {
     /// <summary>
-    /// Gets or sets the previously active certificate, published so relying parties can still
-    /// verify tokens it signed, or <see langword="null"/> when there is none. Never used to sign,
-    /// and no private-key handle is ever extracted for it — though a store entry always carries its
-    /// private key, so it is briefly reachable while the certificate is read. See
-    /// <see cref="WindowsCertificateStoreSigningOptions"/>'s provider for what that does and does not
-    /// promise.
-    /// </summary>
-    public CertificateLookup? Previous { get; set; }
-
-    /// <summary>
-    /// Gets or sets the certificate that signs. Required — startup fails when no
-    /// <see cref="Current"/> is configured.
-    /// </summary>
-    public CertificateLookup? Current { get; set; }
-
-    /// <summary>
-    /// Gets or sets a certificate staged to become active later, published in advance so relying
-    /// parties have already cached it by the time it starts signing, or <see langword="null"/> when
-    /// there is none. Never used to sign, and no private-key handle is ever extracted for it, on the
-    /// same terms as <see cref="Previous"/>.
+    /// Gets the certificates that hold the signing keys. At least one is required, and every one must
+    /// have a private key this process can use, because any of them may be chosen to sign.
     /// </summary>
     /// <remarks>
-    /// A certificate whose <c>NotBefore</c> has not arrived yet belongs here. Configuring one as
-    /// <see cref="Current"/> fails startup with <c>signing.signing_key_not_yet_valid</c>.
-    /// <para>
-    /// <b>Nothing verifies that a certificate was staged here before it was promoted.</b> With a
-    /// fixed, operator-edited set of slots there is no observed history to check it against, so
-    /// staging a successor long enough ahead for relying parties to have re-fetched the JWKS is the
-    /// operator's decision, not something this provider can enforce. Replacing <see cref="Current"/>
-    /// in place and restarting is accepted silently, and will reject tokens at any relying party
-    /// still holding a cached key set.
-    /// </para>
+    /// A certificate's <c>NotBefore</c> counts as the moment its key was published. A certificate
+    /// authority sets that date at issuance, not at deployment, so list a new certificate as soon as it
+    /// is issued: one listed more than the lead time after its <c>NotBefore</c> starts signing at the
+    /// first restart, before relying parties have seen it in the key set.
     /// </remarks>
-    public CertificateLookup? Next { get; set; }
+    public IList<CertificateLookup> Certificates { get; } = [];
 
     /// <summary>
-    /// Gets the JWS algorithm every configured slot is signed under. A certificate's key does not
+    /// Gets the JWS algorithm every listed certificate is signed under. A certificate's key does not
     /// itself declare RS256 vs PS256 — that choice is made by
     /// <c>AddWindowsCertificateStoreSigning</c>'s <c>algorithm</c> argument and must match each
     /// certificate's actual key type (RSA algorithms for RSA certificates, EC algorithms for EC
     /// certificates).
     /// </summary>
     /// <remarks>
-    /// The setter is <see langword="internal"/> so the algorithm can be said exactly once, in the
-    /// registration argument. A publicly settable one would let a <c>configure</c> callback silently
-    /// beat that argument — the "said twice, and the winner is documented nowhere" hazard the two
-    /// <c>AddWindowsCertificateStoreSigning</c> overloads exist to prevent for the
-    /// <see cref="Current"/> slot.
+    /// The setter is <see langword="internal"/> so the algorithm is said exactly once, in the
+    /// registration argument, and a <c>configure</c> callback cannot silently override it.
     /// </remarks>
     public SigningAlgorithm Algorithm { get; internal set; } = SigningAlgorithm.RS256;
 
     /// <summary>
-    /// Gets the store location every slot's certificate is looked up in. Set by
+    /// Gets the store location every listed certificate is looked up in. Set by
     /// <c>AddWindowsCertificateStoreSigning</c>'s <c>storeLocation</c> argument.
     /// </summary>
     /// <remarks>
@@ -84,7 +54,7 @@ public sealed class WindowsCertificateStoreSigningOptions
     public StoreLocation StoreLocation { get; internal set; }
 
     /// <summary>
-    /// Gets the store name every slot's certificate is looked up in. Set by
+    /// Gets the store name every listed certificate is looked up in. Set by
     /// <c>AddWindowsCertificateStoreSigning</c>'s <c>storeName</c> argument.
     /// </summary>
     /// <remarks>

@@ -5,8 +5,8 @@
 // AzureKeyVaultRemoteSigningIntegrationTests applies: recorded-session tests against real Key Vault
 // behaviour do not exist yet.
 //
-// The vault is read exactly once, at startup, and never re-read — asserted below by rotating a new
-// version into the fake vault after startup and observing that nothing published changes.
+// The ring reads the vault once, at startup — asserted below by rotating a new version into the fake
+// vault after startup and observing that nothing published changes until the next read.
 
 using System.Security.Cryptography;
 using Azure.Security.KeyVault.Certificates;
@@ -130,7 +130,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         timeProvider.SetUtcNow(T0 + TimeSpan.FromDays(30));
 
         ring.Current.Published.Select(k => k.Kid).Should().Equal(publishedAtStartup,
-            "the vault is read exactly once, at startup — a rotation is only picked up by restarting the host");
+            "the ring reads the source once, at startup — a rotation is only picked up when it next reads");
     }
 
     // ── Startup failure propagation ───────────────────────────────────────────────────────────────
@@ -153,12 +153,13 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Startup_fails_closed_when_the_secret_and_the_Cer_diverge()
+    public async Task Startup_fails_closed_when_the_secret_and_the_Cer_diverge_because_the_self_test_catches_it()
     {
-        // The tamper-evidence cross-check: the private key downloaded from the linked secret must
-        // match the public key published from the Cer, and the divergence must reach the startup
-        // output NAMED — a configuration failure the ring absorbs verbatim, never a generic
-        // signer_unavailable that reads as transient.
+        // The source no longer pairs the private key with the published public key itself; the ring's
+        // startup self-test does. A private key downloaded from the linked secret that does not match
+        // the public key published from the Cer produces a signature that does not verify, and that
+        // must fail startup NAMED — signing.self_test_failed — never as a generic signer_unavailable
+        // that reads as transient.
         var ct = TestContext.Current.CancellationToken;
         var (services, reader, _) = BuildServices(T0);
         reader.AddRsaVersion("v1", createdOn: T0);
@@ -173,7 +174,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var act = async () => await StartHostedServicesAsync(provider, ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*secret_cer_mismatch*does not match*");
+            .WithMessage("*self_test_failed*");
     }
 
     [Fact]

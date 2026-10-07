@@ -38,5 +38,13 @@ internal sealed class AzureKeyVaultRemoteSigningOptionsValidator : ZeeKayDaOptio
                 $"AzureKeyVaultRemoteSigningOptions.Algorithm value '{options.Algorithm}' is not a defined " +
                 $"{nameof(SigningAlgorithm)} member.");
         }
+
+        if (options.MaxVersions < KeyVaultVersions.MinimumMaxVersions)
+        {
+            yield return new(
+                "configuration.azure_key_vault_remote_signing.max_versions.too_small",
+                $"AzureKeyVaultRemoteSigningOptions.MaxVersions is {options.MaxVersions}, but must be at least {KeyVaultVersions.MinimumMaxVersions}: " +
+                "a rotation has a staged, a signing and a previous version live at once.");
+        }
     }
 }

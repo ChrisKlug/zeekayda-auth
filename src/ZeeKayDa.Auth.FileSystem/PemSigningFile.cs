@@ -1,12 +1,12 @@
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// The PEM certificate configured into <see cref="PemFileSigningOptions.Current"/> — the one slot
-/// whose private key is ever opened.
+/// One PEM file listed in <see cref="PemFileSigningOptions.Files"/>.
 /// </summary>
 /// <param name="Path">
 /// The certificate's path — a combined cert+key file when <paramref name="KeyPath"/> is
-/// <see langword="null"/>, otherwise the certificate-only file.
+/// <see langword="null"/>, otherwise the certificate-only file. It is also the key's identifier in
+/// every configuration failure about it.
 /// </param>
 /// <param name="KeyPath">
 /// The separate private-key-only file's path, or <see langword="null"/> when
@@ -14,10 +14,7 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// Let's Encrypt/certbot (<c>fullchain.pem</c> + <c>privkey.pem</c>) and cert-manager.
 /// </param>
 /// <remarks>
-/// The published-only slots take a <see cref="PemCertificateFile"/> instead, which has no
-/// <see cref="KeyPath"/> at all. Both paths here are validated by
-/// <see cref="PemFileSigningOptionsValidator"/> at startup rather than on assignment, so a
-/// configuration-bound options instance reports every problem at once instead of throwing from the
-/// first bad property setter.
+/// Both paths are validated by <see cref="PemFileSigningOptionsValidator"/> at startup rather than on
+/// assignment, so a configuration-bound options instance reports every problem at once.
 /// </remarks>
 public sealed record PemSigningFile(string Path, string? KeyPath = null);

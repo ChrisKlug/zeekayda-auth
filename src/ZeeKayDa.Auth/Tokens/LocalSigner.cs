@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 
 namespace ZeeKayDa.Auth.Tokens;
 
@@ -38,6 +39,62 @@ public sealed class LocalSigner : ISigner
 
         _algorithm = algorithm;
         _privateKey = privateKey;
+    }
+
+    /// <summary>
+    /// Creates a <see cref="LocalSigner"/> over a certificate's private key.
+    /// </summary>
+    /// <param name="certificate">
+    /// The certificate. The returned signer owns its own handle to the private key, so the caller may
+    /// dispose <paramref name="certificate"/> straight away.
+    /// </param>
+    /// <param name="algorithm">The signing algorithm to use.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="algorithm"/> is not a defined <see cref="SigningAlgorithm"/> member.
+    /// </exception>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// Thrown with failure code <c>signing.certificate.private_key_not_found</c> when the certificate
+    /// carries no private key, or one this process cannot access; or with the codes
+    /// <see cref="SourceKey.FromCertificate"/> raises when its key does not suit <paramref name="algorithm"/>.
+    /// </exception>
+    public static LocalSigner FromCertificate(X509Certificate2 certificate, SigningAlgorithm algorithm)
+    {
+        ArgumentNullException.ThrowIfNull(certificate);
+        if (!Enum.IsDefined(algorithm))
+            throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, $"Not a defined {nameof(SigningAlgorithm)} member.");
+
+        // Rejects a key type or curve that does not suit the algorithm, by the same rule the key set
+        // applies, before any private key is opened.
+        _ = SourceKey.FromCertificate(certificate, new SourceKeyId(certificate.Thumbprint), algorithm);
+
+        if (!certificate.HasPrivateKey)
+            throw PrivateKeyNotFound(certificate, "carries no private key");
+
+        AsymmetricAlgorithm? privateKey;
+        try
+        {
+            privateKey = certificate.GetRSAPrivateKey();
+            privateKey ??= certificate.GetECDsaPrivateKey();
+        }
+        catch (CryptographicException ex)
+        {
+            throw PrivateKeyNotFound(certificate, "has a private key, but it could not be accessed", ex);
+        }
+
+        return privateKey is not null
+            ? new LocalSigner(algorithm, privateKey)
+            : throw PrivateKeyNotFound(certificate, "has a private key, but it could not be accessed");
+    }
+
+    // The cause travels as the inner exception, never its message in the failure text.
+    private static ZeeKayDaConfigurationException PrivateKeyNotFound(
+        X509Certificate2 certificate, string problem, CryptographicException? cause = null)
+    {
+        var failure = new ZeeKayDaConfigurationFailure(
+            "signing.certificate.private_key_not_found",
+            $"Certificate '{certificate.Subject}' (thumbprint {certificate.Thumbprint}) {problem}. Every listed " +
+            "signing certificate must carry a private key this process can use, because any of them may be chosen to sign.");
+        return cause is null ? new(failure) : new(failure, cause);
     }
 
     /// <inheritdoc/>

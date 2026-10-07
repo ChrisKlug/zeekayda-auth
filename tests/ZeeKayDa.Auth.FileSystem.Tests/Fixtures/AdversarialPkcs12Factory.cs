@@ -59,6 +59,36 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
+    /// A bundle whose MAC and certificate safe are under <paramref name="password"/> but whose
+    /// shrouded key bag is under <paramref name="keyPassword"/>. Reading the certificate succeeds;
+    /// importing the key with <paramref name="password"/> fails, so a read that imports the key fails.
+    /// </summary>
+    public static byte[] KeyBagUnderAnotherPassword(
+        string password, string keyPassword, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=test-key-bag-other-password", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var certificate = request.CreateSelfSigned(notBefore, notAfter);
+        using var publicOnly = X509CertificateLoader.LoadCertificate(certificate.Export(X509ContentType.Cert));
+
+        var localKeyId = new byte[] { 0x01 };
+
+        var certificates = new Pkcs12SafeContents();
+        certificates.AddCertificate(publicOnly).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var keys = new Pkcs12SafeContents();
+        keys.AddShroudedKey(key, keyPassword, Pbe).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
+        builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+        return builder.Encode();
+    }
+
+    /// <summary>
     /// A bundle whose certificate safe is <em>unencrypted</em> while its key bag is shrouded, sealed
     /// with a MAC under <paramref name="macPassword"/>. Reaching the certificate needs no password at
     /// all, so only the MAC can tell whether the file is the one the operator configured.
@@ -166,7 +196,7 @@ internal static class AdversarialPkcs12Factory
     /// <summary>
     /// The shape <c>openssl pkcs12 -export -nokeys</c> produces for a chain: no key bag at all, the
     /// issuer's certificate unmarked, and the leaf carrying the <c>localKeyId</c> of the key that was
-    /// stripped. The right shape for a published-only slot.
+    /// stripped. A bundle the source now rejects, because it can never sign.
     /// </summary>
     /// <returns>The bundle, and the public key of the certificate that should be selected.</returns>
     public static (byte[] Bundle, RSAParameters ExpectedPublicKey) CertificateOnlyChainWithMarkedLeaf(
@@ -266,9 +296,10 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
-    /// A bundle carrying two certificates and no key bag, so nothing identifies which one signs.
+    /// A bundle carrying two certificates and one private key with no <c>localKeyId</c>, so nothing
+    /// identifies which certificate the key belongs to.
     /// </summary>
-    public static byte[] TwoCertificatesNoKey(
+    public static byte[] TwoCertificatesUnmarkedKey(
         string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
     {
         using var firstKey = RSA.Create(2048);
@@ -282,8 +313,12 @@ internal static class AdversarialPkcs12Factory
         certificates.AddCertificate(first);
         certificates.AddCertificate(second);
 
+        var keys = new Pkcs12SafeContents();
+        keys.AddShroudedKey(firstKey, password, Pbe);
+
         var builder = new Pkcs12Builder();
         builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
         builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
 
         return builder.Encode();

@@ -55,7 +55,7 @@ public sealed class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
     }
 
     [Fact]
-    public void AddWindowsCertificateStoreSigning_slots_overload_throws_PlatformNotSupportedException_on_non_Windows()
+    public void AddWindowsCertificateStoreSigning_configure_overload_throws_PlatformNotSupportedException_on_non_Windows()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(),
             "This test verifies the non-Windows PlatformNotSupportedException guard and is only " +
@@ -107,7 +107,7 @@ public sealed class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
     public async Task AddWindowsCertificateStoreSigning_does_not_apply_its_options_when_the_source_registration_is_rejected()
     {
         // The source is registered before any configuration callback runs, so a caller that catches
-        // the rejection is not left with the rejected call's slots on the surviving registration.
+        // the rejection is not left with the rejected call's certificates on the surviving registration.
         Assert.SkipUnless(OperatingSystem.IsWindows(), "requires the real registration path past the platform gate");
 
         var builder = NewBuilder();
@@ -115,12 +115,12 @@ public sealed class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
 
         var act = () => builder.AddWindowsCertificateStoreSigning(
             SigningAlgorithm.ES256, StoreLocation.LocalMachine, StoreName.Root,
-            options => options.Current = CertificateLookup.ByThumbprint(OtherThumbprint));
+            options => options.Certificates.Add(CertificateLookup.ByThumbprint(OtherThumbprint)));
 
         act.Should().Throw<InvalidOperationException>();
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<WindowsCertificateStoreSigningOptions>>().Value;
-        options.Current.Should().Be(Certificate());
+        options.Certificates.Should().Equal(Certificate());
         options.Algorithm.Should().Be(SigningAlgorithm.RS256);
         options.StoreLocation.Should().Be(StoreLocation.CurrentUser);
         options.StoreName.Should().Be(StoreName.My);
@@ -158,7 +158,7 @@ public sealed class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
 
 
     [Fact]
-    public async Task AddWindowsCertificateStoreSigning_fills_the_Current_slot_and_leaves_the_others_empty()
+    public async Task AddWindowsCertificateStoreSigning_lists_the_one_certificate_it_was_given()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "requires the real registration path past the platform gate");
 
@@ -168,15 +168,13 @@ public sealed class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
 
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<WindowsCertificateStoreSigningOptions>>().Value;
-        options.Current.Should().Be(Certificate());
-        options.Previous.Should().BeNull();
-        options.Next.Should().BeNull();
+        options.Certificates.Should().Equal(Certificate());
         options.StoreLocation.Should().Be(StoreLocation.LocalMachine);
         options.StoreName.Should().Be(StoreName.Root);
     }
 
     [Fact]
-    public async Task AddWindowsCertificateStoreSigning_slots_overload_fills_every_slot_the_callback_sets()
+    public async Task AddWindowsCertificateStoreSigning_configure_overload_lists_every_certificate_the_callback_adds()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "requires the real registration path past the platform gate");
 
@@ -184,16 +182,13 @@ public sealed class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
 
         builder.AddWindowsCertificateStoreSigning(SigningAlgorithm.ES256, StoreLocation.CurrentUser, StoreName.My, options =>
         {
-            options.Previous = CertificateLookup.ByThumbprint(OtherThumbprint);
-            options.Current = Certificate();
-            options.Next = CertificateLookup.ByThumbprint("2222222222222222222222222222222222222B");
+            options.Certificates.Add(CertificateLookup.ByThumbprint(OtherThumbprint));
+            options.Certificates.Add(Certificate());
         });
 
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<WindowsCertificateStoreSigningOptions>>().Value;
-        options.Previous.Should().Be(CertificateLookup.ByThumbprint(OtherThumbprint));
-        options.Current.Should().Be(Certificate());
-        options.Next.Should().Be(CertificateLookup.ByThumbprint("2222222222222222222222222222222222222B"));
+        options.Certificates.Should().Equal(CertificateLookup.ByThumbprint(OtherThumbprint), Certificate());
         options.Algorithm.Should().Be(SigningAlgorithm.ES256);
     }
 
@@ -222,7 +217,7 @@ public sealed class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
         var builder = NewBuilder();
 
         builder.AddWindowsCertificateStoreSigning(SigningAlgorithm.ES256, StoreLocation.LocalMachine, StoreName.Root,
-            options => options.Current = Certificate());
+            options => options.Certificates.Add(Certificate()));
 
         await using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<WindowsCertificateStoreSigningOptions>>().Value;

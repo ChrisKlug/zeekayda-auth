@@ -81,6 +81,42 @@ public sealed class AzureKeyVaultCachedSigningOptionsValidatorTests
             .Which.Message.Should().Contain("Algorithm");
     }
 
+    // ── MaxVersions ───────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_accepts_a_null_MaxVersions_meaning_every_enabled_version()
+    {
+        var options = ValidOptions();
+        options.MaxVersions = null;
+
+        Validate(options).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Validate_accepts_a_MaxVersions_of_exactly_three()
+    {
+        var options = ValidOptions();
+        options.MaxVersions = 3;
+
+        Validate(options).Should().BeEmpty("three is the smallest count that holds a staged, a signing and a previous version");
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(1)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_rejects_a_MaxVersions_below_three(int maxVersions)
+    {
+        var options = ValidOptions();
+        options.MaxVersions = maxVersions;
+
+        var failures = Validate(options);
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.azure_key_vault_cached_signing.max_versions.too_small")
+            .Which.Message.Should().Contain("MaxVersions").And.Contain(maxVersions.ToString());
+    }
+
     // ── Batched, not fail-fast ────────────────────────────────────────────────────────────────────
 
     [Fact]

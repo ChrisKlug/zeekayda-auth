@@ -11,9 +11,6 @@ namespace ZeeKayDa.Auth.Windows;
 /// </summary>
 internal sealed class CertificateKeyExtractor : ICertificateKeyExtractor
 {
-    public (AsymmetricAlgorithm PublicKey, SigningKeyType KeyType) ExtractPublicKey(X509Certificate2 certificate, string thumbprint) =>
-        WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, thumbprint);
-
     public (AsymmetricAlgorithm PrivateKey, SigningKeyType KeyType) ExtractPrivateKey(X509Certificate2 certificate, string thumbprint) =>
         WindowsCertificateKeyExtractor.ExtractPrivateKey(certificate, thumbprint);
 }

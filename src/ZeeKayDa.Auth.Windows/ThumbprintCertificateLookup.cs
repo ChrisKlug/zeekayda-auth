@@ -6,8 +6,8 @@ namespace ZeeKayDa.Auth.Windows;
 /// </summary>
 /// <remarks>
 /// Two lookups are equal when they are the same mode and name the same certificate, which is how
-/// <see cref="WindowsCertificateStoreSigningOptionsValidator"/> detects two slots configured with
-/// one certificate however each thumbprint happened to be written.
+/// <see cref="WindowsCertificateStoreSigningOptionsValidator"/> detects one certificate listed
+/// twice, however each thumbprint happened to be written.
 /// </remarks>
 public sealed class ThumbprintCertificateLookup : CertificateLookup
 {

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
@@ -97,5 +98,98 @@ public sealed class LocalSignerTests
         var act = () => sut.SignAsync(new byte[] { 1 }, ct);
 
         await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void FromCertificate_rejects_an_EC_certificate_for_an_RSA_algorithm()
+    {
+        using var certificate = SelfSigned(ECDsa.Create(ECCurve.NamedCurves.nistP256));
+
+        var act = () => LocalSigner.FromCertificate(certificate, SigningAlgorithm.RS256);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
+    }
+
+    [Fact]
+    public void FromCertificate_rejects_an_undefined_algorithm()
+    {
+        using var certificate = SelfSigned(RSA.Create(2048));
+
+        var act = () => LocalSigner.FromCertificate(certificate, (SigningAlgorithm)999);
+
+        act.Should().Throw<ArgumentOutOfRangeException>().Which.ParamName.Should().Be("algorithm");
+    }
+
+    [Fact]
+    public async Task FromCertificate_signs_a_payload_that_verifies_with_an_RSA_certificates_public_key()
+    {
+        using var certificate = SelfSigned(RSA.Create(2048));
+        using var sut = LocalSigner.FromCertificate(certificate, SigningAlgorithm.RS256);
+        var input = new byte[] { 1, 2, 3, 4, 5 };
+
+        var signature = await sut.SignAsync(input, TestContext.Current.CancellationToken);
+
+        using var publicKey = certificate.GetRSAPublicKey()!;
+        publicKey.VerifyData(input, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task FromCertificate_signs_a_payload_that_verifies_with_an_EC_certificates_public_key()
+    {
+        using var certificate = SelfSigned(ECDsa.Create(ECCurve.NamedCurves.nistP256));
+        using var sut = LocalSigner.FromCertificate(certificate, SigningAlgorithm.ES256);
+        var input = new byte[] { 1, 2, 3, 4, 5 };
+
+        var signature = await sut.SignAsync(input, TestContext.Current.CancellationToken);
+
+        using var publicKey = certificate.GetECDsaPublicKey()!;
+        publicKey.VerifyData(input, signature.Span, HashAlgorithmName.SHA256).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task FromCertificate_signer_keeps_signing_after_the_certificate_is_disposed()
+    {
+        using var certificate = SelfSigned(RSA.Create(2048));
+        using var publicKey = certificate.GetRSAPublicKey()!;
+        using var sut = LocalSigner.FromCertificate(certificate, SigningAlgorithm.RS256);
+        certificate.Dispose();
+        var input = new byte[] { 9, 8, 7 };
+
+        var signature = await sut.SignAsync(input, TestContext.Current.CancellationToken);
+
+        publicKey.VerifyData(input, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void FromCertificate_throws_private_key_not_found_for_a_certificate_without_a_private_key()
+    {
+        using var withKey = SelfSigned(RSA.Create(2048));
+        using var publicOnly = X509CertificateLoader.LoadCertificate(withKey.Export(X509ContentType.Cert));
+
+        var act = () => LocalSigner.FromCertificate(publicOnly, SigningAlgorithm.RS256);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>().Which.AggregatedFailures
+            .Should().ContainSingle(f => f.Code == "signing.certificate.private_key_not_found");
+    }
+
+    private static X509Certificate2 SelfSigned(RSA rsa)
+    {
+        using (rsa)
+        {
+            var request = new CertificateRequest("CN=local-signer-test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-3), DateTimeOffset.UtcNow.AddDays(30));
+        }
+    }
+
+    private static X509Certificate2 SelfSigned(ECDsa ecdsa)
+    {
+        using (ecdsa)
+        {
+            var request = new CertificateRequest("CN=local-signer-test", ecdsa, HashAlgorithmName.SHA256);
+            return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-3), DateTimeOffset.UtcNow.AddDays(30));
+        }
     }
 }

@@ -788,3 +788,5 @@ ZeeKayDa.Auth.Tokens.SigningKeyOptions.SigningKeyOptions() -> void
 ZeeKayDa.Auth.Tokens.SourceKey.ExpiresAt.get -> System.DateTimeOffset
 ZeeKayDa.Auth.Tokens.SourceKey.NotBefore.get -> System.DateTimeOffset
 ZeeKayDa.Auth.Tokens.SourceKey.SourceKey(ZeeKayDa.Auth.Tokens.SourceKeyId id, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, ZeeKayDa.Auth.Tokens.PublicKeyParameters! publicKey, System.DateTimeOffset? notBefore = null, System.DateTimeOffset? expiresAt = null) -> void
+static ZeeKayDa.Auth.Tokens.LocalSigner.FromCertificate(System.Security.Cryptography.X509Certificates.X509Certificate2! certificate, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm) -> ZeeKayDa.Auth.Tokens.LocalSigner!
+static ZeeKayDa.Auth.Tokens.SourceKey.FromCertificate(System.Security.Cryptography.X509Certificates.X509Certificate2! certificate, ZeeKayDa.Auth.Tokens.SourceKeyId id, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm) -> ZeeKayDa.Auth.Tokens.SourceKey!

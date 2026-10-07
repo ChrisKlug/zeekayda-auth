@@ -23,10 +23,11 @@ plus `ClockSkewTolerance` (per-client overrides are invisible at startup); sums 
 the ordinally greater source id. One rule covers a first deployment, a normal rotation and an emergency (remove the
 key, restart). `SigningKeySet.SigningKey` is non-nullable and always published.
 
-**A file or store provider's slot names carry no meaning to core.** PEM, PFX and Windows still configure
-`Previous`/`Current`/`Next` and report the filled slots as a list; whichever key the dates choose signs. Each
-still opens a signer only for `Current`, so a configuration in which the dates choose another slot fails
-startup closed until those providers become plain lists.
+**File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list
+`Files`/`Certificates` with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`. A
+certificate's `NotBefore` is its publication date; a CA sets it at issuance, so one listed more than the lead time
+after issuance signs at the next restart unpublished. Listing checks every entry can sign without importing a
+key: PFX key bags, PEM key files (permissions) and blocks, Windows `HasPrivateKey`. No read lock or cache.
 
 **The framework derives every `kid`; a provider cannot supply one.** The ring computes an RFC 7638 JWK
 thumbprint over the public key. A provider supplies only its internal `SourceKeyId`, so it cannot leak a
@@ -36,18 +37,15 @@ vault URI, certificate thumbprint, or file path into every issued token.
 version counts from the later of its `CreatedOn` and its own `nbf`, never first-seen time; its `exp` is its
 expiry. Disabling a version removes it from the listing — the one revocation lever. A listed version whose
 identifier is not pinned to that version is rejected, since the SDK resolves an unpinned URI to whatever
-version is newest at sign time. Every enabled version's public key is fetched at startup; pruning fully
-retired versions before fetching them is a Key Vault optimisation, not part of the contract.
+version is newest at sign time. `MaxVersions` (default all, minimum 3: staged, signing, previous) lists only the
+newest N, so only their public keys are fetched; too low drops a version whose tokens are still live.
 
 **The cached Key Vault source downloads private material only for the version the ring asks to sign.** Reads
 publish public `Cer` halves only (no `secrets/get`); that version's private key is downloaded once, in
-`CreateSignerAsync`, and cross-checked against the public key the read published — separate vault reads that
-could diverge, so a divergence is named rather than surfacing as a generic self-test failure. A
-published-only version's key never enters the process.
+`CreateSignerAsync`. The secret and the `Cer` are separate reads; the self-test catches a divergence.
 
-**Bundled formats keep non-active private material out of reach by never importing it.** PFX verifies the
-MAC against the password, takes the certificate the key bag's `localKeyId` names — PKCS#12 has no bag
-ordering — and imports no key at all.
+**Listing a bundled format imports no private key.** PFX verifies the MAC against the password and takes the
+certificate the key bag's `localKeyId` names — PKCS#12 has no bag ordering; only the chosen bundle's key is imported.
 
 **Every signer handoff is self-tested before the signer is used.** `SigningKeyRing` signs a
 non-JWS-shaped constant prefix plus a fresh 32-byte nonce and verifies it against that key's own published
@@ -126,22 +124,22 @@ development provider stays in core.
 - **Timing owned by each provider: three operator-filled slots, and Key Vault's `KeyVaultVersionSelector`
   with `PreActivationDelay` and `PreviousVersionsToPublish`.** A provider author had to understand rotation
   to write a provider, and the one real implementation of the rules sat inside one provider package.
+- **Key Vault pruning by asking core which versions it keeps, or from a rotation period.** The first is custom
+  handling of a first-party package; the second miscounts after an emergency rotation.
 - **A startup cross-check between advertised and producible algorithms
   (`AdvertisedSigningAlgorithmVerifier`, `ISigningKeyProducibility`).** Detecting a disagreement the
   configuration should not express. #515 derives the advertised set from the published set instead, making
   it unrepresentable.
-- **An `Enabled`/disabled flag on the provider contract.** It only ever meant "this Key Vault version is
-  enabled", and forced every provider to carry a concept most had no equivalent for.
-- **A whole-set change-detection hook alongside refresh.** Once listings became public-only data and signer
-  creation was gated on the active key changing, it was the default behaviour.
+- **An `Enabled` flag, or a whole-set change-detection hook, on the provider contract.** The flag only
+  ever meant "this Key Vault version is enabled"; the hook became the default once listings were public-only.
 - **`InternalsVisibleTo` for the shared signing helpers.** The Azure Key Vault provider's first attempt. It
   can serve exactly one first-party package and can never serve a third party without a new core release
   naming them. Public contracts with internal crypto is the fix.
 - **The development-key environment gate on the shared server options root.** Shipped, then reverted: it
   conflated the gate's input (server-wide host environment name) with its policy (feature-scoped, inert
   unless a development-key method was called).
-- **A hand-rolled key-pairing check inside the Windows Certificate Store provider.** Added after a
-  security-review finding, then superseded — the same invariant is now proven on every handoff.
+- **Hand-rolled key-pairing checks in the Windows and cached Key Vault providers.** Superseded — the same
+  invariant is proven on every handoff.
 - **`EphemeralKeySet` to keep a non-active PFX bundle's key off disk.** Platform-conditional (macOS throws)
   and it still materialises the key. Never decrypting the key bag beats it everywhere.
 - **A macOS Keychain signing provider.** Implemented and reviewed, then descoped: the file-system provider
