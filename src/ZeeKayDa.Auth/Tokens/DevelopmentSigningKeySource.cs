@@ -115,7 +115,7 @@ internal sealed class DevelopmentSigningKeySource(
                 $"called at most once, immediately after {nameof(ReadAsync)} generated or loaded the " +
                 "single dev key.");
 
-        return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, rsa));
+        return Task.FromResult<ISigner>(new LocalSigner(Algorithm, rsa));
     }
 
     /// <summary>

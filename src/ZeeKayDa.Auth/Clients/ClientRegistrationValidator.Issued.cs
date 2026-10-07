@@ -31,14 +31,17 @@ internal sealed partial class ClientRegistrationValidator
             yield break;
         }
 
-        foreach (var undefined in algorithms.Where(algorithm => !Enum.IsDefined(algorithm)))
+        var undefinedValues = algorithms.Where(algorithm => !Enum.IsDefined(algorithm)).ToList();
+        foreach (var undefined in undefinedValues)
         {
             yield return new ZeeKayDaConfigurationFailure(
                 "client.signing_algorithms.undefined",
                 $"Client '{client.ClientId}' has AllowedSigningAlgorithms value {(int)undefined}, which is not a " +
                 $"defined {nameof(SigningAlgorithm)} member.");
-            yield break;
         }
+
+        if (undefinedValues.Count > 0)
+            yield break;
 
         // CurrentOrNull rather than Current: a custom repository may validate before the ring has
         // been initialized, and throwing there would turn "cannot check yet" into a startup crash.
@@ -54,6 +57,7 @@ internal sealed partial class ClientRegistrationValidator
                 "client.signing_algorithms.excludes_signing_key",
                 $"Client '{client.ClientId}' has AllowedSigningAlgorithms that exclude '{keySet.Algorithm}', the " +
                 "algorithm the server signs with, so no ID token could be issued to it. Add that algorithm.");
+            yield break;
         }
 
         WarnUnusedAlgorithms(client, algorithms, keySet.Algorithm);

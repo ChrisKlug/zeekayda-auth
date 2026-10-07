@@ -1183,6 +1183,42 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
+    public void Validate_reports_every_undefined_AllowedSigningAlgorithms_value()
+    {
+        var validator = MakeValidator(ring: TestSigningKeys.Ring(SigningAlgorithm.RS256));
+
+        var client = MakeValidPublicClient() with
+        {
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm>
+            {
+                SigningAlgorithm.RS256, (SigningAlgorithm)998, (SigningAlgorithm)999,
+            }
+        };
+
+        var failures = validator.Validate(client);
+
+        failures.Where(f => f.Code == "client.signing_algorithms.undefined").Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Validate_fails_a_set_excluding_the_server_algorithm_without_also_warning_its_entries_are_unused()
+    {
+        // One mistake, one message: the "never signs with" warning would bury the startup failure.
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger, ring: TestSigningKeys.Ring(SigningAlgorithm.RS256));
+
+        var client = MakeValidPublicClient() with
+        {
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 }
+        };
+
+        var failures = validator.Validate(client);
+
+        failures.Should().ContainSingle(f => f.Code == "client.signing_algorithms.excludes_signing_key");
+        logger.Warnings.Should().NotContain(w => w.Contains("never signs with"));
+    }
+
+    [Fact]
     public void Validate_warns_once_about_an_AllowedSigningAlgorithms_entry_the_server_never_signs_with()
     {
         // An acceptance list may carry an algorithm for another server or a planned change; it has no

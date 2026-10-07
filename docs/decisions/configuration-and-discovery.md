@@ -100,10 +100,11 @@ provider is public and replaceable — that is the escape hatch for a host that 
 the framework does not model.
 
 **The advertised signing algorithm is the signing source's, never configured beside it.**
-`id_token_signing_alg_values_supported` is the one algorithm the signing source declares, read from
-the ring on each request; every published key signs under it, so a rotation never changes the
-document. There is no filter: with one algorithm there is nothing to narrow. A host serving the protocol endpoints must register a signing key source: with no key set
-there is nothing to derive from, and startup fails with `signing.key_ring.missing`.
+`id_token_signing_alg_values_supported` is the one algorithm the signing source declares, read from the
+ring on each request; every published key signs under it, so a rotation never changes the document.
+There is no filter: with one algorithm there is nothing to narrow. A host serving the protocol endpoints
+must register a signing key source: with no key set there is nothing to derive from, and startup fails
+with `signing.key_ring.missing`.
 
 **The advertised token endpoint auth methods are derived from the authenticators.** Every method a
 registered `IClientAuthenticator` declares, plus `none`, which the framework performs itself — so a

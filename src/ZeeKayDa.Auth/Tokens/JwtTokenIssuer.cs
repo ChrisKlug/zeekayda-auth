@@ -155,8 +155,8 @@ public sealed class JwtTokenIssuer : ITokenIssuer
         {
             throw new InvalidOperationException(
                 $"Client '{context.Client.ClientId}' does not allow ID tokens signed with " +
-                $"{SigningAlgorithms.WireName(key.Algorithm)}, the algorithm of the current signing key. " +
-                "Widen the client's AllowedSigningAlgorithms, or sign with a key it allows.");
+                $"{SigningAlgorithms.WireName(key.Algorithm)}, the algorithm the server signs with. " +
+                "Widen the client's AllowedSigningAlgorithms, or register a signing source for an algorithm it allows.");
         }
     }
 
