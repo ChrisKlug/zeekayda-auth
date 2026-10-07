@@ -38,11 +38,12 @@ public sealed class JwtTokenIssuerTests
 
     private sealed class WorkingSource(RSA rsa) : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             var current = new SourceKey(
                 new SourceKeyId("current"),
-                SigningAlgorithm.RS256,
                 PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)));
             return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
         }
@@ -81,7 +82,7 @@ public sealed class JwtTokenIssuerTests
         CountingSigner? signer = null;
         using var privateKey = TestSigningKeys.PrivateKey(SigningAlgorithm.RS256);
         var ring = TestSigningKeys.Ring(
-            [TestSigningKeys.SourceKey("current", SigningAlgorithm.RS256, privateKey)],
+            [TestSigningKeys.SourceKey("current", privateKey)],
             privateKey,
             decorateSigner: inner => signer = new CountingSigner(inner));
         signer!.Reset();
@@ -118,11 +119,12 @@ public sealed class JwtTokenIssuerTests
     /// <summary>A source over one EC key, for the algorithms whose hash is not SHA-256.</summary>
     private sealed class EcSource(ECDsa ecdsa, SigningAlgorithm algorithm) : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => algorithm;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             var current = new SourceKey(
                 new SourceKeyId("current"),
-                algorithm,
                 PublicKeyParameters.FromEc(ecdsa.ExportParameters(includePrivateParameters: false)));
             return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
         }

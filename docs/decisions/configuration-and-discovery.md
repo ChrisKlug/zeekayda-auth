@@ -14,7 +14,7 @@ IntelliSense collapses and cross-endpoint invariants have nowhere to live.
 **The grouping rule is mechanical and spec-driven.** A property groups with any other whose
 discovery key shares a spec-defined prefix — an endpoint name (`token_endpoint_*`), an artifact name
 (`id_token_*`), a response shape (`response_*`). Groups named after an HTTP endpoint carry an
-`Endpoint` suffix; groups that do not (`IdToken`, `Response`) do not. No shared prefix means the
+`Endpoint` suffix; groups that do not (`Response`) do not. No shared prefix means the
 root. Endpoint affinity is a permitted secondary criterion only when the *spec text itself* names a
 property as a modifier of that endpoint — that is how RFC 7636's `code_challenge_*` parameters land
 on `AuthorizationEndpoint` with nothing to form a prefix group with. It is never a judgement call.
@@ -99,14 +99,12 @@ an internal, freely-refactorable options class is never coupled to a spec-mandat
 provider is public and replaceable — that is the escape hatch for a host that must advertise something
 the framework does not model.
 
-**The advertised signing algorithms are derived from the key set, never configured beside it.**
-`id_token_signing_alg_values_supported` is the distinct algorithms of the published key set — every
-configured slot, ascending by `SigningAlgorithm` value — read from the ring on each request. The
-*published* set, not the producible one, keeps the document stable across a rotation: a `Previous`
-key's algorithm stays advertised while that key is published. `IdToken.AdvertisedSigningAlgorithms`
-narrows that set and can never widen it; a filter excluding the signing key's own algorithm fails
-startup. A host serving the protocol endpoints must register a signing key source: with no key set
-there is nothing to derive from, and startup fails with `signing.key_ring.missing`.
+**The advertised signing algorithm is the signing source's, never configured beside it.**
+`id_token_signing_alg_values_supported` is the one algorithm the signing source declares, read from the
+ring on each request; every published key signs under it, so a rotation never changes the document.
+There is no filter: with one algorithm there is nothing to narrow. A host serving the protocol endpoints
+must register a signing key source: with no key set there is nothing to derive from, and startup fails
+with `signing.key_ring.missing`.
 
 **The advertised token endpoint auth methods are derived from the authenticators.** Every method a
 registered `IClientAuthenticator` declares, plus `none`, which the framework performs itself — so a

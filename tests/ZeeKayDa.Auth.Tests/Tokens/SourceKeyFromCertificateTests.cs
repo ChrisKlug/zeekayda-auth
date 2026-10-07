@@ -14,22 +14,21 @@ public sealed class SourceKeyFromCertificateTests
         using var rsa = RSA.Create(2048);
         using var certificate = SelfSigned(rsa);
 
-        var sut = SourceKey.FromCertificate(certificate, KeyId, SigningAlgorithm.RS256);
+        var sut = SourceKey.FromCertificate(certificate, KeyId);
 
         sut.PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
         sut.PublicKey.RsaPublicParameters!.Value.Modulus.Should().Equal(rsa.ExportParameters(false).Modulus);
     }
 
     [Fact]
-    public void FromCertificate_carries_the_id_and_algorithm_it_was_given()
+    public void FromCertificate_carries_the_id_it_was_given()
     {
         using var rsa = RSA.Create(2048);
         using var certificate = SelfSigned(rsa);
 
-        var sut = SourceKey.FromCertificate(certificate, KeyId, SigningAlgorithm.PS256);
+        var sut = SourceKey.FromCertificate(certificate, KeyId);
 
         sut.Id.Should().Be(KeyId);
-        sut.Algorithm.Should().Be(SigningAlgorithm.PS256);
     }
 
     [Fact]
@@ -38,7 +37,7 @@ public sealed class SourceKeyFromCertificateTests
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var certificate = SelfSigned(ecdsa);
 
-        var sut = SourceKey.FromCertificate(certificate, KeyId, SigningAlgorithm.ES256);
+        var sut = SourceKey.FromCertificate(certificate, KeyId);
 
         sut.PublicKey.KeyType.Should().Be(SigningKeyType.Ec);
         sut.PublicKey.EcPublicParameters!.Value.Q.X.Should().Equal(ecdsa.ExportParameters(false).Q.X);
@@ -50,7 +49,7 @@ public sealed class SourceKeyFromCertificateTests
         using var rsa = RSA.Create(2048);
         using var certificate = SelfSigned(rsa);
 
-        var sut = SourceKey.FromCertificate(certificate, KeyId, SigningAlgorithm.RS256);
+        var sut = SourceKey.FromCertificate(certificate, KeyId);
 
         sut.PublicKey.RsaPublicParameters!.Value.D.Should().BeNull();
     }
@@ -61,34 +60,10 @@ public sealed class SourceKeyFromCertificateTests
         using var rsa = RSA.Create(2048);
         using var certificate = SelfSigned(rsa);
 
-        var sut = SourceKey.FromCertificate(certificate, KeyId, SigningAlgorithm.RS256);
+        var sut = SourceKey.FromCertificate(certificate, KeyId);
 
         sut.NotBefore.UtcDateTime.Should().Be(certificate.NotBefore.ToUniversalTime());
         sut.ExpiresAt.UtcDateTime.Should().Be(certificate.NotAfter.ToUniversalTime());
-    }
-
-    [Fact]
-    public void FromCertificate_rejects_a_key_that_does_not_suit_the_algorithm_naming_the_id()
-    {
-        using var rsa = RSA.Create(2048);
-        using var certificate = SelfSigned(rsa);
-
-        var act = () => SourceKey.FromCertificate(certificate, KeyId, SigningAlgorithm.ES256);
-
-        var exception = act.Should().Throw<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
-        exception.Which.Message.Should().Contain(KeyId.Value);
-    }
-
-    [Fact]
-    public void FromCertificate_rejects_an_undefined_algorithm()
-    {
-        using var rsa = RSA.Create(2048);
-        using var certificate = SelfSigned(rsa);
-
-        var act = () => SourceKey.FromCertificate(certificate, KeyId, (SigningAlgorithm)999);
-
-        act.Should().Throw<ArgumentOutOfRangeException>().Which.ParamName.Should().Be("algorithm");
     }
 
     [Fact]
@@ -98,7 +73,7 @@ public sealed class SourceKeyFromCertificateTests
         using var withKey = SelfSigned(rsa);
         using var publicOnly = X509CertificateLoader.LoadCertificate(withKey.Export(X509ContentType.Cert));
 
-        var sut = SourceKey.FromCertificate(publicOnly, KeyId, SigningAlgorithm.RS256);
+        var sut = SourceKey.FromCertificate(publicOnly, KeyId);
 
         sut.PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
     }
@@ -110,7 +85,7 @@ public sealed class SourceKeyFromCertificateTests
 
         using var certificate = X509Certificate2.CreateFromPem(DsaCertificatePem);
 
-        var act = () => SourceKey.FromCertificate(certificate, KeyId, SigningAlgorithm.RS256);
+        var act = () => SourceKey.FromCertificate(certificate, KeyId);
 
         act.Should().Throw<ZeeKayDaConfigurationException>().Which.AggregatedFailures
             .Should().ContainSingle(f => f.Code == "signing.certificate.unsupported_key_type")

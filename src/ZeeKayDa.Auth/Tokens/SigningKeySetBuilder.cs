@@ -35,45 +35,53 @@ internal static partial class SigningKeySetBuilder
     private static readonly TimeSpan NotBeforeGrace = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// Validates every key in <paramref name="keys"/> and builds the key set in force at
-    /// <paramref name="now"/>.
+    /// Validates every key in <paramref name="keys"/> against <paramref name="algorithm"/> and builds
+    /// the key set in force at <paramref name="now"/>.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
-    /// Thrown with failure code <c>signing.no_keys</c> when <paramref name="keys"/> is empty;
+    /// Thrown with failure code <c>signing.undefined_algorithm</c> when <paramref name="algorithm"/> is
+    /// not a defined <see cref="SigningAlgorithm"/> member; <c>signing.no_keys</c> when <paramref name="keys"/> is empty;
     /// <c>signing.null_key</c> when it contains a <see langword="null"/>;
     /// <c>signing.undated_key</c> when one of two or more keys has no <see cref="SourceKey.NotBefore"/>;
     /// <c>signing.invalid_validity_window</c> when a key expires before it becomes valid;
     /// <c>signing.signing_key_not_yet_valid</c> or <c>signing.signing_key_expired</c> when no key is
     /// valid at <paramref name="now"/>; or any per-key code from validation
-    /// (<c>signing.empty_key_id</c>, <c>signing.duplicate_key_id</c>, <c>signing.undefined_algorithm</c>,
-    /// <c>signing.key_algorithm_mismatch</c>, <c>signing.ec_curve_algorithm_mismatch</c>,
+    /// (<c>signing.empty_key_id</c>, <c>signing.duplicate_key_id</c>, <c>signing.key_algorithm_mismatch</c>, <c>signing.ec_curve_algorithm_mismatch</c>,
     /// <c>signing.rsa_key_too_small</c>, <c>signing.ec_unsupported_curve</c>,
     /// <c>signing.invalid_public_key</c>, <c>signing.duplicate_kid</c>).
     /// </exception>
     internal static SigningKeySet Build(
-        IReadOnlyList<SourceKey> keys, DateTimeOffset now, SigningKeyOptions options, ILogger logger)
+        IReadOnlyList<SourceKey> keys,
+        SigningAlgorithm algorithm,
+        DateTimeOffset now,
+        SigningKeyOptions options,
+        ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(keys);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
-        var oldestFirst = BuildAll(keys)
+        if (!Enum.IsDefined(algorithm))
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.undefined_algorithm",
+                    $"The signing key source declares algorithm value {(int)algorithm}, which is not a " +
+                    $"defined {nameof(SigningAlgorithm)} member."));
+        }
+
+        var oldestFirst = BuildAll(keys, algorithm)
             .OrderBy(key => key.NotBefore)
             .ThenBy(key => key.SourceId.Value, StringComparer.Ordinal)
             .ToList();
 
         var signingKey = ChooseSigningKey(oldestFirst, now, options, logger);
         var published = WithoutRetiredKeys(oldestFirst, signingKey, now, options);
-        var advertisedAlgorithms = published
-            .Select(k => k.Algorithm)
-            .Distinct()
-            .OrderBy(a => a)
-            .ToImmutableArray();
 
-        return new SigningKeySet(signingKey, published, advertisedAlgorithms);
+        return new SigningKeySet(signingKey, published);
     }
 
-    private static List<SigningKey> BuildAll(IReadOnlyList<SourceKey> keys)
+    private static List<SigningKey> BuildAll(IReadOnlyList<SourceKey> keys, SigningAlgorithm algorithm)
     {
         if (keys.Count == 0)
         {
@@ -98,7 +106,7 @@ internal static partial class SigningKeySetBuilder
             }
 
             ValidateDates(sourceKey, keys.Count);
-            built.Add(BuildAndValidate(sourceKey, seenSourceIds, seenKids));
+            built.Add(BuildAndValidate(sourceKey, algorithm, seenSourceIds, seenKids));
         }
 
         return built;
@@ -196,7 +204,7 @@ internal static partial class SigningKeySetBuilder
     }
 
     private static SigningKey BuildAndValidate(
-        SourceKey sourceKey, HashSet<string> seenSourceIds, HashSet<string> seenKids)
+        SourceKey sourceKey, SigningAlgorithm algorithm, HashSet<string> seenSourceIds, HashSet<string> seenKids)
     {
         var keyLabel = sourceKey.Id.Value;
 
@@ -218,18 +226,9 @@ internal static partial class SigningKeySetBuilder
                     "Each SourceKey.Id must be unique among the keys reported by ReadAsync."));
         }
 
-        if (!Enum.IsDefined(sourceKey.Algorithm))
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.undefined_algorithm",
-                    $"Key '{keyLabel}' declares algorithm value {(int)sourceKey.Algorithm}, which is " +
-                    $"not a defined {nameof(SigningAlgorithm)} member."));
-        }
-
         // Strength first: an unsupported curve is reported as that, not as a curve/algorithm mismatch.
         ValidateKeyStrength(sourceKey);
-        ValidateKeyAlgorithmCompatibility(sourceKey);
+        ValidateKeyAlgorithmCompatibility(sourceKey, algorithm);
 
         var canonicalPublicKey = ImportAndCanonicalize(sourceKey);
         var kid = DeriveKid(canonicalPublicKey);
@@ -245,7 +244,7 @@ internal static partial class SigningKeySetBuilder
         }
 
         return new SigningKey(
-            sourceKey.Id, kid, sourceKey.Algorithm, canonicalPublicKey, sourceKey.NotBefore, sourceKey.ExpiresAt);
+            sourceKey.Id, kid, algorithm, canonicalPublicKey, sourceKey.NotBefore, sourceKey.ExpiresAt);
     }
 
     /// <summary>

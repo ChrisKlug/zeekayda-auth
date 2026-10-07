@@ -418,8 +418,8 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_client_pinned_to_an_algorithm_the_current_key_does_not_use_fails_startup()
     {
-        // ES256 is published as the next key, so the subset rule passes; the key that signs is
-        // RS256, and a client that will accept only ES256 could never be issued an ID token.
+        // The source signs RS256, and a client that will accept only ES256 could never be issued an
+        // ID token.
         using var host = new EndpointHost(
             configureBuilder: builder =>
             {
@@ -427,20 +427,19 @@ public sealed class TokenEndpointTests : IDisposable
                 {
                     AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 },
                 }));
-                builder.AddSigningKeySource<RsaCurrentEcNextKeySource>();
+                builder.AddSigningKeySource<RsaKeySource>();
             });
 
         var failure = await host.StartupFailureAsync();
 
         var messages = failure.AllMessages();
         messages.Should().Contain("excludes_signing_key");
-        messages.Should().Contain("RS256", "the validator requires the current signing key's algorithm in the set");
+        messages.Should().Contain("RS256", "the validator requires the algorithm the server signs with in the set");
     }
 
     // The grant re-checks the client's allowed algorithms against the signing key before anything
-    // is issued. Registration validation already refuses such a client and the ring never rotates,
-    // so no request can reach the refusal end to end until live rotation exists; the decision itself
-    // is pinned here.
+    // is issued. Registration validation already refuses such a client and a source signs under one
+    // algorithm, so no request can reach the refusal end to end; the decision itself is pinned here.
 
     [Fact]
     public void A_signing_key_the_client_does_not_allow_is_not_accepted()
@@ -470,10 +469,10 @@ public sealed class TokenEndpointTests : IDisposable
     {
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var key = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.ES256,
+            new SourceKeyId("current"),
             PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: false)));
         return SigningKeySetBuilder.Build(
-            [key], DateTimeOffset.UtcNow, new SigningKeyOptions { RetainRetiredKeysFor = TimeSpan.Zero }, NullLogger.Instance).SigningKey;
+            [key], SigningAlgorithm.ES256, DateTimeOffset.UtcNow, new SigningKeyOptions { RetainRetiredKeysFor = TimeSpan.Zero }, NullLogger.Instance).SigningKey;
     }
 
     // ── Lifetimes ─────────────────────────────────────────────────────────────────────────────
@@ -1070,33 +1069,26 @@ public sealed class TokenEndpointTests : IDisposable
                 : Task.FromResult<IClientWithCredentials?>(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
     }
 
-    /// <summary>A source whose current key is RS256 and whose next key is ES256, so ES256 is advertised while RS256 signs.</summary>
-    private sealed class RsaCurrentEcNextKeySource : ISigningKeySource, IDisposable
+    /// <summary>A source signing RS256 with one key.</summary>
+    private sealed class RsaKeySource : ISigningKeySource, IDisposable
     {
         private readonly RSA _rsa = RSA.Create(2048);
-        private readonly ECDsa _ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
-        {
-            var current = new SourceKey(new SourceKeyId("rsa-current"), SigningAlgorithm.RS256,
-                PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)),
-                DateTimeOffset.UtcNow.AddDays(-30));
-            var next = new SourceKey(new SourceKeyId("ec-next"), SigningAlgorithm.ES256,
-                PublicKeyParameters.FromEc(_ecdsa.ExportParameters(includePrivateParameters: false)),
-                DateTimeOffset.UtcNow.AddHours(-1));
-            return Task.FromResult<IReadOnlyList<SourceKey>>([current, next]);
-        }
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<SourceKey>>(
+            [
+                new SourceKey(
+                    new SourceKeyId("rsa-current"),
+                    PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false))),
+            ]);
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
-            Task.FromResult<ISigner>(id.Value == "ec-next"
-                ? new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(_ecdsa.ExportParameters(includePrivateParameters: true)))
-                : new LocalSigner(SigningAlgorithm.RS256, RSA.Create(_rsa.ExportParameters(includePrivateParameters: true))));
+            Task.FromResult<ISigner>(
+                new LocalSigner(SigningAlgorithm.RS256, RSA.Create(_rsa.ExportParameters(includePrivateParameters: true))));
 
-        public void Dispose()
-        {
-            _rsa.Dispose();
-            _ecdsa.Dispose();
-        }
+        public void Dispose() => _rsa.Dispose();
     }
 
     /// <summary>An issuer standing in for a signing key ring that cannot sign.</summary>

@@ -34,6 +34,9 @@ internal sealed class PemFileSigningKeySource(
         new(["PRIVATE KEY", "RSA PRIVATE KEY", "EC PRIVATE KEY"], StringComparer.Ordinal);
 
     /// <inheritdoc/>
+    public SigningAlgorithm Algorithm => _options.Value.Algorithm;
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
     {
         var options = _options.Value;
@@ -42,7 +45,7 @@ internal sealed class PemFileSigningKeySource(
         foreach (var file in options.Files)
         {
             using var certificate = await LoadPublicCertificateAsync(file, cancellationToken).ConfigureAwait(false);
-            keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(file.Path), options.Algorithm));
+            keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(file.Path)));
         }
 
         return keys;

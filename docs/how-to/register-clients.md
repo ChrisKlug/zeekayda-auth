@@ -217,10 +217,10 @@ builder.AddInMemoryClients(clients => clients.Add(customClient));
 `Client` is a record, so `with` expressions work to override any property that was
 not set by the factory method.
 
-> `AllowedSigningAlgorithms` must be a subset of what the server advertises, and the server
-> advertises only the algorithms its configured signing keys use. The `ES256` above therefore
-> requires an ES256 signing key to be configured; without one, startup fails with
-> `client.signing_algorithms.not_subset`.
+> `AllowedSigningAlgorithms` must contain the algorithm the server signs with — the one its signing
+> source was registered for. The `ES256` above therefore requires an ES256 signing source; without
+> one, startup fails with `client.signing_algorithms.excludes_signing_key`. Any other entry has no
+> effect and is logged as a warning once.
 
 ## Multiple `AddInMemoryClients` calls
 

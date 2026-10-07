@@ -72,11 +72,9 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         var keySet = await sut.ReadAsync(ct);
 
         PublishedIds(keySet).Should().BeEquivalentTo(["v1", "v2"]);
+        sut.Algorithm.Should().Be(SigningAlgorithm.RS256);
         keySet.Should().AllSatisfy(key =>
-        {
-            key.Algorithm.Should().Be(SigningAlgorithm.RS256);
-            key.PublicKey.RsaPublicParameters!.Value.D.Should().BeNull("only public material may leave the read path");
-        });
+            key.PublicKey.RsaPublicParameters!.Value.D.Should().BeNull("only public material may leave the read path"));
     }
 
     [Fact]

@@ -164,15 +164,15 @@ public sealed class SigningKeyLifecycleScenarioTests
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private static SigningKeySet Build(params SourceKey[] keys) =>
-        SigningKeySetBuilder.Build(keys, Startup, Options, NullLogger.Instance);
+        SigningKeySetBuilder.Build(keys, SigningAlgorithm.ES256, Startup, Options, NullLogger.Instance);
 
     private static SigningKeySet Build(CapturingSanitizingLogger<SigningKeyRing> logger, params SourceKey[] keys) =>
-        SigningKeySetBuilder.Build(keys, Startup, Options, logger);
+        SigningKeySetBuilder.Build(keys, SigningAlgorithm.ES256, Startup, Options, logger);
 
     private static SourceKey Key(string id, DateTimeOffset? notBefore = null, DateTimeOffset? expiresAt = null)
     {
         using var privateKey = TestSigningKeys.PrivateKey(SigningAlgorithm.ES256);
-        return TestSigningKeys.SourceKey(id, SigningAlgorithm.ES256, privateKey, notBefore, expiresAt);
+        return TestSigningKeys.SourceKey(id, privateKey, notBefore, expiresAt);
     }
 
     private static string[] Ids(IEnumerable<SigningKey> keys) => [.. keys.Select(key => key.SourceId.Value)];

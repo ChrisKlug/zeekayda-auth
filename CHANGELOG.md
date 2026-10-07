@@ -557,6 +557,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: a signing source declares one algorithm, and the server signs only with it; the
+  advertised-algorithm filter is gone** (#905). `ISigningKeySource` gains
+  `SigningAlgorithm Algorithm { get; }`, and `SourceKey` loses its algorithm: it is
+  `(Id, PublicKey, DateTimeOffset? notBefore = null, DateTimeOffset? expiresAt = null)`, and
+  `SourceKey.FromCertificate(certificate, id)` no longer takes one. A source therefore cannot list a
+  key under another algorithm; a key whose material does not suit the source's algorithm fails
+  startup under the existing codes (`signing.key_algorithm_mismatch`,
+  `signing.ec_curve_algorithm_mismatch`), and an undefined source algorithm under
+  `signing.undefined_algorithm`. The first-party providers move the algorithm they already took at
+  registration from each key to the source. `SigningKeySet.AdvertisedAlgorithms` is replaced by
+  `SigningKeySet.Algorithm`, and `id_token_signing_alg_values_supported` is that one algorithm.
+  `AuthorizationServerOptions.IdToken` and its `AdvertisedSigningAlgorithms` filter are removed, with
+  their codes `configuration.id_token.advertised_signing_algorithms.empty`,
+  `signing.advertised_algorithms.excludes_signing_key`, `.withholds_published_algorithm` and
+  `.absent_from_key_set`; the `signing.advertised_algorithms.rs256_absent` warning stays. A client's
+  `AllowedSigningAlgorithms` is an acceptance list: it must contain the server's algorithm
+  (`client.signing_algorithms.excludes_signing_key`), an undefined value fails with
+  `client.signing_algorithms.undefined`, and any other entry is logged as a warning once per client
+  instead of failing — `client.signing_algorithms.not_subset` is gone. Changing algorithm means a
+  new source and a restart. Mixing algorithms in one ring made every key change a possible change of
+  algorithm, which a ring that follows the clock cannot check ahead of time.
+
 - **Signing-key sources only list keys; the framework decides from their dates which one signs**
   (#823). `ISigningKeySource.ReadAsync` returns `IReadOnlyList<SourceKey>`; `SourceKeySet` and its
   "which key signs" designation are gone. `SourceKey` is

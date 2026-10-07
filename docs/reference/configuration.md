@@ -426,35 +426,17 @@ needs a credential.
 
 ---
 
-### `IdToken.AdvertisedSigningAlgorithms`
+### ID token signing algorithm
 
-| Attribute | Value |
-|---|---|
-| Type | `ICollection<SigningAlgorithm>?` |
-| Default | `null` |
-| Required | No (when set, must not be empty) |
-
-An optional **narrowing filter** on what `id_token_signing_alg_values_supported` publishes. The
-advertised set is derived from the configured signing keys — the distinct algorithms of every
-published key (`Previous`, `Current`, and `Next`), ascending by `SigningAlgorithm` value — so the
-server can never advertise an algorithm it holds no key for.
-
-Leave this `null` (the default) to advertise that whole set. Set it to withhold an algorithm the
-server could otherwise advertise; it can never add one. A filter that excludes the signing key's own
-algorithm fails startup with `signing.advertised_algorithms.excludes_signing_key`.
-
-Three startup warnings cover the rest:
+There is no option for it. `id_token_signing_alg_values_supported` publishes the one algorithm the
+signing source was registered for — `AddPemFileSigning(path, SigningAlgorithm.RS256)` and its
+siblings take it — and every key that source lists signs under it, so the advertised value never
+changes during a key rotation. Changing algorithm means registering a source for the new one and
+restarting.
 
 | Code | Meaning |
 |---|---|
-| `signing.advertised_algorithms.withholds_published_algorithm` | The filter withholds an algorithm a published key still uses. Those keys stay in the JWKS and tokens they signed remain verifiable, but a relying party that pins acceptance to `id_token_signing_alg_values_supported` will reject them until they expire. Logged at `Information`, not `Warning`: every filter that narrows anything withholds a published algorithm, so this fires on correct use of the feature too. |
-| `signing.advertised_algorithms.absent_from_key_set` | The filter names an algorithm no configured key uses. The entry has no effect. |
-| `signing.advertised_algorithms.rs256_absent` | The advertised set omits `RS256`, which [OpenID Connect Discovery 1.0 §3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata) requires. The framework warns rather than injecting it — advertising an algorithm with no key behind it is the failure this derivation exists to prevent. |
-
-```csharp
-// Two keys are configured, RS256 and ES256, but only RS256 is advertised.
-options.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
-```
+| `signing.advertised_algorithms.rs256_absent` | The source signs with something other than `RS256`, which [OpenID Connect Discovery 1.0 §3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata) requires in the list. A startup warning: the framework does not advertise an algorithm it never signs with. |
 
 | Enum value | JSON serialization |
 |---|---|
@@ -645,7 +627,6 @@ startup output and host logs.
 | `configuration.token_endpoint.refresh_token_lifetime.not_positive` | `TokenEndpoint.RefreshTokenLifetime` is zero or negative |
 | `configuration.token_endpoint.refresh_token_lifetime.shorter_than_code_lifetime` | `TokenEndpoint.RefreshTokenLifetime` is shorter than `AuthorizationEndpoint.AuthorizationCodeLifetime` |
 | `configuration.token_endpoint.absolute_family_lifetime.not_positive` | `TokenEndpoint.AbsoluteFamilyLifetime` is zero or negative |
-| `configuration.id_token.advertised_signing_algorithms.empty` | `IdToken.AdvertisedSigningAlgorithms` is a non-null empty collection |
 | `configuration.discovery_document.cache_max_age.negative` | `DiscoveryDocument.CacheMaxAge` is negative |
 | `configuration.jwks_endpoint.cache_max_age.negative` | `JwksEndpoint.CacheMaxAge` is negative |
 | `configuration.cors_origins.null` | `CorsOrigins` is `null` |

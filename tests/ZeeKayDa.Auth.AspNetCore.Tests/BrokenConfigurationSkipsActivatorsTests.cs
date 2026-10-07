@@ -35,6 +35,8 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
     /// <summary>Static counters: the ring owns its source, so a test cannot hold the instance.</summary>
     private sealed class RecordingSigningKeySource : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public static int ConstructionCount { get; private set; }
 
         public static int ReadAsyncCallCount { get; private set; }

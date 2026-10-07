@@ -26,7 +26,6 @@ internal static partial class AuthorizationServerOptionsValidation
                 .Concat(ValidateClockSkew(options))
                 .Concat(options.Response.Validate())
                 .Concat(options.TokenEndpoint.Validate())
-                .Concat(options.IdToken.Validate())
                 .Concat(options.DiscoveryDocument.Validate())
                 .Concat(options.JwksEndpoint.Validate())
                 .Concat(options.SigningKeys.Validate())

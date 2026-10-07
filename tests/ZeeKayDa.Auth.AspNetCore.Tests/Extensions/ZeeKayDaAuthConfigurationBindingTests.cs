@@ -28,7 +28,6 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
             ["AuthorizationEndpoint:Interaction:SupportsLocalSignIn"] = "false",
             ["Response:TypesSupported:0"] = "Code",
             ["Response:ModesSupported:0"] = "Query",
-            ["IdToken:AdvertisedSigningAlgorithms:0"] = "ES256",
             ["Development:AllowHttpLoopbackIssuer"] = "true",
         });
 
@@ -44,7 +43,6 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
         options.AuthorizationEndpoint.Interaction.SupportsLocalSignIn.Should().BeFalse();
         options.Response.TypesSupported.Should().Equal(ResponseType.Code);
         options.Response.ModesSupported.Should().Equal(ResponseMode.Query);
-        options.IdToken.AdvertisedSigningAlgorithms.Should().Equal(SigningAlgorithm.ES256);
         options.Development.AllowHttpLoopbackIssuer.Should().BeTrue();
     }
 
@@ -90,7 +88,6 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
 
         options.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode);
         options.TokenEndpoint.AdvertisedAuthMethods.Should().BeNull();
-        options.IdToken.AdvertisedSigningAlgorithms.Should().BeNull();
     }
 
     [Fact]

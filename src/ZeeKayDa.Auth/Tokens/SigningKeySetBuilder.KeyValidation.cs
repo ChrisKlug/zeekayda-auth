@@ -68,16 +68,15 @@ internal static partial class SigningKeySetBuilder
     }
 
     /// <summary>
-    /// Rejects a key whose type, or for an EC algorithm whose curve, does not match its declared
-    /// algorithm.
+    /// Rejects a key whose type, or for an EC algorithm whose curve, does not suit
+    /// <paramref name="algorithm"/>.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown with failure code <c>signing.key_algorithm_mismatch</c> or
     /// <c>signing.ec_curve_algorithm_mismatch</c>.
     /// </exception>
-    internal static void ValidateKeyAlgorithmCompatibility(SourceKey key)
+    internal static void ValidateKeyAlgorithmCompatibility(SourceKey key, SigningAlgorithm algorithm)
     {
-        var algorithm = key.Algorithm;
         var isRsaAlgorithm = algorithm is
             SigningAlgorithm.RS256 or SigningAlgorithm.RS384 or SigningAlgorithm.RS512
             or SigningAlgorithm.PS256 or SigningAlgorithm.PS384 or SigningAlgorithm.PS512;

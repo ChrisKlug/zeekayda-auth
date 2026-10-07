@@ -1,6 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Tokens;
@@ -8,8 +5,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <summary>
 /// Framework-owned <see cref="IStartupActivator"/> that initializes whatever <see cref="SigningKeyRing"/>
 /// is registered, once per host startup — so a misconfigured signing key fails the host rather than
-/// the first request — and then reconciles
-/// <see cref="IdTokenOptions.AdvertisedSigningAlgorithms"/> against the key set it built.
+/// the first request — and then checks the algorithm it signs under against OpenID Connect Discovery.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,9 +22,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>EnsureInitializedAsync</c> itself, which is idempotent.
 /// </para>
 /// </remarks>
-internal sealed class SigningKeyRingActivator(
-    IOptions<AuthorizationServerOptions> options,
-    SigningKeyRing? ring = null) : IStartupActivator
+internal sealed class SigningKeyRingActivator(SigningKeyRing? ring = null) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "SigningKeyRing";
@@ -47,111 +41,26 @@ internal sealed class SigningKeyRingActivator(
 
         await ring.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
 
-        VerifyAdvertisedAlgorithms(context, ring);
-    }
-
-    /// <summary>
-    /// Reconciles the operator's optional narrowing filter with the key set the ring just built, and
-    /// checks the resulting advertised set against what OpenID Connect Discovery requires of it.
-    /// Runs after <c>EnsureInitializedAsync</c>, which is what makes <see cref="SigningKeyRing.Current"/>
-    /// safe to read here.
-    /// </summary>
-    private void VerifyAdvertisedAlgorithms(StartupVerificationContext context, SigningKeyRing ring)
-    {
-        var filter = options.Value.IdToken.AdvertisedSigningAlgorithms;
-        var keySet = ring.Current;
-
-        if (filter is not null)
-            VerifyFilter(context, keySet, filter);
-
-        VerifyRs256IsAdvertised(context, AdvertisedSigningAlgorithms.Resolve(keySet, filter));
-    }
-
-    /// <summary>
-    /// The three ways a narrowing filter can disagree with the key set: excluding the signing key's
-    /// own algorithm (fatal), withholding one a published key still uses (a warning about live
-    /// tokens), and naming one no key uses at all (a warning about a no-op).
-    /// </summary>
-    private static void VerifyFilter(
-        StartupVerificationContext context, SigningKeySet keySet, ICollection<SigningAlgorithm> filter)
-    {
-        var signingAlgorithm = keySet.SigningKey.Algorithm;
-
-        if (!filter.Contains(signingAlgorithm))
-        {
-            context.AddFailure(
-                "signing.advertised_algorithms.excludes_signing_key",
-                $"IdToken.AdvertisedSigningAlgorithms is [{Format(filter)}], which excludes " +
-                $"{signingAlgorithm} — the algorithm of the key that signs ('" +
-                $"{keySet.SigningKey.SourceId.Value}'). The server would advertise no algorithm it " +
-                $"actually issues tokens with. Add {signingAlgorithm} to the filter, or set " +
-                "IdToken.AdvertisedSigningAlgorithms to null to advertise the whole published key set.");
-        }
-
-        // Withheld, but a published key still uses it: relying parties that pin acceptance to
-        // discovery will reject tokens that key signed while they are still live and its kid is
-        // still in the JWKS. The signing key's own algorithm is excluded — that case already
-        // failed above, and reporting it twice would bury the fatal message.
-        var withheld = keySet.AdvertisedAlgorithms
-            .Where(algorithm => algorithm != signingAlgorithm && !filter.Contains(algorithm))
-            .ToArray();
-
-        if (withheld.Length > 0)
-        {
-            // Information, not Warning: every filter that narrows anything at all withholds a
-            // published algorithm, so at Warning this would fire on every correct use of the
-            // feature — and a warning that fires on correct use is one operators learn to ignore,
-            // which costs exactly the case that matters. Distinguishing a retiring key (whose
-            // tokens are live) from a staged one (which has never signed) needs slot identity that
-            // SigningKeySet does not carry; until it does (#553), this records rather than alarms.
-            context.AddWarning(
-                "signing.advertised_algorithms.withholds_published_algorithm",
-                "IdToken.AdvertisedSigningAlgorithms withholds {WithheldAlgorithms}, which the " +
-                "published key set still uses. Those keys stay in the JWKS, so tokens they signed " +
-                "remain verifiable, but a relying party that pins acceptance to " +
-                "id_token_signing_alg_values_supported will reject them until they expire.",
-                LogLevel.Information,
-                Format(withheld));
-        }
-
-        var absent = filter
-            .Where(algorithm => !keySet.AdvertisedAlgorithms.Contains(algorithm))
-            .ToArray();
-
-        if (absent.Length > 0)
-        {
-            // A no-op rather than a misstatement: the advertised set is an intersection, so an
-            // algorithm with no key behind it is never advertised whatever the filter says.
-            context.AddWarning(
-                "signing.advertised_algorithms.absent_from_key_set",
-                "IdToken.AdvertisedSigningAlgorithms names {AbsentAlgorithms}, which no configured " +
-                "signing key uses; the published key set uses {PublishedAlgorithms}. Those entries " +
-                "have no effect — discovery advertises only algorithms the server holds a key for.",
-                Format(absent),
-                Format(keySet.AdvertisedAlgorithms));
-        }
+        VerifyRs256IsAdvertised(context, ring.Current.Algorithm);
     }
 
     /// <summary>
     /// OpenID Connect Discovery 1.0 §3 requires <c>RS256</c> in
-    /// <c>id_token_signing_alg_values_supported</c>. Warns rather than injecting it: an algorithm
-    /// with no key behind it is exactly what this issue's derivation exists to make
-    /// unrepresentable, and a false advertisement is worse than a non-conformant honest one.
+    /// <c>id_token_signing_alg_values_supported</c>. Warns rather than injecting it: discovery
+    /// advertises only the algorithm the server signs with, and a false advertisement is worse than
+    /// a non-conformant honest one.
     /// </summary>
-    private static void VerifyRs256IsAdvertised(
-        StartupVerificationContext context, IReadOnlyList<SigningAlgorithm> advertised)
+    private static void VerifyRs256IsAdvertised(StartupVerificationContext context, SigningAlgorithm algorithm)
     {
-        if (advertised.Contains(SigningAlgorithm.RS256))
+        if (algorithm == SigningAlgorithm.RS256)
             return;
 
         context.AddWarning(
             "signing.advertised_algorithms.rs256_absent",
-            "id_token_signing_alg_values_supported will be {AdvertisedAlgorithms}, which omits " +
+            "id_token_signing_alg_values_supported will be {AdvertisedAlgorithm}, which omits " +
             "RS256. OpenID Connect Discovery 1.0 section 3 requires RS256 to be included, and a " +
-            "relying party may assume it. Configure a key that signs RS256, or accept that clients " +
+            "relying party may assume it. Use a signing source for RS256, or accept that clients " +
             "restricted to RS256 cannot use this server.",
-            Format(advertised));
+            algorithm);
     }
-
-    private static string Format(IEnumerable<SigningAlgorithm> algorithms) => string.Join(", ", algorithms);
 }

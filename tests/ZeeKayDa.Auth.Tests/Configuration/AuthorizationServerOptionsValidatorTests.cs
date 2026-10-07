@@ -458,43 +458,6 @@ public sealed class AuthorizationServerOptionsValidatorTests
         failures.Should().BeEmpty();
     }
 
-    [Fact]
-    public void Validate_succeeds_when_AdvertisedSigningAlgorithms_is_null()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            IdToken = { AdvertisedSigningAlgorithms = null },
-        });
-
-        failures.Should().BeEmpty("null is the default and advertises every algorithm in the published key set");
-    }
-
-    [Fact]
-    public void Validate_fails_when_AdvertisedSigningAlgorithms_is_empty()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            IdToken = { AdvertisedSigningAlgorithms = [] },
-        });
-
-        failures.Should().ContainSingle(f => f.Code == "configuration.id_token.advertised_signing_algorithms.empty")
-            .Which.Message.Should().Contain("IdToken.AdvertisedSigningAlgorithms").And.Contain("set it to null");
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_AdvertisedSigningAlgorithms_names_an_algorithm()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            IdToken = { AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256] },
-        });
-
-        failures.Should().BeEmpty("reconciling the filter with the key set needs a key set, so it happens at startup");
-    }
-
     // ── AuthorizationEndpoint.CodeChallengeMethodsSupported ───────────────────────────────────────
 
     [Fact]
@@ -1170,18 +1133,18 @@ public sealed class AuthorizationServerOptionsValidatorTests
     [Fact]
     public void Validate_accumulates_errors_across_different_groups()
     {
-        // Bad issuer (trailing slash on path) combined with an empty advertised-algorithm filter.
+        // Bad issuer (trailing slash on path) combined with an invalid token endpoint auth method.
         // Both errors must appear in a single result, proving cross-group accumulation.
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com/tenant1/",
-            IdToken = { AdvertisedSigningAlgorithms = [] },
+            TokenEndpoint = { AdvertisedAuthMethods = ["   "] },
         });
 
         failures.Select(f => f.Code).Should().Contain(
         [
             "configuration.issuer.trailing_slash",
-            "configuration.id_token.advertised_signing_algorithms.empty",
+            "configuration.token_endpoint.advertised_auth_methods.invalid_entry",
         ]);
     }
 

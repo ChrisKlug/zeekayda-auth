@@ -210,15 +210,15 @@ public interface IClient
     bool RequirePkce => ClientDefaults.RequirePkce;
 
     /// <summary>
-    /// JWS signing algorithms permitted for ID tokens issued to this client.
-    /// <see langword="null"/> means inherit the server's advertised set.
+    /// JWS signing algorithms this client accepts for its ID tokens. <see langword="null"/> accepts
+    /// whatever the server signs with.
     /// </summary>
     /// <remarks>
-    /// The advertised set is the distinct algorithms of the published signing key set, narrowed by
-    /// <c>IdTokenOptions.AdvertisedSigningAlgorithms</c> when that filter is configured — the same
-    /// set the discovery document publishes as <c>id_token_signing_alg_values_supported</c>. When
-    /// non-null, this set MUST be non-empty and MUST be a subset of it. The framework's validator
-    /// enforces this on every registration it serves; a repository may also check it on write.
+    /// The server signs with one algorithm, the signing source's, which the discovery document
+    /// publishes as <c>id_token_signing_alg_values_supported</c>. When non-null, this set MUST be
+    /// non-empty, MUST contain only defined values, and MUST contain that algorithm; the framework's
+    /// validator enforces this on every registration it serves. Any other entry has no effect and is
+    /// warned about once.
     /// </remarks>
     IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms => ClientDefaults.AllowedSigningAlgorithms;
 

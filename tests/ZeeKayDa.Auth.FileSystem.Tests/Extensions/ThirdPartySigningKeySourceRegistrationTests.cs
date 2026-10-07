@@ -19,11 +19,13 @@ public sealed class ThirdPartySigningKeySourceRegistrationTests
 {
     private sealed class ExternalSigningKeySource : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             using var rsa = RSA.Create(2048);
             var current = new SourceKey(
-                new SourceKeyId("current"), SigningAlgorithm.RS256,
+                new SourceKeyId("current"),
                 PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: DateTimeOffset.UtcNow.AddDays(90));
 
             return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
@@ -37,6 +39,8 @@ public sealed class ThirdPartySigningKeySourceRegistrationTests
     /// registering a different source than one already registered fails loudly.</summary>
     private sealed class OtherExternalSigningKeySource : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 

@@ -113,11 +113,12 @@ public abstract class ClientOptions
     public ISet<PromptValue> AllowedPromptValues { get; } = new HashSet<PromptValue>();
 
     /// <summary>
-    /// JWS signing algorithms permitted for ID tokens issued to this client. Empty by default, which
-    /// means the client inherits the server's advertised set.
+    /// JWS signing algorithms this client accepts for its ID tokens. Empty by default, which accepts
+    /// whatever the server signs with.
     /// </summary>
     /// <remarks>
-    /// When not empty, every entry must be in the server's advertised set; startup fails otherwise.
+    /// When not empty, it must contain the algorithm the server signs with; startup fails otherwise.
+    /// Any other entry has no effect and is warned about once.
     /// </remarks>
     public ISet<SigningAlgorithm> AllowedSigningAlgorithms { get; } = new HashSet<SigningAlgorithm>();
 

@@ -69,7 +69,7 @@ public sealed class FileSigningIntegrationTests
 
         ring.Current.Published.Should().ContainSingle("the single listed file's public key must be published");
         ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
-        ring.Current.AdvertisedAlgorithms.Should().Equal(SigningAlgorithm.RS256);
+        ring.Current.Algorithm.Should().Be(SigningAlgorithm.RS256);
 
         var signingInput = "header.payload"u8.ToArray();
         var outcome = await ring.SignAsync(signingInput, static (_, input) => input, ct);
@@ -224,6 +224,46 @@ public sealed class FileSigningIntegrationTests
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .Which.AggregatedFailures.Should().Contain(f => f.Code == "configuration.pem_file_signing.files.empty");
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_fails_startup_naming_a_PEM_file_whose_key_does_not_suit_the_algorithm()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WritePemFile("current.pem", certificate);
+        var (services, _) = BuildServices(T0);
+
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
+        builder.AddPemFileSigning(path, SigningAlgorithm.ES256);
+
+        await using var provider = services.BuildServiceProvider();
+        var act = async () => await StartHostedServicesAsync(provider, ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch")
+            .Which.Message.Should().Contain(path);
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_fails_startup_naming_a_PFX_bundle_whose_key_does_not_suit_the_algorithm()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var (services, _) = BuildServices(T0);
+
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
+        builder.AddPfxFileSigning(path, SigningAlgorithm.ES256, _ => Task.FromResult(CorrectPassword));
+
+        await using var provider = services.BuildServiceProvider();
+        var act = async () => await StartHostedServicesAsync(provider, ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch")
+            .Which.Message.Should().Contain(path);
     }
 
     // ── PFX: end-to-end resolve (AC #4/#8) ──────────────────────────────────────────────────────

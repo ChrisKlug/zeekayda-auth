@@ -13,7 +13,7 @@ namespace ZeeKayDa.Auth;
 /// <remarks>
 /// Server-wide settings are exposed directly on this class. Per-endpoint settings are grouped
 /// into nested sealed option classes (<see cref="DiscoveryDocument"/>, <see cref="AuthorizationEndpoint"/>,
-/// <see cref="TokenEndpoint"/>, <see cref="JwksEndpoint"/>, <see cref="IdToken"/>, <see cref="Response"/>,
+/// <see cref="TokenEndpoint"/>, <see cref="JwksEndpoint"/>, <see cref="Response"/>,
 /// <see cref="SecurityHeaders"/>, <see cref="Development"/>)
 /// which are initialized to default instances. Group properties are get-only and cannot be nulled;
 /// consumers may mutate the members of each group but not replace the group itself.
@@ -129,11 +129,6 @@ public sealed class AuthorizationServerOptions
     public UserInfoEndpointOptions UserInfoEndpoint { get; } = new();
 
     /// <summary>
-    /// Gets the ID token configuration options.
-    /// </summary>
-    public IdTokenOptions IdToken { get; } = new();
-
-    /// <summary>
     /// Gets the response configuration options.
     /// </summary>
     public ResponseOptions Response { get; } = new();
@@ -162,7 +157,6 @@ public sealed class AuthorizationServerOptions
         CorsOrigins = FrozenOptions.Copy(CorsOrigins);
         AuthorizationEndpoint.Freeze();
         TokenEndpoint.Freeze();
-        IdToken.Freeze();
         Response.Freeze();
         Development.Freeze();
         _frozen = true;

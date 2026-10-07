@@ -1137,12 +1137,9 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_passes_if_AllowedSigningAlgorithms_is_subset_of_server_algorithms()
+    public void Validate_passes_if_AllowedSigningAlgorithms_contains_the_algorithm_the_server_signs_with()
     {
-        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        var validator = MakeValidator(
-            serverOptions: opts,
-            ring: TestSigningKeys.Ring(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
+        var validator = MakeValidator(ring: TestSigningKeys.Ring(SigningAlgorithm.RS256, keyCount: 2));
 
         var client = MakeValidPublicClient() with
         {
@@ -1155,30 +1152,60 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_fails_with_not_subset_code_if_AllowedSigningAlgorithms_is_not_subset_of_server_algorithms()
+    public void Validate_fails_with_undefined_code_if_AllowedSigningAlgorithms_holds_an_undefined_value()
     {
-        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        var validator = MakeValidator(
-            serverOptions: opts, ring: TestSigningKeys.Ring(SigningAlgorithm.RS256));
+        var validator = MakeValidator(ring: TestSigningKeys.Ring(SigningAlgorithm.RS256));
 
         var client = MakeValidPublicClient() with
         {
-            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 }
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256, (SigningAlgorithm)999 }
         };
 
         var failures = validator.Validate(client);
 
-        failures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset");
+        failures.Should().ContainSingle(f => f.Code == "client.signing_algorithms.undefined")
+            .Which.Message.Should().Contain("999");
     }
 
     [Fact]
-    public void Validate_fails_if_AllowedSigningAlgorithms_entry_is_withheld_by_the_advertised_filter()
+    public void Validate_fails_with_undefined_code_before_the_key_ring_has_read_its_source()
     {
-        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        opts.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
-        var validator = MakeValidator(
-            serverOptions: opts,
-            ring: TestSigningKeys.Ring(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
+        var validator = MakeValidator();
+
+        var client = MakeValidPublicClient() with
+        {
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { (SigningAlgorithm)999 }
+        };
+
+        var failures = validator.Validate(client);
+
+        failures.Should().ContainSingle(f => f.Code == "client.signing_algorithms.undefined");
+    }
+
+    [Fact]
+    public void Validate_reports_every_undefined_AllowedSigningAlgorithms_value()
+    {
+        var validator = MakeValidator(ring: TestSigningKeys.Ring(SigningAlgorithm.RS256));
+
+        var client = MakeValidPublicClient() with
+        {
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm>
+            {
+                SigningAlgorithm.RS256, (SigningAlgorithm)998, (SigningAlgorithm)999,
+            }
+        };
+
+        var failures = validator.Validate(client);
+
+        failures.Where(f => f.Code == "client.signing_algorithms.undefined").Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Validate_fails_a_set_excluding_the_server_algorithm_without_also_warning_its_entries_are_unused()
+    {
+        // One mistake, one message: the "never signs with" warning would bury the startup failure.
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger, ring: TestSigningKeys.Ring(SigningAlgorithm.RS256));
 
         var client = MakeValidPublicClient() with
         {
@@ -1187,33 +1214,38 @@ public sealed class ClientRegistrationValidatorTests
 
         var failures = validator.Validate(client);
 
-        failures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset",
-                "the server holds an ES256 key but the operator has withheld it from discovery");
+        failures.Should().ContainSingle(f => f.Code == "client.signing_algorithms.excludes_signing_key");
+        logger.Warnings.Should().NotContain(w => w.Contains("never signs with"));
     }
 
     [Fact]
-    public void Validate_checks_against_the_filter_alone_when_the_key_ring_has_not_read_its_source()
+    public void Validate_warns_once_about_an_AllowedSigningAlgorithms_entry_the_server_never_signs_with()
     {
-        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        opts.IdToken.AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256];
-        var validator = MakeValidator(serverOptions: opts);
+        // An acceptance list may carry an algorithm for another server or a planned change; it has no
+        // effect here, so it warns rather than fails — once, because a repository may validate on
+        // every lookup.
+        var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
+        var validator = MakeValidator(logger: logger, ring: TestSigningKeys.Ring(SigningAlgorithm.RS256));
 
         var client = MakeValidPublicClient() with
         {
-            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES512 }
+            AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256, SigningAlgorithm.ES256 }
         };
 
-        var failures = validator.Validate(client);
+        var first = validator.Validate(client);
+        var second = validator.Validate(client);
 
-        failures.Should().Contain(f => f.Code == "client.signing_algorithms.not_subset");
+        first.Should().BeEmpty();
+        second.Should().BeEmpty();
+        logger.Warnings.Should().ContainSingle(w => w.Contains("ES256") && w.Contains("never signs with"));
     }
 
     [Fact]
     public void Validate_warns_when_the_key_ring_exists_but_has_not_read_its_source()
     {
-        // A host that resolves IClientRepository before startup verification runs gets no subset
-        // check at all. That window is unchecked by anything else, so it is logged rather than
-        // passed over in silence.
+        // A host that resolves IClientRepository before startup verification runs gets no check
+        // against the signing algorithm. That window is unchecked by anything else, so it is logged
+        // rather than passed over in silence.
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         var logger = new CapturingSanitizingLogger<ClientRegistrationValidator>();
         var validator = MakeValidator(logger: logger, serverOptions: opts);
@@ -1229,7 +1261,7 @@ public sealed class ClientRegistrationValidatorTests
     }
 
     [Fact]
-    public void Validate_skips_the_subset_check_when_there_is_no_key_set_and_no_filter()
+    public void Validate_skips_the_signing_algorithm_check_when_there_is_no_key_ring()
     {
         var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         var validator = MakeValidator(serverOptions: opts, withKeyRing: false);
@@ -1241,7 +1273,7 @@ public sealed class ClientRegistrationValidatorTests
 
         var failures = validator.Validate(client);
 
-        failures.Should().BeEmpty("there is nothing yet for the client's set to be a subset of");
+        failures.Should().BeEmpty("there is no signing algorithm for the client's set to contain");
     }
 
     // ── AllowedScopes ─────────────────────────────────────────────────────────────────────────────
@@ -2058,14 +2090,12 @@ public sealed class ClientRegistrationValidatorTests
         logger.Warnings.Should().NotContain(w => w.Contains("Lifetime"));
     }
 
-    // ── AllowedSigningAlgorithms must include the key that signs ──────────────────────────────────
+    // ── AllowedSigningAlgorithms must include the algorithm the server signs with ────────────────
 
     [Fact]
     public void A_client_whose_allowed_algorithms_exclude_the_current_signing_key_fails_registration()
     {
-        // ES256 is advertised (a published key carries it), so the subset rule passes; but the key
-        // that signs today is RS256, and a client pinned to ES256 could never be issued an ID token.
-        var validator = MakeValidator(ring: TestSigningKeys.Ring(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
+        var validator = MakeValidator(ring: TestSigningKeys.Ring(SigningAlgorithm.RS256, keyCount: 2));
         var client = MakeValidPublicClient() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 } };
 
         var failures = validator.Validate(client);
@@ -2076,7 +2106,7 @@ public sealed class ClientRegistrationValidatorTests
     [Fact]
     public void A_client_whose_allowed_algorithms_include_the_current_signing_key_passes()
     {
-        var validator = MakeValidator(ring: TestSigningKeys.Ring(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
+        var validator = MakeValidator(ring: TestSigningKeys.Ring(SigningAlgorithm.RS256, keyCount: 2));
         var client = MakeValidPublicClient() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } };
 
         var failures = validator.Validate(client);

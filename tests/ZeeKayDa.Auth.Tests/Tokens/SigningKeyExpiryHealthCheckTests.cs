@@ -88,8 +88,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var next = CreateRsaKey("next", Now.AddDays(120));
         var currentSigningKey = BuildSigningKey(current);
         var set = new SigningKeySet(
-            currentSigningKey, [BuildSigningKey(previous), BuildSigningKey(current), BuildSigningKey(next)],
-            [SigningAlgorithm.RS256]);
+            currentSigningKey, [BuildSigningKey(previous), BuildSigningKey(current), BuildSigningKey(next)]);
 
         var result = SigningKeyExpiryHealthCheck.Evaluate(set, Now, DegradedThreshold);
 
@@ -110,8 +109,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var next = CreateRsaKey("next", Now.AddDays(120));
         var currentSigningKey = BuildSigningKey(current);
         var set = new SigningKeySet(
-            currentSigningKey, [BuildSigningKey(previous), BuildSigningKey(current), BuildSigningKey(next)],
-            [SigningAlgorithm.RS256]);
+            currentSigningKey, [BuildSigningKey(previous), BuildSigningKey(current), BuildSigningKey(next)]);
 
         var result = SigningKeyExpiryHealthCheck.Evaluate(set, Now, DegradedThreshold);
 
@@ -130,7 +128,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var next = CreateRsaKey("next", Now.AddDays(365));
         var signingKey = BuildSigningKey(current);
         var set = new SigningKeySet(
-            signingKey, [BuildSigningKey(previous), signingKey, BuildSigningKey(next)], [SigningAlgorithm.RS256]);
+            signingKey, [BuildSigningKey(previous), signingKey, BuildSigningKey(next)]);
 
         var result = SigningKeyExpiryHealthCheck.Evaluate(set, Now, DegradedThreshold);
 
@@ -167,7 +165,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
     public async Task CheckHealthAsync_reports_the_ring_s_current_set_health()
     {
         using var privateKey = TestSigningKeys.PrivateKey(SigningAlgorithm.RS256);
-        var current = TestSigningKeys.SourceKey("current", SigningAlgorithm.RS256, privateKey, expiresAt: Now.AddDays(90));
+        var current = TestSigningKeys.SourceKey("current", privateKey, expiresAt: Now.AddDays(90));
         var timeProvider = new FakeTimeProvider(Now);
         using var ring = TestSigningKeys.Ring([current], privateKey, timeProvider);
         var sut = new SigningKeyExpiryHealthCheck(
@@ -183,7 +181,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
-            new SourceKeyId("current"), SigningAlgorithm.RS256, PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Now.AddDays(1));
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Now.AddDays(1));
         var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
         var source = new CountingSigningKeySource(current, privateKeyPem);
         var timeProvider = new FakeTimeProvider(Now);
@@ -204,6 +202,8 @@ public sealed class SigningKeyExpiryHealthCheckTests
     /// re-reads, so a health check probing it repeatedly must not move this count.</summary>
     private sealed class CountingSigningKeySource(SourceKey current, string privateKeyPem) : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public int ReadAsyncCallCount { get; private set; }
 
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
@@ -236,16 +236,16 @@ public sealed class SigningKeyExpiryHealthCheckTests
         // Built long before any expiry these tests evaluate against: the builder refuses a set whose
         // only key has already expired, but the health check must judge one that expired since.
         return SigningKeySetBuilder.Build(
-            [CreateRsaKey("current", signingKeyExpiresAt)], Now.AddYears(-10), TestSigningKeys.Options, NullLogger.Instance);
+            [CreateRsaKey("current", signingKeyExpiresAt)], SigningAlgorithm.RS256, Now.AddYears(-10), TestSigningKeys.Options, NullLogger.Instance);
     }
 
     private static SourceKey CreateRsaKey(string id, DateTimeOffset? expiresAt)
     {
         using var rsa = RSA.Create(2048);
         var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
-        return new SourceKey(new SourceKeyId(id), SigningAlgorithm.RS256, publicKey, expiresAt: expiresAt);
+        return new SourceKey(new SourceKeyId(id), publicKey, expiresAt: expiresAt);
     }
 
     private static SigningKey BuildSigningKey(SourceKey sourceKey) =>
-        SigningKeySetBuilder.Build([sourceKey], Now.AddYears(-10), TestSigningKeys.Options, NullLogger.Instance).SigningKey;
+        SigningKeySetBuilder.Build([sourceKey], SigningAlgorithm.RS256, Now.AddYears(-10), TestSigningKeys.Options, NullLogger.Instance).SigningKey;
 }

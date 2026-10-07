@@ -31,15 +31,36 @@ internal sealed partial class ClientRegistrationValidator
             yield break;
         }
 
-        if (ResolveServerAlgorithms() is { } serverAlgorithms)
+        var undefinedValues = algorithms.Where(algorithm => !Enum.IsDefined(algorithm)).ToList();
+        foreach (var undefined in undefinedValues)
         {
-            foreach (var failure in ValidateAgainstServer(client, algorithms, serverAlgorithms))
-                yield return failure;
+            yield return new ZeeKayDaConfigurationFailure(
+                "client.signing_algorithms.undefined",
+                $"Client '{client.ClientId}' has AllowedSigningAlgorithms value {(int)undefined}, which is not a " +
+                $"defined {nameof(SigningAlgorithm)} member.");
         }
-        else
+
+        if (undefinedValues.Count > 0)
+            yield break;
+
+        // CurrentOrNull rather than Current: a custom repository may validate before the ring has
+        // been initialized, and throwing there would turn "cannot check yet" into a startup crash.
+        if (keyRing?.CurrentOrNull is not { } keySet)
         {
             WarnSigningUnchecked(client);
+            yield break;
         }
+
+        if (!algorithms.Contains(keySet.Algorithm))
+        {
+            yield return new ZeeKayDaConfigurationFailure(
+                "client.signing_algorithms.excludes_signing_key",
+                $"Client '{client.ClientId}' has AllowedSigningAlgorithms that exclude '{keySet.Algorithm}', the " +
+                "algorithm the server signs with, so no ID token could be issued to it. Add that algorithm.");
+            yield break;
+        }
+
+        WarnUnusedAlgorithms(client, algorithms, keySet.Algorithm);
     }
 
     /// <summary>
@@ -53,55 +74,30 @@ internal sealed partial class ClientRegistrationValidator
             logger.LogWarning(
                 "Client '{ClientId}' declares AllowedSigningAlgorithms, but the signing key ring " +
                 "has not yet read its source, so the set could not be checked against the " +
-                "server's advertised algorithms. This happens when an IClientRepository is " +
+                "algorithm the server signs with. This happens when an IClientRepository is " +
                 "resolved before host startup verification runs.",
                 client.ClientId);
         }
     }
 
-    private IEnumerable<ZeeKayDaConfigurationFailure> ValidateAgainstServer(
-        IClientWithCredentials client,
-        IReadOnlySet<SigningAlgorithm> algorithms,
-        IReadOnlyCollection<SigningAlgorithm> serverAlgorithms)
-    {
-        // The key that signs today must be in the set, not only a key that is merely published:
-        // with a ring that reads its source once, a client pinned to a next or previous key's
-        // algorithm would otherwise pass startup and be refused on every exchange.
-        if (keyRing?.CurrentOrNull is { } keySet && !algorithms.Contains(keySet.SigningKey.Algorithm))
-        {
-            yield return new ZeeKayDaConfigurationFailure(
-                "client.signing_algorithms.excludes_signing_key",
-                $"Client '{client.ClientId}' has AllowedSigningAlgorithms that exclude '{keySet.SigningKey.Algorithm}', " +
-                "the algorithm of the current signing key, so no ID token could be issued to it. Add that " +
-                "algorithm, or sign with a key the client allows.");
-        }
-
-        foreach (var algorithm in algorithms.Where(algorithm => !serverAlgorithms.Contains(algorithm)))
-        {
-            yield return new ZeeKayDaConfigurationFailure(
-                "client.signing_algorithms.not_subset",
-                $"Client '{client.ClientId}' has AllowedSigningAlgorithms entry '{algorithm}' that the " +
-                $"server does not advertise. Advertised: [{string.Join(", ", serverAlgorithms)}]. The " +
-                "advertised set is the configured signing keys' algorithms, narrowed by " +
-                "IdToken.AdvertisedSigningAlgorithms when that filter is set — add a key for " +
-                $"'{algorithm}', or remove it from this client.");
-        }
-    }
-
     /// <summary>
-    /// The algorithms a client's <c>AllowedSigningAlgorithms</c> must be a subset of: the advertised
-    /// set once the ring has read its source, the operator's filter alone before that, and
-    /// <see langword="null"/> when neither exists.
+    /// An acceptance list may name an algorithm the server never signs with — a client kept ready for
+    /// another server, or for a planned change of algorithm — so it only warns, once per client and
+    /// algorithm, since a repository may validate on every lookup.
     /// </summary>
-    private IReadOnlyCollection<SigningAlgorithm>? ResolveServerAlgorithms()
+    private void WarnUnusedAlgorithms(
+        IClientWithCredentials client, IReadOnlySet<SigningAlgorithm> algorithms, SigningAlgorithm signingAlgorithm)
     {
-        var advertisedFilter = options.Value.IdToken.AdvertisedSigningAlgorithms;
-
-        // CurrentOrNull rather than Current: a custom repository may validate before the ring has
-        // been initialized, and throwing there would turn "cannot check yet" into a startup crash.
-        return keyRing?.CurrentOrNull is { } keySet
-            ? AdvertisedSigningAlgorithms.Resolve(keySet, advertisedFilter)
-            : advertisedFilter?.ToArray();
+        foreach (var algorithm in algorithms.Where(algorithm =>
+            algorithm != signingAlgorithm && FirstTime(client.ClientId, "algorithm-never-signed", algorithm.ToString())))
+        {
+            logger.LogWarning(
+                "Client '{ClientId}' has AllowedSigningAlgorithms entry '{Algorithm}', which the server never " +
+                "signs with: it signs only with {SigningAlgorithm}. The entry has no effect.",
+                client.ClientId,
+                algorithm,
+                signingAlgorithm);
+        }
     }
 
     /// <summary>

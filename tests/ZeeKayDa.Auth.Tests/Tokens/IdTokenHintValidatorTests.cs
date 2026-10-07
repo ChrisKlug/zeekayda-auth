@@ -41,6 +41,8 @@ public sealed class IdTokenHintValidatorTests
 
     private sealed class RsaSource(RSA rsa) : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<SourceKey>>([RsaSourceKey("current", rsa)]);
 
@@ -71,7 +73,6 @@ public sealed class IdTokenHintValidatorTests
 
     private static SourceKey RsaSourceKey(string id, RSA rsa, DateTimeOffset? notBefore = null) => new(
         new SourceKeyId(id),
-        SigningAlgorithm.RS256,
         PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)),
         notBefore);
 
@@ -95,7 +96,7 @@ public sealed class IdTokenHintValidatorTests
     };
 
     private static SigningKeyRing EcRing(ECDsa ec) => TestSigningKeys.Ring(
-        [TestSigningKeys.SourceKey("current", SigningAlgorithm.ES256, ec)],
+        [TestSigningKeys.SourceKey("current", ec)],
         ec);
 
     /// <summary>Signs exactly the header and payload given, RS256 with the current key unless told otherwise.</summary>
