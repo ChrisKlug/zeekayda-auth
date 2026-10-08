@@ -20,13 +20,7 @@ internal sealed class AuthorizationServerOptionsPostConfigurer : IPostConfigureO
     /// <inheritdoc/>
     public void PostConfigure(string? name, AuthorizationServerOptions options)
     {
-        // A retired key's last token stays valid for a token lifetime, and relying parties accept it
-        // for the clock skew beyond that.
-        options.SigningKeys.RetainRetiredKeysFor ??= TokenLifetimes.Sum(
-            options.TokenEndpoint.AccessTokenLifetime > options.TokenEndpoint.IdTokenLifetime
-                ? options.TokenEndpoint.AccessTokenLifetime
-                : options.TokenEndpoint.IdTokenLifetime,
-            options.ClockSkewTolerance);
+        options.SigningKeys.RetainRetiredKeysFor ??= SigningKeyOptions.DefaultRetainRetiredKeysFor(options);
         options.Freeze();
     }
 }

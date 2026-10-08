@@ -167,11 +167,10 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
     // ── Startup failure propagation ─────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Full_DI_wiring_fails_startup_when_the_only_certificate_is_not_valid_yet()
+    public async Task Full_DI_wiring_signs_with_the_only_certificate_even_before_its_NotBefore()
     {
-        // The single-certificate bootstrap exemption is gone: a lone configured certificate is the
-        // active signer through ordinary date-based selection, with no special case that would let a
-        // not-yet-valid certificate sign.
+        // NotBefore is no validity gate: no relying party can observe it, so a lone certificate dated
+        // in the future signs at once rather than failing startup.
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
         var ct = TestContext.Current.CancellationToken;
@@ -183,10 +182,10 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         builder.AddWindowsCertificateStoreSigning(Lookup(CurrentThumbprint), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
-        var act = async () => await StartHostedServicesAsync(provider, ct);
+        await StartHostedServicesAsync(provider, ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "signing.signing_key_not_yet_valid");
+        provider.GetRequiredService<SigningKeyRing>().Current.SigningKey.Kid
+            .Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
     [Fact]

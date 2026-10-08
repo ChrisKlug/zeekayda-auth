@@ -14,9 +14,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// <remarks>
 /// The response body is derived lazily from <see cref="SigningKeyRing.Current"/> and reused for
 /// as long as the ring returns the same <see cref="SigningKeySet"/> instance, checked by reference
-/// on every request. No observer wiring: under the read-once ring the set never changes for the
-/// process lifetime, and a ring that swaps its set at runtime is picked up on the next request
-/// simply because the reference differs.
+/// on every request. No observer wiring: when the ring swaps its set at a key change, the next
+/// request picks it up simply because the reference differs.
 /// </remarks>
 internal sealed class JwksEndpoint(IOptions<AuthorizationServerOptions> options, CorsAllowlist allowedOrigins) : IZeeKayDaEndpoint
 {

@@ -41,7 +41,7 @@ public sealed class SigningKey
     public PublicKeyParameters PublicKey { get; }
 
     /// <summary>
-    /// Gets the instant this key becomes valid, carried through from <see cref="SourceKey.NotBefore"/>;
+    /// Gets the instant this key is published from, carried through from <see cref="SourceKey.NotBefore"/>;
     /// <see cref="DateTimeOffset.MinValue"/> for an undated key.
     /// </summary>
     public DateTimeOffset NotBefore { get; }

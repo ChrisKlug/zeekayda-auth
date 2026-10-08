@@ -2165,12 +2165,12 @@ code lens on `6db3887`, and the PR's Copilot and CodeScene review; no Critical; 
 - A signer signing under another algorithm than its key fails startup. Closed — `InitializeAsync_throws_self_test_failed_when_the_signer_signs_under_another_algorithm`.
 - A key already expired at startup never signs, but stays published for the retention. Closed — `Expiry_a_key_that_just_expired_never_signs_but_stays_published_for_the_retention`.
 - The signing key's unexpired predecessor stays published however late the restart that switched keys. Closed —
-  `Rotation_restart_weeks_after_the_lead_time_still_keeps_the_predecessor_published`.
+  Rotation_restart_weeks_after_the_lead_time_still_keeps_the_predecessor_published [removed by #823 PR 3, where the ring follows the clock and the predecessor stays published for the retention after its successor takes over: `At_keeps_the_predecessor_published_for_the_retention_after_the_successor_takes_over`].
 - Retention defaults to the longer token lifetime plus clock skew; no combination overflows. Closed — `PostConfigure_defaults_RetainRetiredKeysFor_to_the_longer_token_lifetime_plus_the_clock_skew_tolerance`,
   `PostConfigure_saturates_the_default_RetainRetiredKeysFor_for_an_unbounded_token_lifetime`, `Build_does_not_overflow_when_lead_time_plus_retention_exceeds_TimeSpan_MaxValue`,
   `PostConfigure_with_negative_lifetimes_and_skew_beyond_TimeSpan_MinValue_leaves_the_failures_to_validation`.
 - Key Vault refuses a listed version whose URI is not version-pinned. Closed — `ReadAsync_throws_when_a_listed_versions_identifier_uri_is_not_version_pinned`.
-- **Accepted residuals (maintainer):** a key signs up to five minutes before its `NotBefore` (`Future_a_key_valid_up_to_five_minutes_from_now_signs_to_tolerate_clock_skew`);
+- **Accepted residuals (maintainer):** a key signs up to five minutes before its `NotBefore` (Future_a_key_valid_up_to_five_minutes_from_now_signs_to_tolerate_clock_skew [removed by #823 PR 3, where `NotBefore` is no validity gate: `Build_signs_with_a_sole_key_whose_NotBefore_is_in_the_future`]);
   a key expiring while the process runs signs until restart, with no test pinning that; the health check reports it Unhealthy
   (`CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source`);
   file and Windows sources sign only with Current until PR 2 (CreateSignerAsync_throws_when_called_for_the_Next_slot [removed by #823 PR 2, which lets every listed file sign: `CreateSignerAsync_opens_a_signer_for_any_listed_file`]); per-client lifetimes are invisible at startup,
@@ -2219,3 +2219,26 @@ duplicated configuration reference, fixed in `6b7cb58`), and the PR's CodeQL and
   `A_client_whose_allowed_algorithms_exclude_the_signing_key_is_refused_before_the_signer_is_touched`.
 - **Accepted residual (maintainer):** non-RS256 only warns, against Discovery §3 — `VerifyAsync_warns_when_the_advertised_set_omits_RS256`.
 - **Deferred to #823:** the ring reads `ISigningKeySource.Algorithm` per build, moot while it builds once.
+
+## 2026-10-08 — the signing key ring follows the clock; a bad key is dropped, not fatal (#823, code frozen at `990991c`)
+Copilot code (four passes, each fix verified), security and architecture lenses, the security and architect agents, and the PR's
+CodeQL and CodeScene review; no Critical left open. Four test-only CodeQL dispose alerts are advisory and left as is.
+- A successor signs only after its signer opens and passes a fresh self-test at takeover. Closed — `Handover_opens_the_successor_s_signer_only_when_it_takes_over`,
+  `Handover_signs_with_the_successor_once_its_lead_time_ends_and_the_signature_verifies`.
+- A successor that fails, or does not open within a minute — blocking, ignoring cancellation or throwing from its callback — is set
+  aside, the old key signs on, and the cause is logged. Closed — `Handover_failure_keeps_the_previous_key_signing_logs_an_Error_and_names_the_failed_successor`,
+  `Handover_never_retries_any_failed_successor_when_signing_falls_back_to_it`, `Handover_whose_source_blocks_synchronously_is_still_set_aside_at_the_deadline`,
+  `Handover_past_the_deadline_is_set_aside_even_when_the_source_s_cancellation_callback_throws`, `Handover_failure_logs_the_root_cause_as_the_Error_entry_s_exception`.
+- No change instant is skipped. Closed — `Initialization_catches_up_when_a_change_passes_while_the_startup_signer_opens`,
+  `A_change_crossed_after_a_transition_commits_but_before_it_re_arms_still_fires`.
+- Every signer whose open finishes is disposed once, including one that finishes after shutdown or the deadline. Closed — `Handover_keeps_the_superseded_signer_open_until_the_ring_is_disposed_then_disposes_each_once`,
+  `A_signer_that_opens_after_shutdown_abandoned_its_handover_is_disposed`, `A_signer_that_opens_after_the_handover_deadline_is_disposed_exactly_once`,
+  `Initialization_owns_the_startup_signer_before_logging_so_a_throwing_logger_does_not_leak_it`.
+- A bad key never publishes or signs; a bad key due now, or an ambiguous list, fails startup; health names codes, never source ids. Closed —
+  `A_dropped_staged_key_is_warned_about_and_never_published_or_signed_with`, `Initialization_fails_when_the_key_due_to_sign_now_was_dropped`,
+  `Build_fails_on_a_duplicate_kid_even_when_one_entry_has_unusable_dates`, `Evaluate_is_Degraded_while_a_listed_key_is_dropped_without_naming_its_source_id`.
+- A key signing on after healthy replicas dropped it is Unhealthy. Closed — `Evaluate_is_Unhealthy_when_the_key_signing_on_after_a_failed_handover_has_left_every_other_replica_s_key_set`.
+- **Accepted residuals (maintainer):** a provider's own per-key failure still fails `ReadAsync` (#908) — `ReadAsync_rejects_a_separate_key_file_broader_than_0600_on_Unix_even_for_a_file_that_does_not_sign`;
+  revocation is remove and restart until polling (#527), the source being read once — `CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source`.
+- **Unverified scope limits (maintainer), no test:** a source returning one signer instance for two keys is excluded by the contract,
+  not checked; a signer whose own self-test never completes is set aside at the deadline but never disposed — the ring never receives it.

@@ -16,24 +16,31 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
 
     // ── Defaults that depend on other settings ───────────────────────────────────────────────────
 
+    [Fact]
+    public void PostConfigure_defaults_RetainRetiredKeysFor_to_two_days_when_tokens_live_shorter()
+    {
+        PostConfigure(new AuthorizationServerOptions()).SigningKeys.RetainRetiredKeysFor
+            .Should().Be(TimeSpan.FromDays(2));
+    }
+
     [Theory]
-    [InlineData(30, 5, 30)]
-    [InlineData(5, 45, 45)]
+    [InlineData(4, 3, 4)]
+    [InlineData(3, 5, 5)]
     public void PostConfigure_defaults_RetainRetiredKeysFor_to_the_longer_token_lifetime_plus_the_clock_skew_tolerance(
-        int accessTokenMinutes, int idTokenMinutes, int expectedMinutes)
+        int accessTokenDays, int idTokenDays, int expectedDays)
     {
         var options = new AuthorizationServerOptions
         {
             ClockSkewTolerance = TimeSpan.FromSeconds(7),
             TokenEndpoint =
             {
-                AccessTokenLifetime = TimeSpan.FromMinutes(accessTokenMinutes),
-                IdTokenLifetime = TimeSpan.FromMinutes(idTokenMinutes),
+                AccessTokenLifetime = TimeSpan.FromDays(accessTokenDays),
+                IdTokenLifetime = TimeSpan.FromDays(idTokenDays),
             },
         };
 
         PostConfigure(options).SigningKeys.RetainRetiredKeysFor
-            .Should().Be(TimeSpan.FromMinutes(expectedMinutes) + TimeSpan.FromSeconds(7));
+            .Should().Be(TimeSpan.FromDays(expectedDays) + TimeSpan.FromSeconds(7));
     }
 
     [Fact]

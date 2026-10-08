@@ -1,6 +1,9 @@
 using System.Collections.Generic;
 using System.Security.Cryptography;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
@@ -114,9 +117,10 @@ public sealed class SigningKeyRingTests
     private sealed class DisposableSigningKeySource(
         Func<CancellationToken, Task<IReadOnlyList<SourceKey>>> read,
         Func<SourceKeyId, CancellationToken, Task<ISigner>> createSigner,
-        Action onDispose) : ISigningKeySource, IDisposable
+        Action onDispose,
+        SigningAlgorithm algorithm = SigningAlgorithm.RS256) : ISigningKeySource, IDisposable
     {
-        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+        public SigningAlgorithm Algorithm => algorithm;
 
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
 
@@ -243,6 +247,30 @@ public sealed class SigningKeyRingTests
             "payload"u8.ToArray(), static (_, state) => state, TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task Ring_keeps_its_lead_time_when_the_caller_s_options_change_after_construction()
+    {
+        using var rsa = RSA.Create(2048);
+        var current = new SourceKey(
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
+        var privateKeyPem = rsa.ExportRSAPrivateKeyPem();
+        var source = new FakeSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current]),
+            (_, _) =>
+            {
+                var signerRsa = RSA.Create();
+                signerRsa.ImportFromPem(privateKeyPem);
+                return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, signerRsa));
+            });
+        var options = new SigningKeyOptions { LeadTime = TimeSpan.FromDays(1), RetainRetiredKeysFor = TimeSpan.FromDays(2) };
+
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch), options, new CapturingSanitizingLogger<SigningKeyRing>());
+        options.LeadTime = TimeSpan.FromDays(30);
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+
+        ring.TimelineOrNull!.LeadTime.Should().Be(TimeSpan.FromDays(1));
     }
 
     [Fact]
@@ -684,6 +712,655 @@ public sealed class SigningKeyRingTests
         reusingSigner!.CorruptLastReturnedBuffer();
 
         outcome.Signature.ToArray().Should().Equal(reportedBeforeReuse);
+    }
+
+    // ── Handover over time ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Handover_signs_with_the_successor_once_its_lead_time_ends_and_the_signature_verifies()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var successor = TestSigningKeys.Pair("successor", notBefore: Epoch);
+        using var ring = TestSigningKeys.Ring([TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), successor], clock);
+
+        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
+        var outcome = await ring.SignAsync(0, static (_, _) => "payload"u8.ToArray(), TestContext.Current.CancellationToken);
+
+        outcome.Key.SourceId.Should().Be(successor.Key.Id);
+        using var verifier = ECDsa.Create(successor.PrivateKey);
+        verifier.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_dropped_staged_key_is_warned_about_and_never_published_or_signed_with()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var badStaged = TestSigningKeys.Pair("staged", notBefore: Epoch) with
+        {
+            Key = TestSigningKeys.SourceKey("staged", SigningAlgorithm.RS256, Epoch),
+        };
+        using var ring = TestSigningKeys.Ring([current, badStaged], clock, logger);
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("staged") && w.Contains("signing.key_algorithm_mismatch"));
+        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
+
+        ring.Current.SigningKey.SourceId.Value.Should().Be("current");
+        ring.Current.Published.Select(k => k.SourceId.Value).Should().Equal("current");
+    }
+
+    [Fact]
+    public async Task Initialization_fails_when_the_key_due_to_sign_now_was_dropped()
+    {
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var badDue = TestSigningKeys.Pair("due", notBefore: Epoch.AddDays(-5)) with
+        {
+            Key = TestSigningKeys.SourceKey("due", SigningAlgorithm.RS256, Epoch.AddDays(-5)),
+        };
+        using var ring = TestSigningKeys.Uninitialized([current, badDue], new FakeTimeProvider(Epoch));
+
+        var act = () => ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
+    }
+
+    [Fact]
+    public async Task Initialization_catches_up_when_a_change_passes_while_the_startup_signer_opens()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var opens = 0;
+        using var ring = TestSigningKeys.Ring(
+            [
+                TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)),
+                TestSigningKeys.Pair("successor", notBefore: Epoch - TestSigningKeys.Options.LeadTime + TimeSpan.FromSeconds(30)),
+            ],
+            clock,
+            decorateSigner: signer =>
+            {
+                // The first open is slow: the successor's lead time ends while it runs.
+                if (opens++ == 0)
+                    clock.Advance(TimeSpan.FromMinutes(1));
+                return signer;
+            });
+
+        clock.Advance(TimeSpan.Zero);
+        await ring.LastTransition;
+
+        ring.Current.SigningKey.SourceId.Value.Should().Be("successor");
+    }
+
+    [Fact]
+    public async Task A_change_crossed_after_a_transition_commits_but_before_it_re_arms_still_fires()
+    {
+        // "old" expires at +0.5s, so a transition runs then without a handover; the successor is
+        // due at +1s. The clock jumps past +1s on the very read that arms the next timer.
+        var clock = new JumpingClock(Epoch);
+        using var ring = TestSigningKeys.Ring(
+            [
+                TestSigningKeys.Pair("old", notBefore: Epoch.AddDays(-120), expiresAt: Epoch.AddMilliseconds(500)),
+                TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)),
+                TestSigningKeys.Pair("successor", notBefore: Epoch - TestSigningKeys.Options.LeadTime + TimeSpan.FromSeconds(1)),
+            ],
+            clock);
+
+        clock.SkewTheReadAfterNext(TimeSpan.FromSeconds(1));
+        clock.SetUtcNow(Epoch.AddMilliseconds(500));
+        await ring.LastTransition;
+        clock.Advance(TimeSpan.Zero);
+        await ring.LastTransition;
+        clock.SetUtcNow(Epoch.AddSeconds(1));
+        await ring.LastTransition;
+
+        ring.Current.SigningKey.SourceId.Value.Should().Be("successor");
+    }
+
+    /// <summary>A fake clock whose one chosen read runs ahead, to land a change between two reads.</summary>
+    private sealed class JumpingClock(DateTimeOffset start) : FakeTimeProvider(start)
+    {
+        private int _readsUntilSkew = -1;
+        private TimeSpan _skew;
+
+        public void SkewTheReadAfterNext(TimeSpan skew)
+        {
+            _readsUntilSkew = 1;
+            _skew = skew;
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            var now = base.GetUtcNow();
+            if (_readsUntilSkew < 0)
+                return now;
+
+            return _readsUntilSkew-- == 0 ? now + _skew : now;
+        }
+    }
+
+    [Fact]
+    public async Task Initialization_owns_the_startup_signer_before_logging_so_a_throwing_logger_does_not_leak_it()
+    {
+        var disposed = 0;
+        var pair = TestSigningKeys.Pair("current", notBefore: Epoch);
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([pair.Key]),
+            (_, _) => Task.FromResult<ISigner>(
+                new TrackingSigner(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(pair.PrivateKey)), () => disposed++)),
+            () => { },
+            SigningAlgorithm.ES256);
+        var logger = new SanitizingLogger<SigningKeyRing>(
+            new ThrowingLogger(), Microsoft.Extensions.Options.Options.Create(new AuthorizationServerOptions()));
+        var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch), TestSigningKeys.Options, logger);
+
+        var act = () => ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        ((IDisposable)ring).Dispose();
+
+        disposed.Should().Be(1);
+    }
+
+    private sealed class ThrowingLogger : ILogger<SigningKeyRing>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => throw new InvalidOperationException("simulated: logging failed");
+    }
+
+    [Fact]
+    public async Task Handover_failure_logs_the_root_cause_as_the_Error_entry_s_exception()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var successor = TestSigningKeys.Pair("successor", notBefore: Epoch);
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, successor.Key]),
+            (id, _) => id == successor.Key.Id
+                ? throw new SimulatedVaultException()
+                : Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey))),
+            () => { },
+            SigningAlgorithm.ES256);
+        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, logger);
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+
+        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
+
+        var logged = logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error).Which.Exception;
+        Chain(logged).OfType<RedactedExceptionWrapper>().Select(wrapper => wrapper.OriginalExceptionType)
+            .Should().Contain(typeof(SimulatedVaultException).FullName);
+    }
+
+    [Fact]
+    public async Task Handover_whose_source_blocks_synchronously_is_still_set_aside_at_the_deadline()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        using var release = new ManualResetEventSlim();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var blocked = TestSigningKeys.Pair("blocked", notBefore: Epoch);
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, blocked.Key]),
+            (id, _) =>
+            {
+                if (id != blocked.Key.Id)
+                    return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey)));
+
+                // Blocks the calling thread, then hands back a signer that would pass its self-test.
+                entered.TrySetResult();
+                release.Wait(TimeSpan.FromSeconds(30));
+                return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(blocked.PrivateKey)));
+            },
+            () => { },
+            SigningAlgorithm.ES256);
+        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+
+        try
+        {
+            clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+            clock.Advance(TimeSpan.FromMinutes(1));
+            await ring.LastTransition.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+            // Decided while the source is still blocked.
+            release.IsSet.Should().BeFalse();
+            ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Should().Be(blocked.Key.Id);
+        }
+        finally
+        {
+            release.Set();
+        }
+    }
+
+    [Fact]
+    public async Task Handover_past_the_deadline_is_set_aside_even_when_the_source_s_cancellation_callback_throws()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var hung = TestSigningKeys.Pair("hung", notBefore: Epoch);
+        var registered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var callbackRan = false;
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, hung.Key]),
+            (id, cancellationToken) =>
+            {
+                if (id != hung.Key.Id)
+                    return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey)));
+
+                cancellationToken.Register(() =>
+                {
+                    callbackRan = true;
+                    throw new InvalidOperationException("simulated: callback failure");
+                });
+                registered.TrySetResult();
+                return new TaskCompletionSource<ISigner>().Task;
+            },
+            () => { },
+            SigningAlgorithm.ES256);
+        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await registered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await ring.LastTransition.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        callbackRan.Should().BeTrue("the deadline must tell the source to stop");
+        ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Should().Be(hung.Key.Id);
+    }
+
+    [Fact]
+    public async Task A_signer_that_opens_after_shutdown_abandoned_its_handover_is_disposed()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var slow = TestSigningKeys.Pair("slow", notBefore: Epoch);
+        var opening = new TaskCompletionSource<ISigner>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, slow.Key]),
+            (id, _) =>
+            {
+                if (id != slow.Key.Id)
+                    return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey)));
+
+                requested.TrySetResult();
+                return opening.Task;
+            },
+            () => { },
+            SigningAlgorithm.ES256);
+        var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await requested.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        ((IDisposable)ring).Dispose();
+        await ring.LastTransition;
+        opening.SetResult(new TrackingSigner(
+            new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(slow.PrivateKey)), () => disposed.TrySetResult()));
+
+        await disposed.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task A_signer_that_opens_after_the_handover_deadline_is_disposed_exactly_once()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var slow = TestSigningKeys.Pair("slow", notBefore: Epoch);
+        var opening = new TaskCompletionSource<ISigner>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposeCount = 0;
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, slow.Key]),
+            (id, _) =>
+            {
+                if (id != slow.Key.Id)
+                    return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey)));
+
+                requested.TrySetResult();
+                return opening.Task;
+            },
+            () => { },
+            SigningAlgorithm.ES256);
+        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await requested.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await ring.LastTransition.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        opening.SetResult(new TrackingSigner(
+            new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(slow.PrivateKey)),
+            () =>
+            {
+                Interlocked.Increment(ref disposeCount);
+                disposed.TrySetResult();
+            }));
+        await disposed.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        ((IDisposable)ring).Dispose();
+
+        disposeCount.Should().Be(1, "abandoned at the deadline, it is the late-open cleanup's alone, never the ring's too");
+    }
+
+    private sealed class SimulatedVaultException : Exception;
+
+    private static IEnumerable<Exception> Chain(Exception? exception)
+    {
+        for (; exception is not null; exception = exception.InnerException)
+            yield return exception;
+    }
+
+    [Fact]
+    public async Task Handover_whose_signer_never_opens_is_set_aside_at_the_deadline_and_later_changes_still_fire()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var hung = TestSigningKeys.Pair("hung", notBefore: Epoch);
+        var later = TestSigningKeys.Pair("later", notBefore: Epoch.AddDays(5));
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, hung.Key, later.Key]),
+            (id, _) => id == hung.Key.Id
+                ? new TaskCompletionSource<ISigner>().Task
+                : Task.FromResult<ISigner>(new LocalSigner(
+                    SigningAlgorithm.ES256, ECDsa.Create(id == later.Key.Id ? later.PrivateKey : current.PrivateKey))),
+            () => { },
+            SigningAlgorithm.ES256);
+        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await ring.LastTransition;
+
+        ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Should().Be(hung.Key.Id);
+        ring.Current.SigningKey.SourceId.Should().Be(current.Key.Id);
+
+        await AdvanceToAsync(ring, clock, Epoch.AddDays(5) + TestSigningKeys.Options.LeadTime);
+
+        ring.Current.SigningKey.SourceId.Should().Be(later.Key.Id);
+    }
+
+    [Fact]
+    public void Constructor_throws_when_RetainRetiredKeysFor_is_unresolved()
+    {
+        var act = () => new SigningKeyRing(
+            NeverCalledSource(), new FakeTimeProvider(Epoch), new SigningKeyOptions(), new CapturingSanitizingLogger<SigningKeyRing>());
+
+        act.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("options");
+    }
+
+    [Fact]
+    public async Task Handover_opens_the_successor_s_signer_only_when_it_takes_over()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var opened = 0;
+        using var ring = TestSigningKeys.Ring(
+            [TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), TestSigningKeys.Pair("successor", notBefore: Epoch)],
+            clock,
+            decorateSigner: signer => { opened++; return signer; });
+
+        opened.Should().Be(1);
+        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
+
+        opened.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Handover_failure_keeps_the_previous_key_signing_logs_an_Error_and_names_the_failed_successor()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
+        var successor = TestSigningKeys.Mismatched(TestSigningKeys.Pair("successor", notBefore: Epoch));
+        using var ring = TestSigningKeys.Ring([TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), successor], clock, logger);
+
+        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
+
+        ring.Current.SigningKey.SourceId.Value.Should().Be("current");
+        ring.Current.Published.Should().Contain(ring.Current.SigningKey);
+        ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Should().Be(successor.Key.Id);
+        logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error)
+            .Which.Message.Should().Contain("signing.self_test_failed");
+    }
+
+    [Fact]
+    public async Task Handover_failure_is_not_retried_at_later_transitions()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var opened = 0;
+        using var ring = TestSigningKeys.Ring(
+            [
+                TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)),
+                TestSigningKeys.Mismatched(TestSigningKeys.Pair("successor", notBefore: Epoch)),
+            ],
+            clock,
+            decorateSigner: signer => { opened++; return signer; });
+
+        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime + TimeSpan.FromDays(5));
+
+        opened.Should().Be(2, "the startup signer, then one attempt for the successor");
+        ring.Current.SigningKey.SourceId.Value.Should().Be("current");
+    }
+
+    [Fact]
+    public async Task Handover_failure_keeps_the_failed_key_published_and_the_key_signing_on_published_while_it_signs()
+    {
+        // B fails on this replica only; other replicas sign with it, so it must stay in this
+        // replica's JWKS. A signs on here, so it stays published however long B has been due.
+        var clock = new FakeTimeProvider(Epoch);
+        using var ring = TestSigningKeys.Ring(
+            [
+                TestSigningKeys.Pair("a", notBefore: Epoch.AddDays(-90)),
+                TestSigningKeys.Mismatched(TestSigningKeys.Pair("b", notBefore: Epoch)),
+            ],
+            clock);
+
+        await AdvanceToAsync(ring, clock, Epoch.AddDays(5));
+
+        ring.Current.SigningKey.SourceId.Value.Should().Be("a");
+        ring.Current.Published.Select(key => key.SourceId.Value).Should().Equal("a", "b");
+    }
+
+    [Fact]
+    public async Task Handover_re_evaluates_when_the_clock_passes_a_change_instant_while_the_successor_s_signer_opens()
+    {
+        // B is due at its lead time but expires one second later, while its signer is still opening;
+        // the ring must not commit an expired B, and A is still there to sign.
+        var clock = new FakeTimeProvider(Epoch);
+        var leadEnds = Epoch + TestSigningKeys.Options.LeadTime;
+        var opened = 0;
+        using var ring = TestSigningKeys.Ring(
+            [
+                TestSigningKeys.Pair("a", notBefore: Epoch.AddDays(-90)),
+                TestSigningKeys.Pair("b", notBefore: Epoch, expiresAt: leadEnds.AddSeconds(1)),
+            ],
+            clock,
+            decorateSigner: signer =>
+            {
+                if (opened++ > 0)
+                    clock.Advance(TimeSpan.FromSeconds(2));
+                return signer;
+            });
+
+        await AdvanceToAsync(ring, clock, leadEnds);
+
+        ring.Current.SigningKey.SourceId.Value.Should().Be("a");
+    }
+
+    [Fact]
+    public async Task Handover_hands_over_at_once_to_a_key_that_became_due_while_another_s_signer_opened()
+    {
+        // B is due at its lead time and expires a second later; C becomes due in that second. B's
+        // signer takes two seconds to open, so once it does, C must sign without waiting for a timer.
+        var clock = new FakeTimeProvider(Epoch);
+        var leadEnds = Epoch + TestSigningKeys.Options.LeadTime;
+        var opened = 0;
+        using var ring = TestSigningKeys.Ring(
+            [
+                TestSigningKeys.Pair("a", notBefore: Epoch.AddDays(-90)),
+                TestSigningKeys.Pair("b", notBefore: Epoch, expiresAt: leadEnds.AddSeconds(1)),
+                TestSigningKeys.Pair("c", notBefore: Epoch.AddSeconds(1)),
+            ],
+            clock,
+            decorateSigner: signer =>
+            {
+                if (opened++ == 1)
+                    clock.Advance(TimeSpan.FromSeconds(2));
+                return signer;
+            });
+
+        await AdvanceToAsync(ring, clock, leadEnds);
+
+        ring.Current.SigningKey.SourceId.Value.Should().Be("c");
+    }
+
+    [Fact]
+    public async Task Handover_never_retries_any_failed_successor_when_signing_falls_back_to_it()
+    {
+        // B fails on day 1 and C on day 2; when C expires on day 3, B must not be tried again.
+        var clock = new FakeTimeProvider(Epoch);
+        var opened = 0;
+        using var ring = TestSigningKeys.Ring(
+            [
+                TestSigningKeys.Pair("a", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(4)),
+                TestSigningKeys.Mismatched(TestSigningKeys.Pair("b", notBefore: Epoch)),
+                TestSigningKeys.Mismatched(TestSigningKeys.Pair("c", notBefore: Epoch.AddDays(1), expiresAt: Epoch.AddDays(3))),
+            ],
+            clock,
+            decorateSigner: signer => { opened++; return signer; });
+
+        await AdvanceToAsync(ring, clock, Epoch.AddDays(3).AddHours(1));
+
+        opened.Should().Be(3, "the startup signer, then one attempt each for B and C");
+        ring.Current.SigningKey.SourceId.Value.Should().Be("a");
+        ring.TimelineOrNull!.SetAside.Select(key => key.SourceId.Value).Should().Equal("b", "c");
+    }
+
+    [Fact]
+    public async Task Handover_treats_a_source_s_own_cancellation_as_a_failed_successor_not_a_shutdown()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var opened = 0;
+        using var ring = TestSigningKeys.Ring(
+            [TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), TestSigningKeys.Pair("successor", notBefore: Epoch)],
+            clock,
+            decorateSigner: signer =>
+            {
+                if (opened++ == 0)
+                    return signer;
+                signer.Dispose();
+                throw new OperationCanceledException("simulated: the source timed out");
+            });
+
+        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
+
+        ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Value.Should().Be("successor");
+        ring.Current.SigningKey.SourceId.Value.Should().Be("current");
+    }
+
+    [Fact]
+    public async Task Dispose_still_disposes_every_signer_and_the_source_when_a_cancellation_callback_throws()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var successor = TestSigningKeys.Pair("successor", notBefore: Epoch);
+        var disposed = new List<string>();
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, successor.Key]),
+            (id, cancellationToken) =>
+            {
+                if (id == successor.Key.Id)
+                {
+                    // Hangs until shutdown, and registers a callback that throws when shutdown comes.
+                    cancellationToken.Register(static () => throw new InvalidOperationException("simulated: callback failure"));
+                    return new TaskCompletionSource<ISigner>().Task;
+                }
+
+                ISigner signer = new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey));
+                return Task.FromResult<ISigner>(new TrackingSigner(signer, () => disposed.Add("signer")));
+            },
+            () => disposed.Add("source"),
+            SigningAlgorithm.ES256);
+        var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+
+        ((IDisposable)ring).Dispose();
+
+        disposed.Should().Equal("signer", "source");
+    }
+
+    [Fact]
+    public async Task Handover_failure_makes_the_expiry_health_check_Degraded()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        using var ring = TestSigningKeys.Ring(
+            [
+                TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)),
+                TestSigningKeys.Mismatched(TestSigningKeys.Pair("successor", notBefore: Epoch)),
+            ],
+            clock);
+        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
+        var check = new SigningKeyExpiryHealthCheck(
+            ring, clock, Microsoft.Extensions.Options.Options.Create(new SigningKeyExpiryHealthCheckOptions()));
+
+        var result = await check.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
+
+        result.Status.Should().Be(HealthStatus.Degraded);
+    }
+
+    [Fact]
+    public async Task Handover_keeps_the_superseded_signer_open_until_the_ring_is_disposed_then_disposes_each_once()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var disposed = new List<string>();
+        var opened = 0;
+        var ring = TestSigningKeys.Ring(
+            [TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), TestSigningKeys.Pair("successor", notBefore: Epoch)],
+            clock,
+            decorateSigner: signer =>
+            {
+                var name = opened++ == 0 ? "current" : "successor";
+                return new TrackingSigner(signer, () => disposed.Add(name));
+            });
+
+        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
+        disposed.Should().BeEmpty();
+
+        ((IDisposable)ring).Dispose();
+
+        disposed.Should().BeEquivalentTo("current", "successor");
+    }
+
+    [Fact]
+    public async Task Dispose_stops_the_ring_following_the_clock()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var ring = TestSigningKeys.Ring(
+            [TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), TestSigningKeys.Pair("successor", notBefore: Epoch)],
+            clock);
+
+        ((IDisposable)ring).Dispose();
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+
+        ring.Current.SigningKey.SourceId.Value.Should().Be("current");
+    }
+
+    /// <summary>Moves <paramref name="clock"/> to <paramref name="until"/> one change instant at a
+    /// time, as a live clock would pass them, letting each handover finish.</summary>
+    private static async Task AdvanceToAsync(SigningKeyRing ring, FakeTimeProvider clock, DateTimeOffset until)
+    {
+        while (clock.GetUtcNow() < until)
+        {
+            var next = ring.TimelineOrNull!.NextChangeAfter(clock.GetUtcNow());
+            clock.SetUtcNow(next < until ? next : until);
+            await ring.LastTransition;
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────

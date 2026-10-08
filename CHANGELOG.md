@@ -586,8 +586,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   and an undated key is accepted only when it is the source's only key. Every unexpired key is
   published; the newest key whose `NotBefore` is at least `AuthorizationServerOptions.SigningKeys.LeadTime`
   (default one day; positive, and never shorter than `JwksEndpoint.CacheMaxAge`) old signs. When none is, the oldest
-  valid key signs and a Warning is logged. Keys are read only at startup, so the signing key's
-  predecessor stays published while it signs; an older key stays published until a newer one is
+  unexpired key signs and a Warning is logged. An older key stays published until a newer one is
   `LeadTime + SigningKeys.RetainRetiredKeysFor` old, and an expired key (which never signs) until
   `RetainRetiredKeysFor` after expiry. Retention defaults to the longer of the server-wide access and ID
   token lifetimes plus `ClockSkewTolerance`, and must be raised by hand for longer per-client lifetimes.
@@ -597,6 +596,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   as broken on shutdown. The Key Vault sources list every enabled version, dated from the later of its
   creation and its `nbf`; `PreActivationDelay` and `PreviousVersionsToPublish` are removed, and
   `signing.azure_key_vault.no_active_key` is renamed `signing.azure_key_vault.no_enabled_version`.
+
+- **The signing key ring follows the clock: a successor takes over at its lead time, with no
+  restart** (#823). The ring still reads its source once, then re-evaluates the listed keys at each
+  instant the key set can change — a key passing its lead time, expiring, or leaving retention —
+  so the JWKS, discovery and the signing key change on schedule. The signing key's predecessor is
+  no longer kept published for as long as the signing key signs; it stays until the signing key is
+  `LeadTime + RetainRetiredKeysFor` old, as every older key does. `NotBefore` is no longer a
+  validity gate: `signing.signing_key_not_yet_valid` and the five-minute clock-skew grace are
+  removed, and a sole key dated in the future signs at once. A successor whose signer fails to open
+  or self-test, or does not open within a minute, when it is due is set aside until a restart: it never signs, but stays published so
+  every replica serves the same key set, the keys around it keep signing and keep their ordinary
+  retention, and an Error is logged. `SigningKeyExpiryHealthCheck` reports `Unhealthy` when the key
+  signing now has expired, or is published only because it signs (once replicas whose handover
+  succeeded have dropped it), and `Degraded` when a handover failed or has not completed, or when no key
+  will be able to sign `DegradedThreshold` from now; a staged successor that takes over in time keeps
+  it `Healthy`. `SigningKeys.RetainRetiredKeysFor` now defaults to two days, or to the longer token
+  lifetime plus `ClockSkewTolerance` when that is longer, so a replica whose handover is slow or has
+  failed keeps signing with tokens every replica can verify while the key is fixed; a lower value
+  logs `signing.retain_retired_keys_for.below_default` at startup. A problem with one listed key —
+  weak or malformed material, material that does not suit the source's algorithm, an expiry not after
+  its `NotBefore` — now drops that key with a Warning instead of failing startup: it is neither
+  published nor ever signs, the health check reports `Degraded`, and startup warns when the remaining
+  keys stop covering as long as the listed ones would have. Startup still fails when the dropped key is
+  the one due to sign, when every key is dropped, and for a problem with the list itself (no keys, a
+  `null` entry, an empty or duplicate source id, a duplicate `kid`, an undated key among several).
 
 - **The PEM, PFX and Windows signing sources take a list instead of three slots** (#823).
   `PemFileSigningOptions.Files`, `PfxFileSigningOptions.Files` and

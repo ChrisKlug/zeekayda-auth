@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Tokens;
@@ -5,7 +6,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <summary>
 /// Framework-owned <see cref="IStartupActivator"/> that initializes whatever <see cref="SigningKeyRing"/>
 /// is registered, once per host startup — so a misconfigured signing key fails the host rather than
-/// the first request — and then checks the algorithm it signs under against OpenID Connect Discovery.
+/// the first request — and then checks the algorithm it signs under against OpenID Connect Discovery,
+/// and the configured retention against its default.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,7 +24,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>EnsureInitializedAsync</c> itself, which is idempotent.
 /// </para>
 /// </remarks>
-internal sealed class SigningKeyRingActivator(SigningKeyRing? ring = null) : IStartupActivator
+internal sealed class SigningKeyRingActivator(
+    IOptions<AuthorizationServerOptions> options,
+    SigningKeyRing? ring = null) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "SigningKeyRing";
@@ -42,6 +46,27 @@ internal sealed class SigningKeyRingActivator(SigningKeyRing? ring = null) : ISt
         await ring.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
 
         VerifyRs256IsAdvertised(context, ring.Current.Algorithm);
+        VerifyRetention(context);
+    }
+
+    /// <summary>
+    /// A retention below the default is allowed but warned about: it shortens how long a replica
+    /// whose handover is slow or failed can sign on before its tokens stop verifying elsewhere.
+    /// </summary>
+    private void VerifyRetention(StartupVerificationContext context)
+    {
+        var configured = options.Value.SigningKeys.RetainRetiredKeysFor;
+        var recommended = SigningKeyOptions.DefaultRetainRetiredKeysFor(options.Value);
+        if (configured is not { } retention || retention >= recommended)
+            return;
+
+        context.AddWarning(
+            "signing.retain_retired_keys_for.below_default",
+            "SigningKeys.RetainRetiredKeysFor is {Configured}, below its default of {Default}. A retired key " +
+            "drops from the key set sooner, so a replica whose handover to a new key is slow or fails has less " +
+            "time before the tokens it signs stop verifying at other replicas.",
+            retention,
+            recommended);
     }
 
     /// <summary>

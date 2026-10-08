@@ -4,7 +4,7 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// One key as a signing key source lists it: the source's own stable identifier, its public key
-/// material, and the window in which it is valid. Every key signs under the source's
+/// material, and the dates it is published from and expires at. Every key signs under the source's
 /// <see cref="ISigningKeySource.Algorithm"/>.
 /// </summary>
 /// <remarks>
@@ -21,10 +21,10 @@ public sealed record SourceKey
     /// <c>kid</c>: the framework always derives that from <paramref name="publicKey"/>.</param>
     /// <param name="publicKey">The public key material. Never carries private key material.</param>
     /// <param name="notBefore">
-    /// The instant the key becomes valid, or <see langword="null"/> for a key with no date. An
-    /// undated key is accepted only when it is the only key the source lists. The framework signs
-    /// with a key up to five minutes before this instant, to tolerate a host clock running behind
-    /// the machine that minted the credential.
+    /// The instant the key is published from, or <see langword="null"/> for a key with no date. The
+    /// framework orders keys by it and counts <see cref="SigningKeyOptions.LeadTime"/> from it; it is
+    /// not a validity gate, since no relying party can observe it. An undated key is accepted only
+    /// when it is the only key the source lists.
     /// </param>
     /// <param name="expiresAt">The key's expiry, or <see langword="null"/> when it never expires.</param>
     public SourceKey(
@@ -91,7 +91,7 @@ public sealed record SourceKey
     public PublicKeyParameters PublicKey { get; }
 
     /// <summary>
-    /// Gets the instant the key becomes valid; <see cref="DateTimeOffset.MinValue"/> for an undated key.
+    /// Gets the instant the key is published from; <see cref="DateTimeOffset.MinValue"/> for an undated key.
     /// </summary>
     public DateTimeOffset NotBefore { get; }
 

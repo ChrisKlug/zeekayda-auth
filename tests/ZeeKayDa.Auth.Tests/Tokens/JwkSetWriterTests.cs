@@ -132,7 +132,7 @@ public sealed class JwkSetWriterTests
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private static SigningKeySet BuildKeySet(SourceKey current, SigningAlgorithm algorithm = SigningAlgorithm.RS256)
-        => SigningKeySetBuilder.Build([current], algorithm, DateTimeOffset.UtcNow, TestSigningKeys.Options, NullLogger.Instance);
+        => SigningKeySetBuilder.Build([current], algorithm, TestSigningKeys.Options).At(DateTimeOffset.UtcNow);
 
     private static SourceKey RsaSourceKey(string id, string modulusBase64Url, string exponentBase64Url)
         => new(
