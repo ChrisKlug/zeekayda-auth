@@ -2201,3 +2201,21 @@ Copilot code, security (xhigh) and architecture lenses, the security and archite
 - **Unverified scope limits (maintainer), no test possible:** a CA-issued certificate listed more than the lead time after issuance
   signs unpublished at the next restart, until live rotation (#527) — no local state records when a file was deployed; the wrapping
   of a private-key accessor that throws in `private_key_not_found` — no in-process certificate can be made to throw there.
+
+## 2026-10-08 — a signing source declares one algorithm; the advertised-algorithm filter is removed (#905, code frozen at `08515b9`)
+Copilot code, security and architecture lenses, the security and architect agents, code-lens verification of the one High (a
+duplicated configuration reference, fixed in `6b7cb58`), and the PR's CodeQL and CodeScene review; no Critical. `16508a5` and
+`08515b9` were read by the main session only.
+- Every key's material is checked against the source's `Algorithm`; `SourceKey` carries none, and a key set cannot mix
+  algorithms. Closed — `Build_throws_when_an_EC_algorithm_is_declared_over_an_RSA_public_key`, `Build_throws_when_the_EC_algorithm_does_not_match_the_key_curve`,
+  `Build_throws_when_the_declared_algorithm_is_not_a_defined_SigningAlgorithm_member`, `Constructor_rejects_a_published_key_under_another_algorithm`,
+  `Full_DI_wiring_fails_startup_naming_a_PFX_bundle_whose_key_does_not_suit_the_algorithm`.
+- Discovery advertises exactly that algorithm. Closed — `GetDocument_advertises_one_algorithm_however_many_keys_are_published`.
+- A client's `AllowedSigningAlgorithms` rejects undefined values always, and once the ring has read its source must contain its
+  algorithm; other entries only warn. Closed — `Validate_fails_with_undefined_code_before_the_key_ring_has_read_its_source`,
+  `Host_startup_throws_when_a_client_excludes_the_algorithm_the_server_signs_with`,
+  `Validate_warns_once_about_an_AllowedSigningAlgorithms_entry_the_server_never_signs_with`. Before that read, inclusion is unchecked and
+  warned — `Validate_warns_when_the_key_ring_exists_but_has_not_read_its_source`; the issuer then refuses such a client at signing —
+  `A_client_whose_allowed_algorithms_exclude_the_signing_key_is_refused_before_the_signer_is_touched`.
+- **Accepted residual (maintainer):** non-RS256 only warns, against Discovery §3 — `VerifyAsync_warns_when_the_advertised_set_omits_RS256`.
+- **Deferred to #823:** the ring reads `ISigningKeySource.Algorithm` per build, moot while it builds once.
