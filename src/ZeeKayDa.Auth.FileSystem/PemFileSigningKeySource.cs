@@ -69,7 +69,7 @@ internal sealed class PemFileSigningKeySource(
     /// Parses only the certificate of <paramref name="file"/>, and checks that the file can sign
     /// without parsing or importing its private key: any listed file may be chosen to sign, so one
     /// that cannot fails now rather than at the restart that chooses it. Returns <see langword="null"/>
-    /// when the certificate file does not exist.
+    /// when the certificate file, or a separate key file, does not exist.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The file does not contain a valid PEM-encoded certificate; a combined file carries no private
@@ -102,14 +102,18 @@ internal sealed class PemFileSigningKeySource(
                 ex);
         }
 
-        // A separate key file is held to the permission and symlink rules without being read; a
-        // combined file must at least carry a private key block. Every listed key is published, so a
-        // readable or missing key matters whether or not it signs today.
+        // A separate key file is held to the permission and symlink rules without being read, and a
+        // deleted one unlists the key like a deleted certificate; a combined file must at least carry a
+        // private key block. Every listed key is published, so this matters whether or not it signs today.
         try
         {
-            if (file.KeyPath is not null)
-                reader.Validate(file.KeyPath);
-            else if (!HasUnencryptedPrivateKeyBlock(certPem))
+            if (file.KeyPath is not null && !reader.TryValidate(file.KeyPath))
+            {
+                certificate.Dispose();
+                return null;
+            }
+
+            if (file.KeyPath is null && !HasUnencryptedPrivateKeyBlock(certPem))
                 throw NoPrivateKey(certificatePath);
         }
         catch

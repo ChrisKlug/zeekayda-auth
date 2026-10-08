@@ -578,8 +578,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   cannot change it at runtime. A successor whose signer failed is set aside until the next read
   rather than until a restart, and for good once its predecessor is superseded. The signer of a key
   absent from two reads in a row is disposed. Removing a key at its source now revokes it:
-  - the PEM and PFX sources list nothing for a certificate file that does not exist, with a
-    Warning;
+  - the PEM and PFX sources list nothing for a certificate file, or separate key file, that does
+    not exist, with a Warning;
   - the Windows store source lists nothing for a certificate no longer in the store;
   - the Key Vault sources list nothing for a deleted object, or when every version is disabled.
 

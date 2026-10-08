@@ -523,20 +523,20 @@ public sealed class PemFileSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_rejects_a_listed_file_whose_separate_key_file_does_not_exist()
+    public async Task ReadAsync_no_longer_lists_a_PEM_whose_separate_key_file_was_deleted()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
-        var missingKeyPath = tempDir.GetPath("does-not-exist.key");
-        var sut = BuildSource(new PemSigningFile(certPath, missingKeyPath));
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+        (await sut.ReadAsync(ct)).Should().ContainSingle();
+        File.Delete(keyPath);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_not_found");
-        exception.Which.Message.Should().Contain(missingKeyPath);
+        keys.Should().BeEmpty("deleting the private key revokes the key as deleting the certificate does");
     }
 
     // ── EC certificates ──────────────────────────────────────────────────────────────────────────

@@ -15,7 +15,11 @@ internal abstract record SigningKeyRingState(SigningKeySet KeySet)
 
     /// <summary>A tested signer signs for <see cref="SigningKeyRingState.KeySet"/>'s signing key, chosen from <paramref name="Timeline"/>.</summary>
     internal sealed record Signing(ISigner Signer, SigningKeySet KeySet, SigningKeyTimeline Timeline)
-        : SigningKeyRingState(KeySet);
+        : SigningKeyRingState(KeySet)
+    {
+        /// <summary>The key that signs: a key set chosen by the timeline always has one.</summary>
+        public SigningKey SigningKey => KeySet.SigningKey!;
+    }
 
     /// <summary>Nothing signs and nothing is published, for <paramref name="Reason"/>, until a read lists usable keys.</summary>
     internal sealed record Stopped(SigningKeySet KeySet, string Reason) : SigningKeyRingState(KeySet);

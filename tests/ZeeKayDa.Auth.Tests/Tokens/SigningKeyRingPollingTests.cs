@@ -257,7 +257,10 @@ public sealed class SigningKeyRingPollingTests
         clock.Advance(RefreshInterval);
         await listing.SignerRequested.Task;
 
-        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Unhealthy);
+        var resuming = await HealthAsync(ring, clock);
+        resuming.Status.Should().Be(HealthStatus.Unhealthy);
+        resuming.Data.Values.OfType<SigningKeyExpiryStatus>().Should().ContainSingle()
+            .Which.IsSigningKey.Should().BeFalse("the published key is reported, but nothing signs yet");
         listing.SignerGate.SetResult();
         await ring.LastTransition;
         (await HealthAsync(ring, clock)).Status.Should().NotBe(HealthStatus.Unhealthy);

@@ -130,6 +130,23 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
         }
     }
 
+    /// <summary>
+    /// <see cref="Validate"/>, or <see langword="false"/> with a Warning when the file does not exist.
+    /// </summary>
+    public bool TryValidate(string path)
+    {
+        try
+        {
+            Validate(path);
+            return true;
+        }
+        catch (ZeeKayDaConfigurationException ex) when (ex.AggregatedFailures[0].Code == FileNotFoundCode)
+        {
+            WarnMissing(path);
+            return false;
+        }
+    }
+
     private void WarnMissing(string path) =>
         logger.LogWarning(
             "ZeeKayDa.Auth: signing key file '{Path}' does not exist, so its key is not listed; a key no longer " +

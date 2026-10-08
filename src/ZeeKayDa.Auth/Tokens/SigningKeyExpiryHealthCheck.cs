@@ -77,7 +77,9 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
                 signing.ReadFailure),
             SigningKeyRingState.Resuming resuming => HealthCheckResult.Unhealthy(
                 $"Signing has stopped ({resuming.Reason}) until the handover to the key due to sign completes; the log " +
-                "names the cause."),
+                "names the cause.",
+                exception: null,
+                KeyData(resuming.KeySet.Published, signingKid: null, _timeProvider.GetUtcNow())),
             SigningKeyRingState.Stopped stopped => HealthCheckResult.Unhealthy(
                 $"Signing has stopped ({stopped.Reason}) and no key is published; the log names the cause. Signing " +
                 "resumes once the source lists keys the ring can use."),
@@ -112,7 +114,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
         SigningKeyTimeline timeline, SigningKeySet set, DateTimeOffset now, TimeSpan degradedThreshold)
     {
         var signingKey = set.SigningKey ?? throw new ArgumentException("The key set must have a signing key.", nameof(set));
-        var data = KeyData(set.Published, signingKey, now);
+        var data = KeyData(set.Published, signingKey.Kid, now);
 
         if (signingKey.ExpiresAt <= now)
         {
@@ -173,12 +175,12 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
         }
     }
 
-    private static Dictionary<string, object> KeyData(IReadOnlyList<SigningKey> published, SigningKey signingKey, DateTimeOffset now) =>
+    private static Dictionary<string, object> KeyData(IReadOnlyList<SigningKey> published, string? signingKid, DateTimeOffset now) =>
         published.ToDictionary(
             key => key.Kid,
             object (key) => new SigningKeyExpiryStatus(
                 key.Kid,
-                IsSigningKey: string.Equals(key.Kid, signingKey.Kid, StringComparison.Ordinal),
+                IsSigningKey: string.Equals(key.Kid, signingKid, StringComparison.Ordinal),
                 NeverExpires(key) ? null : key.ExpiresAt,
                 RemainingLifetime: NeverExpires(key) ? null : key.ExpiresAt - now));
 

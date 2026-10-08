@@ -134,6 +134,25 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_abandoned_by_the_ring_does_not_replace_the_versions_a_signer_may_open()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: T0);
+        var sut = BuildSource(reader);
+        await sut.ReadAsync(ct);
+        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
+        using var abandoned = new CancellationTokenSource();
+        reader.DuringPublicKeyMaterial = abandoned.Cancel;
+
+        var act = async () => await sut.ReadAsync(abandoned.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        var openUnlisted = async () => await sut.CreateSignerAsync(new SourceKeyId("v2"), ct);
+        await openUnlisted.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
     public async Task CreateSignerAsync_rejects_any_id_before_a_successful_read()
     {
         var ct = TestContext.Current.CancellationToken;

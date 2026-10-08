@@ -24,13 +24,13 @@ defaults to two days, or the longer token lifetime plus clock skew, so a replica
 signs on safely; lower warns. Ties go to the greater source id. A key with bad material or dates is dropped (Warning,
 Degraded) unless due to sign now; at startup that, an ambiguous list, or every key expired is fatal.
 
-**The ring re-reads its source every `RefreshInterval` (default 5 min, minimum 1)**, so `LeadTime ≥ CacheMaxAge +
-RefreshInterval`. A read that throws or exceeds a minute keeps the last list (Error, Degraded); none starts while one is
-still running. No keys is a full revocation; an ambiguous list or a bad key due now is refused alike, so one bad key
-cannot freeze the old set: signing stops (`SigningKey` null, `SignAsync` throws, JWKS `{"keys":[]}` no-store, Unhealthy)
-until a good read and its handover. An unlisted signing key stops at that read. Sources list a deleted file, certificate
-or vault object as nothing, so removing a key revokes it. A failed successor is set aside until the next read, and for
-good once its predecessor is superseded. An unlisted key's signer is disposed at the second read without it.
+**The ring re-reads its source every `RefreshInterval` (default 5 min, min 1)**, so `LeadTime ≥ CacheMaxAge +
+RefreshInterval`. A read that throws or exceeds a minute keeps the last list (Error, Degraded); no read starts while one
+runs, so a source that never returns pins it. No keys revokes all; an ambiguous list or a bad key due now is refused
+alike (one bad key cannot freeze the old set): signing stops (`SigningKey` null, `SignAsync` throws, JWKS `{"keys":[]}`
+no-store, Unhealthy) until a good read; an unlisted signing key stops at once. Sources list a deleted file, key file,
+certificate or vault object as nothing, so removing a key revokes it; an unmounted directory reads as deleted. A failed
+successor is set aside until the next read, for good once its predecessor retires. Unlisted signers close a read later.
 
 **File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list
 `Files`/`Certificates` with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`.

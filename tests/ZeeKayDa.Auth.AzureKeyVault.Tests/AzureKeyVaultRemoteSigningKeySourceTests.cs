@@ -147,13 +147,16 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         await sut.ReadAsync(ct);
         reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
         using var abandoned = new CancellationTokenSource();
-        await abandoned.CancelAsync();
 
+        // Abandoned once the versions are listed, while their material is fetched: the read runs on
+        // to the end, and only the guard before the commit can stop it.
+        reader.DuringKeyMaterial = abandoned.Cancel;
         var act = async () => await sut.ReadAsync(abandoned.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         var openUnlisted = async () => await sut.CreateSignerAsync(new SourceKeyId("v2"), ct);
         await openUnlisted.Should().ThrowAsync<InvalidOperationException>();
+        (await sut.CreateSignerAsync(new SourceKeyId("v1"), ct)).Dispose();
     }
 
     [Fact]

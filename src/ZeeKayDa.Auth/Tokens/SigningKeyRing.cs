@@ -213,7 +213,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                 $"Signing has stopped ({ReasonOf(current)}): the signing key source lists no key the ring can sign with yet.");
         }
 
-        var signingKey = signing.KeySet.SigningKey!;
+        var signingKey = signing.SigningKey;
         var context = new SigningContext(signingKey);
         var signingInput = buildSigningInput(context, state);
 
@@ -417,8 +417,8 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                 return now;
 
             var due = timeline.SigningKeyAt(now);
-            var signingKey = (state as Signing)?.KeySet.SigningKey;
-            if (state is Signing signing && due.Kid == signingKey!.Kid)
+            var signingKey = (state as Signing)?.SigningKey;
+            if (state is Signing signing && due.Kid == signing.SigningKey.Kid)
             {
                 Volatile.Write(ref _state, signing with { KeySet = timeline.At(now) });
                 return now;
@@ -504,14 +504,14 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         var withoutSigner = new SigningKeySet(_algorithm, null, timeline.At(now).Published);
         switch (state)
         {
-            case Signing signing when timeline.Keys.Any(key => key.Kid == signing.KeySet.SigningKey!.Kid):
+            case Signing signing when timeline.Keys.Any(key => key.Kid == signing.SigningKey.Kid):
                 return signing with { Timeline = timeline, ReadFailure = null };
 
             case Signing signing:
                 _logger.LogWarning(
                     "Key {Kid} ({SourceKeyId}) is no longer listed, so it stops signing; signing resumes once the key due " +
                     "to sign takes over.",
-                    signing.KeySet.SigningKey!.Kid, signing.KeySet.SigningKey.SourceId.Value);
+                    signing.SigningKey.Kid, signing.SigningKey.SourceId.Value);
                 return new Resuming(withoutSigner, timeline, "signing.signing_key_unlisted");
 
             default:
