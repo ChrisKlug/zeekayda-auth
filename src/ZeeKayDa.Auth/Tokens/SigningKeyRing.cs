@@ -299,25 +299,31 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         }
 
         var signer = await OpenTestedSignerAsync(set.SigningKey, cancellationToken).ConfigureAwait(false);
-        WarnIfNotEstablished(timeline, set.SigningKey, now);
 
         Volatile.Write(ref _timeline, timeline);
         Volatile.Write(ref _binding, new SignerBinding(signer, set));
 
         lock (_gate)
         {
-            if (_disposed == 0)
+            if (_disposed != 0)
             {
-                _signers.Add(set.SigningKey.Kid, signer);
-                _timer = _timeProvider.CreateTimer(
-                    static state => ((SigningKeyRing)state!).OnTimer(), this, WaitFrom(timeline, now), Timeout.InfiniteTimeSpan);
+                // Dispose ran while the signer was being opened: it never saw this one, so release it
+                // here rather than leave a live handle behind a ring that has already reported itself disposed.
+                DisposeQuietly(signer);
                 return;
             }
+
+            // Created disarmed and armed only once assigned: a timer due at once may fire before
+            // CreateTimer returns, and its transition re-arms through _timer.
+            _signers.Add(set.SigningKey.Kid, signer);
+            _timer = _timeProvider.CreateTimer(
+                static state => ((SigningKeyRing)state!).OnTimer(), this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
 
-        // Dispose ran while the signer was being opened: it never saw this one, so release it here
-        // rather than leave a live handle behind a ring that has already reported itself disposed.
-        DisposeQuietly(signer);
+        // Scheduled from the instant the set was chosen: if a change passed while the signer
+        // opened, the timer fires at once and the transition catches up.
+        Rearm(WaitFrom(timeline, now, _timeProvider.GetUtcNow()));
+        WarnIfNotEstablished(timeline, set.SigningKey, now);
     }
 
     // At most one transition runs at a time: the timer is one-shot and re-armed only when the
@@ -331,6 +337,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// </summary>
     private async Task TransitionAsync()
     {
+        DateTimeOffset evaluatedAt;
         try
         {
             // A handover takes time, and the clock may pass another change instant meanwhile, so
@@ -339,6 +346,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             {
                 var binding = _binding!;
                 var now = _timeProvider.GetUtcNow();
+                evaluatedAt = now;
                 var due = TimelineOrNull!.At(now);
                 if (due.SigningKey.Kid == binding.KeySet.SigningKey.Kid)
                 {
@@ -364,7 +372,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             return;
         }
 
-        Rearm(WaitFrom(TimelineOrNull!, _timeProvider.GetUtcNow()));
+        Rearm(WaitFrom(TimelineOrNull!, evaluatedAt, _timeProvider.GetUtcNow()));
     }
 
     private void Rearm(TimeSpan wait)
@@ -483,15 +491,24 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             signingKey.Kid, signingKey.SourceId.Value, timeline.LeadTime);
     }
 
-    private static TimeSpan WaitFrom(SigningKeyTimeline timeline, DateTimeOffset now)
+    /// <summary>
+    /// The wait until the first change after <paramref name="evaluatedAt"/>, the instant the
+    /// committed set was chosen for — measured against <paramref name="now"/>, so a change that
+    /// passed since is not skipped but fires at once.
+    /// </summary>
+    internal static TimeSpan WaitFrom(SigningKeyTimeline timeline, DateTimeOffset evaluatedAt, DateTimeOffset now)
     {
-        var next = timeline.NextChangeAfter(now);
+        var next = timeline.NextChangeAfter(evaluatedAt);
         if (next == DateTimeOffset.MaxValue)
             return Timeout.InfiniteTimeSpan;
 
+        var remaining = next - now;
+        if (remaining <= TimeSpan.Zero)
+            return TimeSpan.Zero;
+
         // Rounded up: a timer truncates to whole milliseconds, and waking a fraction early would
         // only find nothing changed and re-arm for the remainder.
-        var wait = TimeSpan.FromMilliseconds(Math.Ceiling((next - now).TotalMilliseconds));
+        var wait = TimeSpan.FromMilliseconds(Math.Ceiling(remaining.TotalMilliseconds));
         return wait < MaxWait ? wait : MaxWait;
     }
 

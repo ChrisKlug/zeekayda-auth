@@ -73,6 +73,8 @@ internal static partial class SigningKeySetBuilder
             if (TryBuildKey(sourceKey, algorithm, dropped) is not { } key)
                 continue;
 
+            // Before the dates are judged: two entries sharing one public key are ambiguous whether
+            // or not either could be used.
             if (!seenKids.Add(key.Kid))
             {
                 throw new ZeeKayDaConfigurationException(
@@ -81,6 +83,12 @@ internal static partial class SigningKeySetBuilder
                         $"The signing key source reported duplicate kid '{key.Kid}', derived from the public " +
                         $"key of source id '{key.SourceId.Value}'. Each key must have a unique, stable " +
                         "kid — check for two distinct source ids sharing the same public key."));
+            }
+
+            if (ValidityWindowFailure(sourceKey) is { } windowFailure)
+            {
+                dropped.Add(new DroppedKey(sourceKey, windowFailure));
+                continue;
             }
 
             built.Add(key);
@@ -138,14 +146,12 @@ internal static partial class SigningKeySetBuilder
 
     /// <summary>
     /// Builds <paramref name="sourceKey"/>, or adds it to <paramref name="dropped"/> with the first
-    /// problem in its own dates or material and returns <see langword="null"/>.
+    /// problem in its material and returns <see langword="null"/>.
     /// </summary>
     private static SigningKey? TryBuildKey(SourceKey sourceKey, SigningAlgorithm algorithm, List<DroppedKey> dropped)
     {
         try
         {
-            ValidateValidityWindow(sourceKey);
-
             // Strength first: an unsupported curve is reported as that, not as a curve/algorithm mismatch.
             ValidateKeyStrength(sourceKey);
             ValidateKeyAlgorithmCompatibility(sourceKey, algorithm);
@@ -161,16 +167,12 @@ internal static partial class SigningKeySetBuilder
         }
     }
 
-    private static void ValidateValidityWindow(SourceKey key)
-    {
-        if (key.NotBefore >= key.ExpiresAt)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.invalid_validity_window",
-                    $"Key '{key.Id.Value}' expires at {key.ExpiresAt:O}, which is not after its NotBefore {key.NotBefore:O}."));
-        }
-    }
+    private static ZeeKayDaConfigurationFailure? ValidityWindowFailure(SourceKey key) =>
+        key.NotBefore >= key.ExpiresAt
+            ? new ZeeKayDaConfigurationFailure(
+                "signing.invalid_validity_window",
+                $"Key '{key.Id.Value}' expires at {key.ExpiresAt:O}, which is not after its NotBefore {key.NotBefore:O}.")
+            : null;
 
     /// <summary>
     /// <paramref name="publicKey"/> has already passed <see cref="ImportAndCanonicalize"/>, so its

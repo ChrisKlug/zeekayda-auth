@@ -399,6 +399,20 @@ public sealed class SigningKeySetBuilderTests
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.duplicate_kid");
     }
 
+    [Fact]
+    public void Build_fails_on_a_duplicate_kid_even_when_one_entry_has_unusable_dates()
+    {
+        using var rsa = RSA.Create(2048);
+        var publicKey = PublicKeyParameters.FromRsa(rsa.ExportParameters(false));
+        var current = new SourceKey(new SourceKeyId("current"), publicKey, Now.AddDays(-10));
+        var broken = new SourceKey(new SourceKeyId("broken"), publicKey, Now.AddDays(5), Now.AddDays(4));
+
+        var act = () => Build(current, broken);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.duplicate_kid");
+    }
+
     // ── Validation: algorithm/key-type compatibility ────────────────────────────────────────────
 
     [Fact]

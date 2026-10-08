@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
@@ -763,6 +764,76 @@ public sealed class SigningKeyRingTests
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
+    }
+
+    [Fact]
+    public async Task Initialization_catches_up_when_a_change_passes_while_the_startup_signer_opens()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var opens = 0;
+        using var ring = TestSigningKeys.Ring(
+            [
+                TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)),
+                TestSigningKeys.Pair("successor", notBefore: Epoch - TestSigningKeys.Options.LeadTime + TimeSpan.FromSeconds(30)),
+            ],
+            clock,
+            decorateSigner: signer =>
+            {
+                // The first open is slow: the successor's lead time ends while it runs.
+                if (opens++ == 0)
+                    clock.Advance(TimeSpan.FromMinutes(1));
+                return signer;
+            });
+
+        clock.Advance(TimeSpan.Zero);
+        await ring.LastTransition;
+
+        ring.Current.SigningKey.SourceId.Value.Should().Be("successor");
+    }
+
+    [Fact]
+    public void WaitFrom_is_zero_when_the_next_change_passed_before_the_timer_is_armed()
+    {
+        using var ring = TestSigningKeys.Ring(
+            [
+                TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)),
+                TestSigningKeys.Pair("successor", notBefore: Epoch),
+            ],
+            new FakeTimeProvider(Epoch));
+        var change = ring.TimelineOrNull!.NextChangeAfter(Epoch);
+
+        SigningKeyRing.WaitFrom(ring.TimelineOrNull!, Epoch, change + TimeSpan.FromSeconds(1)).Should().Be(TimeSpan.Zero);
+        SigningKeyRing.WaitFrom(ring.TimelineOrNull!, Epoch, Epoch).Should().BePositive();
+    }
+
+    [Fact]
+    public async Task Initialization_owns_the_startup_signer_before_logging_so_a_throwing_logger_does_not_leak_it()
+    {
+        var disposed = 0;
+        var pair = TestSigningKeys.Pair("current", notBefore: Epoch);
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([pair.Key]),
+            (_, _) => Task.FromResult<ISigner>(
+                new TrackingSigner(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(pair.PrivateKey)), () => disposed++)),
+            () => { },
+            SigningAlgorithm.ES256);
+        var logger = new SanitizingLogger<SigningKeyRing>(
+            new ThrowingLogger(), Microsoft.Extensions.Options.Options.Create(new AuthorizationServerOptions()));
+        var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch), TestSigningKeys.Options, logger);
+
+        var act = () => ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        ((IDisposable)ring).Dispose();
+
+        disposed.Should().Be(1);
+    }
+
+    private sealed class ThrowingLogger : ILogger<SigningKeyRing>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => throw new InvalidOperationException("simulated: logging failed");
     }
 
     [Fact]
