@@ -116,9 +116,10 @@ public sealed class SigningKeyRingTests
     private sealed class DisposableSigningKeySource(
         Func<CancellationToken, Task<IReadOnlyList<SourceKey>>> read,
         Func<SourceKeyId, CancellationToken, Task<ISigner>> createSigner,
-        Action onDispose) : ISigningKeySource, IDisposable
+        Action onDispose,
+        SigningAlgorithm algorithm = SigningAlgorithm.RS256) : ISigningKeySource, IDisposable
     {
-        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+        public SigningAlgorithm Algorithm => algorithm;
 
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) => read(cancellationToken);
 
@@ -918,7 +919,8 @@ public sealed class SigningKeyRingTests
                 ISigner signer = new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey));
                 return Task.FromResult<ISigner>(new TrackingSigner(signer, () => disposed.Add("signer")));
             },
-            () => disposed.Add("source"));
+            () => disposed.Add("source"),
+            SigningAlgorithm.ES256);
         var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);

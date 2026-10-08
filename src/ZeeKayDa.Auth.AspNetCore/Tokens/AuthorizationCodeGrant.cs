@@ -106,9 +106,8 @@ internal sealed class AuthorizationCodeGrant(
         // Decided before anything is issued: a client whose ID token the current key cannot sign
         // must not be handed an access token first — a reference-token issuer would have persisted
         // it by the time the ID token is refused. The signing callback repeats the check against
-        // the key that actually signs; a handover between the two refuses the ID token after the
-        // access token was issued, which startup's check of every key that can still sign makes
-        // a misconfiguration the operator was warned about.
+        // the key that actually signs; a handover between the two cannot change the outcome, since
+        // every key a source lists signs under its one algorithm.
         if (!ClientAcceptsSigningKey(client, context.RequestServices.GetRequiredService<SigningKeyRing>().Current.SigningKey))
         {
             logger.LogError("Client {ClientId} does not allow ID tokens signed with the current signing key's algorithm; nothing was issued.", client.ClientId);
