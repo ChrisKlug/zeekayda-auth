@@ -92,7 +92,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
     {
         var timeline = Timeline(
             CreateRsaKey("current", Now.AddDays(90), notBefore: Now.AddDays(-90)),
-            CreateRsaKey("successor", Now.AddDays(365), notBefore: Now.AddDays(-2)));
+            CreateRsaKey("successor", Now.AddDays(365), notBefore: Now.AddHours(-36)));
         var successor = timeline.At(Now).SigningKey;
         var remaining = timeline.SettingAside(successor.Kid);
 
@@ -107,7 +107,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
     {
         var timeline = Timeline(
             CreateRsaKey("current", Now.AddDays(90), notBefore: Now.AddDays(-90)),
-            CreateRsaKey("successor", Now.AddDays(365), notBefore: Now.AddDays(-2)));
+            CreateRsaKey("successor", Now.AddDays(365), notBefore: Now.AddHours(-36)));
         var stillSigning = timeline.At(Now.AddDays(-10));
 
         var result = SigningKeyExpiryHealthCheck.Evaluate(timeline, stillSigning, Now, DegradedThreshold);
@@ -122,7 +122,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
         // A failed successor and an upcoming loss of every key are both the operator's to act on.
         var timeline = Timeline(
             CreateRsaKey("current", Now.AddDays(5), notBefore: Now.AddDays(-90)),
-            CreateRsaKey("successor", Now.AddDays(6), notBefore: Now.AddDays(-2)));
+            CreateRsaKey("successor", Now.AddDays(6), notBefore: Now.AddHours(-36)));
         var remaining = timeline.SettingAside(timeline.At(Now).SigningKey.Kid);
 
         var result = SigningKeyExpiryHealthCheck.Evaluate(remaining, remaining.At(Now), Now, DegradedThreshold);
@@ -276,6 +276,32 @@ public sealed class SigningKeyExpiryHealthCheckTests
 
         result.Status.Should().Be(HealthStatus.Degraded);
         result.Description.Should().Contain("signing.key_algorithm_mismatch").And.NotContain("/etc/secret");
+    }
+
+    [Fact]
+    public void Evaluate_is_Unhealthy_when_the_key_signing_on_after_a_failed_handover_has_left_every_other_replica_s_key_set()
+    {
+        // The successor took over three days ago everywhere else; past lead time plus retention
+        // (two days here) healthy replicas no longer publish the key this replica still signs with.
+        var current = CreateRsaKey("current", Now.AddDays(90), notBefore: Now.AddDays(-90));
+        var successor = CreateRsaKey("successor", Now.AddDays(90), notBefore: Now.AddDays(-3));
+        var listed = Timeline(current, successor);
+        var timeline = listed.SettingAside(listed.At(Now).SigningKey.Kid);
+
+        var result = Evaluate(timeline);
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+    }
+
+    [Fact]
+    public void Evaluate_is_only_Degraded_while_the_key_signing_on_after_a_failed_handover_is_still_published_elsewhere()
+    {
+        var current = CreateRsaKey("current", Now.AddDays(90), notBefore: Now.AddDays(-90));
+        var successor = CreateRsaKey("successor", Now.AddDays(90), notBefore: Now.AddDays(-1).AddHours(-1));
+        var listed = Timeline(current, successor);
+        var timeline = listed.SettingAside(listed.At(Now).SigningKey.Kid);
+
+        Evaluate(timeline).Status.Should().Be(HealthStatus.Degraded);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────

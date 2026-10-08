@@ -605,10 +605,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `LeadTime + RetainRetiredKeysFor` old, as every older key does. `NotBefore` is no longer a
   validity gate: `signing.signing_key_not_yet_valid` and the five-minute clock-skew grace are
   removed, and a sole key dated in the future signs at once. A successor whose signer fails to open
-  or self-test when it is due is set aside until a restart: it never signs, but stays published so
+  or self-test, or does not open within a minute, when it is due is set aside until a restart: it never signs, but stays published so
   every replica serves the same key set, the keys around it keep signing and keep their ordinary
   retention, and an Error is logged. `SigningKeyExpiryHealthCheck` reports `Unhealthy` when the key
-  signing now has expired, and `Degraded` when a handover failed or has not completed, or when no key
+  signing now has expired, or is published only because it signs (once replicas whose handover
+  succeeded have dropped it), and `Degraded` when a handover failed or has not completed, or when no key
   will be able to sign `DegradedThreshold` from now; a staged successor that takes over in time keeps
   it `Healthy`. `SigningKeys.RetainRetiredKeysFor` now defaults to two days, or to the longer token
   lifetime plus `ClockSkewTolerance` when that is longer, so a replica whose handover is slow or has

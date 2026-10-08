@@ -23,8 +23,8 @@ resolve a legitimately-optional dependency must not take down the whole health r
 during DI activation — `Unhealthy` is itself the correct signal for "not configured."
 
 **The verdict logic is a pure `Evaluate` static method: no ring, no clock dependency beyond the
-values passed in.** `CheckHealthAsync` is a thin adapter that resolves `CurrentOrNull`, the ring's
-timeline and failed successor, the current time, and the configured threshold, then calls it. This is the same shape as pulling business logic
+values passed in.** `CheckHealthAsync` is a thin adapter that reads the ring's key set and timeline
+in one read, the current time, and the configured threshold, then calls it. This is the same shape as pulling business logic
 out of a controller action, applied to `IHealthCheck.CheckHealthAsync`'s own signature, and it is why
 the boundary cases (`Healthy`/`Degraded`/`Unhealthy` thresholds) are unit-testable with no DI
 container and no `FakeTimeProvider` plumbing through the check itself.
@@ -35,7 +35,8 @@ naming the reason — an unconfigured or not-yet-ready signing key ring is not a
 healthy, and an orchestrator's readiness probe must treat it as not ready.
 
 **The signing-key verdict asks the ring's own rules, never its own reading of the keys.**
-`Unhealthy` when the key signing now has expired; `Degraded`, naming every reason, when a successor's
+`Unhealthy` when the key signing now has expired, or is published only because it signs (after a
+failed or unfinished handover, once healthy replicas have dropped it); `Degraded`, naming every reason, when a successor's
 signer failed and was set aside, when a listed key was dropped (its failure codes only — a
 source id may be a path or vault URI, and the description may be public), when the key due now is not the key signing (a handover still
 running), or when `SigningKeyTimeline.At(now + DegradedThreshold)` has no unexpired key to sign

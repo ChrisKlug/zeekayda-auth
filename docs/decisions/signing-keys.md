@@ -23,10 +23,10 @@ expired one until `RetainRetiredKeysFor` after expiry, the signing key always. `
 the clock; no relying party sees it, so it is no validity gate. Retention (one knob) defaults to two days, or the
 longer token lifetime plus clock skew, so a replica whose handover is slow or failed signs on safely; a lower value
 warns. Ties go to the ordinally greater source id. The ring reads once and re-evaluates on a timer at each change
-instant, so a successor takes over at its lead time with no restart. A successor whose signer fails is set aside
-until restart: published, never signs, Degraded. A key with bad material or dates is dropped (Warning, Degraded),
-unless it is due to sign now; an ambiguous list is fatal. Startup fails if every key expired; until polling, a key
-listed past `NotBefore + LeadTime` signs unpublished.
+instant, so a successor takes over at its lead time with no restart. A successor whose signer fails or takes over a
+minute to open is set aside until restart: published, never signs, Degraded. A key with bad material or dates is
+dropped (Warning, Degraded), unless it is due to sign now; an ambiguous list is fatal. Startup fails if every key
+expired; until polling, a key listed past `NotBefore + LeadTime` signs unpublished.
 
 **File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list
 `Files`/`Certificates` with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`. A

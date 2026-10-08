@@ -25,7 +25,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <para>
 /// A key in <see cref="SetAside"/> never signs but is otherwise treated as listed: it is published,
 /// and it supersedes older keys on its ordinary schedule, exactly as on a replica whose handover to
-/// it succeeded — so every replica publishes the same set.
+/// it succeeded. The key signing on in its place stays published here only because it signs; once
+/// the other replicas drop it, their key sets no longer verify its tokens.
 /// </para>
 /// </remarks>
 internal sealed class SigningKeyTimeline
@@ -84,29 +85,56 @@ internal sealed class SigningKeyTimeline
     {
         var unexpired = _oldestFirst.Where(key => key.ExpiresAt > now).ToList();
         var signingKey = ChooseSigningKey(unexpired, now);
-
-        var supersededAfter = TokenLifetimes.Sum(_leadTime, _retention);
-        var newestEstablished = unexpired.FindLastIndex(key => now - key.NotBefore >= supersededAfter);
-        var keptUnexpired = unexpired.Skip(Math.Max(newestEstablished, 0)).ToHashSet();
+        var keptUnexpired = KeptUnexpired(unexpired, now);
 
         ImmutableArray<SigningKey> published =
         [
-            .. _oldestFirst.Where(key =>
-                key == signingKey
-                || keptUnexpired.Contains(key)
-                || (key.ExpiresAt <= now && now - key.ExpiresAt < _retention)),
+            .. _oldestFirst.Where(key => key == signingKey || IsKept(key, now, keptUnexpired)),
         ];
 
         return new SigningKeySet(signingKey, published);
     }
 
     /// <summary>
+    /// Whether <paramref name="key"/> is published at <paramref name="now"/> only because it signs:
+    /// every replica whose handover succeeded has dropped it, so they no longer verify its tokens.
+    /// </summary>
+    internal bool IsPublishedOnlyBecauseItSigns(SigningKey key, DateTimeOffset now)
+    {
+        // Compared by kid: the caller's instance need not be this timeline's own.
+        var listed = _oldestFirst.FirstOrDefault(k => k.Kid == key.Kid) ?? key;
+        return !IsKept(listed, now, KeptUnexpired([.. _oldestFirst.Where(k => k.ExpiresAt > now)], now));
+    }
+
+    /// <summary>
+    /// The unexpired keys still published: all but those older than the newest key that is
+    /// <see cref="SigningKeyOptions.LeadTime"/> plus <see cref="SigningKeyOptions.RetainRetiredKeysFor"/> old.
+    /// </summary>
+    private HashSet<SigningKey> KeptUnexpired(List<SigningKey> unexpired, DateTimeOffset now)
+    {
+        var supersededAfter = TokenLifetimes.Sum(_leadTime, _retention);
+        var newestEstablished = unexpired.FindLastIndex(key => now - key.NotBefore >= supersededAfter);
+        return unexpired.Skip(Math.Max(newestEstablished, 0)).ToHashSet();
+    }
+
+    private bool IsKept(SigningKey key, DateTimeOffset now, HashSet<SigningKey> keptUnexpired) =>
+        keptUnexpired.Contains(key) || (key.ExpiresAt <= now && now - key.ExpiresAt < _retention);
+
+    /// <summary>
     /// The same keys with the one whose <see cref="SigningKey.Kid"/> is <paramref name="kid"/> set
     /// aside: it never signs, so the rules carry on with the keys around it, and it is never tried
     /// again.
     /// </summary>
-    internal SigningKeyTimeline SettingAside(string kid) =>
-        new(_oldestFirst, Dropped, _leadTime, _retention, SetAside.Add(_oldestFirst.Single(key => key.Kid == kid)));
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when no other key could sign: the key signing now is never set aside.
+    /// </exception>
+    internal SigningKeyTimeline SettingAside(string kid)
+    {
+        if (_oldestFirst.All(key => key.Kid == kid || SetAside.Contains(key)))
+            throw new InvalidOperationException($"Setting key '{kid}' aside would leave no key able to sign.");
+
+        return new(_oldestFirst, Dropped, _leadTime, _retention, SetAside.Add(_oldestFirst.Single(key => key.Kid == kid)));
+    }
 
     /// <summary>
     /// Whether <paramref name="key"/> has been published for the lead time at <paramref name="now"/>;

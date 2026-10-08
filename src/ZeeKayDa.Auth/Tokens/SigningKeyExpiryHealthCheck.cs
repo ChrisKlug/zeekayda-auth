@@ -8,8 +8,10 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> from now.
 /// </summary>
 /// <remarks>
-/// <see cref="HealthStatus.Unhealthy"/> when the key signing now has expired. Otherwise
-/// <see cref="HealthStatus.Degraded"/>, naming every reason that applies, when a successor's signer
+/// <see cref="HealthStatus.Unhealthy"/> when the key signing now has expired, or when it is
+/// published only because it signs — after a failed or unfinished handover, once every replica whose
+/// handover succeeded has dropped it. Otherwise <see cref="HealthStatus.Degraded"/>, naming every
+/// reason that applies, when a listed key was dropped as unusable; when a successor's signer
 /// failed to open or self-test and was set aside until a restart; when the key due to sign now is
 /// not the key signing, because a handover is still running; or when the key set in force at the
 /// end of <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> has no unexpired key to
@@ -60,15 +62,14 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
                 "register a signing key source."));
         }
 
-        var set = _ring.CurrentOrNull;
-        if (set is null)
+        if (_ring.StateOrNull is not { } state)
         {
             return Task.FromResult(HealthCheckResult.Unhealthy(
                 "The signing key ring has not completed startup initialization yet."));
         }
 
         return Task.FromResult(Evaluate(
-            _ring.TimelineOrNull!, set, _timeProvider.GetUtcNow(), _options.Value.DegradedThreshold));
+            state.Timeline, state.KeySet, _timeProvider.GetUtcNow(), _options.Value.DegradedThreshold));
     }
 
     /// <summary>
@@ -97,6 +98,15 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
         {
             return HealthCheckResult.Unhealthy(
                 $"Signing key '{signingKey.Kid}' expired at {signingKey.ExpiresAt:O}, and no unexpired key can sign.",
+                exception: null, data);
+        }
+
+        if (timeline.IsPublishedOnlyBecauseItSigns(signingKey, now))
+        {
+            return HealthCheckResult.Unhealthy(
+                $"Signing key '{signingKey.Kid}' signs on after a failed or unfinished handover, and every replica " +
+                "whose handover succeeded has now dropped it from its key set, so they no longer verify its tokens. " +
+                "Fix the key that should sign and restart.",
                 exception: null, data);
         }
 

@@ -85,7 +85,7 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
-    public void Build_publishes_a_key_not_yet_valid_but_never_signs_with_it()
+    public void Build_publishes_a_key_dated_in_the_future_but_signs_with_the_older_established_key()
     {
         var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-30));
         var future = CreateRsaSourceKey("future", notBefore: Now.AddDays(3));
@@ -759,6 +759,16 @@ public sealed class SigningKeySetBuilderTests
     public void CoverageCutShortTo_is_null_when_nothing_was_dropped()
     {
         Timeline(CreateRsaSourceKey("current", notBefore: Now.AddDays(-30))).CoverageCutShortTo().Should().BeNull();
+    }
+
+    [Fact]
+    public void SettingAside_refuses_to_set_aside_the_last_key_that_can_sign()
+    {
+        var timeline = Timeline(CreateRsaSourceKey("only", notBefore: Now.AddDays(-10)));
+
+        var act = () => timeline.SettingAside(timeline.At(Now).SigningKey.Kid);
+
+        act.Should().Throw<InvalidOperationException>();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
