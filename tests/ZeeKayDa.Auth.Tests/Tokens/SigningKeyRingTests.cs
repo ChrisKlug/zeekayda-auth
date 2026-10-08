@@ -1005,6 +1005,48 @@ public sealed class SigningKeyRingTests
         await disposed.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
     }
 
+    [Fact]
+    public async Task A_signer_that_opens_after_the_handover_deadline_is_disposed_exactly_once()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var slow = TestSigningKeys.Pair("slow", notBefore: Epoch);
+        var opening = new TaskCompletionSource<ISigner>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposeCount = 0;
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, slow.Key]),
+            (id, _) =>
+            {
+                if (id != slow.Key.Id)
+                    return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey)));
+
+                requested.TrySetResult();
+                return opening.Task;
+            },
+            () => { },
+            SigningAlgorithm.ES256);
+        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await requested.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await ring.LastTransition.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        opening.SetResult(new TrackingSigner(
+            new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(slow.PrivateKey)),
+            () =>
+            {
+                Interlocked.Increment(ref disposeCount);
+                disposed.TrySetResult();
+            }));
+        await disposed.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        ((IDisposable)ring).Dispose();
+
+        disposeCount.Should().Be(1, "abandoned at the deadline, it is the late-open cleanup's alone, never the ring's too");
+    }
+
     private sealed class SimulatedVaultException : Exception;
 
     private static IEnumerable<Exception> Chain(Exception? exception)
