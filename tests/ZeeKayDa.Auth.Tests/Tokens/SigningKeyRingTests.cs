@@ -792,18 +792,50 @@ public sealed class SigningKeyRingTests
     }
 
     [Fact]
-    public void WaitFrom_is_zero_when_the_next_change_passed_before_the_timer_is_armed()
+    public async Task A_change_crossed_after_a_transition_commits_but_before_it_re_arms_still_fires()
     {
+        // "old" expires at +0.5s, so a transition runs then without a handover; the successor is
+        // due at +1s. The clock jumps past +1s on the very read that arms the next timer.
+        var clock = new JumpingClock(Epoch);
         using var ring = TestSigningKeys.Ring(
             [
+                TestSigningKeys.Pair("old", notBefore: Epoch.AddDays(-120), expiresAt: Epoch.AddMilliseconds(500)),
                 TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)),
-                TestSigningKeys.Pair("successor", notBefore: Epoch),
+                TestSigningKeys.Pair("successor", notBefore: Epoch - TestSigningKeys.Options.LeadTime + TimeSpan.FromSeconds(1)),
             ],
-            new FakeTimeProvider(Epoch));
-        var change = ring.TimelineOrNull!.NextChangeAfter(Epoch);
+            clock);
 
-        SigningKeyRing.WaitFrom(ring.TimelineOrNull!, Epoch, change + TimeSpan.FromSeconds(1)).Should().Be(TimeSpan.Zero);
-        SigningKeyRing.WaitFrom(ring.TimelineOrNull!, Epoch, Epoch).Should().BePositive();
+        clock.SkewTheReadAfterNext(TimeSpan.FromSeconds(1));
+        clock.SetUtcNow(Epoch.AddMilliseconds(500));
+        await ring.LastTransition;
+        clock.Advance(TimeSpan.Zero);
+        await ring.LastTransition;
+        clock.SetUtcNow(Epoch.AddSeconds(1));
+        await ring.LastTransition;
+
+        ring.Current.SigningKey.SourceId.Value.Should().Be("successor");
+    }
+
+    /// <summary>A fake clock whose one chosen read runs ahead, to land a change between two reads.</summary>
+    private sealed class JumpingClock(DateTimeOffset start) : FakeTimeProvider(start)
+    {
+        private int _readsUntilSkew = -1;
+        private TimeSpan _skew;
+
+        public void SkewTheReadAfterNext(TimeSpan skew)
+        {
+            _readsUntilSkew = 1;
+            _skew = skew;
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            var now = base.GetUtcNow();
+            if (_readsUntilSkew < 0)
+                return now;
+
+            return _readsUntilSkew-- == 0 ? now + _skew : now;
+        }
     }
 
     [Fact]

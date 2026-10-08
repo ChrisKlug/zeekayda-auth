@@ -496,7 +496,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// committed set was chosen for — measured against <paramref name="now"/>, so a change that
     /// passed since is not skipped but fires at once.
     /// </summary>
-    internal static TimeSpan WaitFrom(SigningKeyTimeline timeline, DateTimeOffset evaluatedAt, DateTimeOffset now)
+    private static TimeSpan WaitFrom(SigningKeyTimeline timeline, DateTimeOffset evaluatedAt, DateTimeOffset now)
     {
         var next = timeline.NextChangeAfter(evaluatedAt);
         if (next == DateTimeOffset.MaxValue)
