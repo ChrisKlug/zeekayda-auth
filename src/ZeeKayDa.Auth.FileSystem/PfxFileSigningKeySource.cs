@@ -201,7 +201,7 @@ internal sealed class PfxFileSigningKeySource(
         }
 
         // Checked here, where it costs nothing, rather than when the bundle is first chosen to sign —
-        // possibly at a restart long after it was deployed.
+        // possibly long after it was deployed.
         if (keyBagCount == 0)
         {
             throw InvalidPfx(path,

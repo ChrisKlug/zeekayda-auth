@@ -2165,12 +2165,12 @@ code lens on `6db3887`, and the PR's Copilot and CodeScene review; no Critical; 
 - A signer signing under another algorithm than its key fails startup. Closed — `InitializeAsync_throws_self_test_failed_when_the_signer_signs_under_another_algorithm`.
 - A key already expired at startup never signs, but stays published for the retention. Closed — `Expiry_a_key_that_just_expired_never_signs_but_stays_published_for_the_retention`.
 - The signing key's unexpired predecessor stays published however late the restart that switched keys. Closed —
-  `Rotation_restart_weeks_after_the_lead_time_still_keeps_the_predecessor_published`.
+  Rotation_restart_weeks_after_the_lead_time_still_keeps_the_predecessor_published [removed by #823 PR 3, where the ring follows the clock and the predecessor stays published for the retention after its successor takes over: `At_keeps_the_predecessor_published_for_the_retention_after_the_successor_takes_over`].
 - Retention defaults to the longer token lifetime plus clock skew; no combination overflows. Closed — `PostConfigure_defaults_RetainRetiredKeysFor_to_the_longer_token_lifetime_plus_the_clock_skew_tolerance`,
   `PostConfigure_saturates_the_default_RetainRetiredKeysFor_for_an_unbounded_token_lifetime`, `Build_does_not_overflow_when_lead_time_plus_retention_exceeds_TimeSpan_MaxValue`,
   `PostConfigure_with_negative_lifetimes_and_skew_beyond_TimeSpan_MinValue_leaves_the_failures_to_validation`.
 - Key Vault refuses a listed version whose URI is not version-pinned. Closed — `ReadAsync_throws_when_a_listed_versions_identifier_uri_is_not_version_pinned`.
-- **Accepted residuals (maintainer):** a key signs up to five minutes before its `NotBefore` (`Future_a_key_valid_up_to_five_minutes_from_now_signs_to_tolerate_clock_skew`);
+- **Accepted residuals (maintainer):** a key signs up to five minutes before its `NotBefore` (Future_a_key_valid_up_to_five_minutes_from_now_signs_to_tolerate_clock_skew [removed by #823 PR 3, where `NotBefore` is no validity gate: `Build_signs_with_a_sole_key_whose_NotBefore_is_in_the_future`]);
   a key expiring while the process runs signs until restart, with no test pinning that; the health check reports it Unhealthy
   (`CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source`);
   file and Windows sources sign only with Current until PR 2 (CreateSignerAsync_throws_when_called_for_the_Next_slot [removed by #823 PR 2, which lets every listed file sign: `CreateSignerAsync_opens_a_signer_for_any_listed_file`]); per-client lifetimes are invisible at startup,

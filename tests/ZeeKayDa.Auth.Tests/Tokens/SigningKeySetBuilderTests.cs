@@ -1,12 +1,12 @@
 using System.Security.Cryptography;
-using Microsoft.Extensions.Logging.Abstractions;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
 
 /// <summary>
-/// Exercises <see cref="SigningKeySetBuilder.Build"/> directly: every validation, and every timing
-/// rule that decides which key signs and which keys are published.
+/// Exercises <see cref="SigningKeySetBuilder.Build"/> and the <see cref="SigningKeyTimeline"/> it
+/// returns: every validation, and every timing rule that decides which key signs and which keys are
+/// published at an instant.
 /// </summary>
 public sealed class SigningKeySetBuilderTests
 {
@@ -45,38 +45,22 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
-    public void Build_signs_with_the_oldest_valid_key_and_logs_a_warning_when_no_key_is_past_the_lead_time()
+    public void Build_signs_with_the_oldest_unexpired_key_when_no_key_is_past_the_lead_time()
     {
         var oldest = CreateRsaSourceKey("oldest", notBefore: Now.AddHours(-3));
         var newer = CreateRsaSourceKey("newer", notBefore: Now.AddHours(-1));
-        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
 
-        var set = Build(logger, oldest, newer);
+        var set = Build(oldest, newer);
 
         set.SigningKey.SourceId.Should().Be(oldest.Id);
-        logger.Warnings.Should().ContainSingle().Which.Should().Contain(set.SigningKey.Kid);
     }
 
     [Fact]
-    public void Build_logs_no_warning_when_the_signing_key_is_past_the_lead_time()
+    public void Build_signs_with_a_single_undated_key_at_once()
     {
-        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
-
-        Build(logger, CreateRsaSourceKey("current", notBefore: Now - LeadTime));
-
-        logger.Warnings.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Build_signs_with_a_single_undated_key_at_once_without_a_warning()
-    {
-        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
         var only = CreateRsaSourceKey("only");
 
-        var set = Build(logger, only);
-
-        set.SigningKey.SourceId.Should().Be(only.Id);
-        logger.Warnings.Should().BeEmpty();
+        Build(only).SigningKey.SourceId.Should().Be(only.Id);
     }
 
     [Fact]
@@ -91,9 +75,11 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
-    public void Build_signs_with_a_key_whose_NotBefore_is_within_five_minutes_in_the_future()
+    public void Build_signs_with_a_sole_key_whose_NotBefore_is_in_the_future()
     {
-        var only = CreateRsaSourceKey("only", notBefore: Now.AddMinutes(5));
+        // NotBefore orders keys and starts the lead-time clock; no relying party can observe it, so
+        // it is no validity gate.
+        var only = CreateRsaSourceKey("only", notBefore: Now.AddDays(3));
 
         Build(only).SigningKey.SourceId.Should().Be(only.Id);
     }
@@ -111,23 +97,15 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
-    public void Build_fails_with_signing_key_not_yet_valid_when_every_key_is_more_than_five_minutes_in_the_future()
+    public void Build_keeps_the_last_key_to_expire_as_the_signing_key_once_every_key_has_expired()
     {
-        var act = () => Build(CreateRsaSourceKey("future", notBefore: Now.AddMinutes(5).AddSeconds(1)));
+        var old = CreateRsaSourceKey("old", notBefore: Now.AddDays(-30), expiresAt: Now.AddDays(-2));
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-20), expiresAt: Now);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.signing_key_not_yet_valid");
-    }
+        var set = Build(old, current);
 
-    [Fact]
-    public void Build_fails_with_signing_key_expired_when_every_key_has_expired()
-    {
-        var act = () => Build(
-            CreateRsaSourceKey("old", notBefore: Now.AddDays(-30), expiresAt: Now.AddDays(-2)),
-            CreateRsaSourceKey("current", notBefore: Now.AddDays(-20), expiresAt: Now));
-
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.signing_key_expired");
+        set.SigningKey.SourceId.Should().Be(current.Id);
+        set.Published.Select(k => k.SourceId).Should().Contain(current.Id, "the signing key is always published");
     }
 
     [Fact]
@@ -174,7 +152,7 @@ public sealed class SigningKeySetBuilderTests
     {
         var oldest = CreateRsaSourceKey("oldest", notBefore: Now.AddDays(-30));
         var predecessor = CreateRsaSourceKey("predecessor", notBefore: Now.AddDays(-20));
-        var signing = CreateRsaSourceKey("signing", notBefore: Now - LeadTime - Retention);
+        var signing = CreateRsaSourceKey("signing", notBefore: Now - LeadTime - Retention + TimeSpan.FromSeconds(1));
 
         var set = Build(oldest, predecessor, signing);
 
@@ -183,53 +161,87 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
-    public void Build_keeps_the_signing_keys_predecessor_published_however_long_the_signing_key_has_been_ready()
+    public void Build_drops_the_predecessor_once_the_signing_key_is_past_the_lead_time_plus_retention()
     {
-        // The ring reads keys only at startup: the successor took over at this restart, not when its
-        // lead time ended, so the predecessor may have signed tokens until a moment ago.
+        // The successor took over exactly at its lead time, so the predecessor's last token expired
+        // a retention period later.
         var predecessor = CreateRsaSourceKey("predecessor", notBefore: Now.AddDays(-30));
-        var signing = CreateRsaSourceKey("signing", notBefore: Now.AddDays(-10));
+        var signing = CreateRsaSourceKey("signing", notBefore: Now - LeadTime - Retention);
 
         var set = Build(predecessor, signing);
 
         set.SigningKey.SourceId.Should().Be(signing.Id);
-        set.Published.Select(k => k.SourceId).Should().Equal(predecessor.Id, signing.Id);
+        set.Published.Select(k => k.SourceId).Should().Equal(signing.Id);
     }
 
     [Fact]
-    public void Build_keeps_the_newest_live_predecessor_published_when_a_long_expired_key_sits_between_it_and_the_signing_key()
-    {
-        var predecessor = CreateRsaSourceKey("predecessor", notBefore: Now.AddDays(-100));
-        var expired = CreateRsaSourceKey("expired", notBefore: Now.AddDays(-50), expiresAt: Now.AddDays(-30));
-        var signing = CreateRsaSourceKey("signing", notBefore: Now.AddDays(-10));
-
-        var set = Build(predecessor, expired, signing);
-
-        set.Published.Select(k => k.SourceId).Should().Equal(predecessor.Id, signing.Id);
-    }
-
-    [Fact]
-    public void Build_keeps_a_recently_expired_key_published_even_when_it_is_older_than_the_predecessor()
+    public void Build_keeps_a_recently_expired_key_published_even_after_a_newer_key_superseded_it()
     {
         var expired = CreateRsaSourceKey("expired", notBefore: Now.AddDays(-100), expiresAt: Now - Retention + TimeSpan.FromSeconds(1));
-        var predecessor = CreateRsaSourceKey("predecessor", notBefore: Now.AddDays(-50));
         var signing = CreateRsaSourceKey("signing", notBefore: Now.AddDays(-10));
 
-        var set = Build(expired, predecessor, signing);
+        var set = Build(expired, signing);
 
-        set.Published.Select(k => k.SourceId).Should().Equal(expired.Id, predecessor.Id, signing.Id);
+        set.Published.Select(k => k.SourceId).Should().Equal(expired.Id, signing.Id);
     }
 
     [Fact]
-    public void Build_keeps_the_unexpired_predecessor_published_when_a_recently_expired_key_sits_between_it_and_the_signing_key()
+    public void SettingAside_stops_a_key_signing_but_keeps_it_published()
     {
-        var predecessor = CreateRsaSourceKey("predecessor", notBefore: Now.AddDays(-100));
-        var expired = CreateRsaSourceKey("expired", notBefore: Now.AddDays(-50), expiresAt: Now.AddMinutes(-1));
-        var signing = CreateRsaSourceKey("signing", notBefore: Now.AddDays(-10));
+        // The ring's answer to a successor whose signer fails on this replica: the previous key signs
+        // on, and the failed key stays in the JWKS, as on every replica whose handover succeeded.
+        var previous = CreateRsaSourceKey("previous", notBefore: Now.AddDays(-30));
+        var successor = CreateRsaSourceKey("successor", notBefore: Now.AddDays(-10));
+        var timeline = Timeline(previous, successor);
 
-        var set = Build(predecessor, expired, signing);
+        var set = timeline.SettingAside(timeline.At(Now).SigningKey.Kid).At(Now);
 
-        set.Published.Select(k => k.SourceId).Should().Equal(predecessor.Id, expired.Id, signing.Id);
+        set.SigningKey.SourceId.Should().Be(previous.Id);
+        set.Published.Select(k => k.SourceId).Should().Equal(previous.Id, successor.Id);
+    }
+
+    // ── Over time ────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void At_hands_signing_to_the_successor_exactly_when_its_lead_time_ends()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-30));
+        var successor = CreateRsaSourceKey("successor", notBefore: Now);
+        var timeline = Timeline(current, successor);
+
+        timeline.At(Now + LeadTime - TimeSpan.FromTicks(1)).SigningKey.SourceId.Should().Be(current.Id);
+        timeline.At(Now + LeadTime).SigningKey.SourceId.Should().Be(successor.Id);
+    }
+
+    [Fact]
+    public void At_keeps_the_predecessor_published_for_the_retention_after_the_successor_takes_over()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-30));
+        var successor = CreateRsaSourceKey("successor", notBefore: Now);
+        var timeline = Timeline(current, successor);
+
+        timeline.At(Now + LeadTime + Retention - TimeSpan.FromTicks(1)).Published.Select(k => k.SourceId)
+            .Should().Equal(current.Id, successor.Id);
+        timeline.At(Now + LeadTime + Retention).Published.Select(k => k.SourceId)
+            .Should().Equal(successor.Id);
+    }
+
+    [Fact]
+    public void NextChangeAfter_is_the_successor_s_lead_time_end_then_the_end_of_the_predecessor_s_retention()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-30), expiresAt: Now.AddDays(90));
+        var successor = CreateRsaSourceKey("successor", notBefore: Now, expiresAt: Now.AddDays(180));
+        var timeline = Timeline(current, successor);
+
+        timeline.NextChangeAfter(Now).Should().Be(Now + LeadTime);
+        timeline.NextChangeAfter(Now + LeadTime).Should().Be(Now + LeadTime + Retention);
+    }
+
+    [Fact]
+    public void NextChangeAfter_is_MaxValue_for_a_sole_undated_key()
+    {
+        Timeline(CreateRsaSourceKey("only", expiresAt: DateTimeOffset.MaxValue))
+            .NextChangeAfter(Now).Should().Be(DateTimeOffset.MaxValue);
     }
 
     [Fact]
@@ -240,7 +252,7 @@ public sealed class SigningKeySetBuilderTests
         var signing = CreateRsaSourceKey("signing", notBefore: Now.AddDays(-10));
         var options = new SigningKeyOptions { LeadTime = LeadTime, RetainRetiredKeysFor = TimeSpan.MaxValue };
 
-        var set = SigningKeySetBuilder.Build([oldest, predecessor, signing], SigningAlgorithm.RS256, Now, options, NullLogger.Instance);
+        var set = SigningKeySetBuilder.Build([oldest, predecessor, signing], SigningAlgorithm.RS256, options).At(Now);
 
         set.Published.Should().HaveCount(3, "a saturated retention never retires a key");
     }
@@ -295,7 +307,7 @@ public sealed class SigningKeySetBuilderTests
     [Fact]
     public void Build_throws_ArgumentNullException_when_keys_is_null()
     {
-        var act = () => SigningKeySetBuilder.Build(null!, SigningAlgorithm.RS256, Now, Options(), NullLogger.Instance);
+        var act = () => SigningKeySetBuilder.Build(null!, SigningAlgorithm.RS256, Options());
 
         act.Should().Throw<ArgumentNullException>();
     }
@@ -661,13 +673,13 @@ public sealed class SigningKeySetBuilderTests
 
     private static SigningKeyOptions Options() => new() { LeadTime = LeadTime, RetainRetiredKeysFor = Retention };
 
-    private static SigningKeySet Build(params SourceKey[] keys) => BuildAs(SigningAlgorithm.RS256, keys);
+    private static SigningKeyTimeline Timeline(params SourceKey[] keys)
+        => SigningKeySetBuilder.Build(keys, SigningAlgorithm.RS256, Options());
+
+    private static SigningKeySet Build(params SourceKey[] keys) => Timeline(keys).At(Now);
 
     private static SigningKeySet BuildAs(SigningAlgorithm algorithm, params SourceKey[] keys)
-        => SigningKeySetBuilder.Build(keys, algorithm, Now, Options(), NullLogger.Instance);
-
-    private static SigningKeySet Build(CapturingSanitizingLogger<SigningKeyRing> logger, params SourceKey[] keys)
-        => SigningKeySetBuilder.Build(keys, SigningAlgorithm.RS256, Now, Options(), logger);
+        => SigningKeySetBuilder.Build(keys, algorithm, Options()).At(Now);
 
     private static SourceKey CreateRsaSourceKey(
         string id, int keySize = 2048, DateTimeOffset? notBefore = null, DateTimeOffset? expiresAt = null)

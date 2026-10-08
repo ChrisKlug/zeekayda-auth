@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
@@ -15,6 +16,8 @@ public sealed class SigningKeyRingActivatorTests
     private static ServiceProvider BuildProvider(SigningKeyRing? ring)
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IOptions<AuthorizationServerOptions>>(
+            Options.Create(new AuthorizationServerOptions { Issuer = "https://auth.example.com" }));
         if (ring is not null)
             services.AddSingleton(ring);
 
@@ -92,5 +95,31 @@ public sealed class SigningKeyRingActivatorTests
 
         context.Failures.Should().BeEmpty();
         context.Warnings.Should().BeEmpty();
+    }
+
+    // ── RetainRetiredKeysFor ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task VerifyAsync_warns_when_RetainRetiredKeysFor_is_below_its_default()
+    {
+        using var provider = BuildProvider(TestSigningKeys.Ring(SigningAlgorithm.RS256));
+        provider.GetRequiredService<IOptions<AuthorizationServerOptions>>()
+            .Value.SigningKeys.RetainRetiredKeysFor = TimeSpan.FromHours(1);
+
+        var context = await VerifyAsync(provider);
+
+        context.Warnings.Should().ContainSingle(w => w.Code == "signing.retain_retired_keys_for.below_default");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_does_not_warn_when_RetainRetiredKeysFor_is_at_its_default()
+    {
+        using var provider = BuildProvider(TestSigningKeys.Ring(SigningAlgorithm.RS256));
+        var options = provider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
+        options.SigningKeys.RetainRetiredKeysFor = SigningKeyOptions.DefaultRetainRetiredKeysFor(options);
+
+        var context = await VerifyAsync(provider);
+
+        context.Warnings.Should().NotContain(w => w.Code == "signing.retain_retired_keys_for.below_default");
     }
 }

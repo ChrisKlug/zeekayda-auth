@@ -4,17 +4,18 @@ using Microsoft.Extensions.Options;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Reports whether the current signing key is approaching or past its expiry — the only thing
-/// watching once <see cref="SigningKeyRing"/> has finished its one-time startup read, since a
-/// static ring never notices the signing key expiring after that.
+/// Reports whether the ring can sign now, and whether some key will still be able to sign
+/// <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> from now.
 /// </summary>
 /// <remarks>
-/// <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy"/> once the
-/// signing key's expiry has passed, <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded"/>
-/// within the configured <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> of it,
-/// otherwise <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy"/> —
-/// including when the signing key has no expiry at all. Every other published key appears in the
-/// result data but never drives the verdict; only the key that actually signs does.
+/// <see cref="HealthStatus.Unhealthy"/> when the key signing now has expired. Otherwise
+/// <see cref="HealthStatus.Degraded"/>, naming every reason that applies, when a successor's signer
+/// failed to open or self-test and was set aside until a restart; when the key due to sign now is
+/// not the key signing, because a handover is still running; or when the key set in force at the
+/// end of <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> has no unexpired key to
+/// sign with. Otherwise <see cref="HealthStatus.Healthy"/>. The look-ahead asks the ring's own
+/// rules, so a staged successor that will take over in time keeps the check Healthy. Every
+/// published key appears in the result data.
 /// </remarks>
 public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
 {
@@ -66,18 +67,21 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
                 "The signing key ring has not completed startup initialization yet."));
         }
 
-        return Task.FromResult(Evaluate(set, _timeProvider.GetUtcNow(), _options.Value.DegradedThreshold));
+        return Task.FromResult(Evaluate(
+            _ring.TimelineOrNull!, set, _timeProvider.GetUtcNow(), _options.Value.DegradedThreshold));
     }
 
     /// <summary>
     /// The pure evaluation logic: no ring, no clock dependency beyond the values passed in.
     /// </summary>
-    /// <param name="set">The current signing key set.</param>
+    /// <param name="timeline">The listed keys, the keys set aside, and the rules that choose among them.</param>
+    /// <param name="set">The key set the ring is serving now.</param>
     /// <param name="now">The current time.</param>
     /// <param name="degradedThreshold">
-    /// How far in advance of expiry to report <see cref="HealthStatus.Degraded"/>.
+    /// How far ahead a key must still be able to sign for <see cref="HealthStatus.Healthy"/>.
     /// </param>
-    internal static HealthCheckResult Evaluate(SigningKeySet set, DateTimeOffset now, TimeSpan degradedThreshold)
+    internal static HealthCheckResult Evaluate(
+        SigningKeyTimeline timeline, SigningKeySet set, DateTimeOffset now, TimeSpan degradedThreshold)
     {
         var data = set.Published.ToDictionary(
             key => key.Kid,
@@ -89,26 +93,44 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
 
         var signingKey = set.SigningKey;
 
-        if (NeverExpires(signingKey))
-            return HealthCheckResult.Healthy($"Signing key '{signingKey.Kid}' has no expiry.", data);
-
-        var signingKeyExpiresAt = signingKey.ExpiresAt;
-        var remaining = signingKeyExpiresAt - now;
-
-        if (remaining <= TimeSpan.Zero)
+        if (signingKey.ExpiresAt <= now)
         {
             return HealthCheckResult.Unhealthy(
-                $"Signing key '{signingKey.Kid}' expired at {signingKeyExpiresAt:O}.", exception: null, data);
+                $"Signing key '{signingKey.Kid}' expired at {signingKey.ExpiresAt:O}, and no unexpired key can sign.",
+                exception: null, data);
         }
 
-        if (remaining <= degradedThreshold)
+        var reasons = DegradedReasons(timeline, signingKey, now, degradedThreshold).ToList();
+        if (reasons.Count > 0)
+            return HealthCheckResult.Degraded(string.Join(" ", reasons), exception: null, data);
+
+        return NeverExpires(signingKey)
+            ? HealthCheckResult.Healthy($"Signing key '{signingKey.Kid}' has no expiry.", data)
+            : HealthCheckResult.Healthy($"Signing key '{signingKey.Kid}' expires at {signingKey.ExpiresAt:O}.", data);
+    }
+
+    private static IEnumerable<string> DegradedReasons(
+        SigningKeyTimeline timeline, SigningKey signingKey, DateTimeOffset now, TimeSpan degradedThreshold)
+    {
+        if (timeline.SetAside.Count > 0)
         {
-            return HealthCheckResult.Degraded(
-                $"Signing key '{signingKey.Kid}' expires at {signingKeyExpiresAt:O}, within the " +
-                $"configured {degradedThreshold} threshold.", exception: null, data);
+            yield return
+                $"The signer of {string.Join(", ", timeline.SetAside.Select(key => $"'{key.Kid}'"))} failed to open or " +
+                "self-test when due to sign, so it is set aside until a restart. Fix the key and restart.";
         }
 
-        return HealthCheckResult.Healthy($"Signing key '{signingKey.Kid}' expires at {signingKeyExpiresAt:O}.", data);
+        var due = timeline.At(now).SigningKey;
+        if (due.Kid != signingKey.Kid)
+            yield return $"Key '{due.Kid}' is due to sign, but its handover has not completed; '{signingKey.Kid}' still signs.";
+
+        var horizon = TokenLifetimes.ExpiresAt(now, degradedThreshold);
+        var signingKeyThen = timeline.At(horizon).SigningKey;
+        if (signingKeyThen.ExpiresAt <= horizon)
+        {
+            yield return
+                $"No key will be able to sign at {horizon:O}: '{signingKeyThen.Kid}', the last to expire, expires at " +
+                $"{signingKeyThen.ExpiresAt:O}, within the configured {degradedThreshold} threshold. List a successor.";
+        }
     }
 
     private static bool NeverExpires(SigningKey key) => key.ExpiresAt == DateTimeOffset.MaxValue;

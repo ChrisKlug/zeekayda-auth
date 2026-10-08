@@ -18,18 +18,41 @@ public sealed class SigningKeyOptions
     /// </remarks>
     public TimeSpan LeadTime { get; set; } = TimeSpan.FromDays(1);
 
+    // Long enough that a slow or failed handover on one replica is noticed and fixed before the
+    // other replicas stop publishing the key it still signs with.
+    private static readonly TimeSpan MinimumDefaultRetention = TimeSpan.FromDays(2);
+
     /// <summary>
     /// Gets or sets how long a key stays published after its successor takes over, or after it
-    /// expires, so tokens it signed can still be verified. Defaults to the larger of
+    /// expires, so tokens it signed can still be verified. Defaults to two days, or to the larger of
     /// <see cref="TokenEndpointOptions.AccessTokenLifetime"/> and
-    /// <see cref="TokenEndpointOptions.IdTokenLifetime"/>, plus
-    /// <see cref="AuthorizationServerOptions.ClockSkewTolerance"/>.
+    /// <see cref="TokenEndpointOptions.IdTokenLifetime"/> plus
+    /// <see cref="AuthorizationServerOptions.ClockSkewTolerance"/> when that is longer.
     /// </summary>
     /// <remarks>
-    /// A client can override its token lifetimes, but clients may come from a database and are not
-    /// known at startup. Raise this setting to the longest lifetime any client uses. Keys are read
-    /// only at startup, so a successor takes over at a restart, possibly long after its lead time:
-    /// the key it replaced therefore stays published for as long as the successor signs.
+    /// Must cover the longest token lifetime, so tokens a key signed just before it stopped signing
+    /// stay verifiable. The two days on top cover a replica whose handover to a successor is slow or
+    /// fails: it signs on with the old key, which stays verifiable for this long from the
+    /// successor's takeover. A failed handover must be fixed within it. Clients may override their
+    /// token lifetimes and may come from a database, so they are not known at startup; raise this
+    /// setting to the longest lifetime any client uses. A value below the default logs a Warning at
+    /// startup.
     /// </remarks>
     public TimeSpan? RetainRetiredKeysFor { get; set; }
+
+    /// <summary>
+    /// The value <see cref="RetainRetiredKeysFor"/> takes when it is not set: the longer server-wide
+    /// token lifetime plus the clock skew tolerance, and at least two days.
+    /// </summary>
+    internal static TimeSpan DefaultRetainRetiredKeysFor(AuthorizationServerOptions options)
+    {
+        // A retired key's last token stays valid for a token lifetime, and relying parties accept it
+        // for the clock skew beyond that.
+        var tokens = TokenLifetimes.Sum(
+            options.TokenEndpoint.AccessTokenLifetime > options.TokenEndpoint.IdTokenLifetime
+                ? options.TokenEndpoint.AccessTokenLifetime
+                : options.TokenEndpoint.IdTokenLifetime,
+            options.ClockSkewTolerance);
+        return tokens > MinimumDefaultRetention ? tokens : MinimumDefaultRetention;
+    }
 }

@@ -472,7 +472,7 @@ public sealed class TokenEndpointTests : IDisposable
             new SourceKeyId("current"),
             PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: false)));
         return SigningKeySetBuilder.Build(
-            [key], SigningAlgorithm.ES256, DateTimeOffset.UtcNow, new SigningKeyOptions { RetainRetiredKeysFor = TimeSpan.Zero }, NullLogger.Instance).SigningKey;
+            [key], SigningAlgorithm.ES256, new SigningKeyOptions { RetainRetiredKeysFor = TimeSpan.Zero }).At(DateTimeOffset.UtcNow).SigningKey;
     }
 
     // ── Lifetimes ─────────────────────────────────────────────────────────────────────────────

@@ -23,8 +23,8 @@ resolve a legitimately-optional dependency must not take down the whole health r
 during DI activation — `Unhealthy` is itself the correct signal for "not configured."
 
 **The verdict logic is a pure `Evaluate` static method: no ring, no clock dependency beyond the
-values passed in.** `CheckHealthAsync` is a thin adapter that resolves `CurrentOrNull`, the current
-time, and the configured threshold, then calls it. This is the same shape as pulling business logic
+values passed in.** `CheckHealthAsync` is a thin adapter that resolves `CurrentOrNull`, the ring's
+timeline and failed successor, the current time, and the configured threshold, then calls it. This is the same shape as pulling business logic
 out of a controller action, applied to `IHealthCheck.CheckHealthAsync`'s own signature, and it is why
 the boundary cases (`Healthy`/`Degraded`/`Unhealthy` thresholds) are unit-testable with no DI
 container and no `FakeTimeProvider` plumbing through the check itself.
@@ -34,12 +34,14 @@ registered, or a ring that has not yet completed startup initialization, both re
 naming the reason — an unconfigured or not-yet-ready signing key ring is not a lesser form of
 healthy, and an orchestrator's readiness probe must treat it as not ready.
 
-**`Previous`/`Next` keys are reported in the result data but never drive the verdict.** Only the key
-that actually signs can make the check fail; a `Previous` key past its retirement window or a `Next`
-key not yet active is expected steady-state, not degradation. `SigningKeyExpiryStatus.IsSigningKey`
-is compared by `Kid`, never `ReferenceEquals` — two independently-built `SigningKey` instances for
-the same public key are not reference-equal, and a health check is exactly the kind of code that
-builds its own `SigningKeySet` in tests.
+**The signing-key verdict asks the ring's own rules, never its own reading of the keys.**
+`Unhealthy` when the key signing now has expired; `Degraded`, naming every reason, when a successor's
+signer failed and was set aside, when the key due now is not the key signing (a handover still
+running), or when `SigningKeyTimeline.At(now + DegradedThreshold)` has no unexpired key to sign
+with; otherwise `Healthy`. A staged successor that
+will take over in time therefore keeps the check `Healthy`, and the check and the ring cannot
+disagree about which key signs. Every published key is reported in the result data;
+`SigningKeyExpiryStatus.IsSigningKey` is compared by `Kid`, never `ReferenceEquals`.
 
 **The `Microsoft.IdentityModel` public-surface ban does not extend to `Microsoft.Extensions.*`.**
 `signing-keys.md`'s "no Microsoft.IdentityModel types on the public surface" decision is about a
@@ -50,4 +52,6 @@ public surface elsewhere in the framework — this is not the same risk and is n
 
 ## Tried, didn't work
 
-Nothing yet.
+- **A verdict that predicted the successor from the key set** (a newer key past the lead time before the
+  signing key's expiry, and "restart to rotate" once one was). It duplicated the ring's choice and needed a
+  fix for every rule it missed; asking the ring's timeline replaced it.

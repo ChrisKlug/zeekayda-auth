@@ -41,8 +41,7 @@ internal static class TestSigningKeys
     public static SigningKeySet KeySet(SigningAlgorithm algorithm, int keyCount = 1)
     {
         using var privateKey = PrivateKey(algorithm);
-        return SigningKeySetBuilder.Build(
-            Keys(algorithm, privateKey, keyCount), algorithm, DateTimeOffset.UtcNow, Options, NullLogger.Instance);
+        return SigningKeySetBuilder.Build(Keys(algorithm, privateKey, keyCount), algorithm, Options).At(DateTimeOffset.UtcNow);
     }
 
     /// <summary>
@@ -81,6 +80,45 @@ internal static class TestSigningKeys
         initialization.GetAwaiter().GetResult();
 
         return ring;
+    }
+
+    /// <summary>
+    /// Builds and initializes a ring over keys that each carry their own private key, so the ring
+    /// can hand signing over from one to the next as <paramref name="timeProvider"/> advances.
+    /// </summary>
+    public static SigningKeyRing Ring(
+        IReadOnlyList<KeyPair> keys, TimeProvider timeProvider, SanitizingLogger<SigningKeyRing>? logger = null,
+        Func<ISigner, ISigner>? decorateSigner = null)
+    {
+        var ring = new SigningKeyRing(
+            new KeyPairSource(keys, decorateSigner), timeProvider, Options, logger ?? new CapturingSanitizingLogger<SigningKeyRing>());
+
+        // Completes synchronously over in-memory keys and LocalSigners; see the overload above.
+        var initialization = ring.EnsureInitializedAsync(CancellationToken.None);
+        if (!initialization.IsCompleted)
+            throw new InvalidOperationException("The in-memory signing key ring did not initialize synchronously.");
+        initialization.GetAwaiter().GetResult();
+
+        return ring;
+    }
+
+    /// <summary>Generates an ES256 key pair, listed under <paramref name="id"/> with the given dates.</summary>
+    public static KeyPair Pair(string id, DateTimeOffset? notBefore = null, DateTimeOffset? expiresAt = null)
+    {
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        return new KeyPair(
+            SourceKey(id, ec, notBefore, expiresAt),
+            ec.ExportParameters(includePrivateParameters: true));
+    }
+
+    /// <summary>
+    /// <paramref name="pair"/>'s listing over a private key that does not pair with it, so its
+    /// signer fails the self-test.
+    /// </summary>
+    public static KeyPair Mismatched(KeyPair pair)
+    {
+        using var other = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        return pair with { PrivateKey = other.ExportParameters(includePrivateParameters: true) };
     }
 
     /// <summary>Builds a ring over <paramref name="keys"/> without initializing it.</summary>
@@ -213,6 +251,25 @@ internal static class TestSigningKeys
         }
 
         public void Dispose() => _privateKey.Dispose();
+    }
+
+    /// <summary>A listed key and the private key its signer signs with.</summary>
+    public sealed record KeyPair(SourceKey Key, ECParameters PrivateKey);
+
+    /// <summary>Lists every pair's key and signs with that pair's own private key.</summary>
+    private sealed class KeyPairSource(IReadOnlyList<KeyPair> pairs, Func<ISigner, ISigner>? decorateSigner) : ISigningKeySource
+    {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.ES256;
+
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SourceKey>>([.. pairs.Select(pair => pair.Key)]);
+
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        {
+            var pair = pairs.Single(pair => pair.Key.Id == id);
+            ISigner signer = new LocalSigner(Algorithm, ECDsa.Create(pair.PrivateKey));
+            return Task.FromResult(decorateSigner is null ? signer : decorateSigner(signer));
+        }
     }
 
     private sealed class FailingSource(ZeeKayDaConfigurationFailure failure) : ISigningKeySource

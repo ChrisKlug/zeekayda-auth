@@ -13,19 +13,19 @@ only the handle that instance introduced, so a signer over a shared SDK client m
 never per key, so a key change is never an algorithm change; discovery advertises that one algorithm.
 Changing it is a new source and a restart; multi-algorithm support would be a ring per algorithm, never a mixed one.
 
-**Sources only list keys; core owns all the timing.** A `SourceKey` carries `NotBefore` and `ExpiresAt`
-(undated means `MinValue`/`MaxValue`; an undated key is accepted only as the sole key). The internal
-`SigningKeySetBuilder.Build(keys, algorithm, now, options, logger)` is the single choke point: it validates every key on
-public data against the source's algorithm, derives every `kid` via `JwkThumbprint`, then decides from the dates alone. Every unexpired key
-is published, oldest first. The newest key whose `NotBefore` is at least `SigningKeys.LeadTime` (default one
-day, positive, never below `JwksEndpoint.CacheMaxAge`) in the past signs; if none is, the oldest valid key signs and a
-Warning says relying parties may reject its tokens until they refresh. Keys are read only at startup, so a
-successor takes over at a restart, possibly long after its lead time: the unexpired predecessor stays published
-while it signs; an older key until a newer one is `LeadTime + RetainRetiredKeysFor` old; an expired key (which
-never signs) until `RetainRetiredKeysFor` after expiry, whatever its age. Retention defaults to the longer server-wide token lifetime
-plus `ClockSkewTolerance` (per-client overrides are invisible at startup); sums saturate. Ties on `NotBefore` go to
-the ordinally greater source id. One rule covers a first deployment, a normal rotation and an emergency (remove the
-key, restart). `SigningKeySet.SigningKey` is non-nullable and always published.
+**Sources only list keys; core owns all the timing, and the ring follows the clock.** A `SourceKey` carries
+`NotBefore` and `ExpiresAt` (undated means `MinValue`/`MaxValue`, accepted only as the sole key).
+`SigningKeySetBuilder.Build` validates every key on public data against the source's algorithm, derives every `kid`,
+and returns a `SigningKeyTimeline` whose `At(now)` decides from the dates alone. The newest unexpired key at least
+`SigningKeys.LeadTime` (default one day, never below `JwksEndpoint.CacheMaxAge`) past its `NotBefore` signs, else
+the oldest unexpired key, with a Warning. Every unexpired key is published, an older one until a newer key is
+`LeadTime + RetainRetiredKeysFor` old, an expired one until `RetainRetiredKeysFor` after expiry, the signing key
+always. `NotBefore` orders keys and starts the clock; no relying party sees it, so it is no validity gate. Retention
+(one knob) defaults to two days, or the longer token lifetime plus clock skew, so a replica whose handover is slow
+or failed signs on safely; a lower value warns. Ties go to the ordinally greater source id. The ring reads once and
+re-evaluates on a timer at each change instant, so a successor takes over at its lead time with no restart. A
+successor whose signer fails is set aside until restart: published (replicas agree), never signs, Degraded. Startup
+fails only if every key expired; until polling, a key listed past `NotBefore + LeadTime` signs unpublished.
 
 **File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list
 `Files`/`Certificates` with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`. A
@@ -121,6 +121,7 @@ development provider stays in core.
   Vault share only a *name*, covering both a clock tick over a fixed timeline and a real external poll.
 - **An `ISigningKeyRetirementWindowProvider` computing retirement per provider.** Retention is one core
   setting applied to dates every provider already reports.
+- **A key set frozen at startup.** It forced a predecessor retention rule, a successor-predicting health check and a `NotBefore` grace.
 - **Bootstrap exemptions — the single-key one, and Key Vault's "first version ever" one.** "No relying party
   could have cached anything" is false after any restart; a lone key signs at once through the ordinary
   oldest-valid-key fallback anyway. Deleted, not moved.
