@@ -243,6 +243,28 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_read_publishes_its_keys_at_once_while_the_handover_it_starts_is_still_opening()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-30));
+        var listing = new TestSigningKeys.Listing(TestSigningKeys.Pair("revoked", notBefore: Epoch.AddDays(-90)), current);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.SignerGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        listing.SignerRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        listing.Pairs = [current, TestSigningKeys.Pair("successor", notBefore: Epoch.AddDays(-10))];
+        clock.Advance(RefreshInterval);
+        await listing.SignerRequested.Task;
+
+        ring.Current.Published.Select(key => key.SourceId.Value).Should().Equal("current", "successor");
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current", "it signs on until the successor's signer opens");
+
+        listing.SignerGate.SetResult();
+        await ring.LastTransition;
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("successor");
+    }
+
+    [Fact]
     public async Task The_health_check_is_Unhealthy_while_signing_resumes_until_the_handover_completes()
     {
         var clock = new FakeTimeProvider(Epoch);

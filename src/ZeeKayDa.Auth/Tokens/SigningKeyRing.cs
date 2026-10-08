@@ -495,27 +495,37 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// The state once <paramref name="timeline"/> is adopted. Signing carries on only while its key is
-    /// still listed: a key the source no longer lists stops signing at once, and is unpublished, rather
-    /// than through however long its successor's handover takes.
+    /// The state once <paramref name="timeline"/> is adopted, publishing its keys at once rather than
+    /// after a handover it starts. Signing carries on only while its key is still listed: a key the
+    /// source no longer lists stops signing at once, and is unpublished, rather than through however
+    /// long its successor's handover takes.
     /// </summary>
     private SigningKeyRingState Adopting(SigningKeyRingState state, SigningKeyTimeline timeline, DateTimeOffset now)
     {
-        var withoutSigner = new SigningKeySet(_algorithm, null, timeline.At(now).Published);
+        var published = timeline.At(now).Published;
         switch (state)
         {
-            case Signing signing when timeline.Keys.Any(key => key.Kid == signing.SigningKey.Kid):
-                return signing with { Timeline = timeline, ReadFailure = null };
+            case Signing signing when timeline.Keys.FirstOrDefault(key => key.Kid == signing.SigningKey.Kid) is { } stillListed:
+                // The key signing on until a handover completes stays published while it signs.
+                IReadOnlyList<SigningKey> withSigner = published.Any(key => key.Kid == stillListed.Kid)
+                    ? published
+                    : [.. published.Append(stillListed).Order(SigningKeySetBuilder.OldestFirst)];
+                return signing with
+                {
+                    KeySet = new SigningKeySet(_algorithm, stillListed, withSigner),
+                    Timeline = timeline,
+                    ReadFailure = null,
+                };
 
             case Signing signing:
                 _logger.LogWarning(
                     "Key {Kid} ({SourceKeyId}) is no longer listed, so it stops signing; signing resumes once the key due " +
                     "to sign takes over.",
                     signing.SigningKey.Kid, signing.SigningKey.SourceId.Value);
-                return new Resuming(withoutSigner, timeline, "signing.signing_key_unlisted");
+                return new Resuming(new SigningKeySet(_algorithm, null, published), timeline, "signing.signing_key_unlisted");
 
             default:
-                return new Resuming(withoutSigner, timeline, ReasonOf(state)!);
+                return new Resuming(new SigningKeySet(_algorithm, null, published), timeline, ReasonOf(state)!);
         }
     }
 
@@ -595,7 +605,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                 {
                     _unlistedOnce.Remove(kid);
                 }
-                else if (!_unlistedOnce.Add(kid) && signer != signing)
+                else if (!_unlistedOnce.Add(kid) && !ReferenceEquals(signer, signing))
                 {
                     _unlistedOnce.Remove(kid);
                     _signers.Remove(kid);

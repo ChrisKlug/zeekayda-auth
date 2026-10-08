@@ -128,7 +128,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
             return HealthCheckResult.Unhealthy(
                 $"Signing key '{signingKey.Kid}' signs on after a failed or unfinished handover, and every replica " +
                 "whose handover succeeded has now dropped it from its key set, so they no longer verify its tokens. " +
-                "Fix the key that should sign; the next read tries it again.",
+                "The key that should have taken over can no longer do so; list a fresh key.",
                 exception: null, data);
         }
 

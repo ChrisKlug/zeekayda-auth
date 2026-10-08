@@ -24,12 +24,16 @@ public sealed class SigningKeySet
     }
 
     /// <summary>
-    /// Gets the key that signs, or <see langword="null"/> when signing has stopped: the source listed
-    /// no keys, or a list the ring must refuse.
+    /// Gets the key that signs, or <see langword="null"/> when nothing signs: the source listed no keys
+    /// or a list the ring must refuse, or — transiently — the ring is handing signing over to a listed
+    /// key after a stop or after the signing key left the list.
     /// </summary>
     public SigningKey? SigningKey { get; }
 
-    /// <summary>Gets every key to publish, signing key included, oldest first; empty when signing has stopped.</summary>
+    /// <summary>
+    /// Gets every key to publish, signing key included, oldest first. Empty when signing has stopped;
+    /// during a handover after a stop, the listed keys due to be published.
+    /// </summary>
     public IReadOnlyList<SigningKey> Published { get; }
 
     /// <summary>

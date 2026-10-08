@@ -73,7 +73,7 @@ internal sealed class PemFileSigningKeySource(
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The file does not contain a valid PEM-encoded certificate; a combined file carries no private
-    /// key block; or a separate key file is missing, symlinked or too permissive.
+    /// key block; or a separate key file is symlinked or too permissive.
     /// </exception>
     private async ValueTask<X509Certificate2?> LoadPublicCertificateAsync(
         PemSigningFile file, CancellationToken cancellationToken)
@@ -82,10 +82,27 @@ internal sealed class PemFileSigningKeySource(
         if (await reader.TryReadPemTextAsync(certificatePath, cancellationToken).ConfigureAwait(false) is not { } certPem)
             return null;
 
-        X509Certificate2 certificate;
+        // A separate key file is held to the permission and symlink rules without being read, and a
+        // deleted one unlists the key like a deleted certificate; a combined file must at least carry a
+        // private key block. Every listed key is published, so this matters whether or not it signs today.
+        if (file.KeyPath is not null && !reader.TryValidate(file.KeyPath))
+            return null;
+
+        var certificate = ParseCertificate(certPem, certificatePath);
+        if (file.KeyPath is null && !HasUnencryptedPrivateKeyBlock(certPem))
+        {
+            certificate.Dispose();
+            throw NoPrivateKey(certificatePath);
+        }
+
+        return certificate;
+    }
+
+    private static X509Certificate2 ParseCertificate(string certPem, string certificatePath)
+    {
         try
         {
-            certificate = X509Certificate2.CreateFromPem(certPem);
+            return X509Certificate2.CreateFromPem(certPem);
         }
         catch (Exception ex) when (ex is CryptographicException or ArgumentException or FormatException)
         {
@@ -101,28 +118,6 @@ internal sealed class PemFileSigningKeySource(
                     "the root cause."),
                 ex);
         }
-
-        // A separate key file is held to the permission and symlink rules without being read, and a
-        // deleted one unlists the key like a deleted certificate; a combined file must at least carry a
-        // private key block. Every listed key is published, so this matters whether or not it signs today.
-        try
-        {
-            if (file.KeyPath is not null && !reader.TryValidate(file.KeyPath))
-            {
-                certificate.Dispose();
-                return null;
-            }
-
-            if (file.KeyPath is null && !HasUnencryptedPrivateKeyBlock(certPem))
-                throw NoPrivateKey(certificatePath);
-        }
-        catch
-        {
-            certificate.Dispose();
-            throw;
-        }
-
-        return certificate;
     }
 
     /// <summary>
