@@ -128,7 +128,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
             return HealthCheckResult.Unhealthy(
                 $"Signing key '{signingKey.Kid}' signs on after a failed or unfinished handover, and every replica " +
                 "whose handover succeeded has now dropped it from its key set, so they no longer verify its tokens. " +
-                "The key that should have taken over can no longer do so; list a fresh key.",
+                StrandedRemedy(timeline, now),
                 exception: null, data);
         }
 
@@ -140,6 +140,15 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
             ? HealthCheckResult.Healthy($"Signing key '{signingKey.Kid}' has no expiry.", data)
             : HealthCheckResult.Healthy($"Signing key '{signingKey.Kid}' expires at {signingKey.ExpiresAt:O}.", data);
     }
+
+    /// <summary>
+    /// What the operator can do for a key signing on past its retention: wait for a handover still
+    /// running, or list a fresh key when the one due failed and is now too late to take over.
+    /// </summary>
+    private static string StrandedRemedy(SigningKeyTimeline timeline, DateTimeOffset now) =>
+        timeline.SetAside.Count > 0
+            ? "The key that should have taken over failed and can no longer do so; list a fresh key."
+            : $"The handover to '{timeline.SigningKeyAt(now).Kid}' has not completed yet; it takes over once its signer opens.";
 
     private static IEnumerable<string> DegradedReasons(
         SigningKeyTimeline timeline, SigningKey signingKey, DateTimeOffset now, TimeSpan degradedThreshold)

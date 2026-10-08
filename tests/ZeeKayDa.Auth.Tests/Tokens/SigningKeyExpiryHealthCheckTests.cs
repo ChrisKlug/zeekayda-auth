@@ -293,6 +293,23 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var result = Evaluate(timeline);
 
         result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Description.Should().Contain("list a fresh key");
+    }
+
+    [Fact]
+    public void Evaluate_names_the_handover_still_running_not_a_fresh_key_when_the_successor_has_not_failed()
+    {
+        // The same dates, but the successor's first handover is still opening: it can still take over.
+        var current = CreateRsaKey("current", Now.AddDays(90), notBefore: Now.AddDays(-90));
+        var successor = CreateRsaKey("successor", Now.AddDays(90), notBefore: Now.AddDays(-3));
+        var timeline = Timeline(current, successor);
+        var signingOn = timeline.Keys[0];
+        var set = new SigningKeySet(SigningAlgorithm.RS256, signingOn, [.. timeline.Keys]);
+
+        var result = SigningKeyExpiryHealthCheck.Evaluate(timeline, set, Now, DegradedThreshold);
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Description.Should().Contain("has not completed yet").And.NotContain("fresh key");
     }
 
     [Fact]
