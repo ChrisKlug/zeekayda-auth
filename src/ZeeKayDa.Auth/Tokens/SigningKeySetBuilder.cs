@@ -43,23 +43,7 @@ internal static partial class SigningKeySetBuilder
     {
         ArgumentNullException.ThrowIfNull(keys);
         ArgumentNullException.ThrowIfNull(options);
-
-        if (!Enum.IsDefined(algorithm))
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.undefined_algorithm",
-                    $"The signing key source declares algorithm value {(int)algorithm}, which is not a " +
-                    $"defined {nameof(SigningAlgorithm)} member."));
-        }
-
-        if (keys.Count == 0)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.no_keys",
-                    "The signing key source listed no keys. ReadAsync must list at least one key."));
-        }
+        ValidateSource(keys, algorithm);
 
         var seenSourceIds = new HashSet<string>(StringComparer.Ordinal);
         var seenKids = new HashSet<string>(StringComparer.Ordinal);
@@ -98,6 +82,26 @@ internal static partial class SigningKeySetBuilder
             throw new ZeeKayDaConfigurationException([.. dropped.Select(drop => drop.Failure)]);
 
         return new SigningKeyTimeline([.. built.Order(OldestFirst)], [.. dropped], options);
+    }
+
+    private static void ValidateSource(IReadOnlyList<SourceKey> keys, SigningAlgorithm algorithm)
+    {
+        if (!Enum.IsDefined(algorithm))
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.undefined_algorithm",
+                    $"The signing key source declares algorithm value {(int)algorithm}, which is not a " +
+                    $"defined {nameof(SigningAlgorithm)} member."));
+        }
+
+        if (keys.Count == 0)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.no_keys",
+                    "The signing key source listed no keys. ReadAsync must list at least one key."));
+        }
     }
 
     /// <summary>

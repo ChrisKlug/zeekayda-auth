@@ -150,8 +150,8 @@ internal sealed class SigningKeyTimeline
     internal DroppedKey? DroppedKeyDueAt(DateTimeOffset now)
     {
         var listed = _oldestFirst
-            .Select(key => (key.NotBefore, key.ExpiresAt, Id: key.SourceId.Value, Dropped: (DroppedKey?)null))
-            .Concat(Dropped.Select(drop => (drop.Key.NotBefore, drop.Key.ExpiresAt, Id: drop.Key.Id.Value, Dropped: (DroppedKey?)drop)))
+            .Select(key => new ListedKey(key.NotBefore, key.ExpiresAt, key.SourceId.Value, Dropped: null))
+            .Concat(Dropped.Select(drop => new ListedKey(drop.Key.NotBefore, drop.Key.ExpiresAt, drop.Key.Id.Value, drop)))
             .Where(key => key.ExpiresAt > now)
             .OrderBy(key => key.NotBefore)
             .ThenBy(key => key.Id, StringComparer.Ordinal)
@@ -181,27 +181,23 @@ internal sealed class SigningKeyTimeline
     internal DateTimeOffset NextChangeAfter(DateTimeOffset now)
     {
         var supersededAfter = TokenLifetimes.Sum(_leadTime, _retention);
-        var next = DateTimeOffset.MaxValue;
 
-        foreach (var key in _oldestFirst)
-        {
-            ReadOnlySpan<DateTimeOffset> instants =
-            [
+        return _oldestFirst
+            .SelectMany(key => new[]
+            {
                 TokenLifetimes.ExpiresAt(key.NotBefore, _leadTime),
                 TokenLifetimes.ExpiresAt(key.NotBefore, supersededAfter),
                 key.ExpiresAt,
                 TokenLifetimes.ExpiresAt(key.ExpiresAt, _retention),
-            ];
-
-            foreach (var instant in instants)
-            {
-                if (instant > now && instant < next)
-                    next = instant;
-            }
-        }
-
-        return next;
+            })
+            .Where(instant => instant > now)
+            .DefaultIfEmpty(DateTimeOffset.MaxValue)
+            .Min();
     }
+
+    /// <summary>A listed key's dates and source id, and the drop record when it was unusable.</summary>
+    private readonly record struct ListedKey(
+        DateTimeOffset NotBefore, DateTimeOffset ExpiresAt, string Id, DroppedKey? Dropped);
 
     private SigningKey ChooseSigningKey(List<SigningKey> unexpired, DateTimeOffset now)
     {

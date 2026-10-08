@@ -249,17 +249,9 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             _signers.Clear();
         }
 
-        try
-        {
-            // Cancelled, never disposed: a handover in flight may still read its token, and a source
-            // with no timer or linked token holds nothing to release.
-            _shutdown.Cancel();
-        }
-        catch (AggregateException)
-        {
-            // A callback a source registered on the token threw. Shutdown must still release every
-            // signer and the source, which nothing else will.
-        }
+        // Cancelled, never disposed: a handover in flight may still read its token, and a source
+        // with no timer or linked token holds nothing to release.
+        CancelQuietly(_shutdown);
 
         foreach (var signer in signers)
             DisposeQuietly(signer);
@@ -377,7 +369,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         {
             return;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             _logger.LogError(
                 "The signing key ring failed to bring its key set up to date ({ExceptionType}); it keeps its last " +
@@ -478,7 +470,6 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             successor.Kid, successor.SourceId.Value, reason, current.Kid, current.SourceId.Value);
     }
 
-    // A source's cancellation callback may throw; nothing here can act on that.
     private static void CancelQuietly(CancellationTokenSource source)
     {
         try
@@ -487,6 +478,8 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         }
         catch (AggregateException)
         {
+            // A callback a source registered on the token threw. Nothing here can act on that, and
+            // the caller must still release what it holds.
         }
     }
 
