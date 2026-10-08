@@ -10,8 +10,9 @@ namespace ZeeKayDa.Auth.Windows;
 internal interface ICertificateStoreReader
 {
     /// <summary>
-    /// Finds and returns the certificate with the given (already-normalized) thumbprint in the
-    /// given store. The caller owns the returned certificate and must dispose it.
+    /// Finds the certificate with the given (already-normalized) thumbprint in the given store, or
+    /// returns <see langword="null"/> when the store holds none. The caller owns the returned
+    /// certificate and must dispose it.
     /// </summary>
-    X509Certificate2 GetCertificate(string normalizedThumbprint, StoreLocation storeLocation, StoreName storeName);
+    X509Certificate2? FindCertificate(string normalizedThumbprint, StoreLocation storeLocation, StoreName storeName);
 }

@@ -446,7 +446,7 @@ public sealed class TokenEndpointTests : IDisposable
     {
         var client = PublicRegistration() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } };
 
-        AuthorizationCodeGrant.ClientAcceptsSigningKey(client, Es256SigningKey()).Should().BeFalse();
+        AuthorizationCodeGrant.ClientAcceptsSigningAlgorithm(client, SigningAlgorithm.ES256).Should().BeFalse();
     }
 
     [Fact]
@@ -454,7 +454,7 @@ public sealed class TokenEndpointTests : IDisposable
     {
         var client = PublicRegistration() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 } };
 
-        AuthorizationCodeGrant.ClientAcceptsSigningKey(client, Es256SigningKey()).Should().BeTrue();
+        AuthorizationCodeGrant.ClientAcceptsSigningAlgorithm(client, SigningAlgorithm.ES256).Should().BeTrue();
     }
 
     [Fact]
@@ -462,17 +462,7 @@ public sealed class TokenEndpointTests : IDisposable
     {
         var client = PublicRegistration() with { AllowedSigningAlgorithms = null };
 
-        AuthorizationCodeGrant.ClientAcceptsSigningKey(client, Es256SigningKey()).Should().BeTrue();
-    }
-
-    private static SigningKey Es256SigningKey()
-    {
-        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var key = new SourceKey(
-            new SourceKeyId("current"),
-            PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: false)));
-        return SigningKeySetBuilder.Build(
-            [key], SigningAlgorithm.ES256, new SigningKeyOptions { RetainRetiredKeysFor = TimeSpan.Zero }).At(DateTimeOffset.UtcNow).SigningKey;
+        AuthorizationCodeGrant.ClientAcceptsSigningAlgorithm(client, SigningAlgorithm.ES256).Should().BeTrue();
     }
 
     // ── Lifetimes ─────────────────────────────────────────────────────────────────────────────
@@ -1020,6 +1010,28 @@ public sealed class TokenEndpointTests : IDisposable
         await ShouldBeErrorAsync(replay, "invalid_grant");
         _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains("family", StringComparison.Ordinal));
         LogsShouldCarryNoProtocolMaterial(code, Verifier);
+    }
+
+    [Fact]
+    public async Task The_token_endpoint_answers_server_error_while_signing_has_stopped()
+    {
+        // Starts a refresh interval early, so the read that sees the revocation lands at the code's issue time.
+        var time = new FakeTimeProvider(Now - new SigningKeyOptions().RefreshInterval);
+        var revocation = new SigningRevocation();
+        using var host = new EndpointHost(
+            configureBuilder: builder =>
+            {
+                builder.Services.AddSingleton<TimeProvider>(time);
+                builder.Services.AddSingleton(revocation);
+                builder.AddSigningKeySource<RevocableTestSigningKeySource>();
+                builder.AddInMemoryClients(clients => clients.Add(PublicRegistration()));
+            });
+        await revocation.RevokeAsync(host, time);
+        var code = await SeedCodeWithAsync(host);
+
+        var response = await PostTokenWithAsync(host, TokenForm(code));
+
+        await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
     }
 
     [Fact]

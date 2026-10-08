@@ -102,6 +102,26 @@ internal static class TestSigningKeys
         return ring;
     }
 
+    /// <summary>
+    /// Builds and initializes a ring over <paramref name="listing"/>, which the test changes between
+    /// reads to model a source whose keys change while the ring runs.
+    /// </summary>
+    public static SigningKeyRing Ring(
+        Listing listing, TimeProvider timeProvider, SanitizingLogger<SigningKeyRing>? logger = null,
+        Func<ISigner, ISigner>? decorateSigner = null)
+    {
+        var ring = new SigningKeyRing(
+            new ListingSource(listing, decorateSigner), timeProvider, Options, logger ?? new CapturingSanitizingLogger<SigningKeyRing>());
+
+        // Completes synchronously over in-memory keys and LocalSigners; see the overloads above.
+        var initialization = ring.EnsureInitializedAsync(CancellationToken.None);
+        if (!initialization.IsCompleted)
+            throw new InvalidOperationException("The in-memory signing key ring did not initialize synchronously.");
+        initialization.GetAwaiter().GetResult();
+
+        return ring;
+    }
+
     /// <summary>Generates an ES256 key pair, listed under <paramref name="id"/> with the given dates.</summary>
     public static KeyPair Pair(string id, DateTimeOffset? notBefore = null, DateTimeOffset? expiresAt = null)
     {
@@ -273,6 +293,62 @@ internal static class TestSigningKeys
             var pair = pairs.Single(pair => pair.Key.Id == id);
             ISigner signer = new LocalSigner(Algorithm, ECDsa.Create(pair.PrivateKey));
             return Task.FromResult(decorateSigner is null ? signer : decorateSigner(signer));
+        }
+    }
+
+    /// <summary>
+    /// What a <see cref="ListingSource"/> reports on its next read: <see cref="Pairs"/>, or
+    /// <see cref="ReadFailure"/> thrown instead when set. <see cref="Algorithm"/> may change between
+    /// reads too.
+    /// </summary>
+    public sealed class Listing(params KeyPair[] pairs)
+    {
+        public IReadOnlyList<KeyPair> Pairs { get; set; } = pairs;
+
+        public Exception? ReadFailure { get; set; }
+
+        /// <summary>When set, the next read never completes.</summary>
+        public bool ReadHangs { get; set; }
+
+        /// <summary>Runs inside each read, before it returns — to move a clock while the source is read.</summary>
+        public Action? DuringRead { get; set; }
+
+        /// <summary>When set, a signer opens only once this completes.</summary>
+        public TaskCompletionSource? SignerGate { get; set; }
+
+        /// <summary>Completes when a signer is next asked for.</summary>
+        public TaskCompletionSource SignerRequested { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public SigningAlgorithm Algorithm { get; set; } = SigningAlgorithm.ES256;
+
+        public int Reads { get; set; }
+    }
+
+    private sealed class ListingSource(Listing listing, Func<ISigner, ISigner>? decorateSigner) : ISigningKeySource
+    {
+        public SigningAlgorithm Algorithm => listing.Algorithm;
+
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+        {
+            listing.Reads++;
+            listing.DuringRead?.Invoke();
+            if (listing.ReadHangs)
+                return new TaskCompletionSource<IReadOnlyList<SourceKey>>().Task;
+
+            return listing.ReadFailure is { } failure
+                ? Task.FromException<IReadOnlyList<SourceKey>>(failure)
+                : Task.FromResult<IReadOnlyList<SourceKey>>([.. listing.Pairs.Select(pair => pair.Key)]);
+        }
+
+        public async Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        {
+            var pair = listing.Pairs.Single(pair => pair.Key.Id == id);
+            listing.SignerRequested.TrySetResult();
+            if (listing.SignerGate is { } gate)
+                await gate.Task;
+
+            ISigner signer = new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(pair.PrivateKey));
+            return decorateSigner is null ? signer : decorateSigner(signer);
         }
     }
 

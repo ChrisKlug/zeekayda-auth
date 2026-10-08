@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
@@ -8,11 +9,12 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> from now.
 /// </summary>
 /// <remarks>
-/// <see cref="HealthStatus.Unhealthy"/> when the key signing now has expired, or when it is
-/// published only because it signs — after a failed or unfinished handover, once every replica whose
-/// handover succeeded has dropped it. Otherwise <see cref="HealthStatus.Degraded"/>, naming every
-/// reason that applies, when a listed key was dropped as unusable; when a successor's signer
-/// failed to open or self-test and was set aside until a restart; when the key due to sign now is
+/// <see cref="HealthStatus.Unhealthy"/> when signing has stopped, when the key signing now has
+/// expired, or when it is published only because it signs — after a failed or unfinished handover,
+/// once every replica whose handover succeeded has dropped it. Otherwise
+/// <see cref="HealthStatus.Degraded"/>, naming every reason that applies, when the last read of the
+/// source failed; when a listed key was dropped as unusable; when a successor's signer failed to open
+/// or self-test and was set aside; when the key due to sign now is
 /// not the key signing, because a handover is still running; or when the key set in force at the
 /// end of <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> has no unexpired key to
 /// sign with. Otherwise <see cref="HealthStatus.Healthy"/>. The look-ahead asks the ring's own
@@ -68,8 +70,34 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
                 "The signing key ring has not completed startup initialization yet."));
         }
 
-        return Task.FromResult(Evaluate(
-            state.Timeline, state.KeySet, _timeProvider.GetUtcNow(), _options.Value.DegradedThreshold));
+        return Task.FromResult(state switch
+        {
+            SigningKeyRingState.Signing signing => WithReadFailure(
+                Evaluate(signing.Timeline, signing.KeySet, _timeProvider.GetUtcNow(), _options.Value.DegradedThreshold),
+                signing.ReadFailure),
+            SigningKeyRingState.Resuming resuming => HealthCheckResult.Unhealthy(
+                $"Signing has stopped ({resuming.Reason}) until the handover to the key due to sign completes; the log " +
+                "names the cause.",
+                exception: null,
+                KeyData(resuming.KeySet.Published, signingKid: null, _timeProvider.GetUtcNow())),
+            SigningKeyRingState.Stopped stopped => HealthCheckResult.Unhealthy(
+                $"Signing has stopped ({stopped.Reason}) and no key is published; the log names the cause. Signing " +
+                "resumes once the source lists keys the ring can use."),
+            _ => throw new UnreachableException(),
+        });
+    }
+
+    /// <summary>
+    /// A ring serving the list before a failed read is at best Degraded, whatever that list's own health.
+    /// </summary>
+    private static HealthCheckResult WithReadFailure(HealthCheckResult result, string? readFailure)
+    {
+        if (readFailure is null || result.Status == HealthStatus.Unhealthy)
+            return result;
+
+        var reason = $"The last read of the signing key source failed ({readFailure}); the ring serves the list it read before.";
+        var description = result.Status == HealthStatus.Degraded ? $"{reason} {result.Description}" : reason;
+        return HealthCheckResult.Degraded(description, exception: null, result.Data);
     }
 
     /// <summary>
@@ -81,18 +109,12 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
     /// <param name="degradedThreshold">
     /// How far ahead a key must still be able to sign for <see cref="HealthStatus.Healthy"/>.
     /// </param>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="set"/> has no signing key.</exception>
     internal static HealthCheckResult Evaluate(
         SigningKeyTimeline timeline, SigningKeySet set, DateTimeOffset now, TimeSpan degradedThreshold)
     {
-        var data = set.Published.ToDictionary(
-            key => key.Kid,
-            object (key) => new SigningKeyExpiryStatus(
-                key.Kid,
-                IsSigningKey: string.Equals(key.Kid, set.SigningKey.Kid, StringComparison.Ordinal),
-                NeverExpires(key) ? null : key.ExpiresAt,
-                RemainingLifetime: NeverExpires(key) ? null : key.ExpiresAt - now));
-
-        var signingKey = set.SigningKey;
+        var signingKey = set.SigningKey ?? throw new ArgumentException("The key set must have a signing key.", nameof(set));
+        var data = KeyData(set.Published, signingKey.Kid, now);
 
         if (signingKey.ExpiresAt <= now)
         {
@@ -106,7 +128,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
             return HealthCheckResult.Unhealthy(
                 $"Signing key '{signingKey.Kid}' signs on after a failed or unfinished handover, and every replica " +
                 "whose handover succeeded has now dropped it from its key set, so they no longer verify its tokens. " +
-                "Fix the key that should sign and restart.",
+                StrandedRemedy(timeline, now),
                 exception: null, data);
         }
 
@@ -119,6 +141,15 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
             : HealthCheckResult.Healthy($"Signing key '{signingKey.Kid}' expires at {signingKey.ExpiresAt:O}.", data);
     }
 
+    /// <summary>
+    /// What the operator can do for a key signing on past its retention: wait for a handover still
+    /// running, or list a fresh key when the one due failed and is now too late to take over.
+    /// </summary>
+    private static string StrandedRemedy(SigningKeyTimeline timeline, DateTimeOffset now) =>
+        timeline.SetAside.Count > 0
+            ? "The key that should have taken over failed and can no longer do so; list a fresh key."
+            : $"The handover to '{timeline.SigningKeyAt(now).Kid}' has not completed yet; it takes over once its signer opens.";
+
     private static IEnumerable<string> DegradedReasons(
         SigningKeyTimeline timeline, SigningKey signingKey, DateTimeOffset now, TimeSpan degradedThreshold)
     {
@@ -128,22 +159,23 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
             yield return
                 $"{timeline.Dropped.Length} listed key(s) could not be used and were dropped " +
                 $"({string.Join(", ", timeline.Dropped.Select(drop => drop.Failure.Code).Distinct())}); " +
-                "the startup log names them. Fix the keys and restart.";
+                "the log names them. Fix the keys; the next read picks them up.";
         }
 
         if (timeline.SetAside.Count > 0)
         {
             yield return
                 $"The signer of {string.Join(", ", timeline.SetAside.Select(key => $"'{key.Kid}'"))} failed to open or " +
-                "self-test when due to sign, so it is set aside until a restart. Fix the key and restart.";
+                "self-test when due to sign, so it is set aside. Fix the key; the next read tries it again, unless the " +
+                "key it would replace is superseded by then, when only a fresh key can take over.";
         }
 
-        var due = timeline.At(now).SigningKey;
+        var due = timeline.SigningKeyAt(now);
         if (due.Kid != signingKey.Kid)
             yield return $"Key '{due.Kid}' is due to sign, but its handover has not completed; '{signingKey.Kid}' still signs.";
 
         var horizon = TokenLifetimes.ExpiresAt(now, degradedThreshold);
-        var signingKeyThen = timeline.At(horizon).SigningKey;
+        var signingKeyThen = timeline.SigningKeyAt(horizon);
         if (signingKeyThen.ExpiresAt <= horizon)
         {
             yield return
@@ -151,6 +183,15 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
                 $"{signingKeyThen.ExpiresAt:O}, within the configured {degradedThreshold} threshold. List a successor.";
         }
     }
+
+    private static Dictionary<string, object> KeyData(IReadOnlyList<SigningKey> published, string? signingKid, DateTimeOffset now) =>
+        published.ToDictionary(
+            key => key.Kid,
+            object (key) => new SigningKeyExpiryStatus(
+                key.Kid,
+                IsSigningKey: string.Equals(key.Kid, signingKid, StringComparison.Ordinal),
+                NeverExpires(key) ? null : key.ExpiresAt,
+                RemainingLifetime: NeverExpires(key) ? null : key.ExpiresAt - now));
 
     private static bool NeverExpires(SigningKey key) => key.ExpiresAt == DateTimeOffset.MaxValue;
 }

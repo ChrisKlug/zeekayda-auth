@@ -99,6 +99,62 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
         }
     }
 
+    /// <summary>
+    /// <see cref="ReadPemTextAsync"/>, or <see langword="null"/> with a Warning when the file does not
+    /// exist: a source lists a deleted file as nothing, and the ring treats the key as revoked.
+    /// </summary>
+    public async ValueTask<string?> TryReadPemTextAsync(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ReadPemTextAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ZeeKayDaConfigurationException ex) when (ex.AggregatedFailures[0].Code == FileNotFoundCode)
+        {
+            WarnMissing(path);
+            return null;
+        }
+    }
+
+    /// <summary><see cref="ReadAllBytesAsync"/>, or <see langword="null"/> with a Warning when the file does not exist.</summary>
+    public async ValueTask<byte[]?> TryReadAllBytesAsync(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ZeeKayDaConfigurationException ex) when (ex.AggregatedFailures[0].Code == FileNotFoundCode)
+        {
+            WarnMissing(path);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="Validate"/>, or <see langword="false"/> with a Warning when the file does not exist.
+    /// </summary>
+    public bool TryValidate(string path)
+    {
+        try
+        {
+            Validate(path);
+            return true;
+        }
+        catch (ZeeKayDaConfigurationException ex) when (ex.AggregatedFailures[0].Code == FileNotFoundCode)
+        {
+            WarnMissing(path);
+            return false;
+        }
+    }
+
+    private void WarnMissing(string path) =>
+        logger.LogWarning(
+            "ZeeKayDa.Auth: signing key file '{Path}' does not exist, so its key is not listed; a key no longer " +
+            "listed stops signing and is unpublished.",
+            path);
+
+    private const string FileNotFoundCode = "signing.file_signing.file_not_found";
+
     private static FileStream OpenOrThrowMissing(string path)
     {
         try
@@ -108,7 +164,7 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
             throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
-                "signing.file_signing.file_not_found",
+                FileNotFoundCode,
                 $"Signing key file '{path}' does not exist. Verify the path passed to " +
                 "AddPemFileSigning/AddPfxFileSigning (or options.AddFile) is correct and readable by " +
                 "the process identity."));

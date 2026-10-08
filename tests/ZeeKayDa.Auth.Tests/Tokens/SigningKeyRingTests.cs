@@ -9,7 +9,7 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Tests.Tokens;
 
 /// <summary>
-/// Exercises <see cref="SigningKeyRing"/>: the one-time startup read, the signing key's
+/// Exercises <see cref="SigningKeyRing"/>: the startup read, the signing key's
 /// expiry and signer-open/self-test checks that fail startup, <see cref="SigningKeyRing.SignAsync{TState}"/>,
 /// and ownership of the one <see cref="ISigner"/> it opens for the process lifetime.
 /// </summary>
@@ -211,7 +211,7 @@ public sealed class SigningKeyRingTests
 
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
-        ring.Current.SigningKey.SourceId.Should().Be(current.Id);
+        ring.Current.SigningKey!.SourceId.Should().Be(current.Id);
         source.ReadAsyncCallCount.Should().Be(1);
         source.CreateSignerAsyncCallCount.Should().Be(1);
     }
@@ -459,7 +459,7 @@ public sealed class SigningKeyRingTests
 
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
-        logger.Warnings.Should().ContainSingle().Which.Should().Contain(ring.Current.SigningKey.Kid);
+        logger.Warnings.Should().ContainSingle().Which.Should().Contain(ring.Current.SigningKey!.Kid);
     }
 
     [Fact]
@@ -744,9 +744,9 @@ public sealed class SigningKeyRingTests
         using var ring = TestSigningKeys.Ring([current, badStaged], clock, logger);
 
         logger.Warnings.Should().ContainSingle(w => w.Contains("staged") && w.Contains("signing.key_algorithm_mismatch"));
-        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
+        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime - TimeSpan.FromMinutes(1));
 
-        ring.Current.SigningKey.SourceId.Value.Should().Be("current");
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("current");
         ring.Current.Published.Select(k => k.SourceId.Value).Should().Equal("current");
     }
 
@@ -788,7 +788,7 @@ public sealed class SigningKeyRingTests
         clock.Advance(TimeSpan.Zero);
         await ring.LastTransition;
 
-        ring.Current.SigningKey.SourceId.Value.Should().Be("successor");
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("successor");
     }
 
     [Fact]
@@ -813,7 +813,7 @@ public sealed class SigningKeyRingTests
         clock.SetUtcNow(Epoch.AddSeconds(1));
         await ring.LastTransition;
 
-        ring.Current.SigningKey.SourceId.Value.Should().Be("successor");
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("successor");
     }
 
     /// <summary>A fake clock whose one chosen read runs ahead, to land a change between two reads.</summary>
@@ -1070,7 +1070,11 @@ public sealed class SigningKeyRingTests
                     SigningAlgorithm.ES256, ECDsa.Create(id == later.Key.Id ? later.PrivateKey : current.PrivateKey))),
             () => { },
             SigningAlgorithm.ES256);
-        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+
+        // No read in between: the deadline is advanced past as soon as the handover has started.
+        var options = TestSigningKeys.Options;
+        options.RefreshInterval = TimeSpan.FromDays(30);
+        using var ring = new SigningKeyRing(source, clock, options, new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
@@ -1078,11 +1082,11 @@ public sealed class SigningKeyRingTests
         await ring.LastTransition;
 
         ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Should().Be(hung.Key.Id);
-        ring.Current.SigningKey.SourceId.Should().Be(current.Key.Id);
+        ring.Current.SigningKey!.SourceId.Should().Be(current.Key.Id);
 
         await AdvanceToAsync(ring, clock, Epoch.AddDays(5) + TestSigningKeys.Options.LeadTime);
 
-        ring.Current.SigningKey.SourceId.Should().Be(later.Key.Id);
+        ring.Current.SigningKey!.SourceId.Should().Be(later.Key.Id);
     }
 
     [Fact]
@@ -1120,7 +1124,7 @@ public sealed class SigningKeyRingTests
 
         await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
 
-        ring.Current.SigningKey.SourceId.Value.Should().Be("current");
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("current");
         ring.Current.Published.Should().Contain(ring.Current.SigningKey);
         ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Should().Be(successor.Key.Id);
         logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error)
@@ -1128,7 +1132,7 @@ public sealed class SigningKeyRingTests
     }
 
     [Fact]
-    public async Task Handover_failure_is_not_retried_at_later_transitions()
+    public async Task Handover_failure_is_not_retried_once_the_key_is_too_late_to_take_over()
     {
         var clock = new FakeTimeProvider(Epoch);
         var opened = 0;
@@ -1143,7 +1147,7 @@ public sealed class SigningKeyRingTests
         await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime + TimeSpan.FromDays(5));
 
         opened.Should().Be(2, "the startup signer, then one attempt for the successor");
-        ring.Current.SigningKey.SourceId.Value.Should().Be("current");
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("current");
     }
 
     [Fact]
@@ -1161,7 +1165,7 @@ public sealed class SigningKeyRingTests
 
         await AdvanceToAsync(ring, clock, Epoch.AddDays(5));
 
-        ring.Current.SigningKey.SourceId.Value.Should().Be("a");
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("a");
         ring.Current.Published.Select(key => key.SourceId.Value).Should().Equal("a", "b");
     }
 
@@ -1188,7 +1192,7 @@ public sealed class SigningKeyRingTests
 
         await AdvanceToAsync(ring, clock, leadEnds);
 
-        ring.Current.SigningKey.SourceId.Value.Should().Be("a");
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("a");
     }
 
     [Fact]
@@ -1215,7 +1219,7 @@ public sealed class SigningKeyRingTests
 
         await AdvanceToAsync(ring, clock, leadEnds);
 
-        ring.Current.SigningKey.SourceId.Value.Should().Be("c");
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("c");
     }
 
     [Fact]
@@ -1236,7 +1240,7 @@ public sealed class SigningKeyRingTests
         await AdvanceToAsync(ring, clock, Epoch.AddDays(3).AddHours(1));
 
         opened.Should().Be(3, "the startup signer, then one attempt each for B and C");
-        ring.Current.SigningKey.SourceId.Value.Should().Be("a");
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("a");
         ring.TimelineOrNull!.SetAside.Select(key => key.SourceId.Value).Should().Equal("b", "c");
     }
 
@@ -1259,7 +1263,7 @@ public sealed class SigningKeyRingTests
         await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
 
         ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Value.Should().Be("successor");
-        ring.Current.SigningKey.SourceId.Value.Should().Be("current");
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("current");
     }
 
     [Fact]
@@ -1348,7 +1352,7 @@ public sealed class SigningKeyRingTests
         clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
         await ring.LastTransition;
 
-        ring.Current.SigningKey.SourceId.Value.Should().Be("current");
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("current");
     }
 
     /// <summary>Moves <paramref name="clock"/> to <paramref name="until"/> one change instant at a

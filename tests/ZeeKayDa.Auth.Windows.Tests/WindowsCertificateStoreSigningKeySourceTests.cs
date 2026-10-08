@@ -172,7 +172,7 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
     // ── Every read hits the store ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_after_a_listed_certificate_is_removed_from_the_store()
+    public async Task ReadAsync_no_longer_lists_a_certificate_removed_from_the_store_so_removing_it_revokes_the_key()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
@@ -182,11 +182,9 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
         await sut.ReadAsync(ct);
         reader.RemoveCertificate(CurrentThumbprint);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should()
-            .ContainSingle(f => f.Code == "signing.windows_certificate_store.certificate_not_found");
+        keys.Should().BeEmpty();
     }
 
     [Fact]
@@ -233,12 +231,15 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         using var certificate = CreateRsaCertificate();
+        reader.AddCertificate(CurrentThumbprint, certificate);
+        reader.ExceptionToThrow = new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+            "signing.windows_certificate_store.store_inaccessible", "Simulated store outage."));
         var sut = BuildSource(reader);
 
         var failing = async () => await sut.ReadAsync(ct);
-        await failing.Should().ThrowAsync<ZeeKayDaConfigurationException>("no certificate is in the store yet");
+        await failing.Should().ThrowAsync<ZeeKayDaConfigurationException>("the store cannot be opened yet");
 
-        reader.AddCertificate(CurrentThumbprint, certificate);
+        reader.ExceptionToThrow = null;
         var keySet = await sut.ReadAsync(ct);
 
         keySet.Single().Id.Should().Be(new SourceKeyId(CurrentThumbprint));
@@ -247,13 +248,25 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
     // ── Missing certificate and missing private key ──────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_ZeeKayDaConfigurationException_when_the_certificate_is_not_found()
+    public async Task ReadAsync_lists_nothing_when_the_certificate_is_not_in_the_store()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         var sut = BuildSource(reader);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
+
+        keys.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_throws_certificate_not_found_when_the_certificate_left_the_store()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        var sut = BuildSource(reader);
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(ThumbprintFormat.Normalize(CurrentThumbprint)), ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .Which.AggregatedFailures.Should()

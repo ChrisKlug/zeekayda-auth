@@ -42,7 +42,10 @@ internal sealed class WindowsCertificateStoreSigningKeySource(
         var keys = new List<SourceKey>(options.Certificates.Count);
         foreach (var lookup in options.Certificates)
         {
-            using var certificate = storeReader.GetCertificate(lookup.NormalizedThumbprint, options.StoreLocation, options.StoreName);
+            // A certificate removed from the store is no longer listed: removing it revokes the key.
+            using var certificate = storeReader.FindCertificate(lookup.NormalizedThumbprint, options.StoreLocation, options.StoreName);
+            if (certificate is null)
+                continue;
 
             // Checked without extracting a handle: any listed certificate may be chosen to sign, so one
             // that cannot fails now rather than at the restart that chooses it.
@@ -69,7 +72,12 @@ internal sealed class WindowsCertificateStoreSigningKeySource(
             ?? throw new InvalidOperationException(
                 $"{nameof(CreateSignerAsync)} was called for key '{id.Value}', which is not a listed certificate.");
 
-        using var certificate = storeReader.GetCertificate(lookup.NormalizedThumbprint, options.StoreLocation, options.StoreName);
+        using var certificate = storeReader.FindCertificate(lookup.NormalizedThumbprint, options.StoreLocation, options.StoreName)
+            ?? throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                "signing.windows_certificate_store.certificate_not_found",
+                $"No certificate with thumbprint '{lookup.NormalizedThumbprint}' was found in the '{options.StoreName}' " +
+                $"store at '{options.StoreLocation}'. Verify the thumbprint and that the certificate has been " +
+                "installed into this exact store/location combination."));
 
         // Not LocalSigner.FromCertificate: this extractor explains an inaccessible key in terms of the
         // process identity and the store's key ACL.

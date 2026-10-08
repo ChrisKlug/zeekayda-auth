@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
@@ -440,4 +441,40 @@ internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactor
             app.UseEndpoints(endpoints => endpoints.MapZeeKayDaAuth());
         });
     }
+}
+
+/// <summary>Whether <see cref="RevocableTestSigningKeySource"/>'s next read lists its key.</summary>
+internal sealed class SigningRevocation
+{
+    public bool Revoked { get; set; }
+
+    /// <summary>
+    /// Revokes the key and lets the ring read again, so the ring has stopped signing when this returns.
+    /// </summary>
+    public async Task RevokeAsync(EndpointHost host, FakeTimeProvider time)
+    {
+        await host.EnsureStartedAsync();
+        Revoked = true;
+        time.Advance(new SigningKeyOptions().RefreshInterval);
+        await host.Resolve<SigningKeyRing>().LastTransition;
+    }
+}
+
+/// <summary>
+/// A <see cref="TestSigningKeySource"/> whose key is revoked — no longer listed — once
+/// <see cref="SigningRevocation.Revoked"/> is set.
+/// </summary>
+internal sealed class RevocableTestSigningKeySource(SigningRevocation revocation) : ISigningKeySource, IDisposable
+{
+    private readonly TestSigningKeySource _inner = new();
+
+    public SigningAlgorithm Algorithm => _inner.Algorithm;
+
+    public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) =>
+        revocation.Revoked ? Task.FromResult<IReadOnlyList<SourceKey>>([]) : _inner.ReadAsync(cancellationToken);
+
+    public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
+        _inner.CreateSignerAsync(id, cancellationToken);
+
+    public void Dispose() => _inner.Dispose();
 }

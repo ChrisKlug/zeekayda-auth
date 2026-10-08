@@ -81,7 +81,7 @@ internal static partial class SigningKeySetBuilder
         if (built.Count == 0)
             throw new ZeeKayDaConfigurationException([.. dropped.Select(drop => drop.Failure)]);
 
-        return new SigningKeyTimeline([.. built.Order(OldestFirst)], [.. dropped], options);
+        return new SigningKeyTimeline([.. built.Order(OldestFirst)], [.. dropped], algorithm, options);
     }
 
     private static void ValidateSource(IReadOnlyList<SourceKey> keys, SigningAlgorithm algorithm)

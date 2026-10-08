@@ -171,7 +171,7 @@ public sealed class JwtTokenIssuerTests
             TestContext.Current.CancellationToken);
 
         var header = ParseSegment(token.Value.Split('.')[0]);
-        header.GetProperty("kid").GetString().Should().Be(ring.Current.SigningKey.Kid);
+        header.GetProperty("kid").GetString().Should().Be(ring.Current.SigningKey!.Kid);
         header.GetProperty("alg").GetString().Should().Be("RS256");
     }
 

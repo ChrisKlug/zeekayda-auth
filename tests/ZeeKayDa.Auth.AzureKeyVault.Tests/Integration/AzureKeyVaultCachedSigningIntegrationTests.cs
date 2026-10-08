@@ -71,16 +71,16 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle();
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial(version)),
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial(version)),
             "kid must be the RFC 7638 thumbprint of the public key");
-        ring.Current.SigningKey.Kid.Should().NotContain("fake-vault").And.NotContain("fake-cert").And.NotContain(version,
+        ring.Current.SigningKey!.Kid.Should().NotContain("fake-vault").And.NotContain("fake-cert").And.NotContain(version,
             "kid must never leak vault, certificate, or version identifiers");
         ring.Current.Algorithm.Should().Be(SigningAlgorithm.RS256);
 
         var signingInput = "header.payload"u8.ToArray();
         var outcome = await ring.SignAsync(signingInput, static (_, input) => input, ct);
 
-        using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        using var rsa = RSA.Create(ring.Current.SigningKey!.PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the ring must sign locally with the downloaded private key of the published version");
     }
@@ -105,32 +105,10 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
 
         ring.Current.Published.Should().HaveCount(3,
             "the signing version, its predecessor still inside retention, and the staged version are all published");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")));
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")));
         reader.PrivateKeyMaterialCalls.Should().Equal(["v2"],
             "startup — including the ring's signing self-test — downloads private material for the " +
             "signing version only; published-only versions stay public-key-only");
-    }
-
-    [Fact]
-    public async Task Full_DI_wiring_keeps_publishing_the_startup_key_set_when_the_vault_rotates_afterwards()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var (services, reader, timeProvider) = BuildServices(T0);
-        reader.AddRsaVersion("v1", createdOn: T0);
-
-        var builder = services.AddZeeKayDaAuthCoreForTesting();
-        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
-
-        await using var provider = services.BuildServiceProvider();
-        await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<SigningKeyRing>();
-        var publishedAtStartup = ring.Current.Published.Select(k => k.Kid).ToArray();
-
-        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromMinutes(1));
-        timeProvider.SetUtcNow(T0 + TimeSpan.FromDays(30));
-
-        ring.Current.Published.Select(k => k.Kid).Should().Equal(publishedAtStartup,
-            "the ring reads the source once, at startup — a rotation is only picked up when it next reads");
     }
 
     // ── Startup failure propagation ───────────────────────────────────────────────────────────────
@@ -149,7 +127,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var act = async () => await StartHostedServicesAsync(provider, ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*no_certificate_versions*");
+            .WithMessage("*signing.no_keys*");
     }
 
     [Fact]

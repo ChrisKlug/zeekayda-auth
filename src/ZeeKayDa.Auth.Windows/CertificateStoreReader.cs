@@ -17,7 +17,7 @@ namespace ZeeKayDa.Auth.Windows;
 internal sealed class CertificateStoreReader : ICertificateStoreReader
 {
     /// <inheritdoc/>
-    public X509Certificate2 GetCertificate(string normalizedThumbprint, StoreLocation storeLocation, StoreName storeName)
+    public X509Certificate2? FindCertificate(string normalizedThumbprint, StoreLocation storeLocation, StoreName storeName)
     {
         using var store = new X509Store(storeName, storeLocation);
 
@@ -45,18 +45,7 @@ internal sealed class CertificateStoreReader : ICertificateStoreReader
         // concept here; that is decided by ZeeKayDa.Auth.Tokens.SigningKeyRotation instead.
         var matches = store.Certificates.Find(X509FindType.FindByThumbprint, normalizedThumbprint, validOnly: false);
         if (matches.Count == 0)
-        {
-            foreach (var match in matches)
-            {
-                using var _ = match;
-            }
-
-            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
-                "signing.windows_certificate_store.certificate_not_found",
-                $"No certificate with thumbprint '{normalizedThumbprint}' was found in the '{storeName}' " +
-                $"store at '{storeLocation}'. Verify the thumbprint and that the certificate has been " +
-                "installed into this exact store/location combination."));
-        }
+            return null;
 
         // Return a standalone copy: every certificate in 'matches' is disposed after this copy
         // has been made, which preserves the handle the caller needs.

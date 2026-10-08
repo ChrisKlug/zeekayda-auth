@@ -2172,7 +2172,7 @@ code lens on `6db3887`, and the PR's Copilot and CodeScene review; no Critical; 
 - Key Vault refuses a listed version whose URI is not version-pinned. Closed — `ReadAsync_throws_when_a_listed_versions_identifier_uri_is_not_version_pinned`.
 - **Accepted residuals (maintainer):** a key signs up to five minutes before its `NotBefore` (Future_a_key_valid_up_to_five_minutes_from_now_signs_to_tolerate_clock_skew [removed by #823 PR 3, where `NotBefore` is no validity gate: `Build_signs_with_a_sole_key_whose_NotBefore_is_in_the_future`]);
   a key expiring while the process runs signs until restart, with no test pinning that; the health check reports it Unhealthy
-  (`CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source`);
+  (CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source [renamed by #527, the ring now re-reading: `CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_reading_the_source_itself`]);
   file and Windows sources sign only with Current until PR 2 (CreateSignerAsync_throws_when_called_for_the_Next_slot [removed by #823 PR 2, which lets every listed file sign: `CreateSignerAsync_opens_a_signer_for_any_listed_file`]); per-client lifetimes are invisible at startup,
   so the operator raises the retention, with no test for the default ignoring them (`PostConfigure_keeps_an_explicit_RetainRetiredKeysFor` proves the lever); a hint whose key is retired is refused, #899
   (`Validate_refuses_a_hint_signed_by_a_key_the_server_does_not_publish`).
@@ -2239,6 +2239,27 @@ CodeQL and CodeScene review; no Critical left open. Four test-only CodeQL dispos
   `Build_fails_on_a_duplicate_kid_even_when_one_entry_has_unusable_dates`, `Evaluate_is_Degraded_while_a_listed_key_is_dropped_without_naming_its_source_id`.
 - A key signing on after healthy replicas dropped it is Unhealthy. Closed — `Evaluate_is_Unhealthy_when_the_key_signing_on_after_a_failed_handover_has_left_every_other_replica_s_key_set`.
 - **Accepted residuals (maintainer):** a provider's own per-key failure still fails `ReadAsync` (#908) — `ReadAsync_rejects_a_separate_key_file_broader_than_0600_on_Unix_even_for_a_file_that_does_not_sign`;
-  revocation is remove and restart until polling (#527), the source being read once — `CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source`.
+  revocation is remove and restart until polling (#527), the source being read once — CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source [renamed by #527: `CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_reading_the_source_itself`].
 - **Unverified scope limits (maintainer), no test:** a source returning one signer instance for two keys is excluded by the contract,
   not checked; a signer whose own self-test never completes is set aside at the deadline but never disposed — the ring never receives it.
+
+## 2026-10-08 — the signing key ring re-reads its source; removing a key at its source revokes it (#527, code frozen at `1522ca0`)
+Copilot code (five passes, each fix verified), security and architecture lenses, the security and architect agents (each verified
+its fix diff), and the PR's CodeQL, CodeScene and Copilot review; no High or Critical left open. `49d7ad8` and `1522ca0` were read by the main session only.
+- A failed or hung read keeps the last list, and no second read starts behind it. Closed — `A_failed_read_keeps_the_last_list_logs_an_Error_and_makes_the_health_check_Degraded`,
+  `A_read_that_does_not_complete_within_a_minute_counts_as_failed_and_keeps_the_last_list`, `A_read_still_running_after_its_deadline_is_not_started_again_at_the_next_read`.
+- No keys, an ambiguous list, or a bad key due now stops signing and publishes nothing; a good read resumes. Closed — `A_read_listing_no_keys_stops_signing_publishes_nothing_and_makes_the_health_check_Unhealthy`,
+  `A_read_listing_duplicate_source_ids_stops_signing`, `A_read_whose_key_due_to_sign_now_has_bad_material_stops_signing`, `Signing_resumes_when_a_later_read_lists_usable_keys_again`,
+  `The_token_endpoint_answers_server_error_while_signing_has_stopped`, `GetJwks_serves_an_empty_key_set_that_must_not_be_cached_while_signing_has_stopped`.
+- An unlisted signing key stops signing and is unpublished at that read; health is Unhealthy until a handover completes. Closed — `A_signing_key_no_longer_listed_stops_signing_and_is_unpublished_before_its_successor_s_signer_opens`,
+  `The_health_check_is_Unhealthy_while_signing_resumes_until_the_handover_completes`, `A_read_publishes_its_keys_at_once_while_the_handover_it_starts_is_still_opening`.
+- Removing a key at its source revokes it. Closed — `Ring_stops_signing_at_the_next_read_after_the_only_listed_file_is_deleted`, `ReadAsync_no_longer_lists_a_PEM_whose_separate_key_file_was_deleted`,
+  `ReadAsync_no_longer_lists_a_certificate_removed_from_the_store_so_removing_it_revokes_the_key`, `GetKeyVersionsAsync_lists_nothing_when_the_key_was_deleted`,
+  `ReadAsync_lists_nothing_when_every_version_is_disabled_so_the_ring_treats_it_as_a_full_revocation`. Closes the #823 residual "revocation is remove and restart".
+- A failed successor never takes over once its predecessor is superseded; the algorithm is pinned at startup. Closed — `A_set_aside_key_fixed_only_after_the_key_it_replaces_is_superseded_never_takes_over`,
+  `A_failed_key_too_late_to_take_over_stays_set_aside_after_a_read_that_omitted_it`, `A_failed_key_whose_cutoff_passes_while_the_source_is_read_stays_set_aside`,
+  `The_ring_keeps_signing_under_the_algorithm_it_read_at_startup_when_the_source_s_changes`.
+- **Accepted residuals (maintainer):** a sign call outrunning one refresh interval may meet a disposed signer — `The_signer_of_a_key_no_longer_listed_is_disposed_at_the_second_read_without_it_not_the_first`;
+  a source that never returns pins the last list until restart, and an unmounted key directory reads as deleted (no test); an abandoned Key Vault read
+  cancelled after its pre-commit check can still commit its newer version list, refusing a just-disabled version one read early (no test — the check
+  itself, for cancellation before it, is proven by `ReadAsync_abandoned_by_the_ring_does_not_replace_the_versions_a_signer_may_open`).

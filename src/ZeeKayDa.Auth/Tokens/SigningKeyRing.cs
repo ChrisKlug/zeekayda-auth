@@ -1,13 +1,15 @@
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Logging;
+using static ZeeKayDa.Auth.Tokens.SigningKeyRingState;
 
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// What every signing consumer depends on: the current <see cref="SigningKeySet"/>, and the ability
-/// to sign with its signing key. Reads its <see cref="ISigningKeySource"/> once at startup, then
-/// follows the clock: the key set changes, and a successor takes over signing, at the instants the
-/// keys' own dates set, with no restart.
+/// to sign with its signing key. Reads its <see cref="ISigningKeySource"/> at startup and again every
+/// <see cref="SigningKeyOptions.RefreshInterval"/>, and follows the clock in between: the key set
+/// changes, and a successor takes over signing, at the instants the keys' own dates set, with no
+/// restart.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,15 +24,21 @@ namespace ZeeKayDa.Auth.Tokens;
 /// disagreement unrepresentable rather than merely detected.
 /// </para>
 /// <para>
-/// Every signer is self-tested before it signs. The startup signer failing stops the host. A
-/// successor's signer failing when it is due to take over sets that key aside until a restart: it
-/// stays published but never signs, the keys around it sign in its place, an Error is logged, and
-/// <see cref="SigningKeyExpiryHealthCheck"/> reports Degraded.
+/// A read that fails keeps the last list. A read listing no keys, a list that is ambiguous, or one
+/// whose key due to sign now is unusable stops signing: <see cref="SigningKeySet.SigningKey"/> is
+/// <see langword="null"/>, nothing is published, and <see cref="SignAsync{TState}"/> throws until a
+/// later read lists keys the ring can use.
 /// </para>
 /// <para>
-/// Owns every <see cref="ISigner"/> it opens and disposes each once, at shutdown — a superseded
-/// signer stays open until then, so a token being signed while its successor takes over never sees
-/// it disposed. Also owns the <see cref="ISigningKeySource"/> it was constructed over: nothing else
+/// Every signer is self-tested before it signs. The startup signer failing stops the host. A
+/// successor's signer failing when it is due to take over sets that key aside until the next read:
+/// it stays published but never signs, the keys around it sign in its place, an Error is logged, and
+/// <see cref="SigningKeyExpiryHealthCheck"/> reports Degraded. A key still set aside once the key it
+/// replaces is superseded stays set aside for good.
+/// </para>
+/// <para>
+/// Owns every <see cref="ISigner"/> it opens and disposes each once: at the second read in a row that
+/// no longer lists its key, or at shutdown. Also owns the <see cref="ISigningKeySource"/> it was constructed over: nothing else
 /// holds a reference to it, so the ring disposes it once, at shutdown, after the signers — via
 /// <see cref="IDisposable.Dispose"/> or <see cref="IAsyncDisposable.DisposeAsync"/>, whichever the
 /// host calls.
@@ -45,9 +53,9 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     // How soon to try again after a transition failed for a reason no rule anticipated.
     private static readonly TimeSpan RetryDelay = TimeSpan.FromMinutes(1);
 
-    // How long a successor's signer may take to open and self-test before it is set aside; a hung
-    // open would otherwise hold the transition, and every later change, forever.
-    private static readonly TimeSpan HandoverDeadline = TimeSpan.FromMinutes(1);
+    // How long a source read, or a successor's signer opening and self-testing, may take before it
+    // counts as failed; a hung call would otherwise hold the transition, and every later change, forever.
+    private static readonly TimeSpan SourceDeadline = TimeSpan.FromMinutes(1);
 
     private readonly ISigningKeySource _source;
     private readonly TimeProvider _timeProvider;
@@ -60,9 +68,21 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     private readonly Dictionary<string, ISigner> _signers = new(StringComparer.Ordinal);
     private ITimer? _timer;
 
-    // The key set, the signer for its signing key and the timeline it was chosen from, replaced
-    // together as one reference so a consumer can never observe one without the others.
-    private SignerBinding? _binding;
+    // Read once, at initialization: a source whose getter changes cannot change the server's algorithm.
+    private SigningAlgorithm _algorithm;
+
+    // Touched only by initialization and the transition, which never overlap.
+    private DateTimeOffset _nextReadAt;
+    private readonly HashSet<string> _unlistedOnce = new(StringComparer.Ordinal);
+
+    // Keys whose signer failed when due and has not signed since, by kid, kept across reads that omit
+    // them or stop signing: such a key may never take over once its predecessor is superseded.
+    private readonly HashSet<string> _failed = new(StringComparer.Ordinal);
+
+    // A read abandoned at its deadline may still be running; no second one starts on the source until it ends.
+    private Task? _reading;
+
+    private SigningKeyRingState? _state;
 
     // 0 = live, 1 = disposed. Written under _gate, read without it.
     private int _disposed;
@@ -78,7 +98,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// <see cref="SignAsync{TState}"/>.
     /// </summary>
     /// <param name="source">
-    /// The signing key source to read once. This constructor takes ownership: the ring disposes
+    /// The signing key source to read. This constructor takes ownership: the ring disposes
     /// <paramref name="source"/> once, at shutdown.
     /// </param>
     /// <param name="timeProvider">The clock that decides which key signs and which are published.</param>
@@ -113,6 +133,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         {
             LeadTime = options.LeadTime,
             RetainRetiredKeysFor = options.RetainRetiredKeysFor,
+            RefreshInterval = options.RefreshInterval,
         };
         _logger = logger;
     }
@@ -124,7 +145,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// Thrown when the ring has not yet completed startup initialization.
     /// </exception>
     public SigningKeySet Current =>
-        _binding?.KeySet ?? throw new InvalidOperationException(
+        Volatile.Read(ref _state)?.KeySet ?? throw new InvalidOperationException(
             $"{nameof(SigningKeyRing)} has not completed startup initialization yet.");
 
     /// <summary>
@@ -132,20 +153,19 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// completed startup initialization — lets a health check report "not initialized" rather than
     /// throwing.
     /// </summary>
-    internal SigningKeySet? CurrentOrNull => _binding?.KeySet;
+    internal SigningKeySet? CurrentOrNull => Volatile.Read(ref _state)?.KeySet;
 
     /// <summary>
     /// Gets the listed keys and the rules over them, or <see langword="null"/> before startup
     /// initialization — what the health check looks ahead with.
     /// </summary>
-    internal SigningKeyTimeline? TimelineOrNull => Volatile.Read(ref _binding)?.Timeline;
+    internal SigningKeyTimeline? TimelineOrNull => Volatile.Read(ref _state) is { } state ? TimelineOf(state) : null;
 
     /// <summary>
-    /// Gets the key set and the timeline it was chosen from as one read, or <see langword="null"/>
-    /// before startup initialization — what the health check judges.
+    /// Gets what the ring is doing, or <see langword="null"/> before startup initialization — what
+    /// the health check judges.
     /// </summary>
-    internal (SigningKeySet KeySet, SigningKeyTimeline Timeline)? StateOrNull =>
-        Volatile.Read(ref _binding) is { } binding ? (binding.KeySet, binding.Timeline) : null;
+    internal SigningKeyRingState? StateOrNull => Volatile.Read(ref _state);
 
     /// <summary>
     /// Gets the handover the timer started last, so a test can await it after advancing a fake clock.
@@ -168,7 +188,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The signing input, the signature, and the key that signed it.</returns>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when the ring has not yet completed startup initialization.
+    /// Thrown when the ring has not yet completed startup initialization, or when signing has stopped.
     /// </exception>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="buildSigningInput"/> is <see langword="null"/>.
@@ -184,20 +204,27 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(buildSigningInput);
         ObjectDisposedException.ThrowIf(_disposed != 0, this);
 
-        var binding = _binding ?? throw new InvalidOperationException(
+        var current = Volatile.Read(ref _state) ?? throw new InvalidOperationException(
             $"{nameof(SigningKeyRing)} has not completed startup initialization yet.");
 
-        var context = new SigningContext(binding.KeySet.SigningKey);
+        if (current is not Signing signing)
+        {
+            throw new InvalidOperationException(
+                $"Signing has stopped ({ReasonOf(current)}): the signing key source lists no key the ring can sign with yet.");
+        }
+
+        var signingKey = signing.SigningKey;
+        var context = new SigningContext(signingKey);
         var signingInput = buildSigningInput(context, state);
 
         // Copied before signing and after the signature comes back, so a pooled or reused buffer on
         // either side of ISigner.SignAsync can never disagree with the bytes SigningOutcome reports
         // as having been signed.
         var signingInputCopy = new ReadOnlyMemory<byte>(signingInput.ToArray());
-        var signature = await binding.Signer.SignAsync(signingInputCopy, cancellationToken).ConfigureAwait(false);
+        var signature = await signing.Signer.SignAsync(signingInputCopy, cancellationToken).ConfigureAwait(false);
         var signatureCopy = new ReadOnlyMemory<byte>(signature.ToArray());
 
-        return new SigningOutcome(signingInputCopy, signatureCopy, binding.KeySet.SigningKey);
+        return new SigningOutcome(signingInputCopy, signatureCopy, signingKey);
     }
 
     /// <inheritdoc/>
@@ -290,26 +317,29 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                     "must never return null."));
         }
 
-        var timeline = SigningKeySetBuilder.Build(sourceKeys, _source.Algorithm, _options);
+        _algorithm = _source.Algorithm;
+        var timeline = SigningKeySetBuilder.Build(sourceKeys, _algorithm, _options);
         var now = _timeProvider.GetUtcNow();
+        _nextReadAt = TokenLifetimes.ExpiresAt(now, _options.RefreshInterval);
         if (timeline.DroppedKeyDueAt(now) is { } droppedSigningKey)
             throw new ZeeKayDaConfigurationException(droppedSigningKey.Failure);
 
-        WarnAboutDroppedKeys(timeline);
+        WarnAboutDroppedKeys(timeline, previous: null);
         var set = timeline.At(now);
+        var signingKey = timeline.SigningKeyAt(now);
 
-        if (set.SigningKey.ExpiresAt <= now)
+        if (signingKey.ExpiresAt <= now)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.signing_key_expired",
-                    $"Every listed signing key has expired; the last, '{set.SigningKey.SourceId.Value}', expired at " +
-                    $"{set.SigningKey.ExpiresAt:O}. An expired key issues tokens no relying party will accept."));
+                    $"Every listed signing key has expired; the last, '{signingKey.SourceId.Value}', expired at " +
+                    $"{signingKey.ExpiresAt:O}. An expired key issues tokens no relying party will accept."));
         }
 
-        var signer = await OpenTestedSignerAsync(set.SigningKey, cancellationToken).ConfigureAwait(false);
+        var signer = await OpenTestedSignerAsync(signingKey, cancellationToken).ConfigureAwait(false);
 
-        Volatile.Write(ref _binding, new SignerBinding(signer, set, timeline));
+        Volatile.Write(ref _state, new Signing(signer, set, timeline));
 
         lock (_gate)
         {
@@ -323,15 +353,15 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
             // Created disarmed and armed only once assigned: a timer due at once may fire before
             // CreateTimer returns, and its transition re-arms through _timer.
-            _signers.Add(set.SigningKey.Kid, signer);
+            _signers.Add(signingKey.Kid, signer);
             _timer = _timeProvider.CreateTimer(
                 static state => ((SigningKeyRing)state!).OnTimer(), this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
 
         // Scheduled from the instant the set was chosen: if a change passed while the signer
         // opened, the timer fires at once and the transition catches up.
-        Rearm(WaitFrom(timeline, now, _timeProvider.GetUtcNow()));
-        WarnIfNotEstablished(timeline, set.SigningKey, now);
+        Rearm(NextWait(timeline, now));
+        WarnIfNotEstablished(timeline, signingKey, now);
     }
 
     // At most one transition runs at a time: the timer is one-shot and re-armed only when the
@@ -339,31 +369,20 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     private void OnTimer() => LastTransition = TransitionAsync();
 
     /// <summary>
-    /// Brings the key set up to the clock, handing signing over to a successor when one is due,
-    /// then waits for the next instant the set can change. Never throws: a failure here has no
-    /// caller to reach, so it is logged and the ring keeps its last working state.
+    /// Re-reads the source when a read is due, then brings the key set up to the clock, handing
+    /// signing over to a successor when one is due, and waits for the next read or change instant.
+    /// Never throws: a failure here has no caller to reach, so it is logged and the ring keeps its
+    /// last working state.
     /// </summary>
     private async Task TransitionAsync()
     {
         DateTimeOffset evaluatedAt;
         try
         {
-            // A handover takes time, and the clock may pass another change instant meanwhile, so
-            // re-evaluate until the key due to sign is the one already signing.
-            while (true)
-            {
-                var binding = Volatile.Read(ref _binding)!;
-                var now = _timeProvider.GetUtcNow();
-                evaluatedAt = now;
-                var due = binding.Timeline.At(now);
-                if (due.SigningKey.Kid == binding.KeySet.SigningKey.Kid)
-                {
-                    Volatile.Write(ref _binding, binding with { KeySet = due });
-                    break;
-                }
+            if (_timeProvider.GetUtcNow() >= _nextReadAt)
+                await RefreshAsync().ConfigureAwait(false);
 
-                await HandOverAsync(binding.KeySet.SigningKey, due.SigningKey).ConfigureAwait(false);
-            }
+            evaluatedAt = await FollowTheClockAsync().ConfigureAwait(false);
         }
         catch (Exception) when (_shutdown.IsCancellationRequested)
         {
@@ -380,7 +399,223 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             return;
         }
 
-        Rearm(WaitFrom(Volatile.Read(ref _binding)!.Timeline, evaluatedAt, _timeProvider.GetUtcNow()));
+        Rearm(NextWait(TimelineOf(Volatile.Read(ref _state)!), evaluatedAt));
+    }
+
+    /// <summary>
+    /// Hands over until the key due to sign is the one already signing — a handover takes time, and
+    /// the clock may pass another change instant meanwhile — and returns the instant the committed
+    /// set was chosen for.
+    /// </summary>
+    private async Task<DateTimeOffset> FollowTheClockAsync()
+    {
+        while (true)
+        {
+            var state = Volatile.Read(ref _state)!;
+            var now = _timeProvider.GetUtcNow();
+            if (TimelineOf(state) is not { } timeline)
+                return now;
+
+            var due = timeline.SigningKeyAt(now);
+            var signingKey = (state as Signing)?.SigningKey;
+            if (state is Signing signing && due.Kid == signing.SigningKey.Kid)
+            {
+                Volatile.Write(ref _state, signing with { KeySet = timeline.At(now) });
+                return now;
+            }
+
+            await HandOverAsync(signingKey, due).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Reads the source and adopts what it lists: a read that fails keeps the last list; a list the
+    /// ring must refuse stops signing; anything else becomes the timeline the clock follows.
+    /// </summary>
+    private async Task RefreshAsync()
+    {
+        var now = _timeProvider.GetUtcNow();
+        _nextReadAt = TokenLifetimes.ExpiresAt(now, _options.RefreshInterval);
+
+        if (_reading is { IsCompleted: false })
+        {
+            KeepLastList("the previous read has not completed", failure: null);
+            return;
+        }
+
+        IReadOnlyList<SourceKey>? sourceKeys;
+        try
+        {
+            sourceKeys = await ReadSourceAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!_shutdown.IsCancellationRequested)
+        {
+            KeepLastList(Describe(ex), ex);
+            return;
+        }
+
+        if (sourceKeys is null)
+        {
+            KeepLastList("signing.null_source_key_set", failure: null);
+            return;
+        }
+
+        // Judged when the read completed: a key may have passed a cutoff while the source was read.
+        now = _timeProvider.GetUtcNow();
+        var previous = TimelineOf(Volatile.Read(ref _state)!);
+        SigningKeyTimeline timeline;
+        try
+        {
+            timeline = SigningKeySetBuilder.Build(sourceKeys, _algorithm, _options);
+        }
+        catch (ZeeKayDaConfigurationException ex)
+        {
+            ReleaseUnlistedSigners(timeline: null);
+            StopSigning(ex.AggregatedFailures[0]);
+            return;
+        }
+
+        ReleaseUnlistedSigners(timeline);
+        if (timeline.DroppedKeyDueAt(now) is { } droppedSigningKey)
+        {
+            StopSigning(droppedSigningKey.Failure);
+            return;
+        }
+
+        if (KeepingTooLateKeysAside(timeline, now) is not { } adopted)
+        {
+            StopSigning(new ZeeKayDaConfigurationFailure(
+                "signing.no_usable_key",
+                "Every listed key was set aside when its signer failed, too late to take over now. List a fresh key."));
+            return;
+        }
+
+        WarnAboutDroppedKeys(adopted, previous);
+        Volatile.Write(ref _state, Adopting(Volatile.Read(ref _state)!, adopted, now));
+    }
+
+    /// <summary>
+    /// The state once <paramref name="timeline"/> is adopted, publishing its keys at once rather than
+    /// after a handover it starts. Signing carries on only while its key is still listed: a key the
+    /// source no longer lists stops signing at once, and is unpublished, rather than through however
+    /// long its successor's handover takes.
+    /// </summary>
+    private SigningKeyRingState Adopting(SigningKeyRingState state, SigningKeyTimeline timeline, DateTimeOffset now)
+    {
+        var published = timeline.At(now).Published;
+        switch (state)
+        {
+            case Signing signing when timeline.Keys.FirstOrDefault(key => key.Kid == signing.SigningKey.Kid) is { } stillListed:
+                // The key signing on until a handover completes stays published while it signs.
+                IReadOnlyList<SigningKey> withSigner = published.Any(key => key.Kid == stillListed.Kid)
+                    ? published
+                    : [.. published.Append(stillListed).Order(SigningKeySetBuilder.OldestFirst)];
+                return signing with
+                {
+                    KeySet = new SigningKeySet(_algorithm, stillListed, withSigner),
+                    Timeline = timeline,
+                    ReadFailure = null,
+                };
+
+            case Signing signing:
+                _logger.LogWarning(
+                    "Key {Kid} ({SourceKeyId}) is no longer listed, so it stops signing; signing resumes once the key due " +
+                    "to sign takes over.",
+                    signing.SigningKey.Kid, signing.SigningKey.SourceId.Value);
+                return new Resuming(new SigningKeySet(_algorithm, null, published), timeline, "signing.signing_key_unlisted");
+
+            default:
+                return new Resuming(new SigningKeySet(_algorithm, null, published), timeline, ReasonOf(state)!);
+        }
+    }
+
+    private async Task<IReadOnlyList<SourceKey>?> ReadSourceAsync()
+    {
+        using var abandon = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
+
+        // Run off the transition, and waited on with the ring's clock rather than the token alone:
+        // a source may block synchronously or ignore cancellation.
+        var reading = Task.Run(() => _source.ReadAsync(abandon.Token), CancellationToken.None);
+        _reading = reading;
+        try
+        {
+            return await reading.WaitAsync(SourceDeadline, _timeProvider, _shutdown.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            CancelQuietly(abandon);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Sets aside every failed key now too late to take over, or returns <see langword="null"/> when
+    /// that leaves no key able to sign. Any other failed key is tried again.
+    /// </summary>
+    private SigningKeyTimeline? KeepingTooLateKeysAside(SigningKeyTimeline timeline, DateTimeOffset now)
+    {
+        SigningKeyTimeline? adopted = timeline;
+        foreach (var key in timeline.Keys.Where(key => _failed.Contains(key.Kid) && timeline.IsTooLateToTakeOver(key, now)))
+            adopted = adopted?.SettingAside(key.Kid);
+
+        return adopted;
+    }
+
+    private void KeepLastList(string reason, Exception? failure)
+    {
+        Volatile.Write(ref _state, Volatile.Read(ref _state)! with { ReadFailure = reason });
+        _logger.LogError(
+            failure,
+            "The signing key source could not be read ({Failure}); the ring keeps its last key list and reads again " +
+            "in {RefreshInterval}.",
+            reason,
+            _options.RefreshInterval);
+    }
+
+    /// <summary>
+    /// Stops signing and publishes nothing until a later read lists keys the ring can use: the
+    /// source listed none, or a list the ring must refuse rather than guess past.
+    /// </summary>
+    private void StopSigning(ZeeKayDaConfigurationFailure failure)
+    {
+        Volatile.Write(ref _state, new Stopped(SigningKeySet.Stopped(_algorithm), failure.Code));
+        _logger.LogError(
+            "Signing has stopped and no key is published: [{FailureCode}] {Reason} Signing resumes once the source " +
+            "lists keys the ring can use.",
+            failure.Code,
+            failure.Message);
+    }
+
+    /// <summary>
+    /// Called once per read that listed keys. Disposes the signer of every key absent from two reads
+    /// in a row, unless it still signs. One
+    /// read's grace lets a sign call that started before the key left the list finish with the signer
+    /// it resolved.
+    /// </summary>
+    private void ReleaseUnlistedSigners(SigningKeyTimeline? timeline)
+    {
+        var signing = (Volatile.Read(ref _state) as Signing)?.Signer;
+        var listed = timeline?.Keys.Select(key => key.Kid).ToHashSet(StringComparer.Ordinal) ?? [];
+        List<ISigner> released = [];
+        lock (_gate)
+        {
+            foreach (var (kid, signer) in _signers.ToList())
+            {
+                if (listed.Contains(kid))
+                {
+                    _unlistedOnce.Remove(kid);
+                }
+                else if (!_unlistedOnce.Add(kid) && !ReferenceEquals(signer, signing))
+                {
+                    _unlistedOnce.Remove(kid);
+                    _signers.Remove(kid);
+                    released.Add(signer);
+                }
+            }
+        }
+
+        foreach (var signer in released)
+            DisposeQuietly(signer);
     }
 
     private void Rearm(TimeSpan wait)
@@ -393,82 +628,124 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Opens and self-tests the signer for <paramref name="successor"/>, reusing one opened earlier,
-    /// and makes it the signer. On failure the successor is set aside until a restart instead.
+    /// Makes <paramref name="successor"/>'s signer the signer, once opened and self-tested, unless the
+    /// clock moved on meanwhile or the key is too late to take over.
     /// </summary>
-    private async Task HandOverAsync(SigningKey current, SigningKey successor)
+    private async Task HandOverAsync(SigningKey? current, SigningKey successor)
     {
-        ISigner? signer;
-        lock (_gate)
-            _signers.TryGetValue(successor.Kid, out signer);
+        if (await SignerForAsync(current, successor).ConfigureAwait(false) is not { } signer)
+            return;
 
-        if (signer is null)
-        {
-            using var abandon = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
-
-            // Run off the transition, and waited on with the ring's clock rather than the token
-            // alone: a source may block synchronously or ignore cancellation.
-            var opening = Task.Run(() => OpenTestedSignerAsync(successor, abandon.Token).AsTask(), CancellationToken.None);
-            try
-            {
-                signer = await opening.WaitAsync(HandoverDeadline, _timeProvider, _shutdown.Token).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                // Abandoned — at the deadline, on failure, or at shutdown: a signer it still
-                // produces is disposed, and cleanup is in place before the source is told to stop.
-                DisposeIfItOpensLate(opening);
-                CancelQuietly(abandon);
-
-                if (_shutdown.IsCancellationRequested)
-                    throw;
-
-                SetAside(current, successor, ex);
-                return;
-            }
-
-            if (!TryKeep(successor, signer))
-                throw new OperationCanceledException(_shutdown.Token);
-        }
-
-        var timeline = Volatile.Read(ref _binding)!.Timeline;
+        var timeline = TimelineOf(Volatile.Read(ref _state)!)!;
         var now = _timeProvider.GetUtcNow();
-        var set = timeline.At(now);
 
         // The clock may have moved on while the signer opened; the caller's loop then hands over to
         // whichever key is due now, and this signer stays cached for if its turn comes again.
-        if (set.SigningKey.Kid != successor.Kid)
+        if (timeline.SigningKeyAt(now).Kid != successor.Kid)
             return;
 
-        Volatile.Write(ref _binding, new SignerBinding(signer, set, timeline));
+        // A retried key whose cutoff passed while its signer opened: its predecessor is superseded.
+        if (_failed.Contains(successor.Kid) && timeline.IsTooLateToTakeOver(successor, now))
+        {
+            SetAside(current, successor, "too late to take over", failure: null);
+            return;
+        }
+
+        _failed.Remove(successor.Kid);
+        Volatile.Write(ref _state, new Signing(signer, timeline.At(now), timeline) { ReadFailure = _state!.ReadFailure });
+        LogTakeover(current, successor);
+        WarnIfNotEstablished(timeline, successor, now);
+    }
+
+    /// <summary>
+    /// The signer opened for <paramref name="successor"/> earlier, or a newly opened and self-tested
+    /// one; <see langword="null"/> when it failed and the key was set aside.
+    /// </summary>
+    private async Task<ISigner?> SignerForAsync(SigningKey? current, SigningKey successor)
+    {
+        lock (_gate)
+        {
+            if (_signers.TryGetValue(successor.Kid, out var cached))
+                return cached;
+        }
+
+        using var abandon = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
+
+        // Run off the transition, and waited on with the ring's clock rather than the token
+        // alone: a source may block synchronously or ignore cancellation.
+        var opening = Task.Run(() => OpenTestedSignerAsync(successor, abandon.Token).AsTask(), CancellationToken.None);
+        ISigner signer;
+        try
+        {
+            signer = await opening.WaitAsync(SourceDeadline, _timeProvider, _shutdown.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Abandoned — at the deadline, on failure, or at shutdown: a signer it still
+            // produces is disposed, and cleanup is in place before the source is told to stop.
+            DisposeIfItOpensLate(opening);
+            CancelQuietly(abandon);
+
+            if (_shutdown.IsCancellationRequested)
+                throw;
+
+            SetAside(current, successor, Describe(ex), ex);
+            return null;
+        }
+
+        return TryKeep(successor, signer) ? signer : throw new OperationCanceledException(_shutdown.Token);
+    }
+
+    private void LogTakeover(SigningKey? current, SigningKey successor)
+    {
+        if (current is null)
+        {
+            _logger.LogInformation(
+                "Signing resumes: key {Kid} ({SourceKeyId}) now signs.", successor.Kid, successor.SourceId.Value);
+            return;
+        }
 
         _logger.LogInformation(
             "Key {Kid} ({SourceKeyId}) now signs, taking over from {PreviousKid} ({PreviousSourceKeyId}).",
             successor.Kid, successor.SourceId.Value, current.Kid, current.SourceId.Value);
-        WarnIfNotEstablished(timeline, successor, now);
     }
 
     /// <summary>
     /// Sets <paramref name="successor"/> aside on the timeline, so it stays published but never
     /// signs and the rules carry on with the keys around it; the health check reads it from there.
+    /// Stops signing instead when no other listed key could sign.
     /// </summary>
-    private void SetAside(SigningKey current, SigningKey successor, Exception failure)
+    private void SetAside(SigningKey? current, SigningKey successor, string reason, Exception? failure)
     {
-        var binding = Volatile.Read(ref _binding)!;
-        Volatile.Write(ref _binding, binding with { Timeline = binding.Timeline.SettingAside(successor.Kid) });
-
-        var reason = failure switch
+        _failed.Add(successor.Kid);
+        var state = Volatile.Read(ref _state)!;
+        if (TimelineOf(state)!.SettingAside(successor.Kid) is not { } timeline)
         {
-            ZeeKayDaConfigurationException configuration => configuration.AggregatedFailures[0].Code,
-            TimeoutException => $"did not open within {HandoverDeadline}",
-            _ => failure.GetType().FullName,
-        };
+            _logger.LogError(failure, "The signer of key {Kid} ({SourceKeyId}) failed ({Failure}).", successor.Kid, successor.SourceId.Value, reason);
+            StopSigning(new ZeeKayDaConfigurationFailure(
+                "signing.no_usable_key",
+                $"Key '{successor.SourceId.Value}' is due to sign, its signer failed ({reason}), and no other listed key can sign."));
+            return;
+        }
+
+        Volatile.Write(ref _state, state switch
+        {
+            Signing signing => signing with { Timeline = timeline },
+            _ => (Resuming)state with { Timeline = timeline, KeySet = new SigningKeySet(_algorithm, null, timeline.At(_timeProvider.GetUtcNow()).Published) },
+        });
         _logger.LogError(
             failure,
-            "Key {Kid} ({SourceKeyId}) is due to sign, but its signer failed ({Failure}); it is set aside until a " +
-            "restart and {CurrentKid} ({CurrentSourceKeyId}) signs on. Fix the key and restart.",
-            successor.Kid, successor.SourceId.Value, reason, current.Kid, current.SourceId.Value);
+            "Key {Kid} ({SourceKeyId}) is due to sign, but its signer failed ({Failure}); it is set aside until the " +
+            "next read, and the rules choose among the keys around it. Fix the key; the next read tries it again.",
+            successor.Kid, successor.SourceId.Value, reason);
     }
+
+    private static string Describe(Exception failure) => failure switch
+    {
+        ZeeKayDaConfigurationException configuration => configuration.AggregatedFailures[0].Code,
+        TimeoutException => $"did not complete within {SourceDeadline}",
+        _ => failure.GetType().FullName!,
+    };
 
     private static void CancelQuietly(CancellationTokenSource source)
     {
@@ -513,16 +790,19 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         return false;
     }
 
-    private void WarnAboutDroppedKeys(SigningKeyTimeline timeline)
+    /// <summary>Warns about each key dropped now that <paramref name="previous"/> had not already dropped.</summary>
+    private void WarnAboutDroppedKeys(SigningKeyTimeline timeline, SigningKeyTimeline? previous)
     {
-        foreach (var drop in timeline.Dropped)
+        var known = previous?.Dropped.Select(drop => drop.Key.Id.Value).ToHashSet(StringComparer.Ordinal) ?? [];
+        var fresh = timeline.Dropped.Where(drop => !known.Contains(drop.Key.Id.Value)).ToList();
+        foreach (var drop in fresh)
         {
             _logger.LogWarning(
                 "Signing key {SourceKeyId} was dropped and is neither published nor used to sign: [{FailureCode}] {Reason}",
                 drop.Key.Id.Value, drop.Failure.Code, drop.Failure.Message);
         }
 
-        if (timeline.CoverageCutShortTo() is { } usableUntil)
+        if (fresh.Count > 0 && timeline.CoverageCutShortTo() is { } usableUntil)
         {
             _logger.LogWarning(
                 "With the dropped signing keys gone, the last usable key expires at {UsableUntil}, sooner than the " +
@@ -543,17 +823,15 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// The wait until the first change after <paramref name="evaluatedAt"/>, the instant the
-    /// committed set was chosen for — measured against <paramref name="now"/>, so a change that
-    /// passed since is not skipped but fires at once.
+    /// The wait until the next read, or the first change after <paramref name="evaluatedAt"/> (the
+    /// instant the committed set was chosen for) when that comes sooner — measured against the clock
+    /// now, so a change that passed since is not skipped but fires at once.
     /// </summary>
-    private static TimeSpan WaitFrom(SigningKeyTimeline timeline, DateTimeOffset evaluatedAt, DateTimeOffset now)
+    private TimeSpan NextWait(SigningKeyTimeline? timeline, DateTimeOffset evaluatedAt)
     {
-        var next = timeline.NextChangeAfter(evaluatedAt);
-        if (next == DateTimeOffset.MaxValue)
-            return Timeout.InfiniteTimeSpan;
-
-        var remaining = next - now;
+        var change = timeline?.NextChangeAfter(evaluatedAt) ?? DateTimeOffset.MaxValue;
+        var next = change < _nextReadAt ? change : _nextReadAt;
+        var remaining = next - _timeProvider.GetUtcNow();
         if (remaining <= TimeSpan.Zero)
             return TimeSpan.Zero;
 
@@ -638,6 +916,17 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         return signer;
     }
 
-    /// <summary>The signer, the key set it signs for, and the timeline that set was chosen from.</summary>
-    private sealed record SignerBinding(ISigner Signer, SigningKeySet KeySet, SigningKeyTimeline Timeline);
+    private static SigningKeyTimeline? TimelineOf(SigningKeyRingState state) => state switch
+    {
+        Signing signing => signing.Timeline,
+        Resuming resuming => resuming.Timeline,
+        _ => null,
+    };
+
+    private static string? ReasonOf(SigningKeyRingState state) => state switch
+    {
+        Stopped stopped => stopped.Reason,
+        Resuming resuming => resuming.Reason,
+        _ => null,
+    };
 }

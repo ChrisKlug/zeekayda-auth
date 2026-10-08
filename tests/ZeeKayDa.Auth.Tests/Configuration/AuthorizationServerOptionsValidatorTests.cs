@@ -1477,26 +1477,53 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── SigningKeys ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_the_signing_key_LeadTime_is_shorter_than_the_JWKS_CacheMaxAge()
+    public void Validate_fails_when_the_signing_key_LeadTime_is_shorter_than_the_JWKS_CacheMaxAge_plus_the_RefreshInterval()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             JwksEndpoint = { CacheMaxAge = TimeSpan.FromHours(2) },
-            SigningKeys = { LeadTime = TimeSpan.FromHours(2) - TimeSpan.FromSeconds(1) },
+            SigningKeys = { LeadTime = TimeSpan.FromHours(2) + TimeSpan.FromMinutes(5) - TimeSpan.FromSeconds(1) },
         });
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.signing_keys.lead_time.shorter_than_jwks_cache_max_age");
+        failures.Should().ContainSingle(f => f.Code == "configuration.signing_keys.lead_time.shorter_than_jwks_cache_max_age_plus_refresh_interval");
     }
 
     [Fact]
-    public void Validate_accepts_a_signing_key_LeadTime_equal_to_the_JWKS_CacheMaxAge()
+    public void Validate_accepts_a_signing_key_LeadTime_equal_to_the_JWKS_CacheMaxAge_plus_the_RefreshInterval()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             JwksEndpoint = { CacheMaxAge = TimeSpan.FromHours(2) },
-            SigningKeys = { LeadTime = TimeSpan.FromHours(2) },
+            SigningKeys = { LeadTime = TimeSpan.FromHours(2) + TimeSpan.FromMinutes(5) },
+        });
+
+        failures.Should().NotContain(f => f.Code.StartsWith("configuration.signing_keys", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(59)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_refuses_a_signing_key_RefreshInterval_below_one_minute(int seconds)
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            SigningKeys = { RefreshInterval = TimeSpan.FromSeconds(seconds) },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.signing_keys.refresh_interval.below_minimum");
+    }
+
+    [Fact]
+    public void Validate_accepts_a_signing_key_RefreshInterval_of_one_minute()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            SigningKeys = { RefreshInterval = TimeSpan.FromMinutes(1) },
         });
 
         failures.Should().NotContain(f => f.Code.StartsWith("configuration.signing_keys", StringComparison.Ordinal));

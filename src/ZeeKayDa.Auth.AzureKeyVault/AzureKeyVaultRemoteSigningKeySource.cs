@@ -54,22 +54,16 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
         await foreach (var version in keyReader.GetKeyVersionsAsync(cancellationToken).ConfigureAwait(false))
             allVersions.Add(version);
 
-        if (allVersions.Count == 0)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.azure_key_vault.no_key_versions",
-                    $"Key Vault key '{options.KeyIdentifier.Name}' in vault '{options.KeyIdentifier.VaultUri}' " +
-                    "has no versions. Create at least one key version before starting the host."));
-        }
-
         var listed = KeyVaultVersions.Newest(
-            KeyVaultVersions.Enabled(allVersions, "key", options.KeyIdentifier.Name, options.KeyIdentifier.VaultUri),
+            KeyVaultVersions.Enabled(allVersions, "key"),
             options.MaxVersions);
 
         var keys = new List<SourceKey>(listed.Count);
         foreach (var version in listed)
             keys.Add(await ToSourceKeyAsync(version, cancellationToken).ConfigureAwait(false));
+
+        // A read the ring abandoned at its deadline must not replace the list of a later read.
+        cancellationToken.ThrowIfCancellationRequested();
 
         // Committed only after nothing can throw any more, so a failed read can never leave a
         // signer openable for a version that was never listed.

@@ -33,7 +33,7 @@ public sealed class IdTokenHintValidatorTests
 
     private static SigningKeySet KeySet => Ring.Current;
 
-    private static string CurrentKid => KeySet.SigningKey.Kid;
+    private static string CurrentKid => KeySet.SigningKey!.Kid;
 
     private static string PreviousKid => KeySet.Published.Single(key => key != KeySet.SigningKey).Kid;
 
@@ -170,7 +170,7 @@ public sealed class IdTokenHintValidatorTests
     {
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var ring = EcRing(ec);
-        var header = Header(ring.Current.SigningKey.Kid);
+        var header = Header(ring.Current.SigningKey!.Kid);
         header["alg"] = "ES256";
         var token = Sign(header, Claims(), input =>
             ec.SignData(input, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
@@ -310,7 +310,7 @@ public sealed class IdTokenHintValidatorTests
     [Fact]
     public void Validate_refuses_a_hint_signed_by_a_key_the_server_does_not_publish()
     {
-        var foreignKid = TestSigningKeys.Ring([RsaSourceKey("current", ForeignKey)], ForeignKey).Current.SigningKey.Kid;
+        var foreignKid = TestSigningKeys.Ring([RsaSourceKey("current", ForeignKey)], ForeignKey).Current.SigningKey!.Kid;
         var token = Sign(Header(foreignKid), Claims(), input => SignRs256(ForeignKey, input));
 
         var hint = CreateValidator().Validate(token, ClientId);
@@ -357,7 +357,7 @@ public sealed class IdTokenHintValidatorTests
     {
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         using var ring = EcRing(ec);
-        var header = Header(ring.Current.SigningKey.Kid);
+        var header = Header(ring.Current.SigningKey!.Kid);
         header["alg"] = "ES256";
         var token = $"{Segment(header)}.{Segment(Claims())}.AA";
 

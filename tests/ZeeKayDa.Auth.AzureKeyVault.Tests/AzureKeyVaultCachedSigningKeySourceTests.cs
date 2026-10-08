@@ -134,6 +134,25 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_abandoned_by_the_ring_does_not_replace_the_versions_a_signer_may_open()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: T0);
+        var sut = BuildSource(reader);
+        await sut.ReadAsync(ct);
+        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
+        using var abandoned = new CancellationTokenSource();
+        reader.DuringPublicKeyMaterial = abandoned.Cancel;
+
+        var act = async () => await sut.ReadAsync(abandoned.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        var openUnlisted = async () => await sut.CreateSignerAsync(new SourceKeyId("v2"), ct);
+        await openUnlisted.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
     public async Task CreateSignerAsync_rejects_any_id_before_a_successful_read()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -170,29 +189,27 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
     // ── Failure paths: always throw, never a partial set ─────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_when_the_certificate_has_no_versions()
+    public async Task ReadAsync_lists_nothing_when_the_certificate_has_no_versions()
     {
         var ct = TestContext.Current.CancellationToken;
         var sut = BuildSource(new FakeKeyVaultCertificateReader());
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*no_certificate_versions*");
+        keys.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task ReadAsync_throws_when_no_version_is_enabled()
+    public async Task ReadAsync_lists_nothing_when_every_version_is_disabled_so_the_ring_treats_it_as_a_full_revocation()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeKeyVaultCertificateReader();
         reader.AddRsaVersion("v1", createdOn: T0, enabled: false);
         var sut = BuildSource(reader);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*no_enabled_version*");
+        keys.Should().BeEmpty();
     }
 
     [Fact]

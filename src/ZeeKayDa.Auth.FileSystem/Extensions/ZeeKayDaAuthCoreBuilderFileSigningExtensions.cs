@@ -19,8 +19,9 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
 {
     /// <summary>
     /// Registers a single PEM certificate as the JWT signing key. The
-    /// file(s) identified by <paramref name="path"/> and <paramref name="keyPath"/> are read once at
-    /// startup and the private key is used for signing locally, in process.
+    /// file(s) identified by <paramref name="path"/> and <paramref name="keyPath"/> are read at startup
+    /// and every <see cref="SigningKeyOptions.RefreshInterval"/>, and the private key is used for
+    /// signing locally, in process.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -143,8 +144,9 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
 
     /// <summary>
     /// Registers a single PFX/PKCS#12 bundle as the JWT signing key. The
-    /// file identified by <paramref name="path"/> is read once at startup and its private key is used
-    /// for signing locally, in process.
+    /// file identified by <paramref name="path"/> is read at startup and every
+    /// <see cref="SigningKeyOptions.RefreshInterval"/>, and its private key is used for signing
+    /// locally, in process.
     /// </summary>
     /// <remarks>
     /// <para>

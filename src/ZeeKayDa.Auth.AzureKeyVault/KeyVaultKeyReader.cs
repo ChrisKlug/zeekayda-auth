@@ -52,15 +52,21 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
         var pageable = _keyClient.GetPropertiesOfKeyVersionsAsync(_keyName, cancellationToken);
         await using var enumerator = pageable.GetAsyncEnumerator(cancellationToken);
 
+        var listedAny = false;
         while (true)
         {
-            KeyProperties current;
+            KeyProperties? current;
             try
             {
                 if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
                     yield break;
 
                 current = enumerator.Current;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404 && !listedAny)
+            {
+                // A deleted key has no versions to list: deleting it revokes every key it held.
+                current = null;
             }
             catch (RequestFailedException ex)
             {
@@ -71,6 +77,10 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
                 throw MapUnexpectedFailure(ex);
             }
 
+            if (current is null)
+                yield break;
+
+            listedAny = true;
             yield return MapVersion(current, _keyName, _vaultUri);
         }
     }

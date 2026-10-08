@@ -29,7 +29,7 @@ public sealed class SigningKeySetBuilderTests
 
         var set = Build(older, newest);
 
-        set.SigningKey.SourceId.Should().Be(newest.Id);
+        set.SigningKey!.SourceId.Should().Be(newest.Id);
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public sealed class SigningKeySetBuilderTests
 
         var set = Build(current, staged);
 
-        set.SigningKey.SourceId.Should().Be(current.Id);
+        set.SigningKey!.SourceId.Should().Be(current.Id);
         set.Published.Select(k => k.SourceId).Should().Contain(staged.Id);
     }
 
@@ -52,7 +52,7 @@ public sealed class SigningKeySetBuilderTests
 
         var set = Build(oldest, newer);
 
-        set.SigningKey.SourceId.Should().Be(oldest.Id);
+        set.SigningKey!.SourceId.Should().Be(oldest.Id);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class SigningKeySetBuilderTests
     {
         var only = CreateRsaSourceKey("only");
 
-        Build(only).SigningKey.SourceId.Should().Be(only.Id);
+        Build(only).SigningKey!.SourceId.Should().Be(only.Id);
     }
 
     [Fact]
@@ -70,8 +70,8 @@ public sealed class SigningKeySetBuilderTests
         var b = CreateRsaSourceKey("b", notBefore: date);
         var a = CreateRsaSourceKey("a", notBefore: date);
 
-        Build(b, a).SigningKey.SourceId.Should().Be(b.Id);
-        Build(a, b).SigningKey.SourceId.Should().Be(b.Id);
+        Build(b, a).SigningKey!.SourceId.Should().Be(b.Id);
+        Build(a, b).SigningKey!.SourceId.Should().Be(b.Id);
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class SigningKeySetBuilderTests
         // it is no validity gate.
         var only = CreateRsaSourceKey("only", notBefore: Now.AddDays(3));
 
-        Build(only).SigningKey.SourceId.Should().Be(only.Id);
+        Build(only).SigningKey!.SourceId.Should().Be(only.Id);
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class SigningKeySetBuilderTests
 
         var set = Build(current, future);
 
-        set.SigningKey.SourceId.Should().Be(current.Id);
+        set.SigningKey!.SourceId.Should().Be(current.Id);
         set.Published.Select(k => k.SourceId).Should().Contain(future.Id);
     }
 
@@ -104,7 +104,7 @@ public sealed class SigningKeySetBuilderTests
 
         var set = Build(old, current);
 
-        set.SigningKey.SourceId.Should().Be(current.Id);
+        set.SigningKey!.SourceId.Should().Be(current.Id);
         set.Published.Select(k => k.SourceId).Should().Contain(current.Id, "the signing key is always published");
     }
 
@@ -116,7 +116,7 @@ public sealed class SigningKeySetBuilderTests
 
         var set = Build(older, expired);
 
-        set.SigningKey.SourceId.Should().Be(older.Id);
+        set.SigningKey!.SourceId.Should().Be(older.Id);
         set.Published.Select(k => k.SourceId).Should().Equal(older.Id);
     }
 
@@ -129,7 +129,7 @@ public sealed class SigningKeySetBuilderTests
 
         var set = Build(older, expired);
 
-        set.SigningKey.SourceId.Should().Be(older.Id);
+        set.SigningKey!.SourceId.Should().Be(older.Id);
         set.Published.Select(k => k.SourceId).Should().Equal(older.Id, expired.Id);
     }
 
@@ -143,7 +143,7 @@ public sealed class SigningKeySetBuilderTests
 
         var set = Build(old, successor);
 
-        set.SigningKey.SourceId.Should().Be(successor.Id);
+        set.SigningKey!.SourceId.Should().Be(successor.Id);
         set.Published.Select(k => k.SourceId).Should().Equal(old.Id, successor.Id);
     }
 
@@ -156,7 +156,7 @@ public sealed class SigningKeySetBuilderTests
 
         var set = Build(oldest, predecessor, signing);
 
-        set.SigningKey.SourceId.Should().Be(signing.Id);
+        set.SigningKey!.SourceId.Should().Be(signing.Id);
         set.Published.Select(k => k.SourceId).Should().Equal(predecessor.Id, signing.Id);
     }
 
@@ -170,7 +170,7 @@ public sealed class SigningKeySetBuilderTests
 
         var set = Build(predecessor, signing);
 
-        set.SigningKey.SourceId.Should().Be(signing.Id);
+        set.SigningKey!.SourceId.Should().Be(signing.Id);
         set.Published.Select(k => k.SourceId).Should().Equal(signing.Id);
     }
 
@@ -194,9 +194,9 @@ public sealed class SigningKeySetBuilderTests
         var successor = CreateRsaSourceKey("successor", notBefore: Now.AddDays(-10));
         var timeline = Timeline(previous, successor);
 
-        var set = timeline.SettingAside(timeline.At(Now).SigningKey.Kid).At(Now);
+        var set = timeline.SettingAside(timeline.At(Now).SigningKey!.Kid)!.At(Now);
 
-        set.SigningKey.SourceId.Should().Be(previous.Id);
+        set.SigningKey!.SourceId.Should().Be(previous.Id);
         set.Published.Select(k => k.SourceId).Should().Equal(previous.Id, successor.Id);
     }
 
@@ -209,8 +209,8 @@ public sealed class SigningKeySetBuilderTests
         var successor = CreateRsaSourceKey("successor", notBefore: Now);
         var timeline = Timeline(current, successor);
 
-        timeline.At(Now + LeadTime - TimeSpan.FromTicks(1)).SigningKey.SourceId.Should().Be(current.Id);
-        timeline.At(Now + LeadTime).SigningKey.SourceId.Should().Be(successor.Id);
+        timeline.At(Now + LeadTime - TimeSpan.FromTicks(1)).SigningKey!.SourceId.Should().Be(current.Id);
+        timeline.At(Now + LeadTime).SigningKey!.SourceId.Should().Be(successor.Id);
     }
 
     [Fact]
@@ -299,7 +299,7 @@ public sealed class SigningKeySetBuilderTests
 
         var set = Build(current);
 
-        set.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(current.PublicKey.RsaPublicParameters!.Value));
+        set.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(current.PublicKey.RsaPublicParameters!.Value));
     }
 
     // ── Validation: the list and its dates ───────────────────────────────────────────────────────
@@ -471,16 +471,16 @@ public sealed class SigningKeySetBuilderTests
     {
         var current = CreateRsaSourceKey("current");
         var set = Build(current);
-        var originalKid = set.SigningKey.Kid;
+        var originalKid = set.SigningKey!.Kid;
 
         // A malicious component resolving the built set and mutating whatever it can reach: every
         // accessor returns a fresh copy, so none of this can move the recomputed kid.
-        var rsaParams = set.SigningKey.PublicKey.RsaPublicParameters!.Value;
+        var rsaParams = set.SigningKey!.PublicKey.RsaPublicParameters!.Value;
         rsaParams.Modulus![0] ^= 0xFF;
         rsaParams.Exponent![0] ^= 0xFF;
 
-        JwkThumbprint.Compute(set.SigningKey.PublicKey.RsaPublicParameters!.Value).Should().Be(originalKid);
-        set.SigningKey.Kid.Should().Be(originalKid);
+        JwkThumbprint.Compute(set.SigningKey!.PublicKey.RsaPublicParameters!.Value).Should().Be(originalKid);
+        set.SigningKey!.Kid.Should().Be(originalKid);
     }
 
     [Fact]
@@ -488,14 +488,14 @@ public sealed class SigningKeySetBuilderTests
     {
         var current = CreateEcSourceKey("current", ECCurve.NamedCurves.nistP256);
         var set = BuildAs(SigningAlgorithm.ES256, current);
-        var originalKid = set.SigningKey.Kid;
+        var originalKid = set.SigningKey!.Kid;
 
-        var ecParams = set.SigningKey.PublicKey.EcPublicParameters!.Value;
+        var ecParams = set.SigningKey!.PublicKey.EcPublicParameters!.Value;
         ecParams.Q.X![0] ^= 0xFF;
         ecParams.Q.Y![0] ^= 0xFF;
 
-        JwkThumbprint.Compute(set.SigningKey.PublicKey.EcPublicParameters!.Value).Should().Be(originalKid);
-        set.SigningKey.Kid.Should().Be(originalKid);
+        JwkThumbprint.Compute(set.SigningKey!.PublicKey.EcPublicParameters!.Value).Should().Be(originalKid);
+        set.SigningKey!.Kid.Should().Be(originalKid);
     }
 
     [Fact]
@@ -504,7 +504,7 @@ public sealed class SigningKeySetBuilderTests
         var current = CreateRsaSourceKey("current");
         var set = Build(current);
 
-        set.SigningKey.PublicKey.Should().NotBeSameAs(current.PublicKey);
+        set.SigningKey!.PublicKey.Should().NotBeSameAs(current.PublicKey);
     }
 
     // ── Validation: undefined algorithm ──────────────────────────────────────────────────────────
@@ -766,9 +766,7 @@ public sealed class SigningKeySetBuilderTests
     {
         var timeline = Timeline(CreateRsaSourceKey("only", notBefore: Now.AddDays(-10)));
 
-        var act = () => timeline.SettingAside(timeline.At(Now).SigningKey.Kid);
-
-        act.Should().Throw<InvalidOperationException>();
+        timeline.SettingAside(timeline.At(Now).SigningKey!.Kid).Should().BeNull();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────

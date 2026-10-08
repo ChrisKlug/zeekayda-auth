@@ -68,13 +68,13 @@ public sealed class FileSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle("the single listed file's public key must be published");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
         ring.Current.Algorithm.Should().Be(SigningAlgorithm.RS256);
 
         var signingInput = "header.payload"u8.ToArray();
         var outcome = await ring.SignAsync(signingInput, static (_, input) => input, ct);
 
-        using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        using var rsa = RSA.Create(ring.Current.SigningKey!.PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the ring must sign with the private key of the published file");
     }
@@ -104,7 +104,7 @@ public sealed class FileSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().HaveCount(2, "every listed file is published so relying parties can cache it");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(newer.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(newer.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class FileSigningIntegrationTests
         await StartHostedServicesAsync(provider, ct);
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
-        ring.Current.SigningKey.Kid.Should().Be(
+        ring.Current.SigningKey!.Kid.Should().Be(
             JwkThumbprint.Compute(older.GetRSAPublicKey()!.ExportParameters(false)),
             "a certificate newer than the lead time has not had time to reach relying parties' JWKS caches yet");
         ring.Current.Published.Should().HaveCount(2);
@@ -186,7 +186,7 @@ public sealed class FileSigningIntegrationTests
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
 
-        provider.GetRequiredService<SigningKeyRing>().Current.SigningKey.Kid
+        provider.GetRequiredService<SigningKeyRing>().Current.SigningKey!.Kid
             .Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
@@ -284,11 +284,11 @@ public sealed class FileSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle();
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
 
         var outcome = await ring.SignAsync("header.payload"u8.ToArray(), static (_, input) => input, ct);
 
-        using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        using var rsa = RSA.Create(ring.Current.SigningKey!.PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the ring must sign with the private key of the published file");
     }
@@ -318,7 +318,7 @@ public sealed class FileSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().HaveCount(2, "every listed file is published, each opened with its own password");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(newer.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(newer.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
     [Fact]
@@ -396,7 +396,28 @@ public sealed class FileSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Full_DI_wiring_surfaces_missing_file_as_ZeeKayDaConfigurationException()
+    public async Task Ring_stops_signing_at_the_next_read_after_the_only_listed_file_is_deleted()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WritePemFile("current.pem", certificate);
+        var (services, time) = BuildServices(T0);
+        services.AddZeeKayDaAuthCoreForTesting().AddPemFileSigning(path, SigningAlgorithm.RS256);
+        await using var provider = services.BuildServiceProvider();
+        await StartHostedServicesAsync(provider, ct);
+        var ring = provider.GetRequiredService<SigningKeyRing>();
+
+        File.Delete(path);
+        time.Advance(new SigningKeyOptions().RefreshInterval);
+        await ring.LastTransition;
+
+        ring.Current.SigningKey.Should().BeNull();
+        ring.Current.Published.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_fails_startup_with_no_keys_when_the_only_listed_file_is_missing()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -410,7 +431,7 @@ public sealed class FileSigningIntegrationTests
 
         var act = async () => await StartHostedServicesAsync(provider, ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).WithMessage("*file_not_found*");
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).WithMessage("*signing.no_keys*");
     }
 
     [Fact]
