@@ -49,13 +49,16 @@ internal sealed class JwksEndpoint(IOptions<AuthorizationServerOptions> options,
     // the startup check that names the actual problem.
     internal IResult Handle([FromServices] SigningKeyRing ring, HttpContext context)
     {
-        PublicMetadataHeaders.Apply(
-            context, options.Value.JwksEndpoint.CacheMaxAge, allowedOrigins);
-
         // The ring is initialized at startup or the host never started, so Current cannot throw
         // here; the reference check makes concurrent requests race only towards writing the same
         // bytes.
         var keySet = ring.Current;
+
+        // An empty set means signing has stopped; a relying party caching it would reject the
+        // resumed key's tokens for the whole cache lifetime.
+        PublicMetadataHeaders.Apply(
+            context, keySet.Published.Count == 0 ? TimeSpan.Zero : options.Value.JwksEndpoint.CacheMaxAge, allowedOrigins);
+
         var cached = _cached;
         if (cached is null || !ReferenceEquals(cached.KeySet, keySet))
         {

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
@@ -69,15 +70,32 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
                 "The signing key ring has not completed startup initialization yet."));
         }
 
-        if (state.Timeline is not { } timeline)
+        return Task.FromResult(state switch
         {
-            return Task.FromResult(HealthCheckResult.Unhealthy(
-                $"Signing has stopped ({state.StopReason}) and no key is published; the log names the cause. Signing " +
-                "resumes once the source lists keys the ring can use."));
-        }
+            SigningKeyRingState.Signing signing => WithReadFailure(
+                Evaluate(signing.Timeline, signing.KeySet, _timeProvider.GetUtcNow(), _options.Value.DegradedThreshold),
+                signing.ReadFailure),
+            SigningKeyRingState.Resuming resuming => HealthCheckResult.Unhealthy(
+                $"Signing has stopped ({resuming.Reason}) until the handover to the key due to sign completes; the log " +
+                "names the cause."),
+            SigningKeyRingState.Stopped stopped => HealthCheckResult.Unhealthy(
+                $"Signing has stopped ({stopped.Reason}) and no key is published; the log names the cause. Signing " +
+                "resumes once the source lists keys the ring can use."),
+            _ => throw new UnreachableException(),
+        });
+    }
 
-        return Task.FromResult(Evaluate(
-            timeline, state.KeySet, _timeProvider.GetUtcNow(), _options.Value.DegradedThreshold, state.ReadFailure));
+    /// <summary>
+    /// A ring serving the list before a failed read is at best Degraded, whatever that list's own health.
+    /// </summary>
+    private static HealthCheckResult WithReadFailure(HealthCheckResult result, string? readFailure)
+    {
+        if (readFailure is null || result.Status == HealthStatus.Unhealthy)
+            return result;
+
+        var reason = $"The last read of the signing key source failed ({readFailure}); the ring serves the list it read before.";
+        var description = result.Status == HealthStatus.Degraded ? $"{reason} {result.Description}" : reason;
+        return HealthCheckResult.Degraded(description, exception: null, result.Data);
     }
 
     /// <summary>
@@ -89,21 +107,12 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
     /// <param name="degradedThreshold">
     /// How far ahead a key must still be able to sign for <see cref="HealthStatus.Healthy"/>.
     /// </param>
-    /// <param name="readFailure">Why the last read of the source failed, or <see langword="null"/>.</param>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="set"/> has no signing key.</exception>
     internal static HealthCheckResult Evaluate(
-        SigningKeyTimeline timeline, SigningKeySet set, DateTimeOffset now, TimeSpan degradedThreshold,
-        string? readFailure = null)
+        SigningKeyTimeline timeline, SigningKeySet set, DateTimeOffset now, TimeSpan degradedThreshold)
     {
-        // Null with a timeline only while signing resumes, before the handover to the key due finishes.
-        var signingKey = set.SigningKey ?? timeline.SigningKeyAt(now);
-
-        var data = set.Published.ToDictionary(
-            key => key.Kid,
-            object (key) => new SigningKeyExpiryStatus(
-                key.Kid,
-                IsSigningKey: string.Equals(key.Kid, set.SigningKey?.Kid, StringComparison.Ordinal),
-                NeverExpires(key) ? null : key.ExpiresAt,
-                RemainingLifetime: NeverExpires(key) ? null : key.ExpiresAt - now));
+        var signingKey = set.SigningKey ?? throw new ArgumentException("The key set must have a signing key.", nameof(set));
+        var data = KeyData(set.Published, signingKey, now);
 
         if (signingKey.ExpiresAt <= now)
         {
@@ -122,12 +131,6 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
         }
 
         var reasons = DegradedReasons(timeline, signingKey, now, degradedThreshold).ToList();
-        if (readFailure is not null)
-        {
-            reasons.Insert(0,
-                $"The last read of the signing key source failed ({readFailure}); the ring serves the list it read before.");
-        }
-
         if (reasons.Count > 0)
             return HealthCheckResult.Degraded(string.Join(" ", reasons), exception: null, data);
 
@@ -169,6 +172,15 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
                 $"{signingKeyThen.ExpiresAt:O}, within the configured {degradedThreshold} threshold. List a successor.";
         }
     }
+
+    private static Dictionary<string, object> KeyData(IReadOnlyList<SigningKey> published, SigningKey signingKey, DateTimeOffset now) =>
+        published.ToDictionary(
+            key => key.Kid,
+            object (key) => new SigningKeyExpiryStatus(
+                key.Kid,
+                IsSigningKey: string.Equals(key.Kid, signingKey.Kid, StringComparison.Ordinal),
+                NeverExpires(key) ? null : key.ExpiresAt,
+                RemainingLifetime: NeverExpires(key) ? null : key.ExpiresAt - now));
 
     private static bool NeverExpires(SigningKey key) => key.ExpiresAt == DateTimeOffset.MaxValue;
 }

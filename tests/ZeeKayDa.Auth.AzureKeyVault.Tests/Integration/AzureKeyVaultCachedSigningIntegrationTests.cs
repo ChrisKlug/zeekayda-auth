@@ -149,7 +149,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var act = async () => await StartHostedServicesAsync(provider, ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*no_certificate_versions*");
+            .WithMessage("*signing.no_keys*");
     }
 
     [Fact]

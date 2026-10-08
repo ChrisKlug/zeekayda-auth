@@ -251,12 +251,12 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Full_DI_wiring_surfaces_certificate_not_found_as_ZeeKayDaConfigurationException()
+    public async Task Full_DI_wiring_fails_startup_with_no_keys_when_the_certificate_is_not_in_the_store()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
         var ct = TestContext.Current.CancellationToken;
-        var (services, _, _) = BuildServices(T0); // No certificate registered -> certificate_not_found.
+        var (services, _, _) = BuildServices(T0); // No certificate registered -> nothing listed.
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddWindowsCertificateStoreSigning(Lookup(CurrentThumbprint), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
@@ -264,7 +264,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         await using var provider = services.BuildServiceProvider();
         var act = async () => await StartHostedServicesAsync(provider, ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).WithMessage("*certificate_not_found*");
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).WithMessage("*signing.no_keys*");
     }
 
     [Fact]

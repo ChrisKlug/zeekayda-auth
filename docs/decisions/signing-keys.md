@@ -24,12 +24,13 @@ defaults to two days, or the longer token lifetime plus clock skew, so a replica
 signs on safely; lower warns. Ties go to the greater source id. A key with bad material or dates is dropped (Warning,
 Degraded) unless due to sign now; at startup that, an ambiguous list, or every key expired is fatal.
 
-**The ring re-reads its source every `RefreshInterval` (default 5 min)**, so `LeadTime ≥ CacheMaxAge +
-RefreshInterval`. A read that throws or exceeds a minute keeps the last list (Error, Degraded). No keys is a full
-revocation; an ambiguous list or a bad key due now is refused alike, so one bad key cannot freeze the old set: signing
-stops (`SigningKey` null, `SignAsync` throws, JWKS `{"keys":[]}`, Unhealthy) until a good read. A successor whose
-signer fails or exceeds a minute is set aside until the next read, and for good once its predecessor is superseded
-(`NotBefore + LeadTime + RetainRetiredKeysFor`). An unlisted key's signer is disposed at the second read without it.
+**The ring re-reads its source every `RefreshInterval` (default 5 min, minimum 1)**, so `LeadTime ≥ CacheMaxAge +
+RefreshInterval`. A read that throws or exceeds a minute keeps the last list (Error, Degraded); none starts while one is
+still running. No keys is a full revocation; an ambiguous list or a bad key due now is refused alike, so one bad key
+cannot freeze the old set: signing stops (`SigningKey` null, `SignAsync` throws, JWKS `{"keys":[]}` no-store, Unhealthy)
+until a good read and its handover. An unlisted signing key stops at that read. Sources list a deleted file, certificate
+or vault object as nothing, so removing a key revokes it. A failed successor is set aside until the next read, and for
+good once its predecessor is superseded. An unlisted key's signer is disposed at the second read without it.
 
 **File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list
 `Files`/`Certificates` with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`.
@@ -43,9 +44,8 @@ vault URI, certificate thumbprint, or file path into every issued token.
 
 **The Key Vault sources list every enabled version, dated by vault metadata every replica agrees on.** A
 version counts from the later of its `CreatedOn` and its own `nbf`, never first-seen time; its `exp` is its
-expiry. Disabling a version unlists it — the one revocation lever; disabling all lists none, a full revocation.
-A listed version whose identifier is not pinned to that version is rejected, since the SDK resolves an unpinned
-URI to whatever version is newest at sign time. `MaxVersions` (default all, minimum 3: staged, signing, previous) lists only the
+expiry. Disabling a version unlists it. A version whose identifier is not pinned to it is rejected, since the SDK
+resolves an unpinned URI to whatever version is newest at sign time. `MaxVersions` (default all, minimum 3: staged, signing, previous) lists only the
 newest N, so only their public keys are fetched; too low drops a version whose tokens are still live.
 
 **The cached Key Vault source downloads private material only for the version the ring asks to sign.** Reads

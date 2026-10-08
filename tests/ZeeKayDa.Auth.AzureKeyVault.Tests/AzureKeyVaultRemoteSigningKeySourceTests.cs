@@ -138,15 +138,33 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
     // ── Failure paths: always throw, never a partial set ─────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_when_the_key_has_no_versions()
+    public async Task ReadAsync_abandoned_by_the_ring_does_not_replace_the_versions_a_signer_may_open()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0);
+        var sut = BuildSource(reader);
+        await sut.ReadAsync(ct);
+        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
+        using var abandoned = new CancellationTokenSource();
+        await abandoned.CancelAsync();
+
+        var act = async () => await sut.ReadAsync(abandoned.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        var openUnlisted = async () => await sut.CreateSignerAsync(new SourceKeyId("v2"), ct);
+        await openUnlisted.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task ReadAsync_lists_nothing_when_the_key_has_no_versions()
     {
         var ct = TestContext.Current.CancellationToken;
         var sut = BuildSource(new FakeKeyVaultKeyReader());
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*no_key_versions*");
+        keys.Should().BeEmpty();
     }
 
     [Fact]

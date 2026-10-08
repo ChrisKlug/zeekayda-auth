@@ -200,7 +200,7 @@ public sealed class PemFileSigningKeySourceTests
     // ── Every read hits the disk ─────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_after_a_listed_file_is_deleted()
+    public async Task ReadAsync_no_longer_lists_a_deleted_file_so_deleting_it_revokes_the_key()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -210,10 +210,9 @@ public sealed class PemFileSigningKeySourceTests
         await sut.ReadAsync(ct);
         File.Delete(path);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_not_found");
+        keys.Should().BeEmpty();
     }
 
     [Fact]
@@ -238,18 +237,16 @@ public sealed class PemFileSigningKeySourceTests
     // ── Missing and invalid files ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_when_a_listed_file_does_not_exist()
+    public async Task ReadAsync_lists_nothing_for_a_listed_file_that_does_not_exist()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         var missingPath = tempDir.GetPath("does-not-exist.pem");
         var sut = BuildSource(new PemSigningFile(missingPath));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_not_found");
-        exception.Which.Message.Should().Contain(missingPath);
+        keys.Should().BeEmpty();
     }
 
     [Fact]

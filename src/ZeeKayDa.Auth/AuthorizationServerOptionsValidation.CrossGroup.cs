@@ -59,14 +59,14 @@ internal static partial class AuthorizationServerOptionsValidation
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateSigningKeyLeadTime(AuthorizationServerOptions options)
     {
         var signingKeys = options.SigningKeys;
-        if (signingKeys.LeadTime <= TimeSpan.Zero || signingKeys.RefreshInterval <= TimeSpan.Zero)
+        if (signingKeys.LeadTime <= TimeSpan.Zero || signingKeys.RefreshInterval < SigningKeyOptions.MinimumRefreshInterval)
             yield break;
 
         var unknownFor = TokenLifetimes.Sum(options.JwksEndpoint.CacheMaxAge, signingKeys.RefreshInterval);
         if (signingKeys.LeadTime < unknownFor)
         {
             yield return new(
-                "configuration.signing_keys.lead_time.shorter_than_jwks_cache_max_age",
+                "configuration.signing_keys.lead_time.shorter_than_jwks_cache_max_age_plus_refresh_interval",
                 $"AuthorizationServerOptions.SigningKeys.LeadTime ({signingKeys.LeadTime}) is shorter than " +
                 $"AuthorizationServerOptions.JwksEndpoint.CacheMaxAge ({options.JwksEndpoint.CacheMaxAge}) plus " +
                 $"AuthorizationServerOptions.SigningKeys.RefreshInterval ({signingKeys.RefreshInterval}). A relying " +

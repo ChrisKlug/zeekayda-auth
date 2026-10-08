@@ -45,8 +45,10 @@ internal sealed class PfxFileSigningKeySource(
 
         foreach (var file in options.Files)
         {
+            // A deleted certificate file is no longer listed: deleting it revokes the key.
             using var certificate = await LoadPublicCertificateAsync(file, cancellationToken).ConfigureAwait(false);
-            keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(file.Path)));
+            if (certificate is not null)
+                keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(file.Path)));
         }
 
         return keys;
@@ -67,17 +69,20 @@ internal sealed class PfxFileSigningKeySource(
 
     /// <summary>
     /// Reads the signing certificate out of the PKCS#12 bundle <paramref name="file"/> without
-    /// decrypting its key bag, so listing imports no private key into a key object.
+    /// decrypting its key bag, so listing imports no private key into a key object. Returns
+    /// <see langword="null"/> when the file does not exist.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The file is not a valid PKCS#12 bundle, is not MAC-protected, fails its integrity check
     /// (wrong password or tampering), uses an unsupported confidentiality mode, carries no private
     /// key, or does not identify exactly one signing certificate.
     /// </exception>
-    private async ValueTask<X509Certificate2> LoadPublicCertificateAsync(
+    private async ValueTask<X509Certificate2?> LoadPublicCertificateAsync(
         PfxFile file, CancellationToken cancellationToken)
     {
-        var bytes = await reader.ReadAllBytesAsync(file.Path, cancellationToken).ConfigureAwait(false);
+        if (await reader.TryReadAllBytesAsync(file.Path, cancellationToken).ConfigureAwait(false) is not { } bytes)
+            return null;
+
         var password = await file.PasswordSource(cancellationToken).ConfigureAwait(false);
 
         try

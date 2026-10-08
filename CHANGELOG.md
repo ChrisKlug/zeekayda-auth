@@ -558,23 +558,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - **BREAKING: the signing key ring re-reads its source every `SigningKeys.RefreshInterval`** (#527).
-  The new option defaults to five minutes and must be positive, and
-  `SigningKeys.LeadTime` must now cover `JwksEndpoint.CacheMaxAge` plus `RefreshInterval`
-  (`configuration.signing_keys.refresh_interval.not_positive`; the existing lead-time code). A key
-  added to the source is published within one interval, without a restart. A read that throws, or
-  does not complete within a minute, keeps the last list, logs an Error and makes
-  `SigningKeyExpiryHealthCheck` report `Degraded`. A read listing no keys is a full revocation.
-  The same goes for a list the ring must refuse (a `null` entry, a duplicate source id or `kid`, an
-  undated key among several) and for a list whose key due to sign now is unusable, including a bad
-  staged key once its lead time passes. In all of these, signing stops: `SigningKeySet.SigningKey`
-  is now nullable and is `null`, `Published` and the JWKS are empty, `SignAsync` throws
+  The new option defaults to five minutes and must be at least one minute
+  (`configuration.signing_keys.refresh_interval.below_minimum`). `SigningKeys.LeadTime` must now
+  cover `JwksEndpoint.CacheMaxAge` plus `RefreshInterval`; the code is renamed
+  `configuration.signing_keys.lead_time.shorter_than_jwks_cache_max_age_plus_refresh_interval`. A
+  key added to the source is published within one interval, without a restart. A read that throws,
+  or does not complete within a minute, keeps the last list, logs an Error and makes
+  `SigningKeyExpiryHealthCheck` report `Degraded`; no second read starts while an abandoned one is
+  still running. A read listing no keys is a full revocation. So is a list the ring must refuse (a
+  `null` entry, a duplicate source id or `kid`, an undated key among several), and so is a list
+  whose key due to sign now is unusable, including a bad staged key once its lead time passes. In
+  all of these, signing stops: `SigningKeySet.SigningKey` is now nullable and is `null`,
+  `Published` and the JWKS are empty (served `Cache-Control: no-store`), `SignAsync` throws
   `InvalidOperationException` (the token endpoint answers `server_error`), and the health check
-  reports `Unhealthy`. A later read listing usable keys resumes signing. `SigningKeySet.Algorithm`
-  is a stored value, read from the source once at startup, so a source cannot change it at runtime.
-  A successor whose signer failed is set aside until the next read rather than until a restart, and
-  for good once its predecessor is superseded. The signer of a key absent from two reads in a row is
-  disposed. The Key Vault sources list nothing when every version is disabled, so disabling the last
-  version revokes signing; `signing.azure_key_vault.no_enabled_version` is removed.
+  reports `Unhealthy`. A later read listing usable keys resumes signing; the health check stays
+  `Unhealthy` until the resumed key's handover completes. A signing key the source stops listing
+  stops signing and is unpublished at that read, not when its successor takes over.
+  `SigningKeySet.Algorithm` is a stored value, read from the source once at startup, so a source
+  cannot change it at runtime. A successor whose signer failed is set aside until the next read
+  rather than until a restart, and for good once its predecessor is superseded. The signer of a key
+  absent from two reads in a row is disposed. Removing a key at its source now revokes it:
+  - the PEM and PFX sources list nothing for a certificate file that does not exist, with a
+    Warning;
+  - the Windows store source lists nothing for a certificate no longer in the store;
+  - the Key Vault sources list nothing for a deleted object, or when every version is disabled.
+
+  Startup with nothing listed fails with `signing.no_keys`.
+  `signing.azure_key_vault.no_enabled_version`, `.no_key_versions` and `.no_certificate_versions`
+  are removed, and `signing.file_signing.file_not_found` and
+  `signing.windows_certificate_store.certificate_not_found` no longer fail a read.
 
 - **BREAKING: a signing source declares one algorithm, and the server signs only with it; the
   advertised-algorithm filter is gone** (#905). `ISigningKeySource` gains

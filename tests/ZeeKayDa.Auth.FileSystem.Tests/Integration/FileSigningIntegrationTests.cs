@@ -396,7 +396,28 @@ public sealed class FileSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Full_DI_wiring_surfaces_missing_file_as_ZeeKayDaConfigurationException()
+    public async Task Ring_stops_signing_at_the_next_read_after_the_only_listed_file_is_deleted()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WritePemFile("current.pem", certificate);
+        var (services, time) = BuildServices(T0);
+        services.AddZeeKayDaAuthCoreForTesting().AddPemFileSigning(path, SigningAlgorithm.RS256);
+        await using var provider = services.BuildServiceProvider();
+        await StartHostedServicesAsync(provider, ct);
+        var ring = provider.GetRequiredService<SigningKeyRing>();
+
+        File.Delete(path);
+        time.Advance(new SigningKeyOptions().RefreshInterval);
+        await ring.LastTransition;
+
+        ring.Current.SigningKey.Should().BeNull();
+        ring.Current.Published.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Full_DI_wiring_fails_startup_with_no_keys_when_the_only_listed_file_is_missing()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -410,7 +431,7 @@ public sealed class FileSigningIntegrationTests
 
         var act = async () => await StartHostedServicesAsync(provider, ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).WithMessage("*file_not_found*");
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).WithMessage("*signing.no_keys*");
     }
 
     [Fact]

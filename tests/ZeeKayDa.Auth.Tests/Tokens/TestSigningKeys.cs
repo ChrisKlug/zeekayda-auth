@@ -313,6 +313,12 @@ internal static class TestSigningKeys
         /// <summary>Runs inside each read, before it returns — to move a clock while the source is read.</summary>
         public Action? DuringRead { get; set; }
 
+        /// <summary>When set, a signer opens only once this completes.</summary>
+        public TaskCompletionSource? SignerGate { get; set; }
+
+        /// <summary>Completes when a signer is next asked for.</summary>
+        public TaskCompletionSource SignerRequested { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public SigningAlgorithm Algorithm { get; set; } = SigningAlgorithm.ES256;
 
         public int Reads { get; set; }
@@ -334,11 +340,15 @@ internal static class TestSigningKeys
                 : Task.FromResult<IReadOnlyList<SourceKey>>([.. listing.Pairs.Select(pair => pair.Key)]);
         }
 
-        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public async Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             var pair = listing.Pairs.Single(pair => pair.Key.Id == id);
+            listing.SignerRequested.TrySetResult();
+            if (listing.SignerGate is { } gate)
+                await gate.Task;
+
             ISigner signer = new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(pair.PrivateKey));
-            return Task.FromResult(decorateSigner is null ? signer : decorateSigner(signer));
+            return decorateSigner is null ? signer : decorateSigner(signer);
         }
     }
 

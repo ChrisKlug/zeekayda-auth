@@ -24,9 +24,12 @@ public sealed class SigningKeyOptions
     /// <remarks>
     /// A key added to the source is published within this long of being listed, so it has been
     /// published for the lead time when it signs; a key removed stops signing and is unpublished
-    /// within it. Must be greater than zero.
+    /// within it. Must be at least one minute.
     /// </remarks>
     public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>The shortest <see cref="RefreshInterval"/> accepted.</summary>
+    internal static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
 
     // Long enough that a slow or failed handover on one replica is noticed and fixed before the
     // other replicas stop publishing the key it still signs with.

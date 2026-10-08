@@ -83,6 +83,25 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_read_still_running_after_its_deadline_is_not_started_again_at_the_next_read()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
+        var listing = new TestSigningKeys.Listing(TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)));
+        using var ring = TestSigningKeys.Ring(listing, clock, logger);
+        listing.ReadHangs = true;
+        clock.Advance(RefreshInterval);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await ring.LastTransition;
+
+        await ReadAgainAsync(ring, clock);
+
+        listing.Reads.Should().BeLessThanOrEqualTo(2, "the startup read, then at most the one still running");
+        logger.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains("has not completed"));
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+    }
+
+    [Fact]
     public async Task A_good_read_after_a_failed_one_makes_the_health_check_Healthy_again()
     {
         var clock = new FakeTimeProvider(Epoch);
@@ -196,6 +215,51 @@ public sealed class SigningKeyRingPollingTests
         var outcome = await SignAsync(ring);
         outcome.Key.SourceId.Value.Should().Be("replacement");
         ring.Current.Published.Select(key => key.SourceId.Value).Should().Equal("replacement");
+        (await HealthAsync(ring, clock)).Status.Should().NotBe(HealthStatus.Unhealthy);
+    }
+
+    [Fact]
+    public async Task A_signing_key_no_longer_listed_stops_signing_and_is_unpublished_before_its_successor_s_signer_opens()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var previous = TestSigningKeys.Pair("previous", notBefore: Epoch.AddDays(-90));
+        var listing = new TestSigningKeys.Listing(previous, TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-30)));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.SignerGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        listing.SignerRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        listing.Pairs = [previous];
+        clock.Advance(RefreshInterval);
+        await listing.SignerRequested.Task;
+
+        ring.Current.SigningKey.Should().BeNull();
+        ring.Current.Published.Select(key => key.SourceId.Value).Should().Equal("previous");
+        await FluentActions.Awaiting(() => SignAsync(ring)).Should().ThrowAsync<InvalidOperationException>();
+        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Unhealthy);
+
+        listing.SignerGate.SetResult();
+        await ring.LastTransition;
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("previous");
+    }
+
+    [Fact]
+    public async Task The_health_check_is_Unhealthy_while_signing_resumes_until_the_handover_completes()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var listing = new TestSigningKeys.Listing(TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.Pairs = [];
+        await ReadAgainAsync(ring, clock);
+        listing.SignerGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        listing.SignerRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        listing.Pairs = [TestSigningKeys.Pair("replacement", notBefore: clock.GetUtcNow())];
+        clock.Advance(RefreshInterval);
+        await listing.SignerRequested.Task;
+
+        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Unhealthy);
+        listing.SignerGate.SetResult();
+        await ring.LastTransition;
         (await HealthAsync(ring, clock)).Status.Should().NotBe(HealthStatus.Unhealthy);
     }
 

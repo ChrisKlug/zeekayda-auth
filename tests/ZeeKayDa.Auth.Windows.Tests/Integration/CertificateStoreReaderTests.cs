@@ -53,7 +53,7 @@ public sealed class CertificateStoreReaderTests
     }
 
     [Fact]
-    public void GetCertificate_finds_and_returns_an_installed_certificate_by_thumbprint()
+    public void FindCertificate_finds_and_returns_an_installed_certificate_by_thumbprint()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "requires a real Windows Certificate Store");
 
@@ -61,27 +61,21 @@ public sealed class CertificateStoreReaderTests
         using var installed = new InstalledTestCertificate(testCertificate);
         var reader = new CertificateStoreReader();
 
-        using var found = reader.GetCertificate(ThumbprintFormat.Normalize(installed.Thumbprint), StoreLocation.CurrentUser, StoreName.My);
+        using var found = reader.FindCertificate(ThumbprintFormat.Normalize(installed.Thumbprint), StoreLocation.CurrentUser, StoreName.My)!;
 
         found.Thumbprint.Should().Be(installed.Thumbprint);
         found.HasPrivateKey.Should().BeTrue();
     }
 
     [Fact]
-    public void GetCertificate_throws_certificate_not_found_naming_thumbprint_store_and_location_when_absent()
+    public void FindCertificate_returns_null_when_the_certificate_is_absent()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "requires a real Windows Certificate Store");
 
         var reader = new CertificateStoreReader();
         const string missingThumbprint = "0000000000000000000000000000000000000A";
 
-        var act = () => reader.GetCertificate(missingThumbprint, StoreLocation.CurrentUser, StoreName.My);
-
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .WithMessage("*certificate_not_found*")
-            .WithMessage($"*{missingThumbprint}*")
-            .WithMessage("*My*")
-            .WithMessage("*CurrentUser*");
+        reader.FindCertificate(missingThumbprint, StoreLocation.CurrentUser, StoreName.My).Should().BeNull();
     }
 
     // ── Real store-backed handle-outlives-certificate contract (security review informational #2) ──
@@ -90,13 +84,13 @@ public sealed class CertificateStoreReaderTests
     // CertificateRequest.CreateSelfSigned certificates. This test proves the same contract holds for
     // the actual production code path this provider depends on: a certificate installed into a real
     // Windows Certificate Store, read back via CertificateStoreReader (which returns an independent
-    // copy per GetCertificate's own contract), with its private key extracted and the returned
+    // copy per FindCertificate's own contract), with its private key extracted and the returned
     // certificate then disposed before the extracted handle is used to sign — exactly the sequence
     // WindowsCertificateStoreSigningJwtSigningService.ListKeysAsync/CreateSignerAsync perform. Running this on the
     // windows-latest CI runner automates the security-critical part of what would otherwise be a
     // manual smoke test.
     [Fact]
-    public void GetCertificate_extracted_private_key_handle_signs_correctly_after_the_returned_certificate_is_disposed()
+    public void FindCertificate_extracted_private_key_handle_signs_correctly_after_the_returned_certificate_is_disposed()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "requires a real Windows Certificate Store");
 
@@ -108,7 +102,7 @@ public sealed class CertificateStoreReaderTests
         using var installed = new InstalledTestCertificate(testCertificate);
         var reader = new CertificateStoreReader();
 
-        var found = reader.GetCertificate(ThumbprintFormat.Normalize(installed.Thumbprint), StoreLocation.CurrentUser, StoreName.My);
+        var found = reader.FindCertificate(ThumbprintFormat.Normalize(installed.Thumbprint), StoreLocation.CurrentUser, StoreName.My)!;
         AsymmetricAlgorithm privateKey;
         SigningKeyType keyType;
         try
@@ -137,7 +131,7 @@ public sealed class CertificateStoreReaderTests
     }
 
     [Fact]
-    public void GetCertificate_normalizes_thumbprint_with_embedded_whitespace()
+    public void FindCertificate_normalizes_thumbprint_with_embedded_whitespace()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "requires a real Windows Certificate Store");
 
@@ -146,7 +140,7 @@ public sealed class CertificateStoreReaderTests
         var reader = new CertificateStoreReader();
         var spacedOut = string.Join(" ", installed.Thumbprint.Chunk(2).Select(c => new string(c)));
 
-        using var found = reader.GetCertificate(ThumbprintFormat.Normalize(spacedOut), StoreLocation.CurrentUser, StoreName.My);
+        using var found = reader.FindCertificate(ThumbprintFormat.Normalize(spacedOut), StoreLocation.CurrentUser, StoreName.My)!;
 
         found.Thumbprint.Should().Be(installed.Thumbprint);
     }

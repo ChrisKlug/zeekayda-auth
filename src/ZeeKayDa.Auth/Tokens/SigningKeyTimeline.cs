@@ -42,31 +42,25 @@ internal sealed class SigningKeyTimeline
     /// <param name="options">The lead time and the resolved retention.</param>
     internal SigningKeyTimeline(
         ImmutableArray<SigningKey> oldestFirst, ImmutableArray<DroppedKey> dropped, SigningAlgorithm algorithm, SigningKeyOptions options)
-        : this(
-            oldestFirst,
-            dropped,
-            algorithm,
-            options.LeadTime,
-            options.RetainRetiredKeysFor
-                ?? throw new InvalidOperationException(
-                    $"{nameof(SigningKeyOptions.RetainRetiredKeysFor)} is resolved when the options are configured."),
-            [])
-    {
-    }
-
-    private SigningKeyTimeline(
-        ImmutableArray<SigningKey> oldestFirst,
-        ImmutableArray<DroppedKey> dropped,
-        SigningAlgorithm algorithm,
-        TimeSpan leadTime,
-        TimeSpan retention,
-        ImmutableList<SigningKey> setAside)
     {
         _oldestFirst = oldestFirst;
         Dropped = dropped;
         _algorithm = algorithm;
-        _leadTime = leadTime;
-        _retention = retention;
+        _leadTime = options.LeadTime;
+        _retention = options.RetainRetiredKeysFor
+            ?? throw new InvalidOperationException(
+                $"{nameof(SigningKeyOptions.RetainRetiredKeysFor)} is resolved when the options are configured.");
+        SetAside = [];
+    }
+
+    /// <summary>The keys of <paramref name="listed"/>, with <paramref name="setAside"/> set aside.</summary>
+    private SigningKeyTimeline(SigningKeyTimeline listed, ImmutableList<SigningKey> setAside)
+    {
+        _oldestFirst = listed._oldestFirst;
+        Dropped = listed.Dropped;
+        _algorithm = listed._algorithm;
+        _leadTime = listed._leadTime;
+        _retention = listed._retention;
         SetAside = setAside;
     }
 
@@ -142,7 +136,7 @@ internal sealed class SigningKeyTimeline
         if (_oldestFirst.All(key => key.Kid == kid || SetAside.Contains(key)))
             return null;
 
-        return new(_oldestFirst, Dropped, _algorithm, _leadTime, _retention, SetAside.Add(_oldestFirst.Single(key => key.Kid == kid)));
+        return new(this, SetAside.Add(_oldestFirst.Single(key => key.Kid == kid)));
     }
 
     /// <summary>

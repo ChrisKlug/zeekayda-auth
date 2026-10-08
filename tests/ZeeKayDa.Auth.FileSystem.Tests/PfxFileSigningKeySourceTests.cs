@@ -428,7 +428,7 @@ public sealed class PfxFileSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_throws_after_a_listed_bundle_is_deleted()
+    public async Task ReadAsync_no_longer_lists_a_deleted_bundle_so_deleting_it_revokes_the_key()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -438,10 +438,9 @@ public sealed class PfxFileSigningKeySourceTests
         await sut.ReadAsync(ct);
         File.Delete(path);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_not_found");
+        keys.Should().BeEmpty();
     }
 
     [Fact]
@@ -467,18 +466,16 @@ public sealed class PfxFileSigningKeySourceTests
     // ── Missing file, wrong password, invalid bundle ─────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_when_a_listed_file_does_not_exist()
+    public async Task ReadAsync_lists_nothing_for_a_listed_file_that_does_not_exist()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         var missingPath = tempDir.GetPath("does-not-exist.pfx");
         var sut = BuildSource(new PfxFile(missingPath, Password()));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_not_found");
-        exception.Which.Message.Should().Contain(missingPath);
+        keys.Should().BeEmpty();
     }
 
     [Fact]

@@ -170,15 +170,14 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
     // ── Failure paths: always throw, never a partial set ─────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_when_the_certificate_has_no_versions()
+    public async Task ReadAsync_lists_nothing_when_the_certificate_has_no_versions()
     {
         var ct = TestContext.Current.CancellationToken;
         var sut = BuildSource(new FakeKeyVaultCertificateReader());
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*no_certificate_versions*");
+        keys.Should().BeEmpty();
     }
 
     [Fact]

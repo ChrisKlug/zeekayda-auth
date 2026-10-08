@@ -44,8 +44,10 @@ internal sealed class PemFileSigningKeySource(
 
         foreach (var file in options.Files)
         {
+            // A deleted certificate file is no longer listed: deleting it revokes the key.
             using var certificate = await LoadPublicCertificateAsync(file, cancellationToken).ConfigureAwait(false);
-            keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(file.Path)));
+            if (certificate is not null)
+                keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(file.Path)));
         }
 
         return keys;
@@ -66,17 +68,19 @@ internal sealed class PemFileSigningKeySource(
     /// <summary>
     /// Parses only the certificate of <paramref name="file"/>, and checks that the file can sign
     /// without parsing or importing its private key: any listed file may be chosen to sign, so one
-    /// that cannot fails now rather than at the restart that chooses it.
+    /// that cannot fails now rather than at the restart that chooses it. Returns <see langword="null"/>
+    /// when the certificate file does not exist.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The file does not contain a valid PEM-encoded certificate; a combined file carries no private
     /// key block; or a separate key file is missing, symlinked or too permissive.
     /// </exception>
-    private async ValueTask<X509Certificate2> LoadPublicCertificateAsync(
+    private async ValueTask<X509Certificate2?> LoadPublicCertificateAsync(
         PemSigningFile file, CancellationToken cancellationToken)
     {
         var certificatePath = file.Path;
-        var certPem = await reader.ReadPemTextAsync(certificatePath, cancellationToken).ConfigureAwait(false);
+        if (await reader.TryReadPemTextAsync(certificatePath, cancellationToken).ConfigureAwait(false) is not { } certPem)
+            return null;
 
         X509Certificate2 certificate;
         try

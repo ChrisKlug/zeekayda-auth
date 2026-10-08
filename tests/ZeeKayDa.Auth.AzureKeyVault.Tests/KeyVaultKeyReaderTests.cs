@@ -171,8 +171,20 @@ public sealed class KeyVaultKeyReaderTests
             "the listing must be for the configured key, nothing else");
     }
 
+    [Fact]
+    public async Task GetKeyVersionsAsync_lists_nothing_when_the_key_was_deleted()
+    {
+        var client = new FakeKeyClient
+        {
+            OnGetVersions = () => FakeAsyncPageable<KeyProperties>.Throwing(new RequestFailedException(404, "gone")),
+        };
+
+        var versions = await Collect(BuildReader(client));
+
+        versions.Should().BeEmpty();
+    }
+
     [Theory]
-    [InlineData(404, "key_not_found")]
     [InlineData(401, "access_denied")]
     [InlineData(403, "access_denied")]
     [InlineData(500, "startup_failure")]

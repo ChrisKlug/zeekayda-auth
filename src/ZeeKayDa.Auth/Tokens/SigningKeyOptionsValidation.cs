@@ -13,11 +13,13 @@ internal static class SigningKeyOptionsValidation
                 "AuthorizationServerOptions.SigningKeys.LeadTime must be greater than zero.");
         }
 
-        if (signingKeys.RefreshInterval <= TimeSpan.Zero)
+        // An unlisted key's signer is disposed a read after it leaves the list, so the interval is also
+        // how long a sign call already under way has; a read gets a minute before it is abandoned.
+        if (signingKeys.RefreshInterval < SigningKeyOptions.MinimumRefreshInterval)
         {
             yield return new(
-                "configuration.signing_keys.refresh_interval.not_positive",
-                "AuthorizationServerOptions.SigningKeys.RefreshInterval must be greater than zero.");
+                "configuration.signing_keys.refresh_interval.below_minimum",
+                $"AuthorizationServerOptions.SigningKeys.RefreshInterval must be at least {SigningKeyOptions.MinimumRefreshInterval}.");
         }
 
         if (signingKeys.RetainRetiredKeysFor < TimeSpan.Zero)

@@ -108,7 +108,7 @@ internal sealed class AuthorizationCodeGrant(
         // it by the time the ID token is refused. The signing callback repeats the check against
         // the key that actually signs; a handover between the two cannot change the outcome, since
         // every key a source lists signs under its one algorithm.
-        if (!ClientAcceptsSigningKey(client, context.RequestServices.GetRequiredService<SigningKeyRing>().Current.Algorithm))
+        if (!ClientAcceptsSigningAlgorithm(client, context.RequestServices.GetRequiredService<SigningKeyRing>().Current.Algorithm))
         {
             logger.LogError("Client {ClientId} does not allow ID tokens signed with the current signing key's algorithm; nothing was issued.", client.ClientId);
             return TokenResponses.ServerError();
@@ -215,7 +215,7 @@ internal sealed class AuthorizationCodeGrant(
     private static bool VerifierProvesTheChallengeTheCodeWasIssuedWith(TokenRequest request, AuthorizationCodeEntry entry) =>
         entry.Pkce is not { } pkce || (request.CodeVerifier is { } verifier && PkceVerifier.Verify(verifier, pkce));
 
-    internal static bool ClientAcceptsSigningKey(IClient client, SigningAlgorithm algorithm) =>
+    internal static bool ClientAcceptsSigningAlgorithm(IClient client, SigningAlgorithm algorithm) =>
         client.AllowedSigningAlgorithms is not { } allowed || allowed.Contains(algorithm);
 
     private static ITokenIssuer Issuer(HttpContext context, TokenKind kind) =>

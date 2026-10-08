@@ -668,8 +668,20 @@ public sealed class KeyVaultCertificateReaderTests
             "the listing must be for the configured certificate, nothing else");
     }
 
+    [Fact]
+    public async Task GetCertificateVersionsAsync_lists_nothing_when_the_certificate_was_deleted()
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersions = () => FakeAsyncPageable<CertificateProperties>.Throwing(new RequestFailedException(404, "gone")),
+        };
+
+        var versions = await Collect(BuildReader(client));
+
+        versions.Should().BeEmpty();
+    }
+
     [Theory]
-    [InlineData(404, "certificate_not_found")]
     [InlineData(401, "access_denied")]
     [InlineData(403, "access_denied")]
     [InlineData(500, "startup_failure")]

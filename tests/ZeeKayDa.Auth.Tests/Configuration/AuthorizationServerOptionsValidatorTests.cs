@@ -1486,7 +1486,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
             SigningKeys = { LeadTime = TimeSpan.FromHours(2) + TimeSpan.FromMinutes(5) - TimeSpan.FromSeconds(1) },
         });
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.signing_keys.lead_time.shorter_than_jwks_cache_max_age");
+        failures.Should().ContainSingle(f => f.Code == "configuration.signing_keys.lead_time.shorter_than_jwks_cache_max_age_plus_refresh_interval");
     }
 
     [Fact]
@@ -1503,17 +1503,30 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Theory]
+    [InlineData(59)]
     [InlineData(0)]
     [InlineData(-1)]
-    public void Validate_fails_when_the_signing_key_RefreshInterval_is_not_positive(int minutes)
+    public void Validate_refuses_a_signing_key_RefreshInterval_below_one_minute(int seconds)
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            SigningKeys = { RefreshInterval = TimeSpan.FromMinutes(minutes) },
+            SigningKeys = { RefreshInterval = TimeSpan.FromSeconds(seconds) },
         });
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.signing_keys.refresh_interval.not_positive");
+        failures.Should().ContainSingle(f => f.Code == "configuration.signing_keys.refresh_interval.below_minimum");
+    }
+
+    [Fact]
+    public void Validate_accepts_a_signing_key_RefreshInterval_of_one_minute()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            SigningKeys = { RefreshInterval = TimeSpan.FromMinutes(1) },
+        });
+
+        failures.Should().NotContain(f => f.Code.StartsWith("configuration.signing_keys", StringComparison.Ordinal));
     }
 
     [Theory]

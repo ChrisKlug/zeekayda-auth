@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
@@ -240,6 +241,28 @@ public sealed class JwksEndpointTests
         var headerBytes = Base64Url.DecodeFromChars(headerSegment);
         using var header = JsonDocument.Parse(headerBytes);
         return header.RootElement.GetProperty("kid").GetString();
+    }
+
+    // ── Signing stopped ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetJwks_serves_an_empty_key_set_that_must_not_be_cached_while_signing_has_stopped()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var revocation = new SigningRevocation();
+        using var host = new EndpointHost(configureBuilder: builder =>
+        {
+            builder.Services.AddSingleton<TimeProvider>(time);
+            builder.Services.AddSingleton(revocation);
+            builder.AddSigningKeySource<RevocableTestSigningKeySource>();
+        });
+        await revocation.RevokeAsync(host, time);
+
+        using var response = await GetAsync(host);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        JsonDocument.Parse(body).RootElement.GetProperty("keys").GetArrayLength().Should().Be(0);
+        response.Headers.CacheControl!.ToString().Should().Be("no-store");
     }
 
     // ── Cache-Control ────────────────────────────────────────────────────────────────────────────
