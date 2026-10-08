@@ -88,8 +88,11 @@ internal sealed class PemFileSigningKeySource(
         if (file.KeyPath is not null && !reader.TryValidate(file.KeyPath))
             return null;
 
+        // Judged before the certificate is parsed, so nothing after the parse can throw past it; the
+        // parse error is still reported first.
+        var hasNoKey = file.KeyPath is null && !HasUnencryptedPrivateKeyBlock(certPem);
         var certificate = ParseCertificate(certPem, certificatePath);
-        if (file.KeyPath is null && !HasUnencryptedPrivateKeyBlock(certPem))
+        if (hasNoKey)
         {
             certificate.Dispose();
             throw NoPrivateKey(certificatePath);

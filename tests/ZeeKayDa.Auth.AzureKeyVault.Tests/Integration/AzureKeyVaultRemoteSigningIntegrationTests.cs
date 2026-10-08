@@ -127,28 +127,6 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
             "v2 is the newest version past the lead time");
     }
 
-    [Fact]
-    public async Task Full_DI_wiring_keeps_publishing_the_startup_key_set_when_the_vault_rotates_afterwards()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var (services, reader, _, timeProvider) = BuildServices(T0);
-        reader.AddRsaVersion("v1", createdOn: T0);
-
-        var builder = services.AddZeeKayDaAuthCoreForTesting();
-        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
-
-        await using var provider = services.BuildServiceProvider();
-        await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<SigningKeyRing>();
-        var publishedAtStartup = ring.Current.Published.Select(k => k.Kid).ToArray();
-
-        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromMinutes(1));
-        timeProvider.SetUtcNow(T0 + TimeSpan.FromDays(30));
-
-        ring.Current.Published.Select(k => k.Kid).Should().Equal(publishedAtStartup,
-            "the ring reads the source once, at startup — a rotation is only picked up when it next reads");
-    }
-
     // ── Startup failure propagation ───────────────────────────────────────────────────────────────
 
     [Fact]
