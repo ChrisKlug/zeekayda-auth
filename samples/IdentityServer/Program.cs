@@ -1,6 +1,5 @@
 using ZeeKayDa.Auth.Samples.IdentityServer.ClientSecrets;
 using ZeeKayDa.Auth.Samples.IdentityServer.Users;
-using ZeeKayDa.Auth.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
