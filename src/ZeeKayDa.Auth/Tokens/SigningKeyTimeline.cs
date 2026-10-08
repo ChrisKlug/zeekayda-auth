@@ -35,10 +35,13 @@ internal sealed class SigningKeyTimeline
     private readonly TimeSpan _retention;
 
     /// <param name="oldestFirst">Validated keys in <see cref="SigningKeySetBuilder.OldestFirst"/> order; never empty.</param>
+    /// <param name="dropped">The listed keys whose own dates or material were unusable.</param>
     /// <param name="options">The lead time and the resolved retention.</param>
-    internal SigningKeyTimeline(ImmutableArray<SigningKey> oldestFirst, SigningKeyOptions options)
+    internal SigningKeyTimeline(
+        ImmutableArray<SigningKey> oldestFirst, ImmutableArray<DroppedKey> dropped, SigningKeyOptions options)
         : this(
             oldestFirst,
+            dropped,
             options.LeadTime,
             options.RetainRetiredKeysFor
                 ?? throw new InvalidOperationException(
@@ -48,9 +51,14 @@ internal sealed class SigningKeyTimeline
     }
 
     private SigningKeyTimeline(
-        ImmutableArray<SigningKey> oldestFirst, TimeSpan leadTime, TimeSpan retention, ImmutableList<SigningKey> setAside)
+        ImmutableArray<SigningKey> oldestFirst,
+        ImmutableArray<DroppedKey> dropped,
+        TimeSpan leadTime,
+        TimeSpan retention,
+        ImmutableList<SigningKey> setAside)
     {
         _oldestFirst = oldestFirst;
+        Dropped = dropped;
         _leadTime = leadTime;
         _retention = retention;
         SetAside = setAside;
@@ -64,6 +72,12 @@ internal sealed class SigningKeyTimeline
     /// order they failed. They stay published but never sign.
     /// </summary>
     internal ImmutableList<SigningKey> SetAside { get; }
+
+    /// <summary>
+    /// Gets the listed keys whose own dates or material were unusable. They are neither published nor
+    /// ever sign; the rules carry on with the keys around them.
+    /// </summary>
+    internal ImmutableArray<DroppedKey> Dropped { get; }
 
     /// <summary>The key set in force at <paramref name="now"/>.</summary>
     internal SigningKeySet At(DateTimeOffset now)
@@ -92,13 +106,45 @@ internal sealed class SigningKeyTimeline
     /// again.
     /// </summary>
     internal SigningKeyTimeline SettingAside(string kid) =>
-        new(_oldestFirst, _leadTime, _retention, SetAside.Add(_oldestFirst.Single(key => key.Kid == kid)));
+        new(_oldestFirst, Dropped, _leadTime, _retention, SetAside.Add(_oldestFirst.Single(key => key.Kid == kid)));
 
     /// <summary>
     /// Whether <paramref name="key"/> has been published for the lead time at <paramref name="now"/>;
     /// a signing key that has not been may produce tokens a relying party with a cached key set rejects.
     /// </summary>
     internal bool IsEstablished(SigningKey key, DateTimeOffset now) => now - key.NotBefore >= _leadTime;
+
+    /// <summary>
+    /// The dropped key the rules would have chosen to sign at <paramref name="now"/> had it been
+    /// usable, or <see langword="null"/> when the key due now is a usable one. Startup refuses the
+    /// first: a later key may be dropped, the key signing now may not.
+    /// </summary>
+    internal DroppedKey? DroppedKeyDueAt(DateTimeOffset now)
+    {
+        var listed = _oldestFirst
+            .Select(key => (key.NotBefore, key.ExpiresAt, Id: key.SourceId.Value, Dropped: (DroppedKey?)null))
+            .Concat(Dropped.Select(drop => (drop.Key.NotBefore, drop.Key.ExpiresAt, Id: drop.Key.Id.Value, Dropped: (DroppedKey?)drop)))
+            .Where(key => key.ExpiresAt > now)
+            .OrderBy(key => key.NotBefore)
+            .ThenBy(key => key.Id, StringComparer.Ordinal)
+            .ToList();
+
+        var due = listed.FindLastIndex(key => now - key.NotBefore >= _leadTime);
+        return listed.Count == 0 ? null : listed[Math.Max(due, 0)].Dropped;
+    }
+
+    /// <summary>
+    /// When dropping keys left the usable keys expiring before the listed keys would have, the instant
+    /// the last usable key expires; otherwise <see langword="null"/>.
+    /// </summary>
+    internal DateTimeOffset? CoverageCutShortTo()
+    {
+        if (Dropped.IsEmpty)
+            return null;
+
+        var usableUntil = _oldestFirst.Max(key => key.ExpiresAt);
+        return Dropped.Max(drop => drop.Key.ExpiresAt) > usableUntil ? usableUntil : null;
+    }
 
     /// <summary>
     /// The first instant after <paramref name="now"/> at which <see cref="At"/> may return a

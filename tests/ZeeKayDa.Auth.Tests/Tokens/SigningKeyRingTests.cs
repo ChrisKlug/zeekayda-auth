@@ -731,6 +731,41 @@ public sealed class SigningKeyRingTests
     }
 
     [Fact]
+    public async Task A_dropped_staged_key_is_warned_about_and_never_published_or_signed_with()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var badStaged = TestSigningKeys.Pair("staged", notBefore: Epoch) with
+        {
+            Key = TestSigningKeys.SourceKey("staged", SigningAlgorithm.RS256, Epoch),
+        };
+        using var ring = TestSigningKeys.Ring([current, badStaged], clock, logger);
+
+        logger.Warnings.Should().ContainSingle(w => w.Contains("staged") && w.Contains("signing.key_algorithm_mismatch"));
+        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
+
+        ring.Current.SigningKey.SourceId.Value.Should().Be("current");
+        ring.Current.Published.Select(k => k.SourceId.Value).Should().Equal("current");
+    }
+
+    [Fact]
+    public async Task Initialization_fails_when_the_key_due_to_sign_now_was_dropped()
+    {
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var badDue = TestSigningKeys.Pair("due", notBefore: Epoch.AddDays(-5)) with
+        {
+            Key = TestSigningKeys.SourceKey("due", SigningAlgorithm.RS256, Epoch.AddDays(-5)),
+        };
+        using var ring = TestSigningKeys.Uninitialized([current, badDue], new FakeTimeProvider(Epoch));
+
+        var act = () => ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.key_algorithm_mismatch");
+    }
+
+    [Fact]
     public async Task Handover_opens_the_successor_s_signer_only_when_it_takes_over()
     {
         var clock = new FakeTimeProvider(Epoch);

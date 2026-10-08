@@ -613,7 +613,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   it `Healthy`. `SigningKeys.RetainRetiredKeysFor` now defaults to two days, or to the longer token
   lifetime plus `ClockSkewTolerance` when that is longer, so a replica whose handover is slow or has
   failed keeps signing with tokens every replica can verify while the key is fixed; a lower value
-  logs `signing.retain_retired_keys_for.below_default` at startup.
+  logs `signing.retain_retired_keys_for.below_default` at startup. A problem with one listed key —
+  weak or malformed material, material that does not suit the source's algorithm, an expiry not after
+  its `NotBefore` — now drops that key with a Warning instead of failing startup: it is neither
+  published nor ever signs, the health check reports `Degraded`, and startup warns when the remaining
+  keys stop covering as long as the listed ones would have. Startup still fails when the dropped key is
+  the one due to sign, when every key is dropped, and for a problem with the list itself (no keys, a
+  `null` entry, an empty or duplicate source id, a duplicate `kid`, an undated key among several).
 
 - **The PEM, PFX and Windows signing sources take a list instead of three slots** (#823).
   `PemFileSigningOptions.Files`, `PfxFileSigningOptions.Files` and

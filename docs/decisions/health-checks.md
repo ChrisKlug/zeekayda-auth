@@ -36,7 +36,8 @@ healthy, and an orchestrator's readiness probe must treat it as not ready.
 
 **The signing-key verdict asks the ring's own rules, never its own reading of the keys.**
 `Unhealthy` when the key signing now has expired; `Degraded`, naming every reason, when a successor's
-signer failed and was set aside, when the key due now is not the key signing (a handover still
+signer failed and was set aside, when a listed key was dropped (its failure codes only — a
+source id may be a path or vault URI, and the description may be public), when the key due now is not the key signing (a handover still
 running), or when `SigningKeyTimeline.At(now + DegradedThreshold)` has no unexpired key to sign
 with; otherwise `Healthy`. A staged successor that
 will take over in time therefore keeps the check `Healthy`, and the check and the ring cannot

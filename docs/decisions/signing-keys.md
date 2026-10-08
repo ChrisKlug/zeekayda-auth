@@ -14,18 +14,19 @@ never per key, so a key change is never an algorithm change; discovery advertise
 Changing it is a new source and a restart; multi-algorithm support would be a ring per algorithm, never a mixed one.
 
 **Sources only list keys; core owns all the timing, and the ring follows the clock.** A `SourceKey` carries
-`NotBefore` and `ExpiresAt` (undated means `MinValue`/`MaxValue`, accepted only as the sole key).
-`SigningKeySetBuilder.Build` validates every key on public data against the source's algorithm, derives every `kid`,
-and returns a `SigningKeyTimeline` whose `At(now)` decides from the dates alone. The newest unexpired key at least
-`SigningKeys.LeadTime` (default one day, never below `JwksEndpoint.CacheMaxAge`) past its `NotBefore` signs, else
-the oldest unexpired key, with a Warning. Every unexpired key is published, an older one until a newer key is
-`LeadTime + RetainRetiredKeysFor` old, an expired one until `RetainRetiredKeysFor` after expiry, the signing key
-always. `NotBefore` orders keys and starts the clock; no relying party sees it, so it is no validity gate. Retention
-(one knob) defaults to two days, or the longer token lifetime plus clock skew, so a replica whose handover is slow
-or failed signs on safely; a lower value warns. Ties go to the ordinally greater source id. The ring reads once and
-re-evaluates on a timer at each change instant, so a successor takes over at its lead time with no restart. A
-successor whose signer fails is set aside until restart: published (replicas agree), never signs, Degraded. Startup
-fails only if every key expired; until polling, a key listed past `NotBefore + LeadTime` signs unpublished.
+`NotBefore` and `ExpiresAt` (undated: accepted only as the sole key). `SigningKeySetBuilder.Build` validates every
+key on public data against the source's algorithm, derives every `kid`, and returns a `SigningKeyTimeline` whose
+`At(now)` decides from the dates alone. The newest unexpired key at least `SigningKeys.LeadTime` (default one day,
+never below `JwksEndpoint.CacheMaxAge`) past its `NotBefore` signs, else the oldest unexpired key, with a Warning.
+Every unexpired key is published, an older one until a newer key is `LeadTime + RetainRetiredKeysFor` old, an
+expired one until `RetainRetiredKeysFor` after expiry, the signing key always. `NotBefore` orders keys and starts
+the clock; no relying party sees it, so it is no validity gate. Retention (one knob) defaults to two days, or the
+longer token lifetime plus clock skew, so a replica whose handover is slow or failed signs on safely; a lower value
+warns. Ties go to the ordinally greater source id. The ring reads once and re-evaluates on a timer at each change
+instant, so a successor takes over at its lead time with no restart. A successor whose signer fails is set aside
+until restart: published, never signs, Degraded. A key with bad material or dates is dropped (Warning, Degraded),
+unless it is due to sign now; an ambiguous list is fatal. Startup fails if every key expired; until polling, a key
+listed past `NotBefore + LeadTime` signs unpublished.
 
 **File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list
 `Files`/`Certificates` with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`. A
@@ -119,8 +120,7 @@ development provider stays in core.
   activation by hand. Now a key's own `NotBefore` is its publication date and one `LeadTime` derives the rest.
 - **A single rotating-source tier with one shared check interval.** Shipped, then reversed: file/store and Key
   Vault share only a *name*, covering both a clock tick over a fixed timeline and a real external poll.
-- **An `ISigningKeyRetirementWindowProvider` computing retirement per provider.** Retention is one core
-  setting applied to dates every provider already reports.
+- **An `ISigningKeyRetirementWindowProvider`.** Retention is one core setting over dates providers report.
 - **A key set frozen at startup.** It forced a predecessor retention rule, a successor-predicting health check and a `NotBefore` grace.
 - **Bootstrap exemptions — the single-key one, and Key Vault's "first version ever" one.** "No relying party
   could have cached anything" is false after any restart; a lone key signs at once through the ordinary

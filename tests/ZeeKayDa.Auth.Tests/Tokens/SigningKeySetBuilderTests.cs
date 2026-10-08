@@ -669,6 +669,84 @@ public sealed class SigningKeySetBuilderTests
             .Which.AggregatedFailures[0].Code.Should().Be("signing.ec_curve_algorithm_mismatch");
     }
 
+    // ── A bad key is dropped; a bad list is fatal ───────────────────────────────────────────────
+
+    [Fact]
+    public void Build_drops_a_key_whose_material_does_not_suit_the_algorithm_and_keeps_the_rest()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-10));
+        var staged = CreateEcSourceKey("staged", ECCurve.NamedCurves.nistP256, Now.AddHours(-1));
+
+        var timeline = Timeline(current, staged);
+
+        timeline.At(Now).Published.Select(k => k.SourceId).Should().Equal(current.Id);
+        timeline.Dropped.Should().ContainSingle().Which.Failure.Code.Should().Be("signing.key_algorithm_mismatch");
+    }
+
+    [Fact]
+    public void Build_drops_a_key_that_expires_before_its_NotBefore()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-10));
+        var broken = CreateRsaSourceKey("broken", notBefore: Now.AddDays(5), expiresAt: Now.AddDays(4));
+
+        Timeline(current, broken).Dropped.Should().ContainSingle()
+            .Which.Failure.Code.Should().Be("signing.invalid_validity_window");
+    }
+
+    [Fact]
+    public void Build_fails_with_every_dropped_key_s_failure_when_no_key_is_usable()
+    {
+        var weak = CreateRsaSourceKey("weak", keySize: 1024, notBefore: Now.AddDays(-10));
+        var mismatched = CreateEcSourceKey("mismatched", ECCurve.NamedCurves.nistP256, Now.AddDays(-1));
+
+        var act = () => Timeline(weak, mismatched);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>().Which.AggregatedFailures.Select(f => f.Code)
+            .Should().BeEquivalentTo(["signing.rsa_key_too_small", "signing.key_algorithm_mismatch"]);
+    }
+
+    [Fact]
+    public void Build_still_fails_on_an_undated_key_among_several_rather_than_dropping_it()
+    {
+        var act = () => Timeline(CreateRsaSourceKey("dated", notBefore: Now.AddDays(-2)), CreateRsaSourceKey("undated"));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.undated_key");
+    }
+
+    [Fact]
+    public void DroppedKeyDueAt_names_a_dropped_key_the_rules_would_have_chosen_to_sign_now()
+    {
+        var older = CreateRsaSourceKey("older", notBefore: Now.AddDays(-30));
+        var due = CreateEcSourceKey("due", ECCurve.NamedCurves.nistP256, Now.AddDays(-5));
+
+        Timeline(older, due).DroppedKeyDueAt(Now)!.Key.Id.Should().Be(due.Id);
+    }
+
+    [Fact]
+    public void DroppedKeyDueAt_is_null_when_only_a_staged_key_was_dropped()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-30));
+        var staged = CreateEcSourceKey("staged", ECCurve.NamedCurves.nistP256, Now.AddHours(-1));
+
+        Timeline(current, staged).DroppedKeyDueAt(Now).Should().BeNull();
+    }
+
+    [Fact]
+    public void CoverageCutShortTo_is_the_last_usable_expiry_when_a_dropped_key_would_have_outlived_it()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-30), expiresAt: Now.AddDays(20));
+        var staged = CreateEcSourceKey("staged", ECCurve.NamedCurves.nistP256, Now.AddHours(-1));
+
+        Timeline(current, staged).CoverageCutShortTo().Should().Be(Now.AddDays(20));
+    }
+
+    [Fact]
+    public void CoverageCutShortTo_is_null_when_nothing_was_dropped()
+    {
+        Timeline(CreateRsaSourceKey("current", notBefore: Now.AddDays(-30))).CoverageCutShortTo().Should().BeNull();
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private static SigningKeyOptions Options() => new() { LeadTime = LeadTime, RetainRetiredKeysFor = Retention };

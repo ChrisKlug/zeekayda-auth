@@ -283,6 +283,10 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
         var timeline = SigningKeySetBuilder.Build(sourceKeys, _source.Algorithm, _options);
         var now = _timeProvider.GetUtcNow();
+        if (timeline.DroppedKeyDueAt(now) is { } droppedSigningKey)
+            throw new ZeeKayDaConfigurationException(droppedSigningKey.Failure);
+
+        WarnAboutDroppedKeys(timeline);
         var set = timeline.At(now);
 
         if (set.SigningKey.ExpiresAt <= now)
@@ -448,6 +452,24 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
         DisposeQuietly(signer);
         return false;
+    }
+
+    private void WarnAboutDroppedKeys(SigningKeyTimeline timeline)
+    {
+        foreach (var drop in timeline.Dropped)
+        {
+            _logger.LogWarning(
+                "Signing key {SourceKeyId} was dropped and is neither published nor used to sign: [{FailureCode}] {Reason}",
+                drop.Key.Id.Value, drop.Failure.Code, drop.Failure.Message);
+        }
+
+        if (timeline.CoverageCutShortTo() is { } usableUntil)
+        {
+            _logger.LogWarning(
+                "With the dropped signing keys gone, the last usable key expires at {UsableUntil}, sooner than the " +
+                "listed keys would have. Fix or replace the dropped keys before then.",
+                usableUntil);
+        }
     }
 
     private void WarnIfNotEstablished(SigningKeyTimeline timeline, SigningKey signingKey, DateTimeOffset now)

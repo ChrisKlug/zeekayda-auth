@@ -112,6 +112,15 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
     private static IEnumerable<string> DegradedReasons(
         SigningKeyTimeline timeline, SigningKey signingKey, DateTimeOffset now, TimeSpan degradedThreshold)
     {
+        if (!timeline.Dropped.IsEmpty)
+        {
+            // Codes only: a source id may be a file path or vault URI, and this text can be public.
+            yield return
+                $"{timeline.Dropped.Length} listed key(s) could not be used and were dropped " +
+                $"({string.Join(", ", timeline.Dropped.Select(drop => drop.Failure.Code).Distinct())}); " +
+                "the startup log names them. Fix the keys and restart.";
+        }
+
         if (timeline.SetAside.Count > 0)
         {
             yield return

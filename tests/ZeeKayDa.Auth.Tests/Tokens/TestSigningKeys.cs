@@ -131,6 +131,10 @@ internal static class TestSigningKeys
             Options,
             new CapturingSanitizingLogger<SigningKeyRing>());
 
+    /// <summary>Builds a ring over key pairs without initializing it.</summary>
+    public static SigningKeyRing Uninitialized(IReadOnlyList<KeyPair> keys, TimeProvider timeProvider)
+        => new(new KeyPairSource(keys, null), timeProvider, Options, new CapturingSanitizingLogger<SigningKeyRing>());
+
     /// <summary>Builds a ring over one freshly generated key without initializing it.</summary>
     public static SigningKeyRing Uninitialized(SigningAlgorithm algorithm)
     {

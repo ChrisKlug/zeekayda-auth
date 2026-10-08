@@ -264,6 +264,20 @@ public sealed class SigningKeyExpiryHealthCheckTests
         act.Should().Throw<ArgumentNullException>();
     }
 
+    [Fact]
+    public void Evaluate_is_Degraded_while_a_listed_key_is_dropped_without_naming_its_source_id()
+    {
+        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var current = CreateRsaKey("current", Now.AddDays(90), notBefore: Now.AddDays(-30));
+        var dropped = new SourceKey(
+            new SourceKeyId("/etc/secret/staged.pem"), PublicKeyParameters.FromEc(ec.ExportParameters(false)), Now.AddHours(-1));
+
+        var result = Evaluate(Timeline(current, dropped));
+
+        result.Status.Should().Be(HealthStatus.Degraded);
+        result.Description.Should().Contain("signing.key_algorithm_mismatch").And.NotContain("/etc/secret");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private static SigningKeyTimeline Timeline(params SourceKey[] keys) =>
