@@ -897,15 +897,20 @@ public sealed class SigningKeyRingTests
     {
         var clock = new FakeTimeProvider(Epoch);
         using var release = new ManualResetEventSlim();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
         var blocked = TestSigningKeys.Pair("blocked", notBefore: Epoch);
         var source = new DisposableSigningKeySource(
             _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, blocked.Key]),
             (id, _) =>
             {
-                if (id == blocked.Key.Id)
-                    release.Wait(TimeSpan.FromSeconds(30));
-                return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey)));
+                if (id != blocked.Key.Id)
+                    return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey)));
+
+                // Blocks the calling thread, then hands back a signer that would pass its self-test.
+                entered.TrySetResult();
+                release.Wait(TimeSpan.FromSeconds(30));
+                return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(blocked.PrivateKey)));
             },
             () => { },
             SigningAlgorithm.ES256);
@@ -915,9 +920,12 @@ public sealed class SigningKeyRingTests
         try
         {
             clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
             clock.Advance(TimeSpan.FromMinutes(1));
-            await ring.LastTransition;
+            await ring.LastTransition.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
+            // Decided while the source is still blocked.
+            release.IsSet.Should().BeFalse();
             ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Should().Be(blocked.Key.Id);
         }
         finally
@@ -932,6 +940,8 @@ public sealed class SigningKeyRingTests
         var clock = new FakeTimeProvider(Epoch);
         var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
         var hung = TestSigningKeys.Pair("hung", notBefore: Epoch);
+        var registered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var callbackRan = false;
         var source = new DisposableSigningKeySource(
             _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, hung.Key]),
             (id, cancellationToken) =>
@@ -939,7 +949,12 @@ public sealed class SigningKeyRingTests
                 if (id != hung.Key.Id)
                     return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey)));
 
-                cancellationToken.Register(static () => throw new InvalidOperationException("simulated: callback failure"));
+                cancellationToken.Register(() =>
+                {
+                    callbackRan = true;
+                    throw new InvalidOperationException("simulated: callback failure");
+                });
+                registered.TrySetResult();
                 return new TaskCompletionSource<ISigner>().Task;
             },
             () => { },
@@ -948,9 +963,11 @@ public sealed class SigningKeyRingTests
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await registered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         clock.Advance(TimeSpan.FromMinutes(1));
-        await ring.LastTransition;
+        await ring.LastTransition.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
+        callbackRan.Should().BeTrue("the deadline must tell the source to stop");
         ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Should().Be(hung.Key.Id);
     }
 
