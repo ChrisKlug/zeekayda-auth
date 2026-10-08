@@ -2220,7 +2220,7 @@ duplicated configuration reference, fixed in `6b7cb58`), and the PR's CodeQL and
 - **Accepted residual (maintainer):** non-RS256 only warns, against Discovery §3 — `VerifyAsync_warns_when_the_advertised_set_omits_RS256`.
 - **Deferred to #823:** the ring reads `ISigningKeySource.Algorithm` per build, moot while it builds once.
 
-## 2026-10-08 — the signing key ring follows the clock; a bad key is dropped, not fatal (#823, code frozen at `e185d47`)
+## 2026-10-08 — the signing key ring follows the clock; a bad key is dropped, not fatal (#823, code frozen at `990991c`)
 Copilot code (four passes, each fix verified), security and architecture lenses, the security and architect agents, and the PR's
 CodeQL and CodeScene review; no Critical left open. Four test-only CodeQL dispose alerts are advisory and left as is.
 - A successor signs only after its signer opens and passes a fresh self-test at takeover. Closed — `Handover_opens_the_successor_s_signer_only_when_it_takes_over`,
@@ -2232,7 +2232,8 @@ CodeQL and CodeScene review; no Critical left open. Four test-only CodeQL dispos
 - No change instant is skipped. Closed — `Initialization_catches_up_when_a_change_passes_while_the_startup_signer_opens`,
   `A_change_crossed_after_a_transition_commits_but_before_it_re_arms_still_fires`.
 - Every signer whose open finishes is disposed once, including one that finishes after shutdown or the deadline. Closed — `Handover_keeps_the_superseded_signer_open_until_the_ring_is_disposed_then_disposes_each_once`,
-  `A_signer_that_opens_after_shutdown_abandoned_its_handover_is_disposed`, `Initialization_owns_the_startup_signer_before_logging_so_a_throwing_logger_does_not_leak_it`.
+  `A_signer_that_opens_after_shutdown_abandoned_its_handover_is_disposed`, `A_signer_that_opens_after_the_handover_deadline_is_disposed_exactly_once`,
+  `Initialization_owns_the_startup_signer_before_logging_so_a_throwing_logger_does_not_leak_it`.
 - A bad key never publishes or signs; a bad key due now, or an ambiguous list, fails startup; health names codes, never source ids. Closed —
   `A_dropped_staged_key_is_warned_about_and_never_published_or_signed_with`, `Initialization_fails_when_the_key_due_to_sign_now_was_dropped`,
   `Build_fails_on_a_duplicate_kid_even_when_one_entry_has_unusable_dates`, `Evaluate_is_Degraded_while_a_listed_key_is_dropped_without_naming_its_source_id`.
