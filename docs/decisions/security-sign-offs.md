@@ -2261,4 +2261,5 @@ its fix diff), and the PR's CodeQL, CodeScene and Copilot review; no High or Cri
   `The_ring_keeps_signing_under_the_algorithm_it_read_at_startup_when_the_source_s_changes`.
 - **Accepted residuals (maintainer):** a sign call outrunning one refresh interval may meet a disposed signer — `The_signer_of_a_key_no_longer_listed_is_disposed_at_the_second_read_without_it_not_the_first`;
   a source that never returns pins the last list until restart, and an unmounted key directory reads as deleted (no test); an abandoned Key Vault read
-  can commit its newer version list after the pre-commit check, refusing a just-disabled version one read early — `ReadAsync_abandoned_by_the_ring_does_not_replace_the_versions_a_signer_may_open`.
+  cancelled after its pre-commit check can still commit its newer version list, refusing a just-disabled version one read early (no test — the check
+  itself, for cancellation before it, is proven by `ReadAsync_abandoned_by_the_ring_does_not_replace_the_versions_a_signer_may_open`).
