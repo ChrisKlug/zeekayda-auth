@@ -2219,3 +2219,23 @@ duplicated configuration reference, fixed in `6b7cb58`), and the PR's CodeQL and
   `A_client_whose_allowed_algorithms_exclude_the_signing_key_is_refused_before_the_signer_is_touched`.
 - **Accepted residual (maintainer):** non-RS256 only warns, against Discovery §3 — `VerifyAsync_warns_when_the_advertised_set_omits_RS256`.
 - **Deferred to #823:** the ring reads `ISigningKeySource.Algorithm` per build, moot while it builds once.
+
+## 2026-10-08 — the signing key ring follows the clock; a bad key is dropped, not fatal (#823, code frozen at `e185d47`)
+Copilot code (four passes, each fix verified), security and architecture lenses, the security and architect agents, and the PR's
+CodeQL and CodeScene review; no Critical left open. Four test-only CodeQL dispose alerts are advisory and left as is.
+- A successor signs only after its signer opens and passes a fresh self-test at takeover. Closed — `Handover_opens_the_successor_s_signer_only_when_it_takes_over`,
+  `Handover_signs_with_the_successor_once_its_lead_time_ends_and_the_signature_verifies`.
+- A successor that fails, or does not open within a minute — blocking, ignoring cancellation or throwing from its callback — is set
+  aside, the old key signs on, and the cause is logged. Closed — `Handover_failure_keeps_the_previous_key_signing_logs_an_Error_and_names_the_failed_successor`,
+  `Handover_never_retries_any_failed_successor_when_signing_falls_back_to_it`, `Handover_whose_source_blocks_synchronously_is_still_set_aside_at_the_deadline`,
+  `Handover_past_the_deadline_is_set_aside_even_when_the_source_s_cancellation_callback_throws`, `Handover_failure_logs_the_root_cause_as_the_Error_entry_s_exception`.
+- No change instant is skipped. Closed — `Initialization_catches_up_when_a_change_passes_while_the_startup_signer_opens`,
+  `A_change_crossed_after_a_transition_commits_but_before_it_re_arms_still_fires`.
+- Every signer is disposed once, including one that opens after shutdown. Closed — `Handover_keeps_the_superseded_signer_open_until_the_ring_is_disposed_then_disposes_each_once`,
+  `A_signer_that_opens_after_shutdown_abandoned_its_handover_is_disposed`, `Initialization_owns_the_startup_signer_before_logging_so_a_throwing_logger_does_not_leak_it`.
+- A bad key never publishes or signs; a bad key due now, or an ambiguous list, fails startup; health names codes, never source ids. Closed —
+  `A_dropped_staged_key_is_warned_about_and_never_published_or_signed_with`, `Initialization_fails_when_the_key_due_to_sign_now_was_dropped`,
+  `Build_fails_on_a_duplicate_kid_even_when_one_entry_has_unusable_dates`, `Evaluate_is_Degraded_while_a_listed_key_is_dropped_without_naming_its_source_id`.
+- A key signing on after healthy replicas dropped it is Unhealthy. Closed — `Evaluate_is_Unhealthy_when_the_key_signing_on_after_a_failed_handover_has_left_every_other_replica_s_key_set`.
+- **Accepted residuals (maintainer):** a provider's own per-key failure still fails `ReadAsync` (#908); a source returning one signer instance
+  for two keys is excluded by the contract, not checked; revocation is remove and restart until polling (#527).
