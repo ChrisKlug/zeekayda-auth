@@ -64,7 +64,7 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
         }
 
         var listed = KeyVaultVersions.Newest(
-            KeyVaultVersions.Enabled(allVersions, "key", options.KeyIdentifier.Name, options.KeyIdentifier.VaultUri),
+            KeyVaultVersions.Enabled(allVersions, "key"),
             options.MaxVersions);
 
         var keys = new List<SourceKey>(listed.Count);

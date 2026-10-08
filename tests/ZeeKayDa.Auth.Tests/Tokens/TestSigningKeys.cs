@@ -310,6 +310,9 @@ internal static class TestSigningKeys
         /// <summary>When set, the next read never completes.</summary>
         public bool ReadHangs { get; set; }
 
+        /// <summary>Runs inside each read, before it returns — to move a clock while the source is read.</summary>
+        public Action? DuringRead { get; set; }
+
         public SigningAlgorithm Algorithm { get; set; } = SigningAlgorithm.ES256;
 
         public int Reads { get; set; }
@@ -322,6 +325,7 @@ internal static class TestSigningKeys
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
         {
             listing.Reads++;
+            listing.DuringRead?.Invoke();
             if (listing.ReadHangs)
                 return new TaskCompletionSource<IReadOnlyList<SourceKey>>().Task;
 

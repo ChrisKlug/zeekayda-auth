@@ -150,17 +150,16 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_throws_when_no_version_is_enabled()
+    public async Task ReadAsync_lists_nothing_when_every_version_is_disabled_so_the_ring_treats_it_as_a_full_revocation()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeKeyVaultKeyReader();
         reader.AddRsaVersion("v1", createdOn: T0, enabled: false);
         var sut = BuildSource(reader);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*no_enabled_version*");
+        keys.Should().BeEmpty();
     }
 
     [Fact]

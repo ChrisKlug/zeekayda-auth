@@ -43,9 +43,9 @@ vault URI, certificate thumbprint, or file path into every issued token.
 
 **The Key Vault sources list every enabled version, dated by vault metadata every replica agrees on.** A
 version counts from the later of its `CreatedOn` and its own `nbf`, never first-seen time; its `exp` is its
-expiry. Disabling a version removes it from the listing — the one revocation lever. A listed version whose
-identifier is not pinned to that version is rejected, since the SDK resolves an unpinned URI to whatever
-version is newest at sign time. `MaxVersions` (default all, minimum 3: staged, signing, previous) lists only the
+expiry. Disabling a version unlists it — the one revocation lever; disabling all lists none, a full revocation.
+A listed version whose identifier is not pinned to that version is rejected, since the SDK resolves an unpinned
+URI to whatever version is newest at sign time. `MaxVersions` (default all, minimum 3: staged, signing, previous) lists only the
 newest N, so only their public keys are fetched; too low drops a version whose tokens are still live.
 
 **The cached Key Vault source downloads private material only for the version the ring asks to sign.** Reads

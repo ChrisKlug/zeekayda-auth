@@ -573,7 +573,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   is a stored value, read from the source once at startup, so a source cannot change it at runtime.
   A successor whose signer failed is set aside until the next read rather than until a restart, and
   for good once its predecessor is superseded. The signer of a key absent from two reads in a row is
-  disposed.
+  disposed. The Key Vault sources list nothing when every version is disabled, so disabling the last
+  version revokes signing; `signing.azure_key_vault.no_enabled_version` is removed.
 
 - **BREAKING: a signing source declares one algorithm, and the server signs only with it; the
   advertised-algorithm filter is gone** (#905). `ISigningKeySource` gains

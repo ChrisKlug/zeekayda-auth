@@ -70,7 +70,7 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
         }
 
         var listed = KeyVaultVersions.Newest(
-            KeyVaultVersions.Enabled(allVersions, "certificate", options.CertificateIdentifier.Name, options.CertificateIdentifier.VaultUri),
+            KeyVaultVersions.Enabled(allVersions, "certificate"),
             options.MaxVersions);
 
         var keys = new List<SourceKey>(listed.Count);

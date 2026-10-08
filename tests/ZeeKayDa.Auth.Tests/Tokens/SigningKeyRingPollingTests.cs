@@ -259,6 +259,46 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_failed_key_too_late_to_take_over_stays_set_aside_after_a_read_that_omitted_it()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var successor = TestSigningKeys.Pair("successor", notBefore: Epoch);
+        var listing = new TestSigningKeys.Listing(current, TestSigningKeys.Mismatched(successor));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+        listing.Pairs = [current];
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value);
+        await ring.LastTransition;
+
+        listing.Pairs = [current, successor];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+    }
+
+    [Fact]
+    public async Task A_failed_key_whose_cutoff_passes_while_the_source_is_read_stays_set_aside()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var successor = TestSigningKeys.Pair("successor", notBefore: Epoch);
+        var listing = new TestSigningKeys.Listing(current, TestSigningKeys.Mismatched(successor));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+
+        var cutoff = Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value;
+        listing.Pairs = [current, successor];
+        listing.DuringRead = () => clock.SetUtcNow(cutoff + TimeSpan.FromSeconds(1));
+        clock.SetUtcNow(cutoff - TimeSpan.FromSeconds(1));
+        await ring.LastTransition;
+
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+    }
+
+    [Fact]
     public async Task The_signer_of_a_key_no_longer_listed_is_disposed_at_the_second_read_without_it_not_the_first()
     {
         var clock = new FakeTimeProvider(Epoch);
@@ -275,6 +315,32 @@ public sealed class SigningKeyRingPollingTests
 
         await ReadAgainAsync(ring, clock);
         disposed.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task A_failed_handover_that_stops_signing_still_gives_the_old_signer_one_read_s_grace()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var opened = 0;
+        var disposed = new List<string>();
+        var listing = new TestSigningKeys.Listing(TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)));
+        using var ring = TestSigningKeys.Ring(
+            listing,
+            clock,
+            decorateSigner: signer =>
+            {
+                var name = opened++ == 0 ? "current" : "replacement";
+                return new TrackingSigner(signer, () => disposed.Add(name));
+            });
+
+        listing.Pairs = [TestSigningKeys.Mismatched(TestSigningKeys.Pair("replacement", notBefore: Epoch.AddDays(-10)))];
+        await ReadAgainAsync(ring, clock);
+
+        ring.Current.SigningKey.Should().BeNull();
+        disposed.Should().NotContain("current");
+
+        await ReadAgainAsync(ring, clock);
+        disposed.Should().Contain("current");
     }
 
     [Fact]

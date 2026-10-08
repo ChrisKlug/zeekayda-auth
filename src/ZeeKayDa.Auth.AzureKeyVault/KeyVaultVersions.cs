@@ -14,26 +14,17 @@ internal static class KeyVaultVersions
 
     /// <summary>
     /// Returns every enabled version. Disabling a version is the operator's revocation lever, so a
-    /// disabled version is never listed.
+    /// disabled version is never listed, and disabling every version lists none — a full revocation.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
-    /// Thrown with failure code <c>signing.azure_key_vault.no_enabled_version</c> when no version is
-    /// enabled, or <c>signing.azure_key_vault.unversioned_key_uri</c> when a version's identifier is
-    /// not pinned to that version.
+    /// Thrown with failure code <c>signing.azure_key_vault.unversioned_key_uri</c> when a version's
+    /// identifier is not pinned to that version.
     /// </exception>
     public static IReadOnlyList<TVersion> Enabled<TVersion>(
-        IReadOnlyList<TVersion> allVersions, string objectKind, string objectName, Uri vaultUri)
+        IReadOnlyList<TVersion> allVersions, string objectKind)
         where TVersion : IKeyVaultVersionInfo
     {
         var enabled = allVersions.Where(v => v.Enabled).ToList();
-        if (enabled.Count == 0)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.azure_key_vault.no_enabled_version",
-                    $"No enabled version of Key Vault {objectKind} '{objectName}' in vault " +
-                    $"'{vaultUri}' exists. Verify the {objectKind} has at least one enabled version."));
-        }
 
         // The SDK's CryptographyClient resolves a versionless URI to the vault's latest version at
         // sign time — a key the published set may not contain.

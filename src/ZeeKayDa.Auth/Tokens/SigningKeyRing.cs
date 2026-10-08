@@ -74,6 +74,10 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     private DateTimeOffset _nextReadAt;
     private readonly HashSet<string> _unlistedOnce = new(StringComparer.Ordinal);
 
+    // Keys whose signer failed when due and has not signed since, by kid, kept across reads that omit
+    // them or stop signing: such a key may never take over once its predecessor is superseded.
+    private readonly HashSet<string> _failed = new(StringComparer.Ordinal);
+
     // The key set, the signer for its signing key and the timeline it was chosen from, replaced
     // together as one reference so a consumer can never observe one without the others.
     private SignerBinding? _binding;
@@ -449,6 +453,8 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             return;
         }
 
+        // Judged when the read completed: a key may have passed a cutoff while the source was read.
+        now = _timeProvider.GetUtcNow();
         var previous = Volatile.Read(ref _binding)!.Timeline;
         SigningKeyTimeline timeline;
         try
@@ -457,17 +463,19 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         }
         catch (ZeeKayDaConfigurationException ex)
         {
+            ReleaseUnlistedSigners(timeline: null);
             StopSigning(ex.AggregatedFailures[0]);
             return;
         }
 
+        ReleaseUnlistedSigners(timeline);
         if (timeline.DroppedKeyDueAt(now) is { } droppedSigningKey)
         {
             StopSigning(droppedSigningKey.Failure);
             return;
         }
 
-        if (KeepingTooLateKeysAside(timeline, previous, now) is not { } adopted)
+        if (KeepingTooLateKeysAside(timeline, now) is not { } adopted)
         {
             StopSigning(new ZeeKayDaConfigurationFailure(
                 "signing.no_usable_key",
@@ -478,7 +486,6 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         WarnAboutDroppedKeys(adopted, previous);
         var binding = Volatile.Read(ref _binding)!;
         Volatile.Write(ref _binding, binding with { Timeline = adopted, ReadFailure = null });
-        ReleaseUnlistedSigners(adopted);
     }
 
     private async Task<IReadOnlyList<SourceKey>?> ReadSourceAsync()
@@ -500,15 +507,13 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Carries over every key set aside too late to take over, or returns <see langword="null"/> when
-    /// that leaves no key able to sign. Any other key set aside is tried again.
+    /// Sets aside every failed key now too late to take over, or returns <see langword="null"/> when
+    /// that leaves no key able to sign. Any other failed key is tried again.
     /// </summary>
-    private static SigningKeyTimeline? KeepingTooLateKeysAside(
-        SigningKeyTimeline timeline, SigningKeyTimeline? previous, DateTimeOffset now)
+    private SigningKeyTimeline? KeepingTooLateKeysAside(SigningKeyTimeline timeline, DateTimeOffset now)
     {
-        var setAsideKids = previous?.SetAside.Select(key => key.Kid).ToHashSet(StringComparer.Ordinal) ?? [];
         SigningKeyTimeline? adopted = timeline;
-        foreach (var key in timeline.Keys.Where(key => setAsideKids.Contains(key.Kid) && timeline.IsTooLateToTakeOver(key, now)))
+        foreach (var key in timeline.Keys.Where(key => _failed.Contains(key.Kid) && timeline.IsTooLateToTakeOver(key, now)))
             adopted = adopted?.SettingAside(key.Kid);
 
         return adopted;
@@ -540,11 +545,11 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             "lists keys the ring can use.",
             failure.Code,
             failure.Message);
-        ReleaseUnlistedSigners(timeline: null);
     }
 
     /// <summary>
-    /// Disposes the signer of every key absent from two reads in a row, unless it still signs. One
+    /// Called once per read that listed keys. Disposes the signer of every key absent from two reads
+    /// in a row, unless it still signs. One
     /// read's grace lets a sign call that started before the key left the list finish with the signer
     /// it resolved.
     /// </summary>
@@ -614,7 +619,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                 if (_shutdown.IsCancellationRequested)
                     throw;
 
-                SetAside(current, successor, ex);
+                SetAside(current, successor, Describe(ex), ex);
                 return;
             }
 
@@ -631,6 +636,14 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         if (timeline.SigningKeyAt(now).Kid != successor.Kid)
             return;
 
+        // A retried key whose cutoff passed while its signer opened: its predecessor is superseded.
+        if (_failed.Contains(successor.Kid) && timeline.IsTooLateToTakeOver(successor, now))
+        {
+            SetAside(current, successor, "too late to take over", failure: null);
+            return;
+        }
+
+        _failed.Remove(successor.Kid);
         Volatile.Write(ref _binding, binding with { Signer = signer, KeySet = timeline.At(now), StopReason = null });
 
         if (current is null)
@@ -653,10 +666,10 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// signs and the rules carry on with the keys around it; the health check reads it from there.
     /// Stops signing instead when no other listed key could sign.
     /// </summary>
-    private void SetAside(SigningKey? current, SigningKey successor, Exception failure)
+    private void SetAside(SigningKey? current, SigningKey successor, string reason, Exception? failure)
     {
+        _failed.Add(successor.Kid);
         var binding = Volatile.Read(ref _binding)!;
-        var reason = Describe(failure);
         if (binding.Timeline!.SettingAside(successor.Kid) is not { } timeline)
         {
             _logger.LogError(failure, "The signer of key {Kid} ({SourceKeyId}) failed ({Failure}).", successor.Kid, successor.SourceId.Value, reason);
