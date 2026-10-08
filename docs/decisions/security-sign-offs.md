@@ -2213,7 +2213,8 @@ duplicated configuration reference, fixed in `6b7cb58`), and the PR's CodeQL and
 - Discovery advertises exactly that algorithm. Closed — `GetDocument_advertises_one_algorithm_however_many_keys_are_published`.
 - A client's `AllowedSigningAlgorithms` rejects undefined values always, and once the ring has read its source must contain its
   algorithm; other entries only warn. Closed — `Validate_fails_with_undefined_code_before_the_key_ring_has_read_its_source`,
-  `Host_startup_throws_when_a_client_excludes_the_algorithm_the_server_signs_with`. Before that read, inclusion is unchecked and
+  `Host_startup_throws_when_a_client_excludes_the_algorithm_the_server_signs_with`,
+  `Validate_warns_once_about_an_AllowedSigningAlgorithms_entry_the_server_never_signs_with`. Before that read, inclusion is unchecked and
   warned — `Validate_warns_when_the_key_ring_exists_but_has_not_read_its_source`; the issuer then refuses such a client at signing —
   `A_client_whose_allowed_algorithms_exclude_the_signing_key_is_refused_before_the_signer_is_touched`.
 - **Accepted residual (maintainer):** non-RS256 only warns, against Discovery §3 — `VerifyAsync_warns_when_the_advertised_set_omits_RS256`.
