@@ -446,7 +446,7 @@ public sealed class TokenEndpointTests : IDisposable
     {
         var client = PublicRegistration() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } };
 
-        AuthorizationCodeGrant.ClientAcceptsSigningKey(client, Es256SigningKey()).Should().BeFalse();
+        AuthorizationCodeGrant.ClientAcceptsSigningKey(client, SigningAlgorithm.ES256).Should().BeFalse();
     }
 
     [Fact]
@@ -454,7 +454,7 @@ public sealed class TokenEndpointTests : IDisposable
     {
         var client = PublicRegistration() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 } };
 
-        AuthorizationCodeGrant.ClientAcceptsSigningKey(client, Es256SigningKey()).Should().BeTrue();
+        AuthorizationCodeGrant.ClientAcceptsSigningKey(client, SigningAlgorithm.ES256).Should().BeTrue();
     }
 
     [Fact]
@@ -462,17 +462,7 @@ public sealed class TokenEndpointTests : IDisposable
     {
         var client = PublicRegistration() with { AllowedSigningAlgorithms = null };
 
-        AuthorizationCodeGrant.ClientAcceptsSigningKey(client, Es256SigningKey()).Should().BeTrue();
-    }
-
-    private static SigningKey Es256SigningKey()
-    {
-        using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var key = new SourceKey(
-            new SourceKeyId("current"),
-            PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: false)));
-        return SigningKeySetBuilder.Build(
-            [key], SigningAlgorithm.ES256, new SigningKeyOptions { RetainRetiredKeysFor = TimeSpan.Zero }).At(DateTimeOffset.UtcNow).SigningKey;
+        AuthorizationCodeGrant.ClientAcceptsSigningKey(client, SigningAlgorithm.ES256).Should().BeTrue();
     }
 
     // ── Lifetimes ─────────────────────────────────────────────────────────────────────────────

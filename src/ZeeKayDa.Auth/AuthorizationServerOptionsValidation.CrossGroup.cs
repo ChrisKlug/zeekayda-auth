@@ -52,17 +52,24 @@ internal static partial class AuthorizationServerOptionsValidation
         && options.ClockSkewTolerance >= options.AuthorizationEndpoint.AuthorizationCodeLifetime / 2;
 
     /// <summary>
-    /// A relying party may serve the key set from its cache for up to the JWKS cache lifetime, so a
-    /// new key published for less than that may still be unknown to it when it starts signing.
+    /// A new key is published up to one refresh interval after it is listed, and a relying party may
+    /// then serve the key set from its cache for up to the JWKS cache lifetime, so a lead time shorter
+    /// than both together may leave the key unknown to it when it starts signing.
     /// </summary>
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateSigningKeyLeadTime(AuthorizationServerOptions options)
     {
-        if (options.SigningKeys.LeadTime > TimeSpan.Zero && options.SigningKeys.LeadTime < options.JwksEndpoint.CacheMaxAge)
+        var signingKeys = options.SigningKeys;
+        if (signingKeys.LeadTime <= TimeSpan.Zero || signingKeys.RefreshInterval <= TimeSpan.Zero)
+            yield break;
+
+        var unknownFor = TokenLifetimes.Sum(options.JwksEndpoint.CacheMaxAge, signingKeys.RefreshInterval);
+        if (signingKeys.LeadTime < unknownFor)
         {
             yield return new(
                 "configuration.signing_keys.lead_time.shorter_than_jwks_cache_max_age",
-                $"AuthorizationServerOptions.SigningKeys.LeadTime ({options.SigningKeys.LeadTime}) is shorter than " +
-                $"AuthorizationServerOptions.JwksEndpoint.CacheMaxAge ({options.JwksEndpoint.CacheMaxAge}). A relying " +
+                $"AuthorizationServerOptions.SigningKeys.LeadTime ({signingKeys.LeadTime}) is shorter than " +
+                $"AuthorizationServerOptions.JwksEndpoint.CacheMaxAge ({options.JwksEndpoint.CacheMaxAge}) plus " +
+                $"AuthorizationServerOptions.SigningKeys.RefreshInterval ({signingKeys.RefreshInterval}). A relying " +
                 "party may still be serving a cached key set without the new key when it starts signing.");
         }
     }

@@ -9,9 +9,9 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// </summary>
 /// <remarks>
 /// Key Vault owns the certificate's version history, and the provider lists its enabled versions, dated from
-/// the vault's own per-version metadata. The vault is read once, at startup: rotation is picked up by
-/// restarting the host. Rotate by creating a new certificate version; the framework decides from the
-/// versions' dates when it takes over.
+/// the vault's own per-version metadata. The vault is read at startup and every
+/// <see cref="SigningKeyOptions.RefreshInterval"/>, so a new certificate version is published within one
+/// interval of its creation, and the framework decides from the versions' dates when it takes over.
 /// </remarks>
 public sealed class AzureKeyVaultCachedSigningOptions
 {

@@ -13,6 +13,13 @@ internal static class SigningKeyOptionsValidation
                 "AuthorizationServerOptions.SigningKeys.LeadTime must be greater than zero.");
         }
 
+        if (signingKeys.RefreshInterval <= TimeSpan.Zero)
+        {
+            yield return new(
+                "configuration.signing_keys.refresh_interval.not_positive",
+                "AuthorizationServerOptions.SigningKeys.RefreshInterval must be greater than zero.");
+        }
+
         if (signingKeys.RetainRetiredKeysFor < TimeSpan.Zero)
         {
             yield return new(

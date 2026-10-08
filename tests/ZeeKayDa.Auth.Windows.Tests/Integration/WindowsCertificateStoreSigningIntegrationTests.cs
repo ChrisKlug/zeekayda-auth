@@ -85,15 +85,15 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle("the single listed certificate's public key must be published");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
-        ring.Current.SigningKey.Kid.Should().NotContain(CurrentThumbprint,
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.SigningKey!.Kid.Should().NotContain(CurrentThumbprint,
             "kid must be the RFC 7638 thumbprint, never the certificate's own store thumbprint");
         ring.Current.Algorithm.Should().Be(SigningAlgorithm.RS256);
 
         var signingInput = "header.payload"u8.ToArray();
         var outcome = await ring.SignAsync(signingInput, static (_, input) => input, ct);
 
-        using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        using var rsa = RSA.Create(ring.Current.SigningKey!.PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the ring must sign with the private key of the published certificate");
     }
@@ -124,7 +124,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().HaveCount(2, "every listed certificate is published so relying parties can cache it");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(newer.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(newer.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
     [Fact]
@@ -184,7 +184,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
 
-        provider.GetRequiredService<SigningKeyRing>().Current.SigningKey.Kid
+        provider.GetRequiredService<SigningKeyRing>().Current.SigningKey!.Kid
             .Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
     }
 

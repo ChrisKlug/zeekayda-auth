@@ -15,8 +15,9 @@ public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
 {
     /// <summary>
     /// Registers a single certificate from a Windows Certificate Store as the JWT signing key. The
-    /// certificate <paramref name="certificate"/> finds is read once at
-    /// startup and its private key is used for signing locally, in process.
+    /// certificate <paramref name="certificate"/> finds is read at startup and every
+    /// <see cref="SigningKeyOptions.RefreshInterval"/>, and its private key is used for signing
+    /// locally, in process.
     /// </summary>
     /// <remarks>
     /// <para>

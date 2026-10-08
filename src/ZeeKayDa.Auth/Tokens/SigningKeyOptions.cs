@@ -14,9 +14,19 @@ public sealed class SigningKeyOptions
     /// before it takes over. A day covers relying parties that ignore the JWKS
     /// <c>Cache-Control</c> header (Microsoft.IdentityModel refreshes metadata every 12 hours by
     /// default). Must be greater than zero, and not shorter than
-    /// <see cref="Discovery.JwksEndpointOptions.CacheMaxAge"/>.
+    /// <see cref="Discovery.JwksEndpointOptions.CacheMaxAge"/> plus <see cref="RefreshInterval"/>.
     /// </remarks>
     public TimeSpan LeadTime { get; set; } = TimeSpan.FromDays(1);
+
+    /// <summary>
+    /// Gets or sets how often the signing key source is read again. Defaults to five minutes.
+    /// </summary>
+    /// <remarks>
+    /// A key added to the source is published within this long of being listed, so it has been
+    /// published for the lead time when it signs; a key removed stops signing and is unpublished
+    /// within it. Must be greater than zero.
+    /// </remarks>
+    public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromMinutes(5);
 
     // Long enough that a slow or failed handover on one replica is noticed and fixed before the
     // other replicas stop publishing the key it still signs with.

@@ -2172,7 +2172,7 @@ code lens on `6db3887`, and the PR's Copilot and CodeScene review; no Critical; 
 - Key Vault refuses a listed version whose URI is not version-pinned. Closed — `ReadAsync_throws_when_a_listed_versions_identifier_uri_is_not_version_pinned`.
 - **Accepted residuals (maintainer):** a key signs up to five minutes before its `NotBefore` (Future_a_key_valid_up_to_five_minutes_from_now_signs_to_tolerate_clock_skew [removed by #823 PR 3, where `NotBefore` is no validity gate: `Build_signs_with_a_sole_key_whose_NotBefore_is_in_the_future`]);
   a key expiring while the process runs signs until restart, with no test pinning that; the health check reports it Unhealthy
-  (`CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source`);
+  (CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source [renamed by #527, the ring now re-reading: `CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_reading_the_source_itself`]);
   file and Windows sources sign only with Current until PR 2 (CreateSignerAsync_throws_when_called_for_the_Next_slot [removed by #823 PR 2, which lets every listed file sign: `CreateSignerAsync_opens_a_signer_for_any_listed_file`]); per-client lifetimes are invisible at startup,
   so the operator raises the retention, with no test for the default ignoring them (`PostConfigure_keeps_an_explicit_RetainRetiredKeysFor` proves the lever); a hint whose key is retired is refused, #899
   (`Validate_refuses_a_hint_signed_by_a_key_the_server_does_not_publish`).
@@ -2239,6 +2239,6 @@ CodeQL and CodeScene review; no Critical left open. Four test-only CodeQL dispos
   `Build_fails_on_a_duplicate_kid_even_when_one_entry_has_unusable_dates`, `Evaluate_is_Degraded_while_a_listed_key_is_dropped_without_naming_its_source_id`.
 - A key signing on after healthy replicas dropped it is Unhealthy. Closed — `Evaluate_is_Unhealthy_when_the_key_signing_on_after_a_failed_handover_has_left_every_other_replica_s_key_set`.
 - **Accepted residuals (maintainer):** a provider's own per-key failure still fails `ReadAsync` (#908) — `ReadAsync_rejects_a_separate_key_file_broader_than_0600_on_Unix_even_for_a_file_that_does_not_sign`;
-  revocation is remove and restart until polling (#527), the source being read once — `CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source`.
+  revocation is remove and restart until polling (#527), the source being read once — CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source [renamed by #527: `CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_reading_the_source_itself`].
 - **Unverified scope limits (maintainer), no test:** a source returning one signer instance for two keys is excluded by the contract,
   not checked; a signer whose own self-test never completes is set aside at the deadline but never disposed — the ring never receives it.

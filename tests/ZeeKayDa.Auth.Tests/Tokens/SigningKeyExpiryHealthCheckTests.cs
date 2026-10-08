@@ -93,13 +93,13 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var timeline = Timeline(
             CreateRsaKey("current", Now.AddDays(90), notBefore: Now.AddDays(-90)),
             CreateRsaKey("successor", Now.AddDays(365), notBefore: Now.AddHours(-36)));
-        var successor = timeline.At(Now).SigningKey;
-        var remaining = timeline.SettingAside(successor.Kid);
+        var successor = timeline.At(Now).SigningKey!;
+        var remaining = timeline.SettingAside(successor.Kid)!;
 
         var result = SigningKeyExpiryHealthCheck.Evaluate(remaining, remaining.At(Now), Now, DegradedThreshold);
 
         result.Status.Should().Be(HealthStatus.Degraded);
-        result.Description.Should().Contain(successor.Kid).And.Contain("restart");
+        result.Description.Should().Contain(successor.Kid).And.Contain("next read");
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var result = SigningKeyExpiryHealthCheck.Evaluate(timeline, stillSigning, Now, DegradedThreshold);
 
         result.Status.Should().Be(HealthStatus.Degraded);
-        result.Description.Should().Contain(timeline.At(Now).SigningKey.Kid).And.Contain("handover");
+        result.Description.Should().Contain(timeline.At(Now).SigningKey!.Kid).And.Contain("handover");
     }
 
     [Fact]
@@ -123,7 +123,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var timeline = Timeline(
             CreateRsaKey("current", Now.AddDays(5), notBefore: Now.AddDays(-90)),
             CreateRsaKey("successor", Now.AddDays(6), notBefore: Now.AddHours(-36)));
-        var remaining = timeline.SettingAside(timeline.At(Now).SigningKey.Kid);
+        var remaining = timeline.SettingAside(timeline.At(Now).SigningKey!.Kid)!;
 
         var result = SigningKeyExpiryHealthCheck.Evaluate(remaining, remaining.At(Now), Now, DegradedThreshold);
 
@@ -151,8 +151,8 @@ public sealed class SigningKeyExpiryHealthCheckTests
         // public key, so IsSigningKey can only be derived by comparing Kid, never by ReferenceEquals.
         var current = CreateRsaKey("current", Now.AddDays(30));
         var timeline = Timeline(current);
-        var distinctSigningKey = Timeline(current).At(Now).SigningKey;
-        var set = new SigningKeySet(distinctSigningKey, timeline.At(Now).Published);
+        var distinctSigningKey = Timeline(current).At(Now).SigningKey!;
+        var set = new SigningKeySet(distinctSigningKey.Algorithm, distinctSigningKey, timeline.At(Now).Published);
 
         var result = SigningKeyExpiryHealthCheck.Evaluate(timeline, set, Now, DegradedThreshold);
 
@@ -212,7 +212,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
     }
 
     [Fact]
-    public async Task CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source()
+    public async Task CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_reading_the_source_itself()
     {
         using var rsa = RSA.Create(2048);
         var current = new SourceKey(
@@ -224,12 +224,14 @@ public sealed class SigningKeyExpiryHealthCheckTests
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         timeProvider.SetUtcNow(Now.AddDays(2)); // advance past the signing key's expiry
+        await ring.LastTransition;
+        var readsBefore = source.ReadAsyncCallCount;
         var sut = new SigningKeyExpiryHealthCheck(ring, timeProvider, Options.Create(new SigningKeyExpiryHealthCheckOptions()));
 
         var result = await sut.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         result.Status.Should().Be(HealthStatus.Unhealthy);
-        source.ReadAsyncCallCount.Should().Be(1);
+        source.ReadAsyncCallCount.Should().Be(readsBefore);
     }
 
     /// <summary>Real <see cref="ISigningKeySource"/> tracking how many times <see cref="ReadAsync"/>
@@ -286,7 +288,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var current = CreateRsaKey("current", Now.AddDays(90), notBefore: Now.AddDays(-90));
         var successor = CreateRsaKey("successor", Now.AddDays(90), notBefore: Now.AddDays(-3));
         var listed = Timeline(current, successor);
-        var timeline = listed.SettingAside(listed.At(Now).SigningKey.Kid);
+        var timeline = listed.SettingAside(listed.At(Now).SigningKey!.Kid)!;
 
         var result = Evaluate(timeline);
 
@@ -299,7 +301,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
         var current = CreateRsaKey("current", Now.AddDays(90), notBefore: Now.AddDays(-90));
         var successor = CreateRsaKey("successor", Now.AddDays(90), notBefore: Now.AddDays(-1).AddHours(-1));
         var listed = Timeline(current, successor);
-        var timeline = listed.SettingAside(listed.At(Now).SigningKey.Kid);
+        var timeline = listed.SettingAside(listed.At(Now).SigningKey!.Kid)!;
 
         Evaluate(timeline).Status.Should().Be(HealthStatus.Degraded);
     }

@@ -32,17 +32,20 @@ namespace ZeeKayDa.Auth.Tokens;
 internal sealed class SigningKeyTimeline
 {
     private readonly ImmutableArray<SigningKey> _oldestFirst;
+    private readonly SigningAlgorithm _algorithm;
     private readonly TimeSpan _leadTime;
     private readonly TimeSpan _retention;
 
     /// <param name="oldestFirst">Validated keys in <see cref="SigningKeySetBuilder.OldestFirst"/> order; never empty.</param>
     /// <param name="dropped">The listed keys whose own dates or material were unusable.</param>
+    /// <param name="algorithm">The algorithm every key signs under.</param>
     /// <param name="options">The lead time and the resolved retention.</param>
     internal SigningKeyTimeline(
-        ImmutableArray<SigningKey> oldestFirst, ImmutableArray<DroppedKey> dropped, SigningKeyOptions options)
+        ImmutableArray<SigningKey> oldestFirst, ImmutableArray<DroppedKey> dropped, SigningAlgorithm algorithm, SigningKeyOptions options)
         : this(
             oldestFirst,
             dropped,
+            algorithm,
             options.LeadTime,
             options.RetainRetiredKeysFor
                 ?? throw new InvalidOperationException(
@@ -54,12 +57,14 @@ internal sealed class SigningKeyTimeline
     private SigningKeyTimeline(
         ImmutableArray<SigningKey> oldestFirst,
         ImmutableArray<DroppedKey> dropped,
+        SigningAlgorithm algorithm,
         TimeSpan leadTime,
         TimeSpan retention,
         ImmutableList<SigningKey> setAside)
     {
         _oldestFirst = oldestFirst;
         Dropped = dropped;
+        _algorithm = algorithm;
         _leadTime = leadTime;
         _retention = retention;
         SetAside = setAside;
@@ -67,6 +72,9 @@ internal sealed class SigningKeyTimeline
 
     /// <summary>Gets how long a key is published before it may sign.</summary>
     internal TimeSpan LeadTime => _leadTime;
+
+    /// <summary>Gets every listed key that was not dropped, oldest first.</summary>
+    internal ImmutableArray<SigningKey> Keys => _oldestFirst;
 
     /// <summary>
     /// Gets the keys whose signer failed to open or self-test when they were due to sign, in the
@@ -92,8 +100,12 @@ internal sealed class SigningKeyTimeline
             .. _oldestFirst.Where(key => key == signingKey || IsKept(key, now, keptUnexpired)),
         ];
 
-        return new SigningKeySet(signingKey, published);
+        return new SigningKeySet(_algorithm, signingKey, published);
     }
+
+    /// <summary>The key that signs at <paramref name="now"/>.</summary>
+    internal SigningKey SigningKeyAt(DateTimeOffset now) =>
+        ChooseSigningKey([.. _oldestFirst.Where(key => key.ExpiresAt > now)], now);
 
     /// <summary>
     /// Whether <paramref name="key"/> is published at <paramref name="now"/> only because it signs:
@@ -122,19 +134,24 @@ internal sealed class SigningKeyTimeline
 
     /// <summary>
     /// The same keys with the one whose <see cref="SigningKey.Kid"/> is <paramref name="kid"/> set
-    /// aside: it never signs, so the rules carry on with the keys around it, and it is never tried
-    /// again.
+    /// aside: it never signs, so the rules carry on with the keys around it. Or <see langword="null"/>
+    /// when no other key could sign.
     /// </summary>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when no other key could sign: the key signing now is never set aside.
-    /// </exception>
-    internal SigningKeyTimeline SettingAside(string kid)
+    internal SigningKeyTimeline? SettingAside(string kid)
     {
         if (_oldestFirst.All(key => key.Kid == kid || SetAside.Contains(key)))
-            throw new InvalidOperationException($"Setting key '{kid}' aside would leave no key able to sign.");
+            return null;
 
-        return new(_oldestFirst, Dropped, _leadTime, _retention, SetAside.Add(_oldestFirst.Single(key => key.Kid == kid)));
+        return new(_oldestFirst, Dropped, _algorithm, _leadTime, _retention, SetAside.Add(_oldestFirst.Single(key => key.Kid == kid)));
     }
+
+    /// <summary>
+    /// Whether <paramref name="key"/>, set aside, must stay set aside however healthy its signer
+    /// becomes: by now the key it would replace is superseded, and may no longer be published where
+    /// tokens it signed are verified.
+    /// </summary>
+    internal bool IsTooLateToTakeOver(SigningKey key, DateTimeOffset now) =>
+        now - key.NotBefore >= TokenLifetimes.Sum(_leadTime, _retention);
 
     /// <summary>
     /// Whether <paramref name="key"/> has been published for the lead time at <paramref name="now"/>;

@@ -88,16 +88,16 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle();
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial(version)),
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial(version)),
             "kid must be the RFC 7638 thumbprint of the public key");
-        ring.Current.SigningKey.Kid.Should().NotContain("fake-vault").And.NotContain("fake-key").And.NotContain(version,
+        ring.Current.SigningKey!.Kid.Should().NotContain("fake-vault").And.NotContain("fake-key").And.NotContain(version,
             "kid must never leak vault, key, or version identifiers");
         ring.Current.Algorithm.Should().Be(SigningAlgorithm.RS256);
 
         var signingInput = "header.payload"u8.ToArray();
         var outcome = await ring.SignAsync(signingInput, static (_, input) => input, ct);
 
-        using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        using var rsa = RSA.Create(ring.Current.SigningKey!.PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the ring must sign via the remote Key Vault seam with the published key");
         signer.Calls.Should().NotBeEmpty("every signature is a remote Key Vault round trip — nothing signs locally");
@@ -123,7 +123,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
 
         ring.Current.Published.Should().HaveCount(3,
             "the signing version, its predecessor still inside retention, and the staged version are all published");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")),
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")),
             "v2 is the newest version past the lead time");
     }
 

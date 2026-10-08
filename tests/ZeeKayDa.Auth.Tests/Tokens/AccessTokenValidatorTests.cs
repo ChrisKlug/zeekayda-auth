@@ -32,7 +32,7 @@ public sealed class AccessTokenValidatorTests
     private static readonly SigningKeyRing Ring = TestSigningKeys.Ring(
         [RsaSourceKey("current", CurrentKey)], CurrentKey);
 
-    private static string CurrentKid => Ring.Current.SigningKey.Kid;
+    private static string CurrentKid => Ring.Current.SigningKey!.Kid;
 
     // ── Fakes and helpers ────────────────────────────────────────────────────────────────────────
 

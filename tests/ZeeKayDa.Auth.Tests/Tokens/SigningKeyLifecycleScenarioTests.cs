@@ -215,7 +215,7 @@ public sealed class SigningKeyLifecycleScenarioTests
         }
     }
 
-    private static string SigningId(SigningKeyRing ring) => ring.Current.SigningKey.SourceId.Value;
+    private static string SigningId(SigningKeyRing ring) => ring.Current.SigningKey!.SourceId.Value;
 
     private static string[] PublishedIds(SigningKeyRing ring) => [.. ring.Current.Published.Select(key => key.SourceId.Value)];
 }

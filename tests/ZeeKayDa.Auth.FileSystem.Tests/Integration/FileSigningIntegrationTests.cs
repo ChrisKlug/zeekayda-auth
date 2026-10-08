@@ -68,13 +68,13 @@ public sealed class FileSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle("the single listed file's public key must be published");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
         ring.Current.Algorithm.Should().Be(SigningAlgorithm.RS256);
 
         var signingInput = "header.payload"u8.ToArray();
         var outcome = await ring.SignAsync(signingInput, static (_, input) => input, ct);
 
-        using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        using var rsa = RSA.Create(ring.Current.SigningKey!.PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the ring must sign with the private key of the published file");
     }
@@ -104,7 +104,7 @@ public sealed class FileSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().HaveCount(2, "every listed file is published so relying parties can cache it");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(newer.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(newer.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class FileSigningIntegrationTests
         await StartHostedServicesAsync(provider, ct);
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
-        ring.Current.SigningKey.Kid.Should().Be(
+        ring.Current.SigningKey!.Kid.Should().Be(
             JwkThumbprint.Compute(older.GetRSAPublicKey()!.ExportParameters(false)),
             "a certificate newer than the lead time has not had time to reach relying parties' JWKS caches yet");
         ring.Current.Published.Should().HaveCount(2);
@@ -186,7 +186,7 @@ public sealed class FileSigningIntegrationTests
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
 
-        provider.GetRequiredService<SigningKeyRing>().Current.SigningKey.Kid
+        provider.GetRequiredService<SigningKeyRing>().Current.SigningKey!.Kid
             .Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
@@ -284,11 +284,11 @@ public sealed class FileSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle();
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
 
         var outcome = await ring.SignAsync("header.payload"u8.ToArray(), static (_, input) => input, ct);
 
-        using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        using var rsa = RSA.Create(ring.Current.SigningKey!.PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the ring must sign with the private key of the published file");
     }
@@ -318,7 +318,7 @@ public sealed class FileSigningIntegrationTests
         var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().HaveCount(2, "every listed file is published, each opened with its own password");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(newer.GetRSAPublicKey()!.ExportParameters(false)));
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(newer.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
     [Fact]

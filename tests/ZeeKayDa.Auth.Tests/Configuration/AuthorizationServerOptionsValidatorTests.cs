@@ -1477,29 +1477,43 @@ public sealed class AuthorizationServerOptionsValidatorTests
     // ── SigningKeys ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_the_signing_key_LeadTime_is_shorter_than_the_JWKS_CacheMaxAge()
+    public void Validate_fails_when_the_signing_key_LeadTime_is_shorter_than_the_JWKS_CacheMaxAge_plus_the_RefreshInterval()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             JwksEndpoint = { CacheMaxAge = TimeSpan.FromHours(2) },
-            SigningKeys = { LeadTime = TimeSpan.FromHours(2) - TimeSpan.FromSeconds(1) },
+            SigningKeys = { LeadTime = TimeSpan.FromHours(2) + TimeSpan.FromMinutes(5) - TimeSpan.FromSeconds(1) },
         });
 
         failures.Should().ContainSingle(f => f.Code == "configuration.signing_keys.lead_time.shorter_than_jwks_cache_max_age");
     }
 
     [Fact]
-    public void Validate_accepts_a_signing_key_LeadTime_equal_to_the_JWKS_CacheMaxAge()
+    public void Validate_accepts_a_signing_key_LeadTime_equal_to_the_JWKS_CacheMaxAge_plus_the_RefreshInterval()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
             JwksEndpoint = { CacheMaxAge = TimeSpan.FromHours(2) },
-            SigningKeys = { LeadTime = TimeSpan.FromHours(2) },
+            SigningKeys = { LeadTime = TimeSpan.FromHours(2) + TimeSpan.FromMinutes(5) },
         });
 
         failures.Should().NotContain(f => f.Code.StartsWith("configuration.signing_keys", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_fails_when_the_signing_key_RefreshInterval_is_not_positive(int minutes)
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            SigningKeys = { RefreshInterval = TimeSpan.FromMinutes(minutes) },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.signing_keys.refresh_interval.not_positive");
     }
 
     [Theory]

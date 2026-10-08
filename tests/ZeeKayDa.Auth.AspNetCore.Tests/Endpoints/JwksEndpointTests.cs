@@ -221,7 +221,7 @@ public sealed class JwksEndpointTests
             .ToList();
 
         var ring = host.Resolve<SigningKeyRing>();
-        var currentKid = ring.Current.SigningKey.Kid;
+        var currentKid = ring.Current.SigningKey!.Kid;
         var tokenKid = await IssueIdTokenAndReadHeaderKid(host.Services);
 
         publishedKids.Should().HaveCount(3).And.Contain(currentKid);

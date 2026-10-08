@@ -265,7 +265,7 @@ public sealed class DevelopmentSigningKeySourceTests
             ct);
 
         ring.Current.Published.Should().ContainSingle();
-        outcome.Key.Kid.Should().Be(ring.Current.SigningKey.Kid);
+        outcome.Key.Kid.Should().Be(ring.Current.SigningKey!.Kid);
         SigningAlgorithms.Verify(
                 outcome.Key.Algorithm, outcome.Key.PublicKey, outcome.SigningInput.Span, outcome.Signature.Span)
             .Should().BeTrue();

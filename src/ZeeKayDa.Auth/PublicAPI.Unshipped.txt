@@ -384,7 +384,7 @@ ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.RemainingLifetime.init -> void
 ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.SigningKeyExpiryStatus(string! Kid, bool IsSigningKey, System.DateTimeOffset? ExpiresAt, System.TimeSpan? RemainingLifetime) -> void
 ZeeKayDa.Auth.Tokens.SigningKeySet
 ZeeKayDa.Auth.Tokens.SigningKeySet.Published.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SigningKey!>!
-ZeeKayDa.Auth.Tokens.SigningKeySet.SigningKey.get -> ZeeKayDa.Auth.Tokens.SigningKey!
+ZeeKayDa.Auth.Tokens.SigningKeySet.SigningKey.get -> ZeeKayDa.Auth.Tokens.SigningKey?
 ZeeKayDa.Auth.Tokens.SigningKeyType
 ZeeKayDa.Auth.Tokens.SigningKeyType.Ec = 1 -> ZeeKayDa.Auth.Tokens.SigningKeyType
 ZeeKayDa.Auth.Tokens.SigningKeyType.Rsa = 0 -> ZeeKayDa.Auth.Tokens.SigningKeyType
@@ -777,6 +777,8 @@ ZeeKayDa.Auth.Tokens.SigningKeyOptions.LeadTime.get -> System.TimeSpan
 ZeeKayDa.Auth.Tokens.SigningKeyOptions.LeadTime.set -> void
 ZeeKayDa.Auth.Tokens.SigningKeyOptions.RetainRetiredKeysFor.get -> System.TimeSpan?
 ZeeKayDa.Auth.Tokens.SigningKeyOptions.RetainRetiredKeysFor.set -> void
+ZeeKayDa.Auth.Tokens.SigningKeyOptions.RefreshInterval.get -> System.TimeSpan
+ZeeKayDa.Auth.Tokens.SigningKeyOptions.RefreshInterval.set -> void
 ZeeKayDa.Auth.Tokens.SigningKeyOptions.SigningKeyOptions() -> void
 ZeeKayDa.Auth.Tokens.SourceKey.ExpiresAt.get -> System.DateTimeOffset
 ZeeKayDa.Auth.Tokens.SourceKey.NotBefore.get -> System.DateTimeOffset

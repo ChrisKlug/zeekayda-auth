@@ -557,6 +557,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **BREAKING: the signing key ring re-reads its source every `SigningKeys.RefreshInterval`** (#527).
+  The new option defaults to five minutes and must be positive, and
+  `SigningKeys.LeadTime` must now cover `JwksEndpoint.CacheMaxAge` plus `RefreshInterval`
+  (`configuration.signing_keys.refresh_interval.not_positive`; the existing lead-time code). A key
+  added to the source is published within one interval, without a restart. A read that throws, or
+  does not complete within a minute, keeps the last list, logs an Error and makes
+  `SigningKeyExpiryHealthCheck` report `Degraded`. A read listing no keys is a full revocation.
+  The same goes for a list the ring must refuse (a `null` entry, a duplicate source id or `kid`, an
+  undated key among several) and for a list whose key due to sign now is unusable, including a bad
+  staged key once its lead time passes. In all of these, signing stops: `SigningKeySet.SigningKey`
+  is now nullable and is `null`, `Published` and the JWKS are empty, `SignAsync` throws
+  `InvalidOperationException` (the token endpoint answers `server_error`), and the health check
+  reports `Unhealthy`. A later read listing usable keys resumes signing. `SigningKeySet.Algorithm`
+  is a stored value, read from the source once at startup, so a source cannot change it at runtime.
+  A successor whose signer failed is set aside until the next read rather than until a restart, and
+  for good once its predecessor is superseded. The signer of a key absent from two reads in a row is
+  disposed.
+
 - **BREAKING: a signing source declares one algorithm, and the server signs only with it; the
   advertised-algorithm filter is gone** (#905). `ISigningKeySource` gains
   `SigningAlgorithm Algorithm { get; }`, and `SourceKey` loses its algorithm: it is
