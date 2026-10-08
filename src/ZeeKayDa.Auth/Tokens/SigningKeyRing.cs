@@ -413,19 +413,23 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         if (signer is null)
         {
             using var abandon = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
-            var opening = OpenTestedSignerAsync(successor, abandon.Token).AsTask();
+
+            // Run off the transition, and waited on with the ring's clock rather than the token
+            // alone: a source may block synchronously or ignore cancellation.
+            var opening = Task.Run(() => OpenTestedSignerAsync(successor, abandon.Token).AsTask(), CancellationToken.None);
             try
             {
-                // Waited on with the ring's clock, not only the token: a source may ignore cancellation.
                 signer = await opening.WaitAsync(HandoverDeadline, _timeProvider, _shutdown.Token).ConfigureAwait(false);
             }
-            catch (Exception ex) when (!_shutdown.IsCancellationRequested)
+            catch (Exception ex)
             {
-                if (ex is TimeoutException)
-                {
-                    abandon.Cancel();
-                    DisposeIfItOpensLate(opening);
-                }
+                // Abandoned — at the deadline, on failure, or at shutdown: a signer it still
+                // produces is disposed, and cleanup is in place before the source is told to stop.
+                DisposeIfItOpensLate(opening);
+                CancelQuietly(abandon);
+
+                if (_shutdown.IsCancellationRequested)
+                    throw;
 
                 SetAside(current, successor, ex);
                 return;
@@ -472,6 +476,18 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             "Key {Kid} ({SourceKeyId}) is due to sign, but its signer failed ({Failure}); it is set aside until a " +
             "restart and {CurrentKid} ({CurrentSourceKeyId}) signs on. Fix the key and restart.",
             successor.Kid, successor.SourceId.Value, reason, current.Kid, current.SourceId.Value);
+    }
+
+    // A source's cancellation callback may throw; nothing here can act on that.
+    private static void CancelQuietly(CancellationTokenSource source)
+    {
+        try
+        {
+            source.Cancel();
+        }
+        catch (AggregateException)
+        {
+        }
     }
 
     private static void DisposeIfItOpensLate(Task<ISigner> opening) =>

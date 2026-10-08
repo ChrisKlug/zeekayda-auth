@@ -878,7 +878,7 @@ public sealed class SigningKeyRingTests
         var source = new DisposableSigningKeySource(
             _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, successor.Key]),
             (id, _) => id == successor.Key.Id
-                ? throw new InvalidOperationException("simulated: the vault refused")
+                ? throw new SimulatedVaultException()
                 : Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey))),
             () => { },
             SigningAlgorithm.ES256);
@@ -887,8 +887,113 @@ public sealed class SigningKeyRingTests
 
         await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
 
-        logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error)
-            .Which.Exception.Should().NotBeNull();
+        var logged = logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error).Which.Exception;
+        Chain(logged).OfType<RedactedExceptionWrapper>().Select(wrapper => wrapper.OriginalExceptionType)
+            .Should().Contain(typeof(SimulatedVaultException).FullName);
+    }
+
+    [Fact]
+    public async Task Handover_whose_source_blocks_synchronously_is_still_set_aside_at_the_deadline()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        using var release = new ManualResetEventSlim();
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var blocked = TestSigningKeys.Pair("blocked", notBefore: Epoch);
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, blocked.Key]),
+            (id, _) =>
+            {
+                if (id == blocked.Key.Id)
+                    release.Wait(TimeSpan.FromSeconds(30));
+                return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey)));
+            },
+            () => { },
+            SigningAlgorithm.ES256);
+        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+
+        try
+        {
+            clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+            clock.Advance(TimeSpan.FromMinutes(1));
+            await ring.LastTransition;
+
+            ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Should().Be(blocked.Key.Id);
+        }
+        finally
+        {
+            release.Set();
+        }
+    }
+
+    [Fact]
+    public async Task Handover_past_the_deadline_is_set_aside_even_when_the_source_s_cancellation_callback_throws()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var hung = TestSigningKeys.Pair("hung", notBefore: Epoch);
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, hung.Key]),
+            (id, cancellationToken) =>
+            {
+                if (id != hung.Key.Id)
+                    return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey)));
+
+                cancellationToken.Register(static () => throw new InvalidOperationException("simulated: callback failure"));
+                return new TaskCompletionSource<ISigner>().Task;
+            },
+            () => { },
+            SigningAlgorithm.ES256);
+        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await ring.LastTransition;
+
+        ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Should().Be(hung.Key.Id);
+    }
+
+    [Fact]
+    public async Task A_signer_that_opens_after_shutdown_abandoned_its_handover_is_disposed()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var slow = TestSigningKeys.Pair("slow", notBefore: Epoch);
+        var opening = new TaskCompletionSource<ISigner>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new DisposableSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current.Key, slow.Key]),
+            (id, _) =>
+            {
+                if (id != slow.Key.Id)
+                    return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(current.PrivateKey)));
+
+                requested.TrySetResult();
+                return opening.Task;
+            },
+            () => { },
+            SigningAlgorithm.ES256);
+        var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await requested.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        ((IDisposable)ring).Dispose();
+        await ring.LastTransition;
+        opening.SetResult(new TrackingSigner(
+            new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(slow.PrivateKey)), () => disposed.TrySetResult()));
+
+        await disposed.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+    }
+
+    private sealed class SimulatedVaultException : Exception;
+
+    private static IEnumerable<Exception> Chain(Exception? exception)
+    {
+        for (; exception is not null; exception = exception.InnerException)
+            yield return exception;
     }
 
     [Fact]
