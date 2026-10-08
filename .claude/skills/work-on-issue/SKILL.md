@@ -220,7 +220,12 @@ A genuine re-review happens only if commits landed after the reviewer last looke
 
 ## Stage 5 — Merge ⛔
 
-On the maintainer's approval: `gh pr merge` (which prompts), then `/post-merge-checks`.
+On the maintainer's approval, and once the PR's bots (CodeQL, CodeScene, Copilot) have run and any
+fix they caused is pushed: a change with a trust-boundary decision gets its security sign-off entry
+now, as the **last commit on the feature branch**, naming that branch head as the frozen code. Run
+the citation check and `/adversarial-review text` on that commit, push, then `gh pr merge` (which
+prompts) and `/post-merge-checks`. Anything that lands after the entry means rewriting the entry
+before merge. One PR per change: the sign-off is not a separate docs PR after the merge.
 
 ---
 
@@ -230,7 +235,7 @@ On the maintainer's approval: `gh pr merge` (which prompts), then `/post-merge-c
   touch it not at all.
 - **Security sign-off entries** (`docs/decisions/security-sign-offs.md`, trust-boundary decisions
   only): written **last, once, against frozen code**, after review has concluded — never in a commit
-  that is still under review. **Maximum ~15 lines.** Every claim cites its proof:
+  that is still under review — as the feature PR's final commit (Stage 5). **Maximum ~15 lines.** Every claim cites its proof:
   "closed — proven by `ManualRingRegistration_IsRejected`", not a paragraph a future reviewer must
   re-probe by hand. A residual is one sentence plus a test name.
 - **A fix that changes a documented rule re-checks the documents** — the register, the CHANGELOG
