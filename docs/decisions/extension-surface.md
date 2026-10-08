@@ -119,10 +119,10 @@ dependencies are resolved inside the repository from an injected `IServiceScopeF
 
 **Registration lives in Microsoft's namespaces; everything else groups by feature.** Every public `Add…`
 and `Map…` extension method is declared in `Microsoft.Extensions.DependencyInjection` or
-`Microsoft.AspNetCore.Builder`, so a host's `Program.cs` needs no ZeeKayDa `using` at all. The types a
-host or extension author names in its own code sit in the feature namespace they belong to —
-`AspNetCore.Interaction`, `Claims`, `Clients`, `Tokens`, `Stores` — and a provider package brings its
-own namespace for its options. A host file should need at most two ZeeKayDa `using` directives; no type
+`Microsoft.AspNetCore.Builder`, so registering and mapping the framework in `Program.cs` needs no
+ZeeKayDa `using`. The types a host or extension author names in its own code sit in the feature
+namespace they belong to — `AspNetCore.Interaction`, `Claims`, `Clients`, `Tokens`, `Stores` — and a
+provider package brings its own namespace for its options. A host file should need at most two ZeeKayDa `using` directives; no type
 is hoisted into the root namespace just to save one.
 
 ## Tried, didn't work
