@@ -65,7 +65,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
     // Guards _signers, _timer and the transition from live to disposed.
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, ISigner> _signers = new(StringComparer.Ordinal);
+    private readonly Dictionary<SignerId, ISigner> _signers = [];
     private ITimer? _timer;
 
     // Read once, at initialization: a source whose getter changes cannot change the server's algorithm.
@@ -73,7 +73,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
     // Touched only by initialization and the transition, which never overlap.
     private DateTimeOffset _nextReadAt;
-    private readonly HashSet<string> _unlistedOnce = new(StringComparer.Ordinal);
+    private readonly HashSet<SignerId> _unlistedOnce = [];
 
     // Keys whose signer failed when due and has not signed since, by kid, kept across reads that omit
     // them or stop signing: such a key may never take over once its predecessor is superseded.
@@ -354,7 +354,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
             // Created disarmed and armed only once assigned: a timer due at once may fire before
             // CreateTimer returns, and its transition re-arms through _timer.
-            _signers.Add(signingKey.Kid, signer);
+            _signers.Add(SignerId.Of(signingKey), signer);
             _timer = _timeProvider.CreateTimer(
                 static state => ((SigningKeyRing)state!).OnTimer(), this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
@@ -419,7 +419,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
             var due = timeline.SigningKeyAt(now);
             var signingKey = (state as Signing)?.SigningKey;
-            if (state is Signing signing && due.Kid == signing.SigningKey.Kid)
+            if (state is Signing signing && SignerId.Of(due) == SignerId.Of(signing.SigningKey))
             {
                 Volatile.Write(ref _state, signing with { KeySet = timeline.At(now) });
                 return now;
@@ -512,9 +512,12 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                 IReadOnlyList<SigningKey> withSigner = published.Any(key => key.Kid == stillListed.Kid)
                     ? published
                     : [.. published.Append(stillListed).Order(SigningKeySetBuilder.OldestFirst)];
+
+                // A renewal now opening the key pair under another source id signs once its handover opens it.
+                var signingKey = SignerId.Of(stillListed) == SignerId.Of(signing.SigningKey) ? stillListed : signing.SigningKey;
                 return signing with
                 {
-                    KeySet = new SigningKeySet(_algorithm, stillListed, withSigner),
+                    KeySet = new SigningKeySet(_algorithm, signingKey, withSigner),
                     Timeline = timeline,
                     ReadFailure = null,
                 };
@@ -597,20 +600,20 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     private void ReleaseUnlistedSigners(SigningKeyTimeline? timeline)
     {
         var signing = (Volatile.Read(ref _state) as Signing)?.Signer;
-        var listed = timeline?.Keys.Select(key => key.Kid).ToHashSet(StringComparer.Ordinal) ?? [];
+        var listed = timeline?.Keys.Select(SignerId.Of).ToHashSet() ?? [];
         List<ISigner> released = [];
         lock (_gate)
         {
-            foreach (var (kid, signer) in _signers.ToList())
+            foreach (var (id, signer) in _signers.ToList())
             {
-                if (listed.Contains(kid))
+                if (listed.Contains(id))
                 {
-                    _unlistedOnce.Remove(kid);
+                    _unlistedOnce.Remove(id);
                 }
-                else if (!_unlistedOnce.Add(kid) && !ReferenceEquals(signer, signing))
+                else if (!_unlistedOnce.Add(id) && !ReferenceEquals(signer, signing))
                 {
-                    _unlistedOnce.Remove(kid);
-                    _signers.Remove(kid);
+                    _unlistedOnce.Remove(id);
+                    _signers.Remove(id);
                     released.Add(signer);
                 }
             }
@@ -643,7 +646,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
         // The clock may have moved on while the signer opened; the caller's loop then hands over to
         // whichever key is due now, and this signer stays cached for if its turn comes again.
-        if (timeline.SigningKeyAt(now).Kid != successor.Kid)
+        if (SignerId.Of(timeline.SigningKeyAt(now)) != SignerId.Of(successor))
             return;
 
         // A retried key whose cutoff passed while its signer opened: its predecessor is superseded.
@@ -667,7 +670,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     {
         lock (_gate)
         {
-            if (_signers.TryGetValue(successor.Kid, out var cached))
+            if (_signers.TryGetValue(SignerId.Of(successor), out var cached))
                 return cached;
         }
 
@@ -783,7 +786,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         {
             if (_disposed == 0)
             {
-                _signers.Add(key.Kid, signer);
+                _signers.Add(SignerId.Of(key), signer);
                 return true;
             }
         }
@@ -949,4 +952,13 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         Resuming resuming => resuming.Reason,
         _ => null,
     };
+
+    /// <summary>
+    /// What a signer is opened for: one key pair through one source entry. A renewal listing the key pair
+    /// under another source id needs its own signer, as does a source id that comes to list other material.
+    /// </summary>
+    private readonly record struct SignerId(string Kid, SourceKeyId SourceId)
+    {
+        internal static SignerId Of(SigningKey key) => new(key.Kid, key.SourceId);
+    }
 }

@@ -329,6 +329,9 @@ internal static class TestSigningKeys
         public SigningAlgorithm Algorithm { get; set; } = SigningAlgorithm.ES256;
 
         public int Reads { get; set; }
+
+        /// <summary>The source id of every signer opened, in order.</summary>
+        public List<SourceKeyId> SignersOpened { get; } = [];
     }
 
     private sealed class ListingSource(Listing listing, Func<ISigner, ISigner>? decorateSigner) : ISigningKeySource
@@ -350,6 +353,7 @@ internal static class TestSigningKeys
         public async Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             var pair = listing.Pairs.Single(pair => pair.Key.Id == id);
+            listing.SignersOpened.Add(id);
             listing.SignerRequested.TrySetResult();
             if (listing.SignerGate is { } gate)
                 await gate.Task;

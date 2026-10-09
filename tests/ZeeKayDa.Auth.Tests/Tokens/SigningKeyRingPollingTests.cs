@@ -170,6 +170,38 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_renewal_reusing_the_signing_key_pair_signs_through_a_signer_opened_for_the_renewal()
+    {
+        // A remote signer is bound to the entry it was opened through, which may stop signing at its own expiry.
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+
+        listing.Pairs = [current, TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90))];
+        await ReadAgainAsync(ring, clock);
+
+        listing.SignersOpened.Select(id => id.Value).Should().Equal("current", "renewed");
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("renewed");
+    }
+
+    [Fact]
+    public async Task A_renewal_whose_signer_fails_sets_its_whole_key_pair_aside()
+    {
+        // Accepted: the renewal opens the key pair from the moment it is listed, so a source refusing it
+        // (a remote version with a future nbf) takes the key pair out of signing, not just the renewal.
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+
+        listing.Pairs = [current, TestSigningKeys.Mismatched(TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90)))];
+        await ReadAgainAsync(ring, clock);
+
+        ring.Current.SigningKey.Should().BeNull();
+    }
+
+    [Fact]
     public async Task A_key_pair_listed_under_a_further_source_id_is_logged_again()
     {
         var clock = new FakeTimeProvider(Epoch);
