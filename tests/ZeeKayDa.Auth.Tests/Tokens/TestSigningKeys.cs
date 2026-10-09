@@ -332,6 +332,9 @@ internal static class TestSigningKeys
 
         /// <summary>The source id of every signer opened, in order.</summary>
         public List<SourceKeyId> SignersOpened { get; } = [];
+
+        /// <summary>The source id of the signer behind every signature made, self-tests included, in order.</summary>
+        public List<SourceKeyId> SignedBy { get; } = [];
     }
 
     private sealed class ListingSource(Listing listing, Func<ISigner, ISigner>? decorateSigner) : ISigningKeySource
@@ -358,9 +361,20 @@ internal static class TestSigningKeys
             if (listing.SignerGate is { } gate)
                 await gate.Task;
 
-            ISigner signer = new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(pair.PrivateKey));
+            ISigner signer = new RecordingSigner(new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(pair.PrivateKey)), () => listing.SignedBy.Add(id));
             return decorateSigner is null ? signer : decorateSigner(signer);
         }
+    }
+
+    private sealed class RecordingSigner(ISigner inner, Action onSign) : ISigner
+    {
+        public Task<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
+        {
+            onSign();
+            return inner.SignAsync(signingInput, cancellationToken);
+        }
+
+        public void Dispose() => inner.Dispose();
     }
 
     private sealed class FailingSource(ZeeKayDaConfigurationFailure failure) : ISigningKeySource

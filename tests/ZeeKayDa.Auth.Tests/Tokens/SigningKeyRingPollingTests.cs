@@ -182,7 +182,32 @@ public sealed class SigningKeyRingPollingTests
         await ReadAgainAsync(ring, clock);
 
         listing.SignersOpened.Select(id => id.Value).Should().Equal("current", "renewed");
+        listing.SignedBy.Clear();
         (await SignAsync(ring)).Key.SourceId.Value.Should().Be("renewed");
+        listing.SignedBy.Select(id => id.Value).Should().Equal(["renewed"], "the signer opened through the original entry signs no more");
+    }
+
+    [Fact]
+    public async Task The_health_check_is_Degraded_while_a_renewal_over_the_signing_key_pair_is_still_opening()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(100));
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.SignerGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        listing.SignerRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        listing.Pairs = [current, TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(200))];
+        clock.Advance(RefreshInterval);
+        await listing.SignerRequested.Task;
+
+        var opening = await HealthAsync(ring, clock);
+        opening.Status.Should().Be(HealthStatus.Degraded);
+        opening.Description.Should().NotContain("renewed").And.NotContain("current");
+
+        listing.SignerGate.SetResult();
+        await ring.LastTransition;
+        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Healthy);
     }
 
     [Fact]
