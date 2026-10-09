@@ -269,6 +269,9 @@ public sealed class SigningKeyRingPollingTests
         await ReadAgainAsync(ring, clock);
 
         (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Unhealthy, "the signer still signing is bound to an entry that has expired");
+        listing.SignedBy.Clear();
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        listing.SignedBy.Select(id => id.Value).Should().Equal(["current"], "the earlier entry's signer signs on past its own expiry");
     }
 
     [Fact]
