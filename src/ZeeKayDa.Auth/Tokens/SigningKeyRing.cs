@@ -75,9 +75,9 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     private DateTimeOffset _nextReadAt;
     private readonly HashSet<SignerId> _unlistedOnce = [];
 
-    // Keys that could not sign when due — their signer failed, or they were dropped — and have not signed
-    // since, kept across reads that omit them or stop signing: such a key may never take over once its
-    // predecessor is superseded. By source id: a dropped key may have no kid.
+    // Keys whose signer failed when due, or that were ever listed dropped, and have not signed since, kept
+    // across reads that omit them or stop signing: such a key may never take over once its predecessor is
+    // superseded. By source id: a dropped key may have no kid.
     private readonly HashSet<SourceKeyId> _failed = [];
 
     // Renewals of the signing key pair whose signer failed since the last read: the signer of the entry
@@ -488,9 +488,8 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         _nextReadAt = TokenLifetimes.ExpiresAt(now, _options.RefreshInterval);
         _renewalsFailed.Clear();
 
-        // Recorded from the list in force, whatever this read brings: a dropped key may come due, and pass
-        // its cutoff, while reads fail.
-        RecordDroppedKeyDue(TimelineOf(Volatile.Read(ref _state)!), now);
+        // From the list in force, whatever this read brings: reads may fail until after a dropped key's cutoff.
+        RecordDroppedKeys(TimelineOf(Volatile.Read(ref _state)!));
 
         if (_reading is { IsCompleted: false })
         {
@@ -531,7 +530,8 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         }
 
         ReleaseUnlistedSigners(timeline);
-        var droppedSigningKey = RecordDroppedKeyDue(timeline, now);
+        RecordDroppedKeys(timeline);
+        var droppedSigningKey = timeline.DroppedKeyDueAt(now);
 
         if (KeepingTooLateKeysAside(timeline, now) is not { } adopted)
         {
@@ -549,13 +549,14 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         Volatile.Write(ref _state, Adopting(Volatile.Read(ref _state)!, adopted, now));
     }
 
-    private DroppedKey? RecordDroppedKeyDue(SigningKeyTimeline? timeline, DateTimeOffset now)
+    /// <summary>
+    /// Records every dropped key, not only one due now: a key's whole due window may fall between two reads.
+    /// One repaired in time is not too late to take over, so recording it costs nothing.
+    /// </summary>
+    private void RecordDroppedKeys(SigningKeyTimeline? timeline)
     {
-        var dropped = timeline?.DroppedKeyDueAt(now);
-        if (dropped is not null)
-            _failed.Add(dropped.Key.Id);
-
-        return dropped;
+        foreach (var drop in timeline?.Dropped ?? [])
+            _failed.Add(drop.Key.Id);
     }
 
     private void LogDroppedKeySkipped(DroppedKey dropped, SigningKey signsOn) =>

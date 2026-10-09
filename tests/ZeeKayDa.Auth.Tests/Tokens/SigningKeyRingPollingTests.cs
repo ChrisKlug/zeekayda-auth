@@ -439,6 +439,28 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_dropped_key_whose_whole_due_window_passes_between_reads_never_takes_over()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var dueBriefly = WrongCurve("staged", notBefore: Epoch, expiresAt: Epoch + TestSigningKeys.Options.LeadTime + TimeSpan.FromMinutes(1));
+        var listing = new TestSigningKeys.Listing(current, dueBriefly);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.ReadFailure = new HttpRequestException("simulated: vault unreachable");
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime + TimeSpan.FromMinutes(2));
+        await ring.LastTransition;
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value);
+        await ring.LastTransition;
+
+        listing.ReadFailure = null;
+        listing.Pairs = [current, TestSigningKeys.Pair("staged", notBefore: Epoch)];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Value.Should().Be("staged");
+    }
+
+    [Fact]
     public async Task A_dropped_renewal_of_the_signing_key_pair_repaired_later_keeps_signing()
     {
         // The repaired renewal merges with the entry it renews and takes its older NotBefore; it is the
@@ -776,11 +798,11 @@ public sealed class SigningKeyRingPollingTests
             .CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
     /// <summary>A P-384 key, which an ES256 source cannot sign with, so the ring drops it.</summary>
-    private static TestSigningKeys.KeyPair WrongCurve(string id, DateTimeOffset notBefore)
+    private static TestSigningKeys.KeyPair WrongCurve(string id, DateTimeOffset notBefore, DateTimeOffset? expiresAt = null)
     {
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP384);
         return new TestSigningKeys.KeyPair(
-            TestSigningKeys.SourceKey(id, ec, notBefore), ec.ExportParameters(includePrivateParameters: true));
+            TestSigningKeys.SourceKey(id, ec, notBefore, expiresAt), ec.ExportParameters(includePrivateParameters: true));
     }
 
     private sealed class TrackingSigner(ISigner inner, Action onDispose) : ISigner
