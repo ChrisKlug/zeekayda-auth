@@ -29,8 +29,8 @@ RefreshInterval`. A read that throws or exceeds a minute keeps the last list (Er
 runs, so a source that never returns pins it. No keys or an ambiguous list stops signing (`SigningKey` null, `SignAsync`
 throws, JWKS `{"keys":[]}` no-store, Unhealthy) until a good read; an unlisted signing key stops at once. Sources list a
 deleted file, key file, certificate or vault object as nothing (an unmounted directory too), so removing a key revokes it.
-**A key due to sign that cannot** (signer fails, or dropped) is skipped: the previous key signs on (Error, Degraded); fixed
-once its predecessor is superseded, it never takes over (by source id); only startup refuses it. Unlisted signers close a read later.
+**A key due to sign that cannot** (signer fails, or dropped) is skipped: the previous key signs on (Error, Degraded); fixed once its
+predecessor is superseded, it never takes over (in memory: a restarted replica adopts it); only startup refuses it. Unlisted signers close a read later.
 
 **File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list
 `Files`/`Certificates` with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`.

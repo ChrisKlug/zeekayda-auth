@@ -654,6 +654,21 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_restarted_replica_adopts_a_key_repaired_too_late()
+    {
+        // Residual: the too-late memory is per process. A replica started after the repair never saw the
+        // failure, so the repaired key signs at once and the predecessor leaves this replica's key set.
+        var clock = new FakeTimeProvider(Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value);
+        var listing = new TestSigningKeys.Listing(
+            TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), TestSigningKeys.Pair("staged", notBefore: Epoch));
+
+        using var restarted = TestSigningKeys.Ring(listing, clock);
+
+        (await SignAsync(restarted)).Key.SourceId.Value.Should().Be("staged");
+        restarted.Current.Published.Select(key => key.SourceId.Value).Should().Equal("staged");
+    }
+
+    [Fact]
     public async Task A_failed_key_too_late_to_take_over_stays_set_aside_after_a_read_that_omitted_it()
     {
         var clock = new FakeTimeProvider(Epoch);
