@@ -1756,7 +1756,7 @@ Security and architect agents plus all three Copilot lenses; two Highs from the 
 `access_token` field read as absent, and duplicate `Authorization` headers) fixed in `a4e02a3` and `9bcf3c1`.
 
 - Only a token this server signed, addressed to this server, live, and carrying `openid` is answered.
-  Closed — `Validate_refuses_a_token_signed_by_a_key_this_server_does_not_publish`,
+  Closed — Validate_refuses_a_token_signed_by_a_key_this_server_does_not_publish [renamed by #899, every listed key now verifying: `Validate_refuses_a_token_signed_by_a_key_this_server_does_not_list`],
   `Validate_refuses_a_token_whose_audience_does_not_name_this_server`,
   `Validate_refuses_a_token_with_no_exp_rather_than_treating_it_as_eternal`,
   `A_token_without_the_openid_scope_is_insufficient_scope`,
@@ -2175,7 +2175,7 @@ code lens on `6db3887`, and the PR's Copilot and CodeScene review; no Critical; 
   (CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source [renamed by #527, the ring now re-reading: `CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_reading_the_source_itself`]);
   file and Windows sources sign only with Current until PR 2 (CreateSignerAsync_throws_when_called_for_the_Next_slot [removed by #823 PR 2, which lets every listed file sign: `CreateSignerAsync_opens_a_signer_for_any_listed_file`]); per-client lifetimes are invisible at startup,
   so the operator raises the retention, with no test for the default ignoring them (`PostConfigure_keeps_an_explicit_RetainRetiredKeysFor` proves the lever); a hint whose key is retired is refused, #899
-  (`Validate_refuses_a_hint_signed_by_a_key_the_server_does_not_publish`).
+  (Validate_refuses_a_hint_signed_by_a_key_the_server_does_not_publish [reversed by #899, where every listed key verifies a hint: `Validate_accepts_a_hint_signed_by_a_listed_key_no_longer_published`]).
 
 ## 2026-10-07 — file and store signing sources take a list; Key Vault `MaxVersions`; certificate helpers (#823 PR 2, code frozen at `449015e`)
 Copilot code, security (xhigh) and architecture lenses, the security and architect agents, fix-diff verification by the code lens

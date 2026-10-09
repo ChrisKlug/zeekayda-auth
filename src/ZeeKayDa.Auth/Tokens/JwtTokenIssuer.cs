@@ -85,17 +85,7 @@ public sealed class JwtTokenIssuer : ITokenIssuer
             static (signing, state) => BuildSigningInput(signing.Key, state),
             cancellationToken).ConfigureAwait(false);
 
-        var token = string.Create(
-            outcome.SigningInput.Length + 1 + Base64Url.GetEncodedLength(outcome.Signature.Length),
-            outcome,
-            static (destination, outcome) =>
-            {
-                var written = Encoding.ASCII.GetChars(outcome.SigningInput.Span, destination);
-                destination[written] = '.';
-                Base64Url.EncodeToChars(outcome.Signature.Span, destination[(written + 1)..]);
-            });
-
-        return new IssuedToken(token, kind);
+        return new IssuedToken(CompactJws.Serialize(outcome.SigningInput.Span, outcome.Signature.Span), kind);
     }
 
     /// <summary>
@@ -136,12 +126,8 @@ public sealed class JwtTokenIssuer : ITokenIssuer
         if (accessToken is not null)
             RequireAlgorithmAllowed(state.Context, key);
 
-        var headerSegment = Base64Url.EncodeToString(Header(key, state.Typ));
-        var payloadSegment = Base64Url.EncodeToString(Payload(
-            state.Payload,
-            accessToken is null ? null : AccessTokenHash(key.Algorithm, accessToken)));
-
-        return Encoding.ASCII.GetBytes($"{headerSegment}.{payloadSegment}");
+        var payload = Payload(state.Payload, accessToken is null ? null : AccessTokenHash(key.Algorithm, accessToken));
+        return CompactJws.BuildSigningInput(key, state.Typ, payload);
     }
 
     /// <summary>
@@ -158,21 +144,6 @@ public sealed class JwtTokenIssuer : ITokenIssuer
                 $"{SigningAlgorithms.WireName(key.Algorithm)}, the algorithm the server signs with. " +
                 "Widen the client's AllowedSigningAlgorithms, or register a signing source for an algorithm it allows.");
         }
-    }
-
-    private static ReadOnlySpan<byte> Header(SigningKey key, string typ)
-    {
-        var buffer = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            writer.WriteStartObject();
-            writer.WriteString("alg", SigningAlgorithms.WireName(key.Algorithm));
-            writer.WriteString("typ", typ);
-            writer.WriteString("kid", key.Kid);
-            writer.WriteEndObject();
-        }
-
-        return buffer.WrittenSpan;
     }
 
     // Claim names and values are serialized verbatim — selection and naming happened before

@@ -16,11 +16,15 @@ exactly once per token. A custom JWT issuer keeps this property by signing throu
 `SigningKeyRing.SignAsync` and building its header inside the callback — the atomicity guarantee
 belongs to that path, not to the `ITokenIssuer` contract itself.
 
-**Exactly one component assembles the compact JWS, and it is the only caller of the signing service.**
-The signing service returns the encoded header and the signature and never a finished token, so `kid`
-and `alg` can never disagree with the key that signed; the writer's whole job is
-`header "." payload "." signature`. It is named for tokens rather than for JWTs, because the ID token,
-the access token and any future format share the one seam.
+**One type writes and reads the compact JWS, so what the issuer writes and a validator accepts cannot
+drift.** `JwtTokenIssuer`, the one caller of `SignAsync`, builds the signing input with `CompactJws`
+inside the ring's callback and serializes the token with it; the `id_token_hint` and userinfo
+validators parse with it. Its header is exactly `alg`, `typ` and `kid` on both sides, so a header with
+any other member, `crit` or a repeat included, is refused. The ring knows no format: it signs bytes,
+and `SigningKeyRing.Verify` checks a signature against every key the source lists, published or not,
+leaving the rest of the token, `exp` included, to the validator. A hint ignores `exp`, so it outlives
+its key's publication; only unlisting the key revokes it. The issuer seam is named for tokens rather
+than for JWTs, because the ID token, the access token and any future format share it.
 
 **The ID token always carries `iss`, `sub`, `aud`, `exp`, `iat`, `auth_time` and `at_hash`, and
 `nonce` on the code grant.** OIDC Core §2 requires the first five, and `nonce` whenever the request had
@@ -126,4 +130,8 @@ spec-correct rather than a gap.
 
 ## Tried, didn't work
 
-Nothing reversed yet.
+- **Verifying a presented token against the published keys only.** A relying party keeps its ID token
+  for the whole session, longer than a retired key stays published, so after every rotation a hint
+  stopped identifying its client and the post-logout redirect was lost.
+- **One reader that looked up the key, verified and parsed the payload.** It put key knowledge in the
+  format layer; verifying is the ring's, the format is `CompactJws`'s, the claims are each validator's.

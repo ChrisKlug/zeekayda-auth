@@ -54,26 +54,38 @@ internal sealed class AccessTokenValidator(
     /// </exception>
     public ValidatedAccessToken? Validate(string? accessToken)
     {
-        using var payload = SignedTokenReader.Verify(accessToken, AccessTokenTypes, keyRing.Current.Published);
-        if (payload is null)
+        if (!CompactJws.TryParse(accessToken, out var jws) || !IsSignedAccessToken(jws))
             return null;
 
-        var root = payload.RootElement;
+        using var claims = JwtClaims.Parse(jws.Payload);
+        if (claims is null)
+            return null;
+
+        var root = claims.RootElement;
         var issuer = options.Value.Issuer;
 
-        if (!string.Equals(SignedTokenReader.ReadString(root, "iss"), issuer, StringComparison.Ordinal))
+        if (!string.Equals(JwtClaims.ReadString(root, "iss"), issuer, StringComparison.Ordinal))
             return null;
 
         if (!NamesThisServer(root, issuer) || !IsWithinValidityWindow(root))
             return null;
 
-        var subject = SignedTokenReader.ReadString(root, "sub");
-        var clientId = SignedTokenReader.ReadString(root, "client_id");
+        var subject = JwtClaims.ReadString(root, "sub");
+        var clientId = JwtClaims.ReadString(root, "client_id");
 
         return string.IsNullOrEmpty(subject) || string.IsNullOrEmpty(clientId)
             ? null
             : new ValidatedAccessToken(subject, clientId, ReadScopes(root));
     }
+
+    /// <summary>
+    /// An access token by its <c>typ</c>, signed by a key this server lists, under that key's own
+    /// algorithm. Whether the key is still published does not matter: the token's own lifetime does.
+    /// </summary>
+    private bool IsSignedAccessToken(CompactJws jws) =>
+        AccessTokenTypes.Contains(jws.Typ, StringComparer.OrdinalIgnoreCase)
+        && keyRing.Verify(jws.Kid, jws.SigningInput.Span, jws.Signature.Span) is { } key
+        && jws.NamesAlgorithmOf(key);
 
     /// <summary>
     /// RFC 9068 §4: a resource server rejects a token whose <c>aud</c> does not name it. The claim
@@ -154,7 +166,7 @@ internal sealed class AccessTokenValidator(
     /// one carries no scopes, which unlocks nothing.
     /// </summary>
     private static IReadOnlyList<string> ReadScopes(JsonElement payload) =>
-        SignedTokenReader.ReadString(payload, "scope") is { } scope
+        JwtClaims.ReadString(payload, "scope") is { } scope
             ? scope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             : [];
 }

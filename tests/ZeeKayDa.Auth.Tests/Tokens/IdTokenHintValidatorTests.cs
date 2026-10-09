@@ -20,6 +20,8 @@ public sealed class IdTokenHintValidatorTests
     private const string ClientId = "client-a";
     private const string Subject = "alice";
 
+    private static readonly DateTimeOffset Epoch = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
     private static readonly RSA CurrentKey = RSA.Create(2048);
     private static readonly RSA PreviousKey = RSA.Create(2048);
     private static readonly RSA ForeignKey = RSA.Create(2048);
@@ -95,6 +97,16 @@ public sealed class IdTokenHintValidatorTests
         ["exp"] = 1767225900L,
     };
 
+    /// <summary>An ES256 hint signed by <paramref name="pair"/>, naming it by its derived kid.</summary>
+    private static string SignEs256(TestSigningKeys.KeyPair pair)
+    {
+        using var ec = ECDsa.Create(pair.PrivateKey);
+        var header = Header(TestSigningKeys.KidOf(ec));
+        header["alg"] = "ES256";
+        return Sign(header, Claims(), input =>
+            ec.SignData(input, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
+    }
+
     private static SigningKeyRing EcRing(ECDsa ec) => TestSigningKeys.Ring(
         [TestSigningKeys.SourceKey("current", ec)],
         ec);
@@ -105,6 +117,14 @@ public sealed class IdTokenHintValidatorTests
     {
         var signingInput = $"{Segment(header)}.{Segment(claims)}";
         var signature = (signer ?? SignWithCurrentKey)(Encoding.ASCII.GetBytes(signingInput));
+        return $"{signingInput}.{Base64Url.EncodeToString(signature)}";
+    }
+
+    /// <summary>Signs a header given as raw JSON, for a shape a dictionary cannot hold.</summary>
+    private static string SignWithRawHeader(string header, object claims)
+    {
+        var signingInput = $"{Base64Url.EncodeToString(Encoding.UTF8.GetBytes(header))}.{Segment(claims)}";
+        var signature = SignWithCurrentKey(Encoding.ASCII.GetBytes(signingInput));
         return $"{signingInput}.{Base64Url.EncodeToString(signature)}";
     }
 
@@ -221,7 +241,7 @@ public sealed class IdTokenHintValidatorTests
     public void Validate_refuses_a_hint_longer_than_the_size_cap_even_when_correctly_signed()
     {
         var claims = Claims();
-        claims["padding"] = new string('x', SignedTokenReader.MaxLength);
+        claims["padding"] = new string('x', CompactJws.MaxLength);
         var token = Sign(Header(), claims);
 
         var hint = CreateValidator().Validate(token, ClientId);
@@ -293,6 +313,31 @@ public sealed class IdTokenHintValidatorTests
         hint.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("x5t")]
+    [InlineData("jku")]
+    public void Validate_refuses_a_correctly_signed_hint_whose_header_carries_a_member_the_issuer_does_not_write(string member)
+    {
+        var header = Header();
+        header[member] = "value";
+        var token = Sign(header, Claims());
+
+        var hint = CreateValidator().Validate(token, ClientId);
+
+        hint.Should().BeNull();
+    }
+
+    [Fact]
+    public void Validate_refuses_a_correctly_signed_hint_whose_header_repeats_a_member()
+    {
+        var token = SignWithRawHeader(
+            $$"""{"alg":"RS256","typ":"at+jwt","kid":"{{CurrentKid}}","typ":"JWT"}""", Claims());
+
+        var hint = CreateValidator().Validate(token, ClientId);
+
+        hint.Should().BeNull();
+    }
+
     [Fact]
     public void Validate_refuses_a_correctly_signed_hint_without_a_kid()
     {
@@ -308,14 +353,40 @@ public sealed class IdTokenHintValidatorTests
     // ── Signature ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_refuses_a_hint_signed_by_a_key_the_server_does_not_publish()
+    public void Validate_accepts_a_hint_signed_by_a_listed_key_no_longer_published()
     {
-        var foreignKid = TestSigningKeys.Ring([RsaSourceKey("current", ForeignKey)], ForeignKey).Current.SigningKey!.Kid;
-        var token = Sign(Header(foreignKid), Claims(), input => SignRs256(ForeignKey, input));
+        using var ring = TestSigningKeys.Ring(
+            [
+                RsaSourceKey("retired", PreviousKey, TestSigningKeys.RetiringNotBefore),
+                RsaSourceKey("current", CurrentKey, TestSigningKeys.SupersedingNotBefore),
+            ],
+            CurrentKey);
+        var retiredKid = TestSigningKeys.KidOf(PreviousKey);
+        ring.Current.Published.Should().NotContain(key => key.Kid == retiredKid, "the hint's key must be one the JWKS no longer serves");
+        var token = Sign(Header(retiredKid), Claims(), input => SignRs256(PreviousKey, input));
 
-        var hint = CreateValidator().Validate(token, ClientId);
+        var hint = CreateValidator(ring).Validate(token, ClientId);
 
-        hint.Should().BeNull();
+        hint.Should().Be(new IdTokenHint(ClientId, Subject));
+    }
+
+    [Fact]
+    public async Task Validate_refuses_a_hint_signed_by_a_key_the_source_no_longer_lists()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var retired = TestSigningKeys.Pair("retired", notBefore: Epoch.AddDays(-10));
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-3));
+        var listing = new TestSigningKeys.Listing(retired, current);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        var validator = CreateValidator(ring);
+        var token = SignEs256(retired);
+        validator.Validate(token, ClientId).Should().NotBeNull("the hint verifies while its key is listed");
+
+        listing.Pairs = [current];
+        clock.Advance(TestSigningKeys.Options.RefreshInterval);
+        await ring.LastTransition;
+
+        validator.Validate(token, ClientId).Should().BeNull();
     }
 
     [Fact]

@@ -644,6 +644,21 @@ public sealed class SigningKeyRingPollingTests
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
+    [Fact]
+    public async Task Verify_returns_null_once_a_read_lists_no_keys()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var listing = new TestSigningKeys.Listing(TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        var outcome = await SignAsync(ring);
+        ring.Verify(outcome.Key.Kid, outcome.SigningInput.Span, outcome.Signature.Span).Should().NotBeNull();
+
+        listing.Pairs = [];
+        await ReadAgainAsync(ring, clock);
+
+        ring.Verify(outcome.Key.Kid, outcome.SigningInput.Span, outcome.Signature.Span).Should().BeNull();
+    }
+
     private static async Task ReadAgainAsync(SigningKeyRing ring, FakeTimeProvider clock)
     {
         clock.Advance(RefreshInterval);

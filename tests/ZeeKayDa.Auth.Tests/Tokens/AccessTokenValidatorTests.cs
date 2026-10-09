@@ -28,6 +28,7 @@ public sealed class AccessTokenValidatorTests
 
     private static readonly RSA CurrentKey = RSA.Create(2048);
     private static readonly RSA ForeignKey = RSA.Create(2048);
+    private static readonly RSA RetiredKey = RSA.Create(2048);
 
     private static readonly SigningKeyRing Ring = TestSigningKeys.Ring(
         [RsaSourceKey("current", CurrentKey)], CurrentKey);
@@ -41,13 +42,13 @@ public sealed class AccessTokenValidatorTests
         PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)),
         notBefore);
 
-    private static AccessTokenValidator CreateValidator(TimeSpan? clockSkew = null)
+    private static AccessTokenValidator CreateValidator(TimeSpan? clockSkew = null, SigningKeyRing? ring = null)
     {
         var time = new FakeTimeProvider();
         time.SetUtcNow(Now);
 
         return new AccessTokenValidator(
-            Ring,
+            ring ?? Ring,
             Options.Create(new AuthorizationServerOptions
             {
                 Issuer = Issuer,
@@ -148,6 +149,23 @@ public sealed class AccessTokenValidatorTests
         CreateValidator().Validate(Sign(Header(), claims)).Should().NotBeNull();
     }
 
+    [Fact]
+    public void Validate_accepts_a_live_token_signed_by_a_listed_key_no_longer_published()
+    {
+        using var ring = TestSigningKeys.Ring(
+            [
+                RsaSourceKey("retired", RetiredKey, TestSigningKeys.RetiringNotBefore),
+                RsaSourceKey("current", CurrentKey, TestSigningKeys.SupersedingNotBefore),
+            ],
+            CurrentKey);
+        var retiredKid = TestSigningKeys.KidOf(RetiredKey);
+        ring.Current.Published.Should().NotContain(key => key.Kid == retiredKid, "the token's key must be one the JWKS no longer serves");
+
+        var token = CreateValidator(ring: ring).Validate(Sign(Header(kid: retiredKid), Claims(), RetiredKey));
+
+        token.Should().NotBeNull("the token's own lifetime decides, not whether its key is still published");
+    }
+
     // ── Refused tokens ───────────────────────────────────────────────────────────────────────────
 
     [Theory]
@@ -162,7 +180,7 @@ public sealed class AccessTokenValidatorTests
     }
 
     [Fact]
-    public void Validate_refuses_a_token_signed_by_a_key_this_server_does_not_publish()
+    public void Validate_refuses_a_token_signed_by_a_key_this_server_does_not_list()
     {
         CreateValidator().Validate(Sign(Header(), Claims(), ForeignKey)).Should().BeNull();
     }

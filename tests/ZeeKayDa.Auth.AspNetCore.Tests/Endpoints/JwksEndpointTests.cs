@@ -107,6 +107,29 @@ public sealed class JwksEndpointTests
         }
     }
 
+    private static readonly RSA RetiredKey = RSA.Create(2048);
+    private static readonly RSA SupersedingKey = RSA.Create(2048);
+
+    /// <summary>
+    /// Lists a retired key and the key that superseded it five days ago: well past the default
+    /// one-day lead time plus two-day retention, so the retired key is listed but no longer published.
+    /// </summary>
+    private sealed class RetiredKeySource : ISigningKeySource
+    {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
+        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<SourceKey>>(
+            [
+                new SourceKey(new SourceKeyId("retired-key"), PublicKeyParameters.FromRsa(RetiredKey.ExportParameters(false)), DateTimeOffset.UtcNow.AddDays(-30)),
+                new SourceKey(new SourceKeyId("current-key"), PublicKeyParameters.FromRsa(SupersedingKey.ExportParameters(false)), DateTimeOffset.UtcNow.AddDays(-5)),
+            ]);
+
+        // A fresh private key instance: the ring owns and disposes what it is handed.
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+            => Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, RSA.Create(SupersedingKey.ExportParameters(true))));
+    }
+
     private sealed class TestClient : IClient
     {
         public string ClientId => "test-client";
@@ -241,6 +264,22 @@ public sealed class JwksEndpointTests
         var headerBytes = Base64Url.DecodeFromChars(headerSegment);
         using var header = JsonDocument.Parse(headerBytes);
         return header.RootElement.GetProperty("kid").GetString();
+    }
+
+    [Fact]
+    public async Task GetJwks_never_serves_a_key_kept_for_hint_verification_only()
+    {
+        using var host = new EndpointHost(configureBuilder: builder => builder.AddSigningKeySource<RetiredKeySource>());
+
+        var doc = await GetDocumentAsync(host);
+
+        var ring = host.Resolve<SigningKeyRing>();
+        var retiredKid = ring.TimelineOrNull!.Keys.Single(key => key.SourceId.Value == "retired-key").Kid;
+        var signingInput = "signed by the retired key"u8.ToArray();
+        var signature = RetiredKey.SignData(signingInput, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        ring.Verify(retiredKid, signingInput, signature).Should().NotBeNull("the ring keeps the retired key to verify with");
+        doc.GetProperty("keys").EnumerateArray().Select(jwk => jwk.GetProperty("kid").GetString())
+            .Should().ContainSingle().Which.Should().NotBe(retiredKid);
     }
 
     // ── Signing stopped ──────────────────────────────────────────────────────────────────────────

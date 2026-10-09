@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Logging;
 using static ZeeKayDa.Auth.Tokens.SigningKeyRingState;
@@ -5,8 +6,8 @@ using static ZeeKayDa.Auth.Tokens.SigningKeyRingState;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// What every signing consumer depends on: the current <see cref="SigningKeySet"/>, and the ability
-/// to sign with its signing key. Reads its <see cref="ISigningKeySource"/> at startup and again every
+/// What every signing consumer depends on: the current <see cref="SigningKeySet"/>, the ability to
+/// sign with its signing key, and to verify a signature against any key its source lists. Reads its <see cref="ISigningKeySource"/> at startup and again every
 /// <see cref="SigningKeyOptions.RefreshInterval"/>, and follows the clock in between: the key set
 /// changes, and a successor takes over signing, at the instants the keys' own dates set, with no
 /// restart.
@@ -26,8 +27,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <para>
 /// A read that fails keeps the last list. A read listing no keys, a list that is ambiguous, or one
 /// whose key due to sign now is unusable stops signing: <see cref="SigningKeySet.SigningKey"/> is
-/// <see langword="null"/>, nothing is published, and <see cref="SignAsync{TState}"/> throws until a
-/// later read lists keys the ring can use.
+/// <see langword="null"/>, nothing is published or verifies, and <see cref="SignAsync{TState}"/>
+/// throws until a later read lists keys the ring can use.
 /// </para>
 /// <para>
 /// Every signer is self-tested before it signs. The startup signer failing stops the host. A
@@ -229,6 +230,43 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         var signatureCopy = new ReadOnlyMemory<byte>(signature.ToArray());
 
         return new SigningOutcome(signingInputCopy, signatureCopy, signingKey);
+    }
+
+    /// <summary>
+    /// Verifies <paramref name="signature"/> over <paramref name="signingInput"/> with the listed key
+    /// whose <see cref="SigningKey.Kid"/> is <paramref name="kid"/>, under that key's own algorithm.
+    /// </summary>
+    /// <remarks>
+    /// Every key the source lists verifies, published or not: a token stays verifiable for as long as
+    /// the key that signed it is listed, and removing the key from the source is what revokes it.
+    /// What else makes a token valid, its lifetime included, is the caller's to judge.
+    /// </remarks>
+    /// <param name="kid">The key the token names.</param>
+    /// <param name="signingInput">The exact bytes that were signed.</param>
+    /// <param name="signature">The signature to verify.</param>
+    /// <returns>
+    /// The key that verified, or <see langword="null"/> when no listed key has <paramref name="kid"/>
+    /// or the signature does not verify. Which of the two is never reported.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="kid"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the ring has not yet completed startup initialization.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">
+    /// Thrown when this instance has already been disposed.
+    /// </exception>
+    public SigningKey? Verify(string kid, ReadOnlySpan<byte> signingInput, ReadOnlySpan<byte> signature)
+    {
+        ArgumentNullException.ThrowIfNull(kid);
+        ObjectDisposedException.ThrowIf(_disposed != 0, this);
+
+        var state = Volatile.Read(ref _state) ?? throw new InvalidOperationException(
+            $"{nameof(SigningKeyRing)} has not completed startup initialization yet.");
+
+        var key = TimelineOf(state)?.Keys.FirstOrDefault(listed => string.Equals(listed.Kid, kid, StringComparison.Ordinal));
+        return key is not null && HasValidSignature(key, signingInput, signature) ? key : null;
     }
 
     /// <inheritdoc/>
@@ -984,6 +1022,23 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         }
 
         return signer;
+    }
+
+    /// <summary>
+    /// Bytes that are not a signature of the key's algorithm at all, wrong length included, do not
+    /// verify; some platforms report that by throwing rather than returning false.
+    /// </summary>
+    private static bool HasValidSignature(SigningKey key, ReadOnlySpan<byte> signingInput, ReadOnlySpan<byte> signature)
+    {
+        try
+        {
+            return SigningAlgorithms.Verify(key.Algorithm, key.PublicKey, signingInput, signature);
+        }
+        catch (Exception ex) when (ex is CryptographicException or ArgumentException or NotSupportedException)
+        {
+            _ = ex;
+            return false;
+        }
     }
 
     private static SigningKeyTimeline? TimelineOf(SigningKeyRingState state) => state switch
