@@ -272,6 +272,21 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_signing_entry_replaced_by_a_renewal_of_its_key_pair_stops_signing_and_does_not_sign_on_when_the_renewal_fails()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+
+        listing.Pairs = [TestSigningKeys.Mismatched(TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90)))];
+        await ReadAgainAsync(ring, clock);
+
+        ring.Current.SigningKey.Should().BeNull("the source no longer lists the entry whose signer was signing");
+        await FluentActions.Awaiting(() => SignAsync(ring)).Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
     public async Task The_earlier_entry_s_signer_is_disposed_at_the_read_after_the_renewal_takes_over()
     {
         var clock = new FakeTimeProvider(Epoch);

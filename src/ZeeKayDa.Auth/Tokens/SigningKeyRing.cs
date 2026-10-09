@@ -518,7 +518,8 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         var published = timeline.At(now).Published;
         switch (state)
         {
-            case Signing signing when timeline.Keys.FirstOrDefault(key => key.Kid == signing.SigningKey.Kid) is { } stillListed:
+            case Signing signing when StillLists(timeline, signing.SigningKey)
+                                      && timeline.Keys.FirstOrDefault(key => key.Kid == signing.SigningKey.Kid) is { } stillListed:
                 // A renewal now opening the key pair under another source id signs once its handover opens it.
                 var signingKey = SignerId.Of(stillListed) == SignerId.Of(signing.SigningKey) ? stillListed : signing.SigningKey;
                 return signing with
@@ -539,6 +540,14 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                 return new Resuming(new SigningKeySet(_algorithm, null, published), timeline, ReasonOf(state)!);
         }
     }
+
+    /// <summary>
+    /// Whether <paramref name="timeline"/> still lists <paramref name="key"/> under its own source id: a renewal
+    /// listing its key pair under another id does not vouch for an entry the source has removed.
+    /// </summary>
+    private static bool StillLists(SigningKeyTimeline timeline, SigningKey key) =>
+        timeline.Keys.Any(listed => SignerId.Of(listed) == SignerId.Of(key))
+        || timeline.Merged.Any(merged => merged.Key.Kid == key.Kid && merged.SourceIds.Contains(key.SourceId));
 
     /// <summary>
     /// <paramref name="timeline"/>'s key set at <paramref name="now"/>, signed by <paramref name="signingKey"/>
