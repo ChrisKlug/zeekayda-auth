@@ -654,6 +654,30 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_failed_key_listed_twice_repaired_too_late_under_only_one_of_its_entries_never_takes_over()
+    {
+        // The failure is recorded under every entry listing the key pair, not only the one the merged key carries.
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var successor = TestSigningKeys.Pair("successor", notBefore: Epoch, expiresAt: Epoch.AddDays(90));
+        var broken = TestSigningKeys.Mismatched(successor);
+        var listing = new TestSigningKeys.Listing(current, broken, TestSigningKeys.Renewal(broken, "renewal", Epoch, Epoch.AddDays(180)));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.ReadFailure = new HttpRequestException("simulated: the fix cannot be read yet");
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value);
+        await ring.LastTransition;
+
+        listing.ReadFailure = null;
+        listing.Pairs = [current, successor];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Value.Should().Be("successor");
+    }
+
+    [Fact]
     public async Task A_restarted_replica_adopts_a_key_repaired_too_late()
     {
         // Residual: the too-late memory is per process. A replica started after the repair never saw the

@@ -835,8 +835,8 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// </summary>
     private void SetAside(SigningKey? current, SigningKey successor, string reason, Exception? failure)
     {
-        _failed.Add(successor.SourceId);
         var state = Volatile.Read(ref _state)!;
+        _failed.UnionWith(TimelineOf(state)!.SourceIdsOf(successor));
         if (TimelineOf(state)!.SettingAside(successor.Kid) is not { } timeline)
         {
             _logger.LogError(failure, "The signer of key {Kid} ({SourceKeyId}) failed ({Failure}).", successor.Kid, successor.SourceId.Value, reason);
