@@ -38,10 +38,10 @@ A certificate's `NotBefore` is its CA issuance date, so one listed over a lead t
 Listing checks every entry can sign without importing a key: PFX key bags, PEM key files (permissions) and blocks,
 Windows `HasPrivateKey`. No read lock or cache.
 
-**The framework derives every `kid`; a provider cannot supply one.** The ring computes an RFC 7638 JWK
-thumbprint over the public key. A provider supplies only its internal `SourceKeyId`, so it cannot leak a
-vault URI, certificate thumbprint, or file path into every issued token. Entries over one key pair (a renewal reusing
-its key) build into one key, published from the first `NotBefore` to the last expiry, opened via the last to expire.
+**The framework derives every `kid`; a provider cannot supply one.** The ring computes an RFC 7638 JWK thumbprint over
+the public key. A provider supplies only its internal `SourceKeyId`, so it cannot leak a vault URI, certificate
+thumbprint, or file path into every issued token. One key pair listed twice (a key-reusing renewal) is one key, dated
+first `NotBefore` (older than keys listed between) to last expiry; its last to expire opens it, the earlier signs till then.
 
 **The Key Vault sources list every enabled version, dated by vault metadata every replica agrees on.** A
 version counts from the later of its `CreatedOn` and its own `nbf`, never first-seen time; its `exp` is its
@@ -66,9 +66,9 @@ the key's own algorithm also catches a signer signing under another one. A misma
 signer that throws each fail closed under their own code, and the signer is disposed. A cancellation is the
 caller's whenever the caller's token is cancelled, so a signer linking tokens is not reported as broken. Signed off in `security-sign-offs.md`.
 
-**All load-time validation runs on public data, in one place.** Key/algorithm compatibility, EC curve pairing, RSA
-modulus size (2048-bit minimum), NIST-curve-only EC keys and duplicate source ids are all checked before any private
-material is loaded. A provider never repeats these locally — duplicated validation is how two layers drift.
+**All load-time validation runs on public data, in one place.** Key/algorithm compatibility, EC curve pairing, RSA modulus
+size (2048-bit minimum), NIST-curve-only EC keys and duplicate source ids are all checked before any private material is
+loaded. A provider never repeats these locally — duplicated validation is how two layers drift.
 
 **Development signing keys are one line, and hard-gated on environment.** Persistence is in the method
 name, never a `null` argument. `AllowedEnvironments` is set in the registration callback and the

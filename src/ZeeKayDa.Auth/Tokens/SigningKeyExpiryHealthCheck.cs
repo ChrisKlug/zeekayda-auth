@@ -174,7 +174,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
         if (due.Kid != signingKey.Kid)
             yield return $"Key '{due.Kid}' is due to sign, but its handover has not completed; '{signingKey.Kid}' still signs.";
         else if (due.SourceId != signingKey.SourceId)
-            yield return $"Key '{due.Kid}' is listed again by a renewal whose signer has not opened yet; the earlier entry's signer still signs.";
+            yield return $"Key '{due.Kid}' is listed again by a renewal whose signer has not opened, or failed; the earlier entry's signer still signs.";
 
         var horizon = TokenLifetimes.ExpiresAt(now, degradedThreshold);
         var signingKeyThen = timeline.SigningKeyAt(horizon);

@@ -79,6 +79,10 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     // them or stop signing: such a key may never take over once its predecessor is superseded.
     private readonly HashSet<string> _failed = new(StringComparer.Ordinal);
 
+    // Renewals of the signing key pair whose signer failed since the last read: the signer of the entry
+    // they renew signs on, and the next read tries them again.
+    private readonly HashSet<SignerId> _renewalsFailed = [];
+
     // A read abandoned at its deadline may still be running; no second one starts on the source until it ends.
     private Task? _reading;
 
@@ -425,6 +429,12 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                 return now;
             }
 
+            if (state is Signing renewing && _renewalsFailed.Contains(SignerId.Of(due)))
+            {
+                Volatile.Write(ref _state, renewing with { KeySet = KeySetSignedBy(renewing.SigningKey, timeline, now) });
+                return now;
+            }
+
             await HandOverAsync(signingKey, due).ConfigureAwait(false);
         }
     }
@@ -437,6 +447,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     {
         var now = _timeProvider.GetUtcNow();
         _nextReadAt = TokenLifetimes.ExpiresAt(now, _options.RefreshInterval);
+        _renewalsFailed.Clear();
 
         if (_reading is { IsCompleted: false })
         {
@@ -508,16 +519,11 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         switch (state)
         {
             case Signing signing when timeline.Keys.FirstOrDefault(key => key.Kid == signing.SigningKey.Kid) is { } stillListed:
-                // The key signing on until a handover completes stays published while it signs.
-                IReadOnlyList<SigningKey> withSigner = published.Any(key => key.Kid == stillListed.Kid)
-                    ? published
-                    : [.. published.Append(stillListed).Order(SigningKeySetBuilder.OldestFirst)];
-
                 // A renewal now opening the key pair under another source id signs once its handover opens it.
                 var signingKey = SignerId.Of(stillListed) == SignerId.Of(signing.SigningKey) ? stillListed : signing.SigningKey;
                 return signing with
                 {
-                    KeySet = new SigningKeySet(_algorithm, signingKey, withSigner),
+                    KeySet = KeySetSignedBy(signingKey, timeline, now),
                     Timeline = timeline,
                     ReadFailure = null,
                 };
@@ -532,6 +538,19 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             default:
                 return new Resuming(new SigningKeySet(_algorithm, null, published), timeline, ReasonOf(state)!);
         }
+    }
+
+    /// <summary>
+    /// <paramref name="timeline"/>'s key set at <paramref name="now"/>, signed by <paramref name="signingKey"/>
+    /// until a handover completes, and published while it signs.
+    /// </summary>
+    private SigningKeySet KeySetSignedBy(SigningKey signingKey, SigningKeyTimeline timeline, DateTimeOffset now)
+    {
+        var published = timeline.At(now).Published;
+        IReadOnlyList<SigningKey> withSigner = published.Any(key => key.Kid == signingKey.Kid)
+            ? published
+            : [.. published.Append(signingKey).Order(SigningKeySetBuilder.OldestFirst)];
+        return new SigningKeySet(_algorithm, signingKey, withSigner);
     }
 
     private async Task<IReadOnlyList<SourceKey>?> ReadSourceAsync()
@@ -694,11 +713,30 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             if (_shutdown.IsCancellationRequested)
                 throw;
 
-            SetAside(current, successor, Describe(ex), ex);
+            if (current?.Kid == successor.Kid)
+                KeepSigningThroughTheRenewedEntry(current, successor, Describe(ex), ex);
+            else
+                SetAside(current, successor, Describe(ex), ex);
+
             return null;
         }
 
         return TryKeep(successor, signer) ? signer : throw new OperationCanceledException(_shutdown.Token);
+    }
+
+    /// <summary>
+    /// <paramref name="renewal"/> lists the key pair <paramref name="current"/> signs with under another
+    /// source id: the key pair works, so the signer of <paramref name="current"/> signs on, and the next read
+    /// tries the renewal again.
+    /// </summary>
+    private void KeepSigningThroughTheRenewedEntry(SigningKey current, SigningKey renewal, string reason, Exception failure)
+    {
+        _renewalsFailed.Add(SignerId.Of(renewal));
+        _logger.LogWarning(
+            failure,
+            "Key {Kid} is listed again as {SourceKeyId}, but its signer failed ({Failure}); the signer opened " +
+            "through {PreviousSourceKeyId} signs on, and the next read tries the renewal again.",
+            renewal.Kid, renewal.SourceId.Value, reason, current.SourceId.Value);
     }
 
     private void LogTakeover(SigningKey? current, SigningKey successor)

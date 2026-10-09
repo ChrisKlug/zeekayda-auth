@@ -933,7 +933,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `reuseKey: true`, cert-manager `rotationPolicy: Never`), failed startup with `signing.duplicate_kid`,
   and stopped signing at a later read. The entries now build into one key: one JWK, published from the
   first entry's `NotBefore` to the last one's expiry, with its signer opened through the entry that
-  expires last. An Information line names the source ids once each time the listing changes.
+  expires last. If that signer fails to open, the earlier entry's signer signs on and the next read
+  tries again. An Information line names the source ids once each time the listing changes.
   `signing.duplicate_kid` is removed; duplicate source ids are still refused.
 
 - **A host client validator that returns a null failure no longer hides the real ones** (#881). The
