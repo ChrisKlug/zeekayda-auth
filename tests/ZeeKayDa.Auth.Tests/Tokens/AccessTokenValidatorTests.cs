@@ -84,6 +84,15 @@ public sealed class AccessTokenValidatorTests
         return $"{signingInput}.{Base64Url.EncodeToString(signature)}";
     }
 
+    /// <summary>Signs claims given as raw JSON, for an escape a serializer will not write.</summary>
+    private static string SignWithRawClaims(string claims)
+    {
+        var signingInput = $"{Segment(Header())}.{Base64Url.EncodeToString(Encoding.UTF8.GetBytes(claims))}";
+        var signature = CurrentKey.SignData(
+            Encoding.ASCII.GetBytes(signingInput), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        return $"{signingInput}.{Base64Url.EncodeToString(signature)}";
+    }
+
     private static string Segment(object value) => Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(value));
 
     // ── Accepted tokens ──────────────────────────────────────────────────────────────────────────
@@ -359,6 +368,20 @@ public sealed class AccessTokenValidatorTests
         claims.Remove(claim);
 
         CreateValidator().Validate(Sign(Header(), claims)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("iss")]
+    [InlineData("aud")]
+    [InlineData("sub")]
+    [InlineData("client_id")]
+    public void Validate_refuses_without_throwing_a_signed_token_whose_claim_escapes_a_lone_surrogate(string claim)
+    {
+        var claims = Claims();
+        claims[claim] = "lone-surrogate";
+        var token = SignWithRawClaims(JsonSerializer.Serialize(claims).Replace("lone-surrogate", "\\uD800"));
+
+        CreateValidator().Validate(token).Should().BeNull();
     }
 
     [Fact]

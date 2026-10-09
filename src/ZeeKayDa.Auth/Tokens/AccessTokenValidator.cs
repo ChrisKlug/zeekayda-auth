@@ -52,30 +52,33 @@ internal sealed class AccessTokenValidator(
     /// <exception cref="InvalidOperationException">
     /// The signing key ring has not completed startup initialization.
     /// </exception>
+    /// <exception cref="ObjectDisposedException">The signing key ring has been disposed.</exception>
     public ValidatedAccessToken? Validate(string? accessToken)
     {
         if (!CompactJws.TryParse(accessToken, out var jws) || !IsSignedAccessToken(jws))
             return null;
 
         using var claims = JwtClaims.Parse(jws.Payload);
-        if (claims is null)
-            return null;
+        return claims is null ? null : ReadVerified(claims.RootElement);
+    }
 
-        var root = claims.RootElement;
+    /// <summary>What a verified token names, when it is this server's, addressed to it, and live.</summary>
+    private ValidatedAccessToken? ReadVerified(JsonElement claims)
+    {
         var issuer = options.Value.Issuer;
 
-        if (!string.Equals(JwtClaims.ReadString(root, "iss"), issuer, StringComparison.Ordinal))
+        if (!string.Equals(JwtClaims.ReadString(claims, "iss"), issuer, StringComparison.Ordinal))
             return null;
 
-        if (!NamesThisServer(root, issuer) || !IsWithinValidityWindow(root))
+        if (!NamesThisServer(claims, issuer) || !IsWithinValidityWindow(claims))
             return null;
 
-        var subject = JwtClaims.ReadString(root, "sub");
-        var clientId = JwtClaims.ReadString(root, "client_id");
+        var subject = JwtClaims.ReadString(claims, "sub");
+        var clientId = JwtClaims.ReadString(claims, "client_id");
 
         return string.IsNullOrEmpty(subject) || string.IsNullOrEmpty(clientId)
             ? null
-            : new ValidatedAccessToken(subject, clientId, ReadScopes(root));
+            : new ValidatedAccessToken(subject, clientId, ReadScopes(claims));
     }
 
     /// <summary>
@@ -99,10 +102,10 @@ internal sealed class AccessTokenValidator(
 
         return audience.ValueKind switch
         {
-            JsonValueKind.String => string.Equals(audience.GetString(), issuer, StringComparison.Ordinal),
+            JsonValueKind.String => string.Equals(JwtClaims.AsString(audience), issuer, StringComparison.Ordinal),
             JsonValueKind.Array => audience.EnumerateArray().Any(entry =>
                 entry.ValueKind == JsonValueKind.String &&
-                string.Equals(entry.GetString(), issuer, StringComparison.Ordinal)),
+                string.Equals(JwtClaims.AsString(entry), issuer, StringComparison.Ordinal)),
             _ => false,
         };
     }

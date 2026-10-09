@@ -32,10 +32,28 @@ internal static class JwtClaims
 
     /// <summary>
     /// The value of <paramref name="name"/> when the payload carries it as a JSON string, or
-    /// <see langword="null"/> when it is absent or of any other kind.
+    /// <see langword="null"/> when it is absent or <see cref="AsString"/> cannot read it.
     /// </summary>
     public static string? ReadString(JsonElement claims, string name) =>
-        claims.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
+        claims.TryGetProperty(name, out var value) ? AsString(value) : null;
+
+    /// <summary>
+    /// <paramref name="value"/> when it is a JSON string, or <see langword="null"/> when it is of any
+    /// other kind or escapes a lone surrogate, which System.Text.Json refuses to read.
+    /// </summary>
+    public static string? AsString(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.String)
+            return null;
+
+        try
+        {
+            return value.GetString();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _ = ex;
+            return null;
+        }
+    }
 }

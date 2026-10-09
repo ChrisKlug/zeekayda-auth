@@ -40,6 +40,7 @@ internal sealed class IdTokenHintValidator(SigningKeyRing keyRing, IOptions<Auth
     /// <exception cref="InvalidOperationException">
     /// The signing key ring has not completed startup initialization.
     /// </exception>
+    /// <exception cref="ObjectDisposedException">The signing key ring has been disposed.</exception>
     public IdTokenHint? Validate(string? idTokenHint, string? clientId)
     {
         if (!CompactJws.TryParse(idTokenHint, out var jws) || !IsSignedIdToken(jws))

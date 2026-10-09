@@ -128,6 +128,14 @@ public sealed class IdTokenHintValidatorTests
         return $"{signingInput}.{Base64Url.EncodeToString(signature)}";
     }
 
+    /// <summary>Signs claims given as raw JSON, for an escape a serializer will not write.</summary>
+    private static string SignWithRawClaims(string claims)
+    {
+        var signingInput = $"{Segment(Header())}.{Base64Url.EncodeToString(Encoding.UTF8.GetBytes(claims))}";
+        var signature = SignWithCurrentKey(Encoding.ASCII.GetBytes(signingInput));
+        return $"{signingInput}.{Base64Url.EncodeToString(signature)}";
+    }
+
     private static byte[] SignWithCurrentKey(byte[] input) => SignRs256(CurrentKey, input);
 
     private static byte[] SignRs256(RSA key, byte[] input) =>
@@ -495,6 +503,21 @@ public sealed class IdTokenHintValidatorTests
         var token = Sign(Header(), claims);
 
         var hint = CreateValidator().Validate(token, ClientId);
+
+        hint.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("iss")]
+    [InlineData("sub")]
+    [InlineData("aud")]
+    public void Validate_refuses_without_throwing_a_correctly_signed_hint_whose_claim_escapes_a_lone_surrogate(string claim)
+    {
+        var claims = Claims();
+        claims[claim] = "lone-surrogate";
+        var token = SignWithRawClaims(JsonSerializer.Serialize(claims).Replace("lone-surrogate", "\\uD800"));
+
+        var hint = CreateValidator().Validate(token, null);
 
         hint.Should().BeNull();
     }
