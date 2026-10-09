@@ -338,6 +338,18 @@ public sealed class IdTokenHintValidatorTests
         hint.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("""{"alg":"RS256","typ":"JWT","kid":"k","x\uD800":"v"}""")]
+    [InlineData("""{"alg":"RS256","typ":"JWT\uD800","kid":"k"}""")]
+    public void Validate_refuses_without_throwing_a_hint_whose_header_escapes_a_lone_surrogate(string header)
+    {
+        var token = $"{Base64Url.EncodeToString(Encoding.UTF8.GetBytes(header))}.{Segment(Claims())}.AA";
+
+        var hint = CreateValidator().Validate(token, ClientId);
+
+        hint.Should().BeNull();
+    }
+
     [Fact]
     public void Validate_refuses_a_correctly_signed_hint_without_a_kid()
     {

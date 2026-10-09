@@ -185,6 +185,16 @@ public sealed class AccessTokenValidatorTests
         CreateValidator().Validate(Sign(Header(), Claims(), ForeignKey)).Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("""{"alg":"RS256","typ":"at+jwt","kid":"k","x\uD800":"v"}""")]
+    [InlineData("""{"alg":"RS256","typ":"at+jwt\uD800","kid":"k"}""")]
+    public void Validate_refuses_without_throwing_a_token_whose_header_escapes_a_lone_surrogate(string header)
+    {
+        var token = $"{Base64Url.EncodeToString(Encoding.UTF8.GetBytes(header))}.{Segment(Claims())}.AA";
+
+        CreateValidator().Validate(token).Should().BeNull();
+    }
+
     [Fact]
     public void Validate_refuses_a_token_whose_payload_was_edited_after_signing()
     {

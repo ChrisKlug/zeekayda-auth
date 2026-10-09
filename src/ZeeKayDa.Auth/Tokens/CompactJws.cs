@@ -71,9 +71,10 @@ internal readonly struct CompactJws
                 Base64Url.DecodeFromChars(segments[2]));
             return true;
         }
-        catch (Exception ex) when (ex is FormatException or JsonException)
+        catch (Exception ex) when (ex is FormatException or JsonException or InvalidOperationException)
         {
-            // Malformed Base64Url or malformed JSON: either is a token this server did not write.
+            // Malformed Base64Url, malformed JSON, or an escaped lone surrogate, which System.Text.Json
+            // reports only once the string is read: each is a token this server did not write.
             _ = ex;
             return false;
         }
