@@ -237,6 +237,41 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_key_pair_whose_signer_moves_to_another_of_its_source_ids_is_logged_again()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var listing = new TestSigningKeys.Listing(current, TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90)));
+        using var ring = TestSigningKeys.Ring(listing, clock, logger);
+
+        listing.Pairs = [TestSigningKeys.Renewal(current, "current", Epoch.AddDays(-90), Epoch.AddDays(200)), listing.Pairs[1]];
+        await ReadAgainAsync(ring, clock);
+
+        logger.Entries.Where(entry => entry.Message.Contains("share one key pair")).Select(entry => entry.Message)
+            .Should().SatisfyRespectively(
+                atStartup => atStartup.Should().Contain("opens through renewed"),
+                atTheRead => atTheRead.Should().Contain("opens through current"));
+    }
+
+    [Fact]
+    public async Task The_health_check_is_Unhealthy_once_the_earlier_entry_expires_while_its_renewal_keeps_failing()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch + RefreshInterval + RefreshInterval / 2);
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+
+        listing.Pairs = [current, TestSigningKeys.Mismatched(TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90)))];
+        await ReadAgainAsync(ring, clock);
+        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Degraded);
+
+        await ReadAgainAsync(ring, clock);
+
+        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Unhealthy, "the signer still signing is bound to an entry that has expired");
+    }
+
+    [Fact]
     public async Task The_earlier_entry_s_signer_is_disposed_at_the_read_after_the_renewal_takes_over()
     {
         var clock = new FakeTimeProvider(Epoch);

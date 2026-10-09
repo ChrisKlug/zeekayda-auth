@@ -856,12 +856,12 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// Logs each key listed more than once, unless <paramref name="previous"/> listed it under the
-    /// same source ids already.
+    /// same source ids already, opening it through the same one.
     /// </summary>
     private void LogMergedKeys(SigningKeyTimeline timeline, SigningKeyTimeline? previous)
     {
         var known = previous?.Merged ?? [];
-        foreach (var merged in timeline.Merged.Where(merged => !known.Any(old => old.SourceIds.SequenceEqual(merged.SourceIds))))
+        foreach (var merged in timeline.Merged.Where(merged => !known.Any(old => old.SourceIds.SequenceEqual(merged.SourceIds) && old.Key.SourceId == merged.Key.SourceId)))
         {
             _logger.LogInformation(
                 "Signing keys {SourceKeyIds} share one key pair, so they are published as one key, {Kid}; its signer " +
