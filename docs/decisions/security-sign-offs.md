@@ -2283,3 +2283,18 @@ and Copilot review; no High or Critical left open. The last two fix commits, fro
 - **Accepted residuals (maintainer):** while a renewal keeps failing, the earlier signer signs past its own entry's expiry, and health is
   Unhealthy then — `The_health_check_is_Unhealthy_once_the_earlier_entry_expires_while_its_renewal_keeps_failing`; during a renewal
   handover health reads the dates of the entry still signing (no test).
+
+## 2026-10-09 — a presented token verifies against every listed key; one type writes and reads the compact JWS (#899, code frozen at `7f1cb3b`)
+Copilot code (two passes, High fixes verified) and security (xhigh) lenses, the security agent, the PR's CodeQL, CodeScene and Copilot review, and the
+text lens on this entry; no High or Critical open. `93433af`, `a93c5a2` and `7f1cb3b` were read by the main session only.
+- Every listed key verifies a hint or an access token, published or not; a key stops verifying at the first successful read without it, and nothing
+  verifies once a read lists no keys. Closed — `Validate_accepts_a_hint_signed_by_a_listed_key_no_longer_published`, `Validate_accepts_a_live_token_signed_by_a_listed_key_no_longer_published`,
+  `Validate_refuses_a_hint_signed_by_a_key_the_source_no_longer_lists`, `Verify_returns_null_once_a_read_lists_no_keys`. Reverses the #823 residual "a hint whose key is retired is refused".
+- A key kept only to verify never reaches the JWKS. Closed — `GetJwks_never_serves_a_key_kept_for_hint_verification_only`.
+- The header is exactly `alg`, `typ` and `kid`, as the issuer writes it, with the verifying key's own `alg`. Closed — `Validate_refuses_a_correctly_signed_hint_whose_header_carries_a_member_the_issuer_does_not_write`,
+  `Validate_refuses_a_correctly_signed_hint_whose_header_repeats_a_member`, `Validate_refuses_a_correctly_signed_hint_whose_alg_is_not_the_keys_own`, `Validate_accepts_an_id_token_issued_by_JwtTokenIssuer`.
+- A lone surrogate escaped in the header, or in a required single-string claim, refuses the token rather than throwing. Closed — `Validate_refuses_without_throwing_a_hint_whose_header_escapes_a_lone_surrogate`,
+  `Validate_refuses_without_throwing_a_token_whose_header_escapes_a_lone_surrogate`, `Validate_refuses_without_throwing_a_correctly_signed_hint_whose_claim_escapes_a_lone_surrogate`, `Validate_refuses_without_throwing_a_signed_token_whose_claim_escapes_a_lone_surrogate`.
+- **Accepted residuals:** (maintainer) a stolen old ID token stays a usable hint while its key is listed, not two days, so at a client with `SkipLogoutConfirmation`
+  it signs its user out unconfirmed that long — `Validate_accepts_a_hint_signed_by_a_listed_key_no_longer_published`, `A_valid_hint_from_a_client_that_skips_the_question_signs_out_at_once`; #922 narrows it.
+  (Settled in `signing-keys.md`) a removed key keeps verifying while source reads fail, as it keeps signing — `Verify_keeps_verifying_a_removed_key_while_reads_fail`.
