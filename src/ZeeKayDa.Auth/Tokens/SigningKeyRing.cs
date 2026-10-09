@@ -367,6 +367,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         if (timeline.DroppedKeyDueAt(now) is { } droppedSigningKey)
             throw new ZeeKayDaConfigurationException(droppedSigningKey.Failure);
 
+        RecordDroppedKeys(timeline);
         WarnAboutDroppedKeys(timeline, previous: null);
         LogMergedKeys(timeline, previous: null);
         var set = timeline.At(now);
@@ -488,9 +489,6 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         _nextReadAt = TokenLifetimes.ExpiresAt(now, _options.RefreshInterval);
         _renewalsFailed.Clear();
 
-        // From the list in force, whatever this read brings: reads may fail until after a dropped key's cutoff.
-        RecordDroppedKeys(TimelineOf(Volatile.Read(ref _state)!));
-
         if (_reading is { IsCompleted: false })
         {
             KeepLastList("the previous read has not completed", failure: null);
@@ -537,7 +535,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         {
             StopSigning(new ZeeKayDaConfigurationFailure(
                 "signing.no_usable_key",
-                "Every listed key was set aside when its signer failed, too late to take over now. List a fresh key."));
+                "Every listed key could not sign when due and is too late to take over now. List a fresh key."));
             return;
         }
 
@@ -553,9 +551,9 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// Records every dropped key, not only one due now: a key's whole due window may fall between two reads.
     /// One repaired in time is not too late to take over, so recording it costs nothing.
     /// </summary>
-    private void RecordDroppedKeys(SigningKeyTimeline? timeline)
+    private void RecordDroppedKeys(SigningKeyTimeline timeline)
     {
-        foreach (var drop in timeline?.Dropped ?? [])
+        foreach (var drop in timeline.Dropped)
             _failed.Add(drop.Key.Id);
     }
 
@@ -655,11 +653,12 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Whether <paramref name="key"/> could not sign when due and is now too late to take over. Never the key
-    /// pair already signing: taking over through another entry for it drops nothing from publication.
+    /// Whether <paramref name="key"/>, under any entry listing it, could not sign when due and is now too late
+    /// to take over. Never the key pair already signing: taking over through another entry for it drops
+    /// nothing from publication.
     /// </summary>
     private bool StaysAside(SigningKey key, SigningKey? signing, SigningKeyTimeline timeline, DateTimeOffset now) =>
-        _failed.Contains(key.SourceId) && key.Kid != signing?.Kid && timeline.IsTooLateToTakeOver(key, now);
+        timeline.SourceIdsOf(key).Any(_failed.Contains) && key.Kid != signing?.Kid && timeline.IsTooLateToTakeOver(key, now);
 
     private void KeepLastList(string reason, Exception? failure)
     {
@@ -751,7 +750,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             return;
         }
 
-        _failed.Remove(successor.SourceId);
+        _failed.ExceptWith(timeline.SourceIdsOf(successor));
         Volatile.Write(ref _state, new Signing(signer, timeline.At(now), timeline) { ReadFailure = _state!.ReadFailure });
         LogTakeover(current, successor);
         WarnIfNotEstablished(timeline, successor, now);

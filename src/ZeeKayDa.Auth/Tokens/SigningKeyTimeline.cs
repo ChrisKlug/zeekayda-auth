@@ -92,6 +92,10 @@ internal sealed class SigningKeyTimeline
     /// <summary>Gets the keys the source listed more than once, each under every source id that listed it.</summary>
     internal ImmutableArray<MergedKey> Merged { get; }
 
+    /// <summary>Every source id listing <paramref name="key"/>'s key pair.</summary>
+    internal IEnumerable<SourceKeyId> SourceIdsOf(SigningKey key) =>
+        Merged.FirstOrDefault(merged => merged.Key.Kid == key.Kid)?.SourceIds ?? [key.SourceId];
+
     /// <summary>The key set in force at <paramref name="now"/>.</summary>
     internal SigningKeySet At(DateTimeOffset now)
     {

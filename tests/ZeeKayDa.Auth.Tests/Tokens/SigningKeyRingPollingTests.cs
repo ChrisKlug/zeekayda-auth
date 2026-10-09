@@ -631,6 +631,29 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_failed_key_repaired_too_late_alongside_a_renewal_of_its_key_pair_never_takes_over()
+    {
+        // The renewal lends the merged key its own source id; the failure is recorded under the other one.
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var successor = TestSigningKeys.Pair("successor", notBefore: Epoch, expiresAt: Epoch.AddDays(90));
+        var listing = new TestSigningKeys.Listing(current, TestSigningKeys.Mismatched(successor));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.ReadFailure = new HttpRequestException("simulated: the fix cannot be read yet");
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value);
+        await ring.LastTransition;
+
+        listing.ReadFailure = null;
+        listing.Pairs = [current, successor, TestSigningKeys.Renewal(successor, "renewal", Epoch.AddDays(1), Epoch.AddDays(180))];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        ring.Current.Published.Select(key => key.SourceId.Value).Should().Contain("current");
+    }
+
+    [Fact]
     public async Task A_failed_key_too_late_to_take_over_stays_set_aside_after_a_read_that_omitted_it()
     {
         var clock = new FakeTimeProvider(Epoch);
