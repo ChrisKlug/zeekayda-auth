@@ -651,7 +651,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   published nor ever signs, the health check reports `Degraded`, and startup warns when the remaining
   keys stop covering as long as the listed ones would have. Startup still fails when the dropped key is
   the one due to sign, when every key is dropped, and for a problem with the list itself (no keys, a
-  `null` entry, an empty or duplicate source id, a duplicate `kid`, an undated key among several).
+  `null` entry, an empty or duplicate source id, an undated key among several).
 
 - **The PEM, PFX and Windows signing sources take a list instead of three slots** (#823).
   `PemFileSigningOptions.Files`, `PfxFileSigningOptions.Files` and
@@ -927,6 +927,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   them: the atomicity tests can no longer be turned off.
 
 ### Fixed
+
+- **A certificate renewed with its key reused no longer stops signing** (#914). A source listing one
+  key pair under two source ids, as during the overlap of a renewal that keeps its key (Azure Key Vault
+  `reuseKey: true`, cert-manager `rotationPolicy: Never`), failed startup with `signing.duplicate_kid`,
+  and stopped signing at a later read. The entries now build into one key: one JWK, published from the
+  first entry's `NotBefore` to the last one's expiry, with its signer opened through the entry that
+  expires last. An Information line names the source ids once each time the listing changes.
+  `signing.duplicate_kid` is removed; duplicate source ids are still refused.
 
 - **A host client validator that returns a null failure no longer hides the real ones** (#881). The
   framework reported only `client.validator.malformed_result`; it now reports that alongside every

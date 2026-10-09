@@ -26,7 +26,11 @@ public sealed class SigningKey
         NotBefore = notBefore;
     }
 
-    /// <summary>Gets the source's own identifier for this key.</summary>
+    /// <summary>
+    /// Gets the source's own identifier for this key, through which its signer is opened. When the
+    /// source lists one key pair under several ids, as during a certificate renewal that reuses the key,
+    /// it is the id of the entry that expires last.
+    /// </summary>
     public SourceKeyId SourceId { get; }
 
     /// <summary>
@@ -41,14 +45,16 @@ public sealed class SigningKey
     public PublicKeyParameters PublicKey { get; }
 
     /// <summary>
-    /// Gets the instant this key is published from, carried through from <see cref="SourceKey.NotBefore"/>;
+    /// Gets the instant this key is published from, carried through from <see cref="SourceKey.NotBefore"/>,
+    /// the earliest of them when the source lists the key pair under several ids;
     /// <see cref="DateTimeOffset.MinValue"/> for an undated key.
     /// </summary>
     public DateTimeOffset NotBefore { get; }
 
     /// <summary>
-    /// Gets the key's expiry, carried through from <see cref="SourceKey.ExpiresAt"/>;
-    /// <see cref="DateTimeOffset.MaxValue"/> for a key that never expires.
+    /// Gets the key's expiry, carried through from <see cref="SourceKey.ExpiresAt"/>, the latest of them
+    /// when the source lists the key pair under several ids; <see cref="DateTimeOffset.MaxValue"/> for a
+    /// key that never expires.
     /// </summary>
     public DateTimeOffset ExpiresAt { get; }
 }

@@ -15,8 +15,8 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// canonicalization only for a rooted path; for a relative one it reads the current directory, which
 /// is why I/O failures are caught and reported rather than thrown. Symlink resolution and
 /// case-insensitive-filesystem comparison are deliberately out of scope: if two paths are equivalent
-/// but not caught here, the result is a load failure or a duplicate-kid rejection in
-/// <c>SigningKeySetBuilder</c>, not key confusion.
+/// but not caught here, the result is a load failure or one key listed twice, which
+/// <c>SigningKeySetBuilder</c> builds into one key, not key confusion.
 /// </para>
 /// </remarks>
 internal static class SigningFilePaths

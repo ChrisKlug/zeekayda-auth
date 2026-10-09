@@ -150,6 +150,44 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_key_pair_listed_under_two_source_ids_is_logged_once_at_Information_naming_both()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock, logger);
+
+        listing.Pairs = [current, TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90))];
+        await ReadAgainAsync(ring, clock);
+        await ReadAgainAsync(ring, clock);
+
+        var merge = logger.Entries.Where(entry => entry.Message.Contains("share one key pair"))
+            .Should().ContainSingle("a key listed twice at one read is logged once, not at every read").Subject;
+        merge.Level.Should().Be(LogLevel.Information);
+        merge.Message.Should().Contain("keys current, renewed share").And.Contain("opens through renewed");
+        logger.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_key_pair_listed_under_a_further_source_id_is_logged_again()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var listing = new TestSigningKeys.Listing(current, TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90)));
+        using var ring = TestSigningKeys.Ring(listing, clock, logger);
+
+        listing.Pairs = [.. listing.Pairs, TestSigningKeys.Renewal(current, "renewed-again", Epoch, Epoch.AddDays(180))];
+        await ReadAgainAsync(ring, clock);
+
+        logger.Entries.Where(entry => entry.Message.Contains("share one key pair")).Select(entry => entry.Message)
+            .Should().SatisfyRespectively(
+                atStartup => atStartup.Should().Contain("keys current, renewed share"),
+                atTheRead => atTheRead.Should().Contain("keys current, renewed, renewed-again share"));
+    }
+
+    [Fact]
     public async Task A_read_whose_key_due_to_sign_now_has_bad_material_stops_signing()
     {
         // Rather than letting the older key sign on: someone able to write one bad key must not be

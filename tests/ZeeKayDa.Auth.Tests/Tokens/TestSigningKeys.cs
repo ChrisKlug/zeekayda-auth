@@ -141,6 +141,13 @@ internal static class TestSigningKeys
         return pair with { PrivateKey = other.ExportParameters(includePrivateParameters: true) };
     }
 
+    /// <summary>
+    /// <paramref name="pair"/>'s key pair listed again under <paramref name="id"/> with its own dates,
+    /// as a certificate renewed with its key reused is listed beside the one it renews.
+    /// </summary>
+    public static KeyPair Renewal(KeyPair pair, string id, DateTimeOffset notBefore, DateTimeOffset expiresAt)
+        => pair with { Key = new SourceKey(new SourceKeyId(id), pair.Key.PublicKey, notBefore, expiresAt) };
+
     /// <summary>Builds a ring over <paramref name="keys"/> without initializing it.</summary>
     public static SigningKeyRing Uninitialized(
         IReadOnlyList<SourceKey> keys, AsymmetricAlgorithm signingPrivateKey, TimeProvider? timeProvider = null,

@@ -325,6 +325,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             throw new ZeeKayDaConfigurationException(droppedSigningKey.Failure);
 
         WarnAboutDroppedKeys(timeline, previous: null);
+        LogMergedKeys(timeline, previous: null);
         var set = timeline.At(now);
         var signingKey = timeline.SigningKeyAt(now);
 
@@ -491,6 +492,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         }
 
         WarnAboutDroppedKeys(adopted, previous);
+        LogMergedKeys(adopted, previous);
         Volatile.Write(ref _state, Adopting(Volatile.Read(ref _state)!, adopted, now));
     }
 
@@ -808,6 +810,24 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                 "With the dropped signing keys gone, the last usable key expires at {UsableUntil}, sooner than the " +
                 "listed keys would have. Fix or replace the dropped keys before then.",
                 usableUntil);
+        }
+    }
+
+    /// <summary>
+    /// Logs each key listed more than once, unless <paramref name="previous"/> listed it under the
+    /// same source ids already.
+    /// </summary>
+    private void LogMergedKeys(SigningKeyTimeline timeline, SigningKeyTimeline? previous)
+    {
+        var known = previous?.Merged ?? [];
+        foreach (var merged in timeline.Merged.Where(merged => !known.Any(old => old.SourceIds.SequenceEqual(merged.SourceIds))))
+        {
+            _logger.LogInformation(
+                "Signing keys {SourceKeyIds} share one key pair, so they are published as one key, {Kid}; its signer " +
+                "opens through {SourceKeyId}, the last of them to expire.",
+                string.Join(", ", merged.SourceIds.Select(id => id.Value)),
+                merged.Key.Kid,
+                merged.Key.SourceId.Value);
         }
     }
 

@@ -2,8 +2,8 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// Turns the keys a source lists into a <see cref="SigningKeyTimeline"/>: drops a key that is weak,
-/// mismatched or malformed, rejects a list that is ambiguous, derives every <c>kid</c>, and orders the
-/// keys oldest first.
+/// mismatched or malformed, rejects a list that is ambiguous, derives every <c>kid</c>, builds the
+/// entries listing one key pair into one key, and orders the keys oldest first.
 /// </summary>
 /// <remarks>
 /// Every <c>kid</c> is derived from the key's own public material via <see cref="JwkThumbprint"/> —
@@ -27,7 +27,8 @@ internal static partial class SigningKeySetBuilder
 
     /// <summary>
     /// Validates every key in <paramref name="keys"/> against <paramref name="algorithm"/> and returns
-    /// them as a timeline, with any key whose own material or dates are unusable dropped.
+    /// them as a timeline, with any key whose own material or dates are unusable dropped, and the
+    /// entries listing one key pair built into one key.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown with failure code <c>signing.undefined_algorithm</c> when <paramref name="algorithm"/> is
@@ -35,8 +36,7 @@ internal static partial class SigningKeySetBuilder
     /// is empty; <c>signing.null_key</c> when it contains a <see langword="null"/>;
     /// <c>signing.empty_key_id</c> or <c>signing.duplicate_key_id</c> for a missing or repeated source id;
     /// <c>signing.undated_key</c> when one of two or more keys has no <see cref="SourceKey.NotBefore"/>;
-    /// <c>signing.duplicate_kid</c> when two keys share public material; or, when every key was dropped,
-    /// every dropped key's failure.
+    /// or, when every key was dropped, every dropped key's failure.
     /// </exception>
     internal static SigningKeyTimeline Build(
         IReadOnlyList<SourceKey> keys, SigningAlgorithm algorithm, SigningKeyOptions options)
@@ -46,42 +46,27 @@ internal static partial class SigningKeySetBuilder
         ValidateSource(keys, algorithm);
 
         var seenSourceIds = new HashSet<string>(StringComparer.Ordinal);
-        var seenKids = new HashSet<string>(StringComparer.Ordinal);
-        var built = new List<SigningKey>(keys.Count);
+        var usable = new List<SigningKey>(keys.Count);
         var dropped = new List<DroppedKey>();
 
         foreach (var sourceKey in keys)
         {
             ValidateListing(sourceKey, keys.Count, seenSourceIds);
 
-            if (TryBuildKey(sourceKey, algorithm, dropped) is not { } key)
-                continue;
-
-            // Before the dates are judged: two entries sharing one public key are ambiguous whether
-            // or not either could be used.
-            if (!seenKids.Add(key.Kid))
-            {
-                throw new ZeeKayDaConfigurationException(
-                    new ZeeKayDaConfigurationFailure(
-                        "signing.duplicate_kid",
-                        $"The signing key source reported duplicate kid '{key.Kid}', derived from the public " +
-                        $"key of source id '{key.SourceId.Value}'. Each key must have a unique, stable " +
-                        "kid — check for two distinct source ids sharing the same public key."));
-            }
-
-            if (ValidityWindowFailure(sourceKey) is { } windowFailure)
-            {
-                dropped.Add(new DroppedKey(sourceKey, windowFailure));
-                continue;
-            }
-
-            built.Add(key);
+            if (TryBuildKey(sourceKey, algorithm, dropped) is { } key)
+                usable.Add(key);
         }
 
-        if (built.Count == 0)
+        if (usable.Count == 0)
             throw new ZeeKayDaConfigurationException([.. dropped.Select(drop => drop.Failure)]);
 
-        return new SigningKeyTimeline([.. built.Order(OldestFirst)], [.. dropped], algorithm, options);
+        var keyPairs = usable.GroupBy(key => key.Kid, StringComparer.Ordinal).Select(entries => Merge([.. entries])).ToList();
+        return new SigningKeyTimeline(
+            [.. keyPairs.Select(keyPair => keyPair.Key).Order(OldestFirst)],
+            [.. dropped],
+            [.. keyPairs.Where(keyPair => keyPair.SourceIds.Length > 1)],
+            algorithm,
+            options);
     }
 
     private static void ValidateSource(IReadOnlyList<SourceKey> keys, SigningAlgorithm algorithm)
@@ -150,7 +135,7 @@ internal static partial class SigningKeySetBuilder
 
     /// <summary>
     /// Builds <paramref name="sourceKey"/>, or adds it to <paramref name="dropped"/> with the first
-    /// problem in its material and returns <see langword="null"/>.
+    /// problem in its material or dates and returns <see langword="null"/>.
     /// </summary>
     private static SigningKey? TryBuildKey(SourceKey sourceKey, SigningAlgorithm algorithm, List<DroppedKey> dropped)
     {
@@ -161,6 +146,7 @@ internal static partial class SigningKeySetBuilder
             ValidateKeyAlgorithmCompatibility(sourceKey, algorithm);
 
             var canonicalPublicKey = ImportAndCanonicalize(sourceKey);
+            ValidateValidityWindow(sourceKey);
             return new SigningKey(
                 sourceKey.Id, DeriveKid(canonicalPublicKey), algorithm, canonicalPublicKey, sourceKey.NotBefore, sourceKey.ExpiresAt);
         }
@@ -171,12 +157,39 @@ internal static partial class SigningKeySetBuilder
         }
     }
 
-    private static ZeeKayDaConfigurationFailure? ValidityWindowFailure(SourceKey key) =>
-        key.NotBefore >= key.ExpiresAt
-            ? new ZeeKayDaConfigurationFailure(
+    private static void ValidateValidityWindow(SourceKey key)
+    {
+        if (key.NotBefore < key.ExpiresAt)
+            return;
+
+        throw new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure(
                 "signing.invalid_validity_window",
-                $"Key '{key.Id.Value}' expires at {key.ExpiresAt:O}, which is not after its NotBefore {key.NotBefore:O}.")
-            : null;
+                $"Key '{key.Id.Value}' expires at {key.ExpiresAt:O}, which is not after its NotBefore {key.NotBefore:O}."));
+    }
+
+    /// <summary>
+    /// The entries listing one key pair as one key, published from the first's NotBefore to the last's
+    /// expiry. It opens through the entry that expires last, ties to the ordinally greater source id:
+    /// that certificate is the one still valid at the end.
+    /// </summary>
+    private static MergedKey Merge(IReadOnlyList<SigningKey> entries)
+    {
+        var lastToExpire = entries
+            .OrderBy(entry => entry.ExpiresAt)
+            .ThenBy(entry => entry.SourceId.Value, StringComparer.Ordinal)
+            .Last();
+
+        var key = new SigningKey(
+            lastToExpire.SourceId,
+            lastToExpire.Kid,
+            lastToExpire.Algorithm,
+            lastToExpire.PublicKey,
+            entries.Min(entry => entry.NotBefore),
+            lastToExpire.ExpiresAt);
+
+        return new MergedKey(key, [.. entries.Select(entry => entry.SourceId).OrderBy(id => id.Value, StringComparer.Ordinal)]);
+    }
 
     /// <summary>
     /// <paramref name="publicKey"/> has already passed <see cref="ImportAndCanonicalize"/>, so its

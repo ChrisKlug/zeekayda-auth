@@ -105,6 +105,26 @@ public sealed class SigningKeyLifecycleScenarioTests
         PublishedIds(ring).Should().Equal("second", "third");
     }
 
+    [Fact]
+    public async Task Rotation_a_renewed_certificate_reusing_the_key_pair_keeps_signing()
+    {
+        var original = TestSigningKeys.Pair("original", notBefore: Startup.AddDays(-80), expiresAt: Startup.AddDays(10));
+        var listing = new TestSigningKeys.Listing(original);
+        using var ring = TestSigningKeys.Ring(listing, _clock, _logger);
+        var kid = ring.Current.SigningKey!.Kid;
+
+        listing.Pairs = [original, TestSigningKeys.Renewal(original, "renewed", notBefore: Startup, expiresAt: Startup.AddDays(100))];
+        await AdvanceAsync(ring, TestSigningKeys.Options.RefreshInterval);
+
+        ring.Current.Published.Should().ContainSingle().Which.Kid.Should().Be(kid);
+
+        await AdvanceAsync(ring, TimeSpan.FromDays(10));
+
+        (await SignAsync(ring)).Key.Kid.Should().Be(kid, "the renewal keeps the key pair valid past the original's expiry");
+        ring.Current.Published.Should().ContainSingle();
+        _logger.Entries.Should().NotContain(entry => entry.Level >= LogLevel.Warning);
+    }
+
     // ── Emergency ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -214,6 +234,9 @@ public sealed class SigningKeyLifecycleScenarioTests
             await ring.LastTransition;
         }
     }
+
+    private static Task<SigningOutcome> SignAsync(SigningKeyRing ring) =>
+        ring.SignAsync(0, static (_, _) => "payload"u8.ToArray(), TestContext.Current.CancellationToken);
 
     private static string SigningId(SigningKeyRing ring) => ring.Current.SigningKey!.SourceId.Value;
 
