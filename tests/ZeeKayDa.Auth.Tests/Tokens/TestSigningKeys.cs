@@ -141,6 +141,13 @@ internal static class TestSigningKeys
         return pair with { PrivateKey = other.ExportParameters(includePrivateParameters: true) };
     }
 
+    /// <summary>
+    /// <paramref name="pair"/>'s key pair listed again under <paramref name="id"/> with its own dates,
+    /// as a certificate renewed with its key reused is listed beside the one it renews.
+    /// </summary>
+    public static KeyPair Renewal(KeyPair pair, string id, DateTimeOffset notBefore, DateTimeOffset expiresAt)
+        => pair with { Key = new SourceKey(new SourceKeyId(id), pair.Key.PublicKey, notBefore, expiresAt) };
+
     /// <summary>Builds a ring over <paramref name="keys"/> without initializing it.</summary>
     public static SigningKeyRing Uninitialized(
         IReadOnlyList<SourceKey> keys, AsymmetricAlgorithm signingPrivateKey, TimeProvider? timeProvider = null,
@@ -322,6 +329,15 @@ internal static class TestSigningKeys
         public SigningAlgorithm Algorithm { get; set; } = SigningAlgorithm.ES256;
 
         public int Reads { get; set; }
+
+        /// <summary>The source id of every signer opened, in order.</summary>
+        public List<SourceKeyId> SignersOpened { get; } = [];
+
+        /// <summary>The source id of the signer behind every signature made, self-tests included, in order.</summary>
+        public List<SourceKeyId> SignedBy { get; } = [];
+
+        /// <summary>The source id of every signer disposed, in order.</summary>
+        public List<SourceKeyId> SignersDisposed { get; } = [];
     }
 
     private sealed class ListingSource(Listing listing, Func<ISigner, ISigner>? decorateSigner) : ISigningKeySource
@@ -343,12 +359,29 @@ internal static class TestSigningKeys
         public async Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             var pair = listing.Pairs.Single(pair => pair.Key.Id == id);
+            listing.SignersOpened.Add(id);
             listing.SignerRequested.TrySetResult();
             if (listing.SignerGate is { } gate)
                 await gate.Task;
 
-            ISigner signer = new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(pair.PrivateKey));
+            ISigner signer = new RecordingSigner(
+                new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(pair.PrivateKey)), () => listing.SignedBy.Add(id), () => listing.SignersDisposed.Add(id));
             return decorateSigner is null ? signer : decorateSigner(signer);
+        }
+    }
+
+    private sealed class RecordingSigner(ISigner inner, Action onSign, Action onDispose) : ISigner
+    {
+        public Task<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
+        {
+            onSign();
+            return inner.SignAsync(signingInput, cancellationToken);
+        }
+
+        public void Dispose()
+        {
+            onDispose();
+            inner.Dispose();
         }
     }
 

@@ -38,13 +38,19 @@ internal sealed class SigningKeyTimeline
 
     /// <param name="oldestFirst">Validated keys in <see cref="SigningKeySetBuilder.OldestFirst"/> order; never empty.</param>
     /// <param name="dropped">The listed keys whose own dates or material were unusable.</param>
+    /// <param name="merged">The keys of <paramref name="oldestFirst"/> the source listed more than once.</param>
     /// <param name="algorithm">The algorithm every key signs under.</param>
     /// <param name="options">The lead time and the resolved retention.</param>
     internal SigningKeyTimeline(
-        ImmutableArray<SigningKey> oldestFirst, ImmutableArray<DroppedKey> dropped, SigningAlgorithm algorithm, SigningKeyOptions options)
+        ImmutableArray<SigningKey> oldestFirst,
+        ImmutableArray<DroppedKey> dropped,
+        ImmutableArray<MergedKey> merged,
+        SigningAlgorithm algorithm,
+        SigningKeyOptions options)
     {
         _oldestFirst = oldestFirst;
         Dropped = dropped;
+        Merged = merged;
         _algorithm = algorithm;
         _leadTime = options.LeadTime;
         _retention = options.RetainRetiredKeysFor
@@ -58,6 +64,7 @@ internal sealed class SigningKeyTimeline
     {
         _oldestFirst = listed._oldestFirst;
         Dropped = listed.Dropped;
+        Merged = listed.Merged;
         _algorithm = listed._algorithm;
         _leadTime = listed._leadTime;
         _retention = listed._retention;
@@ -81,6 +88,9 @@ internal sealed class SigningKeyTimeline
     /// ever sign; the rules carry on with the keys around them.
     /// </summary>
     internal ImmutableArray<DroppedKey> Dropped { get; }
+
+    /// <summary>Gets the keys the source listed more than once, each under every source id that listed it.</summary>
+    internal ImmutableArray<MergedKey> Merged { get; }
 
     /// <summary>The key set in force at <paramref name="now"/>.</summary>
     internal SigningKeySet At(DateTimeOffset now)

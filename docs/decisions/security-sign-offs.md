@@ -2236,7 +2236,9 @@ CodeQL and CodeScene review; no Critical left open. Four test-only CodeQL dispos
   `Initialization_owns_the_startup_signer_before_logging_so_a_throwing_logger_does_not_leak_it`.
 - A bad key never publishes or signs; a bad key due now, or an ambiguous list, fails startup; health names codes, never source ids. Closed —
   `A_dropped_staged_key_is_warned_about_and_never_published_or_signed_with`, `Initialization_fails_when_the_key_due_to_sign_now_was_dropped`,
-  `Build_fails_on_a_duplicate_kid_even_when_one_entry_has_unusable_dates`, `Evaluate_is_Degraded_while_a_listed_key_is_dropped_without_naming_its_source_id`.
+  Build_fails_on_a_duplicate_kid_even_when_one_entry_has_unusable_dates [removed by #914, entries over one key pair now merge after per-entry
+  validation: `Build_drops_an_entry_with_unusable_dates_and_builds_the_other_entry_over_its_key_pair_alone`],
+  `Evaluate_is_Degraded_while_a_listed_key_is_dropped_without_naming_its_source_id`.
 - A key signing on after healthy replicas dropped it is Unhealthy. Closed — `Evaluate_is_Unhealthy_when_the_key_signing_on_after_a_failed_handover_has_left_every_other_replica_s_key_set`.
 - **Accepted residuals (maintainer):** a provider's own per-key failure still fails `ReadAsync` (#908) — `ReadAsync_rejects_a_separate_key_file_broader_than_0600_on_Unix_even_for_a_file_that_does_not_sign`;
   revocation is remove and restart until polling (#527), the source being read once — CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source [renamed by #527: `CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_reading_the_source_itself`].

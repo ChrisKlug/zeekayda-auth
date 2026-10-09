@@ -65,7 +65,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
     // Guards _signers, _timer and the transition from live to disposed.
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, ISigner> _signers = new(StringComparer.Ordinal);
+    private readonly Dictionary<SignerId, ISigner> _signers = [];
     private ITimer? _timer;
 
     // Read once, at initialization: a source whose getter changes cannot change the server's algorithm.
@@ -73,11 +73,15 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
     // Touched only by initialization and the transition, which never overlap.
     private DateTimeOffset _nextReadAt;
-    private readonly HashSet<string> _unlistedOnce = new(StringComparer.Ordinal);
+    private readonly HashSet<SignerId> _unlistedOnce = [];
 
     // Keys whose signer failed when due and has not signed since, by kid, kept across reads that omit
     // them or stop signing: such a key may never take over once its predecessor is superseded.
     private readonly HashSet<string> _failed = new(StringComparer.Ordinal);
+
+    // Renewals of the signing key pair whose signer failed since the last read: the signer of the entry
+    // they renew signs on, and the next read tries them again.
+    private readonly HashSet<SignerId> _renewalsFailed = [];
 
     // A read abandoned at its deadline may still be running; no second one starts on the source until it ends.
     private Task? _reading;
@@ -325,6 +329,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             throw new ZeeKayDaConfigurationException(droppedSigningKey.Failure);
 
         WarnAboutDroppedKeys(timeline, previous: null);
+        LogMergedKeys(timeline, previous: null);
         var set = timeline.At(now);
         var signingKey = timeline.SigningKeyAt(now);
 
@@ -353,7 +358,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
             // Created disarmed and armed only once assigned: a timer due at once may fire before
             // CreateTimer returns, and its transition re-arms through _timer.
-            _signers.Add(signingKey.Kid, signer);
+            _signers.Add(SignerId.Of(signingKey), signer);
             _timer = _timeProvider.CreateTimer(
                 static state => ((SigningKeyRing)state!).OnTimer(), this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
@@ -418,9 +423,15 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
             var due = timeline.SigningKeyAt(now);
             var signingKey = (state as Signing)?.SigningKey;
-            if (state is Signing signing && due.Kid == signing.SigningKey.Kid)
+            if (state is Signing signing && SignerId.Of(due) == SignerId.Of(signing.SigningKey))
             {
                 Volatile.Write(ref _state, signing with { KeySet = timeline.At(now) });
+                return now;
+            }
+
+            if (state is Signing renewing && _renewalsFailed.Contains(SignerId.Of(due)))
+            {
+                Volatile.Write(ref _state, renewing with { KeySet = KeySetSignedBy(renewing.SigningKey, timeline, now) });
                 return now;
             }
 
@@ -436,6 +447,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     {
         var now = _timeProvider.GetUtcNow();
         _nextReadAt = TokenLifetimes.ExpiresAt(now, _options.RefreshInterval);
+        _renewalsFailed.Clear();
 
         if (_reading is { IsCompleted: false })
         {
@@ -491,6 +503,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         }
 
         WarnAboutDroppedKeys(adopted, previous);
+        LogMergedKeys(adopted, previous);
         Volatile.Write(ref _state, Adopting(Volatile.Read(ref _state)!, adopted, now));
     }
 
@@ -505,14 +518,13 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         var published = timeline.At(now).Published;
         switch (state)
         {
-            case Signing signing when timeline.Keys.FirstOrDefault(key => key.Kid == signing.SigningKey.Kid) is { } stillListed:
-                // The key signing on until a handover completes stays published while it signs.
-                IReadOnlyList<SigningKey> withSigner = published.Any(key => key.Kid == stillListed.Kid)
-                    ? published
-                    : [.. published.Append(stillListed).Order(SigningKeySetBuilder.OldestFirst)];
+            case Signing signing when StillLists(timeline, signing.SigningKey)
+                                      && timeline.Keys.FirstOrDefault(key => key.Kid == signing.SigningKey.Kid) is { } stillListed:
+                // A renewal now opening the key pair under another source id signs once its handover opens it.
+                var signingKey = SignerId.Of(stillListed) == SignerId.Of(signing.SigningKey) ? stillListed : signing.SigningKey;
                 return signing with
                 {
-                    KeySet = new SigningKeySet(_algorithm, stillListed, withSigner),
+                    KeySet = KeySetSignedBy(signingKey, timeline, now),
                     Timeline = timeline,
                     ReadFailure = null,
                 };
@@ -527,6 +539,27 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             default:
                 return new Resuming(new SigningKeySet(_algorithm, null, published), timeline, ReasonOf(state)!);
         }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="timeline"/> still lists <paramref name="key"/> under its own source id: a renewal
+    /// listing its key pair under another id does not vouch for an entry the source has removed.
+    /// </summary>
+    private static bool StillLists(SigningKeyTimeline timeline, SigningKey key) =>
+        timeline.Keys.Any(listed => SignerId.Of(listed) == SignerId.Of(key))
+        || timeline.Merged.Any(merged => merged.Key.Kid == key.Kid && merged.SourceIds.Contains(key.SourceId));
+
+    /// <summary>
+    /// <paramref name="timeline"/>'s key set at <paramref name="now"/>, signed by <paramref name="signingKey"/>
+    /// until a handover completes, and published while it signs.
+    /// </summary>
+    private SigningKeySet KeySetSignedBy(SigningKey signingKey, SigningKeyTimeline timeline, DateTimeOffset now)
+    {
+        var published = timeline.At(now).Published;
+        IReadOnlyList<SigningKey> withSigner = published.Any(key => key.Kid == signingKey.Kid)
+            ? published
+            : [.. published.Append(signingKey).Order(SigningKeySetBuilder.OldestFirst)];
+        return new SigningKeySet(_algorithm, signingKey, withSigner);
     }
 
     private async Task<IReadOnlyList<SourceKey>?> ReadSourceAsync()
@@ -595,20 +628,20 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     private void ReleaseUnlistedSigners(SigningKeyTimeline? timeline)
     {
         var signing = (Volatile.Read(ref _state) as Signing)?.Signer;
-        var listed = timeline?.Keys.Select(key => key.Kid).ToHashSet(StringComparer.Ordinal) ?? [];
+        var listed = timeline?.Keys.Select(SignerId.Of).ToHashSet() ?? [];
         List<ISigner> released = [];
         lock (_gate)
         {
-            foreach (var (kid, signer) in _signers.ToList())
+            foreach (var (id, signer) in _signers.ToList())
             {
-                if (listed.Contains(kid))
+                if (listed.Contains(id))
                 {
-                    _unlistedOnce.Remove(kid);
+                    _unlistedOnce.Remove(id);
                 }
-                else if (!_unlistedOnce.Add(kid) && !ReferenceEquals(signer, signing))
+                else if (!_unlistedOnce.Add(id) && !ReferenceEquals(signer, signing))
                 {
-                    _unlistedOnce.Remove(kid);
-                    _signers.Remove(kid);
+                    _unlistedOnce.Remove(id);
+                    _signers.Remove(id);
                     released.Add(signer);
                 }
             }
@@ -641,7 +674,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
         // The clock may have moved on while the signer opened; the caller's loop then hands over to
         // whichever key is due now, and this signer stays cached for if its turn comes again.
-        if (timeline.SigningKeyAt(now).Kid != successor.Kid)
+        if (SignerId.Of(timeline.SigningKeyAt(now)) != SignerId.Of(successor))
             return;
 
         // A retried key whose cutoff passed while its signer opened: its predecessor is superseded.
@@ -665,7 +698,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     {
         lock (_gate)
         {
-            if (_signers.TryGetValue(successor.Kid, out var cached))
+            if (_signers.TryGetValue(SignerId.Of(successor), out var cached))
                 return cached;
         }
 
@@ -689,11 +722,30 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             if (_shutdown.IsCancellationRequested)
                 throw;
 
-            SetAside(current, successor, Describe(ex), ex);
+            if (current?.Kid == successor.Kid)
+                KeepSigningThroughTheRenewedEntry(current, successor, Describe(ex), ex);
+            else
+                SetAside(current, successor, Describe(ex), ex);
+
             return null;
         }
 
         return TryKeep(successor, signer) ? signer : throw new OperationCanceledException(_shutdown.Token);
+    }
+
+    /// <summary>
+    /// <paramref name="renewal"/> lists the key pair <paramref name="current"/> signs with under another
+    /// source id: the key pair works, so the signer of <paramref name="current"/> signs on, and the next read
+    /// tries the renewal again.
+    /// </summary>
+    private void KeepSigningThroughTheRenewedEntry(SigningKey current, SigningKey renewal, string reason, Exception failure)
+    {
+        _renewalsFailed.Add(SignerId.Of(renewal));
+        _logger.LogWarning(
+            failure,
+            "Key {Kid} is listed again as {SourceKeyId}, but its signer failed ({Failure}); the signer opened " +
+            "through {PreviousSourceKeyId} signs on, and the next read tries the renewal again.",
+            renewal.Kid, renewal.SourceId.Value, reason, current.SourceId.Value);
     }
 
     private void LogTakeover(SigningKey? current, SigningKey successor)
@@ -781,7 +833,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         {
             if (_disposed == 0)
             {
-                _signers.Add(key.Kid, signer);
+                _signers.Add(SignerId.Of(key), signer);
                 return true;
             }
         }
@@ -808,6 +860,24 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                 "With the dropped signing keys gone, the last usable key expires at {UsableUntil}, sooner than the " +
                 "listed keys would have. Fix or replace the dropped keys before then.",
                 usableUntil);
+        }
+    }
+
+    /// <summary>
+    /// Logs each key listed more than once, unless <paramref name="previous"/> listed it under the
+    /// same source ids already, opening it through the same one.
+    /// </summary>
+    private void LogMergedKeys(SigningKeyTimeline timeline, SigningKeyTimeline? previous)
+    {
+        var known = previous?.Merged ?? [];
+        foreach (var merged in timeline.Merged.Where(merged => !known.Any(old => old.SourceIds.SequenceEqual(merged.SourceIds) && old.Key.SourceId == merged.Key.SourceId)))
+        {
+            _logger.LogInformation(
+                "Signing keys {SourceKeyIds} share one key pair, so they are published as one key, {Kid}; its signer " +
+                "opens through {SourceKeyId}, the last of them to expire.",
+                string.Join(", ", merged.SourceIds.Select(id => id.Value)),
+                merged.Key.Kid,
+                merged.Key.SourceId.Value);
         }
     }
 
@@ -929,4 +999,13 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         Resuming resuming => resuming.Reason,
         _ => null,
     };
+
+    /// <summary>
+    /// What a signer is opened for: one key pair through one source entry. A renewal listing the key pair
+    /// under another source id needs its own signer, as does a source id that comes to list other material.
+    /// </summary>
+    private readonly record struct SignerId(string Kid, SourceKeyId SourceId)
+    {
+        internal static SignerId Of(SigningKey key) => new(key.Kid, key.SourceId);
+    }
 }

@@ -150,6 +150,178 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_key_pair_listed_under_two_source_ids_is_logged_once_at_Information_naming_both()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock, logger);
+
+        listing.Pairs = [current, TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90))];
+        await ReadAgainAsync(ring, clock);
+        await ReadAgainAsync(ring, clock);
+
+        var merge = logger.Entries.Where(entry => entry.Message.Contains("share one key pair"))
+            .Should().ContainSingle("a key listed twice at one read is logged once, not at every read").Subject;
+        merge.Level.Should().Be(LogLevel.Information);
+        merge.Message.Should().Contain("keys current, renewed share").And.Contain("opens through renewed");
+        logger.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_renewal_reusing_the_signing_key_pair_signs_through_a_signer_opened_for_the_renewal()
+    {
+        // A remote signer is bound to the entry it was opened through, which may stop signing at its own expiry.
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+
+        listing.Pairs = [current, TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90))];
+        await ReadAgainAsync(ring, clock);
+
+        listing.SignersOpened.Select(id => id.Value).Should().Equal("current", "renewed");
+        listing.SignedBy.Clear();
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("renewed");
+        listing.SignedBy.Select(id => id.Value).Should().Equal(["renewed"], "the signer opened through the original entry signs no more");
+    }
+
+    [Fact]
+    public async Task The_health_check_is_Degraded_while_a_renewal_over_the_signing_key_pair_is_still_opening()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(100));
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.SignerGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        listing.SignerRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        listing.Pairs = [current, TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(200))];
+        clock.Advance(RefreshInterval);
+        await listing.SignerRequested.Task;
+
+        var opening = await HealthAsync(ring, clock);
+        opening.Status.Should().Be(HealthStatus.Degraded);
+        opening.Description.Should().NotContain("renewed").And.NotContain("current");
+
+        listing.SignerGate.SetResult();
+        await ring.LastTransition;
+        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [Fact]
+    public async Task A_renewal_whose_signer_fails_leaves_the_earlier_signer_signing_and_is_tried_again_at_the_next_read()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var renewal = TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90));
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock, logger);
+
+        listing.Pairs = [current, TestSigningKeys.Mismatched(renewal)];
+        await ReadAgainAsync(ring, clock);
+
+        listing.SignedBy.Clear();
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        listing.SignedBy.Select(id => id.Value).Should().Equal("current");
+        logger.Warnings.Should().ContainSingle().Which.Should().Contain("signs on");
+        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Degraded);
+
+        listing.Pairs = [current, renewal];
+        await ReadAgainAsync(ring, clock);
+
+        listing.SignersOpened.Select(id => id.Value).Should().Equal("current", "renewed", "renewed");
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("renewed");
+    }
+
+    [Fact]
+    public async Task A_key_pair_whose_signer_moves_to_another_of_its_source_ids_is_logged_again()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var listing = new TestSigningKeys.Listing(current, TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90)));
+        using var ring = TestSigningKeys.Ring(listing, clock, logger);
+
+        listing.Pairs = [TestSigningKeys.Renewal(current, "current", Epoch.AddDays(-90), Epoch.AddDays(200)), listing.Pairs[1]];
+        await ReadAgainAsync(ring, clock);
+
+        logger.Entries.Where(entry => entry.Message.Contains("share one key pair")).Select(entry => entry.Message)
+            .Should().SatisfyRespectively(
+                atStartup => atStartup.Should().Contain("opens through renewed"),
+                atTheRead => atTheRead.Should().Contain("opens through current"));
+    }
+
+    [Fact]
+    public async Task The_health_check_is_Unhealthy_once_the_earlier_entry_expires_while_its_renewal_keeps_failing()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch + RefreshInterval + RefreshInterval / 2);
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+
+        listing.Pairs = [current, TestSigningKeys.Mismatched(TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90)))];
+        await ReadAgainAsync(ring, clock);
+        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Degraded);
+
+        await ReadAgainAsync(ring, clock);
+
+        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Unhealthy, "the signer still signing is bound to an entry that has expired");
+    }
+
+    [Fact]
+    public async Task A_signing_entry_replaced_by_a_renewal_of_its_key_pair_stops_signing_and_does_not_sign_on_when_the_renewal_fails()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+
+        listing.Pairs = [TestSigningKeys.Mismatched(TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90)))];
+        await ReadAgainAsync(ring, clock);
+
+        ring.Current.SigningKey.Should().BeNull("the source no longer lists the entry whose signer was signing");
+        await FluentActions.Awaiting(() => SignAsync(ring)).Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task The_earlier_entry_s_signer_is_disposed_at_the_read_after_the_renewal_takes_over()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var listing = new TestSigningKeys.Listing(current);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+
+        listing.Pairs = [current, TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90))];
+        await ReadAgainAsync(ring, clock);
+        listing.SignersDisposed.Should().BeEmpty("one read's grace lets a sign call already holding it finish");
+
+        await ReadAgainAsync(ring, clock);
+
+        listing.SignersDisposed.Select(id => id.Value).Should().Equal("current");
+    }
+
+    [Fact]
+    public async Task A_key_pair_listed_under_a_further_source_id_is_logged_again()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(10));
+        var listing = new TestSigningKeys.Listing(current, TestSigningKeys.Renewal(current, "renewed", Epoch, Epoch.AddDays(90)));
+        using var ring = TestSigningKeys.Ring(listing, clock, logger);
+
+        listing.Pairs = [.. listing.Pairs, TestSigningKeys.Renewal(current, "renewed-again", Epoch, Epoch.AddDays(180))];
+        await ReadAgainAsync(ring, clock);
+
+        logger.Entries.Where(entry => entry.Message.Contains("share one key pair")).Select(entry => entry.Message)
+            .Should().SatisfyRespectively(
+                atStartup => atStartup.Should().Contain("keys current, renewed share"),
+                atTheRead => atTheRead.Should().Contain("keys current, renewed, renewed-again share"));
+    }
+
+    [Fact]
     public async Task A_read_whose_key_due_to_sign_now_has_bad_material_stops_signing()
     {
         // Rather than letting the older key sign on: someone able to write one bad key must not be
