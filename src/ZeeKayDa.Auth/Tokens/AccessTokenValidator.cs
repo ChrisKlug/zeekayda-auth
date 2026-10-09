@@ -100,15 +100,13 @@ internal sealed class AccessTokenValidator(
         if (!payload.TryGetProperty("aud", out var audience))
             return false;
 
-        return audience.ValueKind switch
-        {
-            JsonValueKind.String => string.Equals(JwtClaims.AsString(audience), issuer, StringComparison.Ordinal),
-            JsonValueKind.Array => audience.EnumerateArray().Any(entry =>
-                entry.ValueKind == JsonValueKind.String &&
-                string.Equals(JwtClaims.AsString(entry), issuer, StringComparison.Ordinal)),
-            _ => false,
-        };
+        return audience.ValueKind == JsonValueKind.Array
+            ? audience.EnumerateArray().Any(entry => IsIssuer(entry, issuer))
+            : IsIssuer(audience, issuer);
     }
+
+    private static bool IsIssuer(JsonElement value, string? issuer) =>
+        JwtClaims.AsString(value) is { } name && string.Equals(name, issuer, StringComparison.Ordinal);
 
     /// <summary>
     /// The token has not expired and has become valid, each allowed the configured clock-skew

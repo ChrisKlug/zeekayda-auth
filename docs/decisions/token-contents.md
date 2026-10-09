@@ -23,8 +23,9 @@ validators parse with it. Its header is exactly `alg`, `typ` and `kid` on both s
 any other member, `crit` or a repeat included, is refused. The ring knows no format: it signs bytes,
 and `SigningKeyRing.Verify` checks a signature against every key the source lists, published or not,
 leaving the rest of the token, `exp` included, to the validator. A hint ignores `exp`, so it outlives
-its key's publication; only unlisting the key revokes it. The issuer seam is named for tokens rather
-than for JWTs, because the ID token, the access token and any future format share it.
+its key's publication; only unlisting the key revokes it, at the first successful read that no longer
+lists it (a failed read keeps the last list, `signing-keys.md`). The issuer seam is named for tokens
+rather than for JWTs, because the ID token, the access token and any future format share it.
 
 **The ID token always carries `iss`, `sub`, `aud`, `exp`, `iat`, `auth_time` and `at_hash`, and
 `nonce` on the code grant.** OIDC Core §2 requires the first five, and `nonce` whenever the request had

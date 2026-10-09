@@ -109,7 +109,8 @@ userinfo validate one as an ordinary resource server. See
 
 A token stays verifiable for as long as the signing source lists the key that signed it. The key
 leaving the JWKS does not end the token; its own `exp` does. Removing the key from the source
-revokes every token it signed.
+revokes every token it signed once the server next reads the source successfully. While reads fail,
+the server keeps the last list it read.
 
 Claims are then resolved **fresh** from the host's `IClaimsProvider` on every call — nothing is
 read from a store or a cache. An access token is self-contained and keeps working until it expires

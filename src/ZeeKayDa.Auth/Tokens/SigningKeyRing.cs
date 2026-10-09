@@ -238,8 +238,9 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// </summary>
     /// <remarks>
     /// Every key the source lists verifies, published or not: a token stays verifiable for as long as
-    /// the key that signed it is listed, and removing the key from the source is what revokes it.
-    /// What else makes a token valid, its lifetime included, is the caller's to judge.
+    /// the key that signed it is listed. It stops verifying at the first successful read that no
+    /// longer lists the key; a read that fails keeps the last list. What else makes a token valid, its
+    /// lifetime included, is the caller's to judge.
     /// </remarks>
     /// <param name="kid">The key the token names.</param>
     /// <param name="signingInput">The exact bytes that were signed.</param>
