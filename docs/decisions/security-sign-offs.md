@@ -2265,3 +2265,21 @@ its fix diff), and the PR's CodeQL, CodeScene and Copilot review; no High or Cri
   a source that never returns pins the last list until restart, and an unmounted key directory reads as deleted (no test); an abandoned Key Vault read
   cancelled after its pre-commit check can still commit its newer version list, refusing a just-disabled version one read early (no test — the check
   itself, for cancellation before it, is proven by `ReadAsync_abandoned_by_the_ring_does_not_replace_the_versions_a_signer_may_open`).
+
+## 2026-10-09 — entries over one key pair build into one key (#914, code frozen at `d712c4d`)
+Copilot code (two passes, fix verified) and security lenses, the security agent (verified its fix diff), and the PR's CodeQL, CodeScene
+and Copilot review; no High or Critical left open. The last two fix commits, from the diff read and Copilot's PR review, were read by the main session only.
+- Entries sharing a thumbprint publish one JWK, merged only after per-entry validation; duplicate source ids still stop signing. Closed —
+  `Build_merges_two_entries_over_one_key_pair_into_one_key_spanning_both_windows`, `Build_drops_an_entry_with_unusable_dates_and_builds_the_other_entry_over_its_key_pair_alone`,
+  `A_read_listing_duplicate_source_ids_stops_signing`. Supersedes "an ambiguous list fails startup" (#823) for one key pair under two ids.
+- The merged key signs through the entry expiring last, via its own self-tested signer; the earlier signer is released a read later. Closed —
+  `Build_opens_the_merged_key_through_the_entry_that_expires_last`, `A_renewal_reusing_the_signing_key_pair_signs_through_a_signer_opened_for_the_renewal`,
+  `The_earlier_entry_s_signer_is_disposed_at_the_read_after_the_renewal_takes_over`, `Rotation_a_renewed_certificate_reusing_the_key_pair_keeps_signing`.
+- A renewal whose signer fails leaves the earlier signer signing and is retried next read; health is Degraded and names no source id. Closed —
+  `A_renewal_whose_signer_fails_leaves_the_earlier_signer_signing_and_is_tried_again_at_the_next_read`,
+  `The_health_check_is_Degraded_while_a_renewal_over_the_signing_key_pair_is_still_opening`.
+- An entry the source removes stops signing even while a renewal lists its key pair. Closed —
+  `A_signing_entry_replaced_by_a_renewal_of_its_key_pair_stops_signing_and_does_not_sign_on_when_the_renewal_fails`.
+- **Accepted residuals (maintainer):** while a renewal keeps failing, the earlier signer signs past its own entry's expiry, and health is
+  Unhealthy then — `The_health_check_is_Unhealthy_once_the_earlier_entry_expires_while_its_renewal_keeps_failing`; during a renewal
+  handover health reads the dates of the entry still signing (no test).
