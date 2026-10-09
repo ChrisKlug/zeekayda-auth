@@ -659,6 +659,22 @@ public sealed class SigningKeyRingPollingTests
         ring.Verify(outcome.Key.Kid, outcome.SigningInput.Span, outcome.Signature.Span).Should().BeNull();
     }
 
+    [Fact]
+    public async Task Verify_keeps_verifying_a_removed_key_while_reads_fail()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var listing = new TestSigningKeys.Listing(TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        var outcome = await SignAsync(ring);
+
+        listing.Pairs = [];
+        listing.ReadFailure = new HttpRequestException("simulated: vault unreachable");
+        await ReadAgainAsync(ring, clock);
+
+        ring.Verify(outcome.Key.Kid, outcome.SigningInput.Span, outcome.Signature.Span).Should().NotBeNull(
+            "a source that cannot be read has not revoked anything");
+    }
+
     private static async Task ReadAgainAsync(SigningKeyRing ring, FakeTimeProvider clock)
     {
         clock.Advance(RefreshInterval);
