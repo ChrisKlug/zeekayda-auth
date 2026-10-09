@@ -191,7 +191,7 @@ public sealed class FileSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Full_DI_wiring_fails_startup_when_the_only_PEM_certificate_has_expired()
+    public async Task Full_DI_wiring_starts_and_signs_on_when_the_only_PEM_certificate_has_expired()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -203,10 +203,10 @@ public sealed class FileSigningIntegrationTests
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
 
         await using var provider = services.BuildServiceProvider();
-        var act = async () => await StartHostedServicesAsync(provider, ct);
+        await StartHostedServicesAsync(provider, ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "signing.signing_key_expired");
+        provider.GetRequiredService<SigningKeyRing>().Current.SigningKey!.Kid
+            .Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
     [Fact]

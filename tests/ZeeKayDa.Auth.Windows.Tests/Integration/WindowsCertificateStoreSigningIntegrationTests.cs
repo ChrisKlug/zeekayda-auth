@@ -189,7 +189,7 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
     }
 
     [Fact]
-    public async Task Full_DI_wiring_fails_startup_when_the_only_certificate_has_expired()
+    public async Task Full_DI_wiring_starts_and_signs_on_when_the_only_certificate_has_expired()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), RequiresWindowsReason);
 
@@ -202,10 +202,10 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         builder.AddWindowsCertificateStoreSigning(Lookup(CurrentThumbprint), SigningAlgorithm.RS256, StoreLocation.CurrentUser, StoreName.My);
 
         await using var provider = services.BuildServiceProvider();
-        var act = async () => await StartHostedServicesAsync(provider, ct);
+        await StartHostedServicesAsync(provider, ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "signing.signing_key_expired");
+        provider.GetRequiredService<SigningKeyRing>().Current.SigningKey!.Kid
+            .Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
     }
 
     [Fact]

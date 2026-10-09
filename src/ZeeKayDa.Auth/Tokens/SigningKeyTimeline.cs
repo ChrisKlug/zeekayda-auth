@@ -11,7 +11,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// The newest unexpired key whose <see cref="SigningKey.NotBefore"/> is at least
 /// <see cref="SigningKeyOptions.LeadTime"/> ago signs. When none is, the oldest unexpired key signs:
 /// a first deployment and an emergency replacement alike. When every key has expired, the last to
-/// expire keeps signing; startup refuses that state and the health check reports it.
+/// expire keeps signing, and the health check reports it.
 /// <see cref="SigningKey.NotBefore"/> orders the keys and starts the lead-time clock — it is not a
 /// validity gate, since no relying party can observe it (RFC 7517 §4 has no date member).
 /// </para>
@@ -166,7 +166,7 @@ internal sealed class SigningKeyTimeline
     /// <summary>
     /// The dropped key the rules would have chosen to sign at <paramref name="now"/> had it been
     /// usable, or <see langword="null"/> when the key due now is a usable one. Startup refuses the
-    /// first: a later key may be dropped, the key signing now may not.
+    /// first; a running ring skips it and the key before it signs on.
     /// </summary>
     internal DroppedKey? DroppedKeyDueAt(DateTimeOffset now)
     {

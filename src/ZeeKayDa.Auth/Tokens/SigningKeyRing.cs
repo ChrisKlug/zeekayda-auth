@@ -25,17 +25,16 @@ namespace ZeeKayDa.Auth.Tokens;
 /// disagreement unrepresentable rather than merely detected.
 /// </para>
 /// <para>
-/// A read that fails keeps the last list. A read listing no keys, a list that is ambiguous, or one
-/// whose key due to sign now is unusable stops signing: <see cref="SigningKeySet.SigningKey"/> is
-/// <see langword="null"/>, nothing is published or verifies, and <see cref="SignAsync{TState}"/>
-/// throws until a later read lists keys the ring can use.
+/// A read that fails keeps the last list. A read listing no keys, or a list that is ambiguous, stops
+/// signing: <see cref="SigningKeySet.SigningKey"/> is <see langword="null"/>, nothing is published or
+/// verifies, and <see cref="SignAsync{TState}"/> throws until a later read lists keys the ring can use.
 /// </para>
 /// <para>
-/// Every signer is self-tested before it signs. The startup signer failing stops the host. A
-/// successor's signer failing when it is due to take over sets that key aside until the next read:
-/// it stays published but never signs, the keys around it sign in its place, an Error is logged, and
-/// <see cref="SigningKeyExpiryHealthCheck"/> reports Degraded. A key still set aside once the key it
-/// replaces is superseded stays set aside for good.
+/// Every signer is self-tested before it signs. When the key due to sign cannot — its signer fails to
+/// open or self-test, or the key was dropped for bad material or dates — the keys around it sign in its
+/// place, an Error is logged, and <see cref="SigningKeyExpiryHealthCheck"/> reports Degraded. A key that
+/// still cannot sign once the key it replaces is superseded never takes over, however it is fixed. Only
+/// startup refuses: its signer failing, or the key due now having been dropped, stops the host.
 /// </para>
 /// <para>
 /// Owns every <see cref="ISigner"/> it opens and disposes each once: at the second read in a row that
@@ -76,9 +75,10 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     private DateTimeOffset _nextReadAt;
     private readonly HashSet<SignerId> _unlistedOnce = [];
 
-    // Keys whose signer failed when due and has not signed since, by kid, kept across reads that omit
-    // them or stop signing: such a key may never take over once its predecessor is superseded.
-    private readonly HashSet<string> _failed = new(StringComparer.Ordinal);
+    // Keys that could not sign when due — their signer failed, or they were dropped — and have not signed
+    // since, kept across reads that omit them or stop signing: such a key may never take over once its
+    // predecessor is superseded. By source id: a dropped key may have no kid.
+    private readonly HashSet<SourceKeyId> _failed = [];
 
     // Renewals of the signing key pair whose signer failed since the last read: the signer of the entry
     // they renew signs on, and the next read tries them again.
@@ -374,11 +374,10 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
         if (signingKey.ExpiresAt <= now)
         {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.signing_key_expired",
-                    $"Every listed signing key has expired; the last, '{signingKey.SourceId.Value}', expired at " +
-                    $"{signingKey.ExpiresAt:O}. An expired key issues tokens no relying party will accept."));
+            _logger.LogError(
+                "Every listed signing key has expired; the last to expire, {Kid} ({SourceKeyId}), expired at " +
+                "{ExpiresAt} and signs on until a read lists an unexpired key. List a fresh key.",
+                signingKey.Kid, signingKey.SourceId.Value, signingKey.ExpiresAt);
         }
 
         var signer = await OpenTestedSignerAsync(signingKey, cancellationToken).ConfigureAwait(false);
@@ -480,7 +479,8 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// Reads the source and adopts what it lists: a read that fails keeps the last list; a list the
-    /// ring must refuse stops signing; anything else becomes the timeline the clock follows.
+    /// ring must refuse stops signing; anything else becomes the timeline the clock follows, with a
+    /// dropped key due to sign skipped.
     /// </summary>
     private async Task RefreshAsync()
     {
@@ -527,11 +527,9 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         }
 
         ReleaseUnlistedSigners(timeline);
-        if (timeline.DroppedKeyDueAt(now) is { } droppedSigningKey)
-        {
-            StopSigning(droppedSigningKey.Failure);
-            return;
-        }
+        var droppedSigningKey = timeline.DroppedKeyDueAt(now);
+        if (droppedSigningKey is not null)
+            _failed.Add(droppedSigningKey.Key.Id);
 
         if (KeepingTooLateKeysAside(timeline, now) is not { } adopted)
         {
@@ -542,9 +540,19 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         }
 
         WarnAboutDroppedKeys(adopted, previous);
+        if (droppedSigningKey is not null)
+            LogDroppedKeySkipped(droppedSigningKey, adopted.SigningKeyAt(now));
+
         LogMergedKeys(adopted, previous);
         Volatile.Write(ref _state, Adopting(Volatile.Read(ref _state)!, adopted, now));
     }
+
+    private void LogDroppedKeySkipped(DroppedKey dropped, SigningKey signsOn) =>
+        _logger.LogError(
+            "Key {SourceKeyId} is due to sign, but it was dropped: [{FailureCode}] {Reason} Key {Kid} ({SigningSourceKeyId}) " +
+            "signs in its place. Fix the key; the next read tries it again, unless the key it would replace is " +
+            "superseded by then, when only a fresh key can take over.",
+            dropped.Key.Id.Value, dropped.Failure.Code, dropped.Failure.Message, signsOn.Kid, signsOn.SourceId.Value);
 
     /// <summary>
     /// The state once <paramref name="timeline"/> is adopted, publishing its keys at once rather than
@@ -627,7 +635,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     private SigningKeyTimeline? KeepingTooLateKeysAside(SigningKeyTimeline timeline, DateTimeOffset now)
     {
         SigningKeyTimeline? adopted = timeline;
-        foreach (var key in timeline.Keys.Where(key => _failed.Contains(key.Kid) && timeline.IsTooLateToTakeOver(key, now)))
+        foreach (var key in timeline.Keys.Where(key => _failed.Contains(key.SourceId) && timeline.IsTooLateToTakeOver(key, now)))
             adopted = adopted?.SettingAside(key.Kid);
 
         return adopted;
@@ -717,13 +725,13 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             return;
 
         // A retried key whose cutoff passed while its signer opened: its predecessor is superseded.
-        if (_failed.Contains(successor.Kid) && timeline.IsTooLateToTakeOver(successor, now))
+        if (_failed.Contains(successor.SourceId) && timeline.IsTooLateToTakeOver(successor, now))
         {
             SetAside(current, successor, "too late to take over", failure: null);
             return;
         }
 
-        _failed.Remove(successor.Kid);
+        _failed.Remove(successor.SourceId);
         Volatile.Write(ref _state, new Signing(signer, timeline.At(now), timeline) { ReadFailure = _state!.ReadFailure });
         LogTakeover(current, successor);
         WarnIfNotEstablished(timeline, successor, now);
@@ -808,7 +816,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// </summary>
     private void SetAside(SigningKey? current, SigningKey successor, string reason, Exception? failure)
     {
-        _failed.Add(successor.Kid);
+        _failed.Add(successor.SourceId);
         var state = Volatile.Read(ref _state)!;
         if (TimelineOf(state)!.SettingAside(successor.Kid) is not { } timeline)
         {

@@ -13,7 +13,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// expired, or when it is published only because it signs — after a failed or unfinished handover,
 /// once every replica whose handover succeeded has dropped it. Otherwise
 /// <see cref="HealthStatus.Degraded"/>, naming every reason that applies, when the last read of the
-/// source failed; when a listed key was dropped as unusable; when a successor's signer failed to open
+/// source failed; when a listed key was dropped as unusable, and again when that key is due to sign
+/// now; when a successor's signer failed to open
 /// or self-test and was set aside; when the key due to sign now is
 /// not the key signing, because a handover is still running; or when the key set in force at the
 /// end of <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> has no unexpired key to
@@ -160,6 +161,14 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
                 $"{timeline.Dropped.Length} listed key(s) could not be used and were dropped " +
                 $"({string.Join(", ", timeline.Dropped.Select(drop => drop.Failure.Code).Distinct())}); " +
                 "the log names them. Fix the keys; the next read picks them up.";
+        }
+
+        if (timeline.DroppedKeyDueAt(now) is { } droppedDue)
+        {
+            yield return
+                $"The key due to sign now was dropped ({droppedDue.Failure.Code}), so '{signingKey.Kid}' signs in its " +
+                "place. Fix the key; the next read tries it again, unless the key it would replace is superseded by " +
+                "then, when only a fresh key can take over.";
         }
 
         if (timeline.SetAside.Count > 0)

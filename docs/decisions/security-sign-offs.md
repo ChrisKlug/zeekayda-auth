@@ -2251,7 +2251,7 @@ its fix diff), and the PR's CodeQL, CodeScene and Copilot review; no High or Cri
 - A failed or hung read keeps the last list, and no second read starts behind it. Closed — `A_failed_read_keeps_the_last_list_logs_an_Error_and_makes_the_health_check_Degraded`,
   `A_read_that_does_not_complete_within_a_minute_counts_as_failed_and_keeps_the_last_list`, `A_read_still_running_after_its_deadline_is_not_started_again_at_the_next_read`.
 - No keys, an ambiguous list, or a bad key due now stops signing and publishes nothing; a good read resumes. Closed — `A_read_listing_no_keys_stops_signing_publishes_nothing_and_makes_the_health_check_Unhealthy`,
-  `A_read_listing_duplicate_source_ids_stops_signing`, `A_read_whose_key_due_to_sign_now_has_bad_material_stops_signing`, `Signing_resumes_when_a_later_read_lists_usable_keys_again`,
+  `A_read_listing_duplicate_source_ids_stops_signing`, [superseded by #916: a bad key due now is skipped and the previous key signs on, Degraded — `A_dropped_key_due_to_sign_is_skipped_and_the_predecessor_signs_on_Degraded`], `Signing_resumes_when_a_later_read_lists_usable_keys_again`,
   `The_token_endpoint_answers_server_error_while_signing_has_stopped`, `GetJwks_serves_an_empty_key_set_that_must_not_be_cached_while_signing_has_stopped`.
 - An unlisted signing key stops signing and is unpublished at that read; health is Unhealthy until a handover completes. Closed — `A_signing_key_no_longer_listed_stops_signing_and_is_unpublished_before_its_successor_s_signer_opens`,
   `The_health_check_is_Unhealthy_while_signing_resumes_until_the_handover_completes`, `A_read_publishes_its_keys_at_once_while_the_handover_it_starts_is_still_opening`.
