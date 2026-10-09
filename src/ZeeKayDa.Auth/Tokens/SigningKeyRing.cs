@@ -488,6 +488,10 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         _nextReadAt = TokenLifetimes.ExpiresAt(now, _options.RefreshInterval);
         _renewalsFailed.Clear();
 
+        // Recorded from the list in force, whatever this read brings: a dropped key may come due, and pass
+        // its cutoff, while reads fail.
+        RecordDroppedKeyDue(TimelineOf(Volatile.Read(ref _state)!), now);
+
         if (_reading is { IsCompleted: false })
         {
             KeepLastList("the previous read has not completed", failure: null);
@@ -527,9 +531,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         }
 
         ReleaseUnlistedSigners(timeline);
-        var droppedSigningKey = timeline.DroppedKeyDueAt(now);
-        if (droppedSigningKey is not null)
-            _failed.Add(droppedSigningKey.Key.Id);
+        var droppedSigningKey = RecordDroppedKeyDue(timeline, now);
 
         if (KeepingTooLateKeysAside(timeline, now) is not { } adopted)
         {
@@ -545,6 +547,15 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
         LogMergedKeys(adopted, previous);
         Volatile.Write(ref _state, Adopting(Volatile.Read(ref _state)!, adopted, now));
+    }
+
+    private DroppedKey? RecordDroppedKeyDue(SigningKeyTimeline? timeline, DateTimeOffset now)
+    {
+        var dropped = timeline?.DroppedKeyDueAt(now);
+        if (dropped is not null)
+            _failed.Add(dropped.Key.Id);
+
+        return dropped;
     }
 
     private void LogDroppedKeySkipped(DroppedKey dropped, SigningKey signsOn) =>
@@ -634,12 +645,20 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// </summary>
     private SigningKeyTimeline? KeepingTooLateKeysAside(SigningKeyTimeline timeline, DateTimeOffset now)
     {
+        var signing = (Volatile.Read(ref _state) as Signing)?.SigningKey;
         SigningKeyTimeline? adopted = timeline;
-        foreach (var key in timeline.Keys.Where(key => _failed.Contains(key.SourceId) && timeline.IsTooLateToTakeOver(key, now)))
+        foreach (var key in timeline.Keys.Where(key => StaysAside(key, signing, timeline, now)))
             adopted = adopted?.SettingAside(key.Kid);
 
         return adopted;
     }
+
+    /// <summary>
+    /// Whether <paramref name="key"/> could not sign when due and is now too late to take over. Never the key
+    /// pair already signing: taking over through another entry for it drops nothing from publication.
+    /// </summary>
+    private bool StaysAside(SigningKey key, SigningKey? signing, SigningKeyTimeline timeline, DateTimeOffset now) =>
+        _failed.Contains(key.SourceId) && key.Kid != signing?.Kid && timeline.IsTooLateToTakeOver(key, now);
 
     private void KeepLastList(string reason, Exception? failure)
     {
@@ -725,7 +744,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             return;
 
         // A retried key whose cutoff passed while its signer opened: its predecessor is superseded.
-        if (_failed.Contains(successor.SourceId) && timeline.IsTooLateToTakeOver(successor, now))
+        if (StaysAside(successor, current, timeline, now))
         {
             SetAside(current, successor, "too late to take over", failure: null);
             return;

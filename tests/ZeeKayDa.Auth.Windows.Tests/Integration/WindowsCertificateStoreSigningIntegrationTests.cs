@@ -204,8 +204,12 @@ public sealed class WindowsCertificateStoreSigningIntegrationTests
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
 
-        provider.GetRequiredService<SigningKeyRing>().Current.SigningKey!.Kid
-            .Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
+        var outcome = await provider.GetRequiredService<SigningKeyRing>()
+            .SignAsync("header.payload"u8.ToArray(), static (_, input) => input, ct);
+        outcome.Key.Kid.Should().Be(JwkThumbprint.Compute(certificate.GetRSAPublicKey()!.ExportParameters(false)));
+        certificate.GetRSAPublicKey()!.VerifyData(
+                "header.payload"u8.ToArray(), outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .Should().BeTrue();
     }
 
     [Fact]

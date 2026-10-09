@@ -186,7 +186,7 @@ public sealed class SigningKeyLifecycleScenarioTests
             TestSigningKeys.Pair("older", notBefore: Startup.AddDays(-90), expiresAt: Startup.AddMinutes(-10)),
             TestSigningKeys.Pair("last", notBefore: Startup.AddDays(-60), expiresAt: Startup.AddMinutes(-5)));
 
-        SigningId(ring).Should().Be("last");
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("last");
         _logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error)
             .Which.Message.Should().Contain("Every listed signing key has expired");
         var health = await new SigningKeyExpiryHealthCheck(ring, _clock, Options.Create(new SigningKeyExpiryHealthCheckOptions()))

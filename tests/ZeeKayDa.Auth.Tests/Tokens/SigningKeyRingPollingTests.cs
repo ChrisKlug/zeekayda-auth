@@ -418,6 +418,48 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_dropped_key_whose_cutoff_passes_while_reads_fail_never_takes_over()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var listing = new TestSigningKeys.Listing(current, WrongCurve("staged", notBefore: Epoch));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.ReadFailure = new HttpRequestException("simulated: vault unreachable");
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value);
+        await ring.LastTransition;
+
+        listing.ReadFailure = null;
+        listing.Pairs = [current, TestSigningKeys.Pair("staged", notBefore: Epoch)];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Value.Should().Be("staged");
+    }
+
+    [Fact]
+    public async Task A_dropped_renewal_of_the_signing_key_pair_repaired_later_keeps_signing()
+    {
+        // The repaired renewal merges with the entry it renews and takes its older NotBefore; it is the
+        // key pair already signing, so taking over through it drops nothing from publication.
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddMinutes(10));
+        var listing = new TestSigningKeys.Listing(
+            current, TestSigningKeys.Renewal(current, "renewed", Epoch.AddHours(1), Epoch.AddMinutes(30)));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        var kid = ring.Current.SigningKey!.Kid;
+        clock.SetUtcNow(Epoch.AddMinutes(15));
+        await ring.LastTransition;
+
+        listing.Pairs = [current, TestSigningKeys.Renewal(current, "renewed", Epoch.AddHours(1), Epoch.AddDays(90))];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.Kid.Should().Be(kid);
+        ring.TimelineOrNull!.SetAside.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Signing_resumes_when_a_later_read_lists_usable_keys_again()
     {
         var clock = new FakeTimeProvider(Epoch);
