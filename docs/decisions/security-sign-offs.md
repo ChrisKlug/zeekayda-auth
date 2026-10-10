@@ -2302,7 +2302,7 @@ text lens on this entry; no High or Critical open. `93433af`, `a93c5a2` and `7f1
 ## 2026-10-10 — a key due to sign that cannot is skipped; only startup refuses (#916, code frozen at `6e16d45`)
 Copilot code (three passes, High fixes verified) and security (xhigh, fix diff verified) lenses, the security agent (fix diff verified), and the PR's
 CodeQL, CodeScene and Copilot review; no High or Critical open. Written after the merge, against the merge commit, whose code is the reviewed branch.
-`2a29a0b` and `807cb36` were read by the main session only.
+`807cb36` was read by the main session only.
 - A dropped key due to sign is skipped: the previous key signs on, Error, Degraded naming the code. Closed — `A_dropped_key_due_to_sign_is_skipped_and_the_predecessor_signs_on_Degraded`,
   `A_bad_staged_key_is_skipped_once_it_comes_due_and_the_current_key_signs_on`. Reverses #527 "a bad key due now stops signing"; startup still refuses it — `Initialization_fails_when_the_key_due_to_sign_now_was_dropped`.
 - A key that could not sign when due, repaired only after its predecessor is superseded, never takes over: across failed reads, a due window between reads, and every
@@ -2315,4 +2315,4 @@ CodeQL, CodeScene and Copilot review; no High or Critical open. Written after th
   `Full_DI_wiring_starts_and_signs_on_when_the_only_PEM_certificate_has_expired`. Reverses the `signing.signing_key_expired` startup refusal. No relying party
   sees the expiry: a JWK has no date member (RFC 7517 §4), and the JWKS carries none, nor `x5c` — `Write_emits_no_private_key_member_for_a_set_built_from_rsa_and_ec_private_keys`.
 - **Accepted residuals:** (maintainer) the too-late memory is per process — `A_restarted_replica_adopts_a_key_repaired_too_late`. (maintainer) a fresh key reusing a once-dropped
-  source id with a back-dated `NotBefore` stays set aside as too late (no test). (maintainer) startup refuses a dropped key due now while a running ring signs on — `Initialization_fails_when_the_key_due_to_sign_now_was_dropped`.
+  source id with a back-dated `NotBefore` stays set aside as too late, like a repair — `A_dropped_key_fixed_only_after_its_predecessor_is_superseded_never_takes_over`. (maintainer) startup refuses a dropped key due now while a running ring signs on — `Initialization_fails_when_the_key_due_to_sign_now_was_dropped`.
