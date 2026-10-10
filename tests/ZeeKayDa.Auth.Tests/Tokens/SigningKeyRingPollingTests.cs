@@ -678,6 +678,26 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_dropped_renewal_repaired_by_the_read_that_unlists_the_entry_it_renews_takes_over()
+    {
+        // The unlisted entry stops signing at that read, but the repaired renewal is the same key pair, so taking
+        // over through it drops nothing from publication, however old its NotBefore.
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var listing = new TestSigningKeys.Listing(
+            current, TestSigningKeys.Renewal(current, "renewed", Epoch.AddDays(-30), Epoch.AddDays(-31)));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        var kid = ring.Current.SigningKey!.Kid;
+
+        listing.Pairs = [TestSigningKeys.Renewal(current, "renewed", Epoch.AddDays(-30), Epoch.AddDays(90))];
+        await ReadAgainAsync(ring, clock);
+
+        var outcome = await SignAsync(ring);
+        outcome.Key.Kid.Should().Be(kid);
+        outcome.Key.SourceId.Value.Should().Be("renewed");
+    }
+
+    [Fact]
     public async Task A_restarted_replica_adopts_a_key_repaired_too_late()
     {
         // Residual: the too-late memory is per process. A replica started after the repair never saw the

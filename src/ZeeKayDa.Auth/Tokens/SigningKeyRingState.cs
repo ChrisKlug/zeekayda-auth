@@ -30,5 +30,12 @@ internal abstract record SigningKeyRingState(SigningKeySet KeySet)
     /// timeline's keys are published meanwhile.
     /// </summary>
     internal sealed record Resuming(SigningKeySet KeySet, SigningKeyTimeline Timeline, string Reason)
-        : SigningKeyRingState(KeySet);
+        : SigningKeyRingState(KeySet)
+    {
+        /// <summary>
+        /// The <see cref="SigningKey.Kid"/> of the key pair that signed before signing stopped, when its signer
+        /// was released only because the source no longer lists that entry.
+        /// </summary>
+        public string? LastSignedKid { get; init; }
+    }
 }

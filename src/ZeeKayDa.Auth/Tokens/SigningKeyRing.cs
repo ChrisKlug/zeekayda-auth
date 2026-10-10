@@ -591,10 +591,16 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                     "Key {Kid} ({SourceKeyId}) is no longer listed, so it stops signing; signing resumes once the key due " +
                     "to sign takes over.",
                     signing.SigningKey.Kid, signing.SigningKey.SourceId.Value);
-                return new Resuming(new SigningKeySet(_algorithm, null, published), timeline, "signing.signing_key_unlisted");
+                return new Resuming(new SigningKeySet(_algorithm, null, published), timeline, "signing.signing_key_unlisted")
+                {
+                    LastSignedKid = signing.SigningKey.Kid,
+                };
 
             default:
-                return new Resuming(new SigningKeySet(_algorithm, null, published), timeline, ReasonOf(state)!);
+                return new Resuming(new SigningKeySet(_algorithm, null, published), timeline, ReasonOf(state)!)
+                {
+                    LastSignedKid = (state as Resuming)?.LastSignedKid,
+                };
         }
     }
 
@@ -644,9 +650,9 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// </summary>
     private SigningKeyTimeline? KeepingTooLateKeysAside(SigningKeyTimeline timeline, DateTimeOffset now)
     {
-        var signing = (Volatile.Read(ref _state) as Signing)?.SigningKey;
+        var signedLast = SignedLast(Volatile.Read(ref _state)!);
         SigningKeyTimeline? adopted = timeline;
-        foreach (var key in timeline.Keys.Where(key => StaysAside(key, signing, timeline, now)))
+        foreach (var key in timeline.Keys.Where(key => StaysAside(key, signedLast, timeline, now)))
             adopted = adopted?.SettingAside(key.Kid);
 
         return adopted;
@@ -654,11 +660,18 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// Whether <paramref name="key"/>, under any entry listing it, could not sign when due and is now too late
-    /// to take over. Never the key pair already signing: taking over through another entry for it drops
-    /// nothing from publication.
+    /// to take over. Never the key pair that signs, or signed until its entry was unlisted: taking over through
+    /// another entry for it drops nothing from publication.
     /// </summary>
-    private bool StaysAside(SigningKey key, SigningKey? signing, SigningKeyTimeline timeline, DateTimeOffset now) =>
-        timeline.SourceIdsOf(key).Any(_failed.Contains) && key.Kid != signing?.Kid && timeline.IsTooLateToTakeOver(key, now);
+    private bool StaysAside(SigningKey key, string? signedLast, SigningKeyTimeline timeline, DateTimeOffset now) =>
+        timeline.SourceIdsOf(key).Any(_failed.Contains) && key.Kid != signedLast && timeline.IsTooLateToTakeOver(key, now);
+
+    private static string? SignedLast(SigningKeyRingState state) => state switch
+    {
+        Signing signing => signing.SigningKey.Kid,
+        Resuming resuming => resuming.LastSignedKid,
+        _ => null,
+    };
 
     private void KeepLastList(string reason, Exception? failure)
     {
@@ -744,7 +757,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             return;
 
         // A retried key whose cutoff passed while its signer opened: its predecessor is superseded.
-        if (StaysAside(successor, current, timeline, now))
+        if (StaysAside(successor, SignedLast(Volatile.Read(ref _state)!), timeline, now))
         {
             SetAside(current, successor, "too late to take over", failure: null);
             return;
