@@ -34,6 +34,15 @@ internal static class TestSigningKeys
     /// <summary>A date inside the lead time: a key with it is published but does not sign yet.</summary>
     public static DateTimeOffset StagedNotBefore => DateTimeOffset.UtcNow - TimeSpan.FromHours(1);
 
+    /// <summary>A date past the lead time plus the retention, under <see cref="Options"/>: the newest key
+    /// with it signs, and older keys are still listed but no longer published.</summary>
+    public static DateTimeOffset SupersedingNotBefore => DateTimeOffset.UtcNow - TimeSpan.FromDays(3);
+
+    /// <summary>The <c>kid</c> the framework derives for the public half of <paramref name="privateKey"/>.</summary>
+    public static string KidOf(AsymmetricAlgorithm privateKey) =>
+        SigningKeySetBuilder.Build([SourceKey("only", privateKey)], DefaultAlgorithm(privateKey), Options)
+            .At(DateTimeOffset.UtcNow).SigningKey!.Kid;
+
     /// <summary>
     /// Builds a key set signing with <paramref name="algorithm"/> over <paramref name="keyCount"/>
     /// keys, at most three: the signing key, then one older, then one staged.

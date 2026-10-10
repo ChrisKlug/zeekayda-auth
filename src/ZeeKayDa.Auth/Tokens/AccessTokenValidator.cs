@@ -52,28 +52,43 @@ internal sealed class AccessTokenValidator(
     /// <exception cref="InvalidOperationException">
     /// The signing key ring has not completed startup initialization.
     /// </exception>
+    /// <exception cref="ObjectDisposedException">The signing key ring has been disposed.</exception>
     public ValidatedAccessToken? Validate(string? accessToken)
     {
-        using var payload = SignedTokenReader.Verify(accessToken, AccessTokenTypes, keyRing.Current.Published);
-        if (payload is null)
+        if (!CompactJws.TryParse(accessToken, out var jws) || !IsSignedAccessToken(jws))
             return null;
 
-        var root = payload.RootElement;
+        using var claims = JwtClaims.Parse(jws.Payload);
+        return claims is null ? null : ReadVerified(claims.RootElement);
+    }
+
+    /// <summary>What a verified token names, when it is this server's, addressed to it, and live.</summary>
+    private ValidatedAccessToken? ReadVerified(JsonElement claims)
+    {
         var issuer = options.Value.Issuer;
 
-        if (!string.Equals(SignedTokenReader.ReadString(root, "iss"), issuer, StringComparison.Ordinal))
+        if (!string.Equals(JwtClaims.ReadString(claims, "iss"), issuer, StringComparison.Ordinal))
             return null;
 
-        if (!NamesThisServer(root, issuer) || !IsWithinValidityWindow(root))
+        if (!NamesThisServer(claims, issuer) || !IsWithinValidityWindow(claims))
             return null;
 
-        var subject = SignedTokenReader.ReadString(root, "sub");
-        var clientId = SignedTokenReader.ReadString(root, "client_id");
+        var subject = JwtClaims.ReadString(claims, "sub");
+        var clientId = JwtClaims.ReadString(claims, "client_id");
 
         return string.IsNullOrEmpty(subject) || string.IsNullOrEmpty(clientId)
             ? null
-            : new ValidatedAccessToken(subject, clientId, ReadScopes(root));
+            : new ValidatedAccessToken(subject, clientId, ReadScopes(claims));
     }
+
+    /// <summary>
+    /// An access token by its <c>typ</c>, signed by a key this server lists, under that key's own
+    /// algorithm. Whether the key is still published does not matter: the token's own lifetime does.
+    /// </summary>
+    private bool IsSignedAccessToken(CompactJws jws) =>
+        AccessTokenTypes.Contains(jws.Typ, StringComparer.OrdinalIgnoreCase)
+        && keyRing.Verify(jws.Kid, jws.SigningInput.Span, jws.Signature.Span) is { } key
+        && jws.NamesAlgorithmOf(key);
 
     /// <summary>
     /// RFC 9068 §4: a resource server rejects a token whose <c>aud</c> does not name it. The claim
@@ -85,15 +100,13 @@ internal sealed class AccessTokenValidator(
         if (!payload.TryGetProperty("aud", out var audience))
             return false;
 
-        return audience.ValueKind switch
-        {
-            JsonValueKind.String => string.Equals(audience.GetString(), issuer, StringComparison.Ordinal),
-            JsonValueKind.Array => audience.EnumerateArray().Any(entry =>
-                entry.ValueKind == JsonValueKind.String &&
-                string.Equals(entry.GetString(), issuer, StringComparison.Ordinal)),
-            _ => false,
-        };
+        return audience.ValueKind == JsonValueKind.Array
+            ? audience.EnumerateArray().Any(entry => IsIssuer(entry, issuer))
+            : IsIssuer(audience, issuer);
     }
+
+    private static bool IsIssuer(JsonElement value, string? issuer) =>
+        JwtClaims.AsString(value) is { } name && string.Equals(name, issuer, StringComparison.Ordinal);
 
     /// <summary>
     /// The token has not expired and has become valid, each allowed the configured clock-skew
@@ -154,7 +167,7 @@ internal sealed class AccessTokenValidator(
     /// one carries no scopes, which unlocks nothing.
     /// </summary>
     private static IReadOnlyList<string> ReadScopes(JsonElement payload) =>
-        SignedTokenReader.ReadString(payload, "scope") is { } scope
+        JwtClaims.ReadString(payload, "scope") is { } scope
             ? scope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             : [];
 }

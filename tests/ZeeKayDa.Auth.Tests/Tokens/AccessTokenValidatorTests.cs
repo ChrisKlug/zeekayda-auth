@@ -28,6 +28,7 @@ public sealed class AccessTokenValidatorTests
 
     private static readonly RSA CurrentKey = RSA.Create(2048);
     private static readonly RSA ForeignKey = RSA.Create(2048);
+    private static readonly RSA RetiredKey = RSA.Create(2048);
 
     private static readonly SigningKeyRing Ring = TestSigningKeys.Ring(
         [RsaSourceKey("current", CurrentKey)], CurrentKey);
@@ -41,13 +42,13 @@ public sealed class AccessTokenValidatorTests
         PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)),
         notBefore);
 
-    private static AccessTokenValidator CreateValidator(TimeSpan? clockSkew = null)
+    private static AccessTokenValidator CreateValidator(TimeSpan? clockSkew = null, SigningKeyRing? ring = null)
     {
         var time = new FakeTimeProvider();
         time.SetUtcNow(Now);
 
         return new AccessTokenValidator(
-            Ring,
+            ring ?? Ring,
             Options.Create(new AuthorizationServerOptions
             {
                 Issuer = Issuer,
@@ -79,6 +80,15 @@ public sealed class AccessTokenValidatorTests
     {
         var signingInput = $"{Segment(header)}.{Segment(claims)}";
         var signature = (key ?? CurrentKey).SignData(
+            Encoding.ASCII.GetBytes(signingInput), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        return $"{signingInput}.{Base64Url.EncodeToString(signature)}";
+    }
+
+    /// <summary>Signs claims given as raw JSON, for an escape a serializer will not write.</summary>
+    private static string SignWithRawClaims(string claims)
+    {
+        var signingInput = $"{Segment(Header())}.{Base64Url.EncodeToString(Encoding.UTF8.GetBytes(claims))}";
+        var signature = CurrentKey.SignData(
             Encoding.ASCII.GetBytes(signingInput), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         return $"{signingInput}.{Base64Url.EncodeToString(signature)}";
     }
@@ -148,6 +158,23 @@ public sealed class AccessTokenValidatorTests
         CreateValidator().Validate(Sign(Header(), claims)).Should().NotBeNull();
     }
 
+    [Fact]
+    public void Validate_accepts_a_live_token_signed_by_a_listed_key_no_longer_published()
+    {
+        using var ring = TestSigningKeys.Ring(
+            [
+                RsaSourceKey("retired", RetiredKey, TestSigningKeys.RetiringNotBefore),
+                RsaSourceKey("current", CurrentKey, TestSigningKeys.SupersedingNotBefore),
+            ],
+            CurrentKey);
+        var retiredKid = TestSigningKeys.KidOf(RetiredKey);
+        ring.Current.Published.Should().NotContain(key => key.Kid == retiredKid, "the token's key must be one the JWKS no longer serves");
+
+        var token = CreateValidator(ring: ring).Validate(Sign(Header(kid: retiredKid), Claims(), RetiredKey));
+
+        token.Should().NotBeNull("the token's own lifetime decides, not whether its key is still published");
+    }
+
     // ── Refused tokens ───────────────────────────────────────────────────────────────────────────
 
     [Theory]
@@ -162,9 +189,19 @@ public sealed class AccessTokenValidatorTests
     }
 
     [Fact]
-    public void Validate_refuses_a_token_signed_by_a_key_this_server_does_not_publish()
+    public void Validate_refuses_a_token_signed_by_a_key_this_server_does_not_list()
     {
         CreateValidator().Validate(Sign(Header(), Claims(), ForeignKey)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("""{"alg":"RS256","typ":"at+jwt","kid":"k","x\uD800":"v"}""")]
+    [InlineData("""{"alg":"RS256","typ":"at+jwt\uD800","kid":"k"}""")]
+    public void Validate_refuses_without_throwing_a_token_whose_header_escapes_a_lone_surrogate(string header)
+    {
+        var token = $"{Base64Url.EncodeToString(Encoding.UTF8.GetBytes(header))}.{Segment(Claims())}.AA";
+
+        CreateValidator().Validate(token).Should().BeNull();
     }
 
     [Fact]
@@ -331,6 +368,20 @@ public sealed class AccessTokenValidatorTests
         claims.Remove(claim);
 
         CreateValidator().Validate(Sign(Header(), claims)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("iss")]
+    [InlineData("aud")]
+    [InlineData("sub")]
+    [InlineData("client_id")]
+    public void Validate_refuses_without_throwing_a_signed_token_whose_claim_escapes_a_lone_surrogate(string claim)
+    {
+        var claims = Claims();
+        claims[claim] = "lone-surrogate";
+        var token = SignWithRawClaims(JsonSerializer.Serialize(claims).Replace("lone-surrogate", "\\uD800"));
+
+        CreateValidator().Validate(token).Should().BeNull();
     }
 
     [Fact]

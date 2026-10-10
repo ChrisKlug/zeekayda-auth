@@ -414,6 +414,7 @@ ZeeKayDa.Auth.Tokens.SourceKeyId.Value.init -> void
 ZeeKayDa.Auth.Tokens.SigningKeyRing
 ZeeKayDa.Auth.Tokens.SigningKeyRing.Current.get -> ZeeKayDa.Auth.Tokens.SigningKeySet!
 ZeeKayDa.Auth.Tokens.SigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.SigningOutcome>!
+ZeeKayDa.Auth.Tokens.SigningKeyRing.Verify(string! kid, System.ReadOnlySpan<byte> signingInput, System.ReadOnlySpan<byte> signature) -> ZeeKayDa.Auth.Tokens.SigningKey?
 ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AbsoluteFamilyLifetime.get -> System.TimeSpan

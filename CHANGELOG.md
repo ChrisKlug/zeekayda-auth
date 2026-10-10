@@ -928,6 +928,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **An `id_token_hint` still identifies its client after the key that signed it is retired** (#899).
+  The end-session endpoint verified a hint only against the keys the JWKS serves, and a key leaves the
+  JWKS `SigningKeys.RetainRetiredKeysFor` (two days by default) after its successor takes over, while a
+  relying party keeps its ID token for the whole session. After a rotation, sign-out could no longer
+  tell which client sent the user, and the post-logout redirect was lost. A hint, and an access token
+  at userinfo, now verify against every key the signing source still lists, published or not. A key
+  stops verifying at the first successful read of the source that no longer lists it; a failed read
+  keeps the last list, as it does for signing. At userinfo the token's own `exp` still decides. The new public `SigningKeyRing.Verify` is the read-side counterpart of `SignAsync`: it
+  checks a signature against the listed keys and knows nothing of token format. A presented token
+  whose header carries anything but `alg`, `typ` and `kid` is now refused, since that is all the
+  framework's issuer writes; a host that replaced the issuer and writes more members must stop.
+
 - **A certificate renewed with its key reused no longer stops signing** (#914). A source listing one
   key pair under two source ids, as during the overlap of a renewal that keeps its key (Azure Key Vault
   `reuseKey: true`, cert-manager `rotationPolicy: Never`), failed startup with `signing.duplicate_kid`,

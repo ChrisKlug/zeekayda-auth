@@ -249,6 +249,57 @@ public sealed class SigningKeyRingTests
         await act.Should().ThrowAsync<ObjectDisposedException>();
     }
 
+    // ── Verify ───────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Verify_returns_the_key_that_signed_an_outcome_of_SignAsync()
+    {
+        using var rsa = RSA.Create(2048);
+        var (source, current) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90));
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch), TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        var outcome = await ring.SignAsync("payload"u8.ToArray(), static (_, state) => state, TestContext.Current.CancellationToken);
+
+        var key = ring.Verify(outcome.Key.Kid, outcome.SigningInput.Span, outcome.Signature.Span);
+
+        key.Should().NotBeNull();
+        key!.SourceId.Should().Be(current.Id);
+    }
+
+    [Fact]
+    public void Verify_throws_InvalidOperationException_before_initialization()
+    {
+        SigningKeyRing ring = new SigningKeyRing(NeverCalledSource(), new FakeTimeProvider(Epoch), TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+
+        var act = () => ring.Verify("kid", [1], [2]);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task Verify_throws_ObjectDisposedException_after_Dispose()
+    {
+        using var rsa = RSA.Create(2048);
+        var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(90));
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch), TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        ((IDisposable)ring).Dispose();
+
+        var act = () => ring.Verify("kid", [1], [2]);
+
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void Verify_throws_ArgumentNullException_when_kid_is_null()
+    {
+        using var ring = TestSigningKeys.Ring(SigningAlgorithm.ES256);
+
+        var act = () => ring.Verify(null!, [1], [2]);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+
     [Fact]
     public async Task Ring_keeps_its_lead_time_when_the_caller_s_options_change_after_construction()
     {

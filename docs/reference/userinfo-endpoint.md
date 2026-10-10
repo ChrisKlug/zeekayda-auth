@@ -93,7 +93,8 @@ Every one of these must hold before any claim is resolved:
 
 | Check | Source |
 |---|---|
-| Signature verifies against a key still published in the JWKS, under that key's own algorithm | RFC 9068 §4 |
+| Signature verifies against a key the signing source still lists, published in the JWKS or not, under that key's own algorithm | RFC 9068 §4 |
+| Header carries exactly `alg`, `typ` and `kid`, the members the framework's issuer writes | RFC 7515 §4 |
 | `typ` header is `at+jwt` or `application/at+jwt` | RFC 9068 §2.1, §4 |
 | `iss` equals the configured issuer | RFC 9068 §4 |
 | `aud` contains the issuer, as a string or an array entry | RFC 9068 §4, RFC 7519 §4.1.3 |
@@ -105,6 +106,11 @@ Every one of these must hold before any claim is resolved:
 The issuer is always an audience of an access token issued with `openid`, which is what lets
 userinfo validate one as an ordinary resource server. See
 [Token contents](../decisions/token-contents.md) for why.
+
+A token stays verifiable for as long as the signing source lists the key that signed it. The key
+leaving the JWKS does not end the token; its own `exp` does. Removing the key from the source
+revokes every token it signed once the server next reads the source successfully. While reads fail,
+the server keeps the last list it read.
 
 Claims are then resolved **fresh** from the host's `IClaimsProvider` on every call — nothing is
 read from a store or a cache. An access token is self-contained and keeps working until it expires
