@@ -5,6 +5,7 @@
 #
 # An entry is a heading added to docs/decisions/security-sign-offs.md that names the issue:
 #   ## 2026-10-10 — <what was signed off> (#916, code frozen at `6e16d45`)
+# One heading may name several issues: (#513, #514, ...).
 # A PR whose body has a line "No security sign-off: <reason>" passes: about a third of security
 # issues make no trust-boundary decision.
 #
@@ -36,7 +37,7 @@ fi
 
 status=0
 for issue in "$@"; do
-    if grep -qE "^## [0-9]{4}-[0-9]{2}-[0-9]{2} — .*\(#${issue}[,) ]" "${ADDED}"; then
+    if grep -qE "^## [0-9]{4}-[0-9]{2}-[0-9]{2} — .*[(, ]#${issue}[,) ]" "${ADDED}"; then
         echo "#${issue}: sign-off entry added."
     else
         echo "::error file=docs/decisions/security-sign-offs.md::#${issue} is labelled area:security and this PR adds no sign-off entry for it. Add the entry as the PR's last commit, against frozen code — or, if the change makes no trust-boundary decision, add a line 'No security sign-off: <reason>' to the PR body."

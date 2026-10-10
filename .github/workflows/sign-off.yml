@@ -32,12 +32,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BODY: ${{ github.event.pull_request.body }}
+        # Every lookup is its own checked assignment: a failed one must fail the check, never read as
+        # "no security issue".
         run: |
+          set -euo pipefail
           printf '%s\n' "${PR_BODY}" > "${RUNNER_TEMP}/body"
           git diff HEAD^1 HEAD -- docs/decisions/security-sign-offs.md | sed -n 's/^+//p' > "${RUNNER_TEMP}/added"
+          closing=$(gh pr view "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --json closingIssuesReferences --jq '.closingIssuesReferences[].number')
           security_issues=()
-          for issue in $(gh pr view "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --json closingIssuesReferences --jq '.closingIssuesReferences[].number'); do
-            if gh issue view "${issue}" --repo "${GITHUB_REPOSITORY}" --json labels --jq '.labels[].name' | grep -qx 'area:security'; then
+          for issue in ${closing}; do
+            labels=$(gh issue view "${issue}" --repo "${GITHUB_REPOSITORY}" --json labels --jq '.labels[].name')
+            if grep -qx 'area:security' <<< "${labels}"; then
               security_issues+=("${issue}")
             fi
           done
