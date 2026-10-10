@@ -2311,7 +2311,8 @@ CodeQL, CodeScene and Copilot review; no High or Critical open. Written after th
   `A_failed_key_listed_twice_repaired_too_late_under_only_one_of_its_entries_never_takes_over`; repaired in time it does — `A_dropped_key_fixed_in_time_takes_over`.
 - The key pair signing, or signing until its entry was unlisted, is never held aside. Closed — `A_dropped_renewal_of_the_signing_key_pair_repaired_later_keeps_signing`,
   `A_dropped_renewal_repaired_by_the_read_that_unlists_the_entry_it_renews_takes_over`.
-- Startup with every key expired signs with the last to expire, Error, Unhealthy; a JWK carries no dates (RFC 7517 §4) and the JWKS no `x5c`. Closed —
-  `Startup_with_every_key_expired_signs_on_and_is_Unhealthy`, `Full_DI_wiring_starts_and_signs_on_when_the_only_PEM_certificate_has_expired`. Reverses the `signing.signing_key_expired` startup refusal.
+- Startup with every key expired signs with the last to expire, Error, Unhealthy. Closed — `Startup_with_every_key_expired_signs_on_and_is_Unhealthy`,
+  `Full_DI_wiring_starts_and_signs_on_when_the_only_PEM_certificate_has_expired`. Reverses the `signing.signing_key_expired` startup refusal. No relying party
+  sees the expiry: a JWK has no date member (RFC 7517 §4), and the JWKS carries none, nor `x5c` — `Write_emits_no_private_key_member_for_a_set_built_from_rsa_and_ec_private_keys`.
 - **Accepted residuals:** (maintainer) the too-late memory is per process — `A_restarted_replica_adopts_a_key_repaired_too_late`. (maintainer) a fresh key reusing a once-dropped
   source id with a back-dated `NotBefore` stays set aside as too late (no test). (maintainer) startup refuses a dropped key due now while a running ring signs on — `Initialization_fails_when_the_key_due_to_sign_now_was_dropped`.
