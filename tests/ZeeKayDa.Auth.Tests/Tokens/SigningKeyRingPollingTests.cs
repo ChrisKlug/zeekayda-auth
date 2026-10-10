@@ -325,19 +325,23 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
-    public async Task A_read_whose_key_due_to_sign_now_has_bad_material_stops_signing()
+    public async Task A_dropped_key_due_to_sign_is_skipped_and_the_predecessor_signs_on_Degraded()
     {
-        // Rather than letting the older key sign on: someone able to write one bad key must not be
-        // able to freeze the set it was meant to replace.
         var clock = new FakeTimeProvider(Epoch);
+        var logger = new CapturingSanitizingLogger<SigningKeyRing>();
         var listing = new TestSigningKeys.Listing(TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)));
-        using var ring = TestSigningKeys.Ring(listing, clock);
+        using var ring = TestSigningKeys.Ring(listing, clock, logger);
 
         listing.Pairs = [.. listing.Pairs, WrongCurve("replacement", notBefore: Epoch.AddDays(-10))];
         await ReadAgainAsync(ring, clock);
 
-        ring.Current.SigningKey.Should().BeNull();
-        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Unhealthy);
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        ring.Current.Published.Select(key => key.SourceId.Value).Should().Equal("current");
+        logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error)
+            .Which.Message.Should().Contain("replacement").And.Contain("signing.ec_curve_algorithm_mismatch");
+        var health = await HealthAsync(ring, clock);
+        health.Status.Should().Be(HealthStatus.Degraded);
+        health.Description.Should().Contain("The key due to sign now was dropped (signing.ec_curve_algorithm_mismatch)");
     }
 
     [Fact]
@@ -360,7 +364,7 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
-    public async Task A_bad_staged_key_stops_signing_at_the_first_read_after_it_comes_due()
+    public async Task A_bad_staged_key_is_skipped_once_it_comes_due_and_the_current_key_signs_on()
     {
         var clock = new FakeTimeProvider(Epoch);
         var listing = new TestSigningKeys.Listing(
@@ -370,7 +374,111 @@ public sealed class SigningKeyRingPollingTests
         clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
         await ring.LastTransition;
 
-        ring.Current.SigningKey.Should().BeNull();
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Degraded);
+    }
+
+    [Fact]
+    public async Task A_dropped_key_fixed_in_time_takes_over()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var listing = new TestSigningKeys.Listing(current, WrongCurve("staged", notBefore: Epoch));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+
+        listing.Pairs = [current, TestSigningKeys.Pair("staged", notBefore: Epoch)];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("staged");
+    }
+
+    [Fact]
+    public async Task A_dropped_key_fixed_only_after_its_predecessor_is_superseded_never_takes_over()
+    {
+        // Taking over now would drop the predecessor from publication in the same instant, while tokens
+        // it signed moments ago are still live.
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var listing = new TestSigningKeys.Listing(current, WrongCurve("staged", notBefore: Epoch));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+        listing.ReadFailure = new HttpRequestException("simulated: the fix cannot be read yet");
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value);
+        await ring.LastTransition;
+
+        listing.ReadFailure = null;
+        listing.Pairs = [current, TestSigningKeys.Pair("staged", notBefore: Epoch)];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Value.Should().Be("staged");
+    }
+
+    [Fact]
+    public async Task A_dropped_key_whose_cutoff_passes_while_reads_fail_never_takes_over()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var listing = new TestSigningKeys.Listing(current, WrongCurve("staged", notBefore: Epoch));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.ReadFailure = new HttpRequestException("simulated: vault unreachable");
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value);
+        await ring.LastTransition;
+
+        listing.ReadFailure = null;
+        listing.Pairs = [current, TestSigningKeys.Pair("staged", notBefore: Epoch)];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Value.Should().Be("staged");
+    }
+
+    [Fact]
+    public async Task A_dropped_key_whose_whole_due_window_passes_between_reads_never_takes_over()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var dueBriefly = WrongCurve("staged", notBefore: Epoch, expiresAt: Epoch + TestSigningKeys.Options.LeadTime + TimeSpan.FromMinutes(1));
+        var listing = new TestSigningKeys.Listing(current, dueBriefly);
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.ReadFailure = new HttpRequestException("simulated: vault unreachable");
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime + TimeSpan.FromMinutes(2));
+        await ring.LastTransition;
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value);
+        await ring.LastTransition;
+
+        listing.ReadFailure = null;
+        listing.Pairs = [current, TestSigningKeys.Pair("staged", notBefore: Epoch)];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Value.Should().Be("staged");
+    }
+
+    [Fact]
+    public async Task A_dropped_renewal_of_the_signing_key_pair_repaired_later_keeps_signing()
+    {
+        // The repaired renewal merges with the entry it renews and takes its older NotBefore; it is the
+        // key pair already signing, so taking over through it drops nothing from publication.
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddMinutes(10));
+        var listing = new TestSigningKeys.Listing(
+            current, TestSigningKeys.Renewal(current, "renewed", Epoch.AddHours(1), Epoch.AddMinutes(30)));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        var kid = ring.Current.SigningKey!.Kid;
+        clock.SetUtcNow(Epoch.AddMinutes(15));
+        await ring.LastTransition;
+
+        listing.Pairs = [current, TestSigningKeys.Renewal(current, "renewed", Epoch.AddHours(1), Epoch.AddDays(90))];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.Kid.Should().Be(kid);
+        ring.TimelineOrNull!.SetAside.Should().BeEmpty();
     }
 
     [Fact]
@@ -520,6 +628,88 @@ public sealed class SigningKeyRingPollingTests
 
         (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
         ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Value.Should().Be("successor");
+    }
+
+    [Fact]
+    public async Task A_failed_key_repaired_too_late_alongside_a_renewal_of_its_key_pair_never_takes_over()
+    {
+        // The renewal lends the merged key its own source id; the failure is recorded under the other one.
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var successor = TestSigningKeys.Pair("successor", notBefore: Epoch, expiresAt: Epoch.AddDays(90));
+        var listing = new TestSigningKeys.Listing(current, TestSigningKeys.Mismatched(successor));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.ReadFailure = new HttpRequestException("simulated: the fix cannot be read yet");
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value);
+        await ring.LastTransition;
+
+        listing.ReadFailure = null;
+        listing.Pairs = [current, successor, TestSigningKeys.Renewal(successor, "renewal", Epoch.AddDays(1), Epoch.AddDays(180))];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        ring.Current.Published.Select(key => key.SourceId.Value).Should().Contain("current");
+    }
+
+    [Fact]
+    public async Task A_failed_key_listed_twice_repaired_too_late_under_only_one_of_its_entries_never_takes_over()
+    {
+        // The failure is recorded under every entry listing the key pair, not only the one the merged key carries.
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var successor = TestSigningKeys.Pair("successor", notBefore: Epoch, expiresAt: Epoch.AddDays(90));
+        var broken = TestSigningKeys.Mismatched(successor);
+        var listing = new TestSigningKeys.Listing(current, broken, TestSigningKeys.Renewal(broken, "renewal", Epoch, Epoch.AddDays(180)));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        listing.ReadFailure = new HttpRequestException("simulated: the fix cannot be read yet");
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value);
+        await ring.LastTransition;
+
+        listing.ReadFailure = null;
+        listing.Pairs = [current, successor];
+        await ReadAgainAsync(ring, clock);
+
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+        ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Value.Should().Be("successor");
+    }
+
+    [Fact]
+    public async Task A_dropped_renewal_repaired_by_the_read_that_unlists_the_entry_it_renews_takes_over()
+    {
+        // The unlisted entry stops signing at that read, but the repaired renewal is the same key pair, so taking
+        // over through it drops nothing from publication, however old its NotBefore.
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var listing = new TestSigningKeys.Listing(
+            current, TestSigningKeys.Renewal(current, "renewed", Epoch.AddDays(-30), Epoch.AddDays(-31)));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        var kid = ring.Current.SigningKey!.Kid;
+
+        listing.Pairs = [TestSigningKeys.Renewal(current, "renewed", Epoch.AddDays(-30), Epoch.AddDays(90))];
+        await ReadAgainAsync(ring, clock);
+
+        var outcome = await SignAsync(ring);
+        outcome.Key.Kid.Should().Be(kid);
+        outcome.Key.SourceId.Value.Should().Be("renewed");
+    }
+
+    [Fact]
+    public async Task A_restarted_replica_adopts_a_key_repaired_too_late()
+    {
+        // Residual: the too-late memory is per process. A replica started after the repair never saw the
+        // failure, so the repaired key signs at once and the predecessor leaves this replica's key set.
+        var clock = new FakeTimeProvider(Epoch + TestSigningKeys.Options.LeadTime + TestSigningKeys.Options.RetainRetiredKeysFor!.Value);
+        var listing = new TestSigningKeys.Listing(
+            TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), TestSigningKeys.Pair("staged", notBefore: Epoch));
+
+        using var restarted = TestSigningKeys.Ring(listing, clock);
+
+        (await SignAsync(restarted)).Key.SourceId.Value.Should().Be("staged");
+        restarted.Current.Published.Select(key => key.SourceId.Value).Should().Equal("staged");
     }
 
     [Fact]
@@ -690,11 +880,11 @@ public sealed class SigningKeyRingPollingTests
             .CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
     /// <summary>A P-384 key, which an ES256 source cannot sign with, so the ring drops it.</summary>
-    private static TestSigningKeys.KeyPair WrongCurve(string id, DateTimeOffset notBefore)
+    private static TestSigningKeys.KeyPair WrongCurve(string id, DateTimeOffset notBefore, DateTimeOffset? expiresAt = null)
     {
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP384);
         return new TestSigningKeys.KeyPair(
-            TestSigningKeys.SourceKey(id, ec, notBefore), ec.ExportParameters(includePrivateParameters: true));
+            TestSigningKeys.SourceKey(id, ec, notBefore, expiresAt), ec.ExportParameters(includePrivateParameters: true));
     }
 
     private sealed class TrackingSigner(ISigner inner, Action onDispose) : ISigner

@@ -22,15 +22,15 @@ unexpired key, with a Warning. Every unexpired key is published, an older one un
 always. `NotBefore` orders keys and starts the clock; no relying party sees it, so it is no validity gate. Retention
 defaults to two days, or the longer token lifetime plus clock skew, so a replica whose handover is slow or failed
 signs on safely; lower warns. Ties go to the greater source id. A key with bad material or dates is dropped (Warning,
-Degraded) unless due to sign now; at startup that, an ambiguous list, or every key expired is fatal.
+Degraded). When every key has expired the last to expire signs on (Error, Unhealthy): a JWK has no dates (RFC 7517 §4).
 
 **The ring re-reads its source every `RefreshInterval` (default 5 min, min 1)**, so `LeadTime ≥ CacheMaxAge +
 RefreshInterval`. A read that throws or exceeds a minute keeps the last list (Error, Degraded); no read starts while one
-runs, so a source that never returns pins it. No keys revokes all; an ambiguous list or a bad key due now is refused
-alike (one bad key cannot freeze the old set): signing stops (`SigningKey` null, `SignAsync` throws, JWKS `{"keys":[]}`
-no-store, Unhealthy) until a good read; an unlisted signing key stops at once. Sources list a deleted file, key file,
-certificate or vault object as nothing, so removing a key revokes it; an unmounted directory reads as deleted. A failed
-successor is set aside until the next read, for good once its predecessor retires. Unlisted signers close a read later.
+runs, so a source that never returns pins it. No keys or an ambiguous list stops signing (`SigningKey` null, `SignAsync`
+throws, JWKS `{"keys":[]}` no-store, Unhealthy) until a good read; an unlisted signing key stops at once. Sources list a
+deleted file, key file, certificate or vault object as nothing (an unmounted directory too), so removing a key revokes it.
+**A key due to sign that cannot** (signer fails, or dropped) is skipped: the previous key signs on (Error, Degraded); fixed once its
+predecessor is superseded, it never takes over (in memory: a restarted replica adopts it); only startup refuses it. Unlisted signers close a read later.
 
 **File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list
 `Files`/`Certificates` with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`.

@@ -435,14 +435,18 @@ public sealed class SigningKeyRingTests
     [Fact]
     public async Task InitializeAsync_builds_the_key_set_against_the_time_provider_s_clock()
     {
-        using var rsa = RSA.Create(2048);
-        var (source, _) = CreateSuccessfulSource(rsa, expiresAt: Epoch.AddDays(-1));
-        SigningKeyRing ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch), TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        // Under the wall clock the older key has expired and the newer one is past its lead time; under the
+        // ring's clock the older key still signs.
+        using var ring = TestSigningKeys.Uninitialized(
+            [
+                TestSigningKeys.Pair("older", notBefore: Epoch.AddDays(-90), expiresAt: Epoch.AddDays(30)),
+                TestSigningKeys.Pair("newer", notBefore: Epoch),
+            ],
+            new FakeTimeProvider(Epoch));
 
-        var act = async () => await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
+        await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.signing_key_expired");
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("older");
     }
 
     [Fact]

@@ -13,8 +13,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// expired, or when it is published only because it signs — after a failed or unfinished handover,
 /// once every replica whose handover succeeded has dropped it. Otherwise
 /// <see cref="HealthStatus.Degraded"/>, naming every reason that applies, when the last read of the
-/// source failed; when a listed key was dropped as unusable; when a successor's signer failed to open
-/// or self-test and was set aside; when the key due to sign now is
+/// source failed; when a listed key was dropped as unusable, and again when that key is due to sign
+/// now; when a successor could not sign when due (its signer failed to open or self-test, or it was
+/// dropped) and was set aside; when the key due to sign now is
 /// not the key signing, because a handover is still running; or when the key set in force at the
 /// end of <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> has no unexpired key to
 /// sign with. Otherwise <see cref="HealthStatus.Healthy"/>. The look-ahead asks the ring's own
@@ -162,12 +163,20 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
                 "the log names them. Fix the keys; the next read picks them up.";
         }
 
+        if (timeline.DroppedKeyDueAt(now) is { } droppedDue)
+        {
+            yield return
+                $"The key due to sign now was dropped ({droppedDue.Failure.Code}), so '{signingKey.Kid}' signs in its " +
+                "place. Fix the key; the next read tries it again, unless the key it would replace is superseded by " +
+                "then, when only a fresh key can take over.";
+        }
+
         if (timeline.SetAside.Count > 0)
         {
             yield return
-                $"The signer of {string.Join(", ", timeline.SetAside.Select(key => $"'{key.Kid}'"))} failed to open or " +
-                "self-test when due to sign, so it is set aside. Fix the key; the next read tries it again, unless the " +
-                "key it would replace is superseded by then, when only a fresh key can take over.";
+                $"{string.Join(", ", timeline.SetAside.Select(key => $"'{key.Kid}'"))} could not sign when due (its signer " +
+                "failed, or it was dropped), so it is set aside. Fix the key; the next read tries it again, unless the " +
+                "key it would replace is superseded by then: then list a fresh key, and remove this one.";
         }
 
         var due = timeline.SigningKeyAt(now);

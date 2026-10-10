@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.Tokens;
 
@@ -177,12 +179,19 @@ public sealed class SigningKeyLifecycleScenarioTests
     }
 
     [Fact]
-    public void Expiry_every_key_expired_fails_startup_with_signing_key_expired()
+    public async Task Startup_with_every_key_expired_signs_on_and_is_Unhealthy()
     {
-        var act = () => Ring(TestSigningKeys.Pair("expired", notBefore: Startup.AddDays(-90), expiresAt: Startup.AddMinutes(-5)));
+        // A JWK carries no dates (RFC 7517 §4): no relying party can tell the key has expired.
+        using var ring = Ring(
+            TestSigningKeys.Pair("older", notBefore: Startup.AddDays(-90), expiresAt: Startup.AddMinutes(-10)),
+            TestSigningKeys.Pair("last", notBefore: Startup.AddDays(-60), expiresAt: Startup.AddMinutes(-5)));
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.signing_key_expired");
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("last");
+        _logger.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Error)
+            .Which.Message.Should().Contain("Every listed signing key has expired");
+        var health = await new SigningKeyExpiryHealthCheck(ring, _clock, Options.Create(new SigningKeyExpiryHealthCheckOptions()))
+            .CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
+        health.Status.Should().Be(HealthStatus.Unhealthy);
     }
 
     // ── Dates in the future ──────────────────────────────────────────────────────────────────────

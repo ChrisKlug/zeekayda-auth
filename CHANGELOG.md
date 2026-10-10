@@ -557,6 +557,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **A key due to sign that cannot sign is skipped, not fatal** (#916). A running ring whose key due
+  to sign was dropped for bad material or dates no longer stops signing: the previous key signs on,
+  an Error is logged, and `SigningKeyExpiryHealthCheck` reports `Degraded` naming the failure code,
+  the same as a successor whose signer fails. Either kind of key, fixed only once the key it would
+  replace is superseded, never takes over. Startup still refuses a dropped key due now. Startup
+  with every key expired no longer fails with `signing.signing_key_expired`: the last key to expire
+  signs on, an Error is logged, and the health check reports `Unhealthy`, as a running ring already
+  did. A JWK carries no validity dates (RFC 7517 §4), so relying parties cannot tell the key expired.
+
 - **BREAKING: the signing key ring re-reads its source every `SigningKeys.RefreshInterval`** (#527).
   The new option defaults to five minutes and must be at least one minute
   (`configuration.signing_keys.refresh_interval.below_minimum`). `SigningKeys.LeadTime` must now
@@ -566,9 +575,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   or does not complete within a minute, keeps the last list, logs an Error and makes
   `SigningKeyExpiryHealthCheck` report `Degraded`; no second read starts while an abandoned one is
   still running. A read listing no keys is a full revocation. So is a list the ring must refuse (a
-  `null` entry, a duplicate source id or `kid`, an undated key among several), and so is a list
-  whose key due to sign now is unusable, including a bad staged key once its lead time passes. In
-  all of these, signing stops: `SigningKeySet.SigningKey` is now nullable and is `null`,
+  `null` entry, a duplicate source id or `kid`, an undated key among several). In both, signing
+  stops: `SigningKeySet.SigningKey` is now nullable and is `null`,
   `Published` and the JWKS are empty (served `Cache-Control: no-store`), `SignAsync` throws
   `InvalidOperationException` (the token endpoint answers `server_error`), and the health check
   reports `Unhealthy`. A later read listing usable keys resumes signing; the health check stays
