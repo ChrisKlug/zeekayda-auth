@@ -1,0 +1,49 @@
+name: Security sign-off
+
+# Apart from CI so that editing the PR body, to add the opt-out line, re-runs only this check.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  sign-off:
+    name: Security sign-off present
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # The pull_request checkout is the merge commit; its first parent is the base.
+          fetch-depth: 2
+
+      - name: Run sign-off presence script smoke tests
+        run: bash .github/scripts/tests/check_sign_off_present.tests.sh
+
+      # Red through review is expected: the entry is written last, against frozen code.
+      - name: Check the PR adds a sign-off entry for each area:security issue it closes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        # Every lookup is its own checked assignment: a failed one must fail the check, never read as
+        # "no security issue".
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${PR_BODY}" > "${RUNNER_TEMP}/body"
+          git diff HEAD^1 HEAD -- docs/decisions/security-sign-offs.md > "${RUNNER_TEMP}/diff"
+          closing=$(gh pr view "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --json closingIssuesReferences --jq '.closingIssuesReferences[].number')
+          security_issues=()
+          for issue in ${closing}; do
+            labels=$(gh issue view "${issue}" --repo "${GITHUB_REPOSITORY}" --json labels --jq '.labels[].name')
+            if grep -qx 'area:security' <<< "${labels}"; then
+              security_issues+=("${issue}")
+            fi
+          done
+          bash .github/scripts/check_sign_off_present.sh "${RUNNER_TEMP}/diff" "${RUNNER_TEMP}/body" "${security_issues[@]}"
