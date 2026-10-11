@@ -38,7 +38,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </para>
 /// <para>
 /// Owns every <see cref="ISigner"/> it opens and disposes each once: at the first read a full
-/// <see cref="SigningKeyOptions.RefreshInterval"/> after it stopped signing, or at shutdown; a key that signs again after that gets a freshly opened, self-tested one. Also owns the <see cref="ISigningKeySource"/> it was constructed over: nothing else
+/// <see cref="SigningKeyOptions.RefreshInterval"/> after it is seen to stop signing — at the handover that
+/// supersedes it, or else at the end of the first read that finds it idle — or at shutdown; a key that signs again after that gets a freshly opened, self-tested one. Also owns the <see cref="ISigningKeySource"/> it was constructed over: nothing else
 /// holds a reference to it, so the ring disposes it once, at shutdown, after the signers — via
 /// <see cref="IDisposable.Dispose"/> or <see cref="IAsyncDisposable.DisposeAsync"/>, whichever the
 /// host calls.

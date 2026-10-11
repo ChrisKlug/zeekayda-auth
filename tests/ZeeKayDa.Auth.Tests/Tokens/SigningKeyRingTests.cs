@@ -1435,6 +1435,27 @@ public sealed class SigningKeyRingTests
     }
 
     [Fact]
+    public async Task A_sign_call_outrunning_a_full_refresh_interval_after_the_takeover_meets_a_disposed_signer()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var opened = 0;
+        TaskCompletionSource? hold = null;
+        using var ring = TestSigningKeys.Ring(
+            [TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), TestSigningKeys.Pair("successor", notBefore: Epoch)],
+            clock,
+            decorateSigner: signer => opened++ == 0 ? new HeldSigner(signer, () => hold?.Task ?? Task.CompletedTask) : signer);
+        hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var signing = ring.SignAsync(0, static (_, _) => "payload"u8.ToArray(), TestContext.Current.CancellationToken);
+
+        await TakeOverBetweenReadsAsync(ring, clock);
+        await FirstReadAfterTheTakeoverAsync(ring, clock);
+        await ReadAgainAsync(ring, clock);
+        hold.SetResult();
+
+        await FluentActions.Awaiting(() => signing).Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
     public async Task A_read_whose_transition_throws_still_releases_idle_signers()
     {
         var clock = new FakeTimeProvider(Epoch);
