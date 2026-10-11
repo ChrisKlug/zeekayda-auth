@@ -772,6 +772,46 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_superseded_key_that_signs_again_is_reopened_and_self_tested()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var listing = new TestSigningKeys.Listing(current, TestSigningKeys.Pair("successor", notBefore: Epoch));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+        await ReadAgainAsync(ring, clock);
+        listing.SignersDisposed.Select(id => id.Value).Should().Equal("current");
+        var signaturesBefore = listing.SignedBy.Count;
+
+        listing.Pairs = [current];
+        await ReadAgainAsync(ring, clock);
+
+        listing.SignersOpened.Select(id => id.Value).Should().Equal("current", "successor", "current");
+        listing.SignedBy.Skip(signaturesBefore).Select(id => id.Value).Should().Equal(["current"], "the reopened signer is self-tested");
+        (await SignAsync(ring)).Key.SourceId.Value.Should().Be("current");
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_is_called_again_only_when_a_superseded_version_signs_again()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
+        var listing = new TestSigningKeys.Listing(current, TestSigningKeys.Pair("successor", notBefore: Epoch));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
+        await ring.LastTransition;
+
+        for (var read = 0; read < 3; read++)
+            await ReadAgainAsync(ring, clock);
+        listing.SignersOpened.Select(id => id.Value).Should().Equal(["current", "successor"], "a superseded key still listed is not reopened");
+
+        listing.Pairs = [current];
+        await ReadAgainAsync(ring, clock);
+        listing.SignersOpened.Select(id => id.Value).Should().Equal("current", "successor", "current");
+    }
+
+    [Fact]
     public async Task A_failed_handover_that_stops_signing_still_gives_the_old_signer_one_read_s_grace()
     {
         var clock = new FakeTimeProvider(Epoch);

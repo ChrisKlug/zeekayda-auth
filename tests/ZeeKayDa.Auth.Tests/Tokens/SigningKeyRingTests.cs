@@ -101,6 +101,19 @@ public sealed class SigningKeyRingTests
         }
     }
 
+    /// <summary>Signs only once <paramref name="hold"/> completes, modelling a sign call still in flight.</summary>
+    private sealed class HeldSigner(ISigner inner, Func<Task> hold) : ISigner
+    {
+        public async Task<ReadOnlyMemory<byte>> SignAsync(
+            ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
+        {
+            await hold().ConfigureAwait(false);
+            return await inner.SignAsync(signingInput, cancellationToken).ConfigureAwait(false);
+        }
+
+        public void Dispose() => inner.Dispose();
+    }
+
     /// <summary>An <see cref="ISigner"/> whose <c>Dispose</c> always throws, modelling a third-party
     /// signer whose cleanup fails — used to prove the ring still disposes its source.</summary>
     private sealed class ThrowingDisposeSigner(ISigner inner) : ISigner
@@ -1373,7 +1386,7 @@ public sealed class SigningKeyRingTests
     }
 
     [Fact]
-    public async Task Handover_keeps_the_superseded_signer_open_until_the_ring_is_disposed_then_disposes_each_once()
+    public async Task Handover_disposes_the_superseded_signer_at_the_second_read_after_it_stopped_signing()
     {
         var clock = new FakeTimeProvider(Epoch);
         var disposed = new List<string>();
@@ -1386,13 +1399,39 @@ public sealed class SigningKeyRingTests
                 var name = opened++ == 0 ? "current" : "successor";
                 return new TrackingSigner(signer, () => disposed.Add(name));
             });
+        await TakeOverBetweenReadsAsync(ring, clock);
 
-        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
-        disposed.Should().BeEmpty();
+        await ReadAgainAsync(ring, clock);
+        disposed.Should().BeEmpty("a sign call that resolved the old signer just before the takeover may still be using it");
+
+        await ReadAgainAsync(ring, clock);
+        disposed.Should().Equal("current");
 
         ((IDisposable)ring).Dispose();
+        disposed.Should().Equal("current", "successor");
+    }
 
-        disposed.Should().BeEquivalentTo("current", "successor");
+    [Fact]
+    public async Task A_sign_call_started_before_a_takeover_completes_with_the_old_signer()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var opened = 0;
+        TaskCompletionSource? hold = null;
+        using var ring = TestSigningKeys.Ring(
+            [TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), TestSigningKeys.Pair("successor", notBefore: Epoch)],
+            clock,
+            decorateSigner: signer => opened++ == 0 ? new HeldSigner(signer, () => hold?.Task ?? Task.CompletedTask) : signer);
+        hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var signing = ring.SignAsync(0, static (_, _) => "payload"u8.ToArray(), TestContext.Current.CancellationToken);
+
+        await TakeOverBetweenReadsAsync(ring, clock);
+        await ReadAgainAsync(ring, clock);
+        hold.SetResult();
+        var outcome = await signing;
+
+        outcome.Key.SourceId.Value.Should().Be("current");
+        SigningAlgorithms.Verify(outcome.Key.Algorithm, outcome.Key.PublicKey, outcome.SigningInput.Span, outcome.Signature.Span)
+            .Should().BeTrue();
     }
 
     [Fact]
@@ -1423,6 +1462,25 @@ public sealed class SigningKeyRingTests
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Moves <paramref name="clock"/> to a minute before the successor is due, which reads the
+    /// source, then to the instant it is due, so the successor takes over between two reads.</summary>
+    private static async Task TakeOverBetweenReadsAsync(SigningKeyRing ring, FakeTimeProvider clock)
+    {
+        var due = Epoch + TestSigningKeys.Options.LeadTime;
+        clock.SetUtcNow(due - TimeSpan.FromMinutes(1));
+        await ring.LastTransition;
+        clock.SetUtcNow(due);
+        await ring.LastTransition;
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("successor");
+    }
+
+    private static async Task ReadAgainAsync(SigningKeyRing ring, FakeTimeProvider clock)
+    {
+        clock.Advance(TestSigningKeys.Options.RefreshInterval);
+        await ring.LastTransition;
+    }
+
 
     private static FakeSigningKeySource NeverCalledSource() =>
         new(

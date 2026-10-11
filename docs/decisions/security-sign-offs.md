@@ -2231,7 +2231,8 @@ CodeQL and CodeScene review; no Critical left open. Four test-only CodeQL dispos
   `Handover_past_the_deadline_is_set_aside_even_when_the_source_s_cancellation_callback_throws`, `Handover_failure_logs_the_root_cause_as_the_Error_entry_s_exception`.
 - No change instant is skipped. Closed — `Initialization_catches_up_when_a_change_passes_while_the_startup_signer_opens`,
   `A_change_crossed_after_a_transition_commits_but_before_it_re_arms_still_fires`.
-- Every signer whose open finishes is disposed once, including one that finishes after shutdown or the deadline. Closed — `Handover_keeps_the_superseded_signer_open_until_the_ring_is_disposed_then_disposes_each_once`,
+- Every signer whose open finishes is disposed once, including one that finishes after shutdown or the deadline. Closed — Handover_keeps_the_superseded_signer_open_until_the_ring_is_disposed_then_disposes_each_once [replaced by #919, a
+  superseded signer now closes at the second read that finds it idle: `Handover_disposes_the_superseded_signer_at_the_second_read_after_it_stopped_signing`],
   `A_signer_that_opens_after_shutdown_abandoned_its_handover_is_disposed`, `A_signer_that_opens_after_the_handover_deadline_is_disposed_exactly_once`,
   `Initialization_owns_the_startup_signer_before_logging_so_a_throwing_logger_does_not_leak_it`.
 - A bad key never publishes or signs; a bad key due now, or an ambiguous list, fails startup; health names codes, never source ids. Closed —

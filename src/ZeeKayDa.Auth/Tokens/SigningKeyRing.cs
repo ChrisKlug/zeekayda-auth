@@ -38,7 +38,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </para>
 /// <para>
 /// Owns every <see cref="ISigner"/> it opens and disposes each once: at the second read in a row that
-/// no longer lists its key, or at shutdown. Also owns the <see cref="ISigningKeySource"/> it was constructed over: nothing else
+/// finds it not signing, or at shutdown; a key that signs again gets a freshly opened, self-tested signer. Also owns the <see cref="ISigningKeySource"/> it was constructed over: nothing else
 /// holds a reference to it, so the ring disposes it once, at shutdown, after the signers — via
 /// <see cref="IDisposable.Dispose"/> or <see cref="IAsyncDisposable.DisposeAsync"/>, whichever the
 /// host calls.
@@ -73,7 +73,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
     // Touched only by initialization and the transition, which never overlap.
     private DateTimeOffset _nextReadAt;
-    private readonly HashSet<SignerId> _unlistedOnce = [];
+    private readonly HashSet<SignerId> _idleOnce = [];
 
     // Keys whose signer failed when due, or that were ever listed dropped, and have not signed since, kept
     // across reads that omit them or stop signing: such a key may never take over once its predecessor is
@@ -423,10 +423,13 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         DateTimeOffset evaluatedAt;
         try
         {
-            if (_timeProvider.GetUtcNow() >= _nextReadAt)
+            var reads = _timeProvider.GetUtcNow() >= _nextReadAt;
+            if (reads)
                 await RefreshAsync().ConfigureAwait(false);
 
             evaluatedAt = await FollowTheClockAsync().ConfigureAwait(false);
+            if (reads)
+                ReleaseIdleSigners();
         }
         catch (Exception) when (_shutdown.IsCancellationRequested)
         {
@@ -522,12 +525,10 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         }
         catch (ZeeKayDaConfigurationException ex)
         {
-            ReleaseUnlistedSigners(timeline: null);
             StopSigning(ex.AggregatedFailures[0]);
             return;
         }
 
-        ReleaseUnlistedSigners(timeline);
         RecordDroppedKeys(timeline);
         var droppedSigningKey = timeline.DroppedKeyDueAt(now);
 
@@ -699,27 +700,25 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Called once per read that listed keys. Disposes the signer of every key absent from two reads
-    /// in a row, unless it still signs. One
-    /// read's grace lets a sign call that started before the key left the list finish with the signer
-    /// it resolved.
+    /// Called once per read, after the handovers it caused. Disposes every signer found not signing
+    /// at two reads in a row, whether superseded, unlisted, or never handed over to. The read between
+    /// lets a sign call that resolved a signer just before it stopped signing finish with it.
     /// </summary>
-    private void ReleaseUnlistedSigners(SigningKeyTimeline? timeline)
+    private void ReleaseIdleSigners()
     {
         var signing = (Volatile.Read(ref _state) as Signing)?.Signer;
-        var listed = timeline?.Keys.Select(SignerId.Of).ToHashSet() ?? [];
         List<ISigner> released = [];
         lock (_gate)
         {
             foreach (var (id, signer) in _signers.ToList())
             {
-                if (listed.Contains(id))
+                if (ReferenceEquals(signer, signing))
                 {
-                    _unlistedOnce.Remove(id);
+                    _idleOnce.Remove(id);
                 }
-                else if (!_unlistedOnce.Add(id) && !ReferenceEquals(signer, signing))
+                else if (!_idleOnce.Add(id))
                 {
-                    _unlistedOnce.Remove(id);
+                    _idleOnce.Remove(id);
                     _signers.Remove(id);
                     released.Add(signer);
                 }
@@ -752,7 +751,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         var now = _timeProvider.GetUtcNow();
 
         // The clock may have moved on while the signer opened; the caller's loop then hands over to
-        // whichever key is due now, and this signer stays cached for if its turn comes again.
+        // whichever key is due now, and this signer is released like any other that does not sign.
         if (SignerId.Of(timeline.SigningKeyAt(now)) != SignerId.Of(successor))
             return;
 
