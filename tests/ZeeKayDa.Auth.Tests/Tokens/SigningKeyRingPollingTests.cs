@@ -793,7 +793,7 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
-    public async Task CreateSignerAsync_is_called_again_only_when_a_superseded_version_signs_again()
+    public async Task A_superseded_key_still_listed_is_not_reopened_until_it_signs_again()
     {
         var clock = new FakeTimeProvider(Epoch);
         var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
