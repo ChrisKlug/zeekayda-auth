@@ -812,6 +812,56 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
+    public async Task A_handover_that_finishes_just_before_a_read_still_gives_the_old_signer_a_full_refresh_interval()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var options = TestSigningKeys.Options;
+        options.RefreshInterval = TimeSpan.FromMinutes(1);
+        var listing = new TestSigningKeys.Listing(
+            TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), TestSigningKeys.Pair("successor", notBefore: Epoch));
+        using var ring = TestSigningKeys.Ring(listing, clock, options: options);
+        listing.SignerGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        clock.SetUtcNow(Epoch + options.LeadTime);
+        await listing.SignerRequested.Task;
+        clock.Advance(TimeSpan.FromSeconds(59));
+        listing.SignerGate.SetResult();
+        await ring.LastTransition;
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("successor");
+
+        clock.Advance(TimeSpan.FromSeconds(1));
+        await ring.LastTransition;
+        listing.SignersDisposed.Should().BeEmpty("the old signer stopped signing one second before this read");
+
+        clock.Advance(options.RefreshInterval);
+        await ring.LastTransition;
+        listing.SignersDisposed.Select(id => id.Value).Should().Equal("current");
+    }
+
+    [Fact]
+    public async Task A_signer_that_signs_again_between_reads_gets_a_full_refresh_interval_once_it_stops_again()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var day = TestSigningKeys.Options.LeadTime;
+        var listing = new TestSigningKeys.Listing(
+            TestSigningKeys.Pair("first", notBefore: Epoch.AddDays(-90)),
+            TestSigningKeys.Pair("short-lived", notBefore: Epoch.AddMinutes(2), expiresAt: Epoch + day + TimeSpan.FromMinutes(6)),
+            TestSigningKeys.Pair("last", notBefore: Epoch.AddMinutes(8)));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+        await MoveToAsync(ring, clock, Epoch + day, signing: "first");
+        await MoveToAsync(ring, clock, Epoch + day + TimeSpan.FromMinutes(2), signing: "short-lived");
+        await MoveToAsync(ring, clock, Epoch + day + TimeSpan.FromMinutes(5), signing: "short-lived");
+        await MoveToAsync(ring, clock, Epoch + day + TimeSpan.FromMinutes(6), signing: "first");
+        await MoveToAsync(ring, clock, Epoch + day + TimeSpan.FromMinutes(8), signing: "last");
+
+        await MoveToAsync(ring, clock, Epoch + day + TimeSpan.FromMinutes(10), signing: "last");
+        listing.SignersDisposed.Select(id => id.Value).Should().NotContain("first", "it stopped signing again two minutes before this read");
+
+        await MoveToAsync(ring, clock, Epoch + day + TimeSpan.FromMinutes(15), signing: "last");
+        listing.SignersDisposed.Select(id => id.Value).Should().Contain("first");
+        listing.SignersOpened.Select(id => id.Value).Should().Equal("first", "short-lived", "last");
+    }
+
+    [Fact]
     public async Task A_failed_handover_that_stops_signing_still_gives_the_old_signer_one_read_s_grace()
     {
         var clock = new FakeTimeProvider(Epoch);
@@ -903,6 +953,13 @@ public sealed class SigningKeyRingPollingTests
 
         ring.Verify(outcome.Key.Kid, outcome.SigningInput.Span, outcome.Signature.Span).Should().NotBeNull(
             "a source that cannot be read has not revoked anything");
+    }
+
+    private static async Task MoveToAsync(SigningKeyRing ring, FakeTimeProvider clock, DateTimeOffset to, string signing)
+    {
+        clock.SetUtcNow(to);
+        await ring.LastTransition;
+        ring.Current.SigningKey!.SourceId.Value.Should().Be(signing);
     }
 
     private static async Task ReadAgainAsync(SigningKeyRing ring, FakeTimeProvider clock)

@@ -1386,7 +1386,7 @@ public sealed class SigningKeyRingTests
     }
 
     [Fact]
-    public async Task Handover_disposes_the_superseded_signer_at_the_second_read_after_it_stopped_signing()
+    public async Task Handover_disposes_the_superseded_signer_at_the_first_read_a_refresh_interval_after_the_takeover()
     {
         var clock = new FakeTimeProvider(Epoch);
         var disposed = new List<string>();
@@ -1401,7 +1401,7 @@ public sealed class SigningKeyRingTests
             });
         await TakeOverBetweenReadsAsync(ring, clock);
 
-        await ReadAgainAsync(ring, clock);
+        await FirstReadAfterTheTakeoverAsync(ring, clock);
         disposed.Should().BeEmpty("a sign call that resolved the old signer just before the takeover may still be using it");
 
         await ReadAgainAsync(ring, clock);
@@ -1425,7 +1425,7 @@ public sealed class SigningKeyRingTests
         var signing = ring.SignAsync(0, static (_, _) => "payload"u8.ToArray(), TestContext.Current.CancellationToken);
 
         await TakeOverBetweenReadsAsync(ring, clock);
-        await ReadAgainAsync(ring, clock);
+        await FirstReadAfterTheTakeoverAsync(ring, clock);
         hold.SetResult();
         var outcome = await signing;
 
@@ -1463,16 +1463,26 @@ public sealed class SigningKeyRingTests
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
+    private static readonly DateTimeOffset SuccessorDue = Epoch + TestSigningKeys.Options.LeadTime;
+
     /// <summary>Moves <paramref name="clock"/> to a minute before the successor is due, which reads the
     /// source, then to the instant it is due, so the successor takes over between two reads.</summary>
     private static async Task TakeOverBetweenReadsAsync(SigningKeyRing ring, FakeTimeProvider clock)
     {
-        var due = Epoch + TestSigningKeys.Options.LeadTime;
+        var due = SuccessorDue;
         clock.SetUtcNow(due - TimeSpan.FromMinutes(1));
         await ring.LastTransition;
         clock.SetUtcNow(due);
         await ring.LastTransition;
         ring.Current.SigningKey!.SourceId.Value.Should().Be("successor");
+    }
+
+    /// <summary>Moves <paramref name="clock"/> to the read due after <see cref="TakeOverBetweenReadsAsync"/>,
+    /// less than a refresh interval after the takeover.</summary>
+    private static async Task FirstReadAfterTheTakeoverAsync(SigningKeyRing ring, FakeTimeProvider clock)
+    {
+        clock.SetUtcNow(SuccessorDue - TimeSpan.FromMinutes(1) + TestSigningKeys.Options.RefreshInterval);
+        await ring.LastTransition;
     }
 
     private static async Task ReadAgainAsync(SigningKeyRing ring, FakeTimeProvider clock)

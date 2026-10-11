@@ -117,10 +117,10 @@ internal static class TestSigningKeys
     /// </summary>
     public static SigningKeyRing Ring(
         Listing listing, TimeProvider timeProvider, SanitizingLogger<SigningKeyRing>? logger = null,
-        Func<ISigner, ISigner>? decorateSigner = null)
+        Func<ISigner, ISigner>? decorateSigner = null, SigningKeyOptions? options = null)
     {
         var ring = new SigningKeyRing(
-            new ListingSource(listing, decorateSigner), timeProvider, Options, logger ?? new CapturingSanitizingLogger<SigningKeyRing>());
+            new ListingSource(listing, decorateSigner), timeProvider, options ?? Options, logger ?? new CapturingSanitizingLogger<SigningKeyRing>());
 
         // Completes synchronously over in-memory keys and LocalSigners; see the overloads above.
         var initialization = ring.EnsureInitializedAsync(CancellationToken.None);
