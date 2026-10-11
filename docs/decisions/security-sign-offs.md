@@ -13,8 +13,9 @@ reasoned acceptance into an undocumented gap.
 **Rules for this file.** Append; do not rewrite. Corrections are appended as new entries, not edits
 to old ones — a reversal is itself the audit-relevant fact and is recorded as a reversal. Scope
 limits and explicit negatives ("this sign-off did not cover X") are as load-bearing as the approval
-and are never trimmed. Where a decision has since changed, the register file for that topic is
-authoritative for *current* behaviour; this file remains authoritative for *what was approved when*.
+and are never trimmed. One edit is allowed: when a cited test is renamed or replaced, the old name stays
+in the entry without backticks, followed by a bracketed note naming the issue and the successor test.
+Where a decision has since changed, the register file for that topic is authoritative for *current* behaviour; this file remains authoritative for *what was approved when*.
 
 **Rules for new entries** (in force from the vertical-slice rework; earlier entries predate them).
 An entry is written **last, once, against frozen code** — after review has concluded, never in a
