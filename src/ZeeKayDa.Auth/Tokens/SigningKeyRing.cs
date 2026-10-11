@@ -421,15 +421,13 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     private async Task TransitionAsync()
     {
         DateTimeOffset evaluatedAt;
+        var reads = _timeProvider.GetUtcNow() >= _nextReadAt;
         try
         {
-            var reads = _timeProvider.GetUtcNow() >= _nextReadAt;
             if (reads)
                 await RefreshAsync().ConfigureAwait(false);
 
             evaluatedAt = await FollowTheClockAsync().ConfigureAwait(false);
-            if (reads)
-                ReleaseIdleSigners();
         }
         catch (Exception) when (_shutdown.IsCancellationRequested)
         {
@@ -444,6 +442,12 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
                 RetryDelay);
             Rearm(RetryDelay);
             return;
+        }
+        finally
+        {
+            // A transition that fails every time must not keep a retired key resident indefinitely.
+            if (reads && !_shutdown.IsCancellationRequested)
+                ReleaseIdleSigners();
         }
 
         Rearm(NextWait(TimelineOf(Volatile.Read(ref _state)!), evaluatedAt));

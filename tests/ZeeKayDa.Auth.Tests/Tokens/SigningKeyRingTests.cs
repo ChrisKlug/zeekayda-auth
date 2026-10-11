@@ -1435,6 +1435,51 @@ public sealed class SigningKeyRingTests
     }
 
     [Fact]
+    public async Task A_read_whose_transition_throws_still_releases_idle_signers()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var disposed = new List<string>();
+        string[] names = ["current", "successor", "last"];
+        var opened = 0;
+        var logger = new SanitizingLogger<SigningKeyRing>(
+            new TakeoverThrowingLogger(), Microsoft.Extensions.Options.Options.Create(new AuthorizationServerOptions()));
+        using var ring = TestSigningKeys.Ring(
+            [
+                TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)),
+                TestSigningKeys.Pair("successor", notBefore: Epoch),
+                TestSigningKeys.Pair("last", notBefore: Epoch.AddMinutes(9)),
+            ],
+            clock,
+            logger,
+            decorateSigner: signer =>
+            {
+                var name = names[opened++];
+                return new TrackingSigner(signer, () => disposed.Add(name));
+            });
+        await TakeOverBetweenReadsAsync(ring, clock);
+        await FirstReadAfterTheTakeoverAsync(ring, clock);
+        disposed.Should().BeEmpty();
+
+        clock.SetUtcNow(SuccessorDue + TimeSpan.FromMinutes(9));
+        await ring.LastTransition;
+
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("last");
+        disposed.Should().Equal("current");
+    }
+
+    /// <summary>Throws on the takeover log line only, so a transition fails after its handover committed.</summary>
+    private sealed class TakeoverThrowingLogger : ILogger<SigningKeyRing>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (formatter(state, exception).Contains("taking over from", StringComparison.Ordinal))
+                throw new InvalidOperationException("simulated: logging failed");
+        }
+    }
+
+    [Fact]
     public async Task Dispose_stops_the_ring_following_the_clock()
     {
         var clock = new FakeTimeProvider(Epoch);

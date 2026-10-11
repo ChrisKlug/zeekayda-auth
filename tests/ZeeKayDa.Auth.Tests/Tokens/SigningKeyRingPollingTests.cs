@@ -888,7 +888,7 @@ public sealed class SigningKeyRingPollingTests
     }
 
     [Fact]
-    public async Task The_signer_of_a_key_listed_again_before_the_second_read_is_kept()
+    public async Task The_signer_of_a_key_that_signs_again_before_its_grace_ends_is_kept()
     {
         var clock = new FakeTimeProvider(Epoch);
         var disposed = 0;
