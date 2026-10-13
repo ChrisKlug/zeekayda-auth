@@ -712,7 +712,42 @@ public sealed class PemFileSigningKeySourceTests
         var listing = await sut.ReadAsync(ct);
 
         var failure = listing.ShouldReportOnly(certPath, "signing.file_signing.key_encryption_mismatch");
-        failure.Message.Should().Contain("unencrypted private key");
+        failure.Message.Should().Contain(certPath).And.Contain("unencrypted private key");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_plain_key_after_an_encrypted_one_in_the_certificate_file()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteTextFile("cert.pem",
+            certificate.ExportCertificatePem() + "\n" + EncryptedKeyPem(certificate) + "\n"
+            + certificate.GetRSAPrivateKey()!.ExportPkcs8PrivateKeyPem());
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(certPath, "signing.file_signing.key_encryption_mismatch");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_combined_file_with_a_plain_key_after_its_encrypted_one()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WriteTextFile("combined.pem",
+            certificate.ExportCertificatePem() + "\n" + EncryptedKeyPem(certificate) + "\n"
+            + certificate.GetRSAPrivateKey()!.ExportPkcs8PrivateKeyPem());
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(path, PasswordSource: password.GetAsync));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(path, "signing.file_signing.key_encryption_mismatch");
     }
 
     [Fact]

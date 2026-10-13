@@ -108,7 +108,7 @@ internal sealed class PemFileSigningKeySource(
 
         using var certificate = ParseCertificate(certPem, file.Path);
         CheckKeyBlock(file, keyPem);
-        CheckNoPlainKeyBesideAnEncryptedOne(file, certPem);
+        CheckNoPlainKeyBesideAnEncryptedOne(file, certPem, keyPem);
         var key = SourceKey.FromCertificate(certificate, id);
 
         if (file.PasswordSource is not null)
@@ -323,21 +323,39 @@ internal sealed class PemFileSigningKeySource(
     }
 
     /// <summary>
-    /// Throws when a split-form certificate file carries a plain private key while the key file is
-    /// encrypted: the password would protect nothing.
+    /// Throws when a password is configured but either file also carries an unencrypted private key
+    /// block, wherever it sits: the password would protect nothing.
     /// </summary>
-    private static void CheckNoPlainKeyBesideAnEncryptedOne(PemSigningFile file, ReadOnlySpan<char> certPem)
+    private static void CheckNoPlainKeyBesideAnEncryptedOne(PemSigningFile file, string certPem, string keyPem)
     {
-        if (file.KeyPath is not null && file.PasswordSource is not null && FindKeyBlock(certPem) == KeyBlock.Plain)
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.file_signing.key_encryption_mismatch",
-                    $"The certificate file '{file.Path}' carries an unencrypted private key, while a " +
-                    $"PasswordSource is configured for the encrypted key in '{file.KeyPath}'. Remove the " +
-                    "private key from the certificate file."));
-        }
+        if (file.PasswordSource is null)
+            return;
+
+        if (ContainsPlainKeyBlock(keyPem))
+            throw PlainKeyBesideEncrypted(KeyFileOf(file));
+
+        if (file.KeyPath is not null && ContainsPlainKeyBlock(certPem))
+            throw PlainKeyBesideEncrypted(file.Path);
     }
+
+    private static bool ContainsPlainKeyBlock(ReadOnlySpan<char> pem)
+    {
+        while (PemEncoding.TryFind(pem, out var fields))
+        {
+            if (UnencryptedPrivateKeyLabels.Contains(pem[fields.Label].ToString()))
+                return true;
+
+            pem = pem[fields.Location.End..];
+        }
+
+        return false;
+    }
+
+    private static ZeeKayDaConfigurationException PlainKeyBesideEncrypted(string path) =>
+        new(new ZeeKayDaConfigurationFailure(
+            "signing.file_signing.key_encryption_mismatch",
+            $"The file '{path}' carries an unencrypted private key while a PasswordSource is configured, so " +
+            "the password protects nothing. Remove the unencrypted key."));
 
     /// <summary>
     /// The first complete private key block in <paramref name="pem"/>. The block is located and its
