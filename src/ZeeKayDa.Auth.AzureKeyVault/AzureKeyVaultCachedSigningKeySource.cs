@@ -32,7 +32,8 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// published public key, so a divergence fails startup there.
 /// </para>
 /// <para>
-/// A failed or empty vault read always throws — never a partial key set. This source performs no
+/// A failed or empty vault read always throws; only a version whose own key material is unusable is
+/// reported in <see cref="SourceKeyListing.Failures"/>. This source performs no
 /// algorithm/key-type check of its own: <see cref="SigningKeySetBuilder"/> validates every reported
 /// key, keyed on the source id (the Key Vault version string).
 /// </para>

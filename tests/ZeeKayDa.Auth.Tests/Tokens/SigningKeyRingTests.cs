@@ -888,6 +888,23 @@ public sealed class SigningKeyRingTests
     }
 
     [Fact]
+    public async Task A_read_listing_only_failures_stops_signing_and_unpublishes_the_deleted_key()
+    {
+        // Not "keep the last list": the deleted key would sign on while its broken replacement is fixed.
+        var clock = new FakeTimeProvider(Epoch);
+        var listing = new TestSigningKeys.Listing(TestSigningKeys.Pair("revoked", notBefore: Epoch.AddDays(-90)));
+        using var ring = TestSigningKeys.Ring(listing, clock);
+
+        listing.Pairs = [];
+        listing.Failures = [Broken("replacement", "signing.file_signing.file_too_permissive")];
+        await ReadAgainAsync(ring, clock);
+
+        ring.Current.SigningKey.Should().BeNull();
+        ring.Current.Published.Should().BeEmpty();
+        (await HealthAsync(ring, clock)).Status.Should().Be(HealthStatus.Unhealthy);
+    }
+
+    [Fact]
     public async Task Initialization_fails_when_the_key_due_to_sign_now_was_dropped()
     {
         var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));

@@ -34,7 +34,8 @@ internal static partial class SigningKeySetBuilder
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown with failure code <c>signing.undefined_algorithm</c> when <paramref name="algorithm"/> is
     /// not a defined <see cref="SigningAlgorithm"/> member; <c>signing.no_keys</c> when <paramref name="listing"/>
-    /// holds neither keys nor failures; <c>signing.null_key</c> when it contains a <see langword="null"/>;
+    /// holds neither keys nor failures; <c>signing.null_key</c> or <c>signing.null_failure</c> when it
+    /// contains a <see langword="null"/>;
     /// <c>signing.empty_key_id</c> or <c>signing.duplicate_key_id</c> for a missing or repeated source id,
     /// among keys and failures alike;
     /// <c>signing.undated_key</c> when one of two or more keys has no <see cref="SourceKey.NotBefore"/>;
@@ -131,7 +132,7 @@ internal static partial class SigningKeySetBuilder
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
-                    "signing.null_key",
+                    "signing.null_failure",
                     "The signing key source reported a null failure. Every SourceKeyFailure ReadAsync " +
                     "returns, and its Failure, must be non-null."));
         }

@@ -852,25 +852,25 @@ public sealed class SigningKeySetBuilderTests
     }
 
     [Fact]
-    public void Build_fails_with_null_key_when_a_reported_failure_is_null()
+    public void Build_fails_with_null_failure_when_a_reported_failure_is_null()
     {
         var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-10));
 
         var act = () => Timeline(new SourceKeyListing([current], [null!]));
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.null_key");
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.null_failure");
     }
 
     [Fact]
-    public void Build_fails_with_null_key_when_a_reported_failure_carries_no_failure()
+    public void Build_fails_with_null_failure_when_a_reported_failure_carries_no_failure()
     {
         var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-10));
 
         var act = () => Timeline(new SourceKeyListing([current], [new SourceKeyFailure(new SourceKeyId("broken"), null!)]));
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.null_key");
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.null_failure");
     }
 
     [Fact]

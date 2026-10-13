@@ -495,6 +495,19 @@ public sealed class KeyVaultKeyReaderTests
     }
 
     [Fact]
+    public async Task GetKeyMaterialAsync_maps_a_version_without_key_material_to_startup_failure()
+    {
+        // A vault answer with no key at all is a vault problem, not this version's material: it fails the whole read.
+        var client = new FakeKeyClient { OnGetKey = _ => BuildKey(null!) };
+
+        var act = () => BuildReader(client)
+            .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.azure_key_vault.startup_failure");
+    }
+
+    [Fact]
     public async Task GetKeyMaterialAsync_does_not_reclassify_an_unsupported_key_type_as_startup_failure()
     {
         // A catch(ZeeKayDaConfigurationException) re-throw arm sits ahead of the broad SDK-fault

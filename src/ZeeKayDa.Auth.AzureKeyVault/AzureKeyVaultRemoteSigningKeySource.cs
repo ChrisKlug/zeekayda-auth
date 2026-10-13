@@ -19,8 +19,9 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// version is never listed.
 /// </para>
 /// <para>
-/// A failed or empty vault read always throws — never a partial key set — so a vault outage is
-/// never indistinguishable from a revocation.
+/// A failed or empty vault read always throws, so a vault outage is never mistaken for a
+/// revocation. Only a version whose own key material is unusable is reported in
+/// <see cref="SourceKeyListing.Failures"/>, with the other versions listed.
 /// </para>
 /// <para>
 /// This source performs no algorithm/key-type check of its own.

@@ -121,7 +121,8 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
         try
         {
             var response = await _keyClient.GetKeyAsync(_keyName, version, cancellationToken).ConfigureAwait(false);
-            key = response.Value.Key;
+            key = response.Value.Key
+                ?? throw new InvalidOperationException("Key Vault returned the version without its key material.");
         }
         catch (RequestFailedException ex)
         {
@@ -141,19 +142,17 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
     /// </exception>
     private (AsymmetricAlgorithm, SigningKeyType) MapJsonWebKey(JsonWebKey key, string version)
     {
-        if (key.KeyType != KeyType.Rsa && key.KeyType != KeyType.RsaHsm && key.KeyType != KeyType.Ec && key.KeyType != KeyType.EcHsm)
-        {
-            throw new ZeeKayDaConfigurationException(
+        var keyType = SigningKeyTypeOf(key.KeyType)
+            ?? throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.unsupported_key_type",
                     $"Key Vault key type '{key.KeyType}' is not supported. Only RSA, RSA-HSM, EC, and EC-HSM keys can be used for JWT signing."));
-        }
 
         try
         {
-            return key.KeyType == KeyType.Rsa || key.KeyType == KeyType.RsaHsm
-                ? (key.ToRSA(includePrivateParameters: false), SigningKeyType.Rsa)
-                : (key.ToECDsa(includePrivateParameters: false), SigningKeyType.Ec);
+            return keyType == SigningKeyType.Rsa
+                ? (key.ToRSA(includePrivateParameters: false), keyType)
+                : (key.ToECDsa(includePrivateParameters: false), keyType);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -166,6 +165,14 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
                     "for the root cause."),
                 ex);
         }
+    }
+
+    private static SigningKeyType? SigningKeyTypeOf(KeyType keyType)
+    {
+        if (keyType == KeyType.Rsa || keyType == KeyType.RsaHsm)
+            return SigningKeyType.Rsa;
+
+        return keyType == KeyType.Ec || keyType == KeyType.EcHsm ? SigningKeyType.Ec : null;
     }
 
     private ZeeKayDaConfigurationException MapRequestFailedException(RequestFailedException ex) =>
