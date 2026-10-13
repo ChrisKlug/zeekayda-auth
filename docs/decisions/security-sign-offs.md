@@ -2242,7 +2242,7 @@ CodeQL and CodeScene review; no Critical left open. Four test-only CodeQL dispos
   validation: `Build_drops_an_entry_with_unusable_dates_and_builds_the_other_entry_over_its_key_pair_alone`],
   `Evaluate_is_Degraded_while_a_listed_key_is_dropped_without_naming_its_source_id`.
 - A key signing on after healthy replicas dropped it is Unhealthy. Closed — `Evaluate_is_Unhealthy_when_the_key_signing_on_after_a_failed_handover_has_left_every_other_replica_s_key_set`.
-- **Accepted residuals (maintainer):** a provider's own per-key failure still fails `ReadAsync` (#908) [closed by #908, entry 2026-10-13: the test now proves a per-entry report] — `ReadAsync_rejects_a_separate_key_file_broader_than_0600_on_Unix_even_for_a_file_that_does_not_sign`;
+- **Accepted residuals (maintainer):** a provider's own per-key failure still fails `ReadAsync` (#908) — `ReadAsync_rejects_a_separate_key_file_broader_than_0600_on_Unix_even_for_a_file_that_does_not_sign`;
   revocation is remove and restart until polling (#527), the source being read once — CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source [renamed by #527: `CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_reading_the_source_itself`].
 - **Unverified scope limits (maintainer), no test:** a source returning one signer instance for two keys is excluded by the contract,
   not checked; a signer whose own self-test never completes is set aside at the deadline but never disposed — the ring never receives it.
@@ -2340,13 +2340,17 @@ and architect agents, and the PR's CodeQL, CodeScene and Copilot review; no High
 - A broken entry is dropped, never published nor due to sign, and the rest of the read is adopted, a deletion included. Closed — `A_revocation_is_not_blocked_by_a_broken_entry_in_the_same_read`,
   `A_read_reporting_a_per_entry_failure_drops_that_key_and_adopts_the_rest`, `A_reported_failure_is_never_the_key_due_to_sign_and_never_shortens_coverage`.
 - A read with no usable entry stops signing rather than keeping a deleted key. Closed — `A_read_listing_only_failures_stops_signing_and_unpublishes_the_deleted_key`.
-- Every file failure but a cancellation is that file's: permissions, key bag, unreadable public key, I/O, password source. Closed — `ReadAsync_reports_a_too_permissive_key_file_as_a_per_entry_failure_and_lists_the_rest`,
+- A file's own failure is reported against that file — permissions, key bag, unreadable public key, password source — and a cancellation still fails the read. Closed — `ReadAsync_reports_a_too_permissive_key_file_as_a_per_entry_failure_and_lists_the_rest`,
   `ReadAsync_reports_a_bundle_without_a_key_bag_as_a_per_entry_failure_and_lists_the_rest`, `ReadAsync_reports_a_certificate_whose_public_key_cannot_be_read_as_a_per_entry_failure_and_lists_the_rest`,
   `ReadAsync_reports_a_bundle_whose_password_source_fails_as_a_per_entry_failure_and_lists_the_rest`, `ReadAsync_lets_a_cancellation_from_one_bundle_fail_the_whole_read`;
   Windows — `ReadAsync_reports_a_certificate_without_a_private_key_as_a_per_entry_failure_and_lists_the_rest`.
 - A vault or store failure still fails the whole read; a reported version never opens a signer. Closed — `ReadAsync_still_throws_for_a_vault_failure_on_one_version_rather_than_reporting_it`,
+  `ReadAsync_recovers_on_retry_after_a_failed_read` (Windows store),
   `GetKeyMaterialAsync_never_reports_a_vault_failure_as_a_failure_of_the_versions_material`, `CreateSignerAsync_rejects_a_version_the_read_reported_as_a_failure`.
 - A reported failure names an exception type, never its message, a host password source's included. Closed — `ReadAsync_never_reports_a_configuration_failure_thrown_by_the_password_source_in_its_own_words`,
   `FromCertificate_reports_an_unreadable_public_key_as_invalid_public_key_naming_the_exception_type_not_its_message`.
 - **Accepted residuals:** (maintainer) every file failing at once stops signing — `A_read_listing_only_failures_stops_signing_and_unpublishes_the_deleted_key`.
-  (Agreed scope) a reported failure on the entry due to sign does not fail startup; the older key signs on — `A_reported_failure_is_never_the_key_due_to_sign_and_never_shortens_coverage`.
+  (Agreed scope) startup refuses a dropped key only when it is due to sign, and a reported failure has no dates, so it is never due and never refuses startup —
+  `A_reported_failure_is_never_the_key_due_to_sign_and_never_shortens_coverage`.
+  **Not covered:** a lock or I/O error on one file is reported by the same catch as the password-source case, but no test drives one; Unix file locks are advisory.
+  #527's residual "a provider's own per-key failure still fails `ReadAsync`" is closed: its cited test now proves a per-entry report.
