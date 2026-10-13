@@ -112,15 +112,7 @@ public sealed class SigningKeyRingHarness : IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfLessThan(by, TimeSpan.Zero);
 
         _clock.Advance(by);
-
-        // A transition may re-arm the timer due at once, starting another before it completes.
-        Task transition;
-        do
-        {
-            transition = Ring.LastTransition;
-            await transition.ConfigureAwait(false);
-        }
-        while (transition != Ring.LastTransition);
+        await Ring.LastTransition.ConfigureAwait(false);
     }
 
     /// <summary>
