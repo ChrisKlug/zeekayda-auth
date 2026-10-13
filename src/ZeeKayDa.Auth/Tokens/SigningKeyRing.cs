@@ -1029,7 +1029,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         {
             signer.Dispose();
         }
-        catch
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally swallowed: we are already unwinding a more important failure.
         }

@@ -138,7 +138,7 @@ public sealed class SigningKeyRingHarness : IAsyncDisposable
         {
             await ((IAsyncDisposable)ring).DisposeAsync().ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally swallowed: we are already unwinding a more important failure.
         }
