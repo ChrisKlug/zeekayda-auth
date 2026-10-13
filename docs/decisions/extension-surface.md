@@ -51,7 +51,9 @@ never the next one without a new core release.
 reuses core's POSIX `stat`/`lstat` interop rather than forking security-critical, ABI-fragile P/Invoke
 that has already needed a security fix once. The Windows provider reuses core's process-identity
 helper for access-denied diagnostics. The conformance kit needs to construct store keys so a third
-party can derive the fixtures from their own test project without any grant of their own. All three
+party can derive the fixtures from their own test project without any grant of their own, and to
+build the signing key ring for `SigningKeyRingHarness`, which is how any signing key source's tests,
+first-party or not, drive the ring over their source on a fake clock. All three
 ship in lockstep with core. The rule around them: **anything expressible through core's public surface
 must use it** — these are not a pattern to copy.
 
