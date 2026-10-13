@@ -41,6 +41,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **A signing key source's tests can drive the ring that reads it** (#929).
+  `SigningKeyRingHarness`, in `ZeeKayDa.Auth.TestKit`, starts a `SigningKeyRing` over any
+  `ISigningKeySource` on a `FakeTimeProvider` the test passes in. `AdvanceAsync(by)` moves the clock in
+  one jump and returns once the ring has caught up: at most one source read, then every handover due.
+  `ReadAsync()` moves it one `RefreshInterval`, so the ring reads exactly once. Disposing the harness
+  disposes the ring and, through it, the source. A provider's tests need no friend access to the core.
+
 - **In-memory clients can be bound from configuration** (#780).
   `AddInMemoryClients(IConfiguration section)`, in `ZeeKayDa.Auth.AspNetCore`, reads a `Confidential`
   and a `Public` child, each keyed by client id, and binds every client's keys onto

@@ -36,3 +36,9 @@ ZeeKayDa.Auth.TestKit.Stores.RefreshTokenBackingStoreConformanceTests.TryMarkCon
 ZeeKayDa.Auth.TestKit.Stores.RefreshTokenBackingStoreConformanceTests.TryMarkConsumedAsync_propagates_a_transport_fault_instead_of_swallowing_it() -> System.Threading.Tasks.Task!
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthTestingServiceCollectionExtensions
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthTestingServiceCollectionExtensions.AddZeeKayDaAuthCoreForTesting(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder!
+ZeeKayDa.Auth.TestKit.Signing.SigningKeyRingHarness
+ZeeKayDa.Auth.TestKit.Signing.SigningKeyRingHarness.AdvanceAsync(System.TimeSpan by) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Signing.SigningKeyRingHarness.DisposeAsync() -> System.Threading.Tasks.ValueTask
+ZeeKayDa.Auth.TestKit.Signing.SigningKeyRingHarness.ReadAsync() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.TestKit.Signing.SigningKeyRingHarness.Ring.get -> ZeeKayDa.Auth.Tokens.SigningKeyRing!
+static ZeeKayDa.Auth.TestKit.Signing.SigningKeyRingHarness.StartAsync(ZeeKayDa.Auth.Tokens.ISigningKeySource! source, Microsoft.Extensions.Time.Testing.FakeTimeProvider! clock, ZeeKayDa.Auth.Tokens.SigningKeyOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.TestKit.Signing.SigningKeyRingHarness!>!
