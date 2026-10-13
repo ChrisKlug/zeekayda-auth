@@ -68,7 +68,7 @@ public sealed class JwksEndpointTests
 
         public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
         {
             var previous = layout.IncludePrevious
                 ? new SourceKey(
@@ -87,7 +87,7 @@ public sealed class JwksEndpointTests
                     DateTimeOffset.UtcNow.AddHours(-1))
                 : null;
 
-            return Task.FromResult<IReadOnlyList<SourceKey>>([.. new[] { previous, current, next }.OfType<SourceKey>()]);
+            return Task.FromResult(new SourceKeyListing([.. new[] { previous, current, next }.OfType<SourceKey>()], []));
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -118,12 +118,12 @@ public sealed class JwksEndpointTests
     {
         public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<SourceKey>>(
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new SourceKeyListing(
             [
                 new SourceKey(new SourceKeyId("retired-key"), PublicKeyParameters.FromRsa(RetiredKey.ExportParameters(false)), DateTimeOffset.UtcNow.AddDays(-30)),
                 new SourceKey(new SourceKeyId("current-key"), PublicKeyParameters.FromRsa(SupersedingKey.ExportParameters(false)), DateTimeOffset.UtcNow.AddDays(-5)),
-            ]);
+            ], []));
 
         // A fresh private key instance: the ring owns and disposes what it is handed.
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -473,7 +473,7 @@ public sealed class JwksEndpointTests
                 });
         }
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
         {
             var publicKey = _rsa is not null
                 ? PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false))
@@ -481,7 +481,7 @@ public sealed class JwksEndpointTests
             var current = new SourceKey(
                 new SourceKeyId("current-key"), publicKey);
 
-            return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
+            return Task.FromResult(new SourceKeyListing([current], []));
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)

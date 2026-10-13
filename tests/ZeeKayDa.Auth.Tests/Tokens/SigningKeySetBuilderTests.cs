@@ -252,7 +252,7 @@ public sealed class SigningKeySetBuilderTests
         var signing = CreateRsaSourceKey("signing", notBefore: Now.AddDays(-10));
         var options = new SigningKeyOptions { LeadTime = LeadTime, RetainRetiredKeysFor = TimeSpan.MaxValue };
 
-        var set = SigningKeySetBuilder.Build([oldest, predecessor, signing], SigningAlgorithm.RS256, options).At(Now);
+        var set = SigningKeySetBuilder.Build(new SourceKeyListing([oldest, predecessor, signing], []), SigningAlgorithm.RS256, options).At(Now);
 
         set.Published.Should().HaveCount(3, "a saturated retention never retires a key");
     }
@@ -435,7 +435,7 @@ public sealed class SigningKeySetBuilderTests
         key.SourceId.Should().Be(current.Id);
         key.NotBefore.Should().Be(current.NotBefore);
         key.ExpiresAt.Should().Be(current.ExpiresAt);
-        timeline.Dropped.Should().ContainSingle().Which.Key.Id.Should().Be(broken.Id);
+        timeline.Dropped.Should().ContainSingle().Which.Id.Should().Be(broken.Id);
         timeline.Merged.Should().BeEmpty();
     }
 
@@ -760,7 +760,7 @@ public sealed class SigningKeySetBuilderTests
         var older = CreateRsaSourceKey("older", notBefore: Now.AddDays(-30));
         var due = CreateEcSourceKey("due", ECCurve.NamedCurves.nistP256, Now.AddDays(-5));
 
-        Timeline(older, due).DroppedKeyDueAt(Now)!.Key.Id.Should().Be(due.Id);
+        Timeline(older, due).DroppedKeyDueAt(Now)!.Id.Should().Be(due.Id);
     }
 
     [Fact]
@@ -787,6 +787,113 @@ public sealed class SigningKeySetBuilderTests
         Timeline(CreateRsaSourceKey("current", notBefore: Now.AddDays(-30))).CoverageCutShortTo().Should().BeNull();
     }
 
+    // ── Failures a source reports about one entry ────────────────────────────────────────────────
+
+    [Fact]
+    public void Build_folds_a_reported_failure_into_Dropped_without_a_key_and_builds_the_rest()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-10));
+        var reported = Reported("broken", "signing.file_signing.invalid_pem");
+
+        var timeline = Timeline(new SourceKeyListing([current], [reported]));
+
+        timeline.At(Now).Published.Select(k => k.SourceId).Should().Equal(current.Id);
+        var dropped = timeline.Dropped.Should().ContainSingle().Subject;
+        dropped.Id.Should().Be(reported.Id);
+        dropped.Key.Should().BeNull();
+        dropped.Failure.Should().Be(reported.Failure);
+    }
+
+    [Fact]
+    public void A_reported_failure_is_never_the_key_due_to_sign_and_never_shortens_coverage()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-30), expiresAt: Now.AddDays(20));
+
+        var timeline = Timeline(new SourceKeyListing([current], [Reported("broken", "signing.file_signing.invalid_pem")]));
+
+        timeline.DroppedKeyDueAt(Now).Should().BeNull("a failure has no dates to place it by");
+        timeline.CoverageCutShortTo().Should().BeNull("a failure has no expiry that could have outlived the usable keys");
+    }
+
+    [Fact]
+    public void Build_fails_with_duplicate_key_id_when_an_id_is_both_listed_and_reported_as_a_failure()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-10));
+
+        var act = () => Timeline(new SourceKeyListing([current], [Reported("current", "signing.file_signing.invalid_pem")]));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.duplicate_key_id");
+    }
+
+    [Fact]
+    public void Build_fails_with_duplicate_key_id_when_an_id_is_reported_as_a_failure_twice()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-10));
+
+        var act = () => Timeline(new SourceKeyListing(
+            [current], [Reported("broken", "signing.file_signing.invalid_pem"), Reported("broken", "signing.file_signing.invalid_pfx")]));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.duplicate_key_id");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Build_fails_with_empty_key_id_when_a_reported_failure_has_an_empty_id(string emptyId)
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-10));
+
+        var act = () => Timeline(new SourceKeyListing([current], [Reported(emptyId, "signing.file_signing.invalid_pem")]));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.empty_key_id");
+    }
+
+    [Fact]
+    public void Build_fails_with_null_key_when_a_reported_failure_is_null()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-10));
+
+        var act = () => Timeline(new SourceKeyListing([current], [null!]));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.null_key");
+    }
+
+    [Fact]
+    public void Build_fails_with_null_key_when_a_reported_failure_carries_no_failure()
+    {
+        var current = CreateRsaSourceKey("current", notBefore: Now.AddDays(-10));
+
+        var act = () => Timeline(new SourceKeyListing([current], [new SourceKeyFailure(new SourceKeyId("broken"), null!)]));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.null_key");
+    }
+
+    [Fact]
+    public void Build_throws_the_reported_failures_rather_than_no_keys_when_the_source_lists_only_failures()
+    {
+        var act = () => Timeline(new SourceKeyListing(
+            [], [Reported("first", "signing.file_signing.invalid_pem"), Reported("second", "signing.file_signing.file_too_permissive")]));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>().Which.AggregatedFailures.Select(f => f.Code)
+            .Should().BeEquivalentTo(["signing.file_signing.invalid_pem", "signing.file_signing.file_too_permissive"]);
+    }
+
+    [Fact]
+    public void Build_throws_a_reported_failure_beside_a_dropped_key_when_no_key_is_usable()
+    {
+        var weak = CreateRsaSourceKey("weak", keySize: 1024, notBefore: Now.AddDays(-10));
+
+        var act = () => Timeline(new SourceKeyListing([weak], [Reported("broken", "signing.file_signing.invalid_pem")]));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>().Which.AggregatedFailures.Select(f => f.Code)
+            .Should().BeEquivalentTo(["signing.rsa_key_too_small", "signing.file_signing.invalid_pem"]);
+    }
+
     [Fact]
     public void SettingAside_refuses_to_set_aside_the_last_key_that_can_sign()
     {
@@ -800,12 +907,18 @@ public sealed class SigningKeySetBuilderTests
     private static SigningKeyOptions Options() => new() { LeadTime = LeadTime, RetainRetiredKeysFor = Retention };
 
     private static SigningKeyTimeline Timeline(params SourceKey[] keys)
-        => SigningKeySetBuilder.Build(keys, SigningAlgorithm.RS256, Options());
+        => SigningKeySetBuilder.Build(new SourceKeyListing(keys, []), SigningAlgorithm.RS256, Options());
+
+    private static SigningKeyTimeline Timeline(SourceKeyListing listing)
+        => SigningKeySetBuilder.Build(listing, SigningAlgorithm.RS256, Options());
+
+    private static SourceKeyFailure Reported(string id, string code)
+        => new(new SourceKeyId(id), new ZeeKayDaConfigurationFailure(code, "The entry could not be loaded."));
 
     private static SigningKeySet Build(params SourceKey[] keys) => Timeline(keys).At(Now);
 
     private static SigningKeySet BuildAs(SigningAlgorithm algorithm, params SourceKey[] keys)
-        => SigningKeySetBuilder.Build(keys, algorithm, Options()).At(Now);
+        => SigningKeySetBuilder.Build(new SourceKeyListing(keys, []), algorithm, Options()).At(Now);
 
     private static PublicKeyParameters CreateRsaPublicKey()
     {

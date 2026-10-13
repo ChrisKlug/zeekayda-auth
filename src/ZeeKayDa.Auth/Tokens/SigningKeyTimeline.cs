@@ -84,8 +84,9 @@ internal sealed class SigningKeyTimeline
     internal ImmutableList<SigningKey> SetAside { get; }
 
     /// <summary>
-    /// Gets the listed keys whose own dates or material were unusable. They are neither published nor
-    /// ever sign; the rules carry on with the keys around them.
+    /// Gets the listed keys whose own dates or material were unusable, and the entries the source
+    /// reported as failures. They are neither published nor ever sign; the rules carry on with the
+    /// keys around them.
     /// </summary>
     internal ImmutableArray<DroppedKey> Dropped { get; }
 
@@ -170,13 +171,16 @@ internal sealed class SigningKeyTimeline
     /// <summary>
     /// The dropped key the rules would have chosen to sign at <paramref name="now"/> had it been
     /// usable, or <see langword="null"/> when the key due now is a usable one. Startup refuses the
-    /// first; a running ring skips it and the key before it signs on.
+    /// first; a running ring skips it and the key before it signs on. A failure the source reported
+    /// has no dates, so it is never the key due.
     /// </summary>
     internal DroppedKey? DroppedKeyDueAt(DateTimeOffset now)
     {
         var listed = _oldestFirst
             .Select(key => new ListedKey(key.NotBefore, key.ExpiresAt, key.SourceId.Value, Dropped: null))
-            .Concat(Dropped.Select(drop => new ListedKey(drop.Key.NotBefore, drop.Key.ExpiresAt, drop.Key.Id.Value, drop)))
+            .Concat(Dropped
+                .Where(drop => drop.Key is not null)
+                .Select(drop => new ListedKey(drop.Key!.NotBefore, drop.Key.ExpiresAt, drop.Id.Value, drop)))
             .Where(key => key.ExpiresAt > now)
             .OrderBy(key => key.NotBefore)
             .ThenBy(key => key.Id, StringComparer.Ordinal)
@@ -192,11 +196,12 @@ internal sealed class SigningKeyTimeline
     /// </summary>
     internal DateTimeOffset? CoverageCutShortTo()
     {
-        if (Dropped.IsEmpty)
+        var droppedExpiries = Dropped.Where(drop => drop.Key is not null).Select(drop => drop.Key!.ExpiresAt).ToList();
+        if (droppedExpiries.Count == 0)
             return null;
 
         var usableUntil = _oldestFirst.Max(key => key.ExpiresAt);
-        return Dropped.Max(drop => drop.Key.ExpiresAt) > usableUntil ? usableUntil : null;
+        return droppedExpiries.Max() > usableUntil ? usableUntil : null;
     }
 
     /// <summary>

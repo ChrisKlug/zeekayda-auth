@@ -21,14 +21,14 @@ public sealed class ThirdPartySigningKeySourceRegistrationTests
     {
         public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
         {
             using var rsa = RSA.Create(2048);
             var current = new SourceKey(
                 new SourceKeyId("current"),
                 PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: DateTimeOffset.UtcNow.AddDays(90));
 
-            return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
+            return Task.FromResult(new SourceKeyListing([current], []));
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -41,7 +41,7 @@ public sealed class ThirdPartySigningKeySourceRegistrationTests
     {
         public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)

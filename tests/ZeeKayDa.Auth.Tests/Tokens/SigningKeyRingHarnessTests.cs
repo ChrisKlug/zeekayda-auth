@@ -192,8 +192,8 @@ public sealed class SigningKeyRingHarnessTests
 
         public SigningAlgorithm Algorithm => SigningAlgorithm.ES256;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) =>
-            Task.FromException<IReadOnlyList<SourceKey>>(new TimeoutException("the vault did not answer"));
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default) =>
+            Task.FromException<SourceKeyListing>(new TimeoutException("the vault did not answer"));
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("No key was listed.");

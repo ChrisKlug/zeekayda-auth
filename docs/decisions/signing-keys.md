@@ -21,8 +21,8 @@ unexpired key, with a Warning. Every unexpired key is published, an older one un
 `LeadTime + RetainRetiredKeysFor` old, an expired one until `RetainRetiredKeysFor` after expiry, the signing key
 always. `NotBefore` orders keys and starts the clock; no relying party sees it, so it is no validity gate. Retention
 defaults to two days, or the longer token lifetime plus clock skew, so a replica whose handover is slow or failed
-signs on safely; lower warns. Ties go to the greater source id. A key with bad material or dates is dropped (Warning,
-Degraded). When every key has expired the last to expire signs on (Error, Unhealthy): a JWK has no dates (RFC 7517 §4).
+signs on safely; lower warns. Ties go to the greater source id. A key with bad material or dates, or a reported
+`SourceKeyFailure`, is dropped (Warning, Degraded). When every key has expired the last to expire signs on (Error, Unhealthy): a JWK has no dates (RFC 7517 §4).
 
 **The ring re-reads its source every `RefreshInterval` (default 5 min, min 1)**, so `LeadTime ≥ CacheMaxAge +
 RefreshInterval`. A read that throws or exceeds a minute keeps the last list (Error, Degraded); no read starts while one
@@ -36,7 +36,7 @@ predecessor is superseded, it never takes over (in memory: a restarted replica a
 `Files`/`Certificates` with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`.
 A certificate's `NotBefore` is its CA issuance date, so one listed over a lead time later signs as soon as it is read.
 Listing checks every entry can sign without importing a key: PFX key bags, PEM key files (permissions) and blocks,
-Windows `HasPrivateKey`. No read lock or cache.
+Windows `HasPrivateKey`. One that cannot is a `SourceKeyFailure`, not a throw, so it cannot block a revocation. No read lock or cache.
 
 **The framework derives every `kid`; a provider cannot supply one.** The ring computes an RFC 7638 JWK thumbprint over
 the public key. A provider supplies only its internal `SourceKeyId`, so it cannot leak a vault URI, certificate

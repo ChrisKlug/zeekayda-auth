@@ -117,43 +117,55 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
     {
         ArgumentException.ThrowIfNullOrEmpty(version);
 
+        JsonWebKey key;
         try
         {
             var response = await _keyClient.GetKeyAsync(_keyName, version, cancellationToken).ConfigureAwait(false);
-            return MapJsonWebKey(response.Value.Key);
+            key = response.Value.Key;
         }
         catch (RequestFailedException ex)
         {
             throw MapRequestFailedException(ex);
         }
-        catch (ZeeKayDaConfigurationException)
-        {
-            // Re-throw before re-classifying. MapJsonWebKey raises its own well-formed failure for an
-            // unsupported key type; without this arm the broad catch below flattens it into a generic
-            // startup_failure and sends the operator to investigate a vault that is working fine.
-            // The mapping stays inside the try so that a malformed JWK — where ToRSA or ToECDsa
-            // throws — is still mapped to a stable failure code rather than escaping as a raw
-            // CryptographicException.
-            throw;
-        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             throw MapUnexpectedFailure(ex);
         }
+
+        return MapJsonWebKey(key, version);
     }
 
-    private static (AsymmetricAlgorithm, SigningKeyType) MapJsonWebKey(JsonWebKey key)
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// <paramref name="key"/>'s type is unsupported, or its material cannot be imported — a problem
+    /// with this one version, never with the vault.
+    /// </exception>
+    private (AsymmetricAlgorithm, SigningKeyType) MapJsonWebKey(JsonWebKey key, string version)
     {
-        if (key.KeyType == KeyType.Rsa || key.KeyType == KeyType.RsaHsm)
-            return (key.ToRSA(includePrivateParameters: false), SigningKeyType.Rsa);
+        if (key.KeyType != KeyType.Rsa && key.KeyType != KeyType.RsaHsm && key.KeyType != KeyType.Ec && key.KeyType != KeyType.EcHsm)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.unsupported_key_type",
+                    $"Key Vault key type '{key.KeyType}' is not supported. Only RSA, RSA-HSM, EC, and EC-HSM keys can be used for JWT signing."));
+        }
 
-        if (key.KeyType == KeyType.Ec || key.KeyType == KeyType.EcHsm)
-            return (key.ToECDsa(includePrivateParameters: false), SigningKeyType.Ec);
-
-        throw new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure(
-                "signing.azure_key_vault.unsupported_key_type",
-                $"Key Vault key type '{key.KeyType}' is not supported. Only RSA, RSA-HSM, EC, and EC-HSM keys can be used for JWT signing."));
+        try
+        {
+            return key.KeyType == KeyType.Rsa || key.KeyType == KeyType.RsaHsm
+                ? (key.ToRSA(includePrivateParameters: false), SigningKeyType.Rsa)
+                : (key.ToECDsa(includePrivateParameters: false), SigningKeyType.Ec);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The exception TYPE is named, never ex.Message: it can echo the material it failed to parse.
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.invalid_key_material",
+                    $"Version '{version}' of Key Vault key '{_keyName}' in vault '{_vaultUri}' carries key " +
+                    $"material that could not be imported: {ex.GetType().FullName}. See the inner exception " +
+                    "for the root cause."),
+                ex);
+        }
     }
 
     private ZeeKayDaConfigurationException MapRequestFailedException(RequestFailedException ex) =>

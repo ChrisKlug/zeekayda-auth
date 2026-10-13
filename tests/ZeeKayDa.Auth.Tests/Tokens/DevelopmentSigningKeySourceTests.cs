@@ -135,9 +135,19 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
         set.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ReadAsync_reports_no_per_entry_failures()
+    {
+        using var sut = BuildEphemeral();
+
+        var listing = await sut.ReadAsync(TestContext.Current.CancellationToken);
+
+        listing.Failures.Should().BeEmpty();
     }
 
     [Fact]
@@ -153,7 +163,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
         set.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
         using var rsa = RSA.Create();
@@ -168,7 +178,7 @@ public sealed class DevelopmentSigningKeySourceTests
         // is taken only when PersistToDirectory is set.
         using var sut = BuildEphemeral(new ThrowOnAnyUseFileSystem());
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
         set.Should().ContainSingle();
     }
@@ -178,7 +188,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
         set.Single().ExpiresAt.Should().Be(DateTimeOffset.MaxValue,
             "a development key's lifetime is the process's, not a certificate's");
@@ -189,7 +199,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
         set.Single().Id.Should().Be(new SourceKeyId("development"));
     }
@@ -201,7 +211,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
-        var set = await sut.ReadAsync(ct);
+        var set = (await sut.ReadAsync(ct)).Keys;
 
         using var signer = await sut.CreateSignerAsync(set.Single().Id, ct);
         var signature = await signer.SignAsync("payload"u8.ToArray(), ct);
@@ -216,7 +226,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
-        var set = await sut.ReadAsync(ct);
+        var set = (await sut.ReadAsync(ct)).Keys;
         using var first = await sut.CreateSignerAsync(set.Single().Id, ct);
 
         var act = () => sut.CreateSignerAsync(set.Single().Id, ct);
@@ -307,12 +317,12 @@ public sealed class DevelopmentSigningKeySourceTests
         byte[] firstModulus;
         using (var first = BuildPersisted(fs))
         {
-            var set = await first.ReadAsync(ct);
+            var set = (await first.ReadAsync(ct)).Keys;
             firstModulus = set.Single().PublicKey.RsaPublicParameters!.Value.Modulus!;
         }
 
         using var second = BuildPersisted(fs);
-        var secondSet = await second.ReadAsync(ct);
+        var secondSet = (await second.ReadAsync(ct)).Keys;
 
         secondSet.Single().PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().Equal(firstModulus,
@@ -325,7 +335,7 @@ public sealed class DevelopmentSigningKeySourceTests
         using var winner = RSA.Create(3072);
         using var sut = BuildPersisted(new LosesTheCreateRaceFileSystem(winner.ExportRSAPrivateKeyPem()));
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
         set.Single().PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().Equal(winner.ExportParameters(false).Modulus,
@@ -354,7 +364,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
-        var set = await sut.ReadAsync(ct);
+        var set = (await sut.ReadAsync(ct)).Keys;
         using var signer = await sut.CreateSignerAsync(set.Single().Id, ct);
 
         sut.Dispose();
@@ -371,8 +381,8 @@ public sealed class DevelopmentSigningKeySourceTests
         using var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
 
-        var first = await sut.ReadAsync(ct);
-        var second = await sut.ReadAsync(ct);
+        var first = (await sut.ReadAsync(ct)).Keys;
+        var second = (await sut.ReadAsync(ct)).Keys;
 
         second.Single().PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().Equal(first.Single().PublicKey.RsaPublicParameters!.Value.Modulus,
@@ -384,7 +394,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
-        var set = await sut.ReadAsync(ct);
+        var set = (await sut.ReadAsync(ct)).Keys;
         await sut.ReadAsync(ct);
 
         using var signer = await sut.CreateSignerAsync(set.Single().Id, ct);
@@ -405,14 +415,14 @@ public sealed class DevelopmentSigningKeySourceTests
             Enumerable.Range(0, 8).Select(_ => Task.Run(async () => await sut.ReadAsync(ct), ct)));
 
         var moduli = sets
-            .Select(set => Convert.ToHexString(set.Single().PublicKey.RsaPublicParameters!.Value.Modulus!))
+            .Select(set => Convert.ToHexString(set.Keys.Single().PublicKey.RsaPublicParameters!.Value.Modulus!))
             .Distinct();
         moduli.Should().ContainSingle("concurrent reads must not each mint their own key");
 
-        using var signer = await sut.CreateSignerAsync(sets[0].Single().Id, ct);
+        using var signer = await sut.CreateSignerAsync(sets[0].Keys.Single().Id, ct);
         var signature = await signer.SignAsync("payload"u8.ToArray(), ct);
         SigningAlgorithms.Verify(
-                SigningAlgorithm.RS256, sets[0].Single().PublicKey, "payload"u8, signature.Span)
+                SigningAlgorithm.RS256, sets[0].Keys.Single().PublicKey, "payload"u8, signature.Span)
             .Should().BeTrue();
     }
 
@@ -512,7 +522,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildForEnvironment(environmentName, allowed: null);
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
         set.Should().ContainSingle();
     }
@@ -522,7 +532,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildForEnvironment("Staging", allowed: ["Development", "Staging"]);
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
         set.Should().ContainSingle();
     }

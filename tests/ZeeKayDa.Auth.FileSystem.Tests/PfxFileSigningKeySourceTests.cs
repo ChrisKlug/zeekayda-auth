@@ -60,7 +60,7 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Should().ContainSingle();
         keySet.Single().Id.Should().Be(new SourceKeyId(path));
@@ -79,7 +79,7 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Single().NotBefore.Should().Be(new DateTimeOffset(certificate.NotBefore));
         keySet.Single().ExpiresAt.Should().Be(new DateTimeOffset(certificate.NotAfter));
@@ -93,7 +93,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
         var sut = BuildSource(new PfxFile(path, Password()));
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         var signingInput = "header.payload"u8.ToArray();
@@ -121,7 +121,7 @@ public sealed class PfxFileSigningKeySourceTests
         var sut = BuildSource(
             [new PfxFile(firstPath, Password("first-password")), new PfxFile(secondPath, Password())]);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Should().HaveCount(2);
         keySet.Should().AllSatisfy(key =>
@@ -141,7 +141,7 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WriteBytes("current.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Should().ContainSingle();
         var act = async () => await sut.CreateSignerAsync(keySet.Single().Id, ct);
@@ -161,11 +161,28 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WritePfxFile("keyless.pfx", publicOnly, CorrectPassword);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
-        exception.Which.Message.Should().Contain("carries no private key").And.Contain(path);
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
+        failure.Message.Should().Contain("carries no private key").And.Contain(path);
+    }
+
+    [Fact]
+    public async Task ReadAsync_reports_a_bundle_without_a_key_bag_as_a_per_entry_failure_and_lists_the_rest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var goodCertificate = CreateRsaCertificate();
+        using var brokenCertificate = CreateRsaCertificate();
+        using var publicOnly = X509CertificateLoader.LoadCertificate(brokenCertificate.RawData);
+        var goodPath = tempDir.WritePfxFile("good.pfx", goodCertificate, CorrectPassword);
+        var brokenPath = tempDir.WritePfxFile("keyless.pfx", publicOnly, CorrectPassword);
+        var sut = BuildSource([new PfxFile(goodPath, Password()), new PfxFile(brokenPath, Password())]);
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.Keys.Select(k => k.Id).Should().Equal(new SourceKeyId(goodPath));
+        listing.ShouldReportOnly(brokenPath, "signing.file_signing.invalid_pfx");
     }
 
     // ── Integrity: the password must actually authenticate the bundle ───────────────────────────
@@ -184,11 +201,10 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WriteBytes("current.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password("a completely different password")));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
-        exception.Which.Message.Should().Contain("integrity check");
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
+        failure.Message.Should().Contain("integrity check");
     }
 
     [Fact]
@@ -201,7 +217,7 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WriteBytes("current.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Single().Id.Should().Be(new SourceKeyId(path));
         keySet.Single().PublicKey.RsaPublicParameters.Should().NotBeNull();
@@ -220,11 +236,10 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WriteBytes("current.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
-        exception.Which.Message.Should().Contain("integrity mode");
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
+        failure.Message.Should().Contain("integrity mode");
     }
 
     [Fact]
@@ -242,11 +257,10 @@ public sealed class PfxFileSigningKeySourceTests
         var nextPath = tempDir.WriteBytes("next.pfx", nextBundle);
         var sut = BuildSource([new PfxFile(currentPath, Password()), new PfxFile(nextPath, Password("wrong"))]);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
-        exception.Which.Message.Should().Contain(nextPath);
+        var failure = listing.ShouldReportOnly(nextPath, "signing.file_signing.invalid_pfx");
+        failure.Message.Should().Contain(nextPath);
     }
 
     // ── Chain bundles: the signing certificate, not the first one ───────────────────────────────
@@ -264,7 +278,7 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WriteBytes("current.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Single().PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().BeEquivalentTo(signingPublicKey.Modulus, "the leaf's key signs, not the CA's");
@@ -286,7 +300,7 @@ public sealed class PfxFileSigningKeySourceTests
             CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WriteBytes("current.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password()));
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         var signingInput = "header.payload"u8.ToArray();
@@ -307,11 +321,10 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WriteBytes("current.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
-        exception.Which.Message.Should().Contain("nothing identifying which one signs");
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
+        failure.Message.Should().Contain("nothing identifying which one signs");
     }
 
     [Fact]
@@ -326,11 +339,10 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WriteBytes("current.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
-        exception.Which.Message.Should().Contain("ambiguous");
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
+        failure.Message.Should().Contain("ambiguous");
     }
 
     [Fact]
@@ -346,7 +358,7 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WriteBytes("current.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Single().PublicKey.RsaPublicParameters.Should().NotBeNull();
     }
@@ -364,11 +376,10 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WriteBytes("stripped.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
-        exception.Which.Message.Should().Contain("carries no private key");
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
+        failure.Message.Should().Contain("carries no private key");
     }
 
     [Fact]
@@ -383,10 +394,9 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WriteBytes("current.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+        listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
     }
 
     [Fact]
@@ -399,11 +409,10 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WriteBytes("current.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
-        exception.Which.Message.Should().Contain("not among the certificates it carries");
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
+        failure.Message.Should().Contain("not among the certificates it carries");
     }
 
     // ── Several listed files, and every read hits the disk ───────────────────────────────────────
@@ -422,7 +431,7 @@ public sealed class PfxFileSigningKeySourceTests
         var sut = BuildSource(
             [new PfxFile(firstPath, Password()), new PfxFile(secondPath, Password()), new PfxFile(thirdPath, Password())]);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Select(k => k.Id.Value).Should().BeEquivalentTo([firstPath, secondPath, thirdPath]);
     }
@@ -438,7 +447,7 @@ public sealed class PfxFileSigningKeySourceTests
         await sut.ReadAsync(ct);
         File.Delete(path);
 
-        var keys = await sut.ReadAsync(ct);
+        var keys = (await sut.ReadAsync(ct)).Keys;
 
         keys.Should().BeEmpty();
     }
@@ -453,10 +462,10 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var first = await sut.ReadAsync(ct);
+        var first = (await sut.ReadAsync(ct)).Keys;
         File.Delete(path);
         tempDir.WritePfxFile("current.pfx", replacement, CorrectPassword);
-        var second = await sut.ReadAsync(ct);
+        var second = (await sut.ReadAsync(ct)).Keys;
 
         second.Single().PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().Equal(replacement.GetRSAPublicKey()!.ExportParameters(false).Modulus)
@@ -473,13 +482,13 @@ public sealed class PfxFileSigningKeySourceTests
         var missingPath = tempDir.GetPath("does-not-exist.pfx");
         var sut = BuildSource(new PfxFile(missingPath, Password()));
 
-        var keys = await sut.ReadAsync(ct);
+        var keys = (await sut.ReadAsync(ct)).Keys;
 
         keys.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task ReadAsync_throws_for_an_incorrect_password_and_never_leaks_it()
+    public async Task ReadAsync_reports_an_incorrect_password_as_a_per_entry_failure_and_never_leaks_it()
     {
         const string wrongPassword = "hunter2-is-not-the-password";
         var ct = TestContext.Current.CancellationToken;
@@ -488,15 +497,14 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
         var sut = BuildSource(new PfxFile(path, Password(wrongPassword)));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
-        exception.Which.Message.Should().NotContain(wrongPassword).And.NotContain(CorrectPassword);
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
+        failure.Message.Should().NotContain(wrongPassword).And.NotContain(CorrectPassword);
     }
 
     [Fact]
-    public async Task ReadAsync_throws_for_an_incorrect_password_on_any_listed_file()
+    public async Task ReadAsync_reports_an_incorrect_password_on_any_listed_file_as_a_per_entry_failure()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -506,15 +514,14 @@ public sealed class PfxFileSigningKeySourceTests
         var nextPath = tempDir.WritePfxFile("next.pfx", nextCertificate, CorrectPassword);
         var sut = BuildSource([new PfxFile(currentPath, Password()), new PfxFile(nextPath, Password("wrong"))]);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
-        exception.Which.Message.Should().Contain(nextPath);
+        var failure = listing.ShouldReportOnly(nextPath, "signing.file_signing.invalid_pfx");
+        failure.Message.Should().Contain(nextPath);
     }
 
     [Fact]
-    public async Task ReadAsync_throws_for_an_empty_password_when_the_bundle_has_one()
+    public async Task ReadAsync_reports_an_empty_password_when_the_bundle_has_one_as_a_per_entry_failure()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -522,31 +529,29 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
         var sut = BuildSource(new PfxFile(path, Password(string.Empty)));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
+        listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
     }
 
     [Fact]
-    public async Task ReadAsync_throws_when_the_file_is_not_a_PKCS12_bundle_at_all()
+    public async Task ReadAsync_reports_a_file_that_is_not_a_PKCS12_bundle_as_a_per_entry_failure()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         var path = tempDir.WriteTextFile("garbage.pfx", "this is definitely not a PKCS#12 bundle");
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pfx");
-        exception.Which.Message.Should().Contain(path);
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
+        failure.Message.Should().Contain(path);
     }
 
     // ── Permission enforcement ───────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_when_the_file_is_broader_than_0600_on_Unix()
+    public async Task ReadAsync_reports_a_file_broader_than_0600_on_Unix_as_a_per_entry_failure()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "0600-mode enforcement is the Unix permission model.");
 
@@ -557,14 +562,13 @@ public sealed class PfxFileSigningKeySourceTests
         tempDir.MakeTooPermissive(path);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+        listing.ShouldReportOnly(path, "signing.file_signing.file_too_permissive");
     }
 
     [Fact]
-    public async Task ReadAsync_throws_when_the_ACL_grants_a_broad_principal_on_Windows()
+    public async Task ReadAsync_reports_a_broad_principal_ACL_on_Windows_as_a_per_entry_failure()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "broad-principal ACL enforcement is the Windows permission model.");
 
@@ -575,10 +579,9 @@ public sealed class PfxFileSigningKeySourceTests
         tempDir.MakeTooPermissive(path);
         var sut = BuildSource(new PfxFile(path, Password()));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+        listing.ShouldReportOnly(path, "signing.file_signing.file_too_permissive");
     }
 
     [Fact]
@@ -609,16 +612,15 @@ public sealed class PfxFileSigningKeySourceTests
         tempDir.MakeTooPermissive(previousPath);
         var sut = BuildSource([new PfxFile(currentPath, Password()), new PfxFile(previousPath, Password())]);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+        listing.ShouldReportOnly(previousPath, "signing.file_signing.file_too_permissive");
     }
 
     // ── Symlink rejection ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_when_the_configured_path_is_a_symlink()
+    public async Task ReadAsync_reports_a_symlinked_configured_path_as_a_per_entry_failure()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -638,10 +640,9 @@ public sealed class PfxFileSigningKeySourceTests
 
         var sut = BuildSource(new PfxFile(symlinkPath, Password()));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.symlink_detected");
+        listing.ShouldReportOnly(symlinkPath, "signing.file_signing.symlink_detected");
     }
 
     // ── EC certificates ──────────────────────────────────────────────────────────────────────────
@@ -655,7 +656,7 @@ public sealed class PfxFileSigningKeySourceTests
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
         var sut = BuildSource(new PfxFile(path, Password()), algorithm: SigningAlgorithm.ES256);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Ec);
         keySet.Single().PublicKey.EcPublicParameters.Should().NotBeNull();
@@ -670,7 +671,7 @@ public sealed class PfxFileSigningKeySourceTests
         using var certificate = TestCertificateFactory.CreateEcSelfSigned("ec-test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
         var sut = BuildSource(new PfxFile(path, Password()), algorithm: SigningAlgorithm.ES256);
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         var signingInput = "header.payload"u8.ToArray();
@@ -777,13 +778,17 @@ public sealed class PfxFileSigningKeySourceTests
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        var path = tempDir.WriteBytes("current.pfx", [0x01, 0x02, 0x03, 0x04]);
+        byte[] bytes = [0x01, 0x02, 0x03, 0x04];
+        var path = tempDir.WriteBytes("current.pfx", bytes);
         var sut = BuildSource(new PfxFile(path, Password()));
+        var parserFailure = Record.Exception(() => X509CertificateLoader.LoadPkcs12(bytes, CorrectPassword));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        AssertNamesTypeWithoutCopyingMessage(exception.Which);
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
+        parserFailure.Should().NotBeNull();
+        failure.Message.Should().Contain(parserFailure!.GetType().FullName);
+        failure.Message.Should().NotContain(parserFailure.Message);
     }
 
     [Fact]

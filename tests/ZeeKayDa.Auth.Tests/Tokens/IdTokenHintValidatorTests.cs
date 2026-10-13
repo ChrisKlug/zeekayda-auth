@@ -45,8 +45,8 @@ public sealed class IdTokenHintValidatorTests
     {
         public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<SourceKey>>([RsaSourceKey("current", rsa)]);
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new SourceKeyListing([RsaSourceKey("current", rsa)], []));
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {

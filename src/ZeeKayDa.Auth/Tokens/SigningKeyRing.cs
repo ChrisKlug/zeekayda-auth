@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Logging;
@@ -351,18 +352,18 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
 
     private async Task InitializeCoreAsync(CancellationToken cancellationToken)
     {
-        var sourceKeys = await _source.ReadAsync(cancellationToken).ConfigureAwait(false);
-        if (sourceKeys is null)
+        var listing = await _source.ReadAsync(cancellationToken).ConfigureAwait(false);
+        if (IsNull(listing))
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.null_source_key_set",
-                    "The signing key source's ReadAsync returned null. ISigningKeySource.ReadAsync " +
-                    "must never return null."));
+                    "The signing key source's ReadAsync returned null, or a listing whose Keys or " +
+                    "Failures is null. ISigningKeySource.ReadAsync must never return either."));
         }
 
         _algorithm = _source.Algorithm;
-        var timeline = SigningKeySetBuilder.Build(sourceKeys, _algorithm, _options);
+        var timeline = SigningKeySetBuilder.Build(listing, _algorithm, _options);
         var now = _timeProvider.GetUtcNow();
         _nextReadAt = TokenLifetimes.ExpiresAt(now, _options.RefreshInterval);
         if (timeline.DroppedKeyDueAt(now) is { } droppedSigningKey)
@@ -503,10 +504,10 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             return;
         }
 
-        IReadOnlyList<SourceKey>? sourceKeys;
+        SourceKeyListing? listing;
         try
         {
-            sourceKeys = await ReadSourceAsync().ConfigureAwait(false);
+            listing = await ReadSourceAsync().ConfigureAwait(false);
         }
         catch (Exception ex) when (!_shutdown.IsCancellationRequested)
         {
@@ -514,7 +515,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             return;
         }
 
-        if (sourceKeys is null)
+        if (IsNull(listing))
         {
             KeepLastList("signing.null_source_key_set", failure: null);
             return;
@@ -526,7 +527,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         SigningKeyTimeline timeline;
         try
         {
-            timeline = SigningKeySetBuilder.Build(sourceKeys, _algorithm, _options);
+            timeline = SigningKeySetBuilder.Build(listing, _algorithm, _options);
         }
         catch (ZeeKayDaConfigurationException ex)
         {
@@ -560,7 +561,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     private void RecordDroppedKeys(SigningKeyTimeline timeline)
     {
         foreach (var drop in timeline.Dropped)
-            _failed.Add(drop.Key.Id);
+            _failed.Add(drop.Id);
     }
 
     private void LogDroppedKeySkipped(DroppedKey dropped, SigningKey signsOn) =>
@@ -568,7 +569,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             "Key {SourceKeyId} is due to sign, but it was dropped: [{FailureCode}] {Reason} Key {Kid} ({SigningSourceKeyId}) " +
             "signs in its place. Fix the key; the next read tries it again, unless the key it would replace is " +
             "superseded by then, when only a fresh key can take over.",
-            dropped.Key.Id.Value, dropped.Failure.Code, dropped.Failure.Message, signsOn.Kid, signsOn.SourceId.Value);
+            dropped.Id.Value, dropped.Failure.Code, dropped.Failure.Message, signsOn.Kid, signsOn.SourceId.Value);
 
     /// <summary>
     /// The state once <paramref name="timeline"/> is adopted, publishing its keys at once rather than
@@ -631,7 +632,11 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         return new SigningKeySet(_algorithm, signingKey, withSigner);
     }
 
-    private async Task<IReadOnlyList<SourceKey>?> ReadSourceAsync()
+    /// <summary>Whether <paramref name="listing"/>, or either of its lists, is null — a contract breach a source can still commit.</summary>
+    private static bool IsNull([NotNullWhen(false)] SourceKeyListing? listing) =>
+        listing?.Keys is null || listing.Failures is null;
+
+    private async Task<SourceKeyListing?> ReadSourceAsync()
     {
         using var abandon = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
 
@@ -934,13 +939,13 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// <summary>Warns about each key dropped now that <paramref name="previous"/> had not already dropped.</summary>
     private void WarnAboutDroppedKeys(SigningKeyTimeline timeline, SigningKeyTimeline? previous)
     {
-        var known = previous?.Dropped.Select(drop => drop.Key.Id.Value).ToHashSet(StringComparer.Ordinal) ?? [];
-        var fresh = timeline.Dropped.Where(drop => !known.Contains(drop.Key.Id.Value)).ToList();
+        var known = previous?.Dropped.Select(drop => drop.Id.Value).ToHashSet(StringComparer.Ordinal) ?? [];
+        var fresh = timeline.Dropped.Where(drop => !known.Contains(drop.Id.Value)).ToList();
         foreach (var drop in fresh)
         {
             _logger.LogWarning(
                 "Signing key {SourceKeyId} was dropped and is neither published nor used to sign: [{FailureCode}] {Reason}",
-                drop.Key.Id.Value, drop.Failure.Code, drop.Failure.Message);
+                drop.Id.Value, drop.Failure.Code, drop.Failure.Message);
         }
 
         if (fresh.Count > 0 && timeline.CoverageCutShortTo() is { } usableUntil)

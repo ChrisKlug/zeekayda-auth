@@ -38,20 +38,29 @@ internal sealed class PfxFileSigningKeySource(
     public SigningAlgorithm Algorithm => _options.Value.Algorithm;
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
     {
         var options = _options.Value;
         var keys = new List<SourceKey>(options.Files.Count);
+        var failures = new List<SourceKeyFailure>();
 
         foreach (var file in options.Files)
         {
-            // A deleted certificate file is no longer listed: deleting it revokes the key.
-            using var certificate = await LoadPublicCertificateAsync(file, cancellationToken).ConfigureAwait(false);
-            if (certificate is not null)
-                keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(file.Path)));
+            var id = new SourceKeyId(file.Path);
+            try
+            {
+                // A deleted certificate file is no longer listed: deleting it revokes the key.
+                using var certificate = await LoadPublicCertificateAsync(file, cancellationToken).ConfigureAwait(false);
+                if (certificate is not null)
+                    keys.Add(SourceKey.FromCertificate(certificate, id));
+            }
+            catch (ZeeKayDaConfigurationException ex)
+            {
+                failures.Add(new SourceKeyFailure(id, ex.AggregatedFailures[0]));
+            }
         }
 
-        return keys;
+        return new SourceKeyListing(keys, failures);
     }
 
     /// <inheritdoc/>
