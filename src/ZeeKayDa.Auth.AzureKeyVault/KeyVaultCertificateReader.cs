@@ -276,7 +276,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
             // A public-key accessor on a certificate that loaded can still throw — an unreadable or
             // unsupported key algorithm surfaces as a CryptographicException. Without this the raw
             // BCL exception escapes the reader instead of reaching the operator as a stable code.
-            throw new ZeeKayDaConfigurationException(
+            throw new KeyVaultVersionMaterialException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.invalid_certificate_public_key",
                     $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' " +
@@ -298,7 +298,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
             // input it failed to parse, and ZeeKayDaConfigurationFailure.Message is a plain string on
             // public API surface that SanitizingLogger cannot redact. The root cause stays
             // available to operators as InnerException.
-            throw new ZeeKayDaConfigurationException(
+            throw new KeyVaultVersionMaterialException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.invalid_certificate_public_key",
                     $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' did " +
@@ -479,7 +479,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         }
     }
 
-    private ZeeKayDaConfigurationException UnsupportedKeyTypeException(string version) =>
+    private KeyVaultVersionMaterialException UnsupportedKeyTypeException(string version) =>
         new(new ZeeKayDaConfigurationFailure(
             "signing.azure_key_vault.unsupported_key_type",
             $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' does not " +

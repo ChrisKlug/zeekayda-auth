@@ -13,7 +13,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// — a store that cannot be opened, a vault that cannot be reached — throws from
 /// <see cref="ISigningKeySource.ReadAsync"/>, and the framework keeps the keys it last read.
 /// </remarks>
-public sealed record SourceKeyListing
+public sealed class SourceKeyListing
 {
     /// <summary>Initialises a <see cref="SourceKeyListing"/>.</summary>
     /// <param name="keys">Every key the source could list, in any order.</param>

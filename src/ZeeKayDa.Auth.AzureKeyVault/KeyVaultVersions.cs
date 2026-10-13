@@ -14,16 +14,6 @@ internal static class KeyVaultVersions
     /// </summary>
     public const int MinimumMaxVersions = 3;
 
-    // The failures about one version's own key material. Every other failure is about the vault —
-    // unreachable, access denied, a broken listing — and fails the whole read.
-    private static readonly HashSet<string> VersionFailureCodes = new(
-        [
-            "signing.azure_key_vault.unsupported_key_type",
-            "signing.azure_key_vault.invalid_key_material",
-            "signing.azure_key_vault.invalid_certificate_public_key",
-        ],
-        StringComparer.Ordinal);
-
     /// <summary>
     /// Lists each of <paramref name="versions"/> through <paramref name="toSourceKey"/>, reporting a
     /// version whose own key material is unusable as a failure; any other failure throws.
@@ -40,7 +30,7 @@ internal static class KeyVaultVersions
             {
                 keys.Add(await toSourceKey(version).ConfigureAwait(false));
             }
-            catch (ZeeKayDaConfigurationException ex) when (VersionFailureCodes.Contains(ex.AggregatedFailures[0].Code))
+            catch (KeyVaultVersionMaterialException ex)
             {
                 failures.Add(new SourceKeyFailure(new SourceKeyId(version.Version), ex.AggregatedFailures[0]));
             }

@@ -64,7 +64,7 @@ internal static partial class SigningKeySetBuilder
         foreach (var failure in listing.Failures)
         {
             ValidateFailure(failure, seenSourceIds);
-            dropped.Add(new DroppedKey(failure.Id, Key: null, failure.Failure));
+            dropped.Add(new DroppedKey(failure.Id, failure.Failure, Dates: null));
         }
 
         if (usable.Count == 0)
@@ -180,7 +180,7 @@ internal static partial class SigningKeySetBuilder
         }
         catch (ZeeKayDaConfigurationException ex)
         {
-            dropped.Add(new DroppedKey(sourceKey.Id, sourceKey, ex.AggregatedFailures[0]));
+            dropped.Add(new DroppedKey(sourceKey.Id, ex.AggregatedFailures[0], (sourceKey.NotBefore, sourceKey.ExpiresAt)));
             return null;
         }
     }

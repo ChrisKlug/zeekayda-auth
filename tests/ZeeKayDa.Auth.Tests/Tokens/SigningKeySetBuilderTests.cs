@@ -800,7 +800,7 @@ public sealed class SigningKeySetBuilderTests
         timeline.At(Now).Published.Select(k => k.SourceId).Should().Equal(current.Id);
         var dropped = timeline.Dropped.Should().ContainSingle().Subject;
         dropped.Id.Should().Be(reported.Id);
-        dropped.Key.Should().BeNull();
+        dropped.Dates.Should().BeNull();
         dropped.Failure.Should().Be(reported.Failure);
     }
 

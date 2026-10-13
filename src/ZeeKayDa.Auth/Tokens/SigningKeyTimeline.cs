@@ -178,9 +178,7 @@ internal sealed class SigningKeyTimeline
     {
         var listed = _oldestFirst
             .Select(key => new ListedKey(key.NotBefore, key.ExpiresAt, key.SourceId.Value, Dropped: null))
-            .Concat(Dropped
-                .Where(drop => drop.Key is not null)
-                .Select(drop => new ListedKey(drop.Key!.NotBefore, drop.Key.ExpiresAt, drop.Id.Value, drop)))
+            .Concat(DatedDrops())
             .Where(key => key.ExpiresAt > now)
             .OrderBy(key => key.NotBefore)
             .ThenBy(key => key.Id, StringComparer.Ordinal)
@@ -196,7 +194,7 @@ internal sealed class SigningKeyTimeline
     /// </summary>
     internal DateTimeOffset? CoverageCutShortTo()
     {
-        var droppedExpiries = Dropped.Where(drop => drop.Key is not null).Select(drop => drop.Key!.ExpiresAt).ToList();
+        var droppedExpiries = Dropped.Select(drop => drop.Dates?.ExpiresAt).OfType<DateTimeOffset>().ToList();
         if (droppedExpiries.Count == 0)
             return null;
 
@@ -223,6 +221,15 @@ internal sealed class SigningKeyTimeline
             .Where(instant => instant > now)
             .DefaultIfEmpty(DateTimeOffset.MaxValue)
             .Min();
+    }
+
+    private IEnumerable<ListedKey> DatedDrops()
+    {
+        foreach (var drop in Dropped)
+        {
+            if (drop.Dates is { } dates)
+                yield return new ListedKey(dates.NotBefore, dates.ExpiresAt, drop.Id.Value, drop);
+        }
     }
 
     /// <summary>A listed key's dates and source id, and the drop record when it was unusable.</summary>

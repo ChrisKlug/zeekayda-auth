@@ -20,10 +20,10 @@ public sealed class SourceKeyListingTests
     }
 
     [Fact]
-    public void A_listing_copies_lists_assigned_through_init_as_well()
+    public void A_listing_copies_lists_assigned_through_an_initializer_as_well()
     {
         var keys = new List<SourceKey> { TestSigningKeys.SourceKey("listed", SigningAlgorithm.RS256) };
-        var sut = new SourceKeyListing([], []) with { Keys = keys };
+        var sut = new SourceKeyListing([], []) { Keys = keys };
 
         keys.Clear();
 

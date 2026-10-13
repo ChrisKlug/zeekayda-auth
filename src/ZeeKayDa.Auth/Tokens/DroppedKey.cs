@@ -5,9 +5,11 @@ namespace ZeeKayDa.Auth.Tokens;
 /// ever signs.
 /// </summary>
 /// <param name="Id">The source's own identifier for the entry.</param>
-/// <param name="Key">
-/// The key as listed, when the source listed it and its own dates or material were unusable;
-/// <see langword="null"/> when the source reported the entry as a failure, with no dates to place it by.
-/// </param>
 /// <param name="Failure">The first problem found.</param>
-internal sealed record DroppedKey(SourceKeyId Id, SourceKey? Key, ZeeKayDaConfigurationFailure Failure);
+/// <param name="Dates">
+/// The dates the source listed the key with, when it listed one whose own dates or material were
+/// unusable; <see langword="null"/> when the source reported the entry as a failure, with no dates
+/// to place it by.
+/// </param>
+internal sealed record DroppedKey(
+    SourceKeyId Id, ZeeKayDaConfigurationFailure Failure, (DateTimeOffset NotBefore, DateTimeOffset ExpiresAt)? Dates);

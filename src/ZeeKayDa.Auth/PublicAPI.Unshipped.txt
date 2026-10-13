@@ -790,13 +790,8 @@ static ZeeKayDa.Auth.Tokens.SourceKey.FromCertificate(System.Security.Cryptograp
 override ZeeKayDa.Auth.Tokens.SourceKeyFailure.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.Tokens.SourceKeyFailure.GetHashCode() -> int
 override ZeeKayDa.Auth.Tokens.SourceKeyFailure.ToString() -> string!
-override ZeeKayDa.Auth.Tokens.SourceKeyListing.Equals(object? obj) -> bool
-override ZeeKayDa.Auth.Tokens.SourceKeyListing.GetHashCode() -> int
-override ZeeKayDa.Auth.Tokens.SourceKeyListing.ToString() -> string!
 static ZeeKayDa.Auth.Tokens.SourceKeyFailure.operator !=(ZeeKayDa.Auth.Tokens.SourceKeyFailure? left, ZeeKayDa.Auth.Tokens.SourceKeyFailure? right) -> bool
 static ZeeKayDa.Auth.Tokens.SourceKeyFailure.operator ==(ZeeKayDa.Auth.Tokens.SourceKeyFailure? left, ZeeKayDa.Auth.Tokens.SourceKeyFailure? right) -> bool
-static ZeeKayDa.Auth.Tokens.SourceKeyListing.operator !=(ZeeKayDa.Auth.Tokens.SourceKeyListing? left, ZeeKayDa.Auth.Tokens.SourceKeyListing? right) -> bool
-static ZeeKayDa.Auth.Tokens.SourceKeyListing.operator ==(ZeeKayDa.Auth.Tokens.SourceKeyListing? left, ZeeKayDa.Auth.Tokens.SourceKeyListing? right) -> bool
 ZeeKayDa.Auth.Tokens.ISigningKeySource.ReadAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.SourceKeyListing!>!
 ZeeKayDa.Auth.Tokens.SourceKeyFailure
 ZeeKayDa.Auth.Tokens.SourceKeyFailure.<Clone>$() -> ZeeKayDa.Auth.Tokens.SourceKeyFailure!
@@ -808,8 +803,6 @@ ZeeKayDa.Auth.Tokens.SourceKeyFailure.Id.get -> ZeeKayDa.Auth.Tokens.SourceKeyId
 ZeeKayDa.Auth.Tokens.SourceKeyFailure.Id.init -> void
 ZeeKayDa.Auth.Tokens.SourceKeyFailure.SourceKeyFailure(ZeeKayDa.Auth.Tokens.SourceKeyId Id, ZeeKayDa.Auth.ZeeKayDaConfigurationFailure! Failure) -> void
 ZeeKayDa.Auth.Tokens.SourceKeyListing
-ZeeKayDa.Auth.Tokens.SourceKeyListing.<Clone>$() -> ZeeKayDa.Auth.Tokens.SourceKeyListing!
-ZeeKayDa.Auth.Tokens.SourceKeyListing.Equals(ZeeKayDa.Auth.Tokens.SourceKeyListing? other) -> bool
 ZeeKayDa.Auth.Tokens.SourceKeyListing.Failures.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SourceKeyFailure!>!
 ZeeKayDa.Auth.Tokens.SourceKeyListing.Failures.init -> void
 ZeeKayDa.Auth.Tokens.SourceKeyListing.Keys.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SourceKey!>!

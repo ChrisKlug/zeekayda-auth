@@ -240,7 +240,7 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
         var reader = new FakeKeyVaultCertificateReader();
         reader.AddRsaVersion("v1", createdOn: T0);
         reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
-        reader.SetPublicKeyException("v1", new ZeeKayDaConfigurationException(
+        reader.SetPublicKeyException("v1", new KeyVaultVersionMaterialException(
             new ZeeKayDaConfigurationFailure(code, "Simulated unusable material for v1.")));
         var sut = BuildSource(reader);
 
@@ -280,7 +280,7 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
         var reader = new FakeKeyVaultCertificateReader();
         reader.AddRsaVersion("v1", createdOn: T0);
         reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
-        reader.SetPublicKeyException("v1", new ZeeKayDaConfigurationException(
+        reader.SetPublicKeyException("v1", new KeyVaultVersionMaterialException(
             new ZeeKayDaConfigurationFailure("signing.azure_key_vault.unsupported_key_type", "Simulated unusable material for v1.")));
         var sut = BuildSource(reader);
         await sut.ReadAsync(ct);

@@ -143,7 +143,7 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
     private (AsymmetricAlgorithm, SigningKeyType) MapJsonWebKey(JsonWebKey key, string version)
     {
         var keyType = SigningKeyTypeOf(key.KeyType)
-            ?? throw new ZeeKayDaConfigurationException(
+            ?? throw new KeyVaultVersionMaterialException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.unsupported_key_type",
                     $"Key Vault key type '{key.KeyType}' is not supported. Only RSA, RSA-HSM, EC, and EC-HSM keys can be used for JWT signing."));
@@ -157,7 +157,7 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // The exception TYPE is named, never ex.Message: it can echo the material it failed to parse.
-            throw new ZeeKayDaConfigurationException(
+            throw new KeyVaultVersionMaterialException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.invalid_key_material",
                     $"Version '{version}' of Key Vault key '{_keyName}' in vault '{_vaultUri}' carries key " +

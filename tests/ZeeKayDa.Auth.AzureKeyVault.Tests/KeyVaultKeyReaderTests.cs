@@ -329,7 +329,7 @@ public sealed class KeyVaultKeyReaderTests
         var act = () => BuildReader(client)
             .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
 
-        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+        await act.Should().ThrowAsync<KeyVaultVersionMaterialException>()
             .WithMessage("*unsupported_key_type*");
     }
 
@@ -396,6 +396,25 @@ public sealed class KeyVaultKeyReaderTests
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>().WithMessage($"*(HTTP {status})*"))
             .Which.Message.Should().NotContain("ErrorCode",
                 "an absent SDK error code must not leave a dangling 'ErrorCode:' clause in the operator message");
+    }
+
+    [Theory]
+    [InlineData(404)]
+    [InlineData(403)]
+    [InlineData(500)]
+    public async Task GetKeyMaterialAsync_never_reports_a_vault_failure_as_a_failure_of_the_versions_material(int status)
+    {
+        // The source reports only a material failure against one version; a vault failure must fail the whole read.
+        var client = new FakeKeyClient
+        {
+            OnGetKey = _ => throw new RequestFailedException(status, "boom"),
+        };
+
+        var act = () => BuildReader(client)
+            .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.Should().NotBeOfType<KeyVaultVersionMaterialException>();
     }
 
     [Fact]
@@ -487,7 +506,7 @@ public sealed class KeyVaultKeyReaderTests
             .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
 
         importFailure.Should().NotBeNull("the fixture must be material the SDK cannot import");
-        var thrown = (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()).Which;
+        var thrown = (await act.Should().ThrowAsync<KeyVaultVersionMaterialException>()).Which;
         thrown.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.azure_key_vault.invalid_key_material");
         thrown.AggregatedFailures[0].Message.Should().Contain(importFailure!.GetType().FullName);
         thrown.AggregatedFailures[0].Message.Should().NotContain(importFailure.Message);
