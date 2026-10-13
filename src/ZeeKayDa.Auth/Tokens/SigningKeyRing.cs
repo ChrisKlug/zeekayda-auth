@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Logging;
@@ -353,13 +352,13 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     private async Task InitializeCoreAsync(CancellationToken cancellationToken)
     {
         var listing = await _source.ReadAsync(cancellationToken).ConfigureAwait(false);
-        if (IsNull(listing))
+        if (listing is null)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.null_source_key_set",
-                    "The signing key source's ReadAsync returned null, or a listing whose Keys or " +
-                    "Failures is null. ISigningKeySource.ReadAsync must never return either."));
+                    "The signing key source's ReadAsync returned null. ISigningKeySource.ReadAsync " +
+                    "must never return null."));
         }
 
         _algorithm = _source.Algorithm;
@@ -515,7 +514,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             return;
         }
 
-        if (IsNull(listing))
+        if (listing is null)
         {
             KeepLastList("signing.null_source_key_set", failure: null);
             return;
@@ -631,10 +630,6 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
             : [.. published.Append(signingKey).Order(SigningKeySetBuilder.OldestFirst)];
         return new SigningKeySet(_algorithm, signingKey, withSigner);
     }
-
-    /// <summary>Whether <paramref name="listing"/>, or either of its lists, is null — a contract breach a source can still commit.</summary>
-    private static bool IsNull([NotNullWhen(false)] SourceKeyListing? listing) =>
-        listing?.Keys is null || listing.Failures is null;
 
     private async Task<SourceKeyListing?> ReadSourceAsync()
     {

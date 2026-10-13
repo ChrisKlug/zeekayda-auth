@@ -371,6 +371,42 @@ public sealed class PemFileSigningKeySourceTests
         listing.ShouldReportOnly(brokenPath, "signing.file_signing.file_too_permissive");
     }
 
+    [Fact]
+    public async Task ReadAsync_reports_a_certificate_whose_public_key_cannot_be_read_as_a_per_entry_failure_and_lists_the_rest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var goodCertificate = CreateRsaCertificate();
+        using var malformed = CertificateWithMalformedRsaPublicKey();
+        var goodPath = tempDir.WritePemFile("good.pem", goodCertificate);
+        var brokenPath = tempDir.WriteCertificateOnlyPemFile("broken.crt", malformed);
+        var brokenKeyPath = tempDir.WriteKeyOnlyPemFile("broken.key", goodCertificate);
+        var sut = BuildSource([new PemSigningFile(goodPath), new PemSigningFile(brokenPath, brokenKeyPath)]);
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.Keys.Select(k => k.Id).Should().Equal(new SourceKeyId(goodPath));
+        listing.ShouldReportOnly(brokenPath, "signing.certificate.invalid_public_key");
+    }
+
+    /// <summary>
+    /// A certificate that parses but whose RSA key bytes are not an <c>RSAPublicKey</c>, so the
+    /// failure comes from reading the public key, not from parsing the certificate.
+    /// </summary>
+    private static X509Certificate2 CertificateWithMalformedRsaPublicKey()
+    {
+        var malformed = new PublicKey(
+            new Oid("1.2.840.113549.1.1.1"),
+            parameters: new AsnEncodedData([0x05, 0x00]),
+            keyValue: new AsnEncodedData([0x30, 0x03, 0x02, 0x01, 0x01]));
+        var request = new CertificateRequest(new X500DistinguishedName("CN=test"), malformed, HashAlgorithmName.SHA256);
+        using var issuerKey = RSA.Create(2048);
+        var generator = X509SignatureGenerator.CreateForRSA(issuerKey, RSASignaturePadding.Pkcs1);
+        return request.Create(
+            new X500DistinguishedName("CN=issuer"), generator,
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30), serialNumber: [1, 2, 3, 4]);
+    }
+
     // ── Symlink rejection ────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -644,14 +680,16 @@ public sealed class PemFileSigningKeySourceTests
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        var path = tempDir.WriteTextFile("garbage.pem", "not a pem file at all");
+        const string garbage = "not a pem file at all";
+        var path = tempDir.WriteTextFile("garbage.pem", garbage);
+        var parserMessage = Record.Exception(() => X509Certificate2.CreateFromPem(garbage))!.Message;
         var sut = BuildSource(new PemSigningFile(path));
 
         var listing = await sut.ReadAsync(ct);
 
         var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pem");
         failure.Message.Should().Contain(typeof(CryptographicException).FullName);
-        failure.Message.Should().Contain("See the inner exception for the root cause.");
+        failure.Message.Should().NotContain(parserMessage);
     }
 
     [Fact]
