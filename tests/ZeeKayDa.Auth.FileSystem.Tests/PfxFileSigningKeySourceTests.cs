@@ -202,9 +202,28 @@ public sealed class PfxFileSigningKeySourceTests
         var listing = await sut.ReadAsync(ct);
 
         listing.Keys.Select(k => k.Id).Should().Equal(new SourceKeyId(goodPath));
-        var failure = listing.ShouldReportOnly(brokenPath, "signing.file_signing.unreadable_file");
+        var failure = listing.ShouldReportOnly(brokenPath, "signing.file_signing.password_unavailable");
         failure.Message.Should().Contain(typeof(FileNotFoundException).FullName);
         failure.Message.Should().NotContain(passwordFailure.Message);
+    }
+
+    [Fact]
+    public async Task ReadAsync_never_reports_a_configuration_failure_thrown_by_the_password_source_in_its_own_words()
+    {
+        // The password source is host code: a failure it raises may carry the secret it failed to fetch.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("bundle.pfx", certificate, CorrectPassword);
+        var hostFailure = new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure("host.vault.denied", "vault token s3cr3t-token was rejected"));
+        var sut = BuildSource(new PfxFile(path, _ => Task.FromException<string>(hostFailure)));
+
+        var listing = await sut.ReadAsync(ct);
+
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.password_unavailable");
+        failure.Message.Should().Contain(typeof(ZeeKayDaConfigurationException).FullName);
+        failure.Message.Should().NotContain("s3cr3t-token");
     }
 
     [Fact]

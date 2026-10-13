@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace ZeeKayDa.Auth.Tokens;
@@ -71,7 +70,8 @@ public sealed record SourceKey
         {
             return ReadPublicKey(certificate, id);
         }
-        catch (CryptographicException ex)
+        // Not CryptographicException alone: macOS reports malformed key bytes as an ArgumentException.
+        catch (Exception ex) when (ex is not ZeeKayDaConfigurationException and not OperationCanceledException)
         {
             // The exception TYPE is named, never ex.Message: it can echo the material it failed to parse.
             throw new ZeeKayDaConfigurationException(

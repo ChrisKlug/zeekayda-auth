@@ -77,6 +77,28 @@ internal sealed class PfxFileSigningKeySource(
     }
 
     /// <summary>
+    /// <paramref name="file"/>'s password. Whatever the host's password source throws but a
+    /// cancellation is <c>signing.file_signing.password_unavailable</c> naming only the exception
+    /// type: the callback is host code, and its message may carry the secret it failed to fetch.
+    /// </summary>
+    private static async Task<string> ReadPasswordAsync(PfxFile file, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await file.PasswordSource(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.password_unavailable",
+                    $"The password source for '{file.Path}' failed: {ex.GetType().FullName} was thrown. See " +
+                    "the inner exception for the root cause."),
+                ex);
+        }
+    }
+
+    /// <summary>
     /// Reads the signing certificate out of the PKCS#12 bundle <paramref name="file"/> without
     /// decrypting its key bag, so listing imports no private key into a key object. Returns
     /// <see langword="null"/> when the file does not exist.
@@ -92,7 +114,7 @@ internal sealed class PfxFileSigningKeySource(
         if (await reader.TryReadAllBytesAsync(file.Path, cancellationToken).ConfigureAwait(false) is not { } bytes)
             return null;
 
-        var password = await file.PasswordSource(cancellationToken).ConfigureAwait(false);
+        var password = await ReadPasswordAsync(file, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -307,7 +329,7 @@ internal sealed class PfxFileSigningKeySource(
         PfxFile file, CancellationToken cancellationToken)
     {
         var bytes = await reader.ReadAllBytesAsync(file.Path, cancellationToken).ConfigureAwait(false);
-        var password = await file.PasswordSource(cancellationToken).ConfigureAwait(false);
+        var password = await ReadPasswordAsync(file, cancellationToken).ConfigureAwait(false);
 
         try
         {

@@ -7,7 +7,7 @@ internal static class SigningFileFailure
 {
     /// <summary>
     /// <paramref name="exception"/>'s own failure, or for any other exception — a locked file, an I/O
-    /// error, a password source that failed — <c>signing.file_signing.unreadable_file</c> naming its type.
+    /// error — <c>signing.file_signing.unreadable_file</c> naming its type.
     /// Every such failure is about this one file, so it must not hold up the rest of the read.
     /// </summary>
     public static SourceKeyFailure Of(string path, Exception exception) =>

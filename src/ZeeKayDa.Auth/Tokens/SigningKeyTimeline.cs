@@ -223,14 +223,11 @@ internal sealed class SigningKeyTimeline
             .Min();
     }
 
-    private IEnumerable<ListedKey> DatedDrops()
-    {
-        foreach (var drop in Dropped)
-        {
-            if (drop.Dates is { } dates)
-                yield return new ListedKey(dates.NotBefore, dates.ExpiresAt, drop.Id.Value, drop);
-        }
-    }
+    private IEnumerable<ListedKey> DatedDrops() =>
+        from drop in Dropped
+        let dates = drop.Dates
+        where dates.HasValue
+        select new ListedKey(dates.Value.NotBefore, dates.Value.ExpiresAt, drop.Id.Value, drop);
 
     /// <summary>A listed key's dates and source id, and the drop record when it was unusable.</summary>
     private readonly record struct ListedKey(
