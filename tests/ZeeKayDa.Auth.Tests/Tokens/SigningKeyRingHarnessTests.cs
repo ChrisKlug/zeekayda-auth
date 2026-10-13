@@ -53,6 +53,21 @@ public sealed class SigningKeyRingHarnessTests
     }
 
     [Fact]
+    public async Task StartAsync_rejects_a_lead_time_shorter_than_relying_parties_cache_the_published_keys()
+    {
+        var listing = new TestSigningKeys.Listing(TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)));
+        var options = TestSigningKeys.Options;
+        options.LeadTime = TimeSpan.FromMinutes(1);
+
+        var act = async () => await SigningKeyRingHarness.StartAsync(
+            TestSigningKeys.Source(listing), new FakeTimeProvider(Epoch), options, TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code.StartsWith("configuration.signing_keys.lead_time", StringComparison.Ordinal));
+        listing.SourceDisposed.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task StartAsync_throws_the_startup_failure_when_disposing_the_source_also_throws()
     {
         var source = new FailingSource();

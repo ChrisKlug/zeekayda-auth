@@ -57,8 +57,8 @@ public sealed class SigningKeyRingHarness : IAsyncDisposable
     /// <paramref name="source"/> or <paramref name="clock"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ZeeKayDaConfigurationException">
-    /// <paramref name="options"/> breaks a rule the server enforces on <c>SigningKeys</c>, or startup failed
-    /// as it would stop a host.
+    /// <paramref name="options"/> breaks a rule a server with otherwise default options would enforce, or
+    /// startup failed as it would stop a host.
     /// </exception>
     public static async Task<SigningKeyRingHarness> StartAsync(
         ISigningKeySource source, FakeTimeProvider clock, SigningKeyOptions? options = null,
@@ -67,18 +67,23 @@ public sealed class SigningKeyRingHarness : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(clock);
 
-        var serverOptions = new AuthorizationServerOptions();
-        var resolved = new SigningKeyOptions
+        // A server with default options but these signing keys: what the ring would run in, judged by
+        // the same rules, including those that span groups.
+        var serverOptions = new AuthorizationServerOptions { Issuer = "https://issuer.test" };
+        var resolved = serverOptions.SigningKeys;
+        if (options is not null)
         {
-            LeadTime = options?.LeadTime ?? serverOptions.SigningKeys.LeadTime,
-            RefreshInterval = options?.RefreshInterval ?? serverOptions.SigningKeys.RefreshInterval,
-            RetainRetiredKeysFor = options?.RetainRetiredKeysFor ?? SigningKeyOptions.DefaultRetainRetiredKeysFor(serverOptions),
-        };
+            resolved.LeadTime = options.LeadTime;
+            resolved.RefreshInterval = options.RefreshInterval;
+            resolved.RetainRetiredKeysFor = options.RetainRetiredKeysFor;
+        }
+
+        resolved.RetainRetiredKeysFor ??= SigningKeyOptions.DefaultRetainRetiredKeysFor(serverOptions);
         var logger = new SanitizingLogger<SigningKeyRing>(NullLogger<SigningKeyRing>.Instance, Options.Create(serverOptions));
         var ring = new SigningKeyRing(source, clock, resolved, logger);
         try
         {
-            if (resolved.Validate().ToArray() is { Length: > 0 } failures)
+            if (serverOptions.Validate().ToArray() is { Length: > 0 } failures)
                 throw new ZeeKayDaConfigurationException(failures);
 
             await ring.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
