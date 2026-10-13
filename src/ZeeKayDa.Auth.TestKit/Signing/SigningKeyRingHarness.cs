@@ -1,4 +1,3 @@
-using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -58,7 +57,8 @@ public sealed class SigningKeyRingHarness : IAsyncDisposable
     /// </exception>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// <paramref name="options"/> breaks a rule a server with otherwise default options would enforce, or
-    /// startup failed as it would stop a host.
+    /// the ring refused what the source listed, as it would stop a host. An exception the source itself
+    /// throws, such as from its first read, propagates unchanged.
     /// </exception>
     public static async Task<SigningKeyRingHarness> StartAsync(
         ISigningKeySource source, FakeTimeProvider clock, SigningKeyOptions? options = null,
@@ -88,17 +88,10 @@ public sealed class SigningKeyRingHarness : IAsyncDisposable
 
             await ring.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception startupFailure)
+        catch
         {
-            try
-            {
-                await ((IAsyncDisposable)ring).DisposeAsync().ConfigureAwait(false);
-            }
-            finally
-            {
-                // The startup failure is what the test needs to see, even when disposing the source throws too.
-                ExceptionDispatchInfo.Throw(startupFailure);
-            }
+            await DisposeQuietlyAsync(ring).ConfigureAwait(false);
+            throw;
         }
 
         return new SigningKeyRingHarness(ring, clock, resolved.RefreshInterval);
@@ -134,6 +127,22 @@ public sealed class SigningKeyRingHarness : IAsyncDisposable
     /// <returns>A task that completes once the ring has read and caught up with the clock.</returns>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before the ring caught up.</exception>
     public Task ReadAsync(CancellationToken cancellationToken = default) => AdvanceAsync(_refreshInterval, cancellationToken);
+
+    /// <summary>
+    /// Disposes the ring after a failed startup, swallowing anything the source's own <c>Dispose</c>
+    /// throws so the startup failure is the one the test sees.
+    /// </summary>
+    private static async ValueTask DisposeQuietlyAsync(SigningKeyRing ring)
+    {
+        try
+        {
+            await ((IAsyncDisposable)ring).DisposeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // Intentionally swallowed: we are already unwinding a more important failure.
+        }
+    }
 
     /// <summary>
     /// Disposes the ring, which disposes its signers and then the source.
