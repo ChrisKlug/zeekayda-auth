@@ -185,6 +185,42 @@ public sealed class PfxFileSigningKeySourceTests
         listing.ShouldReportOnly(brokenPath, "signing.file_signing.invalid_pfx");
     }
 
+    [Fact]
+    public async Task ReadAsync_reports_a_bundle_whose_password_source_fails_as_a_per_entry_failure_and_lists_the_rest()
+    {
+        // Any failure loading one file is that file's: a missing password file must not hold up a revocation.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var goodCertificate = CreateRsaCertificate();
+        using var brokenCertificate = CreateRsaCertificate();
+        var goodPath = tempDir.WritePfxFile("good.pfx", goodCertificate, CorrectPassword);
+        var brokenPath = tempDir.WritePfxFile("broken.pfx", brokenCertificate, CorrectPassword);
+        var passwordFailure = new FileNotFoundException("the secret password file /run/secrets/pfx is missing");
+        var sut = BuildSource(
+            [new PfxFile(goodPath, Password()), new PfxFile(brokenPath, _ => Task.FromException<string>(passwordFailure))]);
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.Keys.Select(k => k.Id).Should().Equal(new SourceKeyId(goodPath));
+        var failure = listing.ShouldReportOnly(brokenPath, "signing.file_signing.unreadable_file");
+        failure.Message.Should().Contain(typeof(FileNotFoundException).FullName);
+        failure.Message.Should().NotContain(passwordFailure.Message);
+    }
+
+    [Fact]
+    public async Task ReadAsync_lets_a_cancellation_from_one_bundle_fail_the_whole_read()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("cancelled.pfx", certificate, CorrectPassword);
+        var sut = BuildSource(new PfxFile(path, _ => Task.FromCanceled<string>(new CancellationToken(canceled: true))));
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     // ── Integrity: the password must actually authenticate the bundle ───────────────────────────
 
     [Fact]

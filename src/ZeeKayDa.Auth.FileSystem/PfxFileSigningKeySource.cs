@@ -54,9 +54,9 @@ internal sealed class PfxFileSigningKeySource(
                 if (certificate is not null)
                     keys.Add(SourceKey.FromCertificate(certificate, id));
             }
-            catch (ZeeKayDaConfigurationException ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                failures.Add(new SourceKeyFailure(id, ex.AggregatedFailures[0]));
+                failures.Add(SigningFileFailure.Of(file.Path, ex));
             }
         }
 
