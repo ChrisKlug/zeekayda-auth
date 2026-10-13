@@ -101,6 +101,19 @@ public sealed class SigningKeyRingTests
         }
     }
 
+    /// <summary>Signs only once <paramref name="hold"/> completes, modelling a sign call still in flight.</summary>
+    private sealed class HeldSigner(ISigner inner, Func<Task> hold) : ISigner
+    {
+        public async Task<ReadOnlyMemory<byte>> SignAsync(
+            ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default)
+        {
+            await hold().ConfigureAwait(false);
+            return await inner.SignAsync(signingInput, cancellationToken).ConfigureAwait(false);
+        }
+
+        public void Dispose() => inner.Dispose();
+    }
+
     /// <summary>An <see cref="ISigner"/> whose <c>Dispose</c> always throws, modelling a third-party
     /// signer whose cleanup fails — used to prove the ring still disposes its source.</summary>
     private sealed class ThrowingDisposeSigner(ISigner inner) : ISigner
@@ -1373,7 +1386,7 @@ public sealed class SigningKeyRingTests
     }
 
     [Fact]
-    public async Task Handover_keeps_the_superseded_signer_open_until_the_ring_is_disposed_then_disposes_each_once()
+    public async Task Handover_disposes_the_superseded_signer_at_the_first_read_a_refresh_interval_after_the_takeover()
     {
         var clock = new FakeTimeProvider(Epoch);
         var disposed = new List<string>();
@@ -1386,13 +1399,105 @@ public sealed class SigningKeyRingTests
                 var name = opened++ == 0 ? "current" : "successor";
                 return new TrackingSigner(signer, () => disposed.Add(name));
             });
+        await TakeOverBetweenReadsAsync(ring, clock);
 
-        await AdvanceToAsync(ring, clock, Epoch + TestSigningKeys.Options.LeadTime);
-        disposed.Should().BeEmpty();
+        await FirstReadAfterTheTakeoverAsync(ring, clock);
+        disposed.Should().BeEmpty("a sign call that resolved the old signer just before the takeover may still be using it");
+
+        await ReadAgainAsync(ring, clock);
+        disposed.Should().Equal("current");
 
         ((IDisposable)ring).Dispose();
+        disposed.Should().Equal("current", "successor");
+    }
 
-        disposed.Should().BeEquivalentTo("current", "successor");
+    [Fact]
+    public async Task A_sign_call_started_before_a_takeover_completes_with_the_old_signer()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var opened = 0;
+        TaskCompletionSource? hold = null;
+        using var ring = TestSigningKeys.Ring(
+            [TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), TestSigningKeys.Pair("successor", notBefore: Epoch)],
+            clock,
+            decorateSigner: signer => opened++ == 0 ? new HeldSigner(signer, () => hold?.Task ?? Task.CompletedTask) : signer);
+        hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var signing = ring.SignAsync(0, static (_, _) => "payload"u8.ToArray(), TestContext.Current.CancellationToken);
+
+        await TakeOverBetweenReadsAsync(ring, clock);
+        await FirstReadAfterTheTakeoverAsync(ring, clock);
+        hold.SetResult();
+        var outcome = await signing;
+
+        outcome.Key.SourceId.Value.Should().Be("current");
+        SigningAlgorithms.Verify(outcome.Key.Algorithm, outcome.Key.PublicKey, outcome.SigningInput.Span, outcome.Signature.Span)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_sign_call_outrunning_a_full_refresh_interval_after_the_takeover_meets_a_disposed_signer()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var opened = 0;
+        TaskCompletionSource? hold = null;
+        using var ring = TestSigningKeys.Ring(
+            [TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), TestSigningKeys.Pair("successor", notBefore: Epoch)],
+            clock,
+            decorateSigner: signer => opened++ == 0 ? new HeldSigner(signer, () => hold?.Task ?? Task.CompletedTask) : signer);
+        hold = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var signing = ring.SignAsync(0, static (_, _) => "payload"u8.ToArray(), TestContext.Current.CancellationToken);
+
+        await TakeOverBetweenReadsAsync(ring, clock);
+        await FirstReadAfterTheTakeoverAsync(ring, clock);
+        await ReadAgainAsync(ring, clock);
+        hold.SetResult();
+
+        await FluentActions.Awaiting(() => signing).Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task A_read_whose_transition_throws_still_releases_idle_signers()
+    {
+        var clock = new FakeTimeProvider(Epoch);
+        var disposed = new List<string>();
+        string[] names = ["current", "successor", "last"];
+        var opened = 0;
+        var logger = new SanitizingLogger<SigningKeyRing>(
+            new TakeoverThrowingLogger(), Microsoft.Extensions.Options.Options.Create(new AuthorizationServerOptions()));
+        using var ring = TestSigningKeys.Ring(
+            [
+                TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)),
+                TestSigningKeys.Pair("successor", notBefore: Epoch),
+                TestSigningKeys.Pair("last", notBefore: Epoch.AddMinutes(9)),
+            ],
+            clock,
+            logger,
+            decorateSigner: signer =>
+            {
+                var name = names[opened++];
+                return new TrackingSigner(signer, () => disposed.Add(name));
+            });
+        await TakeOverBetweenReadsAsync(ring, clock);
+        await FirstReadAfterTheTakeoverAsync(ring, clock);
+        disposed.Should().BeEmpty();
+
+        clock.SetUtcNow(SuccessorDue + TimeSpan.FromMinutes(9));
+        await ring.LastTransition;
+
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("last");
+        disposed.Should().Equal("current");
+    }
+
+    /// <summary>Throws on the takeover log line only, so a transition fails after its handover committed.</summary>
+    private sealed class TakeoverThrowingLogger : ILogger<SigningKeyRing>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (formatter(state, exception).Contains("taking over from", StringComparison.Ordinal))
+                throw new InvalidOperationException("simulated: logging failed");
+        }
     }
 
     [Fact]
@@ -1423,6 +1528,35 @@ public sealed class SigningKeyRingTests
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
+
+    private static readonly DateTimeOffset SuccessorDue = Epoch + TestSigningKeys.Options.LeadTime;
+
+    /// <summary>Moves <paramref name="clock"/> to a minute before the successor is due, which reads the
+    /// source, then to the instant it is due, so the successor takes over between two reads.</summary>
+    private static async Task TakeOverBetweenReadsAsync(SigningKeyRing ring, FakeTimeProvider clock)
+    {
+        var due = SuccessorDue;
+        clock.SetUtcNow(due - TimeSpan.FromMinutes(1));
+        await ring.LastTransition;
+        clock.SetUtcNow(due);
+        await ring.LastTransition;
+        ring.Current.SigningKey!.SourceId.Value.Should().Be("successor");
+    }
+
+    /// <summary>Moves <paramref name="clock"/> to the read due after <see cref="TakeOverBetweenReadsAsync"/>,
+    /// less than a refresh interval after the takeover.</summary>
+    private static async Task FirstReadAfterTheTakeoverAsync(SigningKeyRing ring, FakeTimeProvider clock)
+    {
+        clock.SetUtcNow(SuccessorDue - TimeSpan.FromMinutes(1) + TestSigningKeys.Options.RefreshInterval);
+        await ring.LastTransition;
+    }
+
+    private static async Task ReadAgainAsync(SigningKeyRing ring, FakeTimeProvider clock)
+    {
+        clock.Advance(TestSigningKeys.Options.RefreshInterval);
+        await ring.LastTransition;
+    }
+
 
     private static FakeSigningKeySource NeverCalledSource() =>
         new(

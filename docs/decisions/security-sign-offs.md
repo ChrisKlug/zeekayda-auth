@@ -13,8 +13,9 @@ reasoned acceptance into an undocumented gap.
 **Rules for this file.** Append; do not rewrite. Corrections are appended as new entries, not edits
 to old ones — a reversal is itself the audit-relevant fact and is recorded as a reversal. Scope
 limits and explicit negatives ("this sign-off did not cover X") are as load-bearing as the approval
-and are never trimmed. Where a decision has since changed, the register file for that topic is
-authoritative for *current* behaviour; this file remains authoritative for *what was approved when*.
+and are never trimmed. One edit is allowed: when a cited test is renamed or replaced, the old name stays
+in the entry without backticks, followed by a bracketed note naming the issue and the successor test.
+Where a decision has since changed, the register file for that topic is authoritative for *current* behaviour; this file remains authoritative for *what was approved when*.
 
 **Rules for new entries** (in force from the vertical-slice rework; earlier entries predate them).
 An entry is written **last, once, against frozen code** — after review has concluded, never in a
@@ -2231,7 +2232,8 @@ CodeQL and CodeScene review; no Critical left open. Four test-only CodeQL dispos
   `Handover_past_the_deadline_is_set_aside_even_when_the_source_s_cancellation_callback_throws`, `Handover_failure_logs_the_root_cause_as_the_Error_entry_s_exception`.
 - No change instant is skipped. Closed — `Initialization_catches_up_when_a_change_passes_while_the_startup_signer_opens`,
   `A_change_crossed_after_a_transition_commits_but_before_it_re_arms_still_fires`.
-- Every signer whose open finishes is disposed once, including one that finishes after shutdown or the deadline. Closed — `Handover_keeps_the_superseded_signer_open_until_the_ring_is_disposed_then_disposes_each_once`,
+- Every signer whose open finishes is disposed once, including one that finishes after shutdown or the deadline. Closed — Handover_keeps_the_superseded_signer_open_until_the_ring_is_disposed_then_disposes_each_once [replaced by #919, a
+  superseded signer now closes at the first read a refresh interval after the takeover: `Handover_disposes_the_superseded_signer_at_the_first_read_a_refresh_interval_after_the_takeover`],
   `A_signer_that_opens_after_shutdown_abandoned_its_handover_is_disposed`, `A_signer_that_opens_after_the_handover_deadline_is_disposed_exactly_once`,
   `Initialization_owns_the_startup_signer_before_logging_so_a_throwing_logger_does_not_leak_it`.
 - A bad key never publishes or signs; a bad key due now, or an ambiguous list, fails startup; health names codes, never source ids. Closed —
@@ -2316,3 +2318,18 @@ CodeQL, CodeScene and Copilot review; no High or Critical open. Written after th
   sees the expiry: a JWK has no date member (RFC 7517 §4), and the JWKS carries none, nor `x5c` — `Write_emits_no_private_key_member_for_a_set_built_from_rsa_and_ec_private_keys`.
 - **Accepted residuals:** (maintainer) the too-late memory is per process — `A_restarted_replica_adopts_a_key_repaired_too_late`. (maintainer) a fresh key reusing a once-dropped
   source id with a back-dated `NotBefore` stays set aside as too late, like a repair — `A_dropped_key_fixed_only_after_its_predecessor_is_superseded_never_takes_over`. (maintainer) startup refuses a dropped key due now while a running ring signs on — `Initialization_fails_when_the_key_due_to_sign_now_was_dropped`.
+
+## 2026-10-11 — a signer not signing is disposed a refresh interval after it is seen to stop (#919, code frozen at `5336525`)
+Copilot code (High fixes verified on the fix diff), security (xhigh) and text lenses, the security agent, and the PR's CodeQL, CodeScene and Copilot
+review; no High or Critical open. `5e050da`, `25060cc`, `15a2d67`, `de98d78` and `5336525` were read by the main session only.
+- A cached signer not signing is disposed at the first read a full `RefreshInterval` after it is seen to stop — at the handover that supersedes it,
+  else at the end of the first read finding it idle — not at shutdown. Closed — `Handover_disposes_the_superseded_signer_at_the_first_read_a_refresh_interval_after_the_takeover`,
+  `The_signer_of_a_key_no_longer_listed_is_disposed_at_the_second_read_without_it_not_the_first`, `A_failed_handover_that_stops_signing_still_gives_the_old_signer_one_read_s_grace`.
+  Reverses the #823 rule that a superseded signer stays open while its key is listed.
+- The grace is never less than one full interval, however the handover and the read line up. Closed — `A_handover_that_finishes_just_before_a_read_still_gives_the_old_signer_a_full_refresh_interval`,
+  `A_signer_that_signs_again_between_reads_gets_a_full_refresh_interval_once_it_stops_again`, `A_sign_call_started_before_a_takeover_completes_with_the_old_signer`.
+- A read whose transition throws still releases idle signers. Closed — `A_read_whose_transition_throws_still_releases_idle_signers`.
+- A key signing again after its signer closed gets a freshly opened, self-tested one; within the grace the cached signer is kept. Closed —
+  `A_superseded_key_that_signs_again_is_reopened_and_self_tested`, `A_superseded_key_still_listed_is_not_reopened_until_it_signs_again`, `The_signer_of_a_key_that_signs_again_before_its_grace_ends_is_kept`.
+- **Accepted residual (unchanged):** a sign call outrunning the grace meets a disposed signer — `A_sign_call_outrunning_a_full_refresh_interval_after_the_takeover_meets_a_disposed_signer`.
+  **Not covered:** the cached Key Vault source's download count across a takeover is proven only at the ring, against the in-memory source; #929 adds it.
