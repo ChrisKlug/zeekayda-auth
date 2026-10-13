@@ -506,16 +506,16 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
         reader.AddRsaVersion("v1", createdOn: T0 - TimeSpan.FromDays(90));
         reader.AddRsaVersion("v2", createdOn: T0);
         await using var harness = await SigningKeyRingHarness.StartAsync(BuildSource(reader), new FakeTimeProvider(T0), options, ct);
-        await harness.AdvanceAsync(options.LeadTime);
+        await harness.AdvanceAsync(options.LeadTime, ct);
         harness.Ring.Current.SigningKey!.SourceId.Value.Should().Be("v2");
 
         for (var read = 0; read < 3; read++)
-            await harness.ReadAsync();
+            await harness.ReadAsync(ct);
         reader.PrivateKeyMaterialCalls.Should().Equal(["v1", "v2"],
             "v1's signer is closed once superseded, and its private key is not downloaded again while it does not sign");
 
         reader.SetEnabled("v2", false);
-        await harness.ReadAsync();
+        await harness.ReadAsync(ct);
 
         harness.Ring.Current.SigningKey!.SourceId.Value.Should().Be("v1");
         reader.PrivateKeyMaterialCalls.Should().Equal("v1", "v2", "v1");

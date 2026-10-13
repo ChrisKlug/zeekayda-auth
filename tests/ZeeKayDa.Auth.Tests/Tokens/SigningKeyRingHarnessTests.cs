@@ -89,10 +89,10 @@ public sealed class SigningKeyRingHarnessTests
         await using var harness = await SigningKeyRingHarness.StartAsync(
             TestSigningKeys.Source(listing), new FakeTimeProvider(Epoch), options, TestContext.Current.CancellationToken);
 
-        await harness.AdvanceAsync(options.LeadTime + retention - TimeSpan.FromSeconds(1));
+        await harness.AdvanceAsync(options.LeadTime + retention - TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
         harness.Ring.Current.Published.Select(k => k.SourceId.Value).Should().Contain("current");
 
-        await harness.AdvanceAsync(TimeSpan.FromSeconds(1));
+        await harness.AdvanceAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
         harness.Ring.Current.Published.Select(k => k.SourceId.Value).Should().NotContain("current");
         options.RetainRetiredKeysFor.Should().BeNull("the caller's options are not changed");
     }
@@ -104,7 +104,7 @@ public sealed class SigningKeyRingHarnessTests
         await using var harness = await SigningKeyRingHarness.StartAsync(
             TestSigningKeys.Source(listing), new FakeTimeProvider(Epoch), TestSigningKeys.Options, TestContext.Current.CancellationToken);
 
-        await harness.AdvanceAsync(TestSigningKeys.Options.RefreshInterval * 10);
+        await harness.AdvanceAsync(TestSigningKeys.Options.RefreshInterval * 10, TestContext.Current.CancellationToken);
 
         listing.Reads.Should().Be(2);
     }
@@ -117,7 +117,7 @@ public sealed class SigningKeyRingHarnessTests
         await using var harness = await SigningKeyRingHarness.StartAsync(
             TestSigningKeys.Source(listing), new FakeTimeProvider(Epoch), TestSigningKeys.Options, TestContext.Current.CancellationToken);
 
-        await harness.AdvanceAsync(TestSigningKeys.Options.LeadTime);
+        await harness.AdvanceAsync(TestSigningKeys.Options.LeadTime, TestContext.Current.CancellationToken);
 
         harness.Ring.Current.SigningKey!.SourceId.Value.Should().Be("successor");
     }
@@ -129,7 +129,7 @@ public sealed class SigningKeyRingHarnessTests
         await using var harness = await SigningKeyRingHarness.StartAsync(
             TestSigningKeys.Source(listing), new FakeTimeProvider(Epoch), TestSigningKeys.Options, TestContext.Current.CancellationToken);
 
-        var act = () => harness.AdvanceAsync(TimeSpan.FromSeconds(-1));
+        var act = () => harness.AdvanceAsync(TimeSpan.FromSeconds(-1), TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
@@ -140,12 +140,27 @@ public sealed class SigningKeyRingHarnessTests
         var listing = new TestSigningKeys.Listing(TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)));
         await using var harness = await SigningKeyRingHarness.StartAsync(
             TestSigningKeys.Source(listing), new FakeTimeProvider(Epoch), TestSigningKeys.Options, TestContext.Current.CancellationToken);
-        await harness.AdvanceAsync(TestSigningKeys.Options.RefreshInterval / 2);
+        await harness.AdvanceAsync(TestSigningKeys.Options.RefreshInterval / 2, TestContext.Current.CancellationToken);
 
-        await harness.ReadAsync();
-        await harness.ReadAsync();
+        await harness.ReadAsync(TestContext.Current.CancellationToken);
+        await harness.ReadAsync(TestContext.Current.CancellationToken);
 
         listing.Reads.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task ReadAsync_stops_waiting_when_cancelled_on_a_read_that_never_completes()
+    {
+        var listing = new TestSigningKeys.Listing(TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)));
+        await using var harness = await SigningKeyRingHarness.StartAsync(
+            TestSigningKeys.Source(listing), new FakeTimeProvider(Epoch), TestSigningKeys.Options, TestContext.Current.CancellationToken);
+        listing.ReadHangs = true;
+        using var cancellation = new CancellationTokenSource();
+
+        var read = harness.ReadAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+
+        await read.Awaiting(r => r).Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Fact]

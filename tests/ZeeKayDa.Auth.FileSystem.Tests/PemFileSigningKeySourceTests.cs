@@ -697,7 +697,7 @@ public sealed class PemFileSigningKeySourceTests
             BuildSource(new PemSigningFile(path)), new FakeTimeProvider(T0), cancellationToken: ct);
 
         File.Delete(path);
-        await harness.ReadAsync();
+        await harness.ReadAsync(ct);
 
         harness.Ring.Current.SigningKey.Should().BeNull();
         harness.Ring.Current.Published.Should().BeEmpty();

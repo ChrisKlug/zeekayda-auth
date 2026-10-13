@@ -110,22 +110,30 @@ public sealed class SigningKeyRingHarness : IAsyncDisposable
     /// time.
     /// </summary>
     /// <param name="by">How far to move the clock.</param>
+    /// <param name="cancellationToken">
+    /// A token to stop waiting, such as for a source whose read never completes. The ring carries on.
+    /// </param>
     /// <returns>A task that completes once the ring has caught up with the clock.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="by"/> is negative.</exception>
-    public async Task AdvanceAsync(TimeSpan by)
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before the ring caught up.</exception>
+    public async Task AdvanceAsync(TimeSpan by, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(by, TimeSpan.Zero);
 
         _clock.Advance(by);
-        await Ring.LastTransition.ConfigureAwait(false);
+        await Ring.LastTransition.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Moves the clock forward by one <see cref="SigningKeyOptions.RefreshInterval"/>, so the ring
     /// reads its source exactly once, and waits until it has caught up.
     /// </summary>
+    /// <param name="cancellationToken">
+    /// A token to stop waiting, such as for a source whose read never completes. The ring carries on.
+    /// </param>
     /// <returns>A task that completes once the ring has read and caught up with the clock.</returns>
-    public Task ReadAsync() => AdvanceAsync(_refreshInterval);
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled before the ring caught up.</exception>
+    public Task ReadAsync(CancellationToken cancellationToken = default) => AdvanceAsync(_refreshInterval, cancellationToken);
 
     /// <summary>
     /// Disposes the ring, which disposes its signers and then the source.
