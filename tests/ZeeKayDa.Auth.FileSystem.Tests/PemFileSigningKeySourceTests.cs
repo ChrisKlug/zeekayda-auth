@@ -16,8 +16,9 @@ namespace ZeeKayDa.Auth.FileSystem.Tests;
 /// files.
 /// </summary>
 /// <remarks>
-/// The source holds no cache and no lock: every <c>ReadAsync</c> re-reads the files from disk, so a
-/// replaced or deleted file is observed on the next read. Which key signs is decided by the core from
+/// The source holds no lock, and every <c>ReadAsync</c> re-reads the files from disk, so a replaced or
+/// deleted file is observed on the next read. Its one cache is which version of an encrypted key's files
+/// last decrypted, so a password is checked again only when they change. Which key signs is decided by the core from
 /// each listed key's validity window, never by this source, so it holds no <c>TimeProvider</c>.
 /// </remarks>
 public sealed class PemFileSigningKeySourceTests
@@ -40,6 +41,36 @@ public sealed class PemFileSigningKeySourceTests
         return new PemFileSigningKeySource(
             Options.Create(options),
             new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance));
+    }
+
+    /// <summary>
+    /// A private key block whose label and base64 are well formed but whose content is not a key: listing
+    /// accepts it on its label alone, and only a parse fails on it.
+    /// </summary>
+    private const string UnparseableKeyPem = "-----BEGIN PRIVATE KEY-----\nbm90IGEga2V5\n-----END PRIVATE KEY-----";
+
+    private const string Password = "correct horse battery staple";
+
+    private static string EncryptedKeyPem(X509Certificate2 certificate, string password = Password)
+    {
+        var parameters = new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 10_000);
+        return certificate.GetRSAPrivateKey() is { } rsa
+            ? rsa.ExportEncryptedPkcs8PrivateKeyPem(password, parameters)
+            : certificate.GetECDsaPrivateKey()!.ExportEncryptedPkcs8PrivateKeyPem(password, parameters);
+    }
+
+    /// <summary>A password source that counts its calls and returns whatever <see cref="Value"/> is now.</summary>
+    private sealed class PasswordSource(string value = Password)
+    {
+        public string Value { get; set; } = value;
+
+        public int Calls { get; private set; }
+
+        public Task<string> GetAsync(CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(Value);
+        }
     }
 
     private static X509Certificate2 CreateRsaCertificate() =>
@@ -91,7 +122,7 @@ public sealed class PemFileSigningKeySourceTests
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         var path = tempDir.WriteTextFile("dsa.pem", DsaCertificatePem);
-        var sut = BuildSource(new PemSigningFile(path, tempDir.WriteTextFile("dsa.key", "unread")));
+        var sut = BuildSource(new PemSigningFile(path, tempDir.WriteTextFile("dsa.key", UnparseableKeyPem)));
 
         var listing = await sut.ReadAsync(ct);
 
@@ -175,10 +206,10 @@ public sealed class PemFileSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_never_parses_a_separate_key_file_for_any_listed_file()
+    public async Task ReadAsync_reads_only_the_label_of_a_separate_key_file()
     {
-        // Listing needs only public material: the key files named here hold no PEM at all, and the
-        // read still succeeds for every file.
+        // Listing needs only public material: the key files named here carry a private key label over
+        // content that is no key, and the read still succeeds for every file.
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var firstCertificate = CreateRsaCertificate();
@@ -187,8 +218,8 @@ public sealed class PemFileSigningKeySourceTests
         var secondPath = tempDir.WriteCertificateOnlyPemFile("second.crt", secondCertificate);
         var sut = BuildSource(
         [
-            new PemSigningFile(firstPath, tempDir.WriteTextFile("first.key", "not a key")),
-            new PemSigningFile(secondPath, tempDir.WriteTextFile("second.key", "not a key")),
+            new PemSigningFile(firstPath, tempDir.WriteTextFile("first.key", UnparseableKeyPem)),
+            new PemSigningFile(secondPath, tempDir.WriteTextFile("second.key", UnparseableKeyPem)),
         ]);
 
         var keySet = (await sut.ReadAsync(ct)).Keys;
@@ -269,7 +300,7 @@ public sealed class PemFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
-        var keyPath = tempDir.WriteTextFile("key.pem", "-----BEGIN PRIVATE KEY-----\nnot base64\n-----END PRIVATE KEY-----");
+        var keyPath = tempDir.WriteTextFile("key.pem", UnparseableKeyPem);
         var sut = BuildSource(new PemSigningFile(certPath, keyPath));
         var keySet = (await sut.ReadAsync(ct)).Keys;
 
@@ -532,23 +563,6 @@ public sealed class PemFileSigningKeySourceTests
         failure.Message.Should().Contain(path);
     }
 
-    [Fact]
-    public async Task ReadAsync_rejects_a_combined_file_whose_only_key_block_is_encrypted()
-    {
-        // An encrypted key block cannot be imported, so the file could never sign.
-        var ct = TestContext.Current.CancellationToken;
-        using var tempDir = new TempSigningKeyDirectory();
-        using var certificate = CreateRsaCertificate();
-        using var key = certificate.GetRSAPrivateKey()!;
-        var encryptedKey = key.ExportEncryptedPkcs8PrivateKeyPem(
-            "password", new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 100_000));
-        var path = tempDir.WriteTextFile("encrypted.pem", certificate.ExportCertificatePem() + "\n" + encryptedKey);
-        var sut = BuildSource(new PemSigningFile(path));
-
-        var listing = await sut.ReadAsync(ct);
-
-        listing.ShouldReportOnly(path, "signing.certificate.private_key_not_found");
-    }
 
     [Fact]
     public async Task ReadAsync_rejects_a_combined_file_whose_key_block_is_truncated()
@@ -568,6 +582,22 @@ public sealed class PemFileSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_rejects_a_separate_key_file_that_carries_no_private_key_block()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", "not a key");
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+
+        var listing = await sut.ReadAsync(ct);
+
+        var failure = listing.ShouldReportOnly(certPath, "signing.certificate.private_key_not_found");
+        failure.Message.Should().Contain(keyPath);
+    }
+
+    [Fact]
     public async Task ReadAsync_no_longer_lists_a_PEM_whose_separate_key_file_was_deleted()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -582,6 +612,270 @@ public sealed class PemFileSigningKeySourceTests
         var keys = (await sut.ReadAsync(ct)).Keys;
 
         keys.Should().BeEmpty("deleting the private key revokes the key as deleting the certificate does");
+    }
+
+    // ── Encrypted keys ───────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_lists_an_encrypted_key_file_when_a_password_is_configured()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.Failures.Should().BeEmpty();
+        listing.Keys.Should().ContainSingle().Which.Id.Should().Be(new SourceKeyId(certPath));
+    }
+
+    [Fact]
+    public async Task ReadAsync_lists_a_combined_file_with_an_encrypted_key_when_a_password_is_configured()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WriteTextFile("combined.pem", certificate.ExportCertificatePem() + "\n" + EncryptedKeyPem(certificate));
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(path, PasswordSource: password.GetAsync));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.Failures.Should().BeEmpty();
+        listing.Keys.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_an_encrypted_key_file_without_a_password_at_listing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+
+        var listing = await sut.ReadAsync(ct);
+
+        var failure = listing.ShouldReportOnly(certPath, "signing.file_signing.key_encryption_mismatch");
+        failure.Message.Should().Contain(keyPath);
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_combined_file_with_an_encrypted_key_without_a_password_at_listing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WriteTextFile("combined.pem", certificate.ExportCertificatePem() + "\n" + EncryptedKeyPem(certificate));
+        var sut = BuildSource(new PemSigningFile(path));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(path, "signing.file_signing.key_encryption_mismatch");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_plain_key_file_when_a_password_is_configured()
+    {
+        // The operator believes the key on disk is encrypted; it is not, so the password protects nothing.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(certPath, "signing.file_signing.key_encryption_mismatch");
+        password.Calls.Should().Be(0, "a label mismatch is found without the password");
+    }
+
+    [Fact]
+    public async Task ReadAsync_names_the_legacy_openssl_format_and_the_pkcs8_conversion()
+    {
+        // Only the header identifies the format, so the body here need not be a real key.
+        const string legacyKey = """
+            -----BEGIN RSA PRIVATE KEY-----
+            Proc-Type: 4,ENCRYPTED
+            DEK-Info: AES-256-CBC,0123456789ABCDEF0123456789ABCDEF
+
+            bm90IGEga2V5
+            -----END RSA PRIVATE KEY-----
+            """;
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", legacyKey);
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+
+        var listing = await sut.ReadAsync(ct);
+
+        var failure = listing.ShouldReportOnly(certPath, "signing.file_signing.legacy_encrypted_key");
+        failure.Message.Should().Contain("openssl pkcs8 -topk8");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_wrong_password_at_listing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var password = new PasswordSource("wrong password");
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+
+        var listing = await sut.ReadAsync(ct);
+
+        var failure = listing.ShouldReportOnly(certPath, "signing.file_signing.key_password_rejected");
+        failure.Message.Should().Contain(keyPath).And.NotContain("wrong password");
+    }
+
+    [Fact]
+    public async Task ReadAsync_retries_a_rejected_password_on_the_next_read()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var password = new PasswordSource("wrong password");
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+        (await sut.ReadAsync(ct)).Keys.Should().BeEmpty();
+        password.Value = Password;
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.Failures.Should().BeEmpty("the password was fixed at its source and the files did not change");
+        listing.Keys.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ReadAsync_fetches_the_password_only_when_the_key_file_changes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+
+        await sut.ReadAsync(ct);
+        await sut.ReadAsync(ct);
+        password.Calls.Should().Be(1, "an unchanged key is not decrypted again");
+
+        // Re-encrypting gives a new salt and IV, so the same key is new text on disk.
+        tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        await sut.ReadAsync(ct);
+
+        password.Calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_an_encrypted_key_that_does_not_belong_to_its_certificate()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        using var other = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(other));
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(certPath, "signing.file_signing.invalid_pem");
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_signs_with_an_encrypted_key_given_its_password()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+        var key = (await sut.ReadAsync(ct)).Keys.Single();
+
+        using var signer = await sut.CreateSignerAsync(key.Id, ct);
+        var signingInput = "header.payload"u8.ToArray();
+        var signature = await signer.SignAsync(signingInput, ct);
+
+        using var rsa = RSA.Create(key.PublicKey.RsaPublicParameters!.Value);
+        rsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_signs_with_a_combined_files_encrypted_EC_key_given_its_password()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateEcSelfSigned(
+            "test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteTextFile("combined.pem", certificate.ExportCertificatePem() + "\n" + EncryptedKeyPem(certificate));
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(path, PasswordSource: password.GetAsync), SigningAlgorithm.ES256);
+        var key = (await sut.ReadAsync(ct)).Keys.Single();
+
+        using var signer = await sut.CreateSignerAsync(key.Id, ct);
+        var signingInput = "header.payload"u8.ToArray();
+        var signature = await signer.SignAsync(signingInput, ct);
+
+        using var ecdsa = certificate.GetECDsaPublicKey()!;
+        ecdsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_fetches_the_password_once()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+        var key = (await sut.ReadAsync(ct)).Keys.Single();
+        var callsAfterListing = password.Calls;
+
+        using var signer = await sut.CreateSignerAsync(key.Id, ct);
+
+        password.Calls.Should().Be(callsAfterListing + 1);
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_rejects_a_wrong_password_under_its_own_code_without_leaking_it()
+    {
+        // The password changed at its source after the key was listed.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+        var key = (await sut.ReadAsync(ct)).Keys.Single();
+        password.Value = "wrong password";
+
+        var act = async () => await sut.CreateSignerAsync(key.Id, ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        AssertNamesTypeWithoutCopyingMessage(exception.Which, "signing.file_signing.key_password_rejected");
+        exception.Which.AggregatedFailures.Single().Message.Should().NotContain("wrong password");
     }
 
     // ── EC certificates ──────────────────────────────────────────────────────────────────────────
@@ -700,7 +994,7 @@ public sealed class PemFileSigningKeySourceTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
         var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
-        var keyPath = tempDir.WriteTextFile("key.pem", "-----BEGIN PRIVATE KEY-----\nnot base64\n-----END PRIVATE KEY-----");
+        var keyPath = tempDir.WriteTextFile("key.pem", UnparseableKeyPem);
         var sut = BuildSource(new PemSigningFile(certPath, keyPath));
         var keySet = (await sut.ReadAsync(ct)).Keys;
 

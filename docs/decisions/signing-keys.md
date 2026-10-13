@@ -32,11 +32,10 @@ deleted file, key file, certificate or vault object as nothing (an unmounted dir
 **A key due to sign that cannot** (signer fails, or dropped) is skipped: the previous key signs on (Error, Degraded); fixed once its
 predecessor is superseded, it never takes over (in memory: a restarted replica adopts it); only startup refuses it. A signer closes at the first read a `RefreshInterval` after it is seen to stop signing; its key signing again after that reopens and self-tests one.
 
-**File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list
-`Files`/`Certificates` with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`.
-A certificate's `NotBefore` is its CA issuance date, so one listed over a lead time later signs as soon as it is read.
-Listing checks every entry can sign without importing a key: PFX key bags, PEM key files (permissions) and blocks,
-Windows `HasPrivateKey`. One that cannot is a `SourceKeyFailure`, not a throw, so it cannot block a revocation. No read lock or cache.
+**File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list `Files`/`Certificates`
+with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`. A certificate's `NotBefore`
+is its CA issuance date, so one listed over a lead time later signs as soon as it is read. Listing checks every entry can sign without importing a plain key: PFX key bags, PEM key files (permissions) and block labels, Windows `HasPrivateKey`. One that cannot is a `SourceKeyFailure`, not a throw, so it cannot block a revocation. No read lock.
+A PEM key may be PKCS#8-encrypted under a per-file password; listing decrypts and pairs it once per hash of its files (the one cache) and retries a failure next read. Legacy OpenSSL-encrypted keys are refused by name.
 
 **The framework derives every `kid`; a provider cannot supply one.** The ring computes an RFC 7638 JWK thumbprint over
 the public key. A provider supplies only its internal `SourceKeyId`, so it cannot leak a vault URI, certificate
