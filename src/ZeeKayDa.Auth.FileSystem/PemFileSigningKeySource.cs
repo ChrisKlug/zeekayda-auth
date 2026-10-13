@@ -108,6 +108,7 @@ internal sealed class PemFileSigningKeySource(
 
         using var certificate = ParseCertificate(certPem, file.Path);
         CheckKeyBlock(file, keyPem);
+        CheckNoPlainKeyBesideAnEncryptedOne(file, certPem);
         var key = SourceKey.FromCertificate(certificate, id);
 
         if (file.PasswordSource is not null)
@@ -318,6 +319,23 @@ internal sealed class PemFileSigningKeySource(
                 throw EncryptionMismatch(file,
                     "is not encrypted, but a PasswordSource is configured for it. Remove the password, or " +
                     "encrypt the key with 'openssl pkcs8 -topk8 -v2 aes-256-cbc'");
+        }
+    }
+
+    /// <summary>
+    /// Throws when a split-form certificate file carries a plain private key while the key file is
+    /// encrypted: the password would protect nothing.
+    /// </summary>
+    private static void CheckNoPlainKeyBesideAnEncryptedOne(PemSigningFile file, ReadOnlySpan<char> certPem)
+    {
+        if (file.KeyPath is not null && file.PasswordSource is not null && FindKeyBlock(certPem) == KeyBlock.Plain)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.key_encryption_mismatch",
+                    $"The certificate file '{file.Path}' carries an unencrypted private key, while a " +
+                    $"PasswordSource is configured for the encrypted key in '{file.KeyPath}'. Remove the " +
+                    "private key from the certificate file."));
         }
     }
 

@@ -698,6 +698,39 @@ public sealed class PemFileSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_rejects_a_plain_key_in_the_certificate_file_beside_an_encrypted_key_file()
+    {
+        // A plaintext copy of the key beside the encrypted one leaves the password protecting nothing.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WritePemFile("cert.pem", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+
+        var listing = await sut.ReadAsync(ct);
+
+        var failure = listing.ShouldReportOnly(certPath, "signing.file_signing.key_encryption_mismatch");
+        failure.Message.Should().Contain("unencrypted private key");
+    }
+
+    [Fact]
+    public async Task ReadAsync_reports_a_password_source_that_returns_null_as_password_unavailable()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, _ => Task.FromResult<string>(null!)));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(certPath, "signing.file_signing.password_unavailable");
+    }
+
+    [Fact]
     public async Task ReadAsync_names_the_legacy_openssl_format_and_the_pkcs8_conversion()
     {
         // Only the header identifies the format, so the body here need not be a real key.
