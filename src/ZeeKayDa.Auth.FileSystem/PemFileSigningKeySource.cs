@@ -15,7 +15,7 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// <remarks>
 /// <para>
 /// <see cref="ReadAsync"/> parses each file's certificate and checks that the file can sign: the key
-/// file's permissions, and that its private key block's label matches whether a password is configured.
+/// file's permissions, and its key blocks through <see cref="PemKeyBlocks"/>.
 /// A plain key is never parsed or imported at listing; only <see cref="CreateSignerAsync"/> imports one,
 /// for the key it is asked for.
 /// </para>
@@ -41,15 +41,10 @@ internal sealed class PemFileSigningKeySource(
     // Keyed by Path: the hash of the certificate and key text whose password last verified.
     private readonly ConcurrentDictionary<string, byte[]> _verifiedVersions = new(StringComparer.Ordinal);
 
-    // RFC 7468 §10 and §11.
-    private static readonly HashSet<string> UnencryptedPrivateKeyLabels =
-        new(["PRIVATE KEY", "RSA PRIVATE KEY", "EC PRIVATE KEY"], StringComparer.Ordinal);
-
-    private const string EncryptedPrivateKeyLabel = "ENCRYPTED PRIVATE KEY";
-
     private const string RsaKeyAlgorithmOid = "1.2.840.113549.1.1.1";
 
-    private enum KeyBlock { None, Plain, Encrypted, LegacyEncrypted }
+    /// <summary>A file's certificate text and key text, the same text twice for a combined file.</summary>
+    private sealed record PemTexts(string Cert, string Key);
 
     /// <inheritdoc/>
     public SigningAlgorithm Algorithm => _options.Value.Algorithm;
@@ -98,61 +93,74 @@ internal sealed class PemFileSigningKeySource(
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The certificate is not valid PEM or its key type is unsupported; a key file is symlinked or too
-    /// permissive; the key block is missing, in the legacy OpenSSL encrypted format, or encrypted when no
-    /// password is configured (or the reverse); or an encrypted key does not decrypt and pair.
+    /// permissive; the key blocks fail <see cref="PemKeyBlocks.Check"/>; or an encrypted key does not
+    /// decrypt and pair.
     /// </exception>
     private async ValueTask<SourceKey?> ListAsync(PemSigningFile file, SourceKeyId id, CancellationToken cancellationToken)
     {
-        if (await ReadPemFilesAsync(file, cancellationToken).ConfigureAwait(false) is not (string certPem, string keyPem))
+        if (await ReadPemTextsAsync(file, cancellationToken).ConfigureAwait(false) is not { } texts)
             return null;
 
-        using var certificate = ParseCertificate(certPem, file.Path);
-        CheckKeyBlock(file, keyPem);
-        CheckNoPlainKeyBesideAnEncryptedOne(file, certPem, keyPem);
+        using var certificate = ParseCertificate(texts.Cert, file.Path);
+        PemKeyBlocks.Check(file, texts.Cert, texts.Key);
         var key = SourceKey.FromCertificate(certificate, id);
 
         if (file.PasswordSource is not null)
-            await VerifyPasswordOncePerVersionAsync(file, certificate, certPem, keyPem, cancellationToken).ConfigureAwait(false);
+            await VerifyPasswordOncePerVersionAsync(file, certificate, texts, cancellationToken).ConfigureAwait(false);
 
         return key;
     }
 
     /// <summary>
-    /// The certificate and key text of <paramref name="file"/>, the same text twice for a combined file,
-    /// or <see langword="null"/> when either file does not exist.
+    /// The certificate and key text of <paramref name="file"/>, or <see langword="null"/> when either
+    /// file does not exist.
     /// </summary>
-    private async ValueTask<(string CertPem, string KeyPem)?> ReadPemFilesAsync(
-        PemSigningFile file, CancellationToken cancellationToken)
+    private async ValueTask<PemTexts?> ReadPemTextsAsync(PemSigningFile file, CancellationToken cancellationToken)
     {
         if (await reader.TryReadPemTextAsync(file.Path, cancellationToken).ConfigureAwait(false) is not { } certPem)
             return null;
 
         if (file.KeyPath is null)
-            return (certPem, certPem);
+            return new(certPem, certPem);
 
         return await reader.TryReadPemTextAsync(file.KeyPath, cancellationToken).ConfigureAwait(false) is { } keyPem
-            ? (certPem, keyPem)
+            ? new(certPem, keyPem)
             : null;
     }
 
     private async Task VerifyPasswordOncePerVersionAsync(
-        PemSigningFile file, X509Certificate2 certificate, string certPem, string keyPem, CancellationToken cancellationToken)
+        PemSigningFile file, X509Certificate2 certificate, PemTexts texts, CancellationToken cancellationToken)
     {
-        var version = VersionOf(file, certPem, keyPem);
+        var version = VersionOf(file, texts);
         if (_verifiedVersions.TryGetValue(file.Path, out var verified) && verified.AsSpan().SequenceEqual(version))
             return;
 
         _verifiedVersions.TryRemove(file.Path, out _);
-        var password = await SigningFilePassword.ReadAsync(file.Path, file.PasswordSource!, cancellationToken).ConfigureAwait(false);
-        using var withKey = WithDecryptedKey(file, certificate, keyPem, password);
+        var password = await ReadPasswordAsync(file, cancellationToken).ConfigureAwait(false);
+        using var withKey = WithDecryptedKey(file, certificate, texts.Key, password);
         _verifiedVersions[file.Path] = version;
     }
 
     // Hashed separately so a byte moving between the two files is still a new version.
-    private static byte[] VersionOf(PemSigningFile file, string certPem, string keyPem) =>
+    private static byte[] VersionOf(PemSigningFile file, PemTexts texts) =>
         file.KeyPath is null
-            ? SHA256.HashData(Encoding.UTF8.GetBytes(certPem))
-            : [.. SHA256.HashData(Encoding.UTF8.GetBytes(certPem)), .. SHA256.HashData(Encoding.UTF8.GetBytes(keyPem))];
+            ? SHA256.HashData(Encoding.UTF8.GetBytes(texts.Cert))
+            : [.. SHA256.HashData(Encoding.UTF8.GetBytes(texts.Cert)), .. SHA256.HashData(Encoding.UTF8.GetBytes(texts.Key))];
+
+    /// <summary>
+    /// The configured password. An empty one is <c>password_unavailable</c>: it is most often a missing
+    /// secret bound to <c>""</c>, and a key encrypted under it is a plain key in disguise.
+    /// </summary>
+    private static async Task<string> ReadPasswordAsync(PemSigningFile file, CancellationToken cancellationToken)
+    {
+        var password = await SigningFilePassword.ReadAsync(file.Path, file.PasswordSource!, cancellationToken).ConfigureAwait(false);
+        return password.Length > 0
+            ? password
+            : throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.password_unavailable",
+                    $"The password source for '{file.Path}' returned an empty password."));
+    }
 
     private static X509Certificate2 ParseCertificate(string certPem, string certificatePath)
     {
@@ -195,9 +203,12 @@ internal sealed class PemFileSigningKeySource(
             ? certPem
             : await reader.ReadPemTextAsync(file.KeyPath, cancellationToken).ConfigureAwait(false);
 
+        // The files may have changed since they were listed.
+        PemKeyBlocks.Check(file, certPem, keyPem);
+
         if (file.PasswordSource is not null)
         {
-            var password = await SigningFilePassword.ReadAsync(file.Path, file.PasswordSource, cancellationToken).ConfigureAwait(false);
+            var password = await ReadPasswordAsync(file, cancellationToken).ConfigureAwait(false);
             using var certificate = ParseCertificate(certPem, file.Path);
             return WithDecryptedKey(file, certificate, keyPem, password);
         }
@@ -227,7 +238,7 @@ internal sealed class PemFileSigningKeySource(
     private static X509Certificate2 WithDecryptedKey(
         PemSigningFile file, X509Certificate2 certificate, string keyPem, string password)
     {
-        // Listing has already refused any key type but RSA and EC.
+        // SourceKey.FromCertificate refuses any key type but RSA and EC at listing.
         if (certificate.GetKeyAlgorithm() == RsaKeyAlgorithmOid)
         {
             using var rsa = RSA.Create();
@@ -253,8 +264,9 @@ internal sealed class PemFileSigningKeySource(
                 new ZeeKayDaConfigurationFailure(
                     "signing.file_signing.key_password_rejected",
                     $"The encrypted private key in '{KeyFileOf(file)}' could not be decrypted with the " +
-                    $"configured password: {ex.GetType().FullName} was thrown. Check the password source, " +
-                    "or that the key is not corrupt. See the inner exception for the root cause."),
+                    $"configured password, or is not a key of the certificate's type: {ex.GetType().FullName} was " +
+                    "thrown. Check the password source, and that the key belongs to the certificate. See the " +
+                    "inner exception for the root cause."),
                 ex);
         }
         catch (ArgumentException ex)
@@ -290,112 +302,5 @@ internal sealed class PemFileSigningKeySource(
             cause);
     }
 
-    /// <summary>
-    /// Throws unless <paramref name="keyPem"/> holds a private key block in the form
-    /// <paramref name="file"/>'s configuration expects: encrypted when a password is configured, plain
-    /// otherwise. Only labels are read; the key itself is never parsed.
-    /// </summary>
-    private static void CheckKeyBlock(PemSigningFile file, ReadOnlySpan<char> keyPem)
-    {
-        var passwordConfigured = file.PasswordSource is not null;
-        switch (FindKeyBlock(keyPem))
-        {
-            case KeyBlock.None:
-                throw NoPrivateKey(file);
-
-            case KeyBlock.LegacyEncrypted:
-                throw new ZeeKayDaConfigurationException(
-                    new ZeeKayDaConfigurationFailure(
-                        "signing.file_signing.legacy_encrypted_key",
-                        $"The private key in '{KeyFileOf(file)}' is encrypted in the legacy OpenSSL format " +
-                        "(Proc-Type: 4,ENCRYPTED), which cannot be imported. Convert it to an encrypted " +
-                        "PKCS#8 key with 'openssl pkcs8 -topk8 -v2 aes-256-cbc'."));
-
-            case KeyBlock.Encrypted when !passwordConfigured:
-                throw EncryptionMismatch(file,
-                    "is encrypted, but no PasswordSource is configured for it");
-
-            case KeyBlock.Plain when passwordConfigured:
-                throw EncryptionMismatch(file,
-                    "is not encrypted, but a PasswordSource is configured for it. Remove the password, or " +
-                    "encrypt the key with 'openssl pkcs8 -topk8 -v2 aes-256-cbc'");
-        }
-    }
-
-    /// <summary>
-    /// Throws when a password is configured but either file also carries an unencrypted private key
-    /// block, wherever it sits: the password would protect nothing.
-    /// </summary>
-    private static void CheckNoPlainKeyBesideAnEncryptedOne(PemSigningFile file, string certPem, string keyPem)
-    {
-        if (file.PasswordSource is null)
-            return;
-
-        if (ContainsPlainKeyBlock(keyPem))
-            throw PlainKeyBesideEncrypted(KeyFileOf(file));
-
-        if (file.KeyPath is not null && ContainsPlainKeyBlock(certPem))
-            throw PlainKeyBesideEncrypted(file.Path);
-    }
-
-    private static bool ContainsPlainKeyBlock(ReadOnlySpan<char> pem)
-    {
-        while (PemEncoding.TryFind(pem, out var fields))
-        {
-            if (UnencryptedPrivateKeyLabels.Contains(pem[fields.Label].ToString()))
-                return true;
-
-            pem = pem[fields.Location.End..];
-        }
-
-        return false;
-    }
-
-    private static ZeeKayDaConfigurationException PlainKeyBesideEncrypted(string path) =>
-        new(new ZeeKayDaConfigurationFailure(
-            "signing.file_signing.key_encryption_mismatch",
-            $"The file '{path}' carries an unencrypted private key while a PasswordSource is configured, so " +
-            "the password protects nothing. Remove the unencrypted key."));
-
-    /// <summary>
-    /// The first complete private key block in <paramref name="pem"/>. The block is located and its
-    /// base64 checked, but the key itself is never parsed.
-    /// </summary>
-    private static KeyBlock FindKeyBlock(ReadOnlySpan<char> pem)
-    {
-        var rest = pem;
-        while (PemEncoding.TryFind(rest, out var fields))
-        {
-            var label = rest[fields.Label];
-            if (label.SequenceEqual(EncryptedPrivateKeyLabel))
-                return KeyBlock.Encrypted;
-
-            if (UnencryptedPrivateKeyLabels.Contains(label.ToString()))
-                return KeyBlock.Plain;
-
-            rest = rest[fields.Location.End..];
-        }
-
-        // RFC 7468 PEM carries no headers, so PemEncoding never matches a legacy block; its header is
-        // what identifies it.
-        return pem.Contains("Proc-Type: 4,ENCRYPTED", StringComparison.Ordinal)
-            ? KeyBlock.LegacyEncrypted
-            : KeyBlock.None;
-    }
-
     private static string KeyFileOf(PemSigningFile file) => file.KeyPath ?? file.Path;
-
-    private static ZeeKayDaConfigurationException EncryptionMismatch(PemSigningFile file, string problem) =>
-        new(new ZeeKayDaConfigurationFailure(
-            "signing.file_signing.key_encryption_mismatch",
-            $"The private key in '{KeyFileOf(file)}' {problem}."));
-
-    private static ZeeKayDaConfigurationException NoPrivateKey(PemSigningFile file) =>
-        new(new ZeeKayDaConfigurationFailure(
-            "signing.certificate.private_key_not_found",
-            file.KeyPath is null
-                ? $"The PEM file at '{file.Path}' carries no private key block and names no separate KeyPath. " +
-                  "Every listed file must carry its private key, because any of them may be chosen to sign."
-                : $"The key file at '{file.KeyPath}' carries no private key block. Every listed file must " +
-                  "carry its private key, because any of them may be chosen to sign."));
 }
