@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -55,7 +56,10 @@ public sealed class SigningKeyRingHarness : IAsyncDisposable
     /// <exception cref="ArgumentNullException">
     /// <paramref name="source"/> or <paramref name="clock"/> is <see langword="null"/>.
     /// </exception>
-    /// <exception cref="ZeeKayDaConfigurationException">Startup failed, as it would stop a host.</exception>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// <paramref name="options"/> breaks a rule the server enforces on <c>SigningKeys</c>, or startup failed
+    /// as it would stop a host.
+    /// </exception>
     public static async Task<SigningKeyRingHarness> StartAsync(
         ISigningKeySource source, FakeTimeProvider clock, SigningKeyOptions? options = null,
         CancellationToken cancellationToken = default)
@@ -74,12 +78,22 @@ public sealed class SigningKeyRingHarness : IAsyncDisposable
         var ring = new SigningKeyRing(source, clock, resolved, logger);
         try
         {
+            if (resolved.Validate().ToArray() is { Length: > 0 } failures)
+                throw new ZeeKayDaConfigurationException(failures);
+
             await ring.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception startupFailure)
         {
-            await ((IAsyncDisposable)ring).DisposeAsync().ConfigureAwait(false);
-            throw;
+            try
+            {
+                await ((IAsyncDisposable)ring).DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                // The startup failure is what the test needs to see, even when disposing the source throws too.
+                ExceptionDispatchInfo.Throw(startupFailure);
+            }
         }
 
         return new SigningKeyRingHarness(ring, clock, resolved.RefreshInterval);
