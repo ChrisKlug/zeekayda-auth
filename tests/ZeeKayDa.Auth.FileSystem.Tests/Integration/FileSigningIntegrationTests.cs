@@ -29,13 +29,12 @@ public sealed class FileSigningIntegrationTests
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
     private const string CorrectPassword = "correct horse battery staple";
 
-    private static (ServiceCollection Services, FakeTimeProvider TimeProvider) BuildServices(DateTimeOffset now)
+    private static ServiceCollection BuildServices(DateTimeOffset now)
     {
-        var timeProvider = new FakeTimeProvider(now);
         var services = new ServiceCollection();
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddSingleton<TimeProvider>(timeProvider);
-        return (services, timeProvider);
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider(now));
+        return services;
     }
 
     // ── PEM: end-to-end through the signing key ring ────────────────────────────────────────────
@@ -58,7 +57,7 @@ public sealed class FileSigningIntegrationTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePemFile("current.pem", certificate);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
@@ -90,7 +89,7 @@ public sealed class FileSigningIntegrationTests
         using var newer = TestCertificateFactory.CreateRsaSelfSigned("newer", T0 - TimeSpan.FromDays(1) - TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(365));
         var olderPath = tempDir.WritePemFile("older.pem", older);
         var newerPath = tempDir.WritePemFile("newer.pem", newer);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
@@ -116,7 +115,7 @@ public sealed class FileSigningIntegrationTests
         using var newer = TestCertificateFactory.CreateRsaSelfSigned("newer", T0 - TimeSpan.FromHours(1), T0 + TimeSpan.FromDays(365));
         var olderPath = tempDir.WritePemFile("older.pem", older);
         var newerPath = tempDir.WritePemFile("newer.pem", newer);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
@@ -146,7 +145,7 @@ public sealed class FileSigningIntegrationTests
         using var next = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
         var currentPath = tempDir.WritePemFile("current.pem", current);
         var nextPath = tempDir.WritePemFile("next.pem", next);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(SigningAlgorithm.RS256, options =>
@@ -178,7 +177,7 @@ public sealed class FileSigningIntegrationTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("future", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
         var path = tempDir.WritePemFile("current.pem", certificate);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
@@ -197,7 +196,7 @@ public sealed class FileSigningIntegrationTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("expired", T0 - TimeSpan.FromDays(400), T0 - TimeSpan.FromDays(1));
         var path = tempDir.WritePemFile("current.pem", certificate);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
@@ -217,7 +216,7 @@ public sealed class FileSigningIntegrationTests
     public async Task Full_DI_wiring_fails_startup_when_no_PEM_file_is_listed()
     {
         var ct = TestContext.Current.CancellationToken;
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
@@ -236,7 +235,7 @@ public sealed class FileSigningIntegrationTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePemFile("current.pem", certificate);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(path, SigningAlgorithm.ES256);
@@ -256,7 +255,7 @@ public sealed class FileSigningIntegrationTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("current", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPfxFileSigning(path, SigningAlgorithm.ES256, _ => Task.FromResult(CorrectPassword));
@@ -278,7 +277,7 @@ public sealed class FileSigningIntegrationTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePfxFile("key.pfx", certificate, CorrectPassword);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPfxFileSigning(path, SigningAlgorithm.RS256, _ => Task.FromResult(CorrectPassword));
@@ -308,7 +307,7 @@ public sealed class FileSigningIntegrationTests
         using var newer = TestCertificateFactory.CreateRsaSelfSigned("newer", T0 - TimeSpan.FromDays(1) - TimeSpan.FromMinutes(1), T0 + TimeSpan.FromDays(365));
         var olderPath = tempDir.WritePfxFile("older.pfx", older, "older-password");
         var newerPath = tempDir.WritePfxFile("newer.pfx", newer, CorrectPassword);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPfxFileSigning(SigningAlgorithm.RS256, options =>
@@ -334,7 +333,7 @@ public sealed class FileSigningIntegrationTests
         using var next = TestCertificateFactory.CreateRsaSelfSigned("next", T0 + TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(400));
         var currentPath = tempDir.WritePfxFile("current.pfx", current, CorrectPassword);
         var nextPath = tempDir.WritePfxFile("next.pfx", next, CorrectPassword);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPfxFileSigning(SigningAlgorithm.RS256, options =>
@@ -366,7 +365,7 @@ public sealed class FileSigningIntegrationTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("rsa", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePemFile("current.pem", certificate);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(path, SigningAlgorithm.ES256);
@@ -386,7 +385,7 @@ public sealed class FileSigningIntegrationTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("rsa", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPfxFileSigning(path, SigningAlgorithm.ES256, _ => Task.FromResult(CorrectPassword));
@@ -405,7 +404,7 @@ public sealed class FileSigningIntegrationTests
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         var missingPath = tempDir.GetPath("does-not-exist.pem");
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(missingPath, SigningAlgorithm.RS256);
@@ -423,7 +422,7 @@ public sealed class FileSigningIntegrationTests
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         var path = tempDir.WriteTextFile("key.pem", "this is not a valid PEM file");
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
@@ -442,7 +441,7 @@ public sealed class FileSigningIntegrationTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePfxFile("key.pfx", certificate, CorrectPassword);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPfxFileSigning(path, SigningAlgorithm.RS256, _ => Task.FromResult("wrong-password"));
@@ -475,7 +474,7 @@ public sealed class FileSigningIntegrationTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePemFile("current.pem", certificate);
-        var (services, _) = BuildServices(T0);
+        var services = BuildServices(T0);
 
         var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddPemFileSigning(path, SigningAlgorithm.RS256);
