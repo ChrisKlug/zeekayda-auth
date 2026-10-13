@@ -347,10 +347,17 @@ internal static class TestSigningKeys
 
         /// <summary>The source id of every signer disposed, in order.</summary>
         public List<SourceKeyId> SignersDisposed { get; } = [];
+
+        public bool SourceDisposed { get; set; }
     }
 
-    private sealed class ListingSource(Listing listing, Func<ISigner, ISigner>? decorateSigner) : ISigningKeySource
+    /// <summary>A source over <paramref name="listing"/>, for a ring the test does not build here.</summary>
+    public static ISigningKeySource Source(Listing listing) => new ListingSource(listing, decorateSigner: null);
+
+    private sealed class ListingSource(Listing listing, Func<ISigner, ISigner>? decorateSigner) : ISigningKeySource, IDisposable
     {
+        public void Dispose() => listing.SourceDisposed = true;
+
         public SigningAlgorithm Algorithm => listing.Algorithm;
 
         public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)

@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <PackageId>ZeeKayDa.Auth.TestKit</PackageId>
-    <Description>Conformance test kit for ZeeKayDa.Auth extension points: ready-to-derive xUnit base classes that let a third-party backing-store author prove their implementation against the framework's invariants, without needing internal access to ZeeKayDa.Auth itself.</Description>
+    <Description>Test kit for ZeeKayDa.Auth extension points, usable without internal access to ZeeKayDa.Auth itself: ready-to-derive xUnit base classes that let a backing-store author prove their implementation against the framework's invariants, and a signing key ring harness that lets a signing key source's tests drive the ring that reads it on a fake clock.</Description>
     <!-- CS1591 (missing XML doc) is suppressed for [Fact]/[Theory] test methods only: per this
          repo's test-standards convention, a test method's readable-English-sentence name IS its
          documentation; the abstract/virtual members a consumer actually overrides keep full XML
@@ -14,6 +14,7 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3.extensibility.core" />
     <PackageReference Include="xunit.v3.assert" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,7 +1,9 @@
 using System.Security.Cryptography;
 using Azure.Security.KeyVault.Certificates;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AzureKeyVault.Tests.Fakes;
+using ZeeKayDa.Auth.TestKit.Signing;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AzureKeyVault.Tests;
@@ -491,5 +493,31 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
         await act.Should().ThrowAsync<InvalidOperationException>(
             "a version outside the listing was never published, so downloading its private key is a caller defect");
         reader.PrivateKeyMaterialCalls.Should().BeEmpty();
+    }
+
+    // ── Driven by the ring ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateSignerAsync_is_called_again_only_when_a_superseded_version_signs_again()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var options = new SigningKeyOptions { LeadTime = TimeSpan.FromDays(1), RetainRetiredKeysFor = TimeSpan.FromDays(1) };
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: T0 - TimeSpan.FromDays(90));
+        reader.AddRsaVersion("v2", createdOn: T0);
+        await using var harness = await SigningKeyRingHarness.StartAsync(BuildSource(reader), new FakeTimeProvider(T0), options, ct);
+        await harness.AdvanceAsync(options.LeadTime, ct);
+        harness.Ring.Current.SigningKey!.SourceId.Value.Should().Be("v2");
+
+        for (var read = 0; read < 3; read++)
+            await harness.ReadAsync(ct);
+        reader.PrivateKeyMaterialCalls.Should().Equal(["v1", "v2"],
+            "v1's signer is closed once superseded, and its private key is not downloaded again while it does not sign");
+
+        reader.SetEnabled("v2", false);
+        await harness.ReadAsync(ct);
+
+        harness.Ring.Current.SigningKey!.SourceId.Value.Should().Be("v1");
+        reader.PrivateKeyMaterialCalls.Should().Equal("v1", "v2", "v1");
     }
 }

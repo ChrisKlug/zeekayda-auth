@@ -1,7 +1,9 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.FileSystem.Tests.Fixtures;
+using ZeeKayDa.Auth.TestKit.Signing;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem.Tests;
@@ -680,5 +682,24 @@ public sealed class PemFileSigningKeySourceTests
         failure.Message.Should().Contain("See the inner exception for the root cause.");
         cause.Message.Should().NotBeNullOrWhiteSpace();
         failure.Message.Should().NotContain(cause.Message);
+    }
+
+    // ── Driven by the ring ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Ring_stops_signing_at_the_next_read_after_the_only_listed_file_is_deleted()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePemFile("current.pem", certificate);
+        await using var harness = await SigningKeyRingHarness.StartAsync(
+            BuildSource(new PemSigningFile(path)), new FakeTimeProvider(T0), cancellationToken: ct);
+
+        File.Delete(path);
+        await harness.ReadAsync(ct);
+
+        harness.Ring.Current.SigningKey.Should().BeNull();
+        harness.Ring.Current.Published.Should().BeEmpty();
     }
 }
