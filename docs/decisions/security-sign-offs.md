@@ -2350,7 +2350,8 @@ and architect agents, and the PR's CodeQL, CodeScene and Copilot review; no High
 - A reported failure names an exception type, never its message, a host password source's included. Closed — `ReadAsync_never_reports_a_configuration_failure_thrown_by_the_password_source_in_its_own_words`,
   `FromCertificate_reports_an_unreadable_public_key_as_invalid_public_key_naming_the_exception_type_not_its_message`.
 - **Accepted residuals:** (maintainer) every file failing at once stops signing — `A_read_listing_only_failures_stops_signing_and_unpublishes_the_deleted_key`.
-  (Agreed scope) startup refuses a dropped key only when it is due to sign, and a reported failure has no dates, so it is never due and never refuses startup —
-  `A_reported_failure_is_never_the_key_due_to_sign_and_never_shortens_coverage`.
+  (Agreed scope) startup refuses a dropped key only when it is due to sign; a reported failure has no dates, so beside a usable key it is never due and never
+  refuses startup — `A_reported_failure_is_never_the_key_due_to_sign_and_never_shortens_coverage`. A listing of only failures still fails startup —
+  `Build_throws_the_reported_failures_rather_than_no_keys_when_the_source_lists_only_failures`.
   **Not covered:** a lock or I/O error on one file is reported by the same catch as the password-source case, but no test drives one; Unix file locks are advisory.
-  #527's residual "a provider's own per-key failure still fails `ReadAsync`" is closed: its cited test now proves a per-entry report.
+  #823's residual "a provider's own per-key failure still fails `ReadAsync`" is closed: its cited test now proves a per-entry report.
