@@ -19,8 +19,9 @@ namespace ZeeKayDa.Auth.AzureKeyVault;
 /// version is never listed.
 /// </para>
 /// <para>
-/// A failed or empty vault read always throws — never a partial key set — so a vault outage is
-/// never indistinguishable from a revocation.
+/// A failed or empty vault read always throws, so a vault outage is never mistaken for a
+/// revocation. Only a version whose own key material is unusable is reported in
+/// <see cref="SourceKeyListing.Failures"/>, with the other versions listed.
 /// </para>
 /// <para>
 /// This source performs no algorithm/key-type check of its own.
@@ -46,7 +47,7 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
     public SigningAlgorithm Algorithm => _options.Value.Algorithm;
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
     {
         var options = _options.Value;
 
@@ -58,17 +59,18 @@ internal sealed class AzureKeyVaultRemoteSigningKeySource(
             KeyVaultVersions.Enabled(allVersions, "key"),
             options.MaxVersions);
 
-        var keys = new List<SourceKey>(listed.Count);
-        foreach (var version in listed)
-            keys.Add(await ToSourceKeyAsync(version, cancellationToken).ConfigureAwait(false));
+        var listing = await KeyVaultVersions
+            .ListAsync(listed, version => ToSourceKeyAsync(version, cancellationToken)).ConfigureAwait(false);
 
         // A read the ring abandoned at its deadline must not replace the list of a later read.
         cancellationToken.ThrowIfCancellationRequested();
 
         // Committed only after nothing can throw any more, so a failed read can never leave a
         // signer openable for a version that was never listed.
-        _listedVersions = listed.ToDictionary(v => v.Version, v => v.Id, StringComparer.Ordinal);
-        return keys;
+        _listedVersions = listed
+            .Where(v => listing.Keys.Any(key => key.Id.Value == v.Version))
+            .ToDictionary(v => v.Version, v => v.Id, StringComparer.Ordinal);
+        return listing;
     }
 
     /// <inheritdoc/>

@@ -158,8 +158,8 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
         {
             // Codes only: a source id may be a file path or vault URI, and this text can be public.
             yield return
-                $"{timeline.Dropped.Length} listed key(s) could not be used and were dropped " +
-                $"({string.Join(", ", timeline.Dropped.Select(drop => drop.Failure.Code).Distinct())}); " +
+                $"Source entries that could not be used were dropped ({timeline.Dropped.Length}: " +
+                $"{string.Join(", ", timeline.Dropped.Select(drop => drop.Failure.Code).Distinct())}); " +
                 "the log names them. Fix the keys; the next read picks them up.";
         }
 

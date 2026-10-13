@@ -36,11 +36,19 @@ public interface ISigningKeySource
     SigningAlgorithm Algorithm { get; }
 
     /// <summary>
-    /// Lists the configured keys' public material.
+    /// Lists the configured keys' public material, and reports each entry that cannot be listed.
     /// </summary>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>Every key the source holds, in any order.</returns>
-    Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default);
+    /// <returns>
+    /// Every key the source holds, in any order, and a <see cref="SourceKeyFailure"/> for each entry
+    /// whose own problem keeps it from being listed.
+    /// </returns>
+    /// <remarks>
+    /// Throw only for a failure that is not about one entry — a store that cannot be opened, a vault
+    /// that cannot be reached. A thrown read is a failed read and changes nothing, so a failure about
+    /// one entry thrown here would stop every other entry's change too, a revocation included.
+    /// </remarks>
+    Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Lends a signer for the key identified by <paramref name="id"/>, one of the keys

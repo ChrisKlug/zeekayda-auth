@@ -102,13 +102,13 @@ public sealed class IdTokenProtocolClaimsTests
     {
         public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<SourceKey>>(
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SourceKeyListing(
             [
                 new SourceKey(
                     new SourceKeyId("current"),
                     PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false))),
-            ]);
+            ], []));
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {

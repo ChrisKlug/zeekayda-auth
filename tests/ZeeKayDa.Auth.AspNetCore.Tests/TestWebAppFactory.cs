@@ -83,13 +83,13 @@ internal sealed class TestSigningKeySource : ISigningKeySource, IDisposable
 
     private readonly RSA _rsa = RSA.Create(SharedKey.Value);
 
-    public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+    public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
     {
         var key = new SourceKey(
             KeyId,
             PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)));
 
-        return Task.FromResult<IReadOnlyList<SourceKey>>([key]);
+        return Task.FromResult(new SourceKeyListing([key], []));
     }
 
     public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -470,8 +470,8 @@ internal sealed class RevocableTestSigningKeySource(SigningRevocation revocation
 
     public SigningAlgorithm Algorithm => _inner.Algorithm;
 
-    public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) =>
-        revocation.Revoked ? Task.FromResult<IReadOnlyList<SourceKey>>([]) : _inner.ReadAsync(cancellationToken);
+    public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default) =>
+        revocation.Revoked ? Task.FromResult(new SourceKeyListing([], [])) : _inner.ReadAsync(cancellationToken);
 
     public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
         _inner.CreateSignerAsync(id, cancellationToken);

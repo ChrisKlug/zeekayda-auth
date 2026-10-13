@@ -1,3 +1,4 @@
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
 
@@ -34,29 +35,43 @@ internal sealed class WindowsCertificateStoreSigningKeySource(
     public SigningAlgorithm Algorithm => _options.Value.Algorithm;
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+    public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         var options = _options.Value;
         var keys = new List<SourceKey>(options.Certificates.Count);
+        var failures = new List<SourceKeyFailure>();
         foreach (var lookup in options.Certificates)
         {
+            // Outside the per-entry catch: a store that cannot be opened fails the whole read.
             // A certificate removed from the store is no longer listed: removing it revokes the key.
             using var certificate = storeReader.FindCertificate(lookup.NormalizedThumbprint, options.StoreLocation, options.StoreName);
             if (certificate is null)
                 continue;
 
-            // Checked without extracting a handle: any listed certificate may be chosen to sign, so one
-            // that cannot fails now rather than at the restart that chooses it.
-            if (!certificate.HasPrivateKey)
-                throw WindowsCertificateKeyExtractor.NoPrivateKey(lookup.NormalizedThumbprint);
-
-            keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(lookup.NormalizedThumbprint)));
+            var id = new SourceKeyId(lookup.NormalizedThumbprint);
+            try
+            {
+                keys.Add(ListedKey(certificate, id));
+            }
+            catch (ZeeKayDaConfigurationException ex)
+            {
+                failures.Add(new SourceKeyFailure(id, ex.AggregatedFailures[0]));
+            }
         }
 
-        return Task.FromResult<IReadOnlyList<SourceKey>>(keys);
+        return Task.FromResult(new SourceKeyListing(keys, failures));
     }
+
+    /// <summary>
+    /// Checks without extracting a handle that <paramref name="certificate"/> can sign: any listed
+    /// certificate may be chosen to, so one that cannot fails now rather than at the restart that chooses it.
+    /// </summary>
+    private static SourceKey ListedKey(X509Certificate2 certificate, SourceKeyId id) =>
+        certificate.HasPrivateKey
+            ? SourceKey.FromCertificate(certificate, id)
+            : throw WindowsCertificateKeyExtractor.NoPrivateKey(id.Value);
 
     /// <inheritdoc/>
     /// <remarks>

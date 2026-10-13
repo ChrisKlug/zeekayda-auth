@@ -40,7 +40,7 @@ internal static class TestSigningKeys
 
     /// <summary>The <c>kid</c> the framework derives for the public half of <paramref name="privateKey"/>.</summary>
     public static string KidOf(AsymmetricAlgorithm privateKey) =>
-        SigningKeySetBuilder.Build([SourceKey("only", privateKey)], DefaultAlgorithm(privateKey), Options)
+        SigningKeySetBuilder.Build(new SourceKeyListing([SourceKey("only", privateKey)], []), DefaultAlgorithm(privateKey), Options)
             .At(DateTimeOffset.UtcNow).SigningKey!.Kid;
 
     /// <summary>
@@ -50,7 +50,7 @@ internal static class TestSigningKeys
     public static SigningKeySet KeySet(SigningAlgorithm algorithm, int keyCount = 1)
     {
         using var privateKey = PrivateKey(algorithm);
-        return SigningKeySetBuilder.Build(Keys(algorithm, privateKey, keyCount), algorithm, Options).At(DateTimeOffset.UtcNow);
+        return SigningKeySetBuilder.Build(new SourceKeyListing(Keys(algorithm, privateKey, keyCount), []), algorithm, Options).At(DateTimeOffset.UtcNow);
     }
 
     /// <summary>
@@ -281,7 +281,7 @@ internal static class TestSigningKeys
 
         public SigningAlgorithm Algorithm => algorithm;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) => Task.FromResult(keys);
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default) => Task.FromResult(new SourceKeyListing(keys, []));
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
@@ -301,8 +301,8 @@ internal static class TestSigningKeys
     {
         public SigningAlgorithm Algorithm => SigningAlgorithm.ES256;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<SourceKey>>([.. pairs.Select(pair => pair.Key)]);
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new SourceKeyListing([.. pairs.Select(pair => pair.Key)], []));
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
@@ -322,6 +322,9 @@ internal static class TestSigningKeys
         public IReadOnlyList<KeyPair> Pairs { get; set; } = pairs;
 
         public Exception? ReadFailure { get; set; }
+
+        /// <summary>The per-entry failures the next read reports beside <see cref="Pairs"/>.</summary>
+        public IReadOnlyList<SourceKeyFailure> Failures { get; set; } = [];
 
         /// <summary>When set, the next read never completes.</summary>
         public bool ReadHangs { get; set; }
@@ -360,16 +363,16 @@ internal static class TestSigningKeys
 
         public SigningAlgorithm Algorithm => listing.Algorithm;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
         {
             listing.Reads++;
             listing.DuringRead?.Invoke();
             if (listing.ReadHangs)
-                return new TaskCompletionSource<IReadOnlyList<SourceKey>>().Task;
+                return new TaskCompletionSource<SourceKeyListing>().Task;
 
             return listing.ReadFailure is { } failure
-                ? Task.FromException<IReadOnlyList<SourceKey>>(failure)
-                : Task.FromResult<IReadOnlyList<SourceKey>>([.. listing.Pairs.Select(pair => pair.Key)]);
+                ? Task.FromException<SourceKeyListing>(failure)
+                : Task.FromResult(new SourceKeyListing([.. listing.Pairs.Select(pair => pair.Key)], listing.Failures));
         }
 
         public async Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -405,7 +408,7 @@ internal static class TestSigningKeys
     {
         public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
             => throw new ZeeKayDaConfigurationException(failure);
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)

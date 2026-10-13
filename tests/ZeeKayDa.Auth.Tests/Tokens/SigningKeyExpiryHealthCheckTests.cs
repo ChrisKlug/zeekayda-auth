@@ -243,10 +243,10 @@ public sealed class SigningKeyExpiryHealthCheckTests
 
         public int ReadAsyncCallCount { get; private set; }
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
         {
             ReadAsyncCallCount++;
-            return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
+            return Task.FromResult(new SourceKeyListing([current], []));
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -326,7 +326,7 @@ public sealed class SigningKeyExpiryHealthCheckTests
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private static SigningKeyTimeline Timeline(params SourceKey[] keys) =>
-        SigningKeySetBuilder.Build(keys, SigningAlgorithm.RS256, TestSigningKeys.Options);
+        SigningKeySetBuilder.Build(new SourceKeyListing(keys, []), SigningAlgorithm.RS256, TestSigningKeys.Options);
 
     private static HealthCheckResult Evaluate(SigningKeyTimeline timeline) =>
         SigningKeyExpiryHealthCheck.Evaluate(timeline, timeline.At(Now), Now, DegradedThreshold);

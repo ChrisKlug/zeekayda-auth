@@ -317,7 +317,7 @@ public sealed class KeyVaultCertificateReaderTests
 
         var act = () => InvokeExtractPublicKey(reader, "not a valid certificate"u8.ToArray());
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
+        act.Should().Throw<KeyVaultVersionMaterialException>()
             .WithMessage("*invalid_certificate_public_key*");
     }
 
@@ -599,7 +599,7 @@ public sealed class KeyVaultCertificateReaderTests
 
         var act = () => InvokeExtractPrivateKey(reader, BuildSecret(Convert.ToBase64String(pfx)));
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
+        act.Should().Throw<KeyVaultVersionMaterialException>()
             .WithMessage("*unsupported_key_type*");
     }
 
@@ -1008,7 +1008,7 @@ public sealed class KeyVaultCertificateReaderTests
 
         var act = () => InvokeExtractPublicKey(reader, CreateCerWithMalformedRsaPublicKey());
 
-        var thrown = act.Should().Throw<ZeeKayDaConfigurationException>()
+        var thrown = act.Should().Throw<KeyVaultVersionMaterialException>()
             .WithMessage("*invalid_certificate_public_key*");
         thrown.Which.Message.Should().Contain("carries a public key that could not be read",
             "this must reach the accessor arm, not LoadCertificate's — the two share a failure code "

@@ -69,7 +69,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
         var sut = BuildSource(reader);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         PublishedIds(keySet).Should().BeEquivalentTo(["v1", "v2"]);
         sut.Algorithm.Should().Be(SigningAlgorithm.RS256);
@@ -86,7 +86,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10), enabled: false);
         var sut = BuildSource(reader);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         PublishedIds(keySet).Should().Equal("v1");
     }
@@ -100,7 +100,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddRsaVersion("v1", createdOn: T0, notBefore: T0 - TimeSpan.FromDays(1), expiresOn: expiresOn);
         var sut = BuildSource(reader);
 
-        var key = (await sut.ReadAsync(ct)).Single();
+        var key = (await sut.ReadAsync(ct)).Keys.Single();
 
         key.NotBefore.Should().Be(T0, "a version is published from its creation, never before");
         key.ExpiresAt.Should().Be(expiresOn);
@@ -115,7 +115,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddRsaVersion("v1", createdOn: T0, notBefore: notBefore);
         var sut = BuildSource(reader);
 
-        var key = (await sut.ReadAsync(ct)).Single();
+        var key = (await sut.ReadAsync(ct)).Keys.Single();
 
         key.NotBefore.Should().Be(notBefore, "a version may not sign before its own nbf");
         key.ExpiresAt.Should().Be(DateTimeOffset.MaxValue);
@@ -129,7 +129,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddEcVersion("v1", createdOn: T0);
         var sut = BuildSource(reader, algorithm: SigningAlgorithm.ES256);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Ec);
         keySet.Single().PublicKey.EcPublicParameters.Should().NotBeNull();
@@ -165,7 +165,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         var ct = TestContext.Current.CancellationToken;
         var sut = BuildSource(new FakeKeyVaultKeyReader());
 
-        var keys = await sut.ReadAsync(ct);
+        var keys = (await sut.ReadAsync(ct)).Keys;
 
         keys.Should().BeEmpty();
     }
@@ -178,7 +178,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddRsaVersion("v1", createdOn: T0, enabled: false);
         var sut = BuildSource(reader);
 
-        var keys = await sut.ReadAsync(ct);
+        var keys = (await sut.ReadAsync(ct)).Keys;
 
         keys.Should().BeEmpty();
     }
@@ -200,6 +200,66 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .WithMessage("*access_denied*");
+    }
+
+    [Theory]
+    [InlineData("signing.azure_key_vault.unsupported_key_type")]
+    [InlineData("signing.azure_key_vault.invalid_key_material")]
+    public async Task ReadAsync_reports_a_version_with_unusable_material_as_a_per_entry_failure_and_lists_the_rest(string code)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0);
+        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
+        reader.SetKeyMaterialException("v1", new KeyVaultVersionMaterialException(
+            new ZeeKayDaConfigurationFailure(code, "Simulated unusable material for v1.")));
+        var sut = BuildSource(reader);
+
+        var listing = await sut.ReadAsync(ct);
+
+        PublishedIds(listing.Keys).Should().Equal("v2");
+        listing.Failures.Should().ContainSingle().Which.Should().Match<SourceKeyFailure>(
+            f => f.Id == new SourceKeyId("v1") && f.Failure.Code == code);
+    }
+
+    [Theory]
+    [InlineData("signing.azure_key_vault.access_denied")]
+    [InlineData("signing.azure_key_vault.startup_failure")]
+    [InlineData("signing.azure_key_vault.key_not_found")]
+    public async Task ReadAsync_still_throws_for_a_vault_failure_on_one_version_rather_than_reporting_it(string code)
+    {
+        // A vault that is unreachable, refusing, or answering 5xx says nothing about one version's
+        // material, so it must never read as a revoked or broken entry.
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0);
+        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
+        reader.SetKeyMaterialException("v1", new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure(code, "Simulated vault failure.")));
+        var sut = BuildSource(reader);
+
+        var act = async () => await sut.ReadAsync(ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == code);
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_rejects_a_version_the_read_reported_as_a_failure()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0);
+        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
+        reader.SetKeyMaterialException("v1", new KeyVaultVersionMaterialException(
+            new ZeeKayDaConfigurationFailure("signing.azure_key_vault.unsupported_key_type", "Simulated unusable material for v1.")));
+        var sut = BuildSource(reader);
+        await sut.ReadAsync(ct);
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId("v1"), ct);
+
+        await act.Should().ThrowAsync<InvalidOperationException>(
+            "a version the read could not list was never listed, so asking to sign with it is a defect in the caller");
     }
 
     [Fact]
@@ -238,7 +298,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
             .WithMessage("*startup_failure*");
 
         reader.MidEnumerationFailure = null;
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         PublishedIds(keySet).Should().BeEquivalentTo(["v1", "v2", "v3"],
             "the partial two-version read must not have been kept — the retry sees the full history");
@@ -251,7 +311,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         var reader = new FakeKeyVaultKeyReader();
         reader.AddRsaVersion("v1", createdOn: T0);
         var sut = BuildSource(reader);
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         var act = () => sut.CreateSignerAsync(keySet.Single().Id, new CancellationToken(canceled: true));
 
@@ -290,7 +350,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         await firstAttempt.Should().ThrowAsync<ZeeKayDaConfigurationException>();
 
         reader.VersionsException = null;
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Single().Id.Should().Be(new SourceKeyId("v1"),
             "nothing is remembered between reads, so a retry re-reads the vault");
@@ -306,9 +366,9 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddRsaVersion("v1", createdOn: T0);
         var sut = BuildSource(reader);
 
-        var first = await sut.ReadAsync(ct);
+        var first = (await sut.ReadAsync(ct)).Keys;
         reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromMinutes(1));
-        var second = await sut.ReadAsync(ct);
+        var second = (await sut.ReadAsync(ct)).Keys;
 
         reader.GetKeyVersionsCallCount.Should().Be(2);
         PublishedIds(first).Should().Equal(["v1"]);
@@ -327,7 +387,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         await sut.ReadAsync(ct);
 
         reader.SetEnabled("v1", false);
-        var second = await sut.ReadAsync(ct);
+        var second = (await sut.ReadAsync(ct)).Keys;
 
         PublishedIds(second).Should().Equal(["v2"]);
     }
@@ -343,7 +403,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         var results = await Task.WhenAll(sut.ReadAsync(ct), sut.ReadAsync(ct));
 
         reader.GetKeyVersionsCallCount.Should().Be(2, "there is no read gate and no cached set to share");
-        results.Should().AllSatisfy(keySet => PublishedIds(keySet).Should().Equal(["v1"]));
+        results.Should().AllSatisfy(keySet => PublishedIds(keySet.Keys).Should().Equal(["v1"]));
     }
 
     [Fact]
@@ -401,7 +461,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddRsaVersion("v3", createdOn: T0 + TimeSpan.FromDays(20));
         var sut = BuildSource(reader, maxVersions: 3);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         PublishedIds(keySet).Should().BeEquivalentTo(["v2", "v3", "v4"],
             "the oldest version falls outside the three newest, whatever order the vault enumerates them in");
@@ -437,7 +497,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddRsaVersion("v5", createdOn: T0 + TimeSpan.FromDays(40), enabled: false);
         var sut = BuildSource(reader, maxVersions: 3);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         PublishedIds(keySet).Should().BeEquivalentTo(["v1", "v2", "v3"],
             "the two newest versions are disabled, so the three newest ENABLED ones are listed");
@@ -462,8 +522,8 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         listedSecond.AddRsaVersion("va", createdOn: T0 + TimeSpan.FromDays(1));
         listedSecond.AddRsaVersion("v1", createdOn: T0);
 
-        var first = await BuildSource(listedFirst, maxVersions: 3).ReadAsync(ct);
-        var second = await BuildSource(listedSecond, maxVersions: 3).ReadAsync(ct);
+        var first = (await BuildSource(listedFirst, maxVersions: 3).ReadAsync(ct)).Keys;
+        var second = (await BuildSource(listedSecond, maxVersions: 3).ReadAsync(ct)).Keys;
 
         PublishedIds(first).Should().BeEquivalentTo(["v4", "v3", "vb"]);
         PublishedIds(second).Should().BeEquivalentTo(["v4", "v3", "vb"]);
@@ -483,7 +543,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddRsaVersion("v4", createdOn: T0 + TimeSpan.FromDays(3));
         var sut = BuildSource(reader, maxVersions: 3);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         PublishedIds(keySet).Should().BeEquivalentTo(["v1", "v3", "v4"]);
     }
@@ -497,7 +557,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
         var sut = BuildSource(reader, maxVersions: 5);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         PublishedIds(keySet).Should().BeEquivalentTo(["v1", "v2"]);
     }
@@ -542,7 +602,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         var v1 = reader.AddRsaVersion("v1", createdOn: T0);
         var signerSeam = new FakeKeyVaultSigner { SignFunc = RealRsaSignFunc(reader) };
         var sut = BuildSource(reader, signer: signerSeam);
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         var signingInput = "header.payload"u8.ToArray();
@@ -613,7 +673,7 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
         reader.AddRsaVersion("v1", createdOn: T0);
         var signerSeam = new FakeKeyVaultSigner { SignFunc = RealRsaSignFunc(reader) };
         var sut = BuildSource(reader, signer: signerSeam);
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         var firstSigner = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         await firstSigner.SignAsync("payload"u8.ToArray(), ct);

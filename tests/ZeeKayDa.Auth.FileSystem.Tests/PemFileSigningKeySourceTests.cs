@@ -93,12 +93,9 @@ public sealed class PemFileSigningKeySourceTests
         var path = tempDir.WriteTextFile("dsa.pem", DsaCertificatePem);
         var sut = BuildSource(new PemSigningFile(path, tempDir.WriteTextFile("dsa.key", "unread")));
 
-        var act = () => sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>(
-            "a key type the signing pipeline cannot sign with must be rejected at read time, not when the first token is issued");
-        exception.Which.AggregatedFailures.Should().ContainSingle(
-            f => f.Code == "signing.certificate.unsupported_key_type");
+        listing.ShouldReportOnly(path, "signing.certificate.unsupported_key_type");
     }
 
     // ── Happy path ───────────────────────────────────────────────────────────────────────────────
@@ -112,7 +109,7 @@ public sealed class PemFileSigningKeySourceTests
         var path = tempDir.WritePemFile("current.pem", certificate);
         var sut = BuildSource(new PemSigningFile(path));
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Should().ContainSingle();
         keySet.Single().Id.Should().Be(new SourceKeyId(path));
@@ -131,7 +128,7 @@ public sealed class PemFileSigningKeySourceTests
         var path = tempDir.WritePemFile("current.pem", certificate);
         var sut = BuildSource(new PemSigningFile(path));
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Single().NotBefore.Should().Be(new DateTimeOffset(certificate.NotBefore));
         keySet.Single().ExpiresAt.Should().Be(new DateTimeOffset(certificate.NotAfter));
@@ -145,7 +142,7 @@ public sealed class PemFileSigningKeySourceTests
         using var certificate = CreateRsaCertificate();
         var path = tempDir.WritePemFile("current.pem", certificate);
         var sut = BuildSource(new PemSigningFile(path));
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         var signingInput = "header.payload"u8.ToArray();
@@ -172,7 +169,7 @@ public sealed class PemFileSigningKeySourceTests
         var sut = BuildSource(
             [new PemSigningFile(firstPath), new PemSigningFile(secondPath), new PemSigningFile(thirdPath)]);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Select(k => k.Id.Value).Should().BeEquivalentTo([firstPath, secondPath, thirdPath]);
     }
@@ -194,7 +191,7 @@ public sealed class PemFileSigningKeySourceTests
             new PemSigningFile(secondPath, tempDir.WriteTextFile("second.key", "not a key")),
         ]);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Should().HaveCount(2);
     }
@@ -212,7 +209,7 @@ public sealed class PemFileSigningKeySourceTests
         await sut.ReadAsync(ct);
         File.Delete(path);
 
-        var keys = await sut.ReadAsync(ct);
+        var keys = (await sut.ReadAsync(ct)).Keys;
 
         keys.Should().BeEmpty();
     }
@@ -227,9 +224,9 @@ public sealed class PemFileSigningKeySourceTests
         var path = tempDir.WritePemFile("current.pem", certificate);
         var sut = BuildSource(new PemSigningFile(path));
 
-        var first = await sut.ReadAsync(ct);
+        var first = (await sut.ReadAsync(ct)).Keys;
         tempDir.WritePemFile("current.pem", replacement);
-        var second = await sut.ReadAsync(ct);
+        var second = (await sut.ReadAsync(ct)).Keys;
 
         second.Single().PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().Equal(replacement.GetRSAPublicKey()!.ExportParameters(false).Modulus)
@@ -246,24 +243,23 @@ public sealed class PemFileSigningKeySourceTests
         var missingPath = tempDir.GetPath("does-not-exist.pem");
         var sut = BuildSource(new PemSigningFile(missingPath));
 
-        var keys = await sut.ReadAsync(ct);
+        var keys = (await sut.ReadAsync(ct)).Keys;
 
         keys.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task ReadAsync_throws_for_invalid_PEM_content()
+    public async Task ReadAsync_reports_invalid_PEM_content_as_a_per_entry_failure()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         var path = tempDir.WriteTextFile("garbage.pem", "not a pem file at all");
         var sut = BuildSource(new PemSigningFile(path));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.invalid_pem");
-        exception.Which.Message.Should().Contain(path);
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pem");
+        failure.Message.Should().Contain(path);
     }
 
     [Fact]
@@ -275,7 +271,7 @@ public sealed class PemFileSigningKeySourceTests
         var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
         var keyPath = tempDir.WriteTextFile("key.pem", "-----BEGIN PRIVATE KEY-----\nnot base64\n-----END PRIVATE KEY-----");
         var sut = BuildSource(new PemSigningFile(certPath, keyPath));
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         var act = async () => await sut.CreateSignerAsync(keySet.Single().Id, ct);
 
@@ -287,7 +283,7 @@ public sealed class PemFileSigningKeySourceTests
     // ── Permission enforcement ───────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_when_the_file_is_broader_than_0600_on_Unix()
+    public async Task ReadAsync_reports_a_file_broader_than_0600_on_Unix_as_a_per_entry_failure()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "0600-mode enforcement is the Unix permission model.");
 
@@ -298,14 +294,13 @@ public sealed class PemFileSigningKeySourceTests
         tempDir.MakeTooPermissive(path);
         var sut = BuildSource(new PemSigningFile(path));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+        listing.ShouldReportOnly(path, "signing.file_signing.file_too_permissive");
     }
 
     [Fact]
-    public async Task ReadAsync_throws_when_the_ACL_grants_a_broad_principal_on_Windows()
+    public async Task ReadAsync_reports_a_broad_principal_ACL_on_Windows_as_a_per_entry_failure()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "broad-principal ACL enforcement is the Windows permission model.");
 
@@ -316,10 +311,9 @@ public sealed class PemFileSigningKeySourceTests
         tempDir.MakeTooPermissive(path);
         var sut = BuildSource(new PemSigningFile(path));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+        listing.ShouldReportOnly(path, "signing.file_signing.file_too_permissive");
     }
 
     [Fact]
@@ -352,16 +346,71 @@ public sealed class PemFileSigningKeySourceTests
         tempDir.MakeTooPermissive(previousPath);
         var sut = BuildSource([new PemSigningFile(currentPath), new PemSigningFile(previousPath)]);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+        listing.ShouldReportOnly(previousPath, "signing.file_signing.file_too_permissive");
+    }
+
+    [Fact]
+    public async Task ReadAsync_reports_a_too_permissive_key_file_as_a_per_entry_failure_and_lists_the_rest()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "0600-mode enforcement is the Unix permission model.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var goodCertificate = CreateRsaCertificate();
+        using var brokenCertificate = CreateRsaCertificate();
+        var goodPath = tempDir.WritePemFile("good.pem", goodCertificate);
+        var brokenPath = tempDir.WritePemFile("broken.pem", brokenCertificate);
+        tempDir.MakeTooPermissive(brokenPath);
+        var sut = BuildSource([new PemSigningFile(goodPath), new PemSigningFile(brokenPath)]);
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.Keys.Select(k => k.Id).Should().Equal(new SourceKeyId(goodPath));
+        listing.ShouldReportOnly(brokenPath, "signing.file_signing.file_too_permissive");
+    }
+
+    [Fact]
+    public async Task ReadAsync_reports_a_certificate_whose_public_key_cannot_be_read_as_a_per_entry_failure_and_lists_the_rest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var goodCertificate = CreateRsaCertificate();
+        using var malformed = CertificateWithMalformedRsaPublicKey();
+        var goodPath = tempDir.WritePemFile("good.pem", goodCertificate);
+        var brokenPath = tempDir.WriteCertificateOnlyPemFile("broken.crt", malformed);
+        var brokenKeyPath = tempDir.WriteKeyOnlyPemFile("broken.key", goodCertificate);
+        var sut = BuildSource([new PemSigningFile(goodPath), new PemSigningFile(brokenPath, brokenKeyPath)]);
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.Keys.Select(k => k.Id).Should().Equal(new SourceKeyId(goodPath));
+        listing.ShouldReportOnly(brokenPath, "signing.certificate.invalid_public_key");
+    }
+
+    /// <summary>
+    /// A certificate that parses but whose RSA key bytes are not an <c>RSAPublicKey</c>, so the
+    /// failure comes from reading the public key, not from parsing the certificate.
+    /// </summary>
+    private static X509Certificate2 CertificateWithMalformedRsaPublicKey()
+    {
+        var malformed = new PublicKey(
+            new Oid("1.2.840.113549.1.1.1"),
+            parameters: new AsnEncodedData([0x05, 0x00]),
+            keyValue: new AsnEncodedData([0x30, 0x03, 0x02, 0x01, 0x01]));
+        var request = new CertificateRequest(new X500DistinguishedName("CN=test"), malformed, HashAlgorithmName.SHA256);
+        using var issuerKey = RSA.Create(2048);
+        var generator = X509SignatureGenerator.CreateForRSA(issuerKey, RSASignaturePadding.Pkcs1);
+        return request.Create(
+            new X500DistinguishedName("CN=issuer"), generator,
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30), serialNumber: [1, 2, 3, 4]);
     }
 
     // ── Symlink rejection ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_when_the_configured_path_is_a_symlink()
+    public async Task ReadAsync_reports_a_symlinked_configured_path_as_a_per_entry_failure()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -381,10 +430,9 @@ public sealed class PemFileSigningKeySourceTests
 
         var sut = BuildSource(new PemSigningFile(symlinkPath));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.symlink_detected");
+        listing.ShouldReportOnly(symlinkPath, "signing.file_signing.symlink_detected");
     }
 
     // ── Split cert/key files ─────────────────────────────────────────────────────────────────────
@@ -399,7 +447,7 @@ public sealed class PemFileSigningKeySourceTests
         var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
         var sut = BuildSource(new PemSigningFile(certPath, keyPath));
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Single().Id.Should().Be(new SourceKeyId(certPath), "the certificate path identifies the file");
         keySet.Single().PublicKey.RsaPublicParameters.Should().NotBeNull();
@@ -414,7 +462,7 @@ public sealed class PemFileSigningKeySourceTests
         var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
         var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
         var sut = BuildSource(new PemSigningFile(certPath, keyPath));
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         var signingInput = "header.payload"u8.ToArray();
@@ -442,10 +490,9 @@ public sealed class PemFileSigningKeySourceTests
         tempDir.MakeTooPermissive(stagedKeyPath);
         var sut = BuildSource([new PemSigningFile(incumbentPath), new PemSigningFile(stagedPath, stagedKeyPath)]);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+        listing.ShouldReportOnly(stagedPath, "signing.file_signing.file_too_permissive");
     }
 
     [Fact]
@@ -463,10 +510,9 @@ public sealed class PemFileSigningKeySourceTests
         tempDir.MakeTooPermissive(stagedKeyPath);
         var sut = BuildSource([new PemSigningFile(incumbentPath), new PemSigningFile(stagedPath, stagedKeyPath)]);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.file_too_permissive");
+        listing.ShouldReportOnly(stagedPath, "signing.file_signing.file_too_permissive");
     }
 
     [Fact]
@@ -480,11 +526,10 @@ public sealed class PemFileSigningKeySourceTests
         var path = tempDir.WriteCertificateOnlyPemFile("cert-only.pem", certificate);
         var sut = BuildSource(new PemSigningFile(path));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.certificate.private_key_not_found");
-        exception.Which.Message.Should().Contain(path);
+        var failure = listing.ShouldReportOnly(path, "signing.certificate.private_key_not_found");
+        failure.Message.Should().Contain(path);
     }
 
     [Fact]
@@ -500,10 +545,9 @@ public sealed class PemFileSigningKeySourceTests
         var path = tempDir.WriteTextFile("encrypted.pem", certificate.ExportCertificatePem() + "\n" + encryptedKey);
         var sut = BuildSource(new PemSigningFile(path));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.certificate.private_key_not_found");
+        listing.ShouldReportOnly(path, "signing.certificate.private_key_not_found");
     }
 
     [Fact]
@@ -518,10 +562,9 @@ public sealed class PemFileSigningKeySourceTests
             "truncated.pem", certificate.ExportCertificatePem() + "\n-----BEGIN PRIVATE KEY-----\nMIIE\n");
         var sut = BuildSource(new PemSigningFile(path));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.certificate.private_key_not_found");
+        listing.ShouldReportOnly(path, "signing.certificate.private_key_not_found");
     }
 
     [Fact]
@@ -533,10 +576,10 @@ public sealed class PemFileSigningKeySourceTests
         var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
         var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
         var sut = BuildSource(new PemSigningFile(certPath, keyPath));
-        (await sut.ReadAsync(ct)).Should().ContainSingle();
+        (await sut.ReadAsync(ct)).Keys.Should().ContainSingle();
         File.Delete(keyPath);
 
-        var keys = await sut.ReadAsync(ct);
+        var keys = (await sut.ReadAsync(ct)).Keys;
 
         keys.Should().BeEmpty("deleting the private key revokes the key as deleting the certificate does");
     }
@@ -552,7 +595,7 @@ public sealed class PemFileSigningKeySourceTests
         var path = tempDir.WritePemFile("current.pem", certificate);
         var sut = BuildSource(new PemSigningFile(path), algorithm: SigningAlgorithm.ES256);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         keySet.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Ec);
         keySet.Single().PublicKey.EcPublicParameters.Should().NotBeNull();
@@ -567,7 +610,7 @@ public sealed class PemFileSigningKeySourceTests
         using var certificate = TestCertificateFactory.CreateEcSelfSigned("ec-test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WritePemFile("current.pem", certificate);
         var sut = BuildSource(new PemSigningFile(path), algorithm: SigningAlgorithm.ES256);
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         var signingInput = "header.payload"u8.ToArray();
@@ -637,13 +680,16 @@ public sealed class PemFileSigningKeySourceTests
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        var path = tempDir.WriteTextFile("garbage.pem", "not a pem file at all");
+        const string garbage = "not a pem file at all";
+        var path = tempDir.WriteTextFile("garbage.pem", garbage);
+        var parserMessage = Record.Exception(() => X509Certificate2.CreateFromPem(garbage))!.Message;
         var sut = BuildSource(new PemSigningFile(path));
 
-        var act = async () => await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
-        AssertNamesTypeWithoutCopyingMessage(exception.Which, "signing.file_signing.invalid_pem");
+        var failure = listing.ShouldReportOnly(path, "signing.file_signing.invalid_pem");
+        failure.Message.Should().Contain(typeof(CryptographicException).FullName);
+        failure.Message.Should().NotContain(parserMessage);
     }
 
     [Fact]
@@ -656,7 +702,7 @@ public sealed class PemFileSigningKeySourceTests
         var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
         var keyPath = tempDir.WriteTextFile("key.pem", "-----BEGIN PRIVATE KEY-----\nnot base64\n-----END PRIVATE KEY-----");
         var sut = BuildSource(new PemSigningFile(certPath, keyPath));
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
         var act = async () => await sut.CreateSignerAsync(keySet.Single().Id, ct);
 

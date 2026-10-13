@@ -40,15 +40,15 @@ internal sealed class DevelopmentSigningKeySource(
     // Interlocked.Exchange, transferring ownership to the LocalSigner it returns.
     private RSA? _pendingPrivateKey;
 
-    // The one key set this source ever reports. Every read after the first returns it unchanged: a
+    // The one listing this source ever reports. Every read after the first returns it unchanged: a
     // fresh key per read would invalidate every token already issued under the previous one.
-    private IReadOnlyList<SourceKey>? _keySet;
+    private SourceKeyListing? _listing;
 
     /// <inheritdoc/>
     public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
     {
         // Enforced on every read, ahead of the memoized set, so a gate that would reject this host
         // rejects it however often the source is read.
@@ -59,8 +59,8 @@ internal sealed class DevelopmentSigningKeySource(
         await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_keySet is not null)
-                return _keySet;
+            if (_listing is not null)
+                return _listing;
 
             // RSA.Create is CPU-bound with no async variant, so key generation cannot be cancelled.
             var persistDir = options.Value.PersistToDirectory;
@@ -75,14 +75,14 @@ internal sealed class DevelopmentSigningKeySource(
                     DevKeyId,
                     PublicKeyParameters.FromRsa(rsa.ExportParameters(false)));
 
-                // The set is built before the private key is published, so a failure here can never
+                // The listing is built before the private key is published, so a failure here can never
                 // leave a disposed key behind for CreateSignerAsync to lend.
-                IReadOnlyList<SourceKey> keySet = [key];
+                var listing = new SourceKeyListing([key], []);
 
                 _pendingPrivateKey = rsa;
-                _keySet = keySet;
+                _listing = listing;
 
-                return keySet;
+                return listing;
             }
             catch
             {

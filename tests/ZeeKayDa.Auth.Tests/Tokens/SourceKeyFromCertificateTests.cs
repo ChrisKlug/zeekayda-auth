@@ -9,6 +9,38 @@ public sealed class SourceKeyFromCertificateTests
     private static readonly SourceKeyId KeyId = new("cert-1");
 
     [Fact]
+    public void FromCertificate_reports_an_unreadable_public_key_as_invalid_public_key_naming_the_exception_type_not_its_message()
+    {
+        using var certificate = CertificateWithMalformedRsaPublicKey();
+        var accessorFailure = Record.Exception(() => certificate.GetRSAPublicKey())!;
+
+        var act = () => SourceKey.FromCertificate(certificate, KeyId);
+
+        var failure = act.Should().Throw<ZeeKayDaConfigurationException>().Which.AggregatedFailures.Should().ContainSingle().Subject;
+        failure.Code.Should().Be("signing.certificate.invalid_public_key");
+        failure.Message.Should().Contain(accessorFailure.GetType().FullName);
+        failure.Message.Should().NotContain(accessorFailure.Message);
+    }
+
+    /// <summary>
+    /// A certificate that parses but whose RSA key bytes are not an <c>RSAPublicKey</c>, so the
+    /// failure comes from reading the public key, not from parsing the certificate.
+    /// </summary>
+    private static X509Certificate2 CertificateWithMalformedRsaPublicKey()
+    {
+        var malformed = new PublicKey(
+            new Oid("1.2.840.113549.1.1.1"),
+            parameters: new AsnEncodedData([0x05, 0x00]),
+            keyValue: new AsnEncodedData([0x30, 0x03, 0x02, 0x01, 0x01]));
+        var request = new CertificateRequest(new X500DistinguishedName("CN=test"), malformed, HashAlgorithmName.SHA256);
+        using var issuerKey = RSA.Create(2048);
+        var generator = X509SignatureGenerator.CreateForRSA(issuerKey, RSASignaturePadding.Pkcs1);
+        return request.Create(
+            new X500DistinguishedName("CN=issuer"), generator,
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30), serialNumber: [1, 2, 3, 4]);
+    }
+
+    [Fact]
     public void FromCertificate_exports_the_public_key_of_an_RSA_certificate()
     {
         using var rsa = RSA.Create(2048);

@@ -40,12 +40,12 @@ public sealed class JwtTokenIssuerTests
     {
         public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
         {
             var current = new SourceKey(
                 new SourceKeyId("current"),
                 PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)));
-            return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
+            return Task.FromResult(new SourceKeyListing([current], []));
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -121,12 +121,12 @@ public sealed class JwtTokenIssuerTests
     {
         public SigningAlgorithm Algorithm => algorithm;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
         {
             var current = new SourceKey(
                 new SourceKeyId("current"),
                 PublicKeyParameters.FromEc(ecdsa.ExportParameters(includePrivateParameters: false)));
-            return Task.FromResult<IReadOnlyList<SourceKey>>([current]);
+            return Task.FromResult(new SourceKeyListing([current], []));
         }
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)

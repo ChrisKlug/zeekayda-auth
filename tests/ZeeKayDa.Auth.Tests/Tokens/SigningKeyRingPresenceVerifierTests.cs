@@ -16,7 +16,7 @@ public sealed class SigningKeyRingPresenceVerifierTests
     {
         public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
@@ -30,7 +30,7 @@ public sealed class SigningKeyRingPresenceVerifierTests
         public UnconstructableSigningKeySource() => throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure("test.source.broken", "The source cannot be built."));
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)

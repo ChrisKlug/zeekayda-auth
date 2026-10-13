@@ -48,7 +48,8 @@ public sealed record SourceKey
     /// configuration failure about it.</param>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown with failure code <c>signing.certificate.unsupported_key_type</c> when the certificate
-    /// carries neither an RSA nor an EC public key.
+    /// carries neither an RSA nor an EC public key, or <c>signing.certificate.invalid_public_key</c>
+    /// when its public key cannot be read.
     /// </exception>
     public static SourceKey FromCertificate(X509Certificate2 certificate, SourceKeyId id)
     {
@@ -64,6 +65,25 @@ public sealed record SourceKey
     }
 
     private static PublicKeyParameters PublicKeyOf(X509Certificate2 certificate, SourceKeyId id)
+    {
+        try
+        {
+            return ReadPublicKey(certificate, id);
+        }
+        // Not CryptographicException alone: macOS reports malformed key bytes as an ArgumentException.
+        catch (Exception ex) when (ex is not ZeeKayDaConfigurationException and not OperationCanceledException)
+        {
+            // The exception TYPE is named, never ex.Message: it can echo the material it failed to parse.
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.certificate.invalid_public_key",
+                    $"The certificate for key '{id.Value}' carries a public key that could not be read: " +
+                    $"{ex.GetType().FullName} was thrown. See the inner exception for the root cause."),
+                ex);
+        }
+    }
+
+    private static PublicKeyParameters ReadPublicKey(X509Certificate2 certificate, SourceKeyId id)
     {
         using (var rsa = certificate.GetRSAPublicKey())
         {

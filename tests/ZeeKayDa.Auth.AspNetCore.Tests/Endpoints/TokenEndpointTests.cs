@@ -1088,13 +1088,13 @@ public sealed class TokenEndpointTests : IDisposable
 
         public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<SourceKey>>(
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SourceKeyListing(
             [
                 new SourceKey(
                     new SourceKeyId("rsa-current"),
                     PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false))),
-            ]);
+            ], []));
 
         public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
             Task.FromResult<ISigner>(

@@ -38,20 +38,29 @@ internal sealed class PfxFileSigningKeySource(
     public SigningAlgorithm Algorithm => _options.Value.Algorithm;
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<SourceKey>> ReadAsync(CancellationToken cancellationToken = default)
+    public async Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
     {
         var options = _options.Value;
         var keys = new List<SourceKey>(options.Files.Count);
+        var failures = new List<SourceKeyFailure>();
 
         foreach (var file in options.Files)
         {
-            // A deleted certificate file is no longer listed: deleting it revokes the key.
-            using var certificate = await LoadPublicCertificateAsync(file, cancellationToken).ConfigureAwait(false);
-            if (certificate is not null)
-                keys.Add(SourceKey.FromCertificate(certificate, new SourceKeyId(file.Path)));
+            var id = new SourceKeyId(file.Path);
+            try
+            {
+                // A deleted certificate file is no longer listed: deleting it revokes the key.
+                using var certificate = await LoadPublicCertificateAsync(file, cancellationToken).ConfigureAwait(false);
+                if (certificate is not null)
+                    keys.Add(SourceKey.FromCertificate(certificate, id));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                failures.Add(SigningFileFailure.Of(file.Path, ex));
+            }
         }
 
-        return keys;
+        return new SourceKeyListing(keys, failures);
     }
 
     /// <inheritdoc/>
@@ -65,6 +74,28 @@ internal sealed class PfxFileSigningKeySource(
         // The one call in this type that materialises a private key.
         using var certificate = await LoadSigningCertificateAsync(file, cancellationToken).ConfigureAwait(false);
         return LocalSigner.FromCertificate(certificate, options.Algorithm);
+    }
+
+    /// <summary>
+    /// <paramref name="file"/>'s password. Whatever the host's password source throws but a
+    /// cancellation is <c>signing.file_signing.password_unavailable</c> naming only the exception
+    /// type: the callback is host code, and its message may carry the secret it failed to fetch.
+    /// </summary>
+    private static async Task<string> ReadPasswordAsync(PfxFile file, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await file.PasswordSource(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.password_unavailable",
+                    $"The password source for '{file.Path}' failed: {ex.GetType().FullName} was thrown. See " +
+                    "the inner exception for the root cause."),
+                ex);
+        }
     }
 
     /// <summary>
@@ -83,7 +114,7 @@ internal sealed class PfxFileSigningKeySource(
         if (await reader.TryReadAllBytesAsync(file.Path, cancellationToken).ConfigureAwait(false) is not { } bytes)
             return null;
 
-        var password = await file.PasswordSource(cancellationToken).ConfigureAwait(false);
+        var password = await ReadPasswordAsync(file, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -298,7 +329,7 @@ internal sealed class PfxFileSigningKeySource(
         PfxFile file, CancellationToken cancellationToken)
     {
         var bytes = await reader.ReadAllBytesAsync(file.Path, cancellationToken).ConfigureAwait(false);
-        var password = await file.PasswordSource(cancellationToken).ConfigureAwait(false);
+        var password = await ReadPasswordAsync(file, cancellationToken).ConfigureAwait(false);
 
         try
         {

@@ -1,3 +1,5 @@
+using ZeeKayDa.Auth.Tokens;
+
 namespace ZeeKayDa.Auth.AzureKeyVault;
 
 /// <summary>
@@ -11,6 +13,31 @@ internal static class KeyVaultVersions
     /// previous version live at once.
     /// </summary>
     public const int MinimumMaxVersions = 3;
+
+    /// <summary>
+    /// Lists each of <paramref name="versions"/> through <paramref name="toSourceKey"/>, reporting a
+    /// version whose own key material is unusable as a failure; any other failure throws.
+    /// </summary>
+    public static async Task<SourceKeyListing> ListAsync<TVersion>(
+        IReadOnlyList<TVersion> versions, Func<TVersion, ValueTask<SourceKey>> toSourceKey)
+        where TVersion : IKeyVaultVersionInfo
+    {
+        var keys = new List<SourceKey>(versions.Count);
+        var failures = new List<SourceKeyFailure>();
+        foreach (var version in versions)
+        {
+            try
+            {
+                keys.Add(await toSourceKey(version).ConfigureAwait(false));
+            }
+            catch (KeyVaultVersionMaterialException ex)
+            {
+                failures.Add(new SourceKeyFailure(new SourceKeyId(version.Version), ex.AggregatedFailures[0]));
+            }
+        }
+
+        return new SourceKeyListing(keys, failures);
+    }
 
     /// <summary>
     /// Returns every enabled version. Disabling a version is the operator's revocation lever, so a
