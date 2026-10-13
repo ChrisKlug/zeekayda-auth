@@ -28,8 +28,8 @@ internal static class PemKeyBlocks
 
     /// <summary>
     /// Throws unless <paramref name="file"/>'s key is in the form its configuration expects: encrypted
-    /// under strong parameters when a password is configured, plain otherwise, with no unencrypted or
-    /// legacy-encrypted copy anywhere in either file.
+    /// under strong parameters when a password is configured, plain otherwise, with no legacy-encrypted
+    /// copy in either file and, under a password, no other copy at all.
     /// </summary>
     /// <param name="file">The configured file.</param>
     /// <param name="certPem">The certificate file's text; the same as <paramref name="keyPem"/> for a combined file.</param>
@@ -58,8 +58,9 @@ internal static class PemKeyBlocks
         if (plain)
             throw PlainBesidePassword(keyFile);
 
-        if (file.KeyPath is not null && Scan(certPem).Plain)
-            throw PlainBesidePassword(file.Path);
+        // Any key copy in the certificate file escapes the checks below, which judge only the key file.
+        if (file.KeyPath is not null && Scan(certPem) is { Plain: true } or { Encrypted.IsEmpty: false })
+            throw KeyInCertificateFile(file);
 
         CheckEncryptionParameters(keyFile, encrypted);
     }
@@ -147,6 +148,10 @@ internal static class PemKeyBlocks
     private static ZeeKayDaConfigurationException PlainBesidePassword(string path) =>
         Mismatch($"The file '{path}' carries an unencrypted private key while a PasswordSource is configured, " +
             $"so the password protects nothing. Remove the unencrypted key, or encrypt it with '{Reencrypt}'.");
+
+    private static ZeeKayDaConfigurationException KeyInCertificateFile(PemSigningFile file) =>
+        Mismatch($"The certificate file '{file.Path}' carries a private key while a PasswordSource is configured " +
+            $"for the key in '{file.KeyPath}'. A copy there escapes the password and its checks; remove it.");
 
     private static ZeeKayDaConfigurationException Mismatch(string message) =>
         new(new ZeeKayDaConfigurationFailure("signing.file_signing.key_encryption_mismatch", message));

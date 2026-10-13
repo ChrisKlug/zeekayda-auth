@@ -727,7 +727,7 @@ public sealed class PemFileSigningKeySourceTests
         var listing = await sut.ReadAsync(ct);
 
         var failure = listing.ShouldReportOnly(certPath, "signing.file_signing.key_encryption_mismatch");
-        failure.Message.Should().Contain(certPath).And.Contain("unencrypted private key");
+        failure.Message.Should().Contain(certPath);
     }
 
     [Fact]
@@ -800,6 +800,69 @@ public sealed class PemFileSigningKeySourceTests
         var listing = await sut.ReadAsync(ct);
 
         listing.ShouldReportOnly(file.Path, "signing.file_signing.legacy_encrypted_key");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_weakly_encrypted_key_copy_in_the_certificate_file()
+    {
+        // Only the key file's encryption is judged, so a copy in the certificate file would escape it.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var weakCopy = EncryptedKeyPem(certificate,
+            new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 1), "guessable");
+        var certPath = tempDir.WriteTextFile("cert.pem", certificate.ExportCertificatePem() + "\n" + weakCopy);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, new PasswordSource().GetAsync));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(certPath, "signing.file_signing.key_encryption_mismatch");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_key_encrypted_with_a_cipher_other_than_AES_CBC()
+    {
+        // PBES2, PBKDF2 at 2048 iterations, des-ede3-cbc: openssl pkcs8 -topk8 -v2 des3 over a throwaway
+        // P-256 key. Checked in because PbeParameters cannot produce PBES2 with 3DES. Only its header is read.
+        const string des3Key = """
+            -----BEGIN ENCRYPTED PRIVATE KEY-----
+            MIHjME4GCSqGSIb3DQEFDTBBMCkGCSqGSIb3DQEFDDAcBAjENwtCTlOxsgICCAAw
+            DAYIKoZIhvcNAgkFADAUBggqhkiG9w0DBwQIPTZISnzzwy4EgZCOuJPZO2tqS0KI
+            FW9eW9djwIr716K/ZDlXvNABXRnTSrYD8kWemGrI7eqlOLk64uNx2szOT46m+tdS
+            k8JXJuo4aftTHVnBhoyvJMKAYoHnRgmYo3dSj81AsQT2rdwD6hTU4Xe/ssNgqbUC
+            AHkugmsXbgiM1OXuSSMZnTEDM6D3OQF8NFuMOBHGXGHdyk1ZJ4U=
+            -----END ENCRYPTED PRIVATE KEY-----
+            """;
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", des3Key);
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, new PasswordSource().GetAsync));
+
+        var listing = await sut.ReadAsync(ct);
+
+        var failure = listing.ShouldReportOnly(certPath, "signing.file_signing.weak_key_encryption");
+        failure.Message.Should().Contain("AES-CBC");
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_refuses_a_plain_key_added_after_listing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, new PasswordSource().GetAsync));
+        var key = (await sut.ReadAsync(ct)).Keys.Single();
+        tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate) + "\n" + certificate.GetRSAPrivateKey()!.ExportPkcs8PrivateKeyPem());
+
+        var act = async () => await sut.CreateSignerAsync(key.Id, ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.key_encryption_mismatch");
     }
 
     [Fact]
