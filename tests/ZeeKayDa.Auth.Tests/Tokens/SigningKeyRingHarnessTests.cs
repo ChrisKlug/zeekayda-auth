@@ -70,13 +70,24 @@ public sealed class SigningKeyRingHarnessTests
     [Fact]
     public async Task StartAsync_throws_the_startup_failure_when_disposing_the_source_also_throws()
     {
-        var source = new FailingSource();
+        var source = new FailingSource(() => new InvalidOperationException("the connection was already torn down"));
 
         var act = async () => await SigningKeyRingHarness.StartAsync(
             source, new FakeTimeProvider(Epoch), TestSigningKeys.Options, TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<TimeoutException>();
         source.Disposed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StartAsync_lets_an_OutOfMemoryException_from_disposing_the_source_escape()
+    {
+        var source = new FailingSource(() => new OutOfMemoryException());
+
+        var act = async () => await SigningKeyRingHarness.StartAsync(
+            source, new FakeTimeProvider(Epoch), TestSigningKeys.Options, TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<OutOfMemoryException>();
     }
 
     [Fact]
@@ -175,7 +186,7 @@ public sealed class SigningKeyRingHarnessTests
         listing.SourceDisposed.Should().BeTrue();
     }
 
-    private sealed class FailingSource : ISigningKeySource, IDisposable
+    private sealed class FailingSource(Func<Exception> disposeFailure) : ISigningKeySource, IDisposable
     {
         public bool Disposed { get; private set; }
 
@@ -190,7 +201,7 @@ public sealed class SigningKeyRingHarnessTests
         public void Dispose()
         {
             Disposed = true;
-            throw new InvalidOperationException("the connection was already torn down");
+            throw disposeFailure();
         }
     }
 }

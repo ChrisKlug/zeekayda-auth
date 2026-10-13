@@ -1011,7 +1011,7 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
         {
             // A throwing Dispose on a third-party signer must not replace the failure that actually
             // matters — the operator needs the self-test failure, not whatever went wrong while
-            // cleaning up after it.
+            // cleaning up after it. Running out of memory is the exception, and escapes.
             DisposeQuietly(signer);
             throw;
         }
@@ -1020,8 +1020,8 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Disposes a signer on a failure path, swallowing anything its own <c>Dispose</c> throws so the
-    /// original failure is the one that reaches the operator.
+    /// Disposes a signer on a failure path, swallowing anything but an <see cref="OutOfMemoryException"/>
+    /// its own <c>Dispose</c> throws, so the original failure is the one that reaches the operator.
     /// </summary>
     private static void DisposeQuietly(ISigner signer)
     {

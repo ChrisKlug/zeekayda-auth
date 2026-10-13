@@ -601,6 +601,37 @@ public sealed class SigningKeyRingTests
     }
 
     [Fact]
+    public async Task InitializeAsync_throws_the_self_test_failure_when_the_signer_s_Dispose_also_throws()
+    {
+        var act = async () => await RingWhoseSelfTestFails(() => throw new InvalidOperationException("simulated: signer Dispose failure"))
+            .EnsureInitializedAsync(TestContext.Current.CancellationToken);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.self_test_failed");
+    }
+
+    [Fact]
+    public async Task InitializeAsync_lets_an_OutOfMemoryException_from_the_signer_s_Dispose_escape()
+    {
+        var act = async () => await RingWhoseSelfTestFails(() => throw new OutOfMemoryException())
+            .EnsureInitializedAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<OutOfMemoryException>();
+    }
+
+    private static SigningKeyRing RingWhoseSelfTestFails(Action onSignerDispose)
+    {
+        using var publicRsa = RSA.Create(2048);
+        var current = new SourceKey(
+            new SourceKeyId("current"), PublicKeyParameters.FromRsa(publicRsa.ExportParameters(false)), expiresAt: Epoch.AddDays(90));
+        var source = new FakeSigningKeySource(
+            _ => Task.FromResult<IReadOnlyList<SourceKey>>([current]),
+            (_, _) => Task.FromResult<ISigner>(
+                new TrackingSigner(new LocalSigner(SigningAlgorithm.RS256, RSA.Create(2048)), onSignerDispose)));
+        return new SigningKeyRing(source, new FakeTimeProvider(Epoch), TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+    }
+
+    [Fact]
     public async Task InitializeAsync_throws_ZeeKayDaConfigurationException_when_ReadAsync_returns_null()
     {
         var source = new FakeSigningKeySource(

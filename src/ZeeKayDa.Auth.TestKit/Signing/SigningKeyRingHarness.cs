@@ -129,8 +129,8 @@ public sealed class SigningKeyRingHarness : IAsyncDisposable
     public Task ReadAsync(CancellationToken cancellationToken = default) => AdvanceAsync(_refreshInterval, cancellationToken);
 
     /// <summary>
-    /// Disposes the ring after a failed startup, swallowing anything the source's own <c>Dispose</c>
-    /// throws so the startup failure is the one the test sees.
+    /// Disposes the ring after a failed startup, swallowing anything but an <see cref="OutOfMemoryException"/>
+    /// the source's own <c>Dispose</c> throws, so the startup failure is the one the test sees.
     /// </summary>
     private static async ValueTask DisposeQuietlyAsync(SigningKeyRing ring)
     {
