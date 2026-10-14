@@ -95,7 +95,9 @@ internal sealed class PemFileSigningKeySource(
     /// </exception>
     private async ValueTask<SourceKey?> ListAsync(PemSigningFile file, SourceKeyId id, CancellationToken cancellationToken)
     {
-        using var texts = await ReadPemTextsAsync(file, forSigning: false, cancellationToken).ConfigureAwait(false);
+        // A missing file reads as null when listing, which unlists the key.
+        using var texts = await ReadPemTextsAsync(
+            file, (path, content) => reader.TryReadPemAsync(path, content, cancellationToken)).ConfigureAwait(false);
         if (texts is null)
             return null;
 
@@ -110,24 +112,25 @@ internal sealed class PemFileSigningKeySource(
     }
 
     /// <summary>
-    /// The certificate and key text of <paramref name="file"/>. A missing file reads as
-    /// <see langword="null"/> when listing, which unlists the key, and throws when signing.
+    /// The certificate and key text of <paramref name="file"/>, each file read through
+    /// <paramref name="read"/>, or <see langword="null"/> when <paramref name="read"/> reports a file missing.
     /// </summary>
-    private async ValueTask<PemTexts?> ReadPemTextsAsync(PemSigningFile file, bool forSigning, CancellationToken cancellationToken)
+    private static async ValueTask<PemTexts?> ReadPemTextsAsync(
+        PemSigningFile file, Func<string, SigningFileContent, ValueTask<PemText?>> read)
     {
         if (file.KeyPath is null)
         {
-            return await ReadAsync(file.Path, SigningFileContent.PrivateKey).ConfigureAwait(false) is { } combined
+            return await read(file.Path, SigningFileContent.PrivateKey).ConfigureAwait(false) is { } combined
                 ? new(combined, combined)
                 : null;
         }
 
-        if (await ReadAsync(file.Path, SigningFileContent.CertificateOnly).ConfigureAwait(false) is not { } certPem)
+        if (await read(file.Path, SigningFileContent.CertificateOnly).ConfigureAwait(false) is not { } certPem)
             return null;
 
         try
         {
-            if (await ReadAsync(file.KeyPath, SigningFileContent.PrivateKey).ConfigureAwait(false) is { } keyPem)
+            if (await read(file.KeyPath, SigningFileContent.PrivateKey).ConfigureAwait(false) is { } keyPem)
                 return new(certPem, keyPem);
         }
         catch
@@ -138,11 +141,6 @@ internal sealed class PemFileSigningKeySource(
 
         certPem.Dispose();
         return null;
-
-        async ValueTask<PemText?> ReadAsync(string path, SigningFileContent content) =>
-            forSigning
-                ? await reader.ReadPemAsync(path, content, cancellationToken).ConfigureAwait(false)
-                : await reader.TryReadPemAsync(path, content, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task VerifyPasswordOncePerVersionAsync(
@@ -228,9 +226,7 @@ internal sealed class PemFileSigningKeySource(
         }
 
         using var second = secondOrNull;
-        if (second is null
-            || (certificate.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault() is not { CertificateAuthority: true }
-                && !certificate.SubjectName.RawData.AsSpan().SequenceEqual(second.IssuerName.RawData)))
+        if (second is null || !IsIssuerOf(certificate, second))
             return certificate;
 
         certificate.Dispose();
@@ -240,6 +236,10 @@ internal sealed class PemFileSigningKeySource(
                 $"The first certificate in '{certificatePath}' is a CA certificate. The signing certificate must " +
                 "come first in the file, followed by its issuers; reorder the chain leaf-first."));
     }
+
+    private static bool IsIssuerOf(X509Certificate2 first, X509Certificate2 second) =>
+        first.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault() is { CertificateAuthority: true }
+        || first.SubjectName.RawData.AsSpan().SequenceEqual(second.IssuerName.RawData);
 
     /// <summary>The second <c>CERTIFICATE</c> block of <paramref name="pem"/>, or <see langword="null"/> when there is none.</summary>
     private static X509Certificate2? SecondCertificate(ReadOnlySpan<char> pem)
@@ -270,8 +270,11 @@ internal sealed class PemFileSigningKeySource(
         // Reads through FileSigningKeyReader and calls X509Certificate2.CreateFromPem rather than
         // X509Certificate2.CreateFromPemFile, which performs its own unvalidated file I/O and would
         // bypass FileSigningKeyReader's permission/symlink validation.
-        using var texts = await ReadPemTextsAsync(file, forSigning: true, cancellationToken).ConfigureAwait(false)
-            ?? throw new UnreachableException("A read for signing throws on a missing file rather than returning null.");
+        // A missing file throws when signing.
+        using var texts = await ReadPemTextsAsync(
+                file, async (path, content) => await reader.ReadPemAsync(path, content, cancellationToken).ConfigureAwait(false))
+            .ConfigureAwait(false)
+            ?? throw new UnreachableException("ReadPemAsync throws on a missing file rather than returning null.");
 
         // The files may have changed since they were listed.
         PemKeyBlocks.Check(file, texts);
