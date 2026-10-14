@@ -4,29 +4,29 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Source Link -->
-    <PackageVersion Include="Microsoft.Extensions.Caching.Abstractions" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Abstractions" Version="10.0.13" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.303" />
   </ItemGroup>
   <ItemGroup>
     <!-- Core abstractions -->
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.AspNetCore.DataProtection" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.DataProtection" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.1.0" />
     <!-- Non-ASP.NET: a plain console host can resolve HealthCheckService and run checks; the
          ASP.NET-specific MapHealthChecks middleware lives in a different package this project does
          not reference. Declares four dependencies (.Abstractions, Hosting.Abstractions,
          Logging.Abstractions, Options); core already referenced the latter three, so the net-new
          packages are this one, HealthChecks.Abstractions, and Diagnostics.Abstractions. -->
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.13" />
   </ItemGroup>
   <ItemGroup>
     <!-- Samples: the web client signs in with Microsoft's OpenID Connect handler -->
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.13" />
   </ItemGroup>
   <ItemGroup>
     <!-- Samples: the identity server shows third-party client-secret hashers -->
@@ -55,7 +55,7 @@
          package reference is required. Used by KeyVaultCertificateReader's managed PKCS#12 parsing
          and, in ZeeKayDa.Auth.FileSystem, by PfxFileSigningKeySource to read a bundle's certificate
          bag without ever decrypting its shrouded key bag. -->
-    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.10" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
   <ItemGroup>
     <!-- xUnit v3 -->
