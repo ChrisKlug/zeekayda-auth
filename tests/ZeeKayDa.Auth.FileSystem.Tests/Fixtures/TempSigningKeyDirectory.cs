@@ -234,13 +234,16 @@ internal sealed class TempSigningKeyDirectory : IDisposable
     /// warning. Unix only — the Windows ACL equivalent is a separate, dedicated code path; a no-op
     /// on Windows, since the caller is expected to skip the Unix-specific test that uses this.
     /// </summary>
-    public void MakeParentDirectoryWorldWritable()
+    public void MakeParentDirectoryWorldWritable() =>
+        MakeParentDirectoryWritableBy(UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute);
+
+    /// <summary>Widens the directory's mode to let <paramref name="others"/> in; a no-op on Windows.</summary>
+    public void MakeParentDirectoryWritableBy(UnixFileMode others)
     {
         if (OperatingSystem.IsWindows())
             return;
 
-        File.SetUnixFileMode(DirectoryPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
-            | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute);
+        File.SetUnixFileMode(DirectoryPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | others);
     }
 
     private static void SecureToCurrentIdentity(string path)

@@ -359,7 +359,7 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
         "0" + Convert.ToString((int)mode & 0x1FF, 8).PadLeft(3, '0');
 
     /// <summary>
-    /// Best-effort, log-only checks for a network-filesystem volume and a world-writable parent
+    /// Best-effort, log-only checks for a network-filesystem volume and a group- or world-writable parent
     /// directory. Neither check fails startup: an inconclusive or unsupported check degrades to
     /// "no warning" rather than a hard failure.
     /// </summary>
@@ -413,12 +413,12 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
         else
         {
             var mode = File.GetUnixFileMode(parent);
-            if ((mode & UnixFileMode.OtherWrite) != 0)
+            if ((mode & (UnixFileMode.GroupWrite | UnixFileMode.OtherWrite)) != 0)
             {
                 logger.LogWarning(
                     "ZeeKayDa.Auth: the parent directory '{Directory}' of signing key file '{Path}' is " +
-                    "world-writable. Another local user could replace or redirect files in this " +
-                    "directory. Restrict the directory's permissions.",
+                    "writable by group or other users. Another local user could replace or redirect files in " +
+                    "this directory. Restrict the directory's permissions.",
                     parent, path);
             }
         }

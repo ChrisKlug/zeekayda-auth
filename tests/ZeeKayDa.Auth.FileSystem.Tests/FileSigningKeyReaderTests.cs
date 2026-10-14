@@ -48,8 +48,27 @@ public sealed class FileSigningKeyReaderTests
 
         using var text = await reader.ReadPemAsync(path, SigningFileContent.PrivateKey, ct);
 
-        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("world-writable"),
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("writable by group or other users"),
             "a world-writable parent directory lets another local user replace or redirect the signing key file");
+    }
+
+    [Fact]
+    public async Task ReadPemAsync_logs_a_warning_when_the_parent_directory_is_group_writable_on_Unix()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "group-writable-directory detection uses the Unix permission model here.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", DateTimeOffset.UtcNow - TimeSpan.FromDays(1), DateTimeOffset.UtcNow + TimeSpan.FromDays(365));
+        var path = tempDir.WritePemFile("key.pem", certificate);
+        tempDir.MakeParentDirectoryWritableBy(UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute);
+        var logger = new CapturingLogger<FileSigningKeyReader>();
+        var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(logger));
+
+        using var text = await reader.ReadPemAsync(path, SigningFileContent.PrivateKey, ct);
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("writable by group or other users"),
+            "a group member could replace a certificate file that may now be world-readable");
     }
 
     [Fact]
