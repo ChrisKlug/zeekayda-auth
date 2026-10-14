@@ -40,7 +40,7 @@ public sealed class PemFileSigningKeySourceTests
 
         return new PemFileSigningKeySource(
             Options.Create(options),
-            new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance));
+            new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance)));
     }
 
     /// <summary>

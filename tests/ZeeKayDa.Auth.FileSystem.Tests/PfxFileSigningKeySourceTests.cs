@@ -43,7 +43,7 @@ public sealed class PfxFileSigningKeySourceTests
 
         return new PfxFileSigningKeySource(
             Options.Create(options),
-            new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance));
+            new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance)));
     }
 
     private static X509Certificate2 CreateRsaCertificate() =>

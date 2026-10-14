@@ -21,7 +21,7 @@ public sealed class FileSigningKeyReaderTests
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", DateTimeOffset.UtcNow - TimeSpan.FromDays(1), DateTimeOffset.UtcNow + TimeSpan.FromDays(365));
         var path = tempDir.WritePemFile("key.pem", certificate);
         tempDir.MakeTooPermissive(path);
-        var reader = new FileSigningKeyReader(NullSanitizingLogger<FileSigningKeyReader>.Instance);
+        var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance));
 
         var act = () => reader.ReadPemTextAsync(path, ct).AsTask();
 
@@ -43,8 +43,8 @@ public sealed class FileSigningKeyReaderTests
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", DateTimeOffset.UtcNow - TimeSpan.FromDays(1), DateTimeOffset.UtcNow + TimeSpan.FromDays(365));
         var path = tempDir.WritePemFile("key.pem", certificate);
         tempDir.MakeParentDirectoryWorldWritable();
-        var logger = new CapturingSanitizingLogger<FileSigningKeyReader>();
-        var reader = new FileSigningKeyReader(logger);
+        var logger = new CapturingLogger<FileSigningKeyReader>();
+        var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(logger));
 
         await reader.ReadPemTextAsync(path, ct);
 
@@ -59,8 +59,8 @@ public sealed class FileSigningKeyReaderTests
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", DateTimeOffset.UtcNow - TimeSpan.FromDays(1), DateTimeOffset.UtcNow + TimeSpan.FromDays(365));
         var path = tempDir.WritePemFile("key.pem", certificate);
-        var logger = new CapturingSanitizingLogger<FileSigningKeyReader>();
-        var reader = new FileSigningKeyReader(logger);
+        var logger = new CapturingLogger<FileSigningKeyReader>();
+        var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(logger));
 
         await reader.ReadPemTextAsync(path, ct);
 
@@ -79,7 +79,7 @@ public sealed class FileSigningKeyReaderTests
         using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", DateTimeOffset.UtcNow - TimeSpan.FromDays(1), DateTimeOffset.UtcNow + TimeSpan.FromDays(365));
         var path = tempDir.WritePemFile("key.pem", certificate);
         tempDir.MakeInaccessible(path);
-        var reader = new FileSigningKeyReader(new CapturingSanitizingLogger<FileSigningKeyReader>());
+        var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance));
 
         var act = async () => await reader.ReadPemTextAsync(path, ct);
 
@@ -116,7 +116,7 @@ public sealed class FileSigningKeyReaderTests
             await File.WriteAllTextAsync(path, TempSigningKeyDirectory.BuildCombinedPem(certificate), ct);
             if (!OperatingSystem.IsWindows())
                 File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            var reader = new FileSigningKeyReader(new CapturingSanitizingLogger<FileSigningKeyReader>());
+            var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance));
 
             // Path.GetTempPath()-rooted paths must not be rejected merely because the OS resolves
             // /tmp (or /var, /etc) through a root-owned symlink — that is not an attacker-plantable
@@ -156,7 +156,7 @@ public sealed class FileSigningKeyReaderTests
         await File.WriteAllTextAsync(Path.Join(realSubdirectory, "key.pem"), TempSigningKeyDirectory.BuildCombinedPem(certificate), ct);
         if (!OperatingSystem.IsWindows())
             File.SetUnixFileMode(Path.Join(realSubdirectory, "key.pem"), UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        var reader = new FileSigningKeyReader(new CapturingSanitizingLogger<FileSigningKeyReader>());
+        var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance));
 
         // Unlike the OS temp directory above, this symlinked ancestor is owned by the current
         // (non-root) test process — exactly the attacker-plantable shape the ancestor-symlink check
@@ -213,7 +213,7 @@ public sealed class FileSigningKeyReaderTests
             await File.WriteAllTextAsync(realLeafPath, TempSigningKeyDirectory.BuildCombinedPem(certificate), ct);
             if (!OperatingSystem.IsWindows())
                 File.SetUnixFileMode(realLeafPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            var reader = new FileSigningKeyReader(new CapturingSanitizingLogger<FileSigningKeyReader>());
+            var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance));
 
             var act = async () => await reader.ReadPemTextAsync(path, ct);
 

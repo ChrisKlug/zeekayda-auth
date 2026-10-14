@@ -42,3 +42,5 @@ ZeeKayDa.Auth.TestKit.Signing.SigningKeyRingHarness.DisposeAsync() -> System.Thr
 ZeeKayDa.Auth.TestKit.Signing.SigningKeyRingHarness.ReadAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.TestKit.Signing.SigningKeyRingHarness.Ring.get -> ZeeKayDa.Auth.Tokens.SigningKeyRing!
 static ZeeKayDa.Auth.TestKit.Signing.SigningKeyRingHarness.StartAsync(ZeeKayDa.Auth.Tokens.ISigningKeySource! source, Microsoft.Extensions.Time.Testing.FakeTimeProvider! clock, ZeeKayDa.Auth.Tokens.SigningKeyOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.TestKit.Signing.SigningKeyRingHarness!>!
+ZeeKayDa.Auth.TestKit.Logging.TestSanitizingLogger
+static ZeeKayDa.Auth.TestKit.Logging.TestSanitizingLogger.Create<T>(Microsoft.Extensions.Logging.ILogger<T>! inner) -> ZeeKayDa.Auth.Logging.SanitizingLogger<T>!

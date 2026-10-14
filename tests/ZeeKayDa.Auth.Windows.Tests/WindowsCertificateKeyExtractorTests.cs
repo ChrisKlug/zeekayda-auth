@@ -136,9 +136,4 @@ public sealed class WindowsCertificateKeyExtractorTests
             .And.Contain("running as", "an access failure must name the identity that was denied")
             .And.Contain("Manage Private Keys");
     }
-
-    // FormatIdentitySuffix/TryResolveProcessIdentity now live in the shared
-    // ZeeKayDa.Auth.ProcessIdentityHelper (consolidated with ZeeKayDa.Auth.FileSystem's identical
-    // copy per PR #410's review) — see ProcessIdentityHelperTests in ZeeKayDa.Auth.Tests for their
-    // tests.
 }

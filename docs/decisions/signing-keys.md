@@ -81,9 +81,9 @@ walked: that matters only on a shared machine, and the environment gate keeps a 
 **Extension contracts are public in core; ZeeKayDa's own crypto and redaction stay internal.**
 `InternalsVisibleTo` can only name first-party assemblies at build time, so it structurally cannot serve a
 third-party provider package. `SanitizingLogger<T>` is nameable for that reason, and cannot be substituted:
-its only constructor is internal. The two narrow grants that do exist — `ZeeKayDa.Auth.FileSystem` and `ZeeKayDa.Auth.Windows`, both for
-the process-identity helper their access-denied messages share — are reviewed exceptions for assemblies
-shipping in lockstep with core, not a pattern. Core has no native interop: the `lstat` owner check lives in
+its only constructor is internal; a source's tests build one through the TestKit's `TestSanitizingLogger`.
+Provider packages and their tests get no friend grant: each compiles the process-identity helper behind its
+access-denied messages from one linked source file. Core has no native interop: the `lstat` owner check lives in
 `ZeeKayDa.Auth.FileSystem`, the one package that protects production keys with it.
 
 **No Microsoft.IdentityModel types on the public surface.** They would bake a large, fast-moving third-party

@@ -9,11 +9,8 @@ namespace ZeeKayDa.Auth;
 /// diagnostic messages, best-effort.
 /// </summary>
 /// <remarks>
-/// Lives in the core <c>ZeeKayDa.Auth</c> assembly so that both the file-based signing provider
-/// (<c>ZeeKayDa.Auth.FileSystem</c>) and the Windows Certificate Store signing provider
-/// (<c>ZeeKayDa.Auth.Windows</c>) share a single implementation of "resolve the process identity,
-/// but never let resolution itself become the failure it was meant to explain". Exposed to both
-/// via the <c>InternalsVisibleTo</c> declarations in <c>ZeeKayDaAuth.cs</c>.
+/// Compiled into both the file-based and the Windows Certificate Store signing providers as a
+/// linked file, so each holds its own internal copy of one implementation without core exposing it.
 /// </remarks>
 internal static class ProcessIdentityHelper
 {
