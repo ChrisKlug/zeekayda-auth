@@ -65,14 +65,18 @@ internal static class PemKeyBlocks
             throw Mismatch($"The certificate file '{file.Path}' carries a private key while a PasswordSource is " +
                 $"configured for the key in '{file.KeyPath}'. A copy there escapes the password and its checks; remove it.");
 
+        if (keyBlocks.EncryptedCount > 1)
+            throw Mismatch($"The file '{KeyFileOf(file)}' carries more than one encrypted private key. Only one is " +
+                "imported and judged, so remove the others.");
+
         CheckEncryptionParameters(file, keyBlocks.Encrypted);
     }
 
     /// <summary>
-    /// Whether a PEM text carries an unencrypted key block, and the base64 of its first
-    /// <c>ENCRYPTED PRIVATE KEY</c> block.
+    /// Whether a PEM text carries an unencrypted key block, the base64 of its first
+    /// <c>ENCRYPTED PRIVATE KEY</c> block, and how many of those it carries.
     /// </summary>
-    private sealed record KeyBlocks(bool Plain, ReadOnlyMemory<char> Encrypted);
+    private sealed record KeyBlocks(bool Plain, ReadOnlyMemory<char> Encrypted, int EncryptedCount);
 
     /// <summary>
     /// The <see cref="KeyBlocks"/> of <paramref name="pem"/>. Blocks are located and their base64 checked,
@@ -82,19 +86,20 @@ internal static class PemKeyBlocks
     {
         var plain = false;
         var encrypted = ReadOnlyMemory<char>.Empty;
+        var encryptedCount = 0;
         var offset = 0;
         while (PemEncoding.TryFind(pem.AsSpan(offset), out var fields))
         {
             var label = pem.AsSpan(offset)[fields.Label];
             if (UnencryptedLabels.Contains(label.ToString()))
                 plain = true;
-            else if (encrypted.IsEmpty && label.SequenceEqual(EncryptedLabel))
+            else if (label.SequenceEqual(EncryptedLabel) && encryptedCount++ == 0)
                 encrypted = pem.AsMemory(offset)[fields.Base64Data];
 
             offset += fields.Location.End.Value;
         }
 
-        return new(plain, encrypted);
+        return new(plain, encrypted, encryptedCount);
     }
 
     // RFC 7468 PEM carries no headers, so PemEncoding never matches a legacy block; its header is what

@@ -865,6 +865,29 @@ public sealed class PemFileSigningKeySourceTests
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.key_encryption_mismatch");
     }
 
+    [Theory]
+    [InlineData("combined")]
+    [InlineData("split")]
+    public async Task ReadAsync_rejects_a_second_encrypted_key_in_the_key_file(string form)
+    {
+        // Only the first is judged and imported, so a second, possibly weaker, copy would escape both.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var keys = EncryptedKeyPem(certificate) + "\n" + EncryptedKeyPem(certificate,
+            new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 1), "guessable");
+        var file = form == "combined"
+            ? new PemSigningFile(tempDir.WriteTextFile("combined.pem", certificate.ExportCertificatePem() + "\n" + keys),
+                PasswordSource: new PasswordSource().GetAsync)
+            : new PemSigningFile(tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate),
+                tempDir.WriteTextFile("key.pem", keys), new PasswordSource().GetAsync);
+        var sut = BuildSource(file);
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(file.Path, "signing.file_signing.key_encryption_mismatch");
+    }
+
     [Fact]
     public async Task ReadAsync_rejects_a_key_encrypted_with_a_PBES1_scheme()
     {

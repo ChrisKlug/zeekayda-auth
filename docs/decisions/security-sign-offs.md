@@ -2188,8 +2188,7 @@ Copilot code, security (xhigh) and architecture lenses, the security and archite
   `ReadAsync_rejects_a_combined_file_whose_key_block_is_truncated`, `ReadAsync_rejects_a_bundle_that_carries_no_private_key`,
   `ReadAsync_rejects_a_listed_certificate_with_no_private_key_without_extracting_one`.
 - Listing imports no private key. Closed — `ReadAsync_lists_a_bundle_whose_key_bag_cannot_be_decrypted_because_it_never_imports_the_key`,
-  `ReadAsync_reads_only_the_label_of_a_separate_key_file` [renamed from ReadAsync_never_parses_a_separate_key_file_for_any_listed_file
-  by #917, which also decrypts and disposes a password-protected PEM key at listing, once per version of its files].
+  ReadAsync_never_parses_a_separate_key_file_for_any_listed_file [renamed by #917 to `ReadAsync_reads_only_the_label_of_a_separate_key_file`].
 - Both certificate helpers reject an undefined algorithm and a key that does not suit it. Closed — `FromCertificate_rejects_an_undefined_algorithm`
   (both), `FromCertificate_rejects_an_EC_certificate_for_an_RSA_algorithm`, FromCertificate_rejects_a_key_that_does_not_suit_the_algorithm_naming_the_id.
   [Since #905 `SourceKey.FromCertificate` takes no algorithm; the builder checks every key against the source's —
