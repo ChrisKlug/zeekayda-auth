@@ -37,6 +37,13 @@ public sealed class PfxFileSigningKeyStoreTests
             Options.Create(options),
             new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance)));
         var keySet = (await sut.ReadAsync(ct)).Keys;
+
+        // Negative control: the snapshot must see the container a certificate-backed load writes,
+        // or an unchanged snapshot below would prove nothing.
+        var beforeControl = UserKeyStoreFiles();
+        using (X509CertificateLoader.LoadPkcs12FromFile(path, Password))
+            UserKeyStoreFiles().Except(beforeControl).Should().NotBeEmpty("a certificate-backed PFX load writes a key container");
+
         var before = UserKeyStoreFiles();
 
         using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
@@ -52,7 +59,7 @@ public sealed class PfxFileSigningKeyStoreTests
     // CNG writes user keys under Crypto\Keys, CAPI under Crypto\RSA\<SID>; both sit below Crypto.
     private static HashSet<string> UserKeyStoreFiles()
     {
-        var store = Path.Combine(
+        var store = Path.Join(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Microsoft", "Crypto");
 
         return Directory.Exists(store)

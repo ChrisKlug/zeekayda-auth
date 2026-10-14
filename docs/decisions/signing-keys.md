@@ -33,7 +33,7 @@ deleted file, key file, certificate or vault object as nothing (an unmounted dir
 predecessor is superseded, it never takes over (in memory: a restarted replica adopts it); only startup refuses it. A signer closes at the first read a `RefreshInterval` after it is seen to stop signing; its key signing again after that reopens and self-tests one.
 
 **File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list `Files`/`Certificates`
-with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`. A certificate's `NotBefore`
+with the public `SourceKey.FromCertificate`; PEM signs via `LocalSigner.FromCertificate`, PFX over its imported key bag. A certificate's `NotBefore`
 is its CA issuance date, so one listed over a lead time later signs as soon as it is read. Listing checks every entry can sign without importing a plain key: PFX key bags, PEM key files (permissions) and block labels, Windows `HasPrivateKey`. One that cannot is a `SourceKeyFailure`, not a throw, so it cannot block a revocation. No read lock.
 A PEM key may be PKCS#8-encrypted (PBES2, PBKDF2 at 2048+ iterations, AES-CBC) under a per-file password; listing decrypts and pairs it once per hash of its files (the one cache) and retries a failure next read. Legacy OpenSSL-encrypted keys, and any plain key beside a password, are refused by name.
 
