@@ -48,8 +48,8 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
     // was listed. volatile: CreateSignerAsync may run on another thread.
     private volatile IReadOnlySet<string>? _listedVersions;
 
-    // The public material of every version the latest read listed. A version's material never
-    // changes, so a refresh fetches only the versions it has not seen before.
+    // The public material of every version fetched so far that the vault still holds, enabled or not.
+    // A version's material never changes, so a refresh fetches only the versions it has not seen before.
     private volatile IReadOnlyDictionary<string, PublicKeyParameters> _publicKeys =
         new Dictionary<string, PublicKeyParameters>(StringComparer.Ordinal);
 
@@ -78,7 +78,7 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
         // Committed only after nothing can throw any more, so a failed read can never leave a
         // signer openable for a version that was never listed.
         _listedVersions = listing.Keys.Select(key => key.Id.Value).ToHashSet(StringComparer.Ordinal);
-        _publicKeys = listing.Keys.ToDictionary(key => key.Id.Value, key => key.PublicKey, StringComparer.Ordinal);
+        _publicKeys = KeyVaultVersions.RememberPublicKeys(_publicKeys, listing, allVersions);
         return listing;
     }
 

@@ -13,15 +13,17 @@ internal sealed class PemText : IDisposable
     private char[]? _buffer;
     private readonly int _length;
 
+    private readonly byte[] _hash;
+
     private PemText(char[] buffer, int length, byte[] hash)
     {
         _buffer = buffer;
         _length = length;
-        Hash = hash;
+        _hash = hash;
     }
 
     /// <summary>Gets the SHA-256 hash of the file's bytes, which identifies this version of the file.</summary>
-    public byte[] Hash { get; }
+    public ReadOnlySpan<byte> Hash => _hash;
 
     /// <summary>Gets the text. Valid until <see cref="Dispose"/>.</summary>
     public ReadOnlyMemory<char> Memory =>
@@ -33,12 +35,23 @@ internal sealed class PemText : IDisposable
     /// <summary>Decodes <paramref name="bytes"/> as UTF-8 and wipes them.</summary>
     public static PemText Decode(byte[] bytes)
     {
+        char[]? buffer = null;
         try
         {
             var length = Encoding.UTF8.GetCharCount(bytes);
-            var buffer = ArrayPool<char>.Shared.Rent(length);
+            buffer = ArrayPool<char>.Shared.Rent(length);
             Encoding.UTF8.GetChars(bytes, buffer);
             return new PemText(buffer, length, SHA256.HashData(bytes));
+        }
+        catch
+        {
+            if (buffer is not null)
+            {
+                buffer.AsSpan().Clear();
+                ArrayPool<char>.Shared.Return(buffer);
+            }
+
+            throw;
         }
         finally
         {

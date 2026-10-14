@@ -183,7 +183,7 @@ internal sealed class PemFileSigningKeySource(
 
     // Hashed separately so a byte moving between the two files is still a new version.
     private static byte[] VersionOf(PemSigningFile file, PemTexts texts) =>
-        file.KeyPath is null ? texts.Cert.Hash : [.. texts.Cert.Hash, .. texts.Key.Hash];
+        file.KeyPath is null ? texts.Cert.Hash.ToArray() : [.. texts.Cert.Hash, .. texts.Key.Hash];
 
     /// <summary>
     /// The configured password. An empty one is <c>password_unavailable</c>: it is most often a missing

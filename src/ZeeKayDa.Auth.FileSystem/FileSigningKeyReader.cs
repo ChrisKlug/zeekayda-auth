@@ -300,9 +300,9 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
             {
                 throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
                     "signing.file_signing.file_too_permissive",
-                    $"Certificate file '{path}' grants write access to a broad principal ('Everyone', " +
-                    "'Users', or 'Authenticated Users'). Anyone who can write it can publish their own key. " +
-                    "Remove the write access."));
+                    $"Certificate file '{path}' grants a broad principal ('Everyone', 'Users', or " +
+                    "'Authenticated Users') the right to write it, change its permissions, or take ownership " +
+                    "of it. Anyone who can write it can publish their own key. Remove those rights."));
             }
 
             return;
@@ -318,9 +318,10 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
         }
     }
 
+    // Changing the ACL or taking ownership is a write once removed: the holder can grant themselves write.
     [SupportedOSPlatform("windows")]
     private static bool GrantsWrite(FileSystemAccessRule rule) =>
-        (rule.FileSystemRights & (FileSystemRights.Write | FileSystemRights.WriteData | FileSystemRights.CreateFiles)) != 0;
+        (rule.FileSystemRights & (FileSystemRights.Write | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership)) != 0;
 
     [SupportedOSPlatform("windows")]
     private static bool IsBroadPrincipal(SecurityIdentifier sid) =>

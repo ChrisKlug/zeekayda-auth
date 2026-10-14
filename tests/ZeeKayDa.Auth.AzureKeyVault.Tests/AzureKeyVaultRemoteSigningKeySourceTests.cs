@@ -395,6 +395,26 @@ public sealed class AzureKeyVaultRemoteSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_does_not_fetch_again_for_a_version_disabled_and_then_re_enabled()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultKeyReader();
+        reader.AddRsaVersion("v1", createdOn: T0);
+        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
+        var sut = BuildSource(reader);
+        await sut.ReadAsync(ct);
+
+        reader.SetEnabled("v1", false);
+        await sut.ReadAsync(ct);
+        reader.SetEnabled("v1", true);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
+
+        PublishedIds(keySet).Should().BeEquivalentTo(["v1", "v2"]);
+        reader.KeyMaterialCalls.Should().BeEquivalentTo(["v1", "v2"],
+            "a disabled version is still in the vault, so its public material is remembered");
+    }
+
+    [Fact]
     public async Task ReadAsync_stops_listing_a_version_that_is_disabled_after_the_first_read()
     {
         var ct = TestContext.Current.CancellationToken;

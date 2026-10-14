@@ -40,6 +40,24 @@ internal static class KeyVaultVersions
     }
 
     /// <summary>
+    /// The public material to remember after a read: what <paramref name="listing"/> holds, plus what
+    /// <paramref name="known"/> holds for a version the vault still has. A disabled version keeps its
+    /// material, so re-enabling it costs no fetch; a version deleted from the vault is forgotten.
+    /// </summary>
+    public static IReadOnlyDictionary<string, PublicKeyParameters> RememberPublicKeys<TVersion>(
+        IReadOnlyDictionary<string, PublicKeyParameters> known, SourceKeyListing listing, IReadOnlyList<TVersion> allVersions)
+        where TVersion : IKeyVaultVersionInfo
+    {
+        var remembered = allVersions
+            .Where(v => known.ContainsKey(v.Version))
+            .ToDictionary(v => v.Version, v => known[v.Version], StringComparer.Ordinal);
+        foreach (var key in listing.Keys)
+            remembered[key.Id.Value] = key.PublicKey;
+
+        return remembered;
+    }
+
+    /// <summary>
     /// Returns every enabled version. Disabling a version is the operator's revocation lever, so a
     /// disabled version is never listed, and disabling every version lists none — a full revocation.
     /// </summary>

@@ -1,3 +1,5 @@
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Options;
@@ -555,6 +557,51 @@ public sealed class PemFileSigningKeySourceTests
         var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
         var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
         tempDir.SetUnixMode(certPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | writeBit);
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(certPath, "signing.file_signing.file_too_permissive");
+    }
+
+    [Theory]
+    [InlineData(FileSystemRights.Read)]
+    [InlineData(FileSystemRights.ReadAndExecute)]
+    [SupportedOSPlatform("windows")]
+    public async Task ReadAsync_accepts_a_certificate_only_file_a_broad_principal_may_only_read_on_Windows(FileSystemRights rights)
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "broad-principal ACL enforcement is the Windows permission model.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        TempSigningKeyDirectory.GrantEveryoneWindows(certPath, rights);
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.Failures.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(FileSystemRights.WriteData)]
+    [InlineData(FileSystemRights.AppendData)]
+    [InlineData(FileSystemRights.ChangePermissions)]
+    [InlineData(FileSystemRights.TakeOwnership)]
+    [SupportedOSPlatform("windows")]
+    public async Task ReadAsync_rejects_a_certificate_only_file_a_broad_principal_may_write_or_take_over_on_Windows(FileSystemRights rights)
+    {
+        // Changing the ACL or taking ownership lets the holder grant themselves write, then publish their own key.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "broad-principal ACL enforcement is the Windows permission model.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        TempSigningKeyDirectory.GrantEveryoneWindows(certPath, rights);
         var sut = BuildSource(new PemSigningFile(certPath, keyPath));
 
         var listing = await sut.ReadAsync(ct);

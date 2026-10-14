@@ -268,13 +268,17 @@ internal sealed class TempSigningKeyDirectory : IDisposable
     }
 
     [SupportedOSPlatform("windows")]
-    private static void GrantEveryoneReadWindows(string path)
+    private static void GrantEveryoneReadWindows(string path) => GrantEveryoneWindows(path, FileSystemRights.Read);
+
+    /// <summary>Grants <c>Everyone</c> <paramref name="rights"/> on an already-written file.</summary>
+    [SupportedOSPlatform("windows")]
+    public static void GrantEveryoneWindows(string path, FileSystemRights rights)
     {
         var fileInfo = new FileInfo(path);
         var security = fileInfo.GetAccessControl();
         security.AddAccessRule(new FileSystemAccessRule(
             new SecurityIdentifier(WellKnownSidType.WorldSid, domainSid: null),
-            FileSystemRights.Read,
+            rights,
             AccessControlType.Allow));
         fileInfo.SetAccessControl(security);
     }
