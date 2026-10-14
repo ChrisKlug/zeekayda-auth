@@ -40,6 +40,8 @@
     <!-- Tracks each public-facing package's surface in PublicAPI.Shipped.txt/PublicAPI.Unshipped.txt
          and fails the build if a public member changes without a matching entry. -->
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" />
+    <!-- Turns a call to a banned API (BannedSymbols*.txt) into a build error. -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="5.6.0" />
   </ItemGroup>
   <ItemGroup>
     <!-- Azure Key Vault signing providers (ZeeKayDa.Auth.AzureKeyVault) -->

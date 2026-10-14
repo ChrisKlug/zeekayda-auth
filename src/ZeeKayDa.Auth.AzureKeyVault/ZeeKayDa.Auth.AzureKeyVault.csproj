@@ -23,6 +23,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- A PKCS#12 private key is imported in memory, never through an OS-backed certificate. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="../Shared/BannedSymbols.Pkcs12.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../ZeeKayDa.Auth.Analyzers/ZeeKayDa.Auth.Analyzers.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
