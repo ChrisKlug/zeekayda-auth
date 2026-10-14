@@ -90,10 +90,6 @@ public sealed class FileSigningKeyReaderTests
             "the original root cause must be preserved for operators who inspect it");
     }
 
-    // FormatIdentitySuffix/TryResolveProcessIdentity now live in the shared
-    // ZeeKayDa.Auth.ProcessIdentityHelper (consolidated with ZeeKayDa.Auth.Windows's identical copy
-    // per PR #410's review) — see ProcessIdentityHelperTests in ZeeKayDa.Auth.Tests for their tests.
-
     // ── Root-owned symlinked ancestor (regression: macOS /tmp -> /private/tmp etc.) ────────────────
     //
     // These two tests exercise FileSigningKeyReader.ValidateNoUntrustedSymlinkedAncestorUnix directly
