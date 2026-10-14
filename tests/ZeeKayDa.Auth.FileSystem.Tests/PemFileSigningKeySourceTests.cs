@@ -1148,6 +1148,35 @@ public sealed class PemFileSigningKeySourceTests
     }
 
     [Fact]
+    public async Task A_password_rotated_without_a_file_change_is_seen_only_by_the_next_signer()
+    {
+        // Accepted residual: listing skips an unchanged file, and an open signer holds its own key.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+        var key = (await sut.ReadAsync(ct)).Keys.Single();
+        using var openSigner = await sut.CreateSignerAsync(key.Id, ct);
+        password.Value = "rotated";
+        var callsBeforeRead = password.Calls;
+
+        var listing = await sut.ReadAsync(ct);
+        var signature = await openSigner.SignAsync("header.payload"u8.ToArray(), ct);
+        var nextSigner = async () => await sut.CreateSignerAsync(key.Id, ct);
+
+        listing.Failures.Should().BeEmpty();
+        password.Calls.Should().Be(callsBeforeRead, "an unchanged file is not decrypted again");
+        using var rsa = RSA.Create(key.PublicKey.RsaPublicParameters!.Value);
+        rsa.VerifyData("header.payload"u8, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .Should().BeTrue();
+        (await nextSigner.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.key_password_rejected");
+    }
+
+    [Fact]
     public async Task CreateSignerAsync_rejects_a_wrong_password_under_its_own_code_without_leaking_it()
     {
         // The password changed at its source after the key was listed.
