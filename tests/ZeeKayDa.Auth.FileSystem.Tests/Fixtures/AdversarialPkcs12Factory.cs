@@ -289,6 +289,58 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
+    /// An RSA certificate paired by <c>localKeyId</c> with an unshrouded key bag that is not an RSA or
+    /// EC private key at all.
+    /// </summary>
+    public static byte[] PairedKeyBagNeitherRsaNorEc(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter) =>
+        RsaCertificatePairedWith(password, notBefore, notAfter,
+            keys =>
+            {
+                var notAPrivateKey = new Pkcs12KeyBag(new byte[] { 0x30, 0x03, 0x02, 0x01, 0x00 });
+                keys.AddSafeBag(notAPrivateKey);
+                return notAPrivateKey;
+            });
+
+    /// <summary>
+    /// An RSA certificate paired by <c>localKeyId</c> with an EC private key: the certificate the
+    /// listing publishes and the key the signer would import are of different types.
+    /// </summary>
+    public static byte[] RsaCertificatePairedWithEcKey(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        return RsaCertificatePairedWith(password, notBefore, notAfter,
+            keys => keys.AddShroudedKey(ecKey, password, Pbe));
+    }
+
+    private static byte[] RsaCertificatePairedWith(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter,
+        Func<Pkcs12SafeContents, Pkcs12SafeBag> addKey)
+    {
+        using var rsaKey = RSA.Create(2048);
+        using var certificate = new CertificateRequest(
+                "CN=test-paired", rsaKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .CreateSelfSigned(notBefore, notAfter);
+        using var publicOnly = X509CertificateLoader.LoadCertificate(certificate.Export(X509ContentType.Cert));
+
+        var localKeyId = new byte[] { 0x01 };
+
+        var certificates = new Pkcs12SafeContents();
+        certificates.AddCertificate(publicOnly).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var keys = new Pkcs12SafeContents();
+        addKey(keys).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
+        builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+        return builder.Encode();
+    }
+
+    /// <summary>
     /// A bundle whose key bag names a <c>localKeyId</c> no certificate carries, with more than one
     /// certificate present — so the key's own certificate is not in the file.
     /// </summary>

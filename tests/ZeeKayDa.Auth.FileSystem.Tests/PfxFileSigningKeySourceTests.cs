@@ -847,6 +847,42 @@ public sealed class PfxFileSigningKeySourceTests
     }
 
     [Fact]
+    public async Task CreateSignerAsync_throws_invalid_pfx_when_the_paired_key_bag_is_neither_RSA_nor_EC()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var bundle = AdversarialPkcs12Factory.PairedKeyBagNeitherRsaNorEc(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxFile(path, Password()));
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(path), ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(
+            f => f.Code == "signing.file_signing.invalid_pfx" && f.Message.Contains("neither an RSA nor an EC key"));
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_throws_invalid_pfx_when_the_paired_key_is_not_the_certificates_key_type()
+    {
+        // The listing validates the certificate's key, so an EC key paired with an RSA certificate
+        // would otherwise only surface as an opaque self-test failure when the signer first signs.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var bundle = AdversarialPkcs12Factory.RsaCertificatePairedWithEcKey(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxFile(path, Password()));
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(path), ct);
+
+        var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
+        exception.Which.AggregatedFailures.Should().ContainSingle(
+            f => f.Code == "signing.file_signing.invalid_pfx" && f.Message.Contains("different type"));
+    }
+
+    [Fact]
     public async Task CreateSignerAsync_throws_invalid_pfx_for_a_wrong_password_rather_than_leaking_the_raw_crypto_error()
     {
         // The signer-open path loads the bundle separately from ReadAsync, so its password failure

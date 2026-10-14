@@ -78,13 +78,29 @@ internal sealed class PfxFileSigningKeySource(
         var bytes = await reader.ReadAllBytesAsync(file.Path, cancellationToken).ConfigureAwait(false);
         var password = await SigningFilePassword.ReadAsync(file.Path, file.PasswordSource, cancellationToken).ConfigureAwait(false);
 
-        // The one call in this type that materialises a private key.
-        var privateKey = OpenSigningPair(bytes, file.Path, password, pair => Pkcs12PrivateKey.Import(pair.Key, password))
-            ?? throw InvalidPfx(file.Path,
+        var privateKey = OpenSigningPair(bytes, file.Path, password, pair => ImportPairedKey(pair, file.Path, password));
+        return new LocalSigner(options.Algorithm, privateKey);
+    }
+
+    /// <summary>
+    /// Imports the key bag of <paramref name="pair"/> — the one call in this type that materialises a
+    /// private key — and rejects a key whose type is not the certificate's.
+    /// </summary>
+    private static AsymmetricAlgorithm ImportPairedKey(SigningPair pair, string path, string password)
+    {
+        var privateKey = Pkcs12PrivateKey.Import(pair.Key, password)
+            ?? throw InvalidPfx(path,
                 "carries a private key that imports as neither an RSA nor an EC key. Verify the key is " +
                 "RSA or EC and is encrypted under the same password as the bundle");
 
-        return new LocalSigner(options.Algorithm, privateKey);
+        using var certificate = pair.Certificate.GetCertificate();
+        if ((privateKey is RSA) == (certificate.GetKeyAlgorithm() == RsaOid))
+            return privateKey;
+
+        privateKey.Dispose();
+        throw InvalidPfx(path,
+            "pairs its certificate with a private key of a different type, so the published key could " +
+            "never verify what it signs. Re-export the bundle from the keypair it is meant to hold");
     }
 
     /// <summary>
@@ -139,6 +155,8 @@ internal sealed class PfxFileSigningKeySource(
                 ex);
         }
     }
+
+    private const string RsaOid = "1.2.840.113549.1.1.1";
 
     private readonly record struct SigningPair(Pkcs12CertBag Certificate, Pkcs12SafeBag Key);
 
