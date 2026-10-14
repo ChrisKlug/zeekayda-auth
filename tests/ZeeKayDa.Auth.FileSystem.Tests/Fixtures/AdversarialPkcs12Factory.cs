@@ -315,17 +315,19 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
-    /// A DSA certificate — neither RSA nor EC — paired by <c>localKeyId</c> with an EC private key.
+    /// An Ed25519 certificate — neither RSA nor EC — paired by <c>localKeyId</c> with an EC private
+    /// key. The Ed25519 public key is written directly, because not every platform can generate one.
     /// </summary>
-    public static byte[] DsaCertificatePairedWithEcKey(
+    public static byte[] Ed25519CertificatePairedWithEcKey(
         string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
     {
         using var issuerKey = RSA.Create(2048);
-        using var dsaKey = DSA.Create(1024);
+        var ed25519PublicKey = new PublicKey(
+            new Oid("1.3.101.112"), null, new AsnEncodedData(new byte[32]));
         using var certificate = new CertificateRequest(
-                new X500DistinguishedName("CN=test-dsa"), new PublicKey(dsaKey), HashAlgorithmName.SHA256)
+                new X500DistinguishedName("CN=test-ed25519"), ed25519PublicKey, HashAlgorithmName.SHA256)
             .Create(
-                new X500DistinguishedName("CN=test-dsa-issuer"),
+                new X500DistinguishedName("CN=test-ed25519-issuer"),
                 X509SignatureGenerator.CreateForRSA(issuerKey, RSASignaturePadding.Pkcs1),
                 notBefore, notAfter, [1, 2, 3, 4]);
         using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);

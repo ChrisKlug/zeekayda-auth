@@ -887,7 +887,7 @@ public sealed class PfxFileSigningKeySourceTests
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        var bundle = AdversarialPkcs12Factory.DsaCertificatePairedWithEcKey(
+        var bundle = AdversarialPkcs12Factory.Ed25519CertificatePairedWithEcKey(
             CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         var path = tempDir.WriteBytes("current.pfx", bundle);
         var sut = BuildSource(new PfxFile(path, Password()));
