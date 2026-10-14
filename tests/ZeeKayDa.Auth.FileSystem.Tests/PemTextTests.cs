@@ -22,7 +22,7 @@ public sealed class PemTextTests
     public void Dispose_wipes_the_buffer_before_returning_it_to_the_pool()
     {
         var pool = new RecordingPool();
-        var text = PemText.Decode(Encoding.UTF8.GetBytes(Pem), pool);
+        using var text = PemText.Decode(Encoding.UTF8.GetBytes(Pem), pool);
 
         text.Dispose();
 
@@ -35,7 +35,7 @@ public sealed class PemTextTests
     public void Dispose_twice_returns_the_buffer_once()
     {
         var pool = new RecordingPool();
-        var text = PemText.Decode(Encoding.UTF8.GetBytes(Pem), pool);
+        using var text = PemText.Decode(Encoding.UTF8.GetBytes(Pem), pool);
 
         text.Dispose();
         text.Dispose();
