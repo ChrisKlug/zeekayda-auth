@@ -339,7 +339,7 @@ public sealed class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensionsTests
         var normalized = System.Text.RegularExpressions.Regex.Replace(firstPara!.Value, @"\s+", " ").Trim();
 
         normalized.Should().Be(
-            "The private key is downloaded from Azure Key Vault at startup and cached in process " +
+            "The private key is downloaded from Azure Key Vault when its version is chosen to sign and cached in process " +
             "memory. Signing is performed locally. An attacker who achieves process memory read gets " +
             "a permanent copy of the signing key. Use AddAzureKeyVaultRemoteSigning if the private " +
             "key must never leave the vault.",

@@ -48,9 +48,9 @@ internal sealed class TempSigningKeyDirectory : IDisposable
     /// ancestor-symlink walk at the first root-owned directory, so an
     /// OS-managed symlink no longer false-positives while a genuinely attacker-plantable symlinked
     /// ancestor still does — see
-    /// <see cref="ZeeKayDa.Auth.FileSystem.Tests.FileSigningKeyReaderTests.ReadPemTextAsync_succeeds_for_a_file_under_the_OS_temp_directory_on_Unix"/>
+    /// <see cref="ZeeKayDa.Auth.FileSystem.Tests.FileSigningKeyReaderTests.ReadPemAsync_succeeds_for_a_file_under_the_OS_temp_directory_on_Unix"/>
     /// and its sibling
-    /// <see cref="ZeeKayDa.Auth.FileSystem.Tests.FileSigningKeyReaderTests.ReadPemTextAsync_still_throws_for_a_file_under_a_non_root_owned_symlinked_ancestor_on_Unix"/>.
+    /// <see cref="ZeeKayDa.Auth.FileSystem.Tests.FileSigningKeyReaderTests.ReadPemAsync_still_throws_for_a_file_under_a_non_root_owned_symlinked_ancestor_on_Unix"/>.
     /// This fixture still resolves the real path up front regardless, so its other tests (rotation,
     /// permissions, parsing) measure only the behavior they are meant to.
     /// </para>
@@ -184,6 +184,13 @@ internal sealed class TempSigningKeyDirectory : IDisposable
         return certPem + Environment.NewLine + keyPem + Environment.NewLine;
     }
 
+    /// <summary>Sets an already-written file's Unix mode; a no-op on Windows, where a test using it skips.</summary>
+    public void SetUnixMode(string path, UnixFileMode mode)
+    {
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(path, mode);
+    }
+
     /// <summary>
     /// Widens an already-written file's permissions beyond what <c>FileSigningKeyReader</c> allows
     /// (issue #291 AC #2/#6: broader-than-0600 Unix mode, or a broad-principal Windows ACL entry).
@@ -227,13 +234,16 @@ internal sealed class TempSigningKeyDirectory : IDisposable
     /// warning. Unix only — the Windows ACL equivalent is a separate, dedicated code path; a no-op
     /// on Windows, since the caller is expected to skip the Unix-specific test that uses this.
     /// </summary>
-    public void MakeParentDirectoryWorldWritable()
+    public void MakeParentDirectoryWorldWritable() =>
+        MakeParentDirectoryWritableBy(UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute);
+
+    /// <summary>Widens the directory's mode to let <paramref name="others"/> in; a no-op on Windows.</summary>
+    public void MakeParentDirectoryWritableBy(UnixFileMode others)
     {
         if (OperatingSystem.IsWindows())
             return;
 
-        File.SetUnixFileMode(DirectoryPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
-            | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute);
+        File.SetUnixFileMode(DirectoryPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | others);
     }
 
     private static void SecureToCurrentIdentity(string path)
@@ -261,13 +271,17 @@ internal sealed class TempSigningKeyDirectory : IDisposable
     }
 
     [SupportedOSPlatform("windows")]
-    private static void GrantEveryoneReadWindows(string path)
+    private static void GrantEveryoneReadWindows(string path) => GrantEveryoneWindows(path, FileSystemRights.Read);
+
+    /// <summary>Grants <c>Everyone</c> <paramref name="rights"/> on an already-written file.</summary>
+    [SupportedOSPlatform("windows")]
+    public static void GrantEveryoneWindows(string path, FileSystemRights rights)
     {
         var fileInfo = new FileInfo(path);
         var security = fileInfo.GetAccessControl();
         security.AddAccessRule(new FileSystemAccessRule(
             new SecurityIdentifier(WellKnownSidType.WorldSid, domainSid: null),
-            FileSystemRights.Read,
+            rights,
             AccessControlType.Allow));
         fileInfo.SetAccessControl(security);
     }

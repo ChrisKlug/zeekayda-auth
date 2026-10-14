@@ -1,23 +1,25 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using Microsoft.Win32.SafeHandles;
 
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// Provides interop access to <c>lstat()</c> for directory ownership validation on Unix platforms.
+/// Provides interop access to <c>lstat()</c>, <c>fstat()</c> and <c>geteuid()</c> for ownership validation on Unix platforms.
 /// </summary>
 /// <remarks>
 /// <para>
 /// There is deliberately no <c>stat()</c>-based counterpart. <c>stat()</c> follows a symlink and
 /// reports the owner of whatever it points at, which an attacker chooses by choosing where their
-/// link points — so every ownership decision in this assembly reads the link entry's own owner.
+/// link points — so every ownership decision in this assembly reads the link entry's own owner, or
+/// the owner of a file already open.
 /// </para>
 /// Separate native stat-buffer structs are declared for macOS/BSD and Linux 64-bit because the kernel ABI
 /// differs between platforms; only the fields up to <c>st_uid</c> are bound, with the rest covered
 /// by blittable padding.
 /// </remarks>
-[ExcludeFromCodeCoverage(Justification = "Each architecture-specific lstat branch is reachable only on the one architecture whose ABI it binds, so no single runner can cover them all. FileSigningKeyReaderTests exercises whichever branch the runner's architecture selects.")]
+[ExcludeFromCodeCoverage(Justification = "Each architecture-specific lstat and fstat branch is reachable only on the one architecture whose ABI it binds, so no single runner can cover them all. FileSigningKeyReaderTests exercises whichever branch the runner's architecture selects.")]
 internal static partial class PosixInterop
 {
     /// <summary>
@@ -35,8 +37,13 @@ internal static partial class PosixInterop
     [UnsupportedOSPlatform("windows")]
     internal static uint? GetLinkOwnerUid(string path)
     {
+        // On x86_64 macOS the plain symbol keeps the legacy 32-bit-inode layout; $INODE64 is the one StatMacOs binds.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            return NativeLstatMacOs(path, out var macBuf) == 0 ? macBuf.st_uid : null;
+        {
+            return (RuntimeInformation.OSArchitecture == Architecture.X64
+                ? NativeLstatMacOsX64(path, out var macBuf)
+                : NativeLstatMacOs(path, out macBuf)) == 0 ? macBuf.st_uid : null;
+        }
 
         if (RuntimeInformation.OSArchitecture == Architecture.X64)
             return NativeLstatLinuxX64(path, out var x64Buf) == 0 ? x64Buf.st_uid : null;
@@ -47,9 +54,62 @@ internal static partial class PosixInterop
         return null;
     }
 
+    /// <summary>
+    /// Returns the UID of the owner of the file open on <paramref name="handle"/>, or
+    /// <see langword="null"/> if <c>fstat()</c> fails. Read from the handle, so it describes the file
+    /// that was opened, whatever the path now names.
+    /// </summary>
+    [UnsupportedOSPlatform("windows")]
+    internal static uint? GetOwnerUid(SafeFileHandle handle)
+    {
+        // On x86_64 macOS the plain symbol keeps the legacy 32-bit-inode layout; $INODE64 is the one StatMacOs binds.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            return (RuntimeInformation.OSArchitecture == Architecture.X64
+                ? NativeFstatMacOsX64(handle, out var macBuf)
+                : NativeFstatMacOs(handle, out macBuf)) == 0 ? macBuf.st_uid : null;
+        }
+
+        if (RuntimeInformation.OSArchitecture == Architecture.X64)
+            return NativeFstatLinuxX64(handle, out var x64Buf) == 0 ? x64Buf.st_uid : null;
+
+        if (RuntimeInformation.OSArchitecture is Architecture.Arm64 or Architecture.RiscV64)
+            return NativeFstatLinuxArm64(handle, out var arm64Buf) == 0 ? arm64Buf.st_uid : null;
+
+        return null;
+    }
+
+    /// <summary>Returns the process's effective UID.</summary>
+    [UnsupportedOSPlatform("windows")]
+    internal static uint GetEffectiveUid() => NativeGeteuid();
+
+    [LibraryImport("libc", EntryPoint = "geteuid")]
+    [UnsupportedOSPlatform("windows")]
+    private static partial uint NativeGeteuid();
+
+    [LibraryImport("libc", EntryPoint = "fstat", SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeFstatMacOs(SafeFileHandle handle, out StatMacOs buf);
+
+    [LibraryImport("libc", EntryPoint = "fstat$INODE64", SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeFstatMacOsX64(SafeFileHandle handle, out StatMacOs buf);
+
+    [LibraryImport("libc", EntryPoint = "fstat", SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeFstatLinuxX64(SafeFileHandle handle, out StatLinuxX64 buf);
+
+    [LibraryImport("libc", EntryPoint = "fstat", SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeFstatLinuxArm64(SafeFileHandle handle, out StatLinuxArm64 buf);
+
     [LibraryImport("libc", EntryPoint = "lstat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
     [UnsupportedOSPlatform("windows")]
     private static partial int NativeLstatMacOs(string path, out StatMacOs buf);
+
+    [LibraryImport("libc", EntryPoint = "lstat$INODE64", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeLstatMacOsX64(string path, out StatMacOs buf);
 
     [LibraryImport("libc", EntryPoint = "lstat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
     [UnsupportedOSPlatform("windows")]
@@ -60,7 +120,7 @@ internal static partial class PosixInterop
     private static partial int NativeLstatLinuxArm64(string path, out StatLinuxArm64 buf);
 
     /// <summary>
-    /// macOS / BSD stat struct (arm64, 144 bytes total). Fields in native ABI order.
+    /// macOS / BSD stat struct (64-bit inode layout: arm64, and x86_64 through the <c>$INODE64</c> symbols; 144 bytes total). Fields in native ABI order.
     /// Layout: dev(4) mode(2) nlink(2) ino(8) uid(4) gid(4) + 120 bytes padding.
     /// Padding uses blittable scalar fields so the struct is compatible with [LibraryImport].
     /// </summary>

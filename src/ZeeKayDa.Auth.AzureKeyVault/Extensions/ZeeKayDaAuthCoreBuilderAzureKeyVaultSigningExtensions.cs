@@ -29,9 +29,10 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
     /// if Key Vault latency or throttling limits are a concern.
     /// </para>
     /// <para>
-    /// The vault is read exactly once, at startup — rotation is picked up by restarting the host.
-    /// Rotate by creating a new version of the key (Key Vault's automatic rotation policy does
-    /// exactly that). Every enabled version is listed, or the newest
+    /// The vault is read at startup and every <see cref="ZeeKayDa.Auth.Tokens.SigningKeyOptions.RefreshInterval"/>,
+    /// so a new version is published within one interval of its creation, with no restart. Rotate by
+    /// creating a new version of the key (Key Vault's automatic rotation policy does exactly that).
+    /// Every enabled version is listed, or the newest
     /// <see cref="AzureKeyVaultRemoteSigningOptions.MaxVersions"/> of them, dated from its creation;
     /// the framework's <see cref="ZeeKayDa.Auth.Tokens.SigningKeyOptions"/> decide which one signs and
     /// how long the versions it succeeds stay published. Disabling a version in the vault removes it
@@ -97,9 +98,9 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The private key is downloaded from Azure Key Vault at startup and cached in process
-    /// memory. Signing is performed locally. An attacker who achieves process memory read gets
-    /// a permanent copy of the signing key. Use <c>AddAzureKeyVaultRemoteSigning</c> if the
+    /// The private key is downloaded from Azure Key Vault when its version is chosen to sign and
+    /// cached in process memory. Signing is performed locally. An attacker who achieves process memory
+    /// read gets a permanent copy of the signing key. Use <c>AddAzureKeyVaultRemoteSigning</c> if the
     /// private key must never leave the vault.
     /// </para>
     /// <para>
@@ -111,8 +112,9 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
     /// <see cref="AddAzureKeyVaultRemoteSigning"/> as the alternative.
     /// </para>
     /// <para>
-    /// The vault is read exactly once, at startup — rotation is picked up by restarting the host.
-    /// Rotate by creating a new version of the certificate. Every enabled version is listed, or the
+    /// The vault is read at startup and every <see cref="ZeeKayDa.Auth.Tokens.SigningKeyOptions.RefreshInterval"/>,
+    /// so a new version is published within one interval of its creation, with no restart. Rotate by
+    /// creating a new version of the certificate. Every enabled version is listed, or the
     /// newest <see cref="AzureKeyVaultCachedSigningOptions.MaxVersions"/> of them, dated from its
     /// creation; the framework's <see cref="ZeeKayDa.Auth.Tokens.SigningKeyOptions"/> decide which one
     /// signs and how long the versions it succeeds stay published. Disabling a version in the vault

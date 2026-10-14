@@ -7,9 +7,10 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// keys, and the algorithm they are signed under.
 /// </summary>
 /// <remarks>
-/// The bundles are read at startup. The framework decides from each certificate's validity window
-/// which one signs and which are published, so rotating means adding the successor's bundle and
-/// restarting, then removing the old bundle once it is no longer published.
+/// The bundles are read at startup and every <see cref="SigningKeyOptions.RefreshInterval"/>. The
+/// framework decides from each certificate's validity window which one signs and which are published,
+/// so a bundle replaced on disk is picked up without a restart; adding or removing an entry in this list
+/// is a configuration change and takes one.
 /// </remarks>
 public sealed class PfxFileSigningOptions
 {

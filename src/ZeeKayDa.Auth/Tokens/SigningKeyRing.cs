@@ -189,7 +189,9 @@ public sealed class SigningKeyRing : IDisposable, IAsyncDisposable
     /// <param name="state">Caller state passed through to <paramref name="buildSigningInput"/>.</param>
     /// <param name="buildSigningInput">
     /// Builds the exact bytes to sign from the resolved <see cref="SigningContext"/> and
-    /// <paramref name="state"/>. Called synchronously, exactly once.
+    /// <paramref name="state"/>. Called synchronously, exactly once. The bytes it returns are signed
+    /// verbatim under the framework's key, so they must be built from the token the framework is
+    /// issuing, never decided by request data.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The signing input, the signature, and the key that signed it.</returns>

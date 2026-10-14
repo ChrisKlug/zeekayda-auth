@@ -1,3 +1,5 @@
+using System.Runtime.Versioning;
+using System.Security.Principal;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.FileSystem.Tests.Fixtures;
 using ZeeKayDa.Auth.Tokens;
@@ -14,7 +16,7 @@ namespace ZeeKayDa.Auth.FileSystem.Tests;
 public sealed class FileSigningKeyReaderTests
 {
     [Fact]
-    public async Task ReadPemTextAsync_releases_the_open_handle_when_validation_rejects_the_file()
+    public async Task ReadPemAsync_releases_the_open_handle_when_validation_rejects_the_file()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -23,7 +25,7 @@ public sealed class FileSigningKeyReaderTests
         tempDir.MakeTooPermissive(path);
         var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance));
 
-        var act = () => reader.ReadPemTextAsync(path, ct).AsTask();
+        var act = () => reader.ReadPemAsync(path, SigningFileContent.PrivateKey, ct).AsTask();
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
         // FileShare is enforced between FileStreams of the same process on every platform (the OS
@@ -34,7 +36,7 @@ public sealed class FileSigningKeyReaderTests
     }
 
     [Fact]
-    public async Task ReadPemTextAsync_logs_a_warning_when_the_parent_directory_is_world_writable_on_Unix()
+    public async Task ReadPemAsync_logs_a_warning_when_the_parent_directory_is_world_writable_on_Unix()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "world-writable-directory detection uses the Unix permission model here.");
 
@@ -46,14 +48,33 @@ public sealed class FileSigningKeyReaderTests
         var logger = new CapturingLogger<FileSigningKeyReader>();
         var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(logger));
 
-        await reader.ReadPemTextAsync(path, ct);
+        using var text = await reader.ReadPemAsync(path, SigningFileContent.PrivateKey, ct);
 
-        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("world-writable"),
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("writable by group or other users"),
             "a world-writable parent directory lets another local user replace or redirect the signing key file");
     }
 
     [Fact]
-    public async Task ReadPemTextAsync_does_not_warn_when_the_parent_directory_is_properly_secured()
+    public async Task ReadPemAsync_logs_a_warning_when_the_parent_directory_is_group_writable_on_Unix()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "group-writable-directory detection uses the Unix permission model here.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = TestCertificateFactory.CreateRsaSelfSigned("test", DateTimeOffset.UtcNow - TimeSpan.FromDays(1), DateTimeOffset.UtcNow + TimeSpan.FromDays(365));
+        var path = tempDir.WritePemFile("key.pem", certificate);
+        tempDir.MakeParentDirectoryWritableBy(UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute);
+        var logger = new CapturingLogger<FileSigningKeyReader>();
+        var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(logger));
+
+        using var text = await reader.ReadPemAsync(path, SigningFileContent.PrivateKey, ct);
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Warning && e.Message.Contains("writable by group or other users"),
+            "a group member could replace a certificate file that may now be world-readable");
+    }
+
+    [Fact]
+    public async Task ReadPemAsync_does_not_warn_when_the_parent_directory_is_properly_secured()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -62,7 +83,7 @@ public sealed class FileSigningKeyReaderTests
         var logger = new CapturingLogger<FileSigningKeyReader>();
         var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(logger));
 
-        await reader.ReadPemTextAsync(path, ct);
+        using var text = await reader.ReadPemAsync(path, SigningFileContent.PrivateKey, ct);
 
         logger.Entries.Should().NotContain(e => e.Level == LogLevel.Warning);
     }
@@ -70,7 +91,7 @@ public sealed class FileSigningKeyReaderTests
     // ── Access-denied wrapping (issue #406) ──────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadPemTextAsync_throws_ZeeKayDaConfigurationException_when_the_file_is_inaccessible_to_the_process_identity()
+    public async Task ReadPemAsync_throws_ZeeKayDaConfigurationException_when_the_file_is_inaccessible_to_the_process_identity()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "the Unix owner-permission model is what makes a same-user 'inaccessible' file reliably reproducible without elevated privileges; the Windows Deny-ACE equivalent is covered separately below.");
 
@@ -81,7 +102,7 @@ public sealed class FileSigningKeyReaderTests
         tempDir.MakeInaccessible(path);
         var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance));
 
-        var act = async () => await reader.ReadPemTextAsync(path, ct);
+        var act = async () => await reader.ReadPemAsync(path, SigningFileContent.PrivateKey, ct);
 
         var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>(
             "a raw UnauthorizedAccessException must never leak past this reader");
@@ -99,7 +120,7 @@ public sealed class FileSigningKeyReaderTests
     // that motivated the fix: on macOS it resolves under /tmp (root-owned symlink to /private/tmp).
 
     [Fact]
-    public async Task ReadPemTextAsync_succeeds_for_a_file_under_the_OS_temp_directory_on_Unix()
+    public async Task ReadPemAsync_succeeds_for_a_file_under_the_OS_temp_directory_on_Unix()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "the root-owned-symlinked-ancestor exemption is Unix-only; Windows has no such OS convention to guard against.");
 
@@ -118,7 +139,7 @@ public sealed class FileSigningKeyReaderTests
             // /tmp (or /var, /etc) through a root-owned symlink — that is not an attacker-plantable
             // redirect, and this provider is the sole recommended signing provider for macOS (ADR
             // 0011 Amendment 7), where that convention is universal.
-            await reader.ReadPemTextAsync(path, ct);
+            using var text = await reader.ReadPemAsync(path, SigningFileContent.PrivateKey, ct);
         }
         finally
         {
@@ -127,7 +148,7 @@ public sealed class FileSigningKeyReaderTests
     }
 
     [Fact]
-    public async Task ReadPemTextAsync_still_throws_for_a_file_under_a_non_root_owned_symlinked_ancestor_on_Unix()
+    public async Task ReadPemAsync_still_throws_for_a_file_under_a_non_root_owned_symlinked_ancestor_on_Unix()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "directory-symlink semantics differ on Windows; the leaf-symlink case is already covered cross-platform elsewhere.");
 
@@ -157,14 +178,14 @@ public sealed class FileSigningKeyReaderTests
         // Unlike the OS temp directory above, this symlinked ancestor is owned by the current
         // (non-root) test process — exactly the attacker-plantable shape the ancestor-symlink check
         // must still reject.
-        var act = async () => await reader.ReadPemTextAsync(path, ct);
+        var act = async () => await reader.ReadPemAsync(path, SigningFileContent.PrivateKey, ct);
 
         var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
         exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.symlink_detected");
     }
 
     [Fact]
-    public async Task ReadPemTextAsync_still_throws_when_a_non_root_owned_symlink_points_at_a_root_owned_directory_on_Unix()
+    public async Task ReadPemAsync_still_throws_when_a_non_root_owned_symlink_points_at_a_root_owned_directory_on_Unix()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), "directory-symlink semantics differ on Windows; the leaf-symlink case is already covered cross-platform elsewhere.");
 
@@ -211,7 +232,7 @@ public sealed class FileSigningKeyReaderTests
                 File.SetUnixFileMode(realLeafPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             var reader = new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance));
 
-            var act = async () => await reader.ReadPemTextAsync(path, ct);
+            var act = async () => await reader.ReadPemAsync(path, SigningFileContent.PrivateKey, ct);
 
             var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
             exception.Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.symlink_detected");
@@ -220,5 +241,49 @@ public sealed class FileSigningKeyReaderTests
         {
             File.Delete(realLeafPath);
         }
+    }
+
+    [Theory]
+    [InlineData(0u, 1000u, true)]
+    [InlineData(1000u, 1000u, true)]
+    [InlineData(1001u, 1000u, false)]
+    [InlineData(null, 1000u, false)]
+    public void IsTrustedOwner_trusts_root_and_the_process_user_only(uint? ownerUid, uint effectiveUid, bool expected)
+    {
+        // A world-readable certificate file no longer proves the process owns it, so its owner is checked.
+        FileSigningKeyReader.IsTrustedOwner(ownerUid, effectiveUid).Should().Be(expected);
+    }
+
+    [Fact]
+    public void GetOwnerUid_of_a_file_the_test_created_is_the_effective_uid()
+    {
+        // Catches a stat layout bound at the wrong offset on whichever runner has one.
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "fstat is the Unix ownership model.");
+
+        using var tempDir = new TempSigningKeyDirectory();
+        var path = tempDir.WriteTextFile("owned.pem", "content");
+        using var handle = File.OpenHandle(path);
+
+        if (!OperatingSystem.IsWindows())
+            PosixInterop.GetOwnerUid(handle).Should().Be(PosixInterop.GetEffectiveUid());
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public void IsTrustedOwner_on_Windows_trusts_the_process_identity_SYSTEM_and_Administrators_only()
+    {
+        // An owner may always change the ACL, so an untrusted owner of a readable certificate file could swap it.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "SIDs are the Windows ownership model.");
+
+        var processUser = WindowsIdentity.GetCurrent().User!;
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, domainSid: null);
+        var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, domainSid: null);
+        var users = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, domainSid: null);
+
+        FileSigningKeyReader.IsTrustedOwner(processUser, processUser).Should().BeTrue();
+        FileSigningKeyReader.IsTrustedOwner(system, processUser).Should().BeTrue();
+        FileSigningKeyReader.IsTrustedOwner(administrators, processUser).Should().BeTrue();
+        FileSigningKeyReader.IsTrustedOwner(users, processUser).Should().BeFalse();
+        FileSigningKeyReader.IsTrustedOwner(null, processUser).Should().BeFalse();
     }
 }

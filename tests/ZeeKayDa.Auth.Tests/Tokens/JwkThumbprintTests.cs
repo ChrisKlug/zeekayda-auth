@@ -7,6 +7,30 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 
 public sealed class JwkThumbprintTests
 {
+    // A P-521 public key whose x begins with two zero bytes, with its RFC 7638 thumbprint computed outside
+    // .NET (Python's cryptography package and hashlib). A platform that strips the leading pad bytes
+    // from an exported coordinate would change both the thumbprint and the served x.
+    private const string P521XBase64Url =
+        "AADTvKb7nLf_9dONkSSZ-rzjuWp2OZTbRWi6SLYBNhwu" +
+        "sYdQBQJ5yC4siNZApUUtUytiImU2pPU4skilmrHC89wS";
+
+    private const string P521YBase64Url =
+        "AVts1dKk6J9Y3we5sT0rFEtm4YBMpFeyv8tzOxlQhh07" +
+        "vfhdW6PvL6mQiMYkBDHuQzd40rfS0YAiHSQI-i-0V5QI";
+
+    private const string P521ExpectedThumbprint = "Th6T9Ta3BhkuIbguPr7mvbkyw4f-Icd61KNnKkyXnA8";
+
+    /// <summary>The fixed P-521 key, imported into and exported back out of the platform's ECDsa.</summary>
+    private static ECParameters P521RoundTrippedThroughThePlatform()
+    {
+        using var ec = ECDsa.Create(new ECParameters
+        {
+            Curve = ECCurve.NamedCurves.nistP521,
+            Q = new ECPoint { X = DecodeBase64Url(P521XBase64Url), Y = DecodeBase64Url(P521YBase64Url) },
+        });
+        return ec.ExportParameters(includePrivateParameters: false);
+    }
+
     // ── RSA — RFC 7638 Appendix A.1 known-answer vector ─────────────────────────────────────────
 
     // The exact modulus/exponent and expected thumbprint published in RFC 7638 Appendix A.1
@@ -88,6 +112,14 @@ public sealed class JwkThumbprintTests
         var thumbprint = JwkThumbprint.Compute(ecParams);
 
         thumbprint.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Compute_ec_matches_an_externally_computed_P521_vector_whose_x_has_leading_zero_bytes()
+    {
+        var thumbprint = JwkThumbprint.Compute(P521RoundTrippedThroughThePlatform());
+
+        thumbprint.Should().Be(P521ExpectedThumbprint);
     }
 
     [Theory]

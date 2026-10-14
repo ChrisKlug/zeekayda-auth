@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
 
@@ -95,10 +95,13 @@ internal sealed class PemFileSigningKeySource(
     /// </exception>
     private async ValueTask<SourceKey?> ListAsync(PemSigningFile file, SourceKeyId id, CancellationToken cancellationToken)
     {
-        if (await ReadPemTextsAsync(file, cancellationToken).ConfigureAwait(false) is not { } texts)
+        // A missing file reads as null when listing, which unlists the key.
+        using var texts = await ReadPemTextsAsync(
+            file, (path, content) => reader.TryReadPemAsync(path, content, cancellationToken)).ConfigureAwait(false);
+        if (texts is null)
             return null;
 
-        using var certificate = ParseCertificate(texts.Cert, file.Path);
+        using var certificate = ParseCertificate(texts.Cert.Span, file.Path);
         PemKeyBlocks.Check(file, texts);
         var key = SourceKey.FromCertificate(certificate, id);
 
@@ -109,20 +112,35 @@ internal sealed class PemFileSigningKeySource(
     }
 
     /// <summary>
-    /// The certificate and key text of <paramref name="file"/>, or <see langword="null"/> when either
-    /// file does not exist.
+    /// The certificate and key text of <paramref name="file"/>, each file read through
+    /// <paramref name="read"/>, or <see langword="null"/> when <paramref name="read"/> reports a file missing.
     /// </summary>
-    private async ValueTask<PemTexts?> ReadPemTextsAsync(PemSigningFile file, CancellationToken cancellationToken)
+    private static async ValueTask<PemTexts?> ReadPemTextsAsync(
+        PemSigningFile file, Func<string, SigningFileContent, ValueTask<PemText?>> read)
     {
-        if (await reader.TryReadPemTextAsync(file.Path, cancellationToken).ConfigureAwait(false) is not { } certPem)
+        if (file.KeyPath is null)
+        {
+            return await read(file.Path, SigningFileContent.PrivateKey).ConfigureAwait(false) is { } combined
+                ? new(combined, combined)
+                : null;
+        }
+
+        if (await read(file.Path, SigningFileContent.CertificateOnly).ConfigureAwait(false) is not { } certPem)
             return null;
 
-        if (file.KeyPath is null)
-            return new(certPem, certPem);
+        try
+        {
+            if (await read(file.KeyPath, SigningFileContent.PrivateKey).ConfigureAwait(false) is { } keyPem)
+                return new(certPem, keyPem);
+        }
+        catch
+        {
+            certPem.Dispose();
+            throw;
+        }
 
-        return await reader.TryReadPemTextAsync(file.KeyPath, cancellationToken).ConfigureAwait(false) is { } keyPem
-            ? new(certPem, keyPem)
-            : null;
+        certPem.Dispose();
+        return null;
     }
 
     private async Task VerifyPasswordOncePerVersionAsync(
@@ -134,15 +152,13 @@ internal sealed class PemFileSigningKeySource(
 
         _verifiedVersions.TryRemove(file.Path, out _);
         var password = await ReadPasswordAsync(file, cancellationToken).ConfigureAwait(false);
-        using var withKey = WithDecryptedKey(file, certificate, texts.Key, password);
+        using var withKey = WithDecryptedKey(file, certificate, texts.Key.Span, password);
         _verifiedVersions[file.Path] = version;
     }
 
     // Hashed separately so a byte moving between the two files is still a new version.
     private static byte[] VersionOf(PemSigningFile file, PemTexts texts) =>
-        file.KeyPath is null
-            ? SHA256.HashData(Encoding.UTF8.GetBytes(texts.Cert))
-            : [.. SHA256.HashData(Encoding.UTF8.GetBytes(texts.Cert)), .. SHA256.HashData(Encoding.UTF8.GetBytes(texts.Key))];
+        file.KeyPath is null ? texts.Cert.Hash.ToArray() : [.. texts.Cert.Hash, .. texts.Key.Hash];
 
     /// <summary>
     /// The configured password. An empty one is <c>password_unavailable</c>: it is most often a missing
@@ -159,11 +175,12 @@ internal sealed class PemFileSigningKeySource(
                     $"The password source for '{file.Path}' returned an empty password."));
     }
 
-    private static X509Certificate2 ParseCertificate(string certPem, string certificatePath)
+    private static X509Certificate2 ParseCertificate(ReadOnlySpan<char> certPem, string certificatePath)
     {
+        X509Certificate2 certificate;
         try
         {
-            return X509Certificate2.CreateFromPem(certPem);
+            certificate = X509Certificate2.CreateFromPem(certPem);
         }
         catch (Exception ex) when (ex is CryptographicException or ArgumentException or FormatException)
         {
@@ -179,6 +196,44 @@ internal sealed class PemFileSigningKeySource(
                     "the root cause."),
                 ex);
         }
+
+        return RefuseRootFirstChain(certificate, certPem, certificatePath);
+    }
+
+    /// <summary>
+    /// Refuses a chain whose first certificate is a CA. <c>CreateFromPem</c> takes a file's first
+    /// <c>CERTIFICATE</c> block, so a chain written root-first would publish the CA's key, then fail to
+    /// pair with the private key when it is chosen to sign. A lone certificate is not a chain: a
+    /// self-signed one from <c>openssl req -x509</c> is marked as a CA by default.
+    /// </summary>
+    private static X509Certificate2 RefuseRootFirstChain(X509Certificate2 certificate, ReadOnlySpan<char> certPem, string certificatePath)
+    {
+        if (!IsMarkedCa(certificate) || CertificateCount(certPem) < 2)
+            return certificate;
+
+        certificate.Dispose();
+        throw new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure(
+                "signing.file_signing.certificate_is_a_ca",
+                $"The first certificate in '{certificatePath}' is a CA certificate. The signing certificate must " +
+                "come first in the file, followed by its issuers; reorder the chain leaf-first."));
+    }
+
+    private static bool IsMarkedCa(X509Certificate2 certificate) =>
+        certificate.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault() is { CertificateAuthority: true };
+
+    private static int CertificateCount(ReadOnlySpan<char> pem)
+    {
+        var count = 0;
+        while (PemEncoding.TryFind(pem, out var fields))
+        {
+            if (pem[fields.Label].SequenceEqual("CERTIFICATE"))
+                count++;
+
+            pem = pem[fields.Location.End.Value..];
+        }
+
+        return count;
     }
 
     /// <summary>
@@ -192,27 +247,31 @@ internal sealed class PemFileSigningKeySource(
     private async ValueTask<X509Certificate2> LoadSigningCertificateAsync(
         PemSigningFile file, CancellationToken cancellationToken)
     {
-        // Reads through FileSigningKeyReader.ReadPemTextAsync and calls X509Certificate2.CreateFromPem
-        // rather than X509Certificate2.CreateFromPemFile, which performs its own unvalidated file I/O
-        // and would bypass FileSigningKeyReader's permission/symlink validation.
-        var certPem = await reader.ReadPemTextAsync(file.Path, cancellationToken).ConfigureAwait(false);
-        var keyPem = file.KeyPath is null
-            ? certPem
-            : await reader.ReadPemTextAsync(file.KeyPath, cancellationToken).ConfigureAwait(false);
+        // Reads through FileSigningKeyReader and calls X509Certificate2.CreateFromPem rather than
+        // X509Certificate2.CreateFromPemFile, which performs its own unvalidated file I/O and would
+        // bypass FileSigningKeyReader's permission/symlink validation.
+        // A missing file throws when signing.
+        using var texts = await ReadPemTextsAsync(
+                file, async (path, content) => await reader.ReadPemAsync(path, content, cancellationToken).ConfigureAwait(false))
+            .ConfigureAwait(false)
+            ?? throw new UnreachableException("ReadPemAsync throws on a missing file rather than returning null.");
 
         // The files may have changed since they were listed.
-        PemKeyBlocks.Check(file, new PemTexts(certPem, keyPem));
+        PemKeyBlocks.Check(file, texts);
 
         if (file.PasswordSource is not null)
         {
             var password = await ReadPasswordAsync(file, cancellationToken).ConfigureAwait(false);
-            using var certificate = ParseCertificate(certPem, file.Path);
-            return WithDecryptedKey(file, certificate, keyPem, password);
+            using var certificate = ParseCertificate(texts.Cert.Span, file.Path);
+            return WithDecryptedKey(file, certificate, texts.Key.Span, password);
         }
 
         try
         {
-            return X509Certificate2.CreateFromPem(certPem, keyPem);
+            // Parsed first so a root-first chain is reported as one rather than as a key that does not pair.
+            ParseCertificate(texts.Cert.Span, file.Path).Dispose();
+
+            return X509Certificate2.CreateFromPem(texts.Cert.Span, texts.Key.Span);
         }
         catch (Exception ex) when (ex is CryptographicException or ArgumentException or FormatException)
         {
@@ -233,7 +292,7 @@ internal sealed class PemFileSigningKeySource(
     /// belong to the certificate.
     /// </exception>
     private static X509Certificate2 WithDecryptedKey(
-        PemSigningFile file, X509Certificate2 certificate, string keyPem, string password)
+        PemSigningFile file, X509Certificate2 certificate, ReadOnlySpan<char> keyPem, string password)
     {
         // SourceKey.FromCertificate refuses any key type but RSA and EC at listing.
         if (certificate.GetKeyAlgorithm() == RsaKeyAlgorithmOid)
@@ -248,7 +307,7 @@ internal sealed class PemFileSigningKeySource(
         return Pair(file, () => certificate.CopyWithPrivateKey(ecdsa));
     }
 
-    private static void Decrypt(PemSigningFile file, AsymmetricAlgorithm key, string keyPem, string password)
+    private static void Decrypt(PemSigningFile file, AsymmetricAlgorithm key, ReadOnlySpan<char> keyPem, string password)
     {
         try
         {

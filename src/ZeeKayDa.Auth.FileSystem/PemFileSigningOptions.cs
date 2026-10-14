@@ -7,9 +7,10 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// the algorithm they are signed under.
 /// </summary>
 /// <remarks>
-/// The files are read at startup. The framework decides from each certificate's validity window which
-/// one signs and which are published, so rotating means adding the successor's file and restarting,
-/// then removing the old file once it is no longer published.
+/// The files are read at startup and every <see cref="SigningKeyOptions.RefreshInterval"/>. The framework
+/// decides from each certificate's validity window which one signs and which are published, so a file
+/// replaced on disk is picked up without a restart; adding or removing an entry in this list is a
+/// configuration change and takes one.
 /// </remarks>
 public sealed class PemFileSigningOptions
 {

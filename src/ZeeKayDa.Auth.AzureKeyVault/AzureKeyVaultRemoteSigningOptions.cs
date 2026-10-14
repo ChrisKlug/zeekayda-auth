@@ -43,9 +43,10 @@ public sealed class AzureKeyVaultRemoteSigningOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Every listed version costs one public-key request at startup, and a key on a rotation policy
-    /// keeps every old version, so this caps that cost. The newest versions are found from the vault's
-    /// version metadata, which is one paged request whatever the count.
+    /// Every listed version costs one public-key request the first time a read lists it, and a key
+    /// on a rotation policy keeps every old version, so this caps the cost of startup. The newest
+    /// versions are found from the vault's version metadata, which is one paged request per read
+    /// whatever the count.
     /// </para>
     /// <para>
     /// A normal rotation has three versions live at once: the new one, published but not yet signing;
