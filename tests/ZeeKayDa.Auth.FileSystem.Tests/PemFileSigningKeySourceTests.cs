@@ -1051,6 +1051,27 @@ public sealed class PemFileSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_pairs_the_key_again_when_only_the_certificate_file_changes()
+    {
+        // A certificate swapped under an unchanged key file is a new pairing to check.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        using var other = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteTextFile("key.pem", EncryptedKeyPem(certificate));
+        var password = new PasswordSource();
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath, password.GetAsync));
+        (await sut.ReadAsync(ct)).Keys.Should().ContainSingle();
+        tempDir.WriteCertificateOnlyPemFile("cert.crt", other);
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(certPath, "signing.file_signing.invalid_pem");
+        password.Calls.Should().Be(2);
+    }
+
+    [Fact]
     public async Task ReadAsync_rejects_an_encrypted_key_that_does_not_belong_to_its_certificate()
     {
         var ct = TestContext.Current.CancellationToken;
