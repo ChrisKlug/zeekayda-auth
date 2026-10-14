@@ -2386,5 +2386,8 @@ Critical open. `ac69445` and `29c14bd` were read by the main session and the PR 
   `CreateSignerAsync_throws_invalid_pfx_when_the_paired_key_is_not_the_certificates_key_type`, `CreateSignerAsync_throws_invalid_pfx_when_the_paired_key_bag_is_neither_RSA_nor_EC`.
 - A wrong password or a stripped key fails signing as `invalid_pfx`, naming no parser text. Closed — `CreateSignerAsync_throws_invalid_pfx_for_a_wrong_password_rather_than_leaking_the_raw_crypto_error`,
   `CreateSignerAsync_throws_invalid_pfx_when_a_bundle_that_has_since_lost_its_key_is_asked_to_sign`, `CreateSignerAsync_names_the_parser_exception_type_rather_than_copying_its_message`.
-- The Key Vault cached reader imports through the same helper with its failure codes unchanged; its existing tests pass unmodified.
+- The Key Vault cached reader imports RSA and EC, plain and shrouded, through the same helper with its failure codes unchanged; its tests are unmodified. Closed —
+  `ExtractPrivateKey_parses_a_real_keyvault_exported_rsa_certificate_secret`, `ExtractPrivateKey_parses_a_real_keyvault_exported_ec_certificate_secret`,
+  `ExtractPrivateKey_imports_an_ec_key_from_a_plain_unencrypted_key_bag`, `ExtractPrivateKey_rejects_a_shrouded_key_bag_that_is_neither_rsa_nor_ec`,
+  `ExtractPrivateKey_non_exportable_exception_message_names_the_remote_signing_alternative`, `GetPrivateKeyMaterialAsync_disposes_both_handles_when_neither_rsa_nor_ec_can_import_the_key`.
   **Not covered:** an import the platform refuses for a real RSA/EC key (FIPS policy) reports as "neither RSA nor EC" with no inner cause.
