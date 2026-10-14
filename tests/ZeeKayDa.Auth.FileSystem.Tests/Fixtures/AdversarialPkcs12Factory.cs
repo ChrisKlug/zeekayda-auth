@@ -314,6 +314,25 @@ internal static class AdversarialPkcs12Factory
             keys => keys.AddShroudedKey(ecKey, password, Pbe));
     }
 
+    /// <summary>
+    /// A DSA certificate — neither RSA nor EC — paired by <c>localKeyId</c> with an EC private key.
+    /// </summary>
+    public static byte[] DsaCertificatePairedWithEcKey(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var issuerKey = RSA.Create(2048);
+        using var dsaKey = DSA.Create(1024);
+        using var certificate = new CertificateRequest(
+                new X500DistinguishedName("CN=test-dsa"), new PublicKey(dsaKey), HashAlgorithmName.SHA256)
+            .Create(
+                new X500DistinguishedName("CN=test-dsa-issuer"),
+                X509SignatureGenerator.CreateForRSA(issuerKey, RSASignaturePadding.Pkcs1),
+                notBefore, notAfter, [1, 2, 3, 4]);
+        using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        return Paired(certificate, password, keys => keys.AddShroudedKey(ecKey, password, Pbe));
+    }
+
     private static byte[] RsaCertificatePairedWith(
         string password, DateTimeOffset notBefore, DateTimeOffset notAfter,
         Func<Pkcs12SafeContents, Pkcs12SafeBag> addKey)
@@ -322,6 +341,12 @@ internal static class AdversarialPkcs12Factory
         using var certificate = new CertificateRequest(
                 "CN=test-paired", rsaKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .CreateSelfSigned(notBefore, notAfter);
+        return Paired(certificate, password, addKey);
+    }
+
+    private static byte[] Paired(
+        X509Certificate2 certificate, string password, Func<Pkcs12SafeContents, Pkcs12SafeBag> addKey)
+    {
         using var publicOnly = X509CertificateLoader.LoadCertificate(certificate.Export(X509ContentType.Cert));
 
         var localKeyId = new byte[] { 0x01 };

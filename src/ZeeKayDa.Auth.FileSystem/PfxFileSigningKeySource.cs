@@ -27,9 +27,10 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// straight into an in-memory key, so the private key is never written to a platform key store.
 /// </para>
 /// <para>
-/// This source performs no algorithm/key-type check of its own.
+/// Whether a key suits the configured algorithm is not checked here:
 /// <see cref="SigningKeySetBuilder"/> validates every reported key, keyed on the source id — which
-/// here is the configured file path, so its failures still name the offending bundle.
+/// here is the configured file path, so its failures still name the offending bundle. The signer
+/// checks only that the imported key is of the same type, RSA or EC, as its paired certificate.
 /// </para>
 /// </remarks>
 internal sealed class PfxFileSigningKeySource(
@@ -88,13 +89,24 @@ internal sealed class PfxFileSigningKeySource(
     /// </summary>
     private static AsymmetricAlgorithm ImportPairedKey(SigningPair pair, string path, string password)
     {
+        // Read before the import, so nothing that can throw stands between the import and its owner.
+        string certificateKeyAlgorithm;
+        using (var certificate = pair.Certificate.GetCertificate())
+            certificateKeyAlgorithm = certificate.GetKeyAlgorithm();
+
         var privateKey = Pkcs12PrivateKey.Import(pair.Key, password)
             ?? throw InvalidPfx(path,
                 "carries a private key that imports as neither an RSA nor an EC key. Verify the key is " +
                 "RSA or EC and is encrypted under the same password as the bundle");
 
-        using var certificate = pair.Certificate.GetCertificate();
-        if ((privateKey is RSA) == (certificate.GetKeyAlgorithm() == RsaOid))
+        var matchesCertificate = privateKey switch
+        {
+            RSA => certificateKeyAlgorithm == RsaOid,
+            ECDsa => certificateKeyAlgorithm == EcOid,
+            _ => false,
+        };
+
+        if (matchesCertificate)
             return privateKey;
 
         privateKey.Dispose();
@@ -157,6 +169,7 @@ internal sealed class PfxFileSigningKeySource(
     }
 
     private const string RsaOid = "1.2.840.113549.1.1.1";
+    private const string EcOid = "1.2.840.10045.2.1";
 
     private readonly record struct SigningPair(Pkcs12CertBag Certificate, Pkcs12SafeBag Key);
 
