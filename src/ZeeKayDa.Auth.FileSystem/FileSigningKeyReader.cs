@@ -332,7 +332,8 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
 
             // An owner may always change the ACL, so an untrusted owner can grant themselves write.
             var owner = security.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
-            if (!IsTrustedOwner(owner, WindowsIdentity.GetCurrent().User))
+            using var identity = WindowsIdentity.GetCurrent();
+            if (!IsTrustedOwner(owner, identity.User))
             {
                 throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
                     "signing.file_signing.file_too_permissive",
