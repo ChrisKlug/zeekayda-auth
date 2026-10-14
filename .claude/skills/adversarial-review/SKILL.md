@@ -102,10 +102,10 @@ See `work-on-issue`, Stage 3. In short:
   to act on. Present the findings; the severity gate decides what happens next.
 - Findings on test style, duplication or naming are ignored entirely, as with every other
   static-analysis source here. A test that does not prove its claim is a real finding.
-- Keep the review text verbatim. It is posted on the PR at Stage 4 as the durable record, headed
-  with the lens and model, exactly as the agents' verdicts are.
-- A verdict of no material findings is information, not a rubber stamp; the
-  "Checked and found sound" section says where the reviewer actually looked.
+- Its findings become rows in the one review-record comment posted on the PR at Stage 4
+  (`work-on-issue`), with the lens and model in the reviewer column — not a paste of the output.
+- A verdict of no material findings is information, not a rubber stamp; the `Looked at:` line says
+  where the reviewer actually looked.
 
 ## Prompts
 
