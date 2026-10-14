@@ -204,44 +204,7 @@ internal sealed class PfxFileSigningKeySource(
     /// </remarks>
     private static SigningPair SelectSigningPair(Pkcs12Info info, string path, string password)
     {
-        var certBags = new List<Pkcs12CertBag>();
-        var keyBags = new List<Pkcs12SafeBag>();
-
-        foreach (var safe in info.AuthenticatedSafe)
-        {
-            switch (safe.ConfidentialityMode)
-            {
-                case Pkcs12ConfidentialityMode.None:
-                    break;
-
-                // Decrypts the safe, not the key bag. A password-protected safe must be opened to
-                // reach the certificate at all; the shrouded key bag inside it stays encrypted
-                // until the signer imports it.
-                case Pkcs12ConfidentialityMode.Password:
-                    safe.Decrypt(password);
-                    break;
-
-                default:
-                    throw InvalidPfx(path,
-                        $"uses the unsupported confidentiality mode '{safe.ConfidentialityMode}'. " +
-                        "Only unencrypted and password-encrypted PKCS#12 safes are supported");
-            }
-
-            foreach (var bag in safe.GetBags())
-            {
-                switch (bag)
-                {
-                    case Pkcs12CertBag certBag:
-                        certBags.Add(certBag);
-                        break;
-
-                    case Pkcs12KeyBag:
-                    case Pkcs12ShroudedKeyBag:
-                        keyBags.Add(bag);
-                        break;
-                }
-            }
-        }
+        var (certBags, keyBags) = ReadBags(info, path, password);
 
         if (certBags.Count == 0)
         {
@@ -261,35 +224,7 @@ internal sealed class PfxFileSigningKeySource(
 
         // The normal case for any bundle carrying a chain: pair on localKeyId.
         if (keyBags.Any(keyBag => LocalKeyIdOf(keyBag) is not null))
-        {
-            var paired = (
-                from certBag in certBags
-                from keyBag in keyBags
-                where LocalKeyIdOf(certBag) is { } certId
-                    && LocalKeyIdOf(keyBag) is { } keyId
-                    && keyId.Span.SequenceEqual(certId.Span)
-                select new SigningPair(certBag, keyBag)).ToList();
-
-            if (paired.Count == 1)
-                return paired[0];
-
-            if (paired.Count > 1)
-            {
-                throw InvalidPfx(path,
-                    $"identifies {paired.Count} certificate and key pairs, so which one signs is " +
-                    "ambiguous. Export a bundle carrying a single signing certificate and its key");
-            }
-
-            // A private key whose certificate is not in the bundle. A lone certificate and a lone
-            // key are still unambiguous; anything else is a bundle that cannot say what it signs with.
-            if (certBags.Count == 1 && keyBags.Count == 1)
-                return new SigningPair(certBags[0], keyBags[0]);
-
-            throw InvalidPfx(path,
-                "names a private key whose certificate is not among the certificates it carries, so " +
-                "which one signs cannot be determined. Re-export the bundle from the keypair it is " +
-                "meant to hold");
-        }
+            return PairOnLocalKeyId(certBags, keyBags, path);
 
         if (certBags.Count == 1 && keyBags.Count == 1)
             return new SigningPair(certBags[0], keyBags[0]);
@@ -299,6 +234,81 @@ internal sealed class PfxFileSigningKeySource(
             "identifying which one signs. PKCS#12 pairs a certificate with its key through a " +
             "localKeyId attribute; re-export the bundle with a tool that sets one, or supply a bundle " +
             "holding a single certificate and key");
+    }
+
+    private static (List<Pkcs12CertBag> CertBags, List<Pkcs12SafeBag> KeyBags) ReadBags(
+        Pkcs12Info info, string path, string password)
+    {
+        var certBags = new List<Pkcs12CertBag>();
+        var keyBags = new List<Pkcs12SafeBag>();
+
+        foreach (var safe in info.AuthenticatedSafe)
+        {
+            OpenSafe(safe, path, password);
+
+            foreach (var bag in safe.GetBags())
+            {
+                if (bag is Pkcs12CertBag certBag)
+                    certBags.Add(certBag);
+                else if (bag is Pkcs12KeyBag or Pkcs12ShroudedKeyBag)
+                    keyBags.Add(bag);
+            }
+        }
+
+        return (certBags, keyBags);
+    }
+
+    private static void OpenSafe(Pkcs12SafeContents safe, string path, string password)
+    {
+        switch (safe.ConfidentialityMode)
+        {
+            case Pkcs12ConfidentialityMode.None:
+                break;
+
+            // Decrypts the safe, not the key bag. A password-protected safe must be opened to reach
+            // the certificate at all; the shrouded key bag inside it stays encrypted until the signer
+            // imports it.
+            case Pkcs12ConfidentialityMode.Password:
+                safe.Decrypt(password);
+                break;
+
+            default:
+                throw InvalidPfx(path,
+                    $"uses the unsupported confidentiality mode '{safe.ConfidentialityMode}'. " +
+                    "Only unencrypted and password-encrypted PKCS#12 safes are supported");
+        }
+    }
+
+    private static SigningPair PairOnLocalKeyId(
+        List<Pkcs12CertBag> certBags, List<Pkcs12SafeBag> keyBags, string path)
+    {
+        var paired = (
+            from certBag in certBags
+            from keyBag in keyBags
+            where LocalKeyIdOf(certBag) is { } certId
+                && LocalKeyIdOf(keyBag) is { } keyId
+                && keyId.Span.SequenceEqual(certId.Span)
+            select new SigningPair(certBag, keyBag)).ToList();
+
+        if (paired.Count == 1)
+            return paired[0];
+
+        if (paired.Count > 1)
+        {
+            throw InvalidPfx(path,
+                $"identifies {paired.Count} certificate and key pairs, so which one signs is " +
+                "ambiguous. Export a bundle carrying a single signing certificate and its key");
+        }
+
+        // A private key whose certificate is not in the bundle. A lone certificate and a lone key are
+        // still unambiguous; anything else is a bundle that cannot say what it signs with.
+        if (certBags.Count == 1 && keyBags.Count == 1)
+            return new SigningPair(certBags[0], keyBags[0]);
+
+        throw InvalidPfx(path,
+            "names a private key whose certificate is not among the certificates it carries, so " +
+            "which one signs cannot be determined. Re-export the bundle from the keypair it is " +
+            "meant to hold");
     }
 
     private static ReadOnlyMemory<byte>? LocalKeyIdOf(Pkcs12SafeBag bag)

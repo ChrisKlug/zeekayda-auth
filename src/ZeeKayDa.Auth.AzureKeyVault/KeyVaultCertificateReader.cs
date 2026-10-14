@@ -382,14 +382,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
             foreach (var bag in safeContents.GetBags())
             {
                 if (bag is Pkcs12KeyBag or Pkcs12ShroudedKeyBag)
-                {
-                    return Pkcs12PrivateKey.Import(bag, ReadOnlySpan<char>.Empty, _createRsa, _createEcdsa) switch
-                    {
-                        RSA rsa => (rsa, SigningKeyType.Rsa),
-                        ECDsa ecdsa => (ecdsa, SigningKeyType.Ec),
-                        _ => throw UnsupportedKeyTypeException(version),
-                    };
-                }
+                    return ImportPrivateKey(bag, version);
             }
         }
 
@@ -405,6 +398,14 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
                 "certificate policy. Use AddAzureKeyVaultRemoteSigning instead if the private key must " +
                 "never leave Key Vault."));
     }
+
+    private (AsymmetricAlgorithm, SigningKeyType) ImportPrivateKey(Pkcs12SafeBag keyBag, string version) =>
+        Pkcs12PrivateKey.Import(keyBag, ReadOnlySpan<char>.Empty, _createRsa, _createEcdsa) switch
+        {
+            RSA rsa => (rsa, SigningKeyType.Rsa),
+            ECDsa ecdsa => (ecdsa, SigningKeyType.Ec),
+            _ => throw UnsupportedKeyTypeException(version),
+        };
 
     private KeyVaultVersionMaterialException UnsupportedKeyTypeException(string version) =>
         new(new ZeeKayDaConfigurationFailure(
