@@ -43,9 +43,6 @@ internal sealed class PemFileSigningKeySource(
 
     private const string RsaKeyAlgorithmOid = "1.2.840.113549.1.1.1";
 
-    /// <summary>A file's certificate text and key text, the same text twice for a combined file.</summary>
-    private sealed record PemTexts(string Cert, string Key);
-
     /// <inheritdoc/>
     public SigningAlgorithm Algorithm => _options.Value.Algorithm;
 
@@ -102,7 +99,7 @@ internal sealed class PemFileSigningKeySource(
             return null;
 
         using var certificate = ParseCertificate(texts.Cert, file.Path);
-        PemKeyBlocks.Check(file, texts.Cert, texts.Key);
+        PemKeyBlocks.Check(file, texts);
         var key = SourceKey.FromCertificate(certificate, id);
 
         if (file.PasswordSource is not null)
@@ -204,7 +201,7 @@ internal sealed class PemFileSigningKeySource(
             : await reader.ReadPemTextAsync(file.KeyPath, cancellationToken).ConfigureAwait(false);
 
         // The files may have changed since they were listed.
-        PemKeyBlocks.Check(file, certPem, keyPem);
+        PemKeyBlocks.Check(file, new PemTexts(certPem, keyPem));
 
         if (file.PasswordSource is not null)
         {

@@ -31,45 +31,54 @@ internal static class PemKeyBlocks
     /// under strong parameters when a password is configured, plain otherwise, with no legacy-encrypted
     /// copy in either file and, under a password, no other copy at all.
     /// </summary>
-    /// <param name="file">The configured file.</param>
-    /// <param name="certPem">The certificate file's text; the same as <paramref name="keyPem"/> for a combined file.</param>
-    /// <param name="keyPem">The text of the file that carries the key.</param>
-    public static void Check(PemSigningFile file, string certPem, string keyPem)
+    public static void Check(PemSigningFile file, PemTexts texts)
     {
-        var keyFile = file.KeyPath ?? file.Path;
-        if (IsLegacyEncrypted(keyPem))
-            throw LegacyEncrypted(keyFile);
+        CheckNoLegacyCopy(file, texts);
 
-        if (file.KeyPath is not null && IsLegacyEncrypted(certPem))
-            throw LegacyEncrypted(file.Path);
-
-        var (plain, encrypted) = Scan(keyPem);
-        if (!plain && encrypted.IsEmpty)
+        var keyBlocks = Scan(texts.Key);
+        if (!keyBlocks.Plain && keyBlocks.Encrypted.IsEmpty)
             throw NoPrivateKey(file);
 
-        if (file.PasswordSource is null)
-        {
-            if (!plain)
-                throw Mismatch($"The private key in '{keyFile}' is encrypted, but no PasswordSource is configured for it.");
+        if (file.PasswordSource is not null)
+            CheckPasswordProtected(file, texts, keyBlocks);
+        else if (!keyBlocks.Plain)
+            throw Mismatch($"The private key in '{KeyFileOf(file)}' is encrypted, but no PasswordSource is configured for it.");
+    }
 
-            return;
-        }
+    private static void CheckNoLegacyCopy(PemSigningFile file, PemTexts texts)
+    {
+        if (IsLegacyEncrypted(texts.Key))
+            throw LegacyEncrypted(KeyFileOf(file));
 
-        if (plain)
-            throw PlainBesidePassword(keyFile);
+        if (file.KeyPath is not null && IsLegacyEncrypted(texts.Cert))
+            throw LegacyEncrypted(file.Path);
+    }
+
+    private static void CheckPasswordProtected(PemSigningFile file, PemTexts texts, KeyBlocks keyBlocks)
+    {
+        if (keyBlocks.Plain)
+            throw Mismatch($"The file '{KeyFileOf(file)}' carries an unencrypted private key while a PasswordSource " +
+                $"is configured, so the password protects nothing. Remove the unencrypted key, or encrypt it with '{Reencrypt}'.");
 
         // Any key copy in the certificate file escapes the checks below, which judge only the key file.
-        if (file.KeyPath is not null && Scan(certPem) is { Plain: true } or { Encrypted.IsEmpty: false })
-            throw KeyInCertificateFile(file);
+        if (file.KeyPath is not null && Scan(texts.Cert) is { Plain: true } or { Encrypted.IsEmpty: false })
+            throw Mismatch($"The certificate file '{file.Path}' carries a private key while a PasswordSource is " +
+                $"configured for the key in '{file.KeyPath}'. A copy there escapes the password and its checks; remove it.");
 
-        CheckEncryptionParameters(keyFile, encrypted);
+        CheckEncryptionParameters(file, keyBlocks.Encrypted);
     }
 
     /// <summary>
-    /// Whether <paramref name="pem"/> carries an unencrypted key block, and the base64 of its first
-    /// <c>ENCRYPTED PRIVATE KEY</c> block. Blocks are located and their base64 checked, never decoded.
+    /// Whether a PEM text carries an unencrypted key block, and the base64 of its first
+    /// <c>ENCRYPTED PRIVATE KEY</c> block.
     /// </summary>
-    private static (bool Plain, ReadOnlyMemory<char> Encrypted) Scan(string pem)
+    private sealed record KeyBlocks(bool Plain, ReadOnlyMemory<char> Encrypted);
+
+    /// <summary>
+    /// The <see cref="KeyBlocks"/> of <paramref name="pem"/>. Blocks are located and their base64 checked,
+    /// never decoded.
+    /// </summary>
+    private static KeyBlocks Scan(string pem)
     {
         var plain = false;
         var encrypted = ReadOnlyMemory<char>.Empty;
@@ -85,7 +94,7 @@ internal static class PemKeyBlocks
             offset += fields.Location.End.Value;
         }
 
-        return (plain, encrypted);
+        return new(plain, encrypted);
     }
 
     // RFC 7468 PEM carries no headers, so PemEncoding never matches a legacy block; its header is what
@@ -98,7 +107,7 @@ internal static class PemKeyBlocks
     /// PBKDF2 at <see cref="MinimumIterations"/> or more and AES-CBC. PBES1, DES, 3DES and RC2 are legacy
     /// (RFC 8018 §6.1, Appendix B.2) and brute-forceable offline, which is the exposure the password is for.
     /// </summary>
-    private static void CheckEncryptionParameters(string keyFile, ReadOnlyMemory<char> base64)
+    private static void CheckEncryptionParameters(PemSigningFile file, ReadOnlyMemory<char> base64)
     {
         // Only the encryption parameters are read: the ciphertext is never decrypted here.
         var der = Convert.FromBase64String(base64.ToString());
@@ -106,36 +115,36 @@ internal static class PemKeyBlocks
         {
             var algorithm = new AsnReader(der, AsnEncodingRules.BER).ReadSequence().ReadSequence();
             if (algorithm.ReadObjectIdentifier() != Pbes2Oid)
-                throw Weak(keyFile, "a PBES1 scheme");
+                throw Weak(file, "a PBES1 scheme");
 
             var pbes2 = algorithm.ReadSequence();
             var kdf = pbes2.ReadSequence();
             if (kdf.ReadObjectIdentifier() != Pbkdf2Oid)
-                throw Weak(keyFile, "a key derivation function other than PBKDF2");
+                throw Weak(file, "a key derivation function other than PBKDF2");
 
             var kdfParameters = kdf.ReadSequence();
             kdfParameters.ReadEncodedValue();
             if (!kdfParameters.TryReadInt32(out var iterations) || iterations < MinimumIterations)
-                throw Weak(keyFile, $"fewer than {MinimumIterations} PBKDF2 iterations");
+                throw Weak(file, $"fewer than {MinimumIterations} PBKDF2 iterations");
 
             if (!AesCbcOids.Contains(pbes2.ReadSequence().ReadObjectIdentifier()))
-                throw Weak(keyFile, "a cipher other than AES-CBC");
+                throw Weak(file, "a cipher other than AES-CBC");
         }
         catch (AsnContentException ex)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.file_signing.invalid_pem",
-                    $"The encrypted private key in '{keyFile}' is not a valid EncryptedPrivateKeyInfo: " +
+                    $"The encrypted private key in '{KeyFileOf(file)}' is not a valid EncryptedPrivateKeyInfo: " +
                     $"{ex.GetType().FullName} was thrown. See the inner exception for the root cause."),
                 ex);
         }
     }
 
-    private static ZeeKayDaConfigurationException Weak(string keyFile, string what) =>
+    private static ZeeKayDaConfigurationException Weak(PemSigningFile file, string what) =>
         new(new ZeeKayDaConfigurationFailure(
             "signing.file_signing.weak_key_encryption",
-            $"The private key in '{keyFile}' is encrypted with {what}. Only PBES2 with PBKDF2 at " +
+            $"The private key in '{KeyFileOf(file)}' is encrypted with {what}. Only PBES2 with PBKDF2 at " +
             $"{MinimumIterations} or more iterations and AES-CBC is accepted; re-encrypt it with '{Reencrypt}'."));
 
     private static ZeeKayDaConfigurationException LegacyEncrypted(string path) =>
@@ -144,14 +153,6 @@ internal static class PemKeyBlocks
             $"The file '{path}' carries a private key encrypted in the legacy OpenSSL format " +
             $"(Proc-Type: 4,ENCRYPTED), which cannot be imported. Convert it to an encrypted PKCS#8 key " +
             $"with '{Reencrypt}', and remove the legacy copy."));
-
-    private static ZeeKayDaConfigurationException PlainBesidePassword(string path) =>
-        Mismatch($"The file '{path}' carries an unencrypted private key while a PasswordSource is configured, " +
-            $"so the password protects nothing. Remove the unencrypted key, or encrypt it with '{Reencrypt}'.");
-
-    private static ZeeKayDaConfigurationException KeyInCertificateFile(PemSigningFile file) =>
-        Mismatch($"The certificate file '{file.Path}' carries a private key while a PasswordSource is configured " +
-            $"for the key in '{file.KeyPath}'. A copy there escapes the password and its checks; remove it.");
 
     private static ZeeKayDaConfigurationException Mismatch(string message) =>
         new(new ZeeKayDaConfigurationFailure("signing.file_signing.key_encryption_mismatch", message));
@@ -164,4 +165,6 @@ internal static class PemKeyBlocks
                   "Every listed file must carry its private key, because any of them may be chosen to sign."
                 : $"The key file at '{file.KeyPath}' carries no private key block. Every listed file must " +
                   "carry its private key, because any of them may be chosen to sign."));
+
+    private static string KeyFileOf(PemSigningFile file) => file.KeyPath ?? file.Path;
 }
