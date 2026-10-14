@@ -69,7 +69,7 @@ The full checklist is in the preloaded **security-checklist** skill — apply it
 
 ## Reporting a review
 
-Lead with the verdict, keep it scannable, and stay near 400 words.
+Lead with the verdict, keep it scannable, and stay under 250 words.
 
 ```markdown
 **Security review: ❌ changes required**
@@ -87,7 +87,9 @@ that is no longer published → verification fails for the window's duration.
 - Line one is `**Security review: ✅ sign-off**` or `**Security review: ❌ changes required**`.
 - `Verified:` is **one line** naming the checks you actually ran, plus the checklist areas covered if that isn't obvious from the findings. You still verify everything you did before — you just stop narrating it. Never claim a check you didn't run.
 - Every finding gets a CVSS v3.1 severity and a file:line anchor.
-- **Every finding with a real exploit path gets that path stated**, in prose under the table. This is the one place prose is never trimmed — a severity without an exploit scenario is an assertion, not a finding.
+- The Finding cell is two short plain sentences: what is wrong, and what it lets happen. A reader must understand it without the code open.
+- **Every High or Critical finding gets its exploit path**, at most three lines under the table — a severity without an exploit scenario is an assertion, not a finding. A Medium or Low carries its consequence in the Finding cell instead.
+- No "checked and clean" section; name the areas you covered in the `Verified:` line.
 - Report **every** finding. Do not pre-filter to what you judge worth fixing; the maintainer decides that.
 
 Return the review to the orchestrator and post nothing yourself — the orchestrator posts your final verdict on the PR once it exists. (GitHub does not allow approve/request-changes reviews on a PR authored by the same account, so a structured comment is the mechanism.)

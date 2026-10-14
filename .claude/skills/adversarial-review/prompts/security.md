@@ -98,24 +98,20 @@ findings.
 
 ```markdown
 **Adversarial review (security): ❌ findings**            ← or: ✅ no material findings
-Read: <N> files beyond the diff · Specs consulted: <RFC sections, or "none needed"> · Model: <the model you are>
+Read: <N> files beyond the diff · Looked at: <the areas you tried to break, comma-separated> · Specs consulted: <RFC sections, or "none needed"> · Model: <the model you are>
 
 | Sev | Conf | Where | Finding | Fix |
 |---|---|---|---|---|
-| High | 0.8 | `src/…/File.cs:123` | one sentence, the weakness | one sentence, the change |
+| High | 0.8 | `src/…/File.cs:123` | two short plain sentences: what is wrong, and what it lets happen | one sentence, the change |
 
 ### Exploit paths
-One short paragraph per finding with a real exploit path: who does what, in what order, and what
-they get. This section is never trimmed.
+High and Critical findings only, at most three lines each: the concrete sequence to the bad
+outcome. Omit the section if there are none.
 
 ### Inferences
-Anything in the table that rests on something you could not verify from the source or the spec.
-Omit the section if there is nothing.
-
-### Checked and found sound
-Up to five things you specifically tried to break and could not, one line each. Name the checklist
-areas you covered.
+One line per finding that rests on something you could not verify. Omit the section if there is
+nothing.
 ```
 
-Stay near 400 words unless the findings genuinely need more. Report every finding that clears the
+Stay under 250 words. No section beyond the ones above. Report every finding that clears the
 bar; do not pre-filter to the ones you think will be fixed — that decision is the maintainer's.

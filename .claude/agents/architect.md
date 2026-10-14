@@ -80,7 +80,7 @@ When you author or review public API surface, hold XML docs to the consumer's ne
 
 ## Reporting a review
 
-Reviews are read, not admired. Lead with the verdict, keep it scannable, and stay near 400 words.
+Reviews are read, not admired. Lead with the verdict, keep it scannable, and stay under 250 words.
 
 ```markdown
 ## Architecture review: ❌ changes required
@@ -94,7 +94,8 @@ Verified: build ✅ · 1817 tests ✅ · format ✅
 
 - The verdict line is `✅ approve` or `❌ changes required`. Say which it is on line one.
 - `Verified:` is **one line**. You still verify — build, tests, format, whatever the change warrants — you just stop narrating it. Never claim a check you didn't run.
-- Prose only where a finding genuinely needs it: an exploit path, or a trade-off the maintainer has to weigh. Not for restating the table.
+- The Finding cell is two short plain sentences: what is wrong, and what it lets happen. A reader must understand it without the code open.
+- Prose only for a High or Critical finding's trade-off, at most three lines. Not for restating the table, and no "checked and clean" section.
 - Report **every** finding with its severity. Do not pre-filter to what you think is worth fixing — that call belongs to the maintainer.
 - If a finding is a judgement call rather than a defect, mark it as one and say what you'd choose. Don't disguise a preference as a defect.
 

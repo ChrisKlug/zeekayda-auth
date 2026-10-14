@@ -142,7 +142,8 @@ C# language server (`csharp-lsp-<agent>`) and the `code-navigation` skill sends 
 result that says it navigated with grep because no language server was available means
 `csharp-lsp-mcp` is not on `PATH` — fix that (`.claude/machine-setup.md` §2a) rather than accepting
 the review. Alongside them, run CodeScene `analyze_change_set` yourself (agents reach only the MCP
-servers their own frontmatter names) — **production files only. Findings on `tests/` are ignored entirely, not
+servers their own frontmatter names), and **again before every push** — a fix round introduces its own
+smells, and PR CodeScene is a gate, not the first look — **production files only. Findings on `tests/` are ignored entirely, not
 argued with**: test code is specification, duplication is how specifications read, and clearly named
 repetitive tests beat clever compact ones.
 
@@ -214,9 +215,18 @@ read** — never folded into the commit that prompted the question. The reviewer
 it touches their findings.
 
 On approval: push, `gh pr create` (the permission prompt is this gate — never work around it), then
-post each reviewer's **existing verdict** on the PR with `gh pr comment` as the durable record —
-the Copilot lenses included, each headed with its lens and model. That is a paste, not a re-review.
-A genuine re-review happens only if commits landed after the reviewer last looked at the branch.
+post **one** `gh pr comment` as the durable record of every review round — not a paste of each
+verdict. One table, one row per finding, from every reviewer and round:
+
+| Reviewer · round | Sev | Finding | Outcome |
+|---|---|---|---|
+| Copilot code lens (`gpt-6.1-sol`) · 1 | High | Certificate-only ACL allowed `ChangePermissions`: a broad principal could grant itself write and swap in its own key | Fixed `0f47b73` — `…_may_write_or_take_over_on_Windows` |
+
+The Finding cell is what is wrong and what it lets happen, in plain words — enough to understand
+without the code open. Outcome is the fixing commit and the test named for it, or "Accepted
+(maintainer)" with the reason in a few words. A reviewer round with no findings is one row saying so.
+Exploit narratives and "checked" lists stay in the session; the PR carries the decisions. A genuine
+re-review happens only if commits landed after the reviewer last looked at the branch.
 
 ## Stage 5 — Merge ⛔
 
