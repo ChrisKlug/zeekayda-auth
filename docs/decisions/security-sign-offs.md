@@ -2393,3 +2393,21 @@ High or Critical open. `ac69445`, `29c14bd`, `a3481a5` and `975de49` were read b
   `ExtractPrivateKey_rejects_a_shrouded_key_bag_that_is_neither_rsa_nor_ec`, `ExtractPrivateKey_throws_actionable_exception_when_certificate_has_no_private_key`,
   `GetPrivateKeyMaterialAsync_disposes_both_handles_when_neither_rsa_nor_ec_can_import_the_key`.
   **Not covered:** an import the platform refuses for a real RSA/EC key (FIPS policy) reports as "neither RSA nor EC" with no inner cause.
+
+## 2026-10-14 — signing review follow-ups: certificate-only PEM files, wiped PEM buffers, root-first chains (#918, code frozen at `f1c4709`)
+Copilot code lens (Highs fixed, fix diff verified), security lens (High fixed, fix diff verified), the security agent (sign-off; two fix diffs verified, the last at `639ac35`),
+and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `46e9ad7`, `48f4c2e` and the merge `f1c4709` were read by the main session and the PR bots only.
+- A certificate-only file may be world-readable, but only a trusted owner may replace it: Unix refuses group/other write and any owner but root or the effective uid (`fstat` on the open handle);
+  Windows refuses broad-principal write, delete, ACL change or take-ownership, and any owner but the process identity, SYSTEM or Administrators. Closed —
+  `ReadAsync_accepts_a_world_readable_certificate_only_file_beside_an_owner_only_key_file`, `ReadAsync_rejects_a_certificate_only_file_writable_by_group_or_other_on_Unix`,
+  `IsTrustedOwner_trusts_root_and_the_process_user_only`, `GetOwnerUid_of_a_file_the_test_created_is_the_effective_uid`,
+  `ReadAsync_rejects_a_certificate_only_file_a_broad_principal_may_write_or_take_over_on_Windows`, `IsTrustedOwner_on_Windows_trusts_the_process_identity_SYSTEM_and_Administrators_only`.
+- A certificate-only file carries no private key marker at all, and under a password no unencrypted key boundary may sit beside the encrypted key. Closed —
+  `ReadAsync_rejects_a_private_key_in_a_certificate_only_file_without_a_password`, `ReadAsync_rejects_a_certificate_only_file_carrying_a_private_key_without_its_footer`,
+  `ReadAsync_rejects_an_encrypted_key_beside_a_plaintext_copy_that_lost_its_footer`.
+- PEM text lives in a pooled buffer wiped before it is returned, never in a string, on listing and signing. Closed — `Decode_wipes_the_input_bytes`,
+  `Dispose_wipes_the_buffer_before_returning_it_to_the_pool`, `Dispose_twice_returns_the_buffer_once`.
+- A chain whose first certificate is marked as a CA is refused; a lone CA-marked certificate is accepted. Closed — `ReadAsync_rejects_a_chain_file_whose_first_certificate_is_a_ca`,
+  `ReadAsync_accepts_a_lone_self_signed_certificate_marked_as_a_ca`, `CreateSignerAsync_reports_a_chain_reordered_root_first_after_listing_as_certificate_is_a_ca`.
+- **Accepted residuals (maintainer):** no test drives the Unix owner reject path through the real `fstat` (needs `chown` as root) — `IsTrustedOwner_trusts_root_and_the_process_user_only` proves the policy.
+  A version 1 root placed first is not caught at listing; it fails at the handover's pairing. **Not covered:** the macOS x86_64 `$INODE64` binding runs on no CI leg.
