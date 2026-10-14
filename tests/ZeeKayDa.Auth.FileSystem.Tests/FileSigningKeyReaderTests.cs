@@ -232,4 +232,18 @@ public sealed class FileSigningKeyReaderTests
         // A world-readable certificate file no longer proves the process owns it, so its owner is checked.
         FileSigningKeyReader.IsTrustedOwner(ownerUid, effectiveUid).Should().Be(expected);
     }
+
+    [Fact]
+    public void GetOwnerUid_of_a_file_the_test_created_is_the_effective_uid()
+    {
+        // Catches a stat layout bound at the wrong offset on whichever runner has one.
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "fstat is the Unix ownership model.");
+
+        using var tempDir = new TempSigningKeyDirectory();
+        var path = tempDir.WriteTextFile("owned.pem", "content");
+        using var handle = File.OpenHandle(path);
+
+        if (!OperatingSystem.IsWindows())
+            PosixInterop.GetOwnerUid(handle).Should().Be(PosixInterop.GetEffectiveUid());
+    }
 }

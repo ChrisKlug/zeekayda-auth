@@ -705,6 +705,45 @@ public sealed class PemFileSigningKeySourceTests
         return (root, leaf, leafKey);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadAsync_rejects_an_encrypted_key_beside_a_plaintext_copy_that_lost_its_footer(bool combined)
+    {
+        // The password protects against offline exposure; a recoverable plaintext copy beside the key defeats it.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var plainPem = certificate.GetRSAPrivateKey()!.ExportPkcs8PrivateKeyPem();
+        var keyText = EncryptedKeyPem(certificate) + "\n" + plainPem[..plainPem.IndexOf("-----END", StringComparison.Ordinal)];
+        var file = combined
+            ? new PemSigningFile(tempDir.WriteTextFile("combined.pem", certificate.ExportCertificatePem() + "\n" + keyText),
+                PasswordSource: new PasswordSource().GetAsync)
+            : new PemSigningFile(tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate),
+                tempDir.WriteTextFile("key.pem", keyText), new PasswordSource().GetAsync);
+        var sut = BuildSource(file);
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(file.Path, "signing.file_signing.key_encryption_mismatch");
+    }
+
+    [Fact]
+    public async Task ReadAsync_reports_a_chain_file_whose_second_certificate_is_corrupt_as_invalid_pem()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        const string corrupt = "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydGlmaWNhdGU=\n-----END CERTIFICATE-----\n";
+        var certPath = tempDir.WriteTextFile("chain.pem", certificate.ExportCertificatePem() + "\n" + corrupt);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(certPath, "signing.file_signing.invalid_pem");
+    }
+
     [Fact]
     public async Task ReadAsync_rejects_a_chain_file_whose_first_certificate_is_a_ca()
     {

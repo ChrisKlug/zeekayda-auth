@@ -211,7 +211,23 @@ internal sealed class PemFileSigningKeySource(
     /// </summary>
     private static X509Certificate2 RefuseRootFirstChain(X509Certificate2 certificate, ReadOnlySpan<char> certPem, string certificatePath)
     {
-        using var second = SecondCertificate(certPem);
+        X509Certificate2? secondOrNull;
+        try
+        {
+            secondOrNull = SecondCertificate(certPem);
+        }
+        catch (Exception ex) when (ex is CryptographicException or FormatException)
+        {
+            certificate.Dispose();
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.invalid_pem",
+                    $"The second certificate in '{certificatePath}' is not a valid certificate: " +
+                    $"{ex.GetType().FullName} was thrown. See the inner exception for the root cause."),
+                ex);
+        }
+
+        using var second = secondOrNull;
         if (second is null
             || (certificate.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault() is not { CertificateAuthority: true }
                 && !certificate.SubjectName.RawData.AsSpan().SequenceEqual(second.IssuerName.RawData)))

@@ -52,7 +52,7 @@ internal static class PemKeyBlocks
             throw NoPrivateKey(file);
 
         if (file.PasswordSource is not null)
-            CheckPasswordProtected(file, keyBlocks);
+            CheckPasswordProtected(file, texts.Key.Span, keyBlocks);
         else if (!keyBlocks.Plain)
             throw Mismatch($"The private key in '{KeyFileOf(file)}' is encrypted, but no PasswordSource is configured for it.");
     }
@@ -66,9 +66,10 @@ internal static class PemKeyBlocks
             throw LegacyEncrypted(file.Path);
     }
 
-    private static void CheckPasswordProtected(PemSigningFile file, KeyBlocks keyBlocks)
+    private static void CheckPasswordProtected(PemSigningFile file, ReadOnlySpan<char> keyPem, KeyBlocks keyBlocks)
     {
-        if (keyBlocks.Plain)
+        // A boundary line is enough, not only a well-formed block: a plaintext copy that lost its footer is still a key.
+        if (keyBlocks.Plain || HasUnencryptedBoundary(keyPem))
             throw Mismatch($"The file '{KeyFileOf(file)}' carries an unencrypted private key while a PasswordSource " +
                 $"is configured, so the password protects nothing. Remove the unencrypted key, or encrypt it with '{Reencrypt}'.");
 
@@ -107,6 +108,18 @@ internal static class PemKeyBlocks
         }
 
         return new(plain, encrypted, encryptedCount);
+    }
+
+    private static bool HasUnencryptedBoundary(ReadOnlySpan<char> pem)
+    {
+        foreach (var label in UnencryptedLabels)
+        {
+            if (pem.Contains($"-----BEGIN {label}-----", StringComparison.Ordinal)
+                || pem.Contains($"-----END {label}-----", StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     // RFC 7468 PEM carries no headers, so PemEncoding never matches a legacy block; its header is what

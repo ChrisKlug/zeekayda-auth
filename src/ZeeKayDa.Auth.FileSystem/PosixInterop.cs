@@ -37,8 +37,13 @@ internal static partial class PosixInterop
     [UnsupportedOSPlatform("windows")]
     internal static uint? GetLinkOwnerUid(string path)
     {
+        // On x86_64 macOS the plain symbol keeps the legacy 32-bit-inode layout; $INODE64 is the one StatMacOs binds.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            return NativeLstatMacOs(path, out var macBuf) == 0 ? macBuf.st_uid : null;
+        {
+            return (RuntimeInformation.OSArchitecture == Architecture.X64
+                ? NativeLstatMacOsX64(path, out var macBuf)
+                : NativeLstatMacOs(path, out macBuf)) == 0 ? macBuf.st_uid : null;
+        }
 
         if (RuntimeInformation.OSArchitecture == Architecture.X64)
             return NativeLstatLinuxX64(path, out var x64Buf) == 0 ? x64Buf.st_uid : null;
@@ -57,8 +62,13 @@ internal static partial class PosixInterop
     [UnsupportedOSPlatform("windows")]
     internal static uint? GetOwnerUid(SafeFileHandle handle)
     {
+        // On x86_64 macOS the plain symbol keeps the legacy 32-bit-inode layout; $INODE64 is the one StatMacOs binds.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            return NativeFstatMacOs(handle, out var macBuf) == 0 ? macBuf.st_uid : null;
+        {
+            return (RuntimeInformation.OSArchitecture == Architecture.X64
+                ? NativeFstatMacOsX64(handle, out var macBuf)
+                : NativeFstatMacOs(handle, out macBuf)) == 0 ? macBuf.st_uid : null;
+        }
 
         if (RuntimeInformation.OSArchitecture == Architecture.X64)
             return NativeFstatLinuxX64(handle, out var x64Buf) == 0 ? x64Buf.st_uid : null;
@@ -81,6 +91,10 @@ internal static partial class PosixInterop
     [UnsupportedOSPlatform("windows")]
     private static partial int NativeFstatMacOs(SafeFileHandle handle, out StatMacOs buf);
 
+    [LibraryImport("libc", EntryPoint = "fstat$INODE64", SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeFstatMacOsX64(SafeFileHandle handle, out StatMacOs buf);
+
     [LibraryImport("libc", EntryPoint = "fstat", SetLastError = true)]
     [UnsupportedOSPlatform("windows")]
     private static partial int NativeFstatLinuxX64(SafeFileHandle handle, out StatLinuxX64 buf);
@@ -93,6 +107,10 @@ internal static partial class PosixInterop
     [UnsupportedOSPlatform("windows")]
     private static partial int NativeLstatMacOs(string path, out StatMacOs buf);
 
+    [LibraryImport("libc", EntryPoint = "lstat$INODE64", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeLstatMacOsX64(string path, out StatMacOs buf);
+
     [LibraryImport("libc", EntryPoint = "lstat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
     [UnsupportedOSPlatform("windows")]
     private static partial int NativeLstatLinuxX64(string path, out StatLinuxX64 buf);
@@ -102,7 +120,7 @@ internal static partial class PosixInterop
     private static partial int NativeLstatLinuxArm64(string path, out StatLinuxArm64 buf);
 
     /// <summary>
-    /// macOS / BSD stat struct (arm64, 144 bytes total). Fields in native ABI order.
+    /// macOS / BSD stat struct (64-bit inode layout: arm64, and x86_64 through the <c>$INODE64</c> symbols; 144 bytes total). Fields in native ABI order.
     /// Layout: dev(4) mode(2) nlink(2) ino(8) uid(4) gid(4) + 120 bytes padding.
     /// Padding uses blittable scalar fields so the struct is compatible with [LibraryImport].
     /// </summary>

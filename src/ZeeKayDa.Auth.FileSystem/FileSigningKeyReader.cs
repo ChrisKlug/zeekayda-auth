@@ -269,7 +269,16 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
             }
 
             // A readable file no longer proves the process owns it, and its owner can rewrite it.
-            if (!IsTrustedOwner(PosixInterop.GetOwnerUid(stream.SafeFileHandle), PosixInterop.GetEffectiveUid()))
+            var owner = PosixInterop.GetOwnerUid(stream.SafeFileHandle);
+            if (owner is null)
+            {
+                throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.file_too_permissive",
+                    $"The owner of certificate file '{path}' could not be determined on this platform, so a " +
+                    "separate certificate file cannot be trusted here. Use a combined certificate and key file."));
+            }
+
+            if (!IsTrustedOwner(owner, PosixInterop.GetEffectiveUid()))
             {
                 throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
                     "signing.file_signing.file_too_permissive",
