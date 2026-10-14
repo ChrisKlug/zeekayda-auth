@@ -2368,7 +2368,8 @@ and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `72
 - Reverses the #823 rule that listing imports no private key: an encrypted key is decrypted, paired and disposed once per version of its files; a failure is retried. Closed —
   `ReadAsync_rejects_a_wrong_password_at_listing`, `ReadAsync_fetches_the_password_only_when_the_key_file_changes`, `ReadAsync_pairs_the_key_again_when_only_the_certificate_file_changes`, `ReadAsync_retries_a_rejected_password_on_the_next_read`,
   `ReadAsync_rejects_an_encrypted_key_that_does_not_belong_to_its_certificate`; signing re-checks the files — `CreateSignerAsync_refuses_a_plain_key_added_after_listing`.
-- The password never appears in a failure; a null, empty or throwing source is `password_unavailable`. Closed — `CreateSignerAsync_rejects_a_wrong_password_under_its_own_code_without_leaking_it`,
+- The password never appears in a failure; a null, empty or throwing source is `password_unavailable`, but a cancellation still fails the whole read,
+  as #908 recorded (`ReadAsync_lets_a_cancellation_from_one_bundle_fail_the_whole_read`, through the shared `SigningFilePassword`). Closed — `CreateSignerAsync_rejects_a_wrong_password_under_its_own_code_without_leaking_it`,
   `ReadAsync_reports_a_password_source_that_returns_an_empty_string_as_password_unavailable`, `ReadAsync_reports_a_password_source_that_throws_as_password_unavailable_without_its_message`.
 - **Accepted residuals (maintainer):** plain keys are not paired at listing — `ReadAsync_reads_only_the_label_of_a_separate_key_file`. A password rotated at its source without a file change
   is unseen until a new signer is created; a signer already open keeps signing — `A_password_rotated_without_a_file_change_is_seen_only_by_the_next_signer`.
