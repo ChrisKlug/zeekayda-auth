@@ -2356,9 +2356,9 @@ and architect agents, and the PR's CodeQL, CodeScene and Copilot review; no High
   **Not covered:** a lock or I/O error on one file is reported by the same catch as the password-source case, but no test drives one; Unix file locks are advisory.
   #823's residual "a provider's own per-key failure still fails `ReadAsync`" is closed: its cited test now proves a per-entry report.
 
-## 2026-10-14 — encrypted PEM private keys with a per-file password (#917, code frozen at `c52031b`)
+## 2026-10-14 — encrypted PEM private keys with a per-file password (#917, code frozen at `4d696b4`)
 Copilot code lens (Highs fixed, two fix diffs verified), security lens (xhigh; Mediums fixed, fix diff verified), the security agent (sign-off; fix diff verified),
-and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `72166dc`, `dcf54be` and `c52031b` were read by the main session and the PR bots only.
+and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `72166dc`, `dcf54be`, `c52031b` and `4d696b4` were read by the main session and the PR bots only.
 - Listing judges a PEM key by label, header and encryption parameters, never importing a plain key; with a password, no other key copy may sit in either file. Closed —
   `ReadAsync_reads_only_the_label_of_a_separate_key_file`, `ReadAsync_rejects_a_plain_key_file_when_a_password_is_configured`, `ReadAsync_rejects_an_encrypted_key_file_without_a_password_at_listing`,
   `ReadAsync_rejects_a_plain_key_after_an_encrypted_one_in_the_certificate_file`, `ReadAsync_rejects_a_weakly_encrypted_key_copy_in_the_certificate_file`, `ReadAsync_rejects_a_second_encrypted_key_in_the_key_file`.
@@ -2366,10 +2366,10 @@ and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `72
   `ReadAsync_rejects_a_key_encrypted_with_a_PBES1_scheme`, `ReadAsync_rejects_a_key_encrypted_with_fewer_than_2048_PBKDF2_iterations`,
   `ReadAsync_rejects_a_key_encrypted_with_a_cipher_other_than_AES_CBC`, `ReadAsync_refuses_a_legacy_encrypted_key_beside_a_valid_pkcs8_one`.
 - Reverses the #823 rule that listing imports no private key: an encrypted key is decrypted, paired and disposed once per version of its files; a failure is retried. Closed —
-  `ReadAsync_rejects_a_wrong_password_at_listing`, `ReadAsync_fetches_the_password_only_when_the_key_file_changes`, `ReadAsync_retries_a_rejected_password_on_the_next_read`,
+  `ReadAsync_rejects_a_wrong_password_at_listing`, `ReadAsync_fetches_the_password_only_when_the_key_file_changes`, `ReadAsync_pairs_the_key_again_when_only_the_certificate_file_changes`, `ReadAsync_retries_a_rejected_password_on_the_next_read`,
   `ReadAsync_rejects_an_encrypted_key_that_does_not_belong_to_its_certificate`; signing re-checks the files — `CreateSignerAsync_refuses_a_plain_key_added_after_listing`.
 - The password never appears in a failure; a null, empty or throwing source is `password_unavailable`. Closed — `CreateSignerAsync_rejects_a_wrong_password_under_its_own_code_without_leaking_it`,
   `ReadAsync_reports_a_password_source_that_returns_an_empty_string_as_password_unavailable`, `ReadAsync_reports_a_password_source_that_throws_as_password_unavailable_without_its_message`.
 - **Accepted residuals (maintainer):** plain keys are not paired at listing — `ReadAsync_reads_only_the_label_of_a_separate_key_file`. A password rotated at its source without a file change
-  is unseen until signing — `CreateSignerAsync_rejects_a_wrong_password_under_its_own_code_without_leaking_it`. PFX still accepts `""`, a real export format.
+  is unseen until a new signer is created; a signer already open keeps signing — `CreateSignerAsync_rejects_a_wrong_password_under_its_own_code_without_leaking_it`.
   **Not covered:** key text sits in managed strings (the PEM-string hygiene chore); the password is defense in depth against offline exposure, not against the process identity.
