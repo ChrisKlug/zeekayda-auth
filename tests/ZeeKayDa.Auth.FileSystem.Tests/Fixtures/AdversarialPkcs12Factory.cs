@@ -249,6 +249,125 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
+    /// A chain bundle that also carries the issuer's private key, unmarked and stored before the
+    /// signing key, which is paired with the signing certificate by <c>localKeyId</c>. "The first key
+    /// in the file" is the issuer's, not the one that signs.
+    /// </summary>
+    /// <returns>The bundle, and the public key of the certificate that actually signs.</returns>
+    public static (byte[] Bundle, RSAParameters SigningPublicKey) IssuerKeyStoredBeforeSigningKey(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var caKey = RSA.Create(2048);
+        var caRequest = new CertificateRequest(
+            "CN=test-chain-ca", caKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        caRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+        using var ca = caRequest.CreateSelfSigned(notBefore.AddDays(-1), notAfter.AddDays(1));
+        using var caPublicOnly = X509CertificateLoader.LoadCertificate(ca.Export(X509ContentType.Cert));
+
+        using var leafKey = RSA.Create(2048);
+        var leafRequest = new CertificateRequest(
+            "CN=test-signing-leaf", leafKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        leafRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+        using var leaf = leafRequest.Create(ca, notBefore, notAfter, [1, 2, 3, 4]);
+
+        var localKeyId = new byte[] { 0xAA, 0xBB };
+
+        var certificates = new Pkcs12SafeContents();
+        certificates.AddCertificate(caPublicOnly);
+        certificates.AddCertificate(leaf).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var keys = new Pkcs12SafeContents();
+        keys.AddShroudedKey(caKey, password, Pbe);
+        keys.AddShroudedKey(leafKey, password, Pbe).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
+        builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+        return (builder.Encode(), leafKey.ExportParameters(false));
+    }
+
+    /// <summary>
+    /// An RSA certificate paired by <c>localKeyId</c> with an unshrouded key bag that is not an RSA or
+    /// EC private key at all.
+    /// </summary>
+    public static byte[] PairedKeyBagNeitherRsaNorEc(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter) =>
+        RsaCertificatePairedWith(password, notBefore, notAfter,
+            keys =>
+            {
+                var notAPrivateKey = new Pkcs12KeyBag(new byte[] { 0x30, 0x03, 0x02, 0x01, 0x00 });
+                keys.AddSafeBag(notAPrivateKey);
+                return notAPrivateKey;
+            });
+
+    /// <summary>
+    /// An RSA certificate paired by <c>localKeyId</c> with an EC private key: the certificate the
+    /// listing publishes and the key the signer would import are of different types.
+    /// </summary>
+    public static byte[] RsaCertificatePairedWithEcKey(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        return RsaCertificatePairedWith(password, notBefore, notAfter,
+            keys => keys.AddShroudedKey(ecKey, password, Pbe));
+    }
+
+    /// <summary>
+    /// An Ed25519 certificate — neither RSA nor EC — paired by <c>localKeyId</c> with an EC private
+    /// key. The Ed25519 public key is written directly, because not every platform can generate one.
+    /// </summary>
+    public static byte[] Ed25519CertificatePairedWithEcKey(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var issuerKey = RSA.Create(2048);
+        var ed25519PublicKey = new PublicKey(
+            new Oid("1.3.101.112"), null, new AsnEncodedData(new byte[32]));
+        using var certificate = new CertificateRequest(
+                new X500DistinguishedName("CN=test-ed25519"), ed25519PublicKey, HashAlgorithmName.SHA256)
+            .Create(
+                new X500DistinguishedName("CN=test-ed25519-issuer"),
+                X509SignatureGenerator.CreateForRSA(issuerKey, RSASignaturePadding.Pkcs1),
+                notBefore, notAfter, [1, 2, 3, 4]);
+        using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        return Paired(certificate, password, keys => keys.AddShroudedKey(ecKey, password, Pbe));
+    }
+
+    private static byte[] RsaCertificatePairedWith(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter,
+        Func<Pkcs12SafeContents, Pkcs12SafeBag> addKey)
+    {
+        using var rsaKey = RSA.Create(2048);
+        using var certificate = new CertificateRequest(
+                "CN=test-paired", rsaKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .CreateSelfSigned(notBefore, notAfter);
+        return Paired(certificate, password, addKey);
+    }
+
+    private static byte[] Paired(
+        X509Certificate2 certificate, string password, Func<Pkcs12SafeContents, Pkcs12SafeBag> addKey)
+    {
+        using var publicOnly = X509CertificateLoader.LoadCertificate(certificate.Export(X509ContentType.Cert));
+
+        var localKeyId = new byte[] { 0x01 };
+
+        var certificates = new Pkcs12SafeContents();
+        certificates.AddCertificate(publicOnly).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var keys = new Pkcs12SafeContents();
+        addKey(keys).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
+        builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+        return builder.Encode();
+    }
+
+    /// <summary>
     /// A bundle whose key bag names a <c>localKeyId</c> no certificate carries, with more than one
     /// certificate present — so the key's own certificate is not in the file.
     /// </summary>

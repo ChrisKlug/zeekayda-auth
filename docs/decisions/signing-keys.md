@@ -33,7 +33,7 @@ deleted file, key file, certificate or vault object as nothing (an unmounted dir
 predecessor is superseded, it never takes over (in memory: a restarted replica adopts it); only startup refuses it. A signer closes at the first read a `RefreshInterval` after it is seen to stop signing; its key signing again after that reopens and self-tests one.
 
 **File and store providers are plain lists, and any listed key may sign.** PEM, PFX and Windows list `Files`/`Certificates`
-with the public `SourceKey.FromCertificate`; PEM and PFX sign via `LocalSigner.FromCertificate`. A certificate's `NotBefore`
+with the public `SourceKey.FromCertificate`; PEM signs via `LocalSigner.FromCertificate`, PFX over its imported key bag. A certificate's `NotBefore`
 is its CA issuance date, so one listed over a lead time later signs as soon as it is read. Listing checks every entry can sign without importing a plain key: PFX key bags, PEM key files (permissions) and block labels, Windows `HasPrivateKey`. One that cannot is a `SourceKeyFailure`, not a throw, so it cannot block a revocation. No read lock.
 A PEM key may be PKCS#8-encrypted (PBES2, PBKDF2 at 2048+ iterations, AES-CBC) under a per-file password; listing decrypts and pairs it once per hash of its files (the one cache) and retries a failure next read. Legacy OpenSSL-encrypted keys, and any plain key beside a password, are refused by name.
 
@@ -54,6 +54,9 @@ publish public `Cer` halves only (no `secrets/get`); that version's private key 
 
 **Listing a bundled format imports no private key.** PFX verifies the MAC against the password and takes the
 certificate the key bag's `localKeyId` names — PKCS#12 has no bag ordering; only the chosen bundle's key is imported.
+**A PKCS#12 key reaches memory, never a key store.** PFX and cached Key Vault signing import the key bag into an
+in-memory `RSA`/`ECDsa` (PFX: the bag the listing paired). `X509CertificateLoader.LoadPkcs12*`, which would write a
+Windows key container or macOS keychain, is a banned API in both packages.
 
 **Every signer handoff is self-tested before the signer is used.** `SigningKeyRing` signs a
 non-JWS-shaped constant prefix plus a fresh 32-byte nonce and verifies it against that key's own published
@@ -141,8 +144,6 @@ development provider stays in core.
   the gate's input (the host environment name) with its policy (inert unless a development-key method was called).
 - **Hand-rolled key-pairing checks in the Windows and cached Key Vault providers.** Superseded — the same
   invariant is proven on every handoff.
-- **`EphemeralKeySet` to keep a non-active PFX bundle's key off disk.** Platform-conditional (macOS throws)
-  and it still materialises the key. Never decrypting the key bag beats it everywhere.
 - **A macOS Keychain signing provider.** Implemented and reviewed, then descoped: the file-system provider
   already covers macOS and Linux without native interop.
 - **A factory overload, and two more registration checks.** The overload was a second way to build a source;

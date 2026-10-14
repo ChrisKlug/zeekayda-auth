@@ -381,13 +381,8 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
 
             foreach (var bag in safeContents.GetBags())
             {
-                switch (bag)
-                {
-                    case Pkcs12KeyBag keyBag:
-                        return ImportPrivateKey(keyBag.Pkcs8PrivateKey.Span, version);
-                    case Pkcs12ShroudedKeyBag shroudedKeyBag:
-                        return ImportShroudedPrivateKey(shroudedKeyBag.EncryptedPkcs8PrivateKey.Span, version);
-                }
+                if (bag is Pkcs12KeyBag or Pkcs12ShroudedKeyBag)
+                    return ImportPrivateKey(bag, version);
             }
         }
 
@@ -404,80 +399,13 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
                 "never leave Key Vault."));
     }
 
-    private (AsymmetricAlgorithm, SigningKeyType) ImportPrivateKey(ReadOnlySpan<byte> pkcs8PrivateKey, string version)
-    {
-        var rsa = _createRsa();
-        try
+    private (AsymmetricAlgorithm, SigningKeyType) ImportPrivateKey(Pkcs12SafeBag keyBag, string version) =>
+        Pkcs12PrivateKey.Import(keyBag, ReadOnlySpan<char>.Empty, _createRsa, _createEcdsa) switch
         {
-            rsa.ImportPkcs8PrivateKey(pkcs8PrivateKey, out _);
-            return (rsa, SigningKeyType.Rsa);
-        }
-        catch (CryptographicException)
-        {
-            rsa.Dispose();
-        }
-        catch
-        {
-            // This handle must never leak regardless of what gets thrown.
-            rsa.Dispose();
-            throw;
-        }
-
-        var ecdsa = _createEcdsa();
-        try
-        {
-            ecdsa.ImportPkcs8PrivateKey(pkcs8PrivateKey, out _);
-            return (ecdsa, SigningKeyType.Ec);
-        }
-        catch (CryptographicException)
-        {
-            ecdsa.Dispose();
-            throw UnsupportedKeyTypeException(version);
-        }
-        catch
-        {
-            ecdsa.Dispose();
-            throw;
-        }
-    }
-
-    private (AsymmetricAlgorithm, SigningKeyType) ImportShroudedPrivateKey(
-        ReadOnlySpan<byte> encryptedPkcs8PrivateKey, string version)
-    {
-        var rsa = _createRsa();
-        try
-        {
-            rsa.ImportEncryptedPkcs8PrivateKey(ReadOnlySpan<char>.Empty, encryptedPkcs8PrivateKey, out _);
-            return (rsa, SigningKeyType.Rsa);
-        }
-        catch (CryptographicException)
-        {
-            rsa.Dispose();
-        }
-        catch
-        {
-            // This handle must never leak regardless of what gets thrown.
-            rsa.Dispose();
-            throw;
-        }
-
-        var ecdsa = _createEcdsa();
-        try
-        {
-            ecdsa.ImportEncryptedPkcs8PrivateKey(ReadOnlySpan<char>.Empty, encryptedPkcs8PrivateKey, out _);
-            return (ecdsa, SigningKeyType.Ec);
-        }
-        catch (CryptographicException)
-        {
-            ecdsa.Dispose();
-            throw UnsupportedKeyTypeException(version);
-        }
-        catch
-        {
-            ecdsa.Dispose();
-            throw;
-        }
-    }
+            RSA rsa => (rsa, SigningKeyType.Rsa),
+            ECDsa ecdsa => (ecdsa, SigningKeyType.Ec),
+            _ => throw UnsupportedKeyTypeException(version),
+        };
 
     private KeyVaultVersionMaterialException UnsupportedKeyTypeException(string version) =>
         new(new ZeeKayDaConfigurationFailure(

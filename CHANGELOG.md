@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- **A PFX bundle's private key no longer touches a platform key store** (#434). Opening a PFX
+  signer used `X509CertificateLoader.LoadPkcs12`, which builds an OS-backed certificate: on Windows
+  the key was written into the user's key store on disk, with residue under
+  `%APPDATA%\Microsoft\Crypto` after an abnormal exit, and on macOS into a transient keychain. The
+  signer now imports the key bag paired with the listed certificate straight into an in-memory
+  `RSA` or `ECDsa`, using the same managed import the Azure Key Vault cached reader already used.
+  A bundle that has lost its key since it was listed now fails with
+  `signing.file_signing.invalid_pfx` instead of `signing.certificate.private_key_not_found`.
+
 - **A development signing key refuses to sign when it cannot tell the host environment** (#825).
   The environment gate used to let a source built outside the registration methods, with no
   environment set, sign as though it were in `Development`. It now fails with
