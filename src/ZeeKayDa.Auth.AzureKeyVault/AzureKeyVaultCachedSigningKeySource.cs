@@ -48,6 +48,11 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
     // was listed. volatile: CreateSignerAsync may run on another thread.
     private volatile IReadOnlySet<string>? _listedVersions;
 
+    // The public material of every version the latest read listed. A version's material never
+    // changes, so a refresh fetches only the versions it has not seen before.
+    private volatile IReadOnlyDictionary<string, PublicKeyParameters> _publicKeys =
+        new Dictionary<string, PublicKeyParameters>(StringComparer.Ordinal);
+
     /// <inheritdoc/>
     public SigningAlgorithm Algorithm => _options.Value.Algorithm;
 
@@ -73,6 +78,7 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
         // Committed only after nothing can throw any more, so a failed read can never leave a
         // signer openable for a version that was never listed.
         _listedVersions = listing.Keys.Select(key => key.Id.Value).ToHashSet(StringComparer.Ordinal);
+        _publicKeys = listing.Keys.ToDictionary(key => key.Id.Value, key => key.PublicKey, StringComparer.Ordinal);
         return listing;
     }
 
@@ -100,23 +106,27 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
     }
 
     /// <summary>
-    /// Fetches <paramref name="version"/>'s public material from the vault and maps it to a
-    /// <see cref="SourceKey"/>. Only the public <c>Cer</c> is ever read here — never the linked
-    /// secret — so no private material exists in the process during a read.
+    /// Maps <paramref name="version"/> to a <see cref="SourceKey"/>, fetching its public material from
+    /// the vault unless an earlier read already did. Only the public <c>Cer</c> is ever read here —
+    /// never the linked secret — so no private material exists in the process during a read.
     /// </summary>
     private async ValueTask<SourceKey> ToSourceKeyAsync(
-        KeyVaultCertificateVersionInfo version, CancellationToken cancellationToken)
-    {
-        var (rawPublicKey, keyType) = await certificateReader
-            .GetPublicKeyMaterialAsync(version.Version, cancellationToken).ConfigureAwait(false);
-
-        using var publicKey = rawPublicKey;
-
-        return new SourceKey(
+        KeyVaultCertificateVersionInfo version, CancellationToken cancellationToken) =>
+        new(
             new SourceKeyId(version.Version),
-            ToPublicKeyParameters(publicKey, keyType),
+            _publicKeys.TryGetValue(version.Version, out var known)
+                ? known
+                : await FetchPublicKeyAsync(version.Version, cancellationToken).ConfigureAwait(false),
             notBefore: KeyVaultVersions.NotBefore(version),
             expiresAt: version.ExpiresOn);
+
+    private async ValueTask<PublicKeyParameters> FetchPublicKeyAsync(string version, CancellationToken cancellationToken)
+    {
+        var (rawPublicKey, keyType) = await certificateReader
+            .GetPublicKeyMaterialAsync(version, cancellationToken).ConfigureAwait(false);
+
+        using var publicKey = rawPublicKey;
+        return ToPublicKeyParameters(publicKey, keyType);
     }
 
     /// <summary>

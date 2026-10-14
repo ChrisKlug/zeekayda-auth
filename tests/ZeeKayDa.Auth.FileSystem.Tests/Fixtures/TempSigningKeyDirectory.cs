@@ -48,9 +48,9 @@ internal sealed class TempSigningKeyDirectory : IDisposable
     /// ancestor-symlink walk at the first root-owned directory, so an
     /// OS-managed symlink no longer false-positives while a genuinely attacker-plantable symlinked
     /// ancestor still does — see
-    /// <see cref="ZeeKayDa.Auth.FileSystem.Tests.FileSigningKeyReaderTests.ReadPemTextAsync_succeeds_for_a_file_under_the_OS_temp_directory_on_Unix"/>
+    /// <see cref="ZeeKayDa.Auth.FileSystem.Tests.FileSigningKeyReaderTests.ReadPemAsync_succeeds_for_a_file_under_the_OS_temp_directory_on_Unix"/>
     /// and its sibling
-    /// <see cref="ZeeKayDa.Auth.FileSystem.Tests.FileSigningKeyReaderTests.ReadPemTextAsync_still_throws_for_a_file_under_a_non_root_owned_symlinked_ancestor_on_Unix"/>.
+    /// <see cref="ZeeKayDa.Auth.FileSystem.Tests.FileSigningKeyReaderTests.ReadPemAsync_still_throws_for_a_file_under_a_non_root_owned_symlinked_ancestor_on_Unix"/>.
     /// This fixture still resolves the real path up front regardless, so its other tests (rotation,
     /// permissions, parsing) measure only the behavior they are meant to.
     /// </para>
@@ -182,6 +182,13 @@ internal sealed class TempSigningKeyDirectory : IDisposable
             ? rsa.ExportPkcs8PrivateKeyPem()
             : certificate.GetECDsaPrivateKey()!.ExportPkcs8PrivateKeyPem();
         return certPem + Environment.NewLine + keyPem + Environment.NewLine;
+    }
+
+    /// <summary>Sets an already-written file's Unix mode; a no-op on Windows, where a test using it skips.</summary>
+    public void SetUnixMode(string path, UnixFileMode mode)
+    {
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(path, mode);
     }
 
     /// <summary>

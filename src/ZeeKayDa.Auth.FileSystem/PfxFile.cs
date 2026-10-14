@@ -13,8 +13,9 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// password-per-file, so every bundle carries its own.
 /// </param>
 /// <remarks>
-/// Invoked once per listed bundle when the source lists its keys at startup, and once more for the
-/// bundle chosen to sign. An implementation sourcing the password from a slow or remote location
+/// Invoked for every listed bundle on every read — at startup and every
+/// <see cref="ZeeKayDa.Auth.Tokens.SigningKeyOptions.RefreshInterval"/> — and once more for the bundle
+/// chosen to sign. An implementation sourcing the password from a slow or remote location
 /// should cache it itself.
 /// </remarks>
 public sealed record PfxFile(string Path, Func<CancellationToken, Task<string>> PasswordSource);

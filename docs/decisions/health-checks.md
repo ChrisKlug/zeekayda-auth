@@ -34,6 +34,11 @@ registered, or a ring that has not yet completed startup initialization, both re
 naming the reason — an unconfigured or not-yet-ready signing key ring is not a lesser form of
 healthy, and an orchestrator's readiness probe must treat it as not ready.
 
+**The signing check is for readiness, never liveness.** A ring that is resuming — its signing key
+unlisted, as when an operator disables a Key Vault version during a handover — reports `Unhealthy`
+until a later read lists a key it can use. On a liveness probe that restarts a healthy pod which a
+refresh would have recovered.
+
 **The signing-key verdict asks the ring's own rules, never its own reading of the keys.**
 `Unhealthy` when the key signing now has expired, or is published only because it signs (after a
 failed or unfinished handover, once healthy replicas have dropped it); `Degraded`, naming every reason, when a successor's

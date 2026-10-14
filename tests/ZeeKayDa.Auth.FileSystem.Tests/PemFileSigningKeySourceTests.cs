@@ -520,6 +520,108 @@ public sealed class PemFileSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_accepts_a_world_readable_certificate_only_file_beside_an_owner_only_key_file()
+    {
+        // certbot's layout: fullchain.pem is 0644, privkey.pem 0600. A certificate is public.
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "0644 is a Unix permission mode.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("fullchain.pem", certificate);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("privkey.pem", certificate);
+        tempDir.SetUnixMode(certPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+
+        var listing = await sut.ReadAsync(ct);
+        using var signer = await sut.CreateSignerAsync(listing.Keys.Single().Id, ct);
+
+        listing.Failures.Should().BeEmpty();
+        signer.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(UnixFileMode.GroupWrite)]
+    [InlineData(UnixFileMode.OtherWrite)]
+    public async Task ReadAsync_rejects_a_certificate_only_file_writable_by_group_or_other_on_Unix(UnixFileMode writeBit)
+    {
+        // Whoever can write the certificate file can publish their own key in the JWKS.
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "group/other write bits are the Unix permission model.");
+
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WriteCertificateOnlyPemFile("cert.crt", certificate);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        tempDir.SetUnixMode(certPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | writeBit);
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(certPath, "signing.file_signing.file_too_permissive");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_private_key_in_a_certificate_only_file_without_a_password()
+    {
+        // A certificate-only file may be world-readable, so a key copy there would be readable by anyone.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var certPath = tempDir.WritePemFile("cert.pem", certificate);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(certPath, "signing.file_signing.private_key_in_certificate_file");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_chain_file_whose_first_certificate_is_a_ca()
+    {
+        // CreateFromPem takes the first CERTIFICATE block, so a root-first chain would publish the CA's key.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var caKey = RSA.Create(2048);
+        var caRequest = new CertificateRequest("CN=test-ca", caKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        caRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+        using var ca = caRequest.CreateSelfSigned(T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        using var leafKey = RSA.Create(2048);
+        var leafRequest = new CertificateRequest("CN=test", leafKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var leaf = leafRequest.Create(ca, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(30), [1, 2, 3, 4]);
+        var certPath = tempDir.WriteTextFile("chain.pem", ca.ExportCertificatePem() + "\n" + leaf.ExportCertificatePem());
+        var keyPath = tempDir.WriteTextFile("key.pem", leafKey.ExportPkcs8PrivateKeyPem());
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+
+        var listing = await sut.ReadAsync(ct);
+
+        var failure = listing.ShouldReportOnly(certPath, "signing.file_signing.certificate_is_a_ca");
+        failure.Message.Should().Contain("leaf-first");
+    }
+
+    [Fact]
+    public async Task ReadAsync_accepts_a_lone_self_signed_certificate_marked_as_a_ca()
+    {
+        // openssl req -x509 marks a self-signed certificate as a CA by default; with no chain there is no ordering to get wrong.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest("CN=test", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+        using var certificate = request.CreateSelfSigned(T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var certPath = tempDir.WriteTextFile("cert.pem", certificate.ExportCertificatePem());
+        var keyPath = tempDir.WriteTextFile("key.pem", key.ExportPkcs8PrivateKeyPem());
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+
+        var listing = await sut.ReadAsync(ct);
+        using var signer = await sut.CreateSignerAsync(listing.Keys.Single().Id, ct);
+
+        listing.Failures.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ReadAsync_rejects_a_separate_key_file_broader_than_0600_on_Unix_even_for_a_file_that_does_not_sign()
     {
         // The staged file never signs at this read, but its public key is published, so a readable
@@ -726,7 +828,7 @@ public sealed class PemFileSigningKeySourceTests
 
         var listing = await sut.ReadAsync(ct);
 
-        var failure = listing.ShouldReportOnly(certPath, "signing.file_signing.key_encryption_mismatch");
+        var failure = listing.ShouldReportOnly(certPath, "signing.file_signing.private_key_in_certificate_file");
         failure.Message.Should().Contain(certPath);
     }
 
@@ -745,7 +847,7 @@ public sealed class PemFileSigningKeySourceTests
 
         var listing = await sut.ReadAsync(ct);
 
-        listing.ShouldReportOnly(certPath, "signing.file_signing.key_encryption_mismatch");
+        listing.ShouldReportOnly(certPath, "signing.file_signing.private_key_in_certificate_file");
     }
 
     [Fact]
@@ -817,7 +919,7 @@ public sealed class PemFileSigningKeySourceTests
 
         var listing = await sut.ReadAsync(ct);
 
-        listing.ShouldReportOnly(certPath, "signing.file_signing.key_encryption_mismatch");
+        listing.ShouldReportOnly(certPath, "signing.file_signing.private_key_in_certificate_file");
     }
 
     [Fact]

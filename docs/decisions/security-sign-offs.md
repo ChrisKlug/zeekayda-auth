@@ -1930,8 +1930,8 @@ security lenses and the security agent, one round plus fix-diff verification; no
   `ReadKeyFileAsync_rejects_a_key_file_that_grants_any_group_or_other_access`,
   `ReadKeyFileAsync_rejects_a_key_path_that_is_itself_a_symlink`.
 - The production file provider's ancestor checks are unchanged by the interop move. Closed —
-  `ReadPemTextAsync_still_throws_for_a_file_under_a_non_root_owned_symlinked_ancestor_on_Unix`,
-  `ReadPemTextAsync_still_throws_when_a_non_root_owned_symlink_points_at_a_root_owned_directory_on_Unix`.
+  `ReadPemAsync_still_throws_for_a_file_under_a_non_root_owned_symlinked_ancestor_on_Unix` [renamed from ReadPemTextAsync_… in #918],
+  `ReadPemAsync_still_throws_when_a_non_root_owned_symlink_points_at_a_root_owned_directory_on_Unix` [renamed from ReadPemTextAsync_… in #918].
 - **Accepted trade (maintainer):** ancestors are not checked for a development key, which only
   protects it on a shared multi-user machine; the environment gate keeps it out of production.
   Pinned by `ReadKeyFileAsync_accepts_a_key_file_reached_through_a_symlinked_ancestor`,

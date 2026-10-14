@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- **A PEM private key is never held in an immutable string** (#918). The PEM file source read each
+  file into a `string`, on every refresh and for every signer, so an unencrypted private key stayed on
+  the heap until collected. Files are now read into a pooled buffer that is wiped after use, and parsed
+  from spans.
+
+- **A PEM chain whose first certificate is a CA is refused** (#918). `CreateFromPem` takes a file's
+  first certificate, so a chain written root-first published the CA's key, then failed at the handover
+  that chose it. Listing now fails with `signing.file_signing.certificate_is_a_ca`.
+
 - **A PFX bundle's private key no longer touches a platform key store** (#434). Opening a PFX
   signer used `X509CertificateLoader.LoadPkcs12`, which builds an OS-backed certificate: on Windows
   the key was written into the user's key store on disk, with residue under
@@ -951,6 +960,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   them: the atomicity tests can no longer be turned off.
 
 ### Fixed
+
+- **A world-readable certificate-only PEM file is accepted** (#918). certbot writes `fullchain.pem`
+  as `0644`, which the PEM source refused. A file named as the certificate beside a separate key file
+  is now refused only when group or other users can write it; every rule on the key file stays. Such a
+  file must carry no private key, now refused with `signing.file_signing.private_key_in_certificate_file`
+  with or without a password, which replaces `key_encryption_mismatch` for that case.
+
+- **The Azure Key Vault sources fetch a version's public key once** (#918). Every refresh re-fetched the
+  public material of every listed version; a refresh is now the version listing plus one fetch per
+  version not seen before. The registration docs no longer claim the vault is read only at startup.
+
+- **`SourceKey` rejects a null public key or id** (#918) with an `ArgumentNullException` at
+  construction.
 
 - **An `id_token_hint` still identifies its client after the key that signed it is retired** (#899).
   The end-session endpoint verified a hint only against the keys the JWKS serves, and a key leaves the

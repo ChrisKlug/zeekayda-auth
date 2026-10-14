@@ -27,12 +27,19 @@ public sealed record SourceKey
     /// when it is the only key the source lists.
     /// </param>
     /// <param name="expiresAt">The key's expiry, or <see langword="null"/> when it never expires.</param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="id"/> carries a <see langword="null"/> value or <paramref name="publicKey"/>
+    /// is <see langword="null"/>.
+    /// </exception>
     public SourceKey(
         SourceKeyId id,
         PublicKeyParameters publicKey,
         DateTimeOffset? notBefore = null,
         DateTimeOffset? expiresAt = null)
     {
+        ArgumentNullException.ThrowIfNull(id.Value, nameof(id));
+        ArgumentNullException.ThrowIfNull(publicKey);
+
         Id = id;
         PublicKey = publicKey;
         NotBefore = notBefore ?? DateTimeOffset.MinValue;

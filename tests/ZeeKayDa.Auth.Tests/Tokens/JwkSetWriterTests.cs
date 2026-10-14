@@ -9,6 +9,30 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 
 public sealed class JwkSetWriterTests
 {
+    // A P-521 public key whose x begins with two zero bytes, with its RFC 7638 thumbprint computed outside
+    // .NET (Python's cryptography package and hashlib). A platform that strips the leading pad bytes
+    // from an exported coordinate would change both the thumbprint and the served x.
+    private const string P521XBase64Url =
+        "AADTvKb7nLf_9dONkSSZ-rzjuWp2OZTbRWi6SLYBNhwu" +
+        "sYdQBQJ5yC4siNZApUUtUytiImU2pPU4skilmrHC89wS";
+
+    private const string P521YBase64Url =
+        "AVts1dKk6J9Y3we5sT0rFEtm4YBMpFeyv8tzOxlQhh07" +
+        "vfhdW6PvL6mQiMYkBDHuQzd40rfS0YAiHSQI-i-0V5QI";
+
+    private const string P521ExpectedThumbprint = "Th6T9Ta3BhkuIbguPr7mvbkyw4f-Icd61KNnKkyXnA8";
+
+    /// <summary>The fixed P-521 key, imported into and exported back out of the platform's ECDsa.</summary>
+    private static ECParameters P521RoundTrippedThroughThePlatform()
+    {
+        using var ec = ECDsa.Create(new ECParameters
+        {
+            Curve = ECCurve.NamedCurves.nistP521,
+            Q = new ECPoint { X = DecodeBase64Url(P521XBase64Url), Y = DecodeBase64Url(P521YBase64Url) },
+        });
+        return ec.ExportParameters(includePrivateParameters: false);
+    }
+
     // The RSA key RFC 7638 §3.1 uses for its worked thumbprint example — the same key as
     // RFC 7517 Appendix A.1's RSA entry — reproduced verbatim so serialising it verifies
     // interoperability with the specifications' own examples, not just internal consistency.
@@ -58,6 +82,21 @@ public sealed class JwkSetWriterTests
         jwk.GetProperty("crv").GetString().Should().Be("P-256");
         jwk.GetProperty("x").GetString().Should().Be(Rfc7517EcXBase64Url);
         jwk.GetProperty("y").GetString().Should().Be(Rfc7517EcYBase64Url);
+    }
+
+    [Fact]
+    public void Write_serialises_an_externally_computed_P521_vector_with_its_leading_zero_bytes_kept()
+    {
+        var keySet = BuildKeySet(
+            new SourceKey(new SourceKeyId("p521"), PublicKeyParameters.FromEc(P521RoundTrippedThroughThePlatform())),
+            algorithm: SigningAlgorithm.ES512);
+
+        var jwk = SingleKey(JwkSetWriter.Write(keySet.Published));
+
+        jwk.GetProperty("crv").GetString().Should().Be("P-521");
+        jwk.GetProperty("x").GetString().Should().Be(P521XBase64Url);
+        jwk.GetProperty("y").GetString().Should().Be(P521YBase64Url);
+        jwk.GetProperty("kid").GetString().Should().Be(P521ExpectedThumbprint);
     }
 
     [Fact]

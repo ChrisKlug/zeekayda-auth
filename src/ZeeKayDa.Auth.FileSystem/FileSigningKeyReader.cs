@@ -16,32 +16,33 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// This provider reads files it did not create, supplied by the operator, so unlike the Windows
 /// Certificate Store or local-development providers it validates rather than trusts them:
 /// read-only, never writing, creating a directory, or narrowing an ACL. Each path is opened
-/// <strong>exactly once</strong> per read call and every check runs against that single open
-/// handle rather than the path string, closing the TOCTOU window between validation and read.
+/// <strong>exactly once</strong> per read call, and the permission check runs against that open
+/// handle rather than the path string. The symlink checks cannot: they inspect the path as given,
+/// because the BCL has no <c>O_NOFOLLOW</c>, so a swap between the open and those checks stays possible.
 /// </remarks>
 internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader> logger)
 {
-    // Broader than 0600 (owner read/write only) is a hard failure.
+    // Broader than 0600 (owner read/write only) is a hard failure for a file carrying a private key.
     private const UnixFileMode DisallowedUnixModeBits =
         UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
         | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
+
+    // A certificate is public, so reading it protects nothing; writing it publishes an attacker's key.
+    private const UnixFileMode DisallowedCertificateOnlyUnixModeBits = UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
 
     /// <summary>
     /// Opens, validates, and reads <paramref name="path"/> as PEM text, for use with
     /// <see cref="System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPem(ReadOnlySpan{char}, ReadOnlySpan{char})"/>.
     /// </summary>
-    /// <param name="path">The operator-supplied path to the combined cert+key PEM file.</param>
+    /// <param name="path">The operator-supplied path to the PEM file.</param>
+    /// <param name="content">What the file carries, which decides the permissions it may have.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown when the file does not exist, resolves through a symlink, or has permissions/ACL
-    /// broader than allowed.
+    /// broader than <paramref name="content"/> allows.
     /// </exception>
-    public async ValueTask<string> ReadPemTextAsync(string path, CancellationToken cancellationToken)
-    {
-        using var stream = OpenValidated(path);
-        using var reader = new StreamReader(stream);
-        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
-    }
+    public async ValueTask<PemText> ReadPemAsync(string path, SigningFileContent content, CancellationToken cancellationToken) =>
+        PemText.Decode(await ReadBytesAsync(path, content, cancellationToken).ConfigureAwait(false));
 
     /// <summary>
     /// Opens, validates, and reads <paramref name="path"/> as raw bytes, for use with
@@ -54,15 +55,26 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
     /// Thrown when the file does not exist, resolves through a symlink, or has permissions/ACL
     /// broader than allowed.
     /// </exception>
-    public async ValueTask<byte[]> ReadAllBytesAsync(string path, CancellationToken cancellationToken)
+    public ValueTask<byte[]> ReadAllBytesAsync(string path, CancellationToken cancellationToken) =>
+        ReadBytesAsync(path, SigningFileContent.PrivateKey, cancellationToken);
+
+    private async ValueTask<byte[]> ReadBytesAsync(string path, SigningFileContent content, CancellationToken cancellationToken)
     {
-        using var stream = OpenValidated(path);
+        using var stream = OpenValidated(path, content);
         var bytes = new byte[stream.Length];
-        await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
-        return bytes;
+        try
+        {
+            await stream.ReadExactlyAsync(bytes, cancellationToken).ConfigureAwait(false);
+            return bytes;
+        }
+        catch
+        {
+            bytes.AsSpan().Clear();
+            throw;
+        }
     }
 
-    private FileStream OpenValidated(string path)
+    private FileStream OpenValidated(string path, SigningFileContent content)
     {
         var stream = OpenOrThrowMissing(path);
         try
@@ -70,9 +82,9 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
             ValidateNoSymlink(stream, path);
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                ValidateAclWindows(stream, path);
+                ValidateAclWindows(stream, path, content);
             else
-                ValidateModeUnix(stream, path);
+                ValidateModeUnix(stream, path, content);
 
             WarnIfPotentiallyUnsafeEnvironment(path);
 
@@ -86,14 +98,14 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
     }
 
     /// <summary>
-    /// <see cref="ReadPemTextAsync"/>, or <see langword="null"/> with a Warning when the file does not
+    /// <see cref="ReadPemAsync"/>, or <see langword="null"/> with a Warning when the file does not
     /// exist: a source lists a deleted file as nothing, and the ring treats the key as revoked.
     /// </summary>
-    public async ValueTask<string?> TryReadPemTextAsync(string path, CancellationToken cancellationToken)
+    public async ValueTask<PemText?> TryReadPemAsync(string path, SigningFileContent content, CancellationToken cancellationToken)
     {
         try
         {
-            return await ReadPemTextAsync(path, cancellationToken).ConfigureAwait(false);
+            return await ReadPemAsync(path, content, cancellationToken).ConfigureAwait(false);
         }
         catch (ZeeKayDaConfigurationException ex) when (ex.AggregatedFailures[0].Code == FileNotFoundCode)
         {
@@ -152,7 +164,6 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
 
     private static void ValidateNoSymlink(FileStream stream, string originalPath)
     {
-        // Inspect the open handle's resolved name, not the original path string, for the leaf file.
         var resolvedPath = stream.Name;
 
         var info = new FileInfo(resolvedPath);
@@ -241,11 +252,24 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
     }
 
     [UnsupportedOSPlatform("windows")]
-    private static void ValidateModeUnix(FileStream stream, string path)
+    private static void ValidateModeUnix(FileStream stream, string path, SigningFileContent content)
     {
         // Checked on the already-open handle (via SafeFileHandle) rather than the path string, so
         // this cannot be TOCTOU-raced between the open above and this check.
         var mode = File.GetUnixFileMode(stream.SafeFileHandle);
+
+        if (content == SigningFileContent.CertificateOnly)
+        {
+            if ((mode & DisallowedCertificateOnlyUnixModeBits) != 0)
+            {
+                throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.file_too_permissive",
+                    $"Certificate file '{path}' is writable by group or other users (found {DescribeUnixMode(mode)}). " +
+                    "Anyone who can write it can publish their own key. Run 'chmod 644' on the file."));
+            }
+
+            return;
+        }
 
         if ((mode & DisallowedUnixModeBits) != 0)
         {
@@ -258,19 +282,33 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
     }
 
     [SupportedOSPlatform("windows")]
-    private static void ValidateAclWindows(FileStream stream, string path)
+    private static void ValidateAclWindows(FileStream stream, string path, SigningFileContent content)
     {
         // GetAccessControl(FileStream) reads the DACL from the already-open handle, closing the
         // same TOCTOU window the Unix mode check closes via SafeFileHandle.
         var security = stream.GetAccessControl();
         var rules = security.GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier));
 
-        var hasBroadAllowRule = rules
+        var broadAllowRules = rules
             .OfType<FileSystemAccessRule>()
             .Where(rule => rule.AccessControlType == AccessControlType.Allow)
-            .Any(rule => rule.IdentityReference is SecurityIdentifier sid && IsBroadPrincipal(sid));
+            .Where(rule => rule.IdentityReference is SecurityIdentifier sid && IsBroadPrincipal(sid));
 
-        if (hasBroadAllowRule)
+        if (content == SigningFileContent.CertificateOnly)
+        {
+            if (broadAllowRules.Any(GrantsWrite))
+            {
+                throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.file_too_permissive",
+                    $"Certificate file '{path}' grants write access to a broad principal ('Everyone', " +
+                    "'Users', or 'Authenticated Users'). Anyone who can write it can publish their own key. " +
+                    "Remove the write access."));
+            }
+
+            return;
+        }
+
+        if (broadAllowRules.Any())
         {
             throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
                 "signing.file_signing.file_too_permissive",
@@ -279,6 +317,10 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
                 "identity only, with inheritance disabled, and restart the application."));
         }
     }
+
+    [SupportedOSPlatform("windows")]
+    private static bool GrantsWrite(FileSystemAccessRule rule) =>
+        (rule.FileSystemRights & (FileSystemRights.Write | FileSystemRights.WriteData | FileSystemRights.CreateFiles)) != 0;
 
     [SupportedOSPlatform("windows")]
     private static bool IsBroadPrincipal(SecurityIdentifier sid) =>
@@ -361,13 +403,11 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
         var security = new DirectoryInfo(parent).GetAccessControl();
         var rules = security.GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier));
 
-        const FileSystemRights WriteRights = FileSystemRights.Write | FileSystemRights.WriteData | FileSystemRights.CreateFiles;
-
         var hasBroadWritableRule = rules
             .OfType<FileSystemAccessRule>()
             .Where(rule => rule.AccessControlType == AccessControlType.Allow)
             .Where(rule => rule.IdentityReference is SecurityIdentifier sid && IsBroadPrincipal(sid))
-            .Any(rule => (rule.FileSystemRights & WriteRights) != 0);
+            .Any(GrantsWrite);
 
         if (hasBroadWritableRule)
         {

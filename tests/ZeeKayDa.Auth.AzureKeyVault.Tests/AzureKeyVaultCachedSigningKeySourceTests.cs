@@ -356,6 +356,24 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_fetches_public_material_once_per_version_across_reads()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeKeyVaultCertificateReader();
+        reader.AddRsaVersion("v1", createdOn: T0);
+        var sut = BuildSource(reader);
+
+        var first = (await sut.ReadAsync(ct)).Keys;
+        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromMinutes(1));
+        var second = (await sut.ReadAsync(ct)).Keys;
+        await sut.ReadAsync(ct);
+
+        reader.PublicKeyMaterialCalls.Should().Equal(["v1", "v2"],
+            "a version's public material never changes, so a refresh fetches only a version it has not seen");
+        second.Single(k => k.Id.Value == "v1").PublicKey.Should().Be(first.Single().PublicKey);
+    }
+
+    [Fact]
     public async Task ReadAsync_stops_listing_a_version_that_is_disabled_after_the_first_read()
     {
         var ct = TestContext.Current.CancellationToken;

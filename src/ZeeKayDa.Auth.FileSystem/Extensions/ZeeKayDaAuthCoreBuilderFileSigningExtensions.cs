@@ -32,10 +32,17 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// Encrypt/certbot (<c>fullchain.pem</c> + <c>privkey.pem</c>) and cert-manager.
     /// </para>
     /// <para>
-    /// Filesystem permissions are enforced fail-closed on every loaded file, including
-    /// <paramref name="keyPath"/>: no more permissive than <c>0600</c> on Unix, and on Windows no
-    /// ACL access for <c>Everyone</c>, <c>Users</c>, or <c>Authenticated Users</c>. A
-    /// broader-than-expected permission is a hard startup failure, not a warning.
+    /// Filesystem permissions are enforced fail-closed on every file that carries the private key:
+    /// no more permissive than <c>0600</c> on Unix, and on Windows no ACL access for <c>Everyone</c>,
+    /// <c>Users</c>, or <c>Authenticated Users</c>. A certificate-only <paramref name="path"/> may be
+    /// readable by anyone, as certbot writes <c>fullchain.pem</c>, but not writable by group or other
+    /// users, and it must carry no private key. A broader-than-expected permission is a hard failure,
+    /// not a warning.
+    /// </para>
+    /// <para>
+    /// No file may be reached through a symlink. certbot's <c>live/</c> directory is made of symlinks
+    /// into <c>archive/</c>, so copy the files out with a certbot deploy hook rather than pointing at
+    /// <c>live/</c> directly.
     /// </para>
     /// <para>
     /// A PKCS#8-encrypted key takes <paramref name="passwordSource"/>, which adds defense in depth on
@@ -95,8 +102,9 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
 
     /// <summary>
     /// Registers the PEM certificates listed in <see cref="PemFileSigningOptions.Files"/> as the JWT
-    /// signing keys. They are read at startup; the framework decides from their validity windows
-    /// which one signs, locally, in process, and which are published.
+    /// signing keys. They are read at startup and every <see cref="SigningKeyOptions.RefreshInterval"/>;
+    /// the framework decides from their validity windows which one signs, locally, in process, and
+    /// which are published.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -205,8 +213,9 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
 
     /// <summary>
     /// Registers the PFX/PKCS#12 bundles listed in <see cref="PfxFileSigningOptions.Files"/> as the
-    /// JWT signing keys. They are read at startup; the framework decides from their validity windows
-    /// which one signs, locally, in process, and which are published.
+    /// JWT signing keys. They are read at startup and every <see cref="SigningKeyOptions.RefreshInterval"/>;
+    /// the framework decides from their validity windows which one signs, locally, in process, and
+    /// which are published.
     /// </summary>
     /// <remarks>
     /// <para>
