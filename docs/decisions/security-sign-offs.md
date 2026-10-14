@@ -2375,9 +2375,9 @@ and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `72
   is unseen until a new signer is created; a signer already open keeps signing — `A_password_rotated_without_a_file_change_is_seen_only_by_the_next_signer`.
   **Not covered:** key text sits in managed strings (the PEM-string hygiene chore); the password is defense in depth against offline exposure, not against the process identity.
 
-## 2026-10-14 — a PKCS#12 private key reaches memory, never a platform key store (#434, code frozen at `a3481a5`)
+## 2026-10-14 — a PKCS#12 private key reaches memory, never a platform key store (#434, code frozen at `975de49`)
 Copilot code lens (Highs fixed, fix diff verified), security lens (xhigh), the security agent (sign-off), and the PR's CodeQL, CodeScene and Copilot review; no
-High or Critical open. `ac69445`, `29c14bd` and `a3481a5` were read by the main session and the PR bots only.
+High or Critical open. `ac69445`, `29c14bd`, `a3481a5` and `975de49` were read by the main session and the PR bots only.
 - PFX signing imports the key bag into an in-memory `RSA`/`ECDsa`; no certificate carrying a private key is built, so Windows writes no key container. Closed —
   `CreateSignerAsync_never_constructs_a_certificate_carrying_a_private_key` (Windows, with a negative control proving the snapshot sees a certificate-backed load).
   Every `X509CertificateLoader.LoadPkcs12*` overload is a build error (RS0030) in the FileSystem and Azure Key Vault packages, so `EphemeralKeySet` cannot return either.
