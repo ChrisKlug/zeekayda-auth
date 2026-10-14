@@ -2375,15 +2375,16 @@ and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `72
   is unseen until a new signer is created; a signer already open keeps signing — `A_password_rotated_without_a_file_change_is_seen_only_by_the_next_signer`.
   **Not covered:** key text sits in managed strings (the PEM-string hygiene chore); the password is defense in depth against offline exposure, not against the process identity.
 
-## 2026-10-14 — a PKCS#12 private key reaches memory, never a platform key store (#434, code frozen at `29c14bd`)
-Copilot code lens (Highs fixed, fix diff verified), security lens (xhigh), the security agent (sign-off), and the PR's CodeQL and CodeScene review; no High or
-Critical open. `ac69445` and `29c14bd` were read by the main session and the PR bots only.
+## 2026-10-14 — a PKCS#12 private key reaches memory, never a platform key store (#434, code frozen at `a3481a5`)
+Copilot code lens (Highs fixed, fix diff verified), security lens (xhigh), the security agent (sign-off), and the PR's CodeQL, CodeScene and Copilot review; no
+High or Critical open. `ac69445`, `29c14bd` and `a3481a5` were read by the main session and the PR bots only.
 - PFX signing imports the key bag into an in-memory `RSA`/`ECDsa`; no certificate carrying a private key is built, so Windows writes no key container. Closed —
   `CreateSignerAsync_never_constructs_a_certificate_carrying_a_private_key` (Windows, with a negative control proving the snapshot sees a certificate-backed load).
   Every `X509CertificateLoader.LoadPkcs12*` overload is a build error (RS0030) in the FileSystem and Azure Key Vault packages, so `EphemeralKeySet` cannot return either.
-- The signer imports the key bag paired with the certificate the listing published, by the listing's own selection, and refuses a key of another type. Closed —
+- The signer imports the key bag paired with the certificate the listing published, by the listing's own selection, and refuses a key not of its certificate's type, RSA or EC. Closed —
   `CreateSignerAsync_imports_the_key_bag_paired_to_the_certificate_the_read_reported`, `CreateSignerAsync_opens_the_same_certificate_the_read_reported_for_a_chain_bundle`,
-  `CreateSignerAsync_throws_invalid_pfx_when_the_paired_key_is_not_the_certificates_key_type`, `CreateSignerAsync_throws_invalid_pfx_when_the_paired_key_bag_is_neither_RSA_nor_EC`.
+  `CreateSignerAsync_throws_invalid_pfx_when_the_paired_key_is_not_the_certificates_key_type`, `CreateSignerAsync_throws_invalid_pfx_when_the_paired_key_bag_is_neither_RSA_nor_EC`,
+  `CreateSignerAsync_throws_invalid_pfx_when_an_EC_key_is_paired_with_a_certificate_that_is_neither_RSA_nor_EC`.
 - A wrong password or a stripped key fails signing as `invalid_pfx`, naming no parser text. Closed — `CreateSignerAsync_throws_invalid_pfx_for_a_wrong_password_rather_than_leaking_the_raw_crypto_error`,
   `CreateSignerAsync_throws_invalid_pfx_when_a_bundle_that_has_since_lost_its_key_is_asked_to_sign`, `CreateSignerAsync_names_the_parser_exception_type_rather_than_copying_its_message`.
 - The Key Vault cached reader imports RSA and EC, plain and shrouded, through the same helper with its failure codes unchanged; its tests are unmodified. Closed —
