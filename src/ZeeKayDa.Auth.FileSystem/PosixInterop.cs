@@ -1,23 +1,25 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using Microsoft.Win32.SafeHandles;
 
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// Provides interop access to <c>lstat()</c> for directory ownership validation on Unix platforms.
+/// Provides interop access to <c>lstat()</c>, <c>fstat()</c> and <c>geteuid()</c> for ownership validation on Unix platforms.
 /// </summary>
 /// <remarks>
 /// <para>
 /// There is deliberately no <c>stat()</c>-based counterpart. <c>stat()</c> follows a symlink and
 /// reports the owner of whatever it points at, which an attacker chooses by choosing where their
-/// link points — so every ownership decision in this assembly reads the link entry's own owner.
+/// link points — so every ownership decision in this assembly reads the link entry's own owner, or
+/// the owner of a file already open.
 /// </para>
 /// Separate native stat-buffer structs are declared for macOS/BSD and Linux 64-bit because the kernel ABI
 /// differs between platforms; only the fields up to <c>st_uid</c> are bound, with the rest covered
 /// by blittable padding.
 /// </remarks>
-[ExcludeFromCodeCoverage(Justification = "Each architecture-specific lstat branch is reachable only on the one architecture whose ABI it binds, so no single runner can cover them all. FileSigningKeyReaderTests exercises whichever branch the runner's architecture selects.")]
+[ExcludeFromCodeCoverage(Justification = "Each architecture-specific lstat and fstat branch is reachable only on the one architecture whose ABI it binds, so no single runner can cover them all. FileSigningKeyReaderTests exercises whichever branch the runner's architecture selects.")]
 internal static partial class PosixInterop
 {
     /// <summary>
@@ -46,6 +48,46 @@ internal static partial class PosixInterop
 
         return null;
     }
+
+    /// <summary>
+    /// Returns the UID of the owner of the file open on <paramref name="handle"/>, or
+    /// <see langword="null"/> if <c>fstat()</c> fails. Read from the handle, so it describes the file
+    /// that was opened, whatever the path now names.
+    /// </summary>
+    [UnsupportedOSPlatform("windows")]
+    internal static uint? GetOwnerUid(SafeFileHandle handle)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            return NativeFstatMacOs(handle, out var macBuf) == 0 ? macBuf.st_uid : null;
+
+        if (RuntimeInformation.OSArchitecture == Architecture.X64)
+            return NativeFstatLinuxX64(handle, out var x64Buf) == 0 ? x64Buf.st_uid : null;
+
+        if (RuntimeInformation.OSArchitecture is Architecture.Arm64 or Architecture.RiscV64)
+            return NativeFstatLinuxArm64(handle, out var arm64Buf) == 0 ? arm64Buf.st_uid : null;
+
+        return null;
+    }
+
+    /// <summary>Returns the process's effective UID.</summary>
+    [UnsupportedOSPlatform("windows")]
+    internal static uint GetEffectiveUid() => NativeGeteuid();
+
+    [LibraryImport("libc", EntryPoint = "geteuid")]
+    [UnsupportedOSPlatform("windows")]
+    private static partial uint NativeGeteuid();
+
+    [LibraryImport("libc", EntryPoint = "fstat", SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeFstatMacOs(SafeFileHandle handle, out StatMacOs buf);
+
+    [LibraryImport("libc", EntryPoint = "fstat", SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeFstatLinuxX64(SafeFileHandle handle, out StatLinuxX64 buf);
+
+    [LibraryImport("libc", EntryPoint = "fstat", SetLastError = true)]
+    [UnsupportedOSPlatform("windows")]
+    private static partial int NativeFstatLinuxArm64(SafeFileHandle handle, out StatLinuxArm64 buf);
 
     [LibraryImport("libc", EntryPoint = "lstat", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
     [UnsupportedOSPlatform("windows")]

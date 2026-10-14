@@ -15,6 +15,9 @@ internal static class PemKeyBlocks
 
     private const string EncryptedLabel = "ENCRYPTED PRIVATE KEY";
 
+    // The tail of every RFC 7468 private key boundary line, encrypted, legacy or plain.
+    private const string PrivateKeyMarker = "PRIVATE KEY-----";
+
     // RFC 8018 §4.2 asks for at least 1000; 2048 is OpenSSL's default.
     private const int MinimumIterations = 2048;
 
@@ -36,7 +39,8 @@ internal static class PemKeyBlocks
         CheckNoLegacyCopy(file, texts);
 
         // A separate certificate file may be world-readable, and a copy there escapes every check below.
-        if (file.KeyPath is not null && Scan(texts.Cert.Memory) is { Plain: true } or { Encrypted.IsEmpty: false })
+        // Any private key marker counts, not only a well-formed block: a key that lost its footer is still a key.
+        if (file.KeyPath is not null && texts.Cert.Span.Contains(PrivateKeyMarker, StringComparison.Ordinal))
             throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
                 "signing.file_signing.private_key_in_certificate_file",
                 $"The certificate file '{file.Path}' carries a private key, while the key is configured in " +

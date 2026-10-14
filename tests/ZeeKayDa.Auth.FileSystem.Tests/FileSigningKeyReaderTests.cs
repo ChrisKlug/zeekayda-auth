@@ -221,4 +221,15 @@ public sealed class FileSigningKeyReaderTests
             File.Delete(realLeafPath);
         }
     }
+
+    [Theory]
+    [InlineData(0u, 1000u, true)]
+    [InlineData(1000u, 1000u, true)]
+    [InlineData(1001u, 1000u, false)]
+    [InlineData(null, 1000u, false)]
+    public void IsTrustedOwner_trusts_root_and_the_process_user_only(uint? ownerUid, uint effectiveUid, bool expected)
+    {
+        // A world-readable certificate file no longer proves the process owns it, so its owner is checked.
+        FileSigningKeyReader.IsTrustedOwner(ownerUid, effectiveUid).Should().Be(expected);
+    }
 }

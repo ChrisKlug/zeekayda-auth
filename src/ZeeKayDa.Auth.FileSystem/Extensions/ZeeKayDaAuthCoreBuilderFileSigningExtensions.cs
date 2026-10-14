@@ -35,8 +35,10 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// Filesystem permissions are enforced fail-closed on every file that carries the private key:
     /// no more permissive than <c>0600</c> on Unix, and on Windows no ACL access for <c>Everyone</c>,
     /// <c>Users</c>, or <c>Authenticated Users</c>. A certificate-only <paramref name="path"/> may be
-    /// readable by anyone, as certbot writes <c>fullchain.pem</c>, but not writable by group or other
-    /// users, and it must carry no private key. A broader-than-expected permission is a hard failure,
+    /// readable by anyone, as certbot writes <c>fullchain.pem</c>, but it must carry no private key and
+    /// only a trusted owner may replace it: on Unix it is owned by root or the process's user and not
+    /// writable by group or other users; on Windows no broad principal may write, delete, change the
+    /// permissions of, or take ownership of it. A broader-than-expected permission is a hard failure,
     /// not a warning.
     /// </para>
     /// <para>

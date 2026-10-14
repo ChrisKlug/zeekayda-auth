@@ -588,6 +588,7 @@ public sealed class PemFileSigningKeySourceTests
     [Theory]
     [InlineData(FileSystemRights.WriteData)]
     [InlineData(FileSystemRights.AppendData)]
+    [InlineData(FileSystemRights.Delete)]
     [InlineData(FileSystemRights.ChangePermissions)]
     [InlineData(FileSystemRights.TakeOwnership)]
     [SupportedOSPlatform("windows")]
@@ -623,6 +624,85 @@ public sealed class PemFileSigningKeySourceTests
         var listing = await sut.ReadAsync(ct);
 
         listing.ShouldReportOnly(certPath, "signing.file_signing.private_key_in_certificate_file");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_certificate_only_file_carrying_a_private_key_without_its_footer()
+    {
+        // A key that lost its END line when a combined file was split is still recoverable key material.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var keyPem = certificate.GetRSAPrivateKey()!.ExportPkcs8PrivateKeyPem();
+        var withoutFooter = keyPem[..keyPem.IndexOf("-----END", StringComparison.Ordinal)];
+        var certPath = tempDir.WriteTextFile("cert.pem", certificate.ExportCertificatePem() + "\n" + withoutFooter);
+        var keyPath = tempDir.WriteKeyOnlyPemFile("key.pem", certificate);
+        var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(certPath, "signing.file_signing.private_key_in_certificate_file");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_a_chain_file_whose_first_certificate_issued_the_second()
+    {
+        // An X.509 v1 root carries no Basic Constraints, so only issuance shows it is the CA.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var (root, leaf, leafKey) = CreateChain(rootIsMarkedCa: false);
+        using (root)
+        using (leaf)
+        using (leafKey)
+        {
+            var certPath = tempDir.WriteTextFile("chain.pem", root.ExportCertificatePem() + "\n" + leaf.ExportCertificatePem());
+            var keyPath = tempDir.WriteTextFile("key.pem", leafKey.ExportPkcs8PrivateKeyPem());
+            var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+
+            var listing = await sut.ReadAsync(ct);
+
+            listing.ShouldReportOnly(certPath, "signing.file_signing.certificate_is_a_ca");
+        }
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_reports_a_chain_reordered_root_first_after_listing_as_certificate_is_a_ca()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var (root, leaf, leafKey) = CreateChain(rootIsMarkedCa: true);
+        using (root)
+        using (leaf)
+        using (leafKey)
+        {
+            var certPath = tempDir.WriteTextFile("chain.pem", leaf.ExportCertificatePem() + "\n" + root.ExportCertificatePem());
+            var keyPath = tempDir.WriteTextFile("key.pem", leafKey.ExportPkcs8PrivateKeyPem());
+            var sut = BuildSource(new PemSigningFile(certPath, keyPath));
+            var id = (await sut.ReadAsync(ct)).Keys.Single().Id;
+            tempDir.WriteTextFile("chain.pem", root.ExportCertificatePem() + "\n" + leaf.ExportCertificatePem());
+
+            var act = async () => await sut.CreateSignerAsync(id, ct);
+
+            (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+                .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.certificate_is_a_ca");
+        }
+    }
+
+    private static (X509Certificate2 Root, X509Certificate2 Leaf, RSA LeafKey) CreateChain(bool rootIsMarkedCa)
+    {
+        using var rootKey = RSA.Create(2048);
+        var rootRequest = new CertificateRequest("CN=test-root", rootKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        if (rootIsMarkedCa)
+            rootRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+        var root = rootRequest.CreateSelfSigned(T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var leafKey = RSA.Create(2048);
+        var leafRequest = new CertificateRequest("CN=test", leafKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+
+        // The generator overload, because Create(X509Certificate2, ...) refuses an issuer not marked as a CA.
+        var leaf = leafRequest.Create(
+            root.SubjectName, X509SignatureGenerator.CreateForRSA(rootKey, RSASignaturePadding.Pkcs1),
+            T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(30), [1, 2, 3, 4]);
+        return (root, leaf, leafKey);
     }
 
     [Fact]

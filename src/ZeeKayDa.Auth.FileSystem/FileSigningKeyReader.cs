@@ -268,6 +268,15 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
                     "Anyone who can write it can publish their own key. Run 'chmod 644' on the file."));
             }
 
+            // A readable file no longer proves the process owns it, and its owner can rewrite it.
+            if (!IsTrustedOwner(PosixInterop.GetOwnerUid(stream.SafeFileHandle), PosixInterop.GetEffectiveUid()))
+            {
+                throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.file_too_permissive",
+                    $"Certificate file '{path}' is owned by neither root nor the user the process runs as. " +
+                    "Its owner can rewrite it and publish their own key. Change its owner with 'chown'."));
+            }
+
             return;
         }
 
@@ -280,6 +289,13 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
                 "Run 'chmod 600' on the file and restart the application."));
         }
     }
+
+    /// <summary>
+    /// Whether a certificate file's owner may be trusted to write it: root, or the process's own user.
+    /// An owner that cannot be read is not trusted.
+    /// </summary>
+    internal static bool IsTrustedOwner(uint? ownerUid, uint effectiveUid) =>
+        ownerUid is { } owner && (owner == 0 || owner == effectiveUid);
 
     [SupportedOSPlatform("windows")]
     private static void ValidateAclWindows(FileStream stream, string path, SigningFileContent content)
@@ -301,8 +317,8 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
                 throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
                     "signing.file_signing.file_too_permissive",
                     $"Certificate file '{path}' grants a broad principal ('Everyone', 'Users', or " +
-                    "'Authenticated Users') the right to write it, change its permissions, or take ownership " +
-                    "of it. Anyone who can write it can publish their own key. Remove those rights."));
+                    "'Authenticated Users') the right to write, delete, change the permissions of, or take " +
+                    "ownership of it. Anyone who can replace it can publish their own key. Remove those rights."));
             }
 
             return;
@@ -319,9 +335,10 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
     }
 
     // Changing the ACL or taking ownership is a write once removed: the holder can grant themselves write.
+    // Delete lets the holder replace the file.
     [SupportedOSPlatform("windows")]
     private static bool GrantsWrite(FileSystemAccessRule rule) =>
-        (rule.FileSystemRights & (FileSystemRights.Write | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership)) != 0;
+        (rule.FileSystemRights & (FileSystemRights.Write | FileSystemRights.Delete | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership)) != 0;
 
     [SupportedOSPlatform("windows")]
     private static bool IsBroadPrincipal(SecurityIdentifier sid) =>
