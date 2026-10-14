@@ -208,6 +208,20 @@ public sealed class PfxFileSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_reports_a_password_source_that_returns_null_as_password_unavailable()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
+        var sut = BuildSource([new PfxFile(path, _ => Task.FromResult<string>(null!))]);
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(path, "signing.file_signing.password_unavailable");
+    }
+
+    [Fact]
     public async Task ReadAsync_never_reports_a_configuration_failure_thrown_by_the_password_source_in_its_own_words()
     {
         // The password source is host code: a failure it raises may carry the secret it failed to fetch.

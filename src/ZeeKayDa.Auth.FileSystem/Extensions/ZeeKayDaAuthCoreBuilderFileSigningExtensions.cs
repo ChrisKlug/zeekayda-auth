@@ -38,6 +38,11 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// broader-than-expected permission is a hard startup failure, not a warning.
     /// </para>
     /// <para>
+    /// A PKCS#8-encrypted key takes <paramref name="passwordSource"/>, which adds defense in depth on
+    /// top of the permissions — see <see cref="PemSigningFile.PasswordSource"/> for when it is invoked
+    /// and what it protects against.
+    /// </para>
+    /// <para>
     /// To rotate, use the
     /// <see cref="AddPemFileSigning{TBuilder}(TBuilder,SigningAlgorithm,Action{PemFileSigningOptions})"/>
     /// overload and list both files.
@@ -55,6 +60,10 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// <see langword="null"/> (the default) when <paramref name="path"/> is a combined cert+key
     /// file.
     /// </param>
+    /// <param name="passwordSource">
+    /// Supplies the password of an encrypted private key, or <see langword="null"/> (the default) when
+    /// the key is not encrypted.
+    /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
@@ -71,7 +80,8 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
         this TBuilder builder,
         string path,
         SigningAlgorithm algorithm,
-        string? keyPath = null)
+        string? keyPath = null,
+        Func<CancellationToken, Task<string>>? passwordSource = null)
         where TBuilder : ZeeKayDaAuthCoreBuilder
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -80,7 +90,7 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
         if (keyPath is not null)
             ArgumentException.ThrowIfNullOrWhiteSpace(keyPath);
 
-        return AddPemFileSigning(builder, algorithm, options => options.Files.Add(new PemSigningFile(path, keyPath)));
+        return AddPemFileSigning(builder, algorithm, options => options.Files.Add(new PemSigningFile(path, keyPath, passwordSource)));
     }
 
     /// <summary>
@@ -95,7 +105,7 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// </para>
     /// <para>
     /// Filesystem permissions are enforced fail-closed on every loaded file, exactly as for
-    /// <see cref="AddPemFileSigning{TBuilder}(TBuilder,string,SigningAlgorithm,string)"/>.
+    /// <see cref="AddPemFileSigning{TBuilder}(TBuilder,string,SigningAlgorithm,string,Func{CancellationToken,Task{string}})"/>.
     /// </para>
     /// <para>
     /// Rotation: add the successor's file and restart. It is published at once and signs once it has
@@ -151,7 +161,7 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// <remarks>
     /// <para>
     /// Filesystem permissions are enforced fail-closed exactly as for
-    /// <see cref="AddPemFileSigning{TBuilder}(TBuilder,string,SigningAlgorithm,string)"/>. The PFX
+    /// <see cref="AddPemFileSigning{TBuilder}(TBuilder,string,SigningAlgorithm,string,Func{CancellationToken,Task{string}})"/>. The PFX
     /// password adds defense in depth on top of that — see
     /// <see cref="PfxFile.PasswordSource"/> for why it is an async delegate rather than a
     /// plain <see langword="string"/>.

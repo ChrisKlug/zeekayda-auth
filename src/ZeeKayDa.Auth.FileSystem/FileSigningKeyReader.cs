@@ -62,20 +62,6 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
         return bytes;
     }
 
-    /// <summary>
-    /// Opens and validates <paramref name="path"/> exactly as a read would, without reading it, so a
-    /// private-key file is held to the same rules before it is ever needed.
-    /// </summary>
-    /// <param name="path">The operator-supplied path.</param>
-    /// <exception cref="ZeeKayDaConfigurationException">
-    /// Thrown when the file does not exist, resolves through a symlink, or has permissions/ACL
-    /// broader than allowed.
-    /// </exception>
-    public void Validate(string path)
-    {
-        using var stream = OpenValidated(path);
-    }
-
     private FileStream OpenValidated(string path)
     {
         var stream = OpenOrThrowMissing(path);
@@ -127,23 +113,6 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
         {
             WarnMissing(path);
             return null;
-        }
-    }
-
-    /// <summary>
-    /// <see cref="Validate"/>, or <see langword="false"/> with a Warning when the file does not exist.
-    /// </summary>
-    public bool TryValidate(string path)
-    {
-        try
-        {
-            Validate(path);
-            return true;
-        }
-        catch (ZeeKayDaConfigurationException ex) when (ex.AggregatedFailures[0].Code == FileNotFoundCode)
-        {
-            WarnMissing(path);
-            return false;
         }
     }
 
