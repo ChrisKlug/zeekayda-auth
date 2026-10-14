@@ -2397,7 +2397,7 @@ High or Critical open. `ac69445`, `29c14bd`, `a3481a5` and `975de49` were read b
 ## 2026-10-14 — signing review follow-ups: certificate-only PEM files, wiped PEM buffers, root-first chains (#918, code frozen at `f1c4709`)
 Copilot code lens (Highs fixed, fix diff verified), security lens (High fixed, fix diff verified), the security agent (sign-off; two fix diffs verified, the last at `639ac35`),
 and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `46e9ad7`, `48f4c2e` and the merge `f1c4709` were read by the main session and the PR bots only.
-- A certificate-only file may be world-readable, but only a trusted owner may replace it: Unix refuses group/other write and any owner but root or the effective uid (`fstat` on the open handle);
+- A certificate-only file may be world-readable, but not replaceable through its mode bits, broad-principal ACL entries or ownership: Unix refuses group/other write and any owner but root or the effective uid (`fstat` on the open handle);
   Windows refuses broad-principal write, delete, ACL change or take-ownership, and any owner but the process identity, SYSTEM or Administrators. Closed —
   `ReadAsync_accepts_a_world_readable_certificate_only_file_beside_an_owner_only_key_file`, `ReadAsync_rejects_a_certificate_only_file_writable_by_group_or_other_on_Unix`,
   `IsTrustedOwner_trusts_root_and_the_process_user_only`, `GetOwnerUid_of_a_file_the_test_created_is_the_effective_uid`,
@@ -2411,3 +2411,4 @@ and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `46
   `ReadAsync_accepts_a_lone_self_signed_certificate_marked_as_a_ca`, `CreateSignerAsync_reports_a_chain_reordered_root_first_after_listing_as_certificate_is_a_ca`.
 - **Accepted residuals (maintainer):** no test drives the Unix owner reject path through the real `fstat` (needs `chown` as root) — `IsTrustedOwner_trusts_root_and_the_process_user_only` proves the policy.
   A version 1 root placed first is not caught at listing; it fails at the handover's pairing. **Not covered:** the macOS x86_64 `$INODE64` binding runs on no CI leg.
+  A write grant to a named Windows account, or a POSIX ACL entry, is not inspected — the same model the key-file check has always used, so this sign-off does not claim the file is writable by its owner alone.
