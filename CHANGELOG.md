@@ -15,7 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **A PEM chain whose first certificate is a CA is refused** (#918). `CreateFromPem` takes a file's
   first certificate, so a chain written root-first published the CA's key, then failed at the handover
-  that chose it. Listing now fails with `signing.file_signing.certificate_is_a_ca`.
+  that chose it. A chain whose first certificate is a CA, or issued the second, now fails with
+  `signing.file_signing.certificate_is_a_ca`. A lone self-signed certificate marked as a CA, which
+  `openssl req -x509` produces by default, is still accepted.
 
 - **A PFX bundle's private key no longer touches a platform key store** (#434). Opening a PFX
   signer used `X509CertificateLoader.LoadPkcs12`, which builds an OS-backed certificate: on Windows
@@ -963,9 +965,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **A world-readable certificate-only PEM file is accepted** (#918). certbot writes `fullchain.pem`
   as `0644`, which the PEM source refused. A file named as the certificate beside a separate key file
-  is now refused only when group or other users can write it; every rule on the key file stays. Such a
-  file must carry no private key, now refused with `signing.file_signing.private_key_in_certificate_file`
-  with or without a password, which replaces `key_encryption_mismatch` for that case.
+  may now be read by anyone, but only a trusted owner may replace it: on Unix it must be owned by root
+  or the process's user and not writable by group or other users; on Windows no broad principal may
+  write, delete, change the permissions of, or take ownership of it. Every rule on the key file stays.
+  Such a file must carry no private key marker at all, refused with
+  `signing.file_signing.private_key_in_certificate_file` with or without a password, which replaces
+  `key_encryption_mismatch` for that case.
+
+- **A password-protected PEM key refuses a plaintext copy that lost its footer** (#918). Only
+  well-formed blocks were judged, so an unencrypted copy missing its `END` line passed beside the
+  encrypted key and defeated the password. Any unencrypted key boundary line is now refused with
+  `signing.file_signing.key_encryption_mismatch`.
 
 - **The Azure Key Vault sources fetch a version's public key once** (#918). Every refresh re-fetched the
   public material of every listed version; a refresh is now the version listing plus one fetch per
