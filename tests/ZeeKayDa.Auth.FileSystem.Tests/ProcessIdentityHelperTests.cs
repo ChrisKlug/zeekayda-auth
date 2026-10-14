@@ -1,10 +1,8 @@
-namespace ZeeKayDa.Auth.Tests;
+namespace ZeeKayDa.Auth.FileSystem.Tests;
 
 /// <summary>
-/// Direct tests for <see cref="ProcessIdentityHelper"/>, the shared best-effort process-identity
-/// resolver used by both <c>ZeeKayDa.Auth.FileSystem</c>'s and <c>ZeeKayDa.Auth.Windows</c>'s
-/// access-denied diagnostic messages (issue #406; consolidated from two verbatim copies per
-/// PR #410's review).
+/// Direct tests for <see cref="ProcessIdentityHelper"/>, the best-effort process-identity resolver
+/// behind the access-denied messages. The Windows provider compiles the same source file.
 /// </summary>
 public sealed class ProcessIdentityHelperTests
 {

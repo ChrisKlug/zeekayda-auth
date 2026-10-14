@@ -47,15 +47,12 @@ referencing only core has no other way to reach them. Attempting to solve a thir
 friend grant is the mistake this rule exists to prevent — it can serve exactly one named package, and
 never the next one without a new core release.
 
-**Three friend grants to shipped packages, each a reviewed exception.** The file-system provider
-reuses core's POSIX `stat`/`lstat` interop rather than forking security-critical, ABI-fragile P/Invoke
-that has already needed a security fix once. The Windows provider reuses core's process-identity
-helper for access-denied diagnostics. The conformance kit needs to construct store keys so a third
-party can derive the fixtures from their own test project without any grant of their own, and to
-build the signing key ring for `SigningKeyRingHarness`, which is how any signing key source's tests,
-first-party or not, drive the ring over their source on a fake clock. All three
-ship in lockstep with core. The rule around them: **anything expressible through core's public surface
-must use it** — these are not a pattern to copy.
+**One friend grant to a shipped package, a reviewed exception.** The conformance kit needs to construct
+store keys so a third party can derive the fixtures from their own test project without any grant of their
+own, to build the signing key ring for `SigningKeyRingHarness`, and to build a `SanitizingLogger<T>` for
+`TestSanitizingLogger`, so any provider's tests, first-party or not, reach what they need through it. It
+ships in lockstep with core. Provider packages and their tests get no grant: they are held to what a third
+party could build, and code two providers share is a linked source file, not core internals.
 
 **The enumerated public extension surface is the SemVer contract.** What a third party may implement:
 the startup verifier (`IStartupVerifier`) and startup activator (`IStartupActivator`), the claims
@@ -84,8 +81,9 @@ either, and a member whose type a BCL contract fixes (`IAsyncDisposable.DisposeA
 
 **The sanitizing logger is inject-only, enforced by the type system.** `SanitizingLogger<T>` is a
 public class so provider packages can constructor-inject it, with an `internal` constructor so nothing
-outside the framework can construct or derive one; any registration of it is therefore the framework's
-redacting logger. Accepted cost: a host cannot decorate it.
+outside the framework can derive one, or construct one except through the TestKit's `TestSanitizingLogger`,
+which builds the same redacting logger for tests; any instance is therefore the framework's redacting
+logger. Accepted cost: a host cannot decorate it.
 
 **Coordinator interfaces grow by adding members outright, not by splitting into capability
 interfaces.** Capability splitting is refused: it multiplies the interfaces a backend must discover,
