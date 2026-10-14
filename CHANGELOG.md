@@ -15,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **A PEM chain whose first certificate is a CA is refused** (#918). `CreateFromPem` takes a file's
   first certificate, so a chain written root-first published the CA's key, then failed at the handover
-  that chose it. A chain whose first certificate is a CA, or issued the second, now fails with
+  that chose it. A chain whose first certificate is a CA now fails with
   `signing.file_signing.certificate_is_a_ca`. A lone self-signed certificate marked as a CA, which
   `openssl req -x509` produces by default, is still accepted.
 

@@ -1,3 +1,5 @@
+using System.Runtime.Versioning;
+using System.Security.Principal;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.FileSystem.Tests.Fixtures;
 using ZeeKayDa.Auth.Tokens;
@@ -264,5 +266,24 @@ public sealed class FileSigningKeyReaderTests
 
         if (!OperatingSystem.IsWindows())
             PosixInterop.GetOwnerUid(handle).Should().Be(PosixInterop.GetEffectiveUid());
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public void IsTrustedOwner_on_Windows_trusts_the_process_identity_SYSTEM_and_Administrators_only()
+    {
+        // An owner may always change the ACL, so an untrusted owner of a readable certificate file could swap it.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "SIDs are the Windows ownership model.");
+
+        var processUser = WindowsIdentity.GetCurrent().User!;
+        var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, domainSid: null);
+        var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, domainSid: null);
+        var users = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, domainSid: null);
+
+        FileSigningKeyReader.IsTrustedOwner(processUser, processUser).Should().BeTrue();
+        FileSigningKeyReader.IsTrustedOwner(system, processUser).Should().BeTrue();
+        FileSigningKeyReader.IsTrustedOwner(administrators, processUser).Should().BeTrue();
+        FileSigningKeyReader.IsTrustedOwner(users, processUser).Should().BeFalse();
+        FileSigningKeyReader.IsTrustedOwner(null, processUser).Should().BeFalse();
     }
 }

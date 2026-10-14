@@ -201,32 +201,14 @@ internal sealed class PemFileSigningKeySource(
     }
 
     /// <summary>
-    /// Refuses a chain whose first certificate is a CA, or issued the certificate after it.
-    /// <c>CreateFromPem</c> takes a file's first <c>CERTIFICATE</c> block, so a chain written root-first
-    /// would publish the CA's key, then fail to pair with the private key when it is chosen to sign. A
-    /// lone certificate is not a chain: a self-signed one from <c>openssl req -x509</c> is marked as a
-    /// CA by default. Issuance is checked as well because an X.509 v1 root carries no CA marker.
+    /// Refuses a chain whose first certificate is a CA. <c>CreateFromPem</c> takes a file's first
+    /// <c>CERTIFICATE</c> block, so a chain written root-first would publish the CA's key, then fail to
+    /// pair with the private key when it is chosen to sign. A lone certificate is not a chain: a
+    /// self-signed one from <c>openssl req -x509</c> is marked as a CA by default.
     /// </summary>
     private static X509Certificate2 RefuseRootFirstChain(X509Certificate2 certificate, ReadOnlySpan<char> certPem, string certificatePath)
     {
-        X509Certificate2? secondOrNull;
-        try
-        {
-            secondOrNull = SecondCertificate(certPem);
-        }
-        catch (Exception ex) when (ex is CryptographicException or FormatException)
-        {
-            certificate.Dispose();
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.file_signing.invalid_pem",
-                    $"The second certificate in '{certificatePath}' is not a valid certificate: " +
-                    $"{ex.GetType().FullName} was thrown. See the inner exception for the root cause."),
-                ex);
-        }
-
-        using var second = secondOrNull;
-        if (second is null || !IsIssuerOf(certificate, second))
+        if (!IsMarkedCa(certificate) || CertificateCount(certPem) < 2)
             return certificate;
 
         certificate.Dispose();
@@ -237,23 +219,21 @@ internal sealed class PemFileSigningKeySource(
                 "come first in the file, followed by its issuers; reorder the chain leaf-first."));
     }
 
-    private static bool IsIssuerOf(X509Certificate2 first, X509Certificate2 second) =>
-        first.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault() is { CertificateAuthority: true }
-        || first.SubjectName.RawData.AsSpan().SequenceEqual(second.IssuerName.RawData);
+    private static bool IsMarkedCa(X509Certificate2 certificate) =>
+        certificate.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault() is { CertificateAuthority: true };
 
-    /// <summary>The second <c>CERTIFICATE</c> block of <paramref name="pem"/>, or <see langword="null"/> when there is none.</summary>
-    private static X509Certificate2? SecondCertificate(ReadOnlySpan<char> pem)
+    private static int CertificateCount(ReadOnlySpan<char> pem)
     {
-        var seen = 0;
+        var count = 0;
         while (PemEncoding.TryFind(pem, out var fields))
         {
-            if (pem[fields.Label].SequenceEqual("CERTIFICATE") && ++seen == 2)
-                return X509CertificateLoader.LoadCertificate(Convert.FromBase64String(pem[fields.Base64Data].ToString()));
+            if (pem[fields.Label].SequenceEqual("CERTIFICATE"))
+                count++;
 
             pem = pem[fields.Location.End.Value..];
         }
 
-        return null;
+        return count;
     }
 
     /// <summary>

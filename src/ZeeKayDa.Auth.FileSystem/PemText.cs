@@ -11,12 +11,13 @@ namespace ZeeKayDa.Auth.FileSystem;
 internal sealed class PemText : IDisposable
 {
     private char[]? _buffer;
+    private readonly ArrayPool<char> _pool;
     private readonly int _length;
-
     private readonly byte[] _hash;
 
-    private PemText(char[] buffer, int length, byte[] hash)
+    private PemText(ArrayPool<char> pool, char[] buffer, int length, byte[] hash)
     {
+        _pool = pool;
         _buffer = buffer;
         _length = length;
         _hash = hash;
@@ -33,22 +34,27 @@ internal sealed class PemText : IDisposable
     public ReadOnlySpan<char> Span => Memory.Span;
 
     /// <summary>Decodes <paramref name="bytes"/> as UTF-8 and wipes them.</summary>
-    public static PemText Decode(byte[] bytes)
+    public static PemText Decode(byte[] bytes) => Decode(bytes, ArrayPool<char>.Shared);
+
+    /// <summary>
+    /// <see cref="Decode(byte[])"/> renting from <paramref name="pool"/>, so a test can observe what is returned.
+    /// </summary>
+    internal static PemText Decode(byte[] bytes, ArrayPool<char> pool)
     {
         char[]? buffer = null;
         try
         {
             var length = Encoding.UTF8.GetCharCount(bytes);
-            buffer = ArrayPool<char>.Shared.Rent(length);
+            buffer = pool.Rent(length);
             Encoding.UTF8.GetChars(bytes, buffer);
-            return new PemText(buffer, length, SHA256.HashData(bytes));
+            return new PemText(pool, buffer, length, SHA256.HashData(bytes));
         }
         catch
         {
             if (buffer is not null)
             {
                 buffer.AsSpan().Clear();
-                ArrayPool<char>.Shared.Return(buffer);
+                pool.Return(buffer);
             }
 
             throw;
@@ -65,6 +71,6 @@ internal sealed class PemText : IDisposable
             return;
 
         buffer.AsSpan().Clear();
-        ArrayPool<char>.Shared.Return(buffer);
+        _pool.Return(buffer);
     }
 }

@@ -330,6 +330,16 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
                     "ownership of it. Anyone who can replace it can publish their own key. Remove those rights."));
             }
 
+            // An owner may always change the ACL, so an untrusted owner can grant themselves write.
+            var owner = security.GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+            if (!IsTrustedOwner(owner, WindowsIdentity.GetCurrent().User))
+            {
+                throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.file_too_permissive",
+                    $"Certificate file '{path}' is owned by neither the process identity, SYSTEM, nor " +
+                    "Administrators. Its owner can change its ACL and publish their own key. Change its owner."));
+            }
+
             return;
         }
 
@@ -348,6 +358,17 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
     [SupportedOSPlatform("windows")]
     private static bool GrantsWrite(FileSystemAccessRule rule) =>
         (rule.FileSystemRights & (FileSystemRights.Write | FileSystemRights.Delete | FileSystemRights.ChangePermissions | FileSystemRights.TakeOwnership)) != 0;
+
+    /// <summary>
+    /// Whether a certificate file's Windows owner may be trusted to write it: the process identity,
+    /// SYSTEM, or Administrators. An owner that cannot be read is not trusted.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    internal static bool IsTrustedOwner(SecurityIdentifier? owner, SecurityIdentifier? processUser) =>
+        owner is not null
+        && (owner == processUser
+            || owner.IsWellKnown(WellKnownSidType.LocalSystemSid)
+            || owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid));
 
     [SupportedOSPlatform("windows")]
     private static bool IsBroadPrincipal(SecurityIdentifier sid) =>
