@@ -54,6 +54,9 @@ publish public `Cer` halves only (no `secrets/get`); that version's private key 
 
 **Listing a bundled format imports no private key.** PFX verifies the MAC against the password and takes the
 certificate the key bag's `localKeyId` names — PKCS#12 has no bag ordering; only the chosen bundle's key is imported.
+**A PKCS#12 key reaches memory, never a key store.** PFX and cached Key Vault signing import the key bag
+straight into an in-memory `RSA`/`ECDsa`; no certificate carrying a private key is built, so Windows
+writes no key container and macOS no keychain. PFX imports the bag the listing paired, by the same selection.
 
 **Every signer handoff is self-tested before the signer is used.** `SigningKeyRing` signs a
 non-JWS-shaped constant prefix plus a fresh 32-byte nonce and verifies it against that key's own published
@@ -141,8 +144,6 @@ development provider stays in core.
   the gate's input (the host environment name) with its policy (inert unless a development-key method was called).
 - **Hand-rolled key-pairing checks in the Windows and cached Key Vault providers.** Superseded — the same
   invariant is proven on every handoff.
-- **`EphemeralKeySet` to keep a non-active PFX bundle's key off disk.** Platform-conditional (macOS throws)
-  and it still materialises the key. Never decrypting the key bag beats it everywhere.
 - **A macOS Keychain signing provider.** Implemented and reviewed, then descoped: the file-system provider
   already covers macOS and Linux without native interop.
 - **A factory overload, and two more registration checks.** The overload was a second way to build a source;

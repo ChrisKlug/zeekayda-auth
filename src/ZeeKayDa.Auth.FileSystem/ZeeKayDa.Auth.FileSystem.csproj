@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <Compile Include="../Shared/ProcessIdentityHelper.cs" Link="ProcessIdentityHelper.cs" />
+    <Compile Include="../Shared/Pkcs12PrivateKey.cs" Link="Pkcs12PrivateKey.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -381,6 +381,30 @@ public sealed class PfxFileSigningKeySourceTests
     }
 
     [Fact]
+    public async Task CreateSignerAsync_imports_the_key_bag_paired_to_the_certificate_the_read_reported()
+    {
+        // The issuer's key is the first key bag in the file. Importing it would sign with a key whose
+        // public half is not the one published, so every token would fail verification.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var (bundle, signingPublicKey) = AdversarialPkcs12Factory.IssuerKeyStoredBeforeSigningKey(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
+        var path = tempDir.WriteBytes("current.pfx", bundle);
+        var sut = BuildSource(new PfxFile(path, Password()));
+        var keySet = (await sut.ReadAsync(ct)).Keys;
+
+        using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
+        var signingInput = "header.payload"u8.ToArray();
+        var signature = await signer.SignAsync(signingInput, ct);
+
+        keySet.Single().PublicKey.RsaPublicParameters!.Value.Modulus
+            .Should().BeEquivalentTo(signingPublicKey.Modulus, "the read reports the leaf, not the issuer");
+        using var rsa = RSA.Create(signingPublicKey);
+        rsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .Should().BeTrue("the signer must import the key paired with the listed certificate");
+    }
+
+    [Fact]
     public async Task ReadAsync_rejects_a_bundle_with_several_certificates_and_nothing_identifying_the_signer()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -804,10 +828,10 @@ public sealed class PfxFileSigningKeySourceTests
     }
 
     [Fact]
-    public async Task CreateSignerAsync_throws_private_key_not_found_when_a_bundle_that_has_since_lost_its_key_is_asked_to_sign()
+    public async Task CreateSignerAsync_throws_invalid_pfx_when_a_bundle_that_has_since_lost_its_key_is_asked_to_sign()
     {
         // ReadAsync rejects a keyless bundle, so this is the file being swapped for a key-stripped one
-        // after the read: the signer must fail with the certificate-level code, not sign garbage or NRE.
+        // after the read: the signer runs the read's own selection, so it fails the read's way.
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
         using var certificate = CreateRsaCertificate();
@@ -819,7 +843,7 @@ public sealed class PfxFileSigningKeySourceTests
 
         var exception = await act.Should().ThrowAsync<ZeeKayDaConfigurationException>();
         exception.Which.AggregatedFailures.Should().ContainSingle(
-            f => f.Code == "signing.certificate.private_key_not_found");
+            f => f.Code == "signing.file_signing.invalid_pfx" && f.Message.Contains("carries no private key"));
     }
 
     [Fact]
@@ -863,13 +887,10 @@ public sealed class PfxFileSigningKeySourceTests
     [Fact]
     public async Task CreateSignerAsync_names_the_parser_exception_type_rather_than_copying_its_message()
     {
-        // The signer path loads the bundle under the configured password, so the parser's text is
-        // raised over a password-protected read. Only the type is reported.
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
-        using var certificate = CreateRsaCertificate();
-        var path = tempDir.WritePfxFile("current.pfx", certificate, CorrectPassword);
-        var sut = BuildSource(new PfxFile(path, Password("not the password")));
+        var path = tempDir.WriteBytes("current.pfx", [0x01, 0x02, 0x03, 0x04]);
+        var sut = BuildSource(new PfxFile(path, Password()));
 
         var act = async () => await sut.CreateSignerAsync(new SourceKeyId(path), ct);
 

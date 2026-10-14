@@ -249,6 +249,46 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
+    /// A chain bundle that also carries the issuer's private key, unmarked and stored before the
+    /// signing key, which is paired with the signing certificate by <c>localKeyId</c>. "The first key
+    /// in the file" is the issuer's, not the one that signs.
+    /// </summary>
+    /// <returns>The bundle, and the public key of the certificate that actually signs.</returns>
+    public static (byte[] Bundle, RSAParameters SigningPublicKey) IssuerKeyStoredBeforeSigningKey(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var caKey = RSA.Create(2048);
+        var caRequest = new CertificateRequest(
+            "CN=test-chain-ca", caKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        caRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+        using var ca = caRequest.CreateSelfSigned(notBefore.AddDays(-1), notAfter.AddDays(1));
+        using var caPublicOnly = X509CertificateLoader.LoadCertificate(ca.Export(X509ContentType.Cert));
+
+        using var leafKey = RSA.Create(2048);
+        var leafRequest = new CertificateRequest(
+            "CN=test-signing-leaf", leafKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        leafRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+        using var leaf = leafRequest.Create(ca, notBefore, notAfter, [1, 2, 3, 4]);
+
+        var localKeyId = new byte[] { 0xAA, 0xBB };
+
+        var certificates = new Pkcs12SafeContents();
+        certificates.AddCertificate(caPublicOnly);
+        certificates.AddCertificate(leaf).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var keys = new Pkcs12SafeContents();
+        keys.AddShroudedKey(caKey, password, Pbe);
+        keys.AddShroudedKey(leafKey, password, Pbe).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
+        builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+        return (builder.Encode(), leafKey.ExportParameters(false));
+    }
+
+    /// <summary>
     /// A bundle whose key bag names a <c>localKeyId</c> no certificate carries, with more than one
     /// certificate present — so the key's own certificate is not in the file.
     /// </summary>
