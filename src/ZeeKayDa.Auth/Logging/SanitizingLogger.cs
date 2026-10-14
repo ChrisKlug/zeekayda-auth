@@ -53,7 +53,8 @@ namespace ZeeKayDa.Auth.Logging;
 /// Inject this type wherever a ZeeKayDa service logs; the <c>ZEEKAYDA0001</c> analyzer enforces it
 /// over a direct <see cref="ILogger{T}"/>. It is public so a provider package referencing only core
 /// ZeeKayDa.Auth can inject it, and its only constructor is internal, so no other assembly can
-/// construct or derive from it: a registration can never substitute a logger that skips redaction.
+/// derive from it, or construct it except through the TestKit's <c>TestSanitizingLogger</c>, which
+/// builds this same redacting logger: a registration can never substitute one that skips redaction.
 /// </para>
 /// </remarks>
 /// <typeparam name="T">The type whose name is used for the logger category.</typeparam>

@@ -22,8 +22,7 @@ public static class TestSanitizingLogger
     /// <typeparam name="T">The type whose name is used for the logger category.</typeparam>
     /// <param name="inner">The logger that receives the redacted output.</param>
     /// <returns>A sanitizing logger writing to <paramref name="inner"/>.</returns>
-    // Wrapping a raw logger is this method's whole job, as it is for the logger types the rule exempts.
-#pragma warning disable ZEEKAYDA0001
+#pragma warning disable ZEEKAYDA0001 // log-hygiene-ok: wrapping a raw logger is this method's whole job, as for the logger types the rule exempts (#912)
     public static SanitizingLogger<T> Create<T>(ILogger<T> inner)
 #pragma warning restore ZEEKAYDA0001
     {

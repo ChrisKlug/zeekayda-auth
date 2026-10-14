@@ -81,8 +81,9 @@ either, and a member whose type a BCL contract fixes (`IAsyncDisposable.DisposeA
 
 **The sanitizing logger is inject-only, enforced by the type system.** `SanitizingLogger<T>` is a
 public class so provider packages can constructor-inject it, with an `internal` constructor so nothing
-outside the framework can construct or derive one; any registration of it is therefore the framework's
-redacting logger. Accepted cost: a host cannot decorate it.
+outside the framework can derive one, or construct one except through the TestKit's `TestSanitizingLogger`,
+which builds the same redacting logger for tests; any instance is therefore the framework's redacting
+logger. Accepted cost: a host cannot decorate it.
 
 **Coordinator interfaces grow by adding members outright, not by splitting into capability
 interfaces.** Capability splitting is refused: it multiplies the interfaces a backend must discover,
