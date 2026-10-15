@@ -37,8 +37,7 @@ internal static class BasicAuthorizationHeader
             !string.Equals(username, clientId, StringComparison.Ordinal))
             return null;
 
-        // Two conflicting client_id values in one request is a protocol error, whichever one the
-        // caller used to look up the client.
+        // Two conflicting client_id values are a protocol error, whichever one looked up the client.
         var formClientId = form["client_id"].ToString();
         return formClientId.Length > 0 && !string.Equals(formClientId, username, StringComparison.Ordinal)
             ? null

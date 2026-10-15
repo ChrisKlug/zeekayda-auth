@@ -9,19 +9,10 @@ using ZeeKayDa.Auth.Scopes;
 namespace ZeeKayDa.Auth.AspNetCore.Tokens;
 
 /// <summary>
-/// Turns a set of granted scopes into the subject claims one destination carries, and — for the
-/// tokens the token endpoint issues — the audience its access token names: resolves the scopes,
-/// checks the client's additions against them, asks the host's <see cref="IClaimsProvider"/> for
-/// the pool, and selects from it. Every failure is logged here, once, and answered as an outcome.
-/// One path for both destinations, so the selection rules cannot drift apart between the tokens a
-/// grant becomes and the claims userinfo answers with.
+/// Turns granted scopes into the claims one destination carries, and for tokens the access token's
+/// audience. One path for tokens and userinfo, so their selection rules cannot drift apart. Every
+/// failure is logged here once and answered as an outcome; no claim value reaches a log line.
 /// </summary>
-/// <remarks>
-/// The provider is resolved from the request's services on every call: it is registered scoped,
-/// so a per-request database context works, and it is called fresh per issuance by design. No
-/// claim value reaches a log line from this type; a provider's exception is logged through the
-/// sanitizing logger, which redacts its message and keeps its type and stack.
-/// </remarks>
 internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, SanitizingLogger<GrantClaimsResolver> logger)
 {
     /// <summary>Resolves the subject claims a destination carries, or says why it could not.</summary>
@@ -41,23 +32,14 @@ internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, Sanitizi
         }
         catch (ScopeContractException ex)
         {
-            // The scope repository broke its contract after startup passed. Nothing can be
-            // resolved without it, and a grant must not be served against half a configuration:
-            // answered as the server error it is, with the broken rule named for the operator.
-            // The codes and messages, not ex.Message: the composed message adds a count and a
-            // preamble the operator does not need. Safe to log only because ScopeContractException
-            // is internal, so every failure here is this framework's own text; one the repository
-            // threw is not caught and never reaches a log line by message.
             logger.LogError(
                 "Claims for a grant to client {ClientId} could not be resolved because the scope repository broke its contract: {Detail}",
                 client.ClientId,
-                string.Join("; ", ex.AggregatedFailures.Select(failure => $"[{failure.Code}] {failure.Message}")));
+                ex.DescribeFailures());
             return GrantClaimsOutcome.Failed.Instance;
         }
 
-        // Every rule below was already applied to the effective scope at the authorization
-        // endpoint, and consent and refresh only narrow, so a failure here is a configuration
-        // that changed under a live grant: the server's fault, and answered as such.
+        // These rules held at authorization, so a failure here is configuration changed under a live grant.
         if (!ScopeResolution.TryResolve(definitions, scope, out var granted, out var undefined))
         {
             logger.LogError("Client {ClientId} holds a grant for the scope {Scope}, which IScopeRepository no longer defines; no claims were resolved.", client.ClientId, undefined);
@@ -85,10 +67,8 @@ internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, Sanitizi
     }
 
     /// <summary>
-    /// The resource server the granted scopes name, for a destination that carries one. Userinfo
-    /// does not: its response has no audience, so a scope set naming two must not turn a request it
-    /// has no bearing on into a server error. A malformed audience is not checked here at all —
-    /// ValidatedScopeCatalog refuses the repository before a definition reaches this method.
+    /// The resource server the granted scopes name, for tokens only: userinfo has no audience, so two
+    /// named audiences must not fail it.
     /// </summary>
     private bool TryResolveAudience(
         IClient client,
@@ -111,11 +91,8 @@ internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, Sanitizi
     }
 
     /// <summary>
-    /// The provider's answer, or <see langword="null"/> after logging when it could not be
-    /// constructed, threw, or returned nothing. Constructing it is inside the boundary too: a
-    /// provider is caller-supplied code from its constructor onwards. Only the request's own
-    /// cancellation propagates; a cancellation the provider raised itself, a timeout inside it,
-    /// is its failure and is answered as one.
+    /// The provider's answer, or <see langword="null"/> after logging when it could not be constructed,
+    /// threw, or returned nothing. Only the request's own cancellation propagates.
     /// </summary>
     private async Task<ClaimsResolutionResult?> ResolvePoolAsync(
         HttpContext context,
@@ -151,9 +128,7 @@ internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, Sanitizi
         string? resourceAudience,
         CancellationToken cancellationToken)
     {
-        // Materialised first, on its own: the list is the provider's, so enumerating it runs its
-        // code, and anything that throws there, its own cancellation included, is logged
-        // redacted, never by its message.
+        // Enumerating the provider's list runs its code, so it is caught on its own.
         ClaimRecord[] pool;
         try
         {
@@ -171,8 +146,7 @@ internal sealed class GrantClaimsResolver(ValidatedScopeCatalog scopes, Sanitizi
         }
         catch (InvalidOperationException ex)
         {
-            // Selection's own failure over an array it owns: the message names the claim type
-            // and never the value, so it is safe to surface to the operator.
+            // Selection's own message names the claim type, never the value.
             logger.LogError("The claims provider's result for a grant to client {ClientId} could not be used: {Reason}", client.ClientId, ex.Message);
             return GrantClaimsOutcome.Failed.Instance;
         }

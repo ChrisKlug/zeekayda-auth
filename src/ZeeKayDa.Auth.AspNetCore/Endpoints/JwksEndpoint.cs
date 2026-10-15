@@ -34,24 +34,15 @@ internal sealed class JwksEndpoint(IOptions<AuthorizationServerOptions> options,
             options.Value.JwksEndpoint.Uri,
             "connect/jwks");
 
-        // AllowAnonymous so a host-wide authorization fallback policy cannot turn the JWKS into a
-        // 401 — the key set must stay publicly readable or every relying party's validation stops.
         endpoints.MapGet(endpointUri.AbsolutePath, Handle)
             .RequireIssuerHost(endpointUri)
-            .AllowAnonymous();
+            .ExemptFromHostAuthorization();
     }
 
-    // The ring is a handler parameter, not a constructor dependency: endpoint instances are
-    // constructed while the host is still being built, and resolving the ring constructs the
-    // signing key source — work that must not happen before the cheap startup checks have passed.
-    // [FromServices] because the ring is conditionally registered: without it, a host with no
-    // signing source would fail at route mapping with a body-inference error instead of reaching
-    // the startup check that names the actual problem.
+    // A handler parameter, so the signing source is not built before the cheap startup checks; [FromServices],
+    // so a host with no source reaches the startup check that names it rather than a body-inference error.
     internal IResult Handle([FromServices] SigningKeyRing ring, HttpContext context)
     {
-        // The ring is initialized at startup or the host never started, so Current cannot throw
-        // here; the reference check makes concurrent requests race only towards writing the same
-        // bytes.
         var keySet = ring.Current;
 
         // An empty set means signing has stopped; a relying party caching it would reject the

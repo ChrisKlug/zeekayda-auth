@@ -47,12 +47,8 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Not served on a host whose <c>GrantTypesSupported</c> lacks the authorization code grant.
-    /// That option is the declaration that the interactive machinery is unused — the startup
-    /// checks are gated on it for the same reason — and discovery omits the endpoint on the same
-    /// condition. Serving it anyway accepted <c>response_type=code</c>, wrote an interaction
-    /// context and answered <c>server_error</c> at the dispatch, with the metadata disagreeing
-    /// all along.
+    /// Not served when <c>GrantTypesSupported</c> lacks the authorization code grant, which is how a
+    /// host declares it has no interactive flow; discovery omits the endpoint on the same condition.
     /// </remarks>
     public void Map(IEndpointRouteBuilder endpoints)
     {
@@ -70,16 +66,12 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
                 [HttpMethods.Get, HttpMethods.Post],
                 Handle)
             .RequireIssuerHost(endpointUri)
-            // AllowAnonymous so a host-wide authorization fallback policy cannot challenge the
-            // authorize request with the host's scheme before the framework's own login handoff
-            // runs: the user is, by definition, not signed in yet when they arrive here.
-            .AllowAnonymous();
+            .ExemptFromHostAuthorization();
     }
 
     internal async Task<IResult> Handle(AuthorizeRequestValidator validator, HttpContext context)
     {
-        // Authorization responses carry codes and errors that must never be cached or logged
-        // from an intermediary cache (RFC 6749 §10.12 guidance, RFC 9700 §4.16).
+        // Codes and errors must never be cached (RFC 6749 §10.12, RFC 9700 §4.16).
         context.Response.Headers.CacheControl = "no-store";
 
         var parameters = await ExtractParametersAsync(context).ConfigureAwait(false);
@@ -91,8 +83,6 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
         var result = await validator.ValidateAsync(parameters, context.RequestAborted).ConfigureAwait(false);
 
-        // A request that fails validation never wrote an interaction, and touches none that
-        // another tab has in flight.
         return result switch
         {
             AuthorizeRequestValidationResult.Valid valid =>
@@ -116,28 +106,20 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         var session = await _flow.ReadSessionAsync(context).ConfigureAwait(false);
         var needsAuthentication = _flow.NeedsAuthentication(request, session);
 
-        // A continuing request carries the session it continues on; a request about to be
-        // authenticated carries no subject, because it has none yet.
-        var requestContext = _flow.CreateContext(request, needsAuthentication ? null : session);
+        var continuedSession = needsAuthentication ? null : session;
+        var requestContext = _flow.CreateContext(request, continuedSession);
 
         try
         {
             if (!await _flow.TryPersistAsync(context, requestContext).ConfigureAwait(false))
             {
-                // The one phase-2 failure that renders locally rather than redirecting. `state`
-                // must round-trip byte for byte (RFC 6749 §4.1.2.1), so echoing an oversized one
-                // builds a Location whose length depends on how the value percent-encodes —
-                // sometimes past what the client's server will accept, sometimes not. A
-                // deterministic error page beats a redirect that works or fails depending on the
-                // bytes in `state`; §4.1.2.1 describes redirecting phase-2 errors rather than
-                // requiring it.
+                // Rendered, not redirected: echoing an oversized `state` byte for byte (RFC 6749 §4.1.2.1)
+                // makes a Location that the client's server may or may not accept.
                 return RenderLocalError(context, AuthorizeRequestErrors.InvalidRequest, InteractionOutcomes.TooLarge);
             }
         }
         catch (ZeeKayDaStoreException ex)
         {
-            // The redirect target is authenticated by now, so the client learns the server failed
-            // and the operator learns which store operation did.
             _logger.LogError(ex, "Storing the authorization request for client {ClientId} failed.", request.Client.ClientId);
 
             return RedirectToClient(request, AuthorizeRequestErrors.ServerError, InteractionOutcomes.CouldNotStoreRequest);
@@ -148,8 +130,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
         if (request.Prompts.Contains(PromptValue.None))
         {
-            // prompt=none is a promise not to show the user anything. The only honest answer to
-            // "authenticate without interacting" is that authentication is required.
+            // OIDC Core §3.1.2.6.
             return await FailRequestAsync(context, requestContext, () => RedirectToClient(
                 request,
                 AuthorizeRequestErrors.LoginRequired,
@@ -163,15 +144,12 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
                 return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
 
             case LoginDispatchRule.SingleProvider:
-                // The framework can choose, so the user never sees a page of the host's: the
-                // handler writes the redirect to the provider itself.
+                // The only provider: no host page is needed to choose one.
                 await _outcomes.ChallengeAsync(context, requestContext, _providers.Registrations[0]).ConfigureAwait(false);
                 return Results.Empty;
 
             default:
-                // A configuration failure, reported to the client rather than rendered at the
-                // user: the redirect target is authenticated by this point, and the client's own
-                // error page is where a developer will be looking. Startup warned about this too.
+                // No login page and no single provider. Startup warned; the client's developer sees this.
                 return await FailRequestAsync(context, requestContext, () => RedirectToClient(
                     request,
                     AuthorizeRequestErrors.ServerError,

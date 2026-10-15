@@ -47,8 +47,7 @@ internal sealed class TokenRequest
         return error is null;
     }
 
-    // The offending key is not echoed: it is attacker-chosen, and RFC 6749 §5.2 restricts what
-    // an error_description may contain.
+    // The key is not echoed: it is attacker-chosen, and RFC 6749 §5.2 restricts error_description.
     private static TokenError? NoDuplicatedParameters(IFormCollection form) =>
         form.Any(parameter => parameter.Value.Count > 1)
             ? TokenError.InvalidRequest("A parameter must not be repeated.")

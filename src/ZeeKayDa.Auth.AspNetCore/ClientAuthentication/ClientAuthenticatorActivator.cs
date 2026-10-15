@@ -89,8 +89,7 @@ internal sealed class ClientAuthenticatorActivator(IServiceProvider services) : 
                 $"{nameof(TokenEndpointAuthMethods)}.");
         }
 
-        // "Client_Secret_Basic" would collide at runtime with the built-in authenticator's
-        // CanHandle, producing a silent invalid_client.
+        // "Client_Secret_Basic" would collide with the built-in authenticator: a silent invalid_client.
         if (_canonicalMethodNames.TryGetValue(method, out var canonical) &&
             !string.Equals(method, canonical, StringComparison.Ordinal))
         {
@@ -136,7 +135,6 @@ internal sealed class ClientAuthenticatorActivator(IServiceProvider services) : 
         $"{typeName} returns a null AuthenticationMethods set or a null entry in it. Declare the " +
         $"methods it performs, using the constants in {nameof(TokenEndpointAuthMethods)}.");
 
-    // Case-insensitive map of framework-handled method strings to their canonical form.
     private static readonly IReadOnlyDictionary<string, string> _canonicalMethodNames =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {

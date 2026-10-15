@@ -37,20 +37,14 @@ internal sealed class AuthorizationCodeGrant(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(client);
 
-        // Refused before the code is touched, as the form parser once did for every client: a
-        // client held to PKCE that forgot its verifier keeps its code. Only a client permitted
-        // to omit PKCE reaches the store without one, and there the code decides.
+        // Before the code is touched, so a PKCE client that forgot its verifier keeps its code.
         if (request.CodeVerifier is null && !PkceRules.MayOmitChallenge(client))
             return TokenResponses.Error(TokenError.InvalidRequest("The code_verifier parameter is required."));
 
-        // Resolved from the request's services rather than the constructor: this is a singleton
-        // whose store and signing-ring dependencies are host registrations, and constructor
-        // injection would surface their absence as a raw DI error instead of the startup
-        // verifiers' own messages.
+        // Not injected: a missing host registration must surface as the startup verifiers' message, not a DI error.
         var store = context.RequestServices.GetRequiredService<AuthorizationCodeStore>();
 
-        // Minted before the redemption so the tombstone written by it carries the family every
-        // later replay must revoke — one fresh CSPRNG value per code, never a GUID.
+        // Before the redemption, so its tombstone carries the family a later replay revokes.
         var familyId = StoreKeyGenerator.Generate();
 
         AuthorizationCodeRedemptionResult redemption;
@@ -89,8 +83,7 @@ internal sealed class AuthorizationCodeGrant(
             return InvalidGrant();
         }
 
-        // The code is consumed by now, so a verifier sent for a code that never had a challenge
-        // buys nothing; the error code is the spec's for a malformed exchange (OAuth 2.1 §3.2.4).
+        // OAuth 2.1 §3.2.4: a malformed exchange, and the code is already burnt.
         if (entry.Pkce is null && request.CodeVerifier is not null)
         {
             logger.LogWarning("Client {ClientId} presented a code_verifier for an authorization code issued without a code_challenge.", client.ClientId);
@@ -103,19 +96,14 @@ internal sealed class AuthorizationCodeGrant(
             return InvalidGrant();
         }
 
-        // Decided before anything is issued: a client whose ID token the current key cannot sign
-        // must not be handed an access token first — a reference-token issuer would have persisted
-        // it by the time the ID token is refused. The signing callback repeats the check against
-        // the key that actually signs; a handover between the two cannot change the outcome, since
-        // every key a source lists signs under its one algorithm.
+        // Before anything is issued: a reference-token issuer would already have persisted the access token.
         if (!ClientAcceptsSigningAlgorithm(client, context.RequestServices.GetRequiredService<SigningKeyRing>().Current.Algorithm))
         {
             logger.LogError("Client {ClientId} does not allow ID tokens signed with the current signing key's algorithm; nothing was issued.", client.ClientId);
             return TokenResponses.ServerError();
         }
 
-        // Resolved fresh for this issuance, keyed on the family the code just started, so a
-        // subject the provider no longer serves gets nothing, and both tokens come from one pool.
+        // Fresh for this issuance, so a subject the provider no longer serves gets nothing.
         var claims = await _claims.ResolveAsync(
             context,
             new ClaimsRequest(client, entry.Sub, entry.Scope, familyId, ClaimsDestination.Tokens)).ConfigureAwait(false);
@@ -143,7 +131,7 @@ internal sealed class AuthorizationCodeGrant(
         IssuedToken idToken;
         try
         {
-            // The access token first: the ID token is assembled after it so it can be bound to it.
+            // The ID token is bound to the access token, so it comes second.
             accessToken = await Issuer(context, TokenKind.AccessToken).IssueAsync(
                 new AccessTokenIssuanceContext(client),
                 accessTokenPayload.Payload,
@@ -170,10 +158,8 @@ internal sealed class AuthorizationCodeGrant(
     }
 
     /// <summary>
-    /// A code presented twice is a stolen code or a broken client, and either way the family the
-    /// first exchange started must not stay alive (RFC 9700 §4.5.3). The revocation is the
-    /// server's own action, so a client dropping the connection does not cancel it; one the
-    /// store cannot perform is logged; the client is refused regardless.
+    /// Revokes the family the first exchange started (RFC 9700 §4.5.3). Not cancelled by the client
+    /// disconnecting: the revocation is the server's own action.
     /// </summary>
     private async Task<IResult> RefuseReplayAsync(HttpContext context, IClient client, string familyId)
     {
