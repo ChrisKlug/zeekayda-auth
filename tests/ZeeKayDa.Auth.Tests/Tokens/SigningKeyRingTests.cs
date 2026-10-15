@@ -1049,7 +1049,7 @@ public sealed class SigningKeyRingTests
     [Fact]
     public async Task Handover_whose_source_blocks_synchronously_is_still_set_aside_at_the_deadline()
     {
-        var clock = new FakeTimeProvider(Epoch);
+        var clock = new DeadlineClock(Epoch);
         using var release = new ManualResetEventSlim();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
@@ -1068,15 +1068,14 @@ public sealed class SigningKeyRingTests
             },
             () => { },
             SigningAlgorithm.ES256);
-        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        using var ring = new SigningKeyRing(source, clock, WithoutReadsBeforeTheDeadline(), new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         try
         {
             clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-            clock.Advance(TimeSpan.FromMinutes(1));
-            await ring.LastTransition.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+            await AdvancePastTheSourceDeadlineAsync(ring, clock);
 
             // Decided while the source is still blocked.
             release.IsSet.Should().BeFalse();
@@ -1091,7 +1090,7 @@ public sealed class SigningKeyRingTests
     [Fact]
     public async Task Handover_past_the_deadline_is_set_aside_even_when_the_source_s_cancellation_callback_throws()
     {
-        var clock = new FakeTimeProvider(Epoch);
+        var clock = new DeadlineClock(Epoch);
         var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
         var hung = TestSigningKeys.Pair("hung", notBefore: Epoch);
         var registered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1113,13 +1112,12 @@ public sealed class SigningKeyRingTests
             },
             () => { },
             SigningAlgorithm.ES256);
-        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        using var ring = new SigningKeyRing(source, clock, WithoutReadsBeforeTheDeadline(), new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
         await registered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-        clock.Advance(TimeSpan.FromMinutes(1));
-        await ring.LastTransition.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await AdvancePastTheSourceDeadlineAsync(ring, clock);
 
         callbackRan.Should().BeTrue("the deadline must tell the source to stop");
         ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Should().Be(hung.Key.Id);
@@ -1162,7 +1160,7 @@ public sealed class SigningKeyRingTests
     [Fact]
     public async Task A_signer_that_opens_after_the_handover_deadline_is_disposed_exactly_once()
     {
-        var clock = new FakeTimeProvider(Epoch);
+        var clock = new DeadlineClock(Epoch);
         var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
         var slow = TestSigningKeys.Pair("slow", notBefore: Epoch);
         var opening = new TaskCompletionSource<ISigner>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1181,12 +1179,11 @@ public sealed class SigningKeyRingTests
             },
             () => { },
             SigningAlgorithm.ES256);
-        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        using var ring = new SigningKeyRing(source, clock, WithoutReadsBeforeTheDeadline(), new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
         await requested.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-        clock.Advance(TimeSpan.FromMinutes(1));
-        await ring.LastTransition.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await AdvancePastTheSourceDeadlineAsync(ring, clock);
 
         opening.SetResult(new TrackingSigner(
             new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(slow.PrivateKey)),
@@ -1212,7 +1209,7 @@ public sealed class SigningKeyRingTests
     [Fact]
     public async Task Handover_whose_signer_never_opens_is_set_aside_at_the_deadline_and_later_changes_still_fire()
     {
-        var clock = new FakeTimeProvider(Epoch);
+        var clock = new DeadlineClock(Epoch);
         var current = TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90));
         var hung = TestSigningKeys.Pair("hung", notBefore: Epoch);
         var later = TestSigningKeys.Pair("later", notBefore: Epoch.AddDays(5));
@@ -1232,8 +1229,7 @@ public sealed class SigningKeyRingTests
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
-        clock.Advance(TimeSpan.FromMinutes(1));
-        await ring.LastTransition;
+        await AdvancePastTheSourceDeadlineAsync(ring, clock);
 
         ring.TimelineOrNull!.SetAside.Should().ContainSingle().Which.SourceId.Should().Be(hung.Key.Id);
         ring.Current.SigningKey!.SourceId.Should().Be(current.Key.Id);
@@ -1603,6 +1599,48 @@ public sealed class SigningKeyRingTests
 
     /// <summary>Moves <paramref name="clock"/> to <paramref name="until"/> one change instant at a
     /// time, as a live clock would pass them, letting each handover finish.</summary>
+    /// <summary>
+    /// Moves <paramref name="clock"/> past the ring's one-minute source deadline once the ring has armed it.
+    /// The ring arms it on a thread of its own, so a jump made before it exists would never fire it.
+    /// </summary>
+    private static async Task AdvancePastTheSourceDeadlineAsync(SigningKeyRing ring, DeadlineClock clock)
+    {
+        await clock.DeadlineArmed.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await ring.LastTransition.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// <see cref="TestSigningKeys.Options"/> with no read due in the day before the handover: a read would
+    /// arm a one-minute deadline of its own and trip <see cref="DeadlineClock"/> first.
+    /// </summary>
+    private static SigningKeyOptions WithoutReadsBeforeTheDeadline()
+    {
+        var options = TestSigningKeys.Options;
+        options.RefreshInterval = TimeSpan.FromDays(30);
+        return options;
+    }
+
+    /// <summary>
+    /// A fake clock that reports when a one-minute timer is created. The startup read and signer open arm
+    /// none, so with no refresh read due it is the handover's source deadline.
+    /// </summary>
+    private sealed class DeadlineClock(DateTimeOffset start) : FakeTimeProvider(start)
+    {
+        private readonly TaskCompletionSource _armed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task DeadlineArmed => _armed.Task;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            if (dueTime == TimeSpan.FromMinutes(1))
+                _armed.TrySetResult();
+
+            return timer;
+        }
+    }
+
     private static async Task AdvanceToAsync(SigningKeyRing ring, FakeTimeProvider clock, DateTimeOffset until)
     {
         while (clock.GetUtcNow() < until)
