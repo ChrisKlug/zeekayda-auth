@@ -146,7 +146,17 @@ public sealed class DiscoveryEndpointTests
         doc.TryGetProperty("claims_supported", out _).Should().BeFalse(
             "such a host issues no ID token and answers no UserInfo request, so it can supply none of them");
         doc.TryGetProperty("end_session_endpoint", out _).Should().BeFalse("without the code grant nobody signs in, so there is no session to end");
+        doc.TryGetProperty("authorization_response_iss_parameter_supported", out _).Should().BeFalse("there is no authorization response");
         doc.TryGetProperty("token_endpoint", out _).Should().BeTrue("the token endpoint is what such a host serves");
+    }
+
+    [Fact]
+    public async Task GetDiscoveryDocument_advertises_the_iss_authorization_response_parameter()
+    {
+        // RFC 9207 §3: omitted means false, and a client may then skip the mix-up check iss exists for.
+        var doc = await GetDocumentAsync(EndpointHost.Default);
+
+        doc.GetProperty("authorization_response_iss_parameter_supported").GetBoolean().Should().BeTrue();
     }
 
     [Fact]
