@@ -99,7 +99,7 @@ question from the maintainer gets an answer and a stop, never a build.
 
 | Change | Process |
 |---|---|
-| Internal / mechanical — bug fix, refactor, test, chore | Main session just builds it. No design gate, no Claude reviewers; one Copilot lens — `code` if the diff has code, `text` if it does not. |
+| Internal / mechanical — bug fix, refactor, test, chore | Main session just builds it. No design gate, no Claude reviewers; one Copilot lens — `code` if the diff has code, `text` if it does not, both if it has both. |
 | New or changed **public API** / behaviour | Shape agreed in chat first; short `### Agreed shape` bookmark comment on the issue. |
 | Touches **tokens, crypto, endpoints, or storage** | `security` reviews — **one round**; High/Critical fixed inline, the rest is the maintainer's call. |
 | Changes **structure or an extension point** | `architect` reviews, same single-round rule. |
