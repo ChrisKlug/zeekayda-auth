@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace ZeeKayDa.Auth.Clients;
 
 // Who the client is: its client_id, and the name users are shown.
-internal sealed partial class ClientRegistrationValidator
+public sealed partial class ClientRegistrationValidator
 {
     private static readonly Regex ClientIdPattern =
         new(@"^[A-Za-z0-9_\-.]+$", RegexOptions.Compiled, TimeSpan.FromMilliseconds(100));

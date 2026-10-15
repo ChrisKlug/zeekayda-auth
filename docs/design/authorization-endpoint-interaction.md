@@ -590,7 +590,7 @@ is not promoted, since the framework promotes its own copy.
 
 **The registration a request is validated against is itself validated first.** Endpoints consume an
 internal `ValidatedClientResolver` wrapping `IClientRepository`: it runs
-`IClientRegistrationValidator` on every served registration (memoized per instance), answers
+`ClientRegistrationValidator` on every served registration (memoized per instance), answers
 "unknown client" for one that fails, and logs the failed rule loudly for the operator. Exact-match
 is only as trustworthy as the set it matches against; a custom store fed by a typo'd or malicious
 database row must not become a redirect target.

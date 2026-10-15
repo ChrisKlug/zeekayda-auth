@@ -26,8 +26,7 @@ internal sealed class AccessTokenValidator(
     IOptions<AuthorizationServerOptions> options,
     TimeProvider time)
 {
-    // RFC 9068 §2.1 fixes the typ as "at+jwt"; the media-type form is the same registration, and
-    // a host that replaced ITokenIssuer may write it.
+    // RFC 9068 §2.1 fixes the typ as "at+jwt"; the media-type form is the same registration.
     private static readonly string[] AccessTokenTypes = ["at+jwt", "application/at+jwt"];
 
     /// <summary>

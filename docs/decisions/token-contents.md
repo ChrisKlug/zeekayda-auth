@@ -12,9 +12,8 @@ the audiences, the lifetimes and the signing entries below describe shipped code
 **A JWT's header is built inside the ring's signing callback, never asserted afterwards.**
 `JwtTokenIssuer` reads `kid`/`alg` from the `SigningKey` the ring resolved for that exact call, so a
 header disagreeing with its signature is unrepresentable rather than detected. The key is resolved
-exactly once per token. A custom JWT issuer keeps this property by signing through
-`SigningKeyRing.SignAsync` and building its header inside the callback — the atomicity guarantee
-belongs to that path, not to the `ITokenIssuer` contract itself.
+exactly once per token. Any future issuer keeps this property by signing through
+`SigningKeyRing.SignAsync` and building its header inside the callback.
 
 **One type writes and reads the compact JWS, so what the issuer writes and a validator accepts cannot
 drift.** `JwtTokenIssuer`, the one caller of `SignAsync`, builds the signing input with `CompactJws`

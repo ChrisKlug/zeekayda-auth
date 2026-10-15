@@ -4,21 +4,11 @@ namespace ZeeKayDa.Auth.Tokens;
 /// Issues a token of one <see cref="TokenKind"/> over a finalized set of claims.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Nothing in the contract is JWS-specific: <see cref="JwtTokenIssuer"/> signs a JWT through the
-/// <see cref="SigningKeyRing"/>, and a reference-token issuer can return an opaque handle from a store.
-/// </para>
-/// <para>
-/// Resolved as a keyed service per <see cref="TokenKind"/>, so each kind's issuer can be replaced alone.
-/// </para>
-/// <para>
-/// A replacement ID-token issuer takes over two obligations nothing downstream re-checks: writing
-/// <c>at_hash</c> over <see cref="IdTokenIssuanceContext.AccessToken"/> with the hash its <c>alg</c>
-/// implies (OpenID Connect Core §3.1.3.6), and refusing an algorithm outside the client's
-/// <see cref="Clients.IClient.AllowedSigningAlgorithms"/>. Both belong inside the signing callback.
-/// </para>
+/// Resolved as a keyed service per <see cref="TokenKind"/>. Internal: userinfo accepts only JWTs this
+/// server signed and there is no introspection, so no replacement could work. A reference-token seam
+/// is designed with refresh tokens.
 /// </remarks>
-public interface ITokenIssuer
+internal interface ITokenIssuer
 {
     /// <summary>
     /// Issues a token of the requested kind over <paramref name="payload"/>'s claims.

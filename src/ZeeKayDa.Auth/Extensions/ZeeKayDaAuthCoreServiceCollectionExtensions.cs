@@ -150,22 +150,18 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupActivator, AdvertisedAuthMethodsActivator>());
 
-        // A factory, because DI activation cannot default the optional SigningKeyRing.
-        services.TryAddSingleton(sp => new ClientRegistrationValidator(
+        // Built here because its constructor is internal; replaced rather than tried, as the framework is its only supplier.
+        services.RemoveAll<ClientRegistrationValidator>();
+        services.AddSingleton(sp => new ClientRegistrationValidator(
             sp.GetRequiredService<IOptions<AuthorizationServerOptions>>(),
             sp.GetRequiredService<AdvertisedAuthMethods>(),
             sp.GetRequiredService<ClientSecretHasherRegistry>(),
             sp.GetRequiredService<SanitizingLogger<ClientRegistrationValidator>>(),
             sp.GetService<SigningKeyRing>()));
-        services.TryAddSingleton<IClientRegistrationValidator>(sp => sp.GetRequiredService<ClientRegistrationValidator>());
-
-        services.TryAddSingleton(sp => new FrameworkThenHostValidator(
-            sp.GetRequiredService<ClientRegistrationValidator>(),
-            sp.GetRequiredService<IClientRegistrationValidator>()));
 
         services.TryAddSingleton(sp => new ValidatedClientResolver(
             sp.GetRequiredService<IClientRepository>(),
-            sp.GetRequiredService<FrameworkThenHostValidator>(),
+            sp.GetRequiredService<ClientRegistrationValidator>().Validate,
             sp.GetRequiredService<SanitizingLogger<ValidatedClientResolver>>()));
 
         services.TryAddEnumerable(

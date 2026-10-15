@@ -824,7 +824,8 @@ public class AuthorizeRequestValidatorTests
     {
         var resolver = new ValidatedClientResolver(
             new SingleClientRepository(client ?? NewClient()),
-            new PassingValidator(),
+            // These tests exercise request validation; registration validation has its own suite.
+            _ => [],
             NullSanitizingLogger<ValidatedClientResolver>.Instance);
         var validator = new AuthorizeRequestValidator(
             resolver,
@@ -842,10 +843,6 @@ public class AuthorizeRequestValidatorTests
                 string.Equals(clientId, client.ClientId, StringComparison.Ordinal) ? client : null);
     }
 
-    private sealed class PassingValidator : IClientRegistrationValidator
-    {
-        // These tests exercise request validation; registration validation has its own suite.
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => [];
-    }
+
 
 }

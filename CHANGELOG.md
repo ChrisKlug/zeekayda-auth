@@ -953,6 +953,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
+- **Three public seams nothing could usefully implement** (#957). `IClientRegistrationValidator` is
+  gone: `ClientRegistrationValidator` is now a public sealed class a custom repository injects to check
+  a client before saving, and a host can no longer add client rules of its own. `ITokenIssuer`,
+  `JwtTokenIssuer`, `TokenIssuanceContext` and its subtypes, `IssuedToken`, `TokenPayload` and
+  `TokenKind` are internal: userinfo accepts only this server's JWTs and there is no introspection, so
+  no replacement issuer could work. `IDiscoveryDocumentProvider` and `OpenIdConfigurationDocument` are
+  internal, so the discovery document cannot advertise what the server does not do.
 - **The distributed-cache token stores** (#829). `AddDistributedCacheAuthorizationCodeStore`,
   `AddDistributedCacheRefreshTokenStore` and `AddDistributedCacheTokenStores` are gone.
   `IDistributedCache` has no atomic check-and-set, so on a shared cache they could redeem a code

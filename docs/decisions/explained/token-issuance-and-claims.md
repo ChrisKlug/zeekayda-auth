@@ -58,7 +58,7 @@ resource audiences, or a provider that throws or returns null: nothing is issued
   `at_hash`, computed inside the signing callback from the key that actually signs.
 
 Everything about the sign-in comes from the stored code entry, never from the token request.
-`ITokenIssuer` is public and registered per token kind; `JwtTokenIssuer` is the default for both.
+Issuers are internal, registered per token kind; `JwtTokenIssuer` issues both.
 
 The response is never cached. `invalid_client` is a 401 challenging the scheme the client used, or
 a 400 when its credentials came in the form (RFC 6749 §5.2). `scope` is always returned.
@@ -75,14 +75,13 @@ answers through the same claims resolver using the userinfo list. CORS comes fro
 - A sign-in with consent reads the client about five times and the scope catalogue two or three
   times, uncached, so a change takes effect on the next request.
 - A custom repository's client-addition clash is caught on the first request, not at startup.
-- Userinfo accepts only JWTs this server signed, so replacing the access-token issuer breaks it.
 
 ## What the walkthrough changed
 
 The maintainer walked this part at code level. Kept as is: the refresh token store and its startup
 requirement, consistent with the code store until refresh tokens land. Filed: an optional caching
-decorator for client and scope repositories (#956). Raised for the extension-surface part: a
-replaced access-token issuer breaks userinfo.
+decorator for client and scope repositories (#956). Raised for the extension-surface part, and since
+landed (#957): a replaced access-token issuer broke userinfo, so the issuer seam is internal.
 
 ## What was rejected
 

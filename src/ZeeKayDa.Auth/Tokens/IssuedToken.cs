@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// no expiry, which is already a claim in the payload, and no <c>token_type</c>, which is the token
 /// endpoint's concern.
 /// </remarks>
-public sealed record IssuedToken
+internal sealed record IssuedToken
 {
     private readonly string _value;
 

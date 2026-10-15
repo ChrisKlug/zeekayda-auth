@@ -21,12 +21,6 @@ public sealed class InMemoryClientRepositoryTests
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
     }
 
-    private sealed class DelegatingValidator(Func<IClientWithCredentials, IReadOnlyList<ZeeKayDaConfigurationFailure>> onValidate)
-        : IClientRegistrationValidator
-    {
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => onValidate(client);
-    }
-
     private static ClientSecretHasherRegistry MakeRegistry()
         => new([new FakeHasher()], Options.Create(new ClientSecretHasherRegistrationOptions()));
 
@@ -52,14 +46,7 @@ public sealed class InMemoryClientRepositoryTests
         InMemoryClientRegistrationOptions opts,
         AuthorizationServerOptions? serverOptions = null)
     {
-        var framework = MakeValidator(serverOptions);
-        return InMemoryClientRepository.Build(opts, MakeSecrets(), new FrameworkThenHostValidator(framework, framework));
-    }
-
-    private static InMemoryClientRepository MakeRepositoryWithValidator(
-        InMemoryClientRegistrationOptions opts, IClientRegistrationValidator validator)
-    {
-        return InMemoryClientRepository.Build(opts, MakeSecrets(), new FrameworkThenHostValidator(MakeValidator(), validator));
+        return InMemoryClientRepository.Build(opts, MakeSecrets(), MakeValidator(serverOptions));
     }
 
     private static Client ValidPublicClient(string clientId = "test-client") =>
@@ -423,80 +410,21 @@ public sealed class InMemoryClientRepositoryTests
             .Which.AggregatedFailures.Count.Should().BeGreaterThanOrEqualTo(2);
     }
 
-    // ── A custom validator's failures are aggregated ──────────────────────────────────────────────
+    // ── Failures are aggregated across clients ────────────────────────────────────────────────────
 
     [Fact]
-    public void Build_aggregates_every_failure_a_validator_returns_across_all_clients()
+    public void Build_aggregates_every_validation_failure_across_all_clients()
     {
         var opts = new InMemoryClientRegistrationOptions();
-        opts.PreBuilt.Add(ValidPublicClient("c1"));
-        opts.PreBuilt.Add(ValidPublicClient("c2"));
-        var validator = new DelegatingValidator(client =>
-            [new ZeeKayDaConfigurationFailure("host.rule", $"Failed for {client.ClientId}.")]);
+        var fragment = new HashSet<string>(["https://app.example.com/cb#fragment"], StringComparer.Ordinal);
+        opts.PreBuilt.Add(ValidPublicClient("c1") with { RedirectUris = fragment });
+        opts.PreBuilt.Add(ValidPublicClient("c2") with { RedirectUris = fragment });
 
-        var act = () => MakeRepositoryWithValidator(opts, validator);
+        var act = () => MakeRepository(opts);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Select(f => f.Message)
-            .Should().Equal("Failed for c1.", "Failed for c2.");
-    }
-
-    [Fact]
-    public async Task Build_serves_every_client_when_the_validator_returns_no_failures()
-    {
-        var opts = new InMemoryClientRegistrationOptions();
-        opts.PreBuilt.Add(ValidPublicClient("c1"));
-
-        var repository = MakeRepositoryWithValidator(opts, new DelegatingValidator(_ => []));
-
-        (await repository.FindByClientIdAsync("c1", TestContext.Current.CancellationToken)).Should().NotBeNull();
-    }
-
-    [Fact]
-    public void Build_reports_a_validator_that_returns_a_null_failure_as_a_coded_configuration_failure()
-    {
-        var opts = new InMemoryClientRegistrationOptions();
-        opts.PreBuilt.Add(ValidPublicClient("c1"));
-
-        var act = () => MakeRepositoryWithValidator(opts, new DelegatingValidator(_ => [null!]));
-
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle()
-            .Which.Should().Match<ZeeKayDaConfigurationFailure>(failure =>
-                failure.Code == "client.validator.malformed_result"
-                && failure.Message.Contains("DelegatingValidator", StringComparison.Ordinal)
-                && failure.Message.Contains("'c1'", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void Build_applies_the_framework_rules_even_when_a_host_validator_accepts_everything()
-    {
-        var opts = new InMemoryClientRegistrationOptions();
-        opts.PreBuilt.Add(ValidPublicClient("c1") with
-        {
-            RedirectUris = new HashSet<string>(["https://app.example.com/cb#fragment"], StringComparer.Ordinal),
-        });
-
-        var act = () => MakeRepositoryWithValidator(opts, new DelegatingValidator(_ => []));
-
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.fragment",
-                "a host can add rules at startup, never remove the framework's");
-    }
-
-    [Fact]
-    public void Build_reports_a_null_failure_alongside_the_real_ones_a_validator_returned()
-    {
-        var opts = new InMemoryClientRegistrationOptions();
-        opts.PreBuilt.Add(ValidPublicClient("c1"));
-        var validator = new DelegatingValidator(_ =>
-            [new ZeeKayDaConfigurationFailure("host.rule", "A real problem."), null!]);
-
-        var act = () => MakeRepositoryWithValidator(opts, validator);
-
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Select(f => f.Code).Should()
-            .Equal("host.rule", "client.validator.malformed_result");
+            .Which.AggregatedFailures.Where(f => f.Code == "client.redirect_uri.fragment")
+            .Should().HaveCount(2, "operators see every client's problems in one pass");
     }
 
     // ── Empty plaintext secret is aggregated, not thrown bare ─────────────────────────────────────

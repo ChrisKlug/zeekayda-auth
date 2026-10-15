@@ -31,9 +31,9 @@ implements `ClientId`, `Secrets` and what it stores.
 the only auth method is `none` (`IsPublic` is declared, never derived); PKCE opt-out only where safe;
 at most two secrets; auth methods the server actually advertises; a client may narrow the server's
 allowlists (grant types, auth methods, signing algorithms), never widen them. Token lifetimes are
-different: a client's override replaces the server default and has no upper bound. It returns its failures, each with a stable code. A host may add its own
-`IClientRegistrationValidator`, which runs after the framework's rules and can add rules but never
-remove them.
+different: a client's override replaces the server default and has no upper bound. It returns its
+failures, each with a stable code. It is a public sealed class only the framework builds: a custom
+repository may inject it to check a client before saving, and a host cannot add rules of its own.
 
 **`ValidatedClientResolver`** is the only way from a `client_id` to a client. It refuses a malformed
 `client_id` before the repository sees it, copies what the repository returned into a snapshot so a

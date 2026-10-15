@@ -121,8 +121,7 @@ internal sealed class ClientRegistrationSnapshot : IClientWithCredentials
     /// </summary>
     public static ClientRegistrationSnapshot Of(IClientWithCredentials client) => new(client);
 
-    // Wrapped, never bare: the host's own ITokenIssuer receives this registration, and could downcast a
-    // HashSet and add to it.
+    // Wrapped, never bare: code handed this registration could otherwise downcast a HashSet and add to it.
     private static IReadOnlySet<string> OrdinalCopy(IReadOnlySet<string> values) =>
         new ReadOnlySet<string>(new HashSet<string>(values, StringComparer.Ordinal));
 

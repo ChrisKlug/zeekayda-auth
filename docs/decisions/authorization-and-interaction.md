@@ -25,7 +25,7 @@ and asserted at startup, so a later registration that changes them fails the hos
 
 **A client registration is validated by the framework at the point of use, not only at
 registration.** Endpoints resolve clients through an internal validating resolver wrapping
-`IClientRepository`; a registration failing `IClientRegistrationValidator` is served to the protocol
+`IClientRepository`; a registration failing `ClientRegistrationValidator` is served to the protocol
 as unknown-client and logged loudly for the operator. A repository does not validate what it
 returns — exact-match redirect validation is only as trustworthy as the set it matches against, so
 the framework cannot rely on an implementor to do it.

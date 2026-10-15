@@ -51,10 +51,11 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Theory]
-    [InlineData(TokenKind.AccessToken)]
-    [InlineData(TokenKind.IdToken)]
-    public void AddZeeKayDaAuth_registers_JwtTokenIssuer_for_each_TokenKind(TokenKind kind)
+    [InlineData(nameof(TokenKind.AccessToken))]
+    [InlineData(nameof(TokenKind.IdToken))]
+    public void AddZeeKayDaAuth_registers_JwtTokenIssuer_for_each_TokenKind(string kindName)
     {
+        var kind = Enum.Parse<TokenKind>(kindName);
         var services = new ServiceCollection();
 
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
@@ -66,16 +67,14 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public async Task ValidatedClientResolver_serves_public_client_with_credentials_as_unknown_regardless_of_registered_validator()
+    public async Task ValidatedClientResolver_serves_public_client_with_credentials_as_unknown()
     {
         // The none path trusts IsPublic because the resolver enforces public <=> no credentials.
-        // A host's own IClientRegistrationValidator, however lax, must not replace that check.
         var corrupt = Client.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"])
             with
         { Secrets = [Pbkdf2ClientSecretHasher.Format(600_000, new byte[16], new byte[32])] };
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IClientRegistrationValidator, AcceptEverythingValidator>();
         services.AddSingleton<IClientRepository>(new SingleClientRepository(corrupt));
         services.AddZeeKayDaAuth(options =>
         {
@@ -87,59 +86,22 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
             .FindClientWithCredentialsAsync("public-client", TestContext.Current.CancellationToken);
 
         served.Should().BeNull();
-        provider.GetRequiredService<IClientRegistrationValidator>().Should().BeOfType<AcceptEverythingValidator>(
-            "the host's validator stays what a repository injects to validate on write");
     }
 
     [Fact]
-    public async Task ValidatedClientResolver_also_runs_the_hosts_own_validator_on_what_it_serves()
-    {
-        var valid = Client.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"]);
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton<IClientRegistrationValidator, RejectEverythingValidator>();
-        services.AddSingleton<IClientRepository>(new SingleClientRepository(valid));
-        services.AddZeeKayDaAuth(options =>
-        {
-            options.Issuer = "https://auth.example.com";
-        });
-        using var provider = services.BuildServiceProvider();
-
-        var served = await provider.GetRequiredService<ValidatedClientResolver>()
-            .FindClientWithCredentialsAsync("public-client", TestContext.Current.CancellationToken);
-
-        served.Should().BeNull("a host's stricter rule applies to what is served, on top of the framework's");
-    }
-
-    [Fact]
-    public void In_memory_clients_are_held_to_the_framework_rules_at_startup_when_the_host_registers_its_own_validator()
+    public void A_custom_repository_can_inject_the_framework_rules_to_check_a_client_before_saving()
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IClientRegistrationValidator, AcceptEverythingValidator>();
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com")
-            .AddInMemoryClients(clients => clients.AddPublic("spa", client =>
-            {
-                client.RedirectUris.UnionWith(["https://app.example.com/cb#fragment"]);
-                client.AllowedScopes.UnionWith(["openid"]);
-            }));
+        services.AddSingleton<IClientRepository>(new SingleClientRepository(
+            Client.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"])));
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
         using var provider = services.BuildServiceProvider();
+        var invalid = Client.CreatePublic("spa", ["https://app.example.com/cb#fragment"], [], ["openid"]);
 
-        var act = () => provider.GetRequiredService<IClientRepository>();
+        var failures = provider.GetRequiredService<ClientRegistrationValidator>().Validate(invalid);
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
-    }
-
-    private sealed class RejectEverythingValidator : IClientRegistrationValidator
-    {
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
-            [new ZeeKayDaConfigurationFailure("host.tenant_rule", "Redirect URIs must be on the tenant domain.")];
-    }
-
-    private sealed class AcceptEverythingValidator : IClientRegistrationValidator
-    {
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => [];
+        failures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
     }
 
     private sealed class SingleClientRepository(IClientWithCredentials client) : IClientRepository

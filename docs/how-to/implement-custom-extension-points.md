@@ -1,37 +1,31 @@
 ---
 title: "Implement a custom extension point"
-description: "How to write custom extension points — IScopeRepository, IDiscoveryDocumentProvider, IClientRepository, IClientSecretHasher, and IClientAuthenticator — that participate correctly in async cancellation."
+description: "How to write custom extension points — IScopeRepository, IClientRepository, IClientSecretHasher, and IClientAuthenticator — that participate correctly in async cancellation."
 parent: "How-to Guides"
 nav_order: 3
 ---
 
 *Added in Unreleased.*
 
-ZeeKayDa.Auth exposes several extension points you can implement to plug in custom behaviour at the scope catalog, discovery, client storage, secret hashing, and authentication layers:
+ZeeKayDa.Auth exposes several extension points you can implement to plug in custom behaviour at the scope catalog, client storage, secret hashing, and authentication layers:
 
 - [`IScopeRepository`](../reference/configuration.md) — supplies the scopes the authorization server knows about, e.g. from a database, a remote config service, or a per-tenant store.
-- `IDiscoveryDocumentProvider` — supplies the OpenID Connect discovery document, e.g. when you need to merge metadata from another source or surface a dynamic key-rotation state.
 - `IClientRepository` — supplies client registrations at request time, e.g. from a relational database or a multi-tenant store.
 - `IClientSecretHasher` — plugs in a custom hashing algorithm (bcrypt, Argon2, etc.) or supports credential migration.
 - `IClientAuthenticator` — adds a new token-endpoint authentication method beyond `client_secret_basic` and `client_secret_post`.
 
-The repository and discovery interfaces are **fully asynchronous and cancellation-aware**. This guide shows you how to implement each extension point correctly. The scope and discovery signatures look like this:
+The repository interfaces are **fully asynchronous and cancellation-aware**. This guide shows you how to implement each extension point correctly. The scope signature looks like this:
 
 ```csharp
 public interface IScopeRepository
 {
     Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default);
 }
-
-public interface IDiscoveryDocumentProvider
-{
-    Task<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default);
-}
 ```
 
-## Why both interfaces are async
+## Why the repository interfaces are async
 
-Both extension points sit on a hot request path: every call to the OpenID Connect discovery endpoint (and, in due course, every token request) reaches them. Real-world implementations are almost always I/O-bound — a database query, an HTTP call, a distributed cache lookup. Forcing those implementations to block a thread-pool thread is the well-known sync-over-async foot-gun: under load it causes thread-pool starvation, and it makes it impossible to honour request cancellation cleanly.
+The scope and client repositories sit on a hot request path: every discovery, authorize and token request reaches them. Real-world implementations are almost always I/O-bound — a database query, an HTTP call, a distributed cache lookup. Forcing those implementations to block a thread-pool thread is the well-known sync-over-async foot-gun: under load it causes thread-pool starvation, and it makes it impossible to honour request cancellation cleanly.
 
 Every asynchronous extension point returns `Task` or `Task<T>`, never `ValueTask`: a `Task` can be awaited more than once and stored without surprises. An implementation that completes synchronously returns `Task.FromResult(value)` or `Task.CompletedTask`.
 
@@ -77,46 +71,7 @@ builder.Services.AddDbContextFactory<ScopeDbContext>(/* ... */);
 builder.Services.AddSingleton<IScopeRepository, DatabaseScopeRepository>();
 ```
 
-## 2. Implement a custom discovery document provider
-
-```csharp
-public sealed class TenantAwareDiscoveryDocumentProvider : IDiscoveryDocumentProvider
-{
-    private readonly ITenantContext _tenant;
-    private readonly IDiscoveryMetadataClient _metadataClient;
-
-    public TenantAwareDiscoveryDocumentProvider(
-        ITenantContext tenant,
-        IDiscoveryMetadataClient metadataClient)
-    {
-        _tenant = tenant;
-        _metadataClient = metadataClient;
-    }
-
-    public async Task<OpenIdConfigurationDocument> GetDocumentAsync(
-        CancellationToken cancellationToken = default)
-    {
-        var metadata = await _metadataClient.FetchAsync(_tenant.Id, cancellationToken);
-
-        return new OpenIdConfigurationDocument
-        {
-            Issuer = metadata.Issuer,
-            AuthorizationEndpoint = metadata.AuthorizationEndpoint,
-            TokenEndpoint = metadata.TokenEndpoint,
-            JwksUri = metadata.JwksUri,
-            // ...populate the remaining required fields...
-        };
-    }
-}
-```
-
-Register the same way:
-
-```csharp
-builder.Services.AddSingleton<IDiscoveryDocumentProvider, TenantAwareDiscoveryDocumentProvider>();
-```
-
-## 3. Honour the cancellation token
+## 2. Honour the cancellation token
 
 The framework passes `HttpContext.RequestAborted` to your implementation. You should:
 
@@ -151,7 +106,7 @@ private IReadOnlyCollection<ScopeDefinition> LoadFromHttpClientSync()
 
 If your data source has only a synchronous API, the right answer is to put a real cache (`IMemoryCache`, `HybridCache`, `IDistributedCache`) in front of it and refresh the cache from a background `IHostedService` — then your `GetScopesAsync` returns `Task.FromResult(_cached)` and you have not introduced sync-over-async on the hot path.
 
-## 4. Implement a custom client secret hasher
+## 3. Implement a custom client secret hasher
 
 ZeeKayDa.Auth ships with a PBKDF2-HMAC-SHA256 hasher (`Pbkdf2ClientSecretHasher`) that covers the
 vast majority of deployments. If you need a different hashing algorithm — for example during a
@@ -298,7 +253,7 @@ only verifies legacy secrets must still create one for a random value.
 > See [Configure host-level log hygiene](configure-host-log-hygiene.md) for the steps required to
 > close this gap in the host pipeline.
 
-## 5. Implement a custom client repository
+## 4. Implement a custom client repository
 
 A custom `IClientRepository` is the right approach when your client registrations live outside
 the in-memory defaults — for example in a relational database, a multi-tenant store, or an
@@ -330,12 +285,12 @@ public sealed class DatabaseClientRepository : IClientRepository
 {
     private readonly IDbContextFactory<ClientDbContext> _factory;
     private readonly ClientSecrets _secrets;
-    private readonly IClientRegistrationValidator _validator;
+    private readonly ClientRegistrationValidator _validator;
 
     public DatabaseClientRepository(
         IDbContextFactory<ClientDbContext> factory,
         ClientSecrets secrets,
-        IClientRegistrationValidator validator)
+        ClientRegistrationValidator validator)
     {
         _factory = factory;
         _secrets = secrets;
@@ -360,7 +315,7 @@ public sealed class DatabaseClientRepository : IClientRepository
 
 ### Validate before persisting
 
-A custom repository should call `IClientRegistrationValidator.Validate` before writing a new or
+A custom repository should call `ClientRegistrationValidator.Validate` before writing a new or
 updated client registration to the store. The validator enforces the same startup-time rules that
 apply to in-memory clients — required fields, allowed grant types, consistent redirect URI
 configuration, and so on. Skipping validation does not let a malformed registration reach the
@@ -389,7 +344,7 @@ For the full `ClientSecrets` API reference, including lifetime and security note
 
 ---
 
-## 6. Implement a custom client authenticator
+## 5. Implement a custom client authenticator
 
 `IClientAuthenticator` lets you plug a new token endpoint authentication method into the
 framework's dispatch pipeline. The built-in `ClientSecretAuthenticator` handles
@@ -524,44 +479,6 @@ builder.Services.AddZeeKayDaAuth(options => options.Issuer = "https://id.example
 >
 > See [Configure host-level log hygiene](configure-host-log-hygiene.md) for the steps required to
 > close this gap in the host pipeline.
-
-## 7. Implement a custom token issuer
-
-`ITokenIssuer` is the seam between deciding a token's contents and producing its wire form. The
-framework resolves the issuer for each token as a **keyed** DI service, keyed by `TokenKind` — so
-you can swap how access tokens are issued without touching ID tokens, and vice versa:
-
-```csharp
-services.AddKeyedSingleton<ITokenIssuer, MyReferenceTokenIssuer>(TokenKind.AccessToken);
-// TokenKind.IdToken keeps the framework's JwtTokenIssuer.
-```
-
-The interface has one member:
-
-```csharp
-public interface ITokenIssuer
-{
-    Task<IssuedToken> IssueAsync(
-        TokenIssuanceContext context,
-        TokenPayload payload,
-        CancellationToken cancellationToken = default);
-}
-```
-
-`TokenIssuanceContext` carries the client as `IClientMetadata` — everything about the client
-except its credentials — and the `TokenKind` being issued. `TokenPayload` carries finalized
-claims: perform no claim selection, renaming, or enrichment in an issuer. Return the token exactly
-as it goes to the client, echoing the requested kind.
-
-Security contract:
-
-| Rule | Why |
-|---|---|
-| Echo `context.Kind` in `IssuedToken.Kind`, always. | The call site asserts it received the kind it asked for; a mismatch must surface as a bug, not a mis-typed token. |
-| Never log or embed `IssuedToken.Value`; it is a live credential. | The framework's own record prints only the value's length for this reason. |
-| A JWT issuer MUST sign via `SigningKeyRing.SignAsync` and build its JOSE header **inside the callback**, from the `SigningKey` the ring supplies. | The header's `kid`/`alg` and the signature then come from the same resolved key — disagreement is structurally impossible. Resolving key material any other way (for example via `ISigningKeySource` directly) reintroduces exactly that disagreement. |
-| Resolve the key at most once per token. | Two resolutions can straddle a key change; the callback shape gives you one for free. |
-| Claim values must be JSON primitives, arrays of them, or purpose-built claim shapes. | Values serialize by runtime type, whole object graph included — a domain object puts every property it references inside a token readable by whoever holds it. |
 
 ## See also
 
