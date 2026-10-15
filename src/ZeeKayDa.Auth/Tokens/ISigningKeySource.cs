@@ -6,28 +6,20 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A source signs under exactly one <see cref="Algorithm"/>, and so does the server: every key it
-/// lists is used with that algorithm, and a key whose material does not suit it fails startup.
-/// Changing algorithm means a new source and a restart.
+/// A source signs under exactly one <see cref="Algorithm"/>, and so does the server; a listed key whose
+/// material does not suit it fails startup. Changing algorithm means a new source and a restart.
 /// </para>
 /// <para>
-/// A source never decides which key signs or which keys are published. The framework decides both
-/// from each key's <see cref="SourceKey.NotBefore"/> and <see cref="SourceKey.ExpiresAt"/>: the
-/// newest key published for at least the lead time signs, and an older key stays published until no
-/// token it signed can still be valid. A source lists every key it has; any of them may be asked to
-/// sign.
+/// A source lists every key it has and never decides which signs or which are published: the framework
+/// decides from each key's <see cref="SourceKey.NotBefore"/> and <see cref="SourceKey.ExpiresAt"/>.
 /// </para>
 /// <para>
-/// Third parties implement this interface from their own package and register it via
-/// <c>builder.AddSigningKeySource&lt;TSource&gt;()</c>.
+/// Register an implementation with <c>builder.AddSigningKeySource&lt;TSource&gt;()</c>.
 /// </para>
 /// <para>
-/// The <see cref="SigningKeyRing"/> constructs and owns the one instance it reads from — nothing
-/// registers an <see cref="ISigningKeySource"/> in the container, so no application code can reach
-/// it. The ring disposes it once, at shutdown, after the <see cref="ISigner"/> it opened. Implement
-/// <see cref="IDisposable"/> if the source holds a handle — a client, a connection — that needs
-/// closing; implementing <see cref="IAsyncDisposable"/> without <see cref="IDisposable"/> is rejected
-/// at registration time.
+/// The <see cref="SigningKeyRing"/> constructs and owns the one instance, which is not in the container,
+/// and disposes it at shutdown after its signers. Implement <see cref="IDisposable"/> if the source holds
+/// a handle; <see cref="IAsyncDisposable"/> without <see cref="IDisposable"/> is rejected at registration.
 /// </para>
 /// </remarks>
 public interface ISigningKeySource
@@ -44,9 +36,8 @@ public interface ISigningKeySource
     /// whose own problem keeps it from being listed.
     /// </returns>
     /// <remarks>
-    /// Throw only for a failure that is not about one entry — a store that cannot be opened, a vault
-    /// that cannot be reached. A thrown read is a failed read and changes nothing, so a failure about
-    /// one entry thrown here would stop every other entry's change too, a revocation included.
+    /// Throw only for a failure that is not about one entry, such as an unreachable vault. A thrown read
+    /// changes nothing, so throwing for one entry would hold back every other change, a revocation included.
     /// </remarks>
     Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default);
 

@@ -112,9 +112,8 @@ internal static partial class SigningKeySetBuilder
     }
 
     /// <summary>
-    /// Imports the key's public parameters into the BCL's own cryptographic provider and re-exports
-    /// them: rejects structural garbage (an off-curve EC point, a non-canonical RSA modulus) and
-    /// returns a canonical copy decoupled from the instance the source still holds.
+    /// Round-trips the key through the BCL, rejecting structural garbage and returning a canonical copy
+    /// decoupled from the source's instance.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown with failure code <c>signing.invalid_public_key</c>.

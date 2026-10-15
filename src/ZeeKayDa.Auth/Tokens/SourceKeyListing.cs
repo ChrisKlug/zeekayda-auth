@@ -7,20 +7,15 @@ namespace ZeeKayDa.Auth.Tokens;
 /// it could not.
 /// </summary>
 /// <remarks>
-/// A failure that is about one entry — a key file too permissive, a certificate without a private
-/// key — is reported here, never thrown, so it cannot hold up the rest of the listing: deleting one
-/// key while another is broken still unlists the deleted key. A failure that is not about one entry
-/// — a store that cannot be opened, a vault that cannot be reached — throws from
+/// A failure about one entry is reported here, never thrown, so it cannot hold up the rest: deleting one
+/// key while another is broken still unlists it. A failure not about one entry throws from
 /// <see cref="ISigningKeySource.ReadAsync"/>, and the framework keeps the keys it last read.
 /// </remarks>
 public sealed class SourceKeyListing
 {
     /// <summary>Initialises a <see cref="SourceKeyListing"/>.</summary>
     /// <param name="keys">Every key the source could list, in any order.</param>
-    /// <param name="failures">
-    /// Every entry the source holds but could not list, each with its own failure. Such an entry is
-    /// neither published nor ever signs, and the health check reports it; the keys around it carry on.
-    /// </param>
+    /// <param name="failures">Every entry the source holds but could not list, each with its own failure.</param>
     public SourceKeyListing(IReadOnlyList<SourceKey> keys, IReadOnlyList<SourceKeyFailure> failures)
     {
         Keys = keys;

@@ -9,12 +9,10 @@ public sealed class SigningKeyOptions
     /// Gets or sets how long a new key is published before it signs. Defaults to one day.
     /// </summary>
     /// <remarks>
-    /// Relying parties that cached the key set before a new key appeared reject its tokens until
-    /// they refresh, so a new key waits this long, counted from its <see cref="SourceKey.NotBefore"/>,
-    /// before it takes over. A day covers relying parties that ignore the JWKS
-    /// <c>Cache-Control</c> header (Microsoft.IdentityModel refreshes metadata every 12 hours by
-    /// default). Must be greater than zero, and not shorter than
-    /// <see cref="Discovery.JwksEndpointOptions.CacheMaxAge"/> plus <see cref="RefreshInterval"/>.
+    /// Relying parties that cached the key set before a key appeared reject its tokens until they refresh, so a
+    /// key waits this long from its <see cref="SourceKey.NotBefore"/> before it signs. A day covers relying
+    /// parties that ignore the JWKS <c>Cache-Control</c> header. Must be greater than zero, and not shorter
+    /// than <see cref="Discovery.JwksEndpointOptions.CacheMaxAge"/> plus <see cref="RefreshInterval"/>.
     /// </remarks>
     public TimeSpan LeadTime { get; set; } = TimeSpan.FromDays(1);
 
@@ -31,8 +29,7 @@ public sealed class SigningKeyOptions
     /// <summary>The shortest <see cref="RefreshInterval"/> accepted.</summary>
     internal static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
 
-    // Long enough that a slow or failed handover on one replica is noticed and fixed before the
-    // other replicas stop publishing the key it still signs with.
+    // Long enough to fix a failed handover on one replica before the others unpublish its key.
     private static readonly TimeSpan MinimumDefaultRetention = TimeSpan.FromDays(2);
 
     /// <summary>
@@ -43,13 +40,9 @@ public sealed class SigningKeyOptions
     /// <see cref="AuthorizationServerOptions.ClockSkewTolerance"/> when that is longer.
     /// </summary>
     /// <remarks>
-    /// Must cover the longest token lifetime, so tokens a key signed just before it stopped signing
-    /// stay verifiable. The two days on top cover a replica whose handover to a successor is slow or
-    /// fails: it signs on with the old key, which stays verifiable for this long from the
-    /// successor's takeover. A failed handover must be fixed within it. Clients may override their
-    /// token lifetimes and may come from a database, so they are not known at startup; raise this
-    /// setting to the longest lifetime any client uses. A value below the default logs a Warning at
-    /// startup.
+    /// Must cover the longest token lifetime any client uses, which is not known at startup when clients come
+    /// from a database, so raise it to match. The two-day floor gives a replica whose handover is slow or fails
+    /// time to be fixed while its old key still verifies. A value below the default logs a Warning at startup.
     /// </remarks>
     public TimeSpan? RetainRetiredKeysFor { get; set; }
 
@@ -59,8 +52,6 @@ public sealed class SigningKeyOptions
     /// </summary>
     internal static TimeSpan DefaultRetainRetiredKeysFor(AuthorizationServerOptions options)
     {
-        // A retired key's last token stays valid for a token lifetime, and relying parties accept it
-        // for the clock skew beyond that.
         var tokens = TokenLifetimes.Sum(
             options.TokenEndpoint.AccessTokenLifetime > options.TokenEndpoint.IdTokenLifetime
                 ? options.TokenEndpoint.AccessTokenLifetime

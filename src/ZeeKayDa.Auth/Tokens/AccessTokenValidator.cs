@@ -3,13 +3,7 @@ using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// An access token this server issued, proven live and addressed to this server, and the three
-/// things a protected resource here needs from it.
-/// </summary>
-/// <param name="Subject">The user the token was issued for: its <c>sub</c>.</param>
-/// <param name="ClientId">The client the token was issued to: its <c>client_id</c>.</param>
-/// <param name="Scopes">The scopes the grant carries, in the order the token lists them.</param>
+/// <summary>A live access token of this server's, and the three things a protected resource here needs from it.</summary>
 internal sealed record ValidatedAccessToken(string Subject, string ClientId, IReadOnlyList<string> Scopes);
 
 /// <summary>A NumericDate claim as read from a payload: whether it was written, and what it says.</summary>
@@ -24,16 +18,9 @@ internal readonly record struct NumericDate(bool Present, DateTimeOffset? Value)
 }
 
 /// <summary>
-/// Validates an access token the way RFC 9068 §4 obliges a resource server to: this server's
-/// signature, its <c>typ</c>, its <c>iss</c>, an <c>aud</c> naming this server, and a validity
-/// window that has not passed.
+/// Validates an access token as RFC 9068 §4 obliges a resource server to: signature, <c>typ</c>,
+/// <c>iss</c>, an <c>aud</c> naming this server, and a live validity window.
 /// </summary>
-/// <remarks>
-/// The issuer is always an audience of an access token carrying <c>openid</c>, which is what lets
-/// a resource this server hosts validate one as an ordinary resource server rather than by
-/// trusting <c>iss</c> alone. What the token then authorizes — which scopes a given endpoint
-/// requires — is the endpoint's question, not this type's.
-/// </remarks>
 internal sealed class AccessTokenValidator(
     SigningKeyRing keyRing,
     IOptions<AuthorizationServerOptions> options,
@@ -44,9 +31,8 @@ internal sealed class AccessTokenValidator(
     private static readonly string[] AccessTokenTypes = ["at+jwt", "application/at+jwt"];
 
     /// <summary>
-    /// Returns what <paramref name="accessToken"/> names when it is a live access token of this
-    /// server's, or <see langword="null"/> when it is absent, malformed, unsigned by this server,
-    /// expired, not yet valid, or addressed elsewhere. Which of those it was is never reported.
+    /// What <paramref name="accessToken"/> names when it is a live access token of this server's, else
+    /// <see langword="null"/>; which check failed is never reported.
     /// </summary>
     /// <param name="accessToken">The presented bearer token, verbatim.</param>
     /// <exception cref="InvalidOperationException">
@@ -81,20 +67,13 @@ internal sealed class AccessTokenValidator(
             : new ValidatedAccessToken(subject, clientId, ReadScopes(claims));
     }
 
-    /// <summary>
-    /// An access token by its <c>typ</c>, signed by a key this server lists, under that key's own
-    /// algorithm. Whether the key is still published does not matter: the token's own lifetime does.
-    /// </summary>
+    /// <summary>Signed by a listed key under its own algorithm, with an access-token <c>typ</c>; publication does not matter.</summary>
     private bool IsSignedAccessToken(CompactJws jws) =>
         AccessTokenTypes.Contains(jws.Typ, StringComparer.OrdinalIgnoreCase)
         && keyRing.Verify(jws.Kid, jws.SigningInput.Span, jws.Signature.Span) is { } key
         && jws.NamesAlgorithmOf(key);
 
-    /// <summary>
-    /// RFC 9068 §4: a resource server rejects a token whose <c>aud</c> does not name it. The claim
-    /// is a single string for one recipient and an array for several (RFC 7519 §4.1.3); a token
-    /// carrying neither shape names nobody and is refused.
-    /// </summary>
+    /// <summary>Whether <c>aud</c>, a string or an array (RFC 7519 §4.1.3), names this server (RFC 9068 §4).</summary>
     private static bool NamesThisServer(JsonElement payload, string? issuer)
     {
         if (!payload.TryGetProperty("aud", out var audience))
@@ -109,19 +88,10 @@ internal sealed class AccessTokenValidator(
         JwtClaims.AsString(value) is { } name && string.Equals(name, issuer, StringComparison.Ordinal);
 
     /// <summary>
-    /// The token has not expired and has become valid, each allowed the configured clock-skew
-    /// tolerance. <c>exp</c> is required of an access token (RFC 9068 §2.2), so a token without a
-    /// readable one is refused rather than treated as eternal; <c>nbf</c> is honoured when present
-    /// (RFC 7519 §4.1.5), and one present but unreadable is refused rather than ignored, since a
-    /// token says it becomes valid later and this code cannot tell when.
+    /// A readable <c>exp</c> not passed (RFC 9068 §2.2) and any <c>nbf</c> reached, both readable, within the
+    /// clock-skew tolerance. The tolerance is applied to the clock, never the claim, which may sit at the edge of
+    /// <see cref="DateTimeOffset"/>.
     /// </summary>
-    /// <remarks>
-    /// The tolerance is applied to <see cref="TimeProvider.GetUtcNow"/>, never to the claim.
-    /// <c>exp</c> and <c>nbf</c> come off the wire and may sit at the edge of what
-    /// <see cref="DateTimeOffset"/> represents — the framework itself emits the maximum when an
-    /// operator configures an enormous lifetime — where adding to them overflows. The clock is
-    /// always far from either edge, and validation is bounded to well under an hour.
-    /// </remarks>
     private bool IsWithinValidityWindow(JsonElement payload)
     {
         if (ReadNumericDate(payload, "exp").Value is not { } expiresAt)
@@ -138,11 +108,7 @@ internal sealed class AccessTokenValidator(
             && (notBefore.Value is not { } validFrom || now + skew >= validFrom);
     }
 
-    /// <summary>
-    /// A NumericDate claim (RFC 7519 §2): absent, present but unreadable, or an instant. The
-    /// middle case is distinct because a claim the issuer wrote and this code cannot read is not
-    /// the same as one the issuer never wrote.
-    /// </summary>
+    /// <summary>A NumericDate claim: absent, present but unreadable, or an instant.</summary>
     private static NumericDate ReadNumericDate(JsonElement payload, string name)
     {
         if (!payload.TryGetProperty(name, out var value))
@@ -162,10 +128,7 @@ internal sealed class AccessTokenValidator(
         }
     }
 
-    /// <summary>
-    /// The <c>scope</c> claim as the space-delimited list RFC 9068 §2.2.3 writes. A token without
-    /// one carries no scopes, which unlocks nothing.
-    /// </summary>
+    /// <summary>The space-delimited <c>scope</c> claim (RFC 9068 §2.2.3); none when absent.</summary>
     private static IReadOnlyList<string> ReadScopes(JsonElement payload) =>
         JwtClaims.ReadString(payload, "scope") is { } scope
             ? scope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

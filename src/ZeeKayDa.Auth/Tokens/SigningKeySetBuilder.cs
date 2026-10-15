@@ -1,19 +1,6 @@
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// Turns what a source lists into a <see cref="SigningKeyTimeline"/>: drops a key that is weak,
-/// mismatched or malformed, rejects a list that is ambiguous, derives every <c>kid</c>, builds the
-/// entries listing one key pair into one key, and orders the keys oldest first.
-/// </summary>
-/// <remarks>
-/// Every <c>kid</c> is derived from the key's own public material via <see cref="JwkThumbprint"/> —
-/// a source cannot supply one. A problem with one key drops that key into
-/// <see cref="SigningKeyTimeline.Dropped"/>, alongside every entry the source reported as a failure,
-/// so a bad staged key cannot stop the keys around it; a problem with the list itself throws
-/// <see cref="ZeeKayDaConfigurationException"/>. Which key signs
-/// and which are published is the timeline's to decide, at each instant — including whether a
-/// dropped key was the one due to sign, which the ring refuses at startup.
-/// </remarks>
+/// <summary>Turns what a source lists into a <see cref="SigningKeyTimeline"/>, dropping unusable keys and refusing an ambiguous list.</summary>
 internal static partial class SigningKeySetBuilder
 {
     /// <summary>
@@ -26,11 +13,7 @@ internal static partial class SigningKeySetBuilder
         return byDate != 0 ? byDate : string.CompareOrdinal(x.SourceId.Value, y.SourceId.Value);
     });
 
-    /// <summary>
-    /// Validates every key in <paramref name="listing"/> against <paramref name="algorithm"/> and returns
-    /// them as a timeline, with any key whose own material or dates are unusable dropped alongside the
-    /// entries the source reported as failures, and the entries listing one key pair built into one key.
-    /// </summary>
+    /// <summary>Validates <paramref name="listing"/> against <paramref name="algorithm"/> and builds its timeline.</summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Thrown with failure code <c>signing.undefined_algorithm</c> when <paramref name="algorithm"/> is
     /// not a defined <see cref="SigningAlgorithm"/> member; <c>signing.no_keys</c> when <paramref name="listing"/>
@@ -197,9 +180,8 @@ internal static partial class SigningKeySetBuilder
     }
 
     /// <summary>
-    /// The entries listing one key pair as one key, published from the first's NotBefore to the last's
-    /// expiry. It opens through the entry that expires last, ties to the ordinally greater source id:
-    /// that certificate is the one still valid at the end.
+    /// The entries listing one key pair as one key, opening through the entry that expires last: that
+    /// certificate is the one still valid at the end.
     /// </summary>
     private static MergedKey Merge(IReadOnlyList<SigningKey> entries)
     {
@@ -219,10 +201,7 @@ internal static partial class SigningKeySetBuilder
         return new MergedKey(key, [.. entries.Select(entry => entry.SourceId).OrderBy(id => id.Value, StringComparer.Ordinal)]);
     }
 
-    /// <summary>
-    /// <paramref name="publicKey"/> has already passed <see cref="ImportAndCanonicalize"/>, so its
-    /// curve is always one <see cref="JwkThumbprint"/> accepts.
-    /// </summary>
+    /// <summary>Safe for any key past <see cref="ImportAndCanonicalize"/>, whose curve <see cref="JwkThumbprint"/> accepts.</summary>
     private static string DeriveKid(PublicKeyParameters publicKey) =>
         publicKey.KeyType == SigningKeyType.Rsa
             ? JwkThumbprint.Compute(publicKey.RsaPublicParameters!.Value)

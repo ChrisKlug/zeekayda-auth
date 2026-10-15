@@ -1,30 +1,16 @@
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// The single derivation of what <c>token_endpoint_auth_methods_supported</c> advertises: every
-/// method a registered client authenticator performs, plus <c>none</c>, narrowed by the operator's
-/// optional filter.
+/// The one derivation of <c>token_endpoint_auth_methods_supported</c>: every method a registered
+/// authenticator performs, plus <c>none</c>, narrowed by the operator's filter. Every consumer reads it.
 /// </summary>
-/// <remarks>
-/// Every consumer — the discovery document, the client registration subset check, the token
-/// endpoint's per-request check, and the startup checks on the result — reads this one instance, so
-/// no caller can derive a different answer from the same inputs. <c>none</c> is always performable
-/// because the framework handles it itself; a client that may use it is still only ever a public
-/// client, held to PKCE S256 on the code grant.
-/// </remarks>
 internal sealed class AdvertisedAuthMethods
 {
     private readonly HashSet<string> _methods;
 
     /// <summary>Resolves what to advertise from what the server performs and the operator's filter.</summary>
-    /// <param name="performable">
-    /// The methods the registered authenticators declare; <c>none</c> is added here, never by them. A
-    /// malformed entry is never advertised: the startup check on the declarations fails on it.
-    /// </param>
-    /// <param name="filter">
-    /// <see cref="TokenEndpointOptions.AdvertisedAuthMethods"/>; <see langword="null"/> advertises
-    /// every performable method.
-    /// </param>
+    /// <param name="performable">The methods the authenticators declare; malformed entries are dropped and fail startup elsewhere.</param>
+    /// <param name="filter"><see cref="TokenEndpointOptions.AdvertisedAuthMethods"/>; <see langword="null"/> advertises them all.</param>
     public AdvertisedAuthMethods(IEnumerable<string> performable, ICollection<string>? filter)
     {
         var all = new SortedSet<string>(performable.Where(TokenEndpointAuthMethodRules.IsWellFormed), StringComparer.Ordinal)
@@ -32,8 +18,7 @@ internal sealed class AdvertisedAuthMethods
             TokenEndpointAuthMethods.None,
         };
 
-        // Read-only wrappers, not arrays: discovery hands Methods to a public document, and an array
-        // cast back from it would let the advertised set drift from the one the token endpoint checks.
+        // Read-only wrappers, not arrays: discovery hands Methods out, and a cast-back array could drift.
         Performable = all.ToList().AsReadOnly();
         Methods = (filter is null ? all : all.Where(method => filter.Contains(method, StringComparer.Ordinal)))
             .ToList().AsReadOnly();

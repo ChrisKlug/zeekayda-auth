@@ -8,9 +8,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <see cref="ISigningKeySource.Algorithm"/>.
 /// </summary>
 /// <remarks>
-/// A source only lists keys; the framework decides which one signs and which are published, from
-/// the dates alone. <see cref="NotBefore"/> must be a date every replica agrees on — a certificate's
-/// own <c>NotBefore</c>, a vault version's creation date — never "first seen by this process".
+/// <see cref="NotBefore"/> must be a date every replica agrees on, such as a certificate's own
+/// <c>NotBefore</c>, never "first seen by this process".
 /// </remarks>
 public sealed record SourceKey
 {
@@ -21,10 +20,8 @@ public sealed record SourceKey
     /// <c>kid</c>: the framework always derives that from <paramref name="publicKey"/>.</param>
     /// <param name="publicKey">The public key material. Never carries private key material.</param>
     /// <param name="notBefore">
-    /// The instant the key is published from, or <see langword="null"/> for a key with no date. The
-    /// framework orders keys by it and counts <see cref="SigningKeyOptions.LeadTime"/> from it; it is
-    /// not a validity gate, since no relying party can observe it. An undated key is accepted only
-    /// when it is the only key the source lists.
+    /// The instant the key is published from, which orders the keys and starts the
+    /// <see cref="SigningKeyOptions.LeadTime"/>; <see langword="null"/> only for a source's sole key.
     /// </param>
     /// <param name="expiresAt">The key's expiry, or <see langword="null"/> when it never expires.</param>
     /// <exception cref="ArgumentNullException">

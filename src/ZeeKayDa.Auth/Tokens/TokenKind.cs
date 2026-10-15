@@ -5,9 +5,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// as a keyed DI service.
 /// </summary>
 /// <remarks>
-/// Refresh tokens are deliberately absent: they are opaque store handles minted by the grant
-/// machinery, not issued through a signing path. Routing them through <see cref="ITokenIssuer"/>
-/// would pre-empt the reference-token design (#284). Adding a member later is additive.
+/// No refresh token: it is an opaque store handle minted by the grant machinery, never signed.
 /// </remarks>
 public enum TokenKind
 {
