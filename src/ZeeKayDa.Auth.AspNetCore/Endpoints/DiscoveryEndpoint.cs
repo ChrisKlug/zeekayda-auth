@@ -71,9 +71,10 @@ internal sealed class DiscoveryEndpoint(IOptions<AuthorizationServerOptions> opt
         SanitizingLogger<DiscoveryEndpoint> logger,
         HttpContext context)
     {
+        OpenIdConfigurationDocument? document;
         try
         {
-            return await provider.GetDocumentAsync(context.RequestAborted).ConfigureAwait(false);
+            document = await provider.GetDocumentAsync(context.RequestAborted).ConfigureAwait(false);
         }
         catch (ScopeContractException ex)
         {
@@ -92,5 +93,10 @@ internal sealed class DiscoveryEndpoint(IOptions<AuthorizationServerOptions> opt
 
             return null;
         }
+
+        if (document is null)
+            logger.LogError("The discovery document could not be built: the provider returned null.");
+
+        return document;
     }
 }

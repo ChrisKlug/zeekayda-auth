@@ -3,9 +3,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Scopes;
 using ZeeKayDa.Auth.Security;
 using ZeeKayDa.Auth.Tokens;
@@ -669,6 +671,30 @@ public sealed class DiscoveryEndpointTests
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         body.Should().NotContain("Password=").And.NotContain("Server=db");
+    }
+
+    [Fact]
+    public async Task A_provider_returning_no_document_answers_500_and_logs_the_broken_contract()
+    {
+        var logs = new CapturingLoggerProvider();
+        using var host = new EndpointHost(
+            configureBuilder: builder =>
+            {
+                builder.Services.AddLogging(logging => logging.AddProvider(logs));
+                builder.Services.Replace(ServiceDescriptor.Singleton<IDiscoveryDocumentProvider, NullDocumentProvider>());
+            });
+
+        using var response = await GetAsync(host);
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        logs.Entries.Should().Contain(entry =>
+            entry.Level == LogLevel.Error && entry.Message.Contains("the provider returned null", StringComparison.Ordinal));
+    }
+
+    private sealed class NullDocumentProvider : IDiscoveryDocumentProvider
+    {
+        public Task<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<OpenIdConfigurationDocument>(null!);
     }
 
     /// <summary>Answers correctly until <see cref="Fail"/> is set, then throws as a store would.</summary>
