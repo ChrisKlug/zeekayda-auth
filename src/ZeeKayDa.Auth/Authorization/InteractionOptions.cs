@@ -1,94 +1,56 @@
 namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
-/// Paths of the host-owned interaction pages the authorization flow hands off to. Each configured
-/// path is a page the host application builds and drives through the corresponding interaction
-/// service.
+/// Paths of the host-owned pages the authorization flow hands off to.
 /// </summary>
 public sealed class InteractionOptions
 {
     /// <summary>
-    /// Gets or sets the host-relative path of the host's error page for authorization requests
-    /// whose errors cannot be redirected to the client (phase-1 validation failures — unknown
-    /// client or unregistered redirect URI). When <see langword="null"/> (the default), the
-    /// framework renders a minimal unbranded error response itself.
+    /// Gets or sets the path of the host's error page for authorization errors that cannot be redirected
+    /// to the client. When <see langword="null"/> (the default), the framework renders a minimal page.
     /// </summary>
     /// <remarks>
-    /// Must be an absolute path within the host application (starting with <c>/</c>), without
-    /// scheme, authority, query, or fragment. The redirect to this page carries only an opaque
-    /// error identifier — the error details are read server-side via the error interaction
-    /// service, never from the query string, which would leak into proxy logs and browser
-    /// history.
+    /// Must be an absolute path within the host application, without scheme, authority, query or fragment. The redirect carries only an opaque error identifier; the page reads the details
+    /// through the error interaction service, keeping them out of proxy logs and browser history.
     /// </remarks>
     public string? ErrorPath { get; set; }
 
     /// <summary>
-    /// Gets or sets the host-relative path of the host's login page. The framework redirects an
-    /// authorization request that needs authentication here, and the page completes the flow by
-    /// calling <c>LoginInteraction.SignInAsync</c>. Defaults to <c>/login</c>. A host with
-    /// <see cref="SupportsLocalSignIn"/> off and exactly one external provider needs no page: the
-    /// request goes straight to that provider whatever this is set to. Set to <see langword="null"/>,
-    /// any other host is warned at startup and answers the client with <c>server_error</c>.
+    /// Gets or sets the path of the host's login page, which completes the flow by calling
+    /// <c>LoginInteraction.SignInAsync</c>. Defaults to <c>/login</c>; the host still has to serve it.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The default is only an address: the host still has to serve a page there.
+    /// Must be an absolute path within the host application, without scheme, authority, query or fragment. Not used when <see cref="SupportsLocalSignIn"/> is off and exactly one external
+    /// provider is registered. When <see langword="null"/> otherwise, startup warns and the client gets <c>server_error</c>.
     /// </para>
     /// <para>
-    /// Must be an absolute path within the host application (starting with <c>/</c>), without
-    /// scheme, authority, query, or fragment.
-    /// </para>
-    /// <para>
-    /// The redirect carries one query parameter, <c>zkd_i</c>, identifying the interaction being
-    /// resumed. The login page must preserve it across its own form post — a
-    /// <c>&lt;form method="post"&gt;</c> with no <c>action</c> does so by default, because the
-    /// browser posts to the current URL including its query string. A form that regenerates the
-    /// URL from routing (<c>asp-page</c>, <c>asp-controller</c>) drops it, and must pass it back
-    /// explicitly with <c>asp-route-zkd_i</c>.
+    /// The redirect carries a <c>zkd_i</c> query parameter the page must keep across its form post. A
+    /// <c>&lt;form method="post"&gt;</c> with no <c>action</c> keeps it; one built from routing
+    /// (<c>asp-page</c>, <c>asp-controller</c>) needs <c>asp-route-zkd_i</c>.
     /// </para>
     /// </remarks>
     public string? LoginPath { get; set; } = "/login";
 
     /// <summary>
-    /// Gets or sets the host-relative path of the host's consent page. The framework redirects an
-    /// authenticated authorization request here when the client requires consent, and the page
-    /// completes the flow by calling <c>ConsentInteraction.GrantAsync</c> or
-    /// <c>ConsentInteraction.DenyAsync</c>. Defaults to <c>/consent</c>. When <see langword="null"/>,
-    /// a request for a client that requires consent answers the client with <c>server_error</c> and
-    /// logs an error naming this option.
+    /// Gets or sets the path of the host's consent page, which completes the flow by calling
+    /// <c>ConsentInteraction.GrantAsync</c> or <c>ConsentInteraction.DenyAsync</c>. Defaults to
+    /// <c>/consent</c>; the host still has to serve it if any client requires consent.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The default is only an address: the host still has to serve a page there if any client
-    /// requires consent.
-    /// </para>
-    /// <para>
-    /// Must be an absolute path within the host application (starting with <c>/</c>), without
-    /// scheme, authority, query, or fragment.
-    /// </para>
-    /// <para>
-    /// The redirect carries the same <c>zkd_i</c> query parameter as <see cref="LoginPath"/>, and
-    /// the consent page must preserve it across its own form post on the same terms.
-    /// </para>
-    /// <para>
-    /// There is no startup warning for a missing consent page: whether one is needed depends on
-    /// the registered clients, which the framework does not enumerate at startup. A host whose
-    /// clients all set <c>RequireConsent</c> to <see langword="false"/> never needs the page.
-    /// </para>
+    /// Must be an absolute path within the host application, without scheme, authority, query or fragment. The redirect carries <c>zkd_i</c> on the same terms as <see cref="LoginPath"/>. When
+    /// <see langword="null"/>, a client that requires consent gets <c>server_error</c>; there is no startup
+    /// warning, because the framework does not enumerate clients at startup.
     /// </remarks>
     public string? ConsentPath { get; set; } = "/consent";
 
     /// <summary>
-    /// Gets or sets whether the host's login page signs users in itself, with a credential form
-    /// whose handler calls <c>LoginInteraction.SignInAsync</c>. Defaults to <see langword="true"/>.
-    /// Set it to <see langword="false"/> for a host that authenticates only through external
-    /// providers; with exactly one provider registered, an authorization request is then sent
-    /// straight to that provider.
+    /// Gets or sets whether the host's login page signs users in itself through
+    /// <c>LoginInteraction.SignInAsync</c>. Defaults to <see langword="true"/>; set it to
+    /// <see langword="false"/> for a host that authenticates only through external providers.
     /// </summary>
     /// <remarks>
-    /// Local sign-in is a flag rather than a provider because it shares nothing with the
-    /// redirect-out-and-back lifecycle of an external provider. A host with local sign-in off and
-    /// no providers has no way to authenticate anyone, and fails at startup saying so.
+    /// With it off and no providers registered, nobody can authenticate, so startup fails.
     /// </remarks>
     public bool SupportsLocalSignIn { get; set; } = true;
 }

@@ -4,19 +4,11 @@ using ZeeKayDa.Auth.Configuration;
 namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>
-/// Validates every <see cref="IValidatedOptions"/> and reports their failures in one
-/// <see cref="ZeeKayDaConfigurationException"/>.
+/// Validates every <see cref="IValidatedOptions"/> together, where <c>ValidateOnStart()</c> would stop at the first.
 /// </summary>
-/// <remarks>
-/// <c>ValidateOnStart()</c> would stop at the first options type whose validator throws, so the
-/// operator would meet a second type's failures only on the next start.
-/// </remarks>
 internal static class ValidatedOptionsCheck
 {
-    /// <summary>
-    /// Throws one <see cref="ZeeKayDaConfigurationException"/> holding every registered options
-    /// type's failures, or returns when all of them are valid.
-    /// </summary>
+    /// <summary>Throws one exception holding every options type's failures, if there are any.</summary>
     public static void ThrowIfAnyInvalid(IServiceProvider services)
     {
         var failures = new OptionsFailures();

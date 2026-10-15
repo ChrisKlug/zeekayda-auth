@@ -1,9 +1,8 @@
 namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
-/// How a configuration failure repeats a URI the host configured. A failure message is printed
-/// with the startup error, where nothing redacts it, so a URI's user information, query and
-/// fragment (a password, a signed token) never appear in it.
+/// How a failure message repeats a configured URI: never with its user information, query or
+/// fragment, which may hold a secret and are never redacted.
 /// </summary>
 internal static class ConfiguredUri
 {

@@ -14,15 +14,11 @@ public static class ZeeKayDaAuthCoreBuilderHasherExtensions
     /// <summary>
     /// Registers a client secret hasher with ZeeKayDa.Auth.
     /// </summary>
-    /// <typeparam name="THasher">
-    /// The hasher implementation to register. Must implement <see cref="IClientSecretHasher"/>
-    /// and be safe for concurrent use (singleton-safe).
-    /// </typeparam>
+    /// <typeparam name="THasher">The hasher, registered as a singleton, so it must be safe for concurrent use.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="isDefault">
-    /// When <see langword="true"/>, this hasher replaces PBKDF2 as the one that creates new hashed
-    /// secrets. PBKDF2 stays registered, so existing PBKDF2 secrets keep verifying. At most one
-    /// hasher may set it, or startup fails. Every registered hasher builds its own timing decoy.
+    /// When <see langword="true"/>, this hasher creates new hashed secrets instead of PBKDF2, which
+    /// stays registered to verify existing ones. At most one hasher may set it, or startup fails.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -58,18 +54,12 @@ public static class ZeeKayDaAuthCoreBuilderHasherExtensions
         return builder;
     }
 
-    /// <summary>
-    /// Configures the built-in PBKDF2-HMAC-SHA256 client secret hasher, which
-    /// <c>AddZeeKayDaAuth</c> always registers.
-    /// </summary>
+    /// <summary>Configures the built-in PBKDF2-HMAC-SHA256 client secret hasher, which is always registered.</summary>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="configure">Sets <see cref="Pbkdf2ClientSecretHasherOptions"/>.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
-    /// <remarks>
-    /// The iteration count must be between 600,000 and 2,000,000; startup fails otherwise. The
-    /// options can equally be bound from configuration.
-    /// </remarks>
+    /// <remarks>The iteration count must be between 600,000 and 2,000,000; startup fails otherwise.</remarks>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> or <paramref name="configure"/> is <see langword="null"/>.
     /// </exception>

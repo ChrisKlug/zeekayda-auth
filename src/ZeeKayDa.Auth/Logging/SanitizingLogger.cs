@@ -11,50 +11,18 @@ namespace ZeeKayDa.Auth.Logging;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Redaction scope:</strong> this wrapper covers only log calls made through
-/// ZeeKayDa.Auth's own services. ASP.NET Core's <c>UseHttpLogging()</c>, Kestrel
-/// connection/request logging, W3CLogger, Application Insights request telemetry, and
-/// exception-handling middleware all emit log entries entirely outside this wrapper and are
-/// <strong>not</strong> protected by it. Consumers must independently configure those surfaces
-/// to avoid writing credential material to their log sinks. See the
+/// Covers only ZeeKayDa.Auth's own log calls. Host surfaces such as <c>UseHttpLogging()</c>, Kestrel,
+/// W3CLogger and Application Insights need their own configuration; see the
 /// <see href="https://chrisklug.github.io/zeekayda-auth/how-to/configure-host-log-hygiene/">
-/// Configure host-level log hygiene</see> how-to guide and the
-/// <see href="https://github.com/ChrisKlug/zeekayda-auth/blob/main/SECURITY.md#security-boundaries">
-/// Security boundaries</see> section of SECURITY.md.
+/// host log hygiene</see> guide. Only key-value states are inspected, against <c>SensitiveKeys</c>.
 /// </para>
 /// <para>
-/// Sensitive keys (case-insensitive):
-/// <c>client_secret</c>,
-/// <c>code_verifier</c>,
-/// <c>Authorization</c>,
-/// <c>access_token</c>,
-/// <c>refresh_token</c>,
-/// <c>id_token</c>,
-/// <c>client_assertion</c>,
-/// <c>assertion</c>,
-/// <c>device_code</c>,
-/// <c>subject_token</c>,
-/// <c>actor_token</c>,
-/// <c>password</c>,
-/// <c>code</c>,
-/// <c>DPoP</c>,
-/// <c>login_hint</c>,
-/// <c>LoginHint</c>. Only states that implement
-/// <see cref="IEnumerable{T}">IEnumerable&lt;KeyValuePair&lt;string, object?&gt;&gt;</see>
-/// are inspected; all other state types pass through unchanged.
+/// Exceptions are wrapped in a <see cref="RedactedExceptionWrapper"/> unless
+/// <see cref="Configuration.DevelopmentOptions.DisableExceptionSanitizing"/> is set.
 /// </para>
 /// <para>
-/// Exception messages are wrapped in a <see cref="RedactedExceptionWrapper"/> by default so that
-/// credential material embedded in exception messages cannot reach log sinks. Set
-/// <see cref="AuthorizationServerOptions.Development"/>.<see cref="Configuration.DevelopmentOptions.DisableExceptionSanitizing"/>
-/// to <see langword="true"/> to opt out (development environments only).
-/// </para>
-/// <para>
-/// Inject this type wherever a ZeeKayDa service logs; the <c>ZEEKAYDA0001</c> analyzer enforces it
-/// over a direct <see cref="ILogger{T}"/>. It is public so a provider package referencing only core
-/// ZeeKayDa.Auth can inject it, and its only constructor is internal, so no other assembly can
-/// derive from it, or construct it except through the TestKit's <c>TestSanitizingLogger</c>, which
-/// builds this same redacting logger: a registration can never substitute one that skips redaction.
+/// The <c>ZEEKAYDA0001</c> analyzer requires it over a direct <see cref="ILogger{T}"/>. Its only
+/// constructor is internal, so no registration can substitute a logger that skips redaction.
 /// </para>
 /// </remarks>
 /// <typeparam name="T">The type whose name is used for the logger category.</typeparam>
@@ -87,8 +55,7 @@ public class SanitizingLogger<T> : ILogger<T>
             "code",
             "DPoP",
 
-            // Not a credential, but personal data: the client's login_hint is an email address
-            // or a phone number (OIDC Core §3.1.2.1).
+            // Personal data rather than a credential: an email address or phone number.
             "login_hint",
             "LoginHint",
         };
@@ -125,8 +92,6 @@ public class SanitizingLogger<T> : ILogger<T>
         Exception? exception,
         Func<TState, Exception?, string> formatter)
     {
-        // Guard before allocating: if the inner logger would discard this entry anyway, skip all
-        // redaction work including the RedactedExceptionWrapper allocation.
         if (!_inner.IsEnabled(logLevel))
             return;
 
@@ -148,8 +113,7 @@ public class SanitizingLogger<T> : ILogger<T>
         }
         else if (state is not string)
         {
-            // Truly opaque custom state (not string, not IEnumerable<KVP>) cannot be inspected for
-            // sensitive key-value pairs, so substitute a safe placeholder rather than risk leaking it.
+            // Opaque state cannot be inspected, so it is replaced rather than risk leaking it.
             const string blocked = "[ZeeKayDa: unscrubbable log state blocked]";
             _inner.Log(logLevel, eventId, blocked, wrappedException, static (s, _) => s);
             return;
@@ -185,9 +149,7 @@ public class SanitizingLogger<T> : ILogger<T>
                     .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal));
         }
 
-        // Converts a structured-logging named template (e.g. "Count={Count:N0}") to an indexed
-        // string.Format template and delegates to string.Format, so alignment/format specifiers,
-        // escaped braces, and duplicate placeholders are all handled by the framework.
+        // Rewrites a named template as an indexed one, so string.Format handles specifiers and escapes.
         private static string FormatTemplate(string template, Dictionary<string, object?> values)
         {
             var args = new List<object?>();
@@ -244,9 +206,7 @@ public class SanitizingLogger<T> : ILogger<T>
 }
 
 /// <summary>
-/// The <see cref="SanitizingLogger{T}"/> the framework registers. The dependency-injection
-/// container activates only public constructors, which <see cref="SanitizingLogger{T}"/> must not
-/// have.
+/// The <see cref="SanitizingLogger{T}"/> the framework registers, since DI needs a public constructor it must not have.
 /// </summary>
 internal sealed class RegisteredSanitizingLogger<T>(ILogger<T> inner, IOptions<AuthorizationServerOptions> options)
     : SanitizingLogger<T>(inner, options);

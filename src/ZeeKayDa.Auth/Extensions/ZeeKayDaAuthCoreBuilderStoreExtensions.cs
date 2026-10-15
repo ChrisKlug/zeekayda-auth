@@ -14,9 +14,8 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ZeeKayDaAuthCoreBuilderStoreExtensions
 {
     /// <summary>
-    /// Registers a per-process interaction store for development and testing only. An
-    /// authorization request started on one instance cannot be completed by another, so a
-    /// multi-instance host must use <see cref="AddDistributedCacheInteractionStore"/> instead.
+    /// Registers a per-process interaction store for development and testing. A multi-instance host
+    /// needs <see cref="AddDistributedCacheInteractionStore"/>.
     /// </summary>
     /// <remarks>
     /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
@@ -25,9 +24,8 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="allowOutsideDevelopment">
-    /// Set to <see langword="true"/> only for test hosts that intentionally run under a
-    /// non-Development environment name. A critical log entry is still emitted on every startup
-    /// so the override remains visible. Defaults to <see langword="false"/>.
+    /// <see langword="true"/> only for test hosts running under a non-Development environment name; a
+    /// critical log entry is still emitted on every startup.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -48,23 +46,19 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
             allowOutsideDevelopment);
 
     /// <summary>
-    /// Registers the interaction store over the host's <see cref="IDistributedCache"/>. A shared
-    /// cache — Redis, SQL Server, or any other <see cref="IDistributedCache"/> implementation — is a
-    /// complete answer for a multi-instance host: the interaction store needs only set, get and
-    /// remove, and the one race in the flow is decided by the authorization code store, not here.
+    /// Registers the interaction store over the host's <see cref="IDistributedCache"/>, such as Redis or
+    /// SQL Server, which is enough for a multi-instance host.
     /// </summary>
     /// <remarks>
-    /// Requires an <see cref="IDistributedCache"/> to be registered; startup fails without one.
-    /// The per-process <c>MemoryDistributedCache</c> registered by <c>AddDistributedMemoryCache()</c>
-    /// is shared with nothing, so outside a Development environment startup fails on it too,
-    /// unless <paramref name="allowMemoryCacheOutsideDevelopment"/> is <see langword="true"/>.
+    /// Startup fails without a registered <see cref="IDistributedCache"/>, and outside Development on the
+    /// per-process <c>MemoryDistributedCache</c> unless <paramref name="allowMemoryCacheOutsideDevelopment"/>
+    /// is <see langword="true"/>.
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="allowMemoryCacheOutsideDevelopment">
-    /// Set to <see langword="true"/> only for test hosts that intentionally run the per-process
-    /// memory cache under a non-Development environment name. A critical log entry is still
-    /// emitted on every startup so the override remains visible. Defaults to <see langword="false"/>.
+    /// <see langword="true"/> only for test hosts running the memory cache under a non-Development
+    /// environment name; a critical log entry is still emitted on every startup.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -89,10 +83,7 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
         return builder;
     }
 
-    /// <summary>
-    /// Registers <typeparamref name="TStore"/> as the one interaction store. The guard names the
-    /// public methods rather than the internal seam, since those are what the host called.
-    /// </summary>
+    /// <summary>Registers <typeparamref name="TStore"/> as the one interaction store.</summary>
     private static void AddInteractionStore<TStore>(ZeeKayDaAuthCoreBuilder builder)
         where TStore : class, IInteractionBackingStore
     {
@@ -108,14 +99,10 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
     }
 
     /// <summary>
-    /// Registers <typeparamref name="T"/> as the singleton <see cref="IAuthorizationCodeBackingStore"/>
-    /// implementation, wired underneath the framework's sealed coordinator. This is the
-    /// recommended registration path for production use.
+    /// Registers <typeparamref name="T"/> as the singleton <see cref="IAuthorizationCodeBackingStore"/> underneath the
+    /// framework's sealed coordinator. This is the production registration.
     /// </summary>
-    /// <typeparam name="T">
-    /// The concrete type implementing <see cref="IAuthorizationCodeBackingStore"/>. Must have a
-    /// publicly accessible constructor so the DI container can instantiate it.
-    /// </typeparam>
+    /// <typeparam name="T">The backing store, constructed by the DI container.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -138,14 +125,10 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
     }
 
     /// <summary>
-    /// Registers <typeparamref name="T"/> as the singleton <see cref="IRefreshTokenBackingStore"/>
-    /// implementation, wired underneath the framework's sealed coordinator. This is the
-    /// recommended registration path for production use.
+    /// Registers <typeparamref name="T"/> as the singleton <see cref="IRefreshTokenBackingStore"/> underneath the
+    /// framework's sealed coordinator. This is the production registration.
     /// </summary>
-    /// <typeparam name="T">
-    /// The concrete type implementing <see cref="IRefreshTokenBackingStore"/>. Must have a
-    /// publicly accessible constructor so the DI container can instantiate it.
-    /// </typeparam>
+    /// <typeparam name="T">The backing store, constructed by the DI container.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -168,9 +151,8 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
     }
 
     /// <summary>
-    /// Registers an in-memory authorization code store for development and testing only. Tokens
-    /// are lost on process restart and reuse detection does not span multiple instances. Do not
-    /// use in production.
+    /// Registers an in-memory authorization code store for development and testing. Tokens are lost on restart
+    /// and reuse detection does not span instances.
     /// </summary>
     /// <remarks>
     /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
@@ -179,9 +161,8 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="allowOutsideDevelopment">
-    /// Set to <see langword="true"/> only for test hosts that intentionally run under a
-    /// non-Development environment name. A critical log entry is still emitted on every startup
-    /// so the override remains visible. Defaults to <see langword="false"/>.
+    /// <see langword="true"/> only for test hosts running under a non-Development environment name; a
+    /// critical log entry is still emitted on every startup.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -202,9 +183,8 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
             allowOutsideDevelopment);
 
     /// <summary>
-    /// Registers an in-memory refresh token store for development and testing only. Tokens are
-    /// lost on process restart and reuse detection does not span multiple instances. Do not use
-    /// in production.
+    /// Registers an in-memory refresh token store for development and testing. Tokens are lost on restart
+    /// and reuse detection does not span instances.
     /// </summary>
     /// <remarks>
     /// Outside a Development environment, startup fails with <see cref="ZeeKayDaConfigurationException"/>
@@ -213,9 +193,8 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="allowOutsideDevelopment">
-    /// Set to <see langword="true"/> only for test hosts that intentionally run under a
-    /// non-Development environment name. A critical log entry is still emitted on every startup
-    /// so the override remains visible. Defaults to <see langword="false"/>.
+    /// <see langword="true"/> only for test hosts running under a non-Development environment name; a
+    /// critical log entry is still emitted on every startup.
     /// </param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
@@ -236,14 +215,9 @@ public static class ZeeKayDaAuthCoreBuilderStoreExtensions
             allowOutsideDevelopment);
 
     /// <summary>
-    /// Registers in-memory authorization code, refresh token and interaction stores for
-    /// development and testing only. Do not use in production.
+    /// Registers the in-memory authorization code, refresh token and interaction stores for development
+    /// and testing, passing <paramref name="allowOutsideDevelopment"/> to all three.
     /// </summary>
-    /// <remarks>
-    /// Combines <see cref="AddInMemoryAuthorizationCodeStore"/>,
-    /// <see cref="AddInMemoryRefreshTokenStore"/> and <see cref="AddInMemoryInteractionStore"/>,
-    /// passing <paramref name="allowOutsideDevelopment"/> through to all three.
-    /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="allowOutsideDevelopment">

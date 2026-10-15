@@ -1,9 +1,6 @@
 namespace ZeeKayDa.Auth.Security;
 
-/// <summary>
-/// An out-of-range enum cast fails at startup like every other misconfiguration, rather than as a
-/// 500 at request time.
-/// </summary>
+/// <summary>Fails startup on an out-of-range enum cast, rather than a 500 at request time.</summary>
 internal static class SecurityHeadersOptionsValidation
 {
     internal static IEnumerable<ZeeKayDaConfigurationFailure> Validate(this SecurityHeadersOptions securityHeaders)

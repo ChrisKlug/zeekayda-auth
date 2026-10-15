@@ -13,9 +13,8 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions
 {
     /// <summary>
-    /// Registers <typeparamref name="TSource"/> as the application's signing key source, a
-    /// <see cref="SigningKeyRing"/> over it, and the startup check that reads the source and
-    /// self-tests its signer once at host startup.
+    /// Registers <typeparamref name="TSource"/> as the signing key source, a <see cref="SigningKeyRing"/>
+    /// over it, and the startup check that self-tests its signer.
     /// </summary>
     /// <typeparam name="TSource">The <see cref="ISigningKeySource"/> implementation to register.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
@@ -31,16 +30,8 @@ public static class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions
     /// Thrown when a signing key source is already registered, whatever its type.
     /// </exception>
     /// <remarks>
-    /// <para>
-    /// A provider package calls this first from its own <c>Add&lt;Provider&gt;Signing()</c> method,
-    /// then registers its options and helpers; the source takes them through its constructor. A
-    /// second call always throws, even for the same type: the provider beside it has already
-    /// applied its configuration, so a repeat is a second opinion about what signs the tokens.
-    /// </para>
-    /// <para>
-    /// The source itself is never registered in the container: the ring constructs and owns it, so
-    /// no application code can resolve it.
-    /// </para>
+    /// A provider package calls this first from its <c>Add&lt;Provider&gt;Signing()</c>, then registers
+    /// what the source's constructor takes. The ring constructs and owns the source, so nothing can resolve it.
     /// </remarks>
     public static ZeeKayDaAuthCoreBuilder AddSigningKeySource<TSource>(this ZeeKayDaAuthCoreBuilder builder)
         where TSource : class, ISigningKeySource
@@ -61,8 +52,7 @@ public static class ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.AddSingleton<SigningKeyRing>(sp =>
         {
-            // Its dependencies first: once the source exists, only the ring may own it, so nothing
-            // that can still throw may run between creating it and handing it over.
+            // Dependencies first, so nothing can throw between creating the source and the ring owning it.
             var timeProvider = sp.GetRequiredService<TimeProvider>();
             var options = sp.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value.SigningKeys;
             var logger = sp.GetRequiredService<SanitizingLogger<SigningKeyRing>>();

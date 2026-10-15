@@ -2,10 +2,7 @@ using ZeeKayDa.Auth.Clients;
 
 namespace ZeeKayDa.Auth.Authorization;
 
-/// <summary>
-/// The outcome of authorization request validation — a closed union mirroring the two-phase
-/// error model: local errors before the redirect target is authenticated, redirect errors after.
-/// </summary>
+/// <summary>The outcome of authorization request validation: valid, a local error, or a redirect error.</summary>
 internal abstract class AuthorizeRequestValidationResult
 {
     private AuthorizeRequestValidationResult() { }
@@ -26,17 +23,11 @@ internal abstract class AuthorizeRequestValidationResult
         /// <summary>The OAuth error code.</summary>
         public required string Error { get; init; }
 
-        /// <summary>
-        /// A generic human-readable description. Never echoes a request value, and is identical
-        /// for unknown-client and unregistered-redirect failures (enumeration defence).
-        /// </summary>
+        /// <summary>A generic description, identical for an unknown client and an unregistered redirect URI.</summary>
         public required string Description { get; init; }
     }
 
-    /// <summary>
-    /// Phase-2 failure: the redirect target is authenticated, so the error is delivered to the
-    /// client per RFC 6749 §4.1.2.1, with <c>state</c> echoed when present and <c>iss</c> always.
-    /// </summary>
+    /// <summary>Phase-2 failure, delivered to the authenticated redirect target (RFC 6749 §4.1.2.1).</summary>
     public sealed class RedirectError : AuthorizeRequestValidationResult
     {
         /// <summary>The exact registered redirect URI the error is sent to.</summary>
@@ -45,9 +36,7 @@ internal abstract class AuthorizeRequestValidationResult
         /// <summary>The OAuth error code.</summary>
         public required string Error { get; init; }
 
-        /// <summary>
-        /// A generic human-readable description naming the offending parameter, never its value.
-        /// </summary>
+        /// <summary>A generic description naming the offending parameter, never its value.</summary>
         public required string Description { get; init; }
 
         /// <summary>The client's <c>state</c> value to echo byte for byte, if one was sent.</summary>

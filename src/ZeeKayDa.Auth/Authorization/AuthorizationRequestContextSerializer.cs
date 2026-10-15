@@ -7,28 +7,12 @@ namespace ZeeKayDa.Auth.Authorization;
 /// interaction store, and decodes it back.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The format is positional — a version byte followed by length-prefixed fields in a fixed order —
-/// rather than JSON. Field names would be roughly 200 bytes of pure overhead on a payload of about
-/// 400, and the store holds one per interaction in flight. Nothing is lost by dropping
-/// self-description from a payload only this framework reads.
-/// </para>
-/// <para>
-/// The payload is never compressed before encryption. Mixing an attacker-controlled <c>state</c>
-/// into a compressed, encrypted payload is a needless nod to CRIME-style length oracles.
-/// </para>
-/// <para>
-/// <see cref="TryDecode"/> answers <see langword="false"/> for anything it does not recognise and
-/// never throws for malformed input: the bytes reaching it have been decrypted, but a payload
-/// written by an older version of this framework is not thereby well-formed.
-/// </para>
+/// Positional rather than JSON, since field names would double the payload. Never compressed before
+/// encryption: an attacker-controlled <c>state</c> would open a CRIME-style length oracle.
 /// </remarks>
 internal static class AuthorizationRequestContextSerializer
 {
-    /// <summary>
-    /// The format version. A payload carrying any other value is refused rather than misread —
-    /// positional formats have no way to detect a field that moved.
-    /// </summary>
+    /// <summary>The format version; any other is refused, as a positional format cannot detect a moved field.</summary>
     private const byte Version = 5;
 
     public static byte[] Encode(AuthorizationRequestContext context)
@@ -71,6 +55,7 @@ internal static class AuthorizationRequestContextSerializer
         return buffer.ToArray();
     }
 
+    /// <summary>Decodes a payload; <see langword="false"/>, never a throw, for one this version did not write.</summary>
     public static bool TryDecode(ReadOnlySpan<byte> payload, out AuthorizationRequestContext? context)
     {
         context = null;
@@ -87,16 +72,8 @@ internal static class AuthorizationRequestContextSerializer
             if (decoded is null)
                 return false;
 
-            // Trailing bytes mean the payload is not what this version writes, whatever else
-            // decoded cleanly along the way.
-            if (buffer.Position != buffer.Length)
-                return false;
-
-            // Every field validation guarantees non-empty must decode non-empty. Nothing should be
-            // able to produce a context the flow would act on with a blank redirect target — an
-            // empty RedirectUri turns the client redirect into a relative one, pointing back at
-            // the authorization server.
-            if (!IsComplete(decoded))
+            bool hasTrailingBytes = buffer.Position != buffer.Length;
+            if (hasTrailingBytes || !IsComplete(decoded))
                 return false;
 
             context = decoded;
@@ -109,9 +86,8 @@ internal static class AuthorizationRequestContextSerializer
     }
 
     /// <summary>
-    /// Reads the fields in order, or <see langword="null"/> when one of them carries a value this
-    /// version does not recognise. Structural failures — a truncated payload, a malformed length
-    /// prefix — surface as exceptions for <see cref="TryDecode"/> to absorb.
+    /// Reads the fields in order, or <see langword="null"/> for an unrecognised value; structural
+    /// failures throw for <see cref="TryDecode"/> to absorb.
     /// </summary>
     private static AuthorizationRequestContext? ReadContext(BinaryReader reader)
     {
@@ -157,11 +133,7 @@ internal static class AuthorizationRequestContextSerializer
         return context with { ProviderAttempt = attempt, LoginHint = ReadNullableString(reader) };
     }
 
-    /// <summary>
-    /// Reads the prompt set, or <see langword="null"/> for a negative count or a value outside the
-    /// enum. An unchecked cast would put an unrecognised prompt into the interaction stage's
-    /// decisions, where it reaches protocol behaviour.
-    /// </summary>
+    /// <summary>The prompt set, or <see langword="null"/> for a negative count or a value outside the enum.</summary>
     private static HashSet<PromptValue>? ReadPrompts(BinaryReader reader)
     {
         var count = reader.Read7BitEncodedInt();
@@ -182,10 +154,8 @@ internal static class AuthorizationRequestContextSerializer
     }
 
     /// <summary>
-    /// Rejects a decoded context missing a value the validator guarantees. The payload is
-    /// encrypted, so this is not a defence against a forged one — it is a floor under what the
-    /// rest of the flow may be handed if this format is ever written wrongly. The <c>nonce</c> is
-    /// optional, but the validator reads an empty one as absent, so an empty one is refused.
+    /// Whether every value the validator guarantees is present: an empty <c>RedirectUri</c> would
+    /// redirect back to the server itself. An empty <c>nonce</c> is one the validator never produces.
     /// </summary>
     private static bool IsComplete(AuthorizationRequestContext context) =>
         !string.IsNullOrEmpty(context.Id) &&

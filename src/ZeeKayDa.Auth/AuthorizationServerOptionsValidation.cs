@@ -7,13 +7,9 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth;
 
 /// <summary>
-/// Validates <see cref="AuthorizationServerOptions"/> top-down against OIDC Discovery 1.0 and
-/// RFC 8414: the root's own values, then each group's, then the rules that span groups.
+/// Validates <see cref="AuthorizationServerOptions"/>: the root's values, each group's in its own
+/// <c>*OptionsValidation.cs</c>, then the cross-group rules.
 /// </summary>
-/// <remarks>
-/// Each options group validates itself in a sibling <c>*OptionsValidation.cs</c> file. A rule that
-/// reads more than one group lives here, with the parent that owns them all, named by its topic.
-/// </remarks>
 internal static partial class AuthorizationServerOptionsValidation
 {
     internal static IEnumerable<ZeeKayDaConfigurationFailure> Validate(this AuthorizationServerOptions options) =>
@@ -56,10 +52,6 @@ internal static partial class AuthorizationServerOptionsValidation
         }
     }
 
-    /// <summary>
-    /// Each entry must be a strict absolute origin (<c>scheme://host[:port]</c>) with no path other
-    /// than "/", query, fragment, userinfo, wildcards or CRLF.
-    /// </summary>
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateCors(AuthorizationServerOptions options)
     {
         if (options.CorsOrigins is null)
@@ -84,7 +76,6 @@ internal static partial class AuthorizationServerOptionsValidation
 
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateClockSkew(AuthorizationServerOptions options)
     {
-        // A negative tolerance silently rejects tokens before their stated expiry.
         if (options.ClockSkewTolerance < TimeSpan.Zero)
         {
             yield return new(

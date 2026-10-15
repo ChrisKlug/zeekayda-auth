@@ -12,15 +12,12 @@ public sealed class JwksEndpointOptions
     public string? Uri { get; set; }
 
     /// <summary>
-    /// Gets or sets the <c>Cache-Control</c> <c>max-age</c> duration for the JWKS response.
-    /// Defaults to one hour. The header's resolution is whole seconds; a value below one second
-    /// emits <c>no-store</c>.
+    /// Gets or sets the JWKS response's <c>Cache-Control</c> <c>max-age</c>, in whole seconds;
+    /// below one second emits <c>no-store</c>. Defaults to one hour.
     /// </summary>
     /// <remarks>
-    /// Set to <see cref="TimeSpan.Zero"/> to disable public caching entirely
-    /// (<c>Cache-Control: no-store</c>). This value governs how long a relying party may keep
-    /// trusting a cached key set — including a key that has since been removed from configuration.
-    /// A shorter TTL shortens that revocation window at the cost of more JWKS traffic.
+    /// How long a relying party may keep trusting a removed key: shorter narrows that window at
+    /// the cost of more JWKS traffic.
     /// </remarks>
     public TimeSpan CacheMaxAge { get; set; } = TimeSpan.FromHours(1);
 }

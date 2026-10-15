@@ -17,24 +17,12 @@ public sealed class AuthorizationEndpointOptions
     public string? Uri { get; set; }
 
     /// <summary>
-    /// Gets or sets the PKCE code challenge methods supported by this authorization server.
-    /// Defaults to <c>[<see cref="CodeChallengeMethod.S256"/>]</c>, the one method the token
-    /// endpoint verifies. When <see langword="null"/>, the <c>code_challenge_methods_supported</c>
-    /// field is omitted from the discovery document.
+    /// Gets or sets the PKCE methods published as <c>code_challenge_methods_supported</c>.
+    /// Defaults to <c>[<see cref="CodeChallengeMethod.S256"/>]</c>, the one method the token endpoint verifies.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// PKCE is mandatory for the authorization code grant, so a host whose
-    /// <see cref="AuthorizationServerOptions.GrantTypesSupported"/> contains
-    /// <see cref="GrantType.AuthorizationCode"/> must keep <see cref="CodeChallengeMethod.S256"/>
-    /// in this collection; startup fails otherwise. <see langword="null"/> is only valid on a host
-    /// that does not serve the code grant.
-    /// </para>
-    /// <para>
-    /// Maps to the <c>code_challenge_methods_supported</c> discovery metadata field defined in
-    /// <see href="https://www.rfc-editor.org/rfc/rfc7636#section-4.3">RFC 7636 §4.3</see> and
-    /// <see href="https://www.rfc-editor.org/rfc/rfc8414#section-2">RFC 8414 §2</see>.
-    /// </para>
+    /// A host serving <see cref="GrantType.AuthorizationCode"/> must keep
+    /// <see cref="CodeChallengeMethod.S256"/> here or startup fails; only other hosts may set <see langword="null"/>.
     /// </remarks>
     public ICollection<CodeChallengeMethod>? CodeChallengeMethodsSupported
     {
@@ -43,31 +31,18 @@ public sealed class AuthorizationEndpointOptions
     }
 
     /// <summary>
-    /// Gets or sets the lifetime of an issued authorization code.
-    /// Defaults to 60 seconds per the short-lived code requirement of
-    /// <see href="https://www.rfc-editor.org/rfc/rfc9700#section-2.1.1">RFC 9700 §2.1.1</see>.
+    /// Gets or sets the lifetime of an issued authorization code. Defaults to 60 seconds; must be
+    /// positive and at most 10 minutes (RFC 9700 §2.1.1).
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Must be greater than <see cref="TimeSpan.Zero"/> and must not exceed 600 seconds (10 minutes).
-    /// Values outside this range are rejected at startup by <c>AuthorizationServerOptionsValidator</c>
-    /// per the short-lived code requirement of RFC 9700 §2.1.1.
-    /// </para>
-    /// </remarks>
     public TimeSpan AuthorizationCodeLifetime { get; set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
-    /// Gets or sets the most an authorization request may occupy in the interaction store, in
-    /// bytes of encoded request context, before it is refused with <c>invalid_request</c>.
-    /// Defaults to 16 KB — far above what any real client sends: a typical request encodes to a
-    /// few hundred bytes, and <c>state</c> and <c>nonce</c> are the only unbounded fields.
+    /// Gets or sets the most bytes one accepted authorization request may occupy in the interaction
+    /// store before it is refused with <c>invalid_request</c>. Defaults to 16 KB; must be positive.
     /// </summary>
     /// <remarks>
-    /// An authorization request needs no authentication, and every valid one is stored for the
-    /// interaction's lifetime. This bounds what one request can make the store hold. A host whose
-    /// clients legitimately send larger <c>state</c> values raises it; the value applies to the
-    /// request as accepted, not to what sign-in later adds. Must be greater than zero; rejected at
-    /// startup otherwise.
+    /// Bounds what an unauthenticated request can make the store hold. A typical request is a few
+    /// hundred bytes; raise it only for clients that send large <c>state</c> values.
     /// </remarks>
     public int MaxRequestContextBytes { get; set; } = 16 * 1024;
 

@@ -8,10 +8,7 @@ namespace ZeeKayDa.Auth.Authorization;
 /// OpenID Connect Core 1.0</see> and
 /// <see href="https://www.rfc-editor.org/rfc/rfc6749#section-3.1.1">RFC 6749 §3.1.1</see>.
 /// </summary>
-/// <remarks>
-/// ZeeKayDa.Auth supports the authorization code response type only.
-/// Hybrid and implicit response types are intentionally not exposed.
-/// </remarks>
+/// <remarks>Only the authorization code response type; hybrid and implicit are not offered.</remarks>
 [JsonConverter(typeof(JsonStringEnumConverter<ResponseType>))]
 public enum ResponseType
 {

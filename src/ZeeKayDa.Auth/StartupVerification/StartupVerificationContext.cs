@@ -3,55 +3,35 @@ using Microsoft.Extensions.Logging;
 namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>
-/// Accumulates the failures and warnings produced by a single <see cref="IStartupVerifier"/> or
-/// <see cref="IStartupActivator"/> invocation. The runner constructs a fresh instance for every invocation, so
-/// nothing here needs to be reset between checks.
+/// The failures and warnings from one <see cref="IStartupVerifier"/> or <see cref="IStartupActivator"/> invocation.
 /// </summary>
 public sealed class StartupVerificationContext
 {
     private readonly List<ZeeKayDaConfigurationFailure> _failures = [];
     private readonly List<StartupVerificationWarning> _warnings = [];
 
-    /// <summary>
-    /// Records a configuration failure. Does not throw or abort immediately — the runner aborts
-    /// startup once the current phase has finished running.
-    /// </summary>
+    /// <summary>Records a failure; the runner aborts startup once the current phase finishes.</summary>
     /// <param name="code">A stable, versioned string identifier for this failure.</param>
     /// <param name="message">
-    /// A human-readable description of the failure. This becomes a
-    /// <see cref="ZeeKayDaConfigurationFailure.Message"/>, so
-    /// <strong>that member's contract binds this argument</strong>: the runner copies it verbatim
-    /// into the exception that aborts startup, and no redaction control can reach it afterwards.
-    /// Never interpolate a caught exception's <see cref="Exception.Message"/> here — name its type
-    /// and let the exception itself propagate as the root cause.
+    /// Bound by the <see cref="ZeeKayDaConfigurationFailure.Message"/> contract: copied verbatim and
+    /// never redacted, so name a caught exception's type, never its message.
     /// </param>
     public void AddFailure(string code, string message) => _failures.Add(new ZeeKayDaConfigurationFailure(code, message));
 
-    /// <summary>
-    /// Records a structured warning for the runner to log. Does not abort startup.
-    /// </summary>
+    /// <summary>Records a structured warning for the runner to log.</summary>
     /// <param name="code">A stable, versioned string identifier for this warning.</param>
     /// <param name="messageTemplate">
-    /// An <see cref="ILogger"/> named-placeholder template (e.g. <c>"{StoreName}"</c>) — it is
-    /// passed through to the sink unformatted, exactly like any other <c>LogWarning</c> call site,
-    /// so structured backends can index the fields and <c>SanitizingLogger</c>'s by-key
-    /// redaction can act on them.
+    /// An <see cref="ILogger"/> named-placeholder template, passed through unformatted so redaction can act on its fields.
     /// </param>
     /// <param name="level">The <see cref="LogLevel"/> the runner logs this warning at.</param>
     /// <param name="args">The structured arguments matching <paramref name="messageTemplate"/>'s placeholders, in order.</param>
     public void AddWarning(string code, string messageTemplate, LogLevel level, params object?[] args)
         => AddWarningCore(code, messageTemplate, level, args);
 
-    /// <summary>
-    /// Records a structured warning for the runner to log at <see cref="LogLevel.Warning"/>. Does
-    /// not abort startup.
-    /// </summary>
+    /// <summary>Records a structured warning for the runner to log at <see cref="LogLevel.Warning"/>.</summary>
     /// <param name="code">A stable, versioned string identifier for this warning.</param>
     /// <param name="messageTemplate">
-    /// An <see cref="ILogger"/> named-placeholder template (e.g. <c>"{StoreName}"</c>) — it is
-    /// passed through to the sink unformatted, exactly like any other <c>LogWarning</c> call site,
-    /// so structured backends can index the fields and <c>SanitizingLogger</c>'s by-key
-    /// redaction can act on them.
+    /// An <see cref="ILogger"/> named-placeholder template, passed through unformatted so redaction can act on its fields.
     /// </param>
     /// <param name="args">The structured arguments matching <paramref name="messageTemplate"/>'s placeholders, in order.</param>
     public void AddWarning(string code, string messageTemplate, params object?[] args)
@@ -63,10 +43,7 @@ public sealed class StartupVerificationContext
     /// <summary>The warnings recorded so far by this invocation.</summary>
     public IReadOnlyList<StartupVerificationWarning> Warnings => _warnings;
 
-    // Only ever called from the two public AddWarning overloads above, each of which passes its
-    // own already-validated messageTemplate parameter straight through unchanged. Being private
-    // is the actual safety guarantee: it cannot be invoked from outside this type, so no other
-    // call site can launder an arbitrary string through a parameter named "messageTemplate".
+    // Private, so no other call site can pass an arbitrary string off as a messageTemplate.
     private void AddWarningCore(string code, string messageTemplate, LogLevel level, object?[] args)
         => _warnings.Add(new StartupVerificationWarning(code, messageTemplate, level, args));
 }

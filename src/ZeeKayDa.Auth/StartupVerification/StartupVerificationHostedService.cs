@@ -6,16 +6,8 @@ using ZeeKayDa.Auth.Logging;
 namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>
-/// The single <see cref="IHostedService"/> that runs every framework startup check. Checks that every
-/// check is registered as scoped and validates every registered options type, then runs two phases in one <see cref="StartAsync"/>: every
-/// <see cref="IStartupVerifier"/>, then every <see cref="IStartupActivator"/>. Each phase runs all of
-/// its members and aggregates every failure into one <see cref="ZeeKayDaConfigurationException"/>
-/// thrown once — but <strong>the activator phase does not run at all if the verifier phase produced
-/// a failure</strong>, so an application with a broken issuer never opens a connection to a key
-/// vault before being told about the issuer. Because every phase runs inside a single
-/// <see cref="StartAsync"/> call, <c>HostOptions.ServicesStartConcurrently</c> has no effect on this
-/// ordering, and because the phases are disjoint collections rather than an ordering knob, no check
-/// can claim a position.
+/// Runs every startup check: options validation, then all verifiers, then all activators, each
+/// phase reporting every failure at once and stopping the next.
 /// </summary>
 internal sealed class StartupVerificationHostedService(
     IServiceScopeFactory scopeFactory,
@@ -55,11 +47,7 @@ internal sealed class StartupVerificationHostedService(
     /// <inheritdoc/>
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    /// <summary>
-    /// Runs one phase to completion and throws once if anything in it failed. Every check in the
-    /// phase runs even after an earlier one failed, so an operator sees every problem in that phase
-    /// in one pass. The checks are resolved from one scope created for the phase.
-    /// </summary>
+    /// <summary>Runs every check in one phase, then throws once if any failed.</summary>
     private async Task RunPhaseAsync(
         string phase,
         Func<IServiceProvider, IEnumerable<Check>> resolveChecks,
@@ -112,10 +100,8 @@ internal sealed class StartupVerificationHostedService(
             [.. failures.Select(failure => failure.RootCause).OfType<Exception>().Distinct()]);
 
     /// <summary>
-    /// Collapses failures with the same code and message. Two checks can surface the same broken
-    /// dependency — the client-repository activator and the signing key ring's own activator both
-    /// report a failed key source, because each genuinely needs it initialized — and that is one
-    /// problem for the operator, not two.
+    /// Collapses failures with the same code and message, such as a broken key source reported by
+    /// two activators that both need it.
     /// </summary>
     private static ZeeKayDaConfigurationFailure[] ReportEachProblemOnce(List<ReportedFailure> failures) =>
         [.. failures.Select(failure => failure.Failure).DistinctBy(failure => (failure.Code, failure.Message))];
@@ -149,10 +135,8 @@ internal sealed class StartupVerificationHostedService(
     }
 
     /// <summary>
-    /// Logs one warning under the producing check's own category, returning a failure when it
-    /// could not be logged — a warning the operator will never see is itself a configuration
-    /// problem. Malformed args throw from inside the logging framework's formatter, not from the
-    /// check.
+    /// Logs one warning under the check's own category, or returns a failure when it could not be
+    /// logged: a warning the operator never sees is itself a configuration problem.
     /// </summary>
     private static ReportedFailure? TryLogWarning(
         IServiceProvider services, Check check, StartupVerificationWarning warning)
@@ -162,10 +146,6 @@ internal sealed class StartupVerificationHostedService(
             var logger = (ILogger)services.GetRequiredService(
                 typeof(SanitizingLogger<>).MakeGenericType(check.Instance.GetType()));
 
-            // ZEEKAYDA0002 requires a compile-time-constant template, because a runtime-built one
-            // normally means a value has already been formatted in and is past by-key redaction.
-            // Here the non-constant operand is another unformatted template, and every value still
-            // travels as a structured arg, so redaction applies exactly as at a literal call site.
 #pragma warning disable ZEEKAYDA0002 // log-hygiene-ok: composes a constant prefix with another unformatted template; all values stay structured args (#444)
             logger.Log(
                 warning.Level,

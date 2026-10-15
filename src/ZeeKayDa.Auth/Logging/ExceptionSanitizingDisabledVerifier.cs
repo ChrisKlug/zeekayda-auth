@@ -7,10 +7,8 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.Logging;
 
 /// <summary>
-/// Records at startup that <see cref="DevelopmentOptions.DisableExceptionSanitizing"/> is enabled:
-/// at <see cref="LogLevel.Information"/> in Development, and at <see cref="LogLevel.Critical"/>
-/// anywhere else, where exception messages carrying credential material would reach production log
-/// sinks. It never fails startup: the flag is itself the opt-out.
+/// Logs that <see cref="DevelopmentOptions.DisableExceptionSanitizing"/> is on, critically outside
+/// Development; it never fails startup, as the flag is its own opt-out.
 /// </summary>
 internal sealed class ExceptionSanitizingDisabledVerifier(
     IOptions<AuthorizationServerOptions> options,

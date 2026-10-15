@@ -3,38 +3,16 @@ using Microsoft.Extensions.Logging;
 
 namespace ZeeKayDa.Auth.Configuration;
 
-/// <summary>
-/// The one implementation of the framework's rule for a resource that is only safe in development:
-/// expected in <c>Development</c>, refused outside it, and permitted outside it only when the
-/// registration deliberately opted out.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Every startup check that gates a development-only resource asks this type rather than testing
-/// the environment itself, so the rule is one decision applied to several resources, and a new
-/// check gets the policy by asking, not by being copied correctly.
-/// </para>
-/// <para>
-/// What stays with each caller is everything specific to its resource: the failure text naming what
-/// is wrong and how to fix it, the warning codes, and the dependencies it resolves. Only the
-/// three-way decision lives here, so this type has nothing to say about stores or caches.
-/// </para>
-/// </remarks>
+/// <summary>The rule for a development-only resource: expected in Development, refused elsewhere unless opted out.</summary>
 internal static class EnvironmentGate
 {
     /// <summary>What the rule says about one development-only resource on this host.</summary>
     internal enum Verdict
     {
-        /// <summary>
-        /// <c>Development</c>: the resource is the expected choice, and is recorded at
-        /// <see cref="LogLevel.Information"/> rather than warned about.
-        /// </summary>
+        /// <summary><c>Development</c>: recorded at <see cref="LogLevel.Information"/>.</summary>
         ExpectedInDevelopment,
 
-        /// <summary>
-        /// Outside <c>Development</c>, with the registration's opt-out set. The host starts, and is
-        /// reminded at <see cref="LogLevel.Critical"/> on every start.
-        /// </summary>
+        /// <summary>Outside <c>Development</c> with the opt-out: starts, with a <see cref="LogLevel.Critical"/> reminder.</summary>
         AllowedByOptOut,
 
         /// <summary>Outside <c>Development</c> with no opt-out: startup fails.</summary>
@@ -42,11 +20,8 @@ internal static class EnvironmentGate
     }
 
     /// <summary>
-    /// Applies the rule. <paramref name="allowOutsideDevelopment"/> is the value the registration
-    /// call captured, never a bindable option — an opt-out is meaningless without the call it
-    /// qualifies, and one host-wide switch would turn off every gate at once. The one exception is a
-    /// <see cref="DevelopmentOptions"/> switch, which is both the resource and its own opt-out; its
-    /// verifier passes <see langword="true"/>.
+    /// Applies the rule to an opt-out captured by the registration call, never a bindable option, so
+    /// no single switch turns off every gate.
     /// </summary>
     public static Verdict Evaluate(IHostEnvironment environment, bool allowOutsideDevelopment)
     {

@@ -17,9 +17,8 @@ public static class ZeeKayDaAuthCoreBuilderClaimsExtensions
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <remarks>
-    /// The provider is registered scoped, so it may take a per-request database context. A host
-    /// without a registered provider fails startup; there is no default. A later call replaces an
-    /// earlier registration.
+    /// Scoped, so it may take a per-request database context. There is no default: without one,
+    /// startup fails. A later call replaces an earlier one.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.

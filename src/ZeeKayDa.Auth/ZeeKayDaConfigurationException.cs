@@ -4,46 +4,20 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth;
 
 /// <summary>
-/// Thrown when the ZeeKayDa.Auth framework is misconfigured or when a required configuration
-/// value is absent or invalid at the point where it is first needed.
+/// Thrown when ZeeKayDa.Auth is misconfigured. Not recoverable at runtime: fix the configuration and restart.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This exception indicates a setup-time error in the host application — missing service
-/// registrations, invalid options values, or configuration state that is required for the
-/// framework to operate but was not provided. It is not recoverable at runtime; the correct
-/// response is to fix the configuration and restart.
-/// </para>
-/// <para>
-/// The framework's options validators
-/// (<see cref="Microsoft.Extensions.Options.IValidateOptions{TOptions}"/>, for options registered
-/// with <c>AddZeeKayDaOptions</c>) throw this exception, with a code for every failure they find. It also
-/// covers the residual cases where invalid state is only detectable at the moment
-/// the framework needs to use a value — for example, when <c>MapZeeKayDaAuth()</c> is called
-/// before <c>AddZeeKayDaAuth()</c>.
-/// </para>
-/// <para>
-/// <strong>This type is public, so an extension point may throw it, and the framework preserves
-/// what it carries.</strong> A <see cref="ZeeKayDaConfigurationFailure"/> thrown from an
-/// <c>IStartupVerifier</c>, an <c>IStartupActivator</c>, an <c>IClientRepository</c>, an
-/// <c>IScopeRepository</c>, or an
-/// <c>ISigningKeySource</c> keeps its <c>Code</c> and its
-/// <c>Message</c> when the startup runner aggregates it, so operator alerting keyed on a
-/// provider's own codes keeps working. That preservation rests on the contract documented on
-/// <see cref="ZeeKayDaConfigurationFailure.Message"/>: the thrower — not the framework — is what
-/// makes that text safe to print, because no redaction control can reach it afterwards. Read that
-/// contract before throwing this type from your own code.
-/// </para>
+/// Thrown by the framework's options validators, with a code per failure, and at first use for
+/// state only detectable then. An extension point may throw it too: the startup runner keeps each
+/// <see cref="ZeeKayDaConfigurationFailure"/>'s code and message, so read the safety contract on
+/// <see cref="ZeeKayDaConfigurationFailure.Message"/> first.
 /// </remarks>
 public class ZeeKayDaConfigurationException : ZeeKayDaException
 {
     /// <summary>
     /// Initialises a new instance from one or more structured <paramref name="failures"/>.
     /// </summary>
-    /// <param name="failures">
-    /// The structured failures. Must be non-empty; each entry carries a stable
-    /// <see cref="ZeeKayDaConfigurationFailure.Code"/> and a human-readable message.
-    /// </param>
+    /// <param name="failures">The structured failures; must be non-empty.</param>
     public ZeeKayDaConfigurationException(params ZeeKayDaConfigurationFailure[] failures)
         : base(ComposeMessage(failures))
     {
@@ -54,15 +28,8 @@ public class ZeeKayDaConfigurationException : ZeeKayDaException
     /// Initialises a new instance from a single structured <paramref name="failure"/>, preserving
     /// the original exception that triggered it as <see cref="Exception.InnerException"/>.
     /// </summary>
-    /// <param name="failure">
-    /// The structured failure. Carries a stable <see cref="ZeeKayDaConfigurationFailure.Code"/> and
-    /// a human-readable message.
-    /// </param>
-    /// <param name="innerException">
-    /// The lower-level exception (for example a BCL <see cref="UnauthorizedAccessException"/>) that
-    /// caused this configuration failure. Preserved so operators can inspect the original root cause
-    /// alongside the framework's actionable message.
-    /// </param>
+    /// <param name="failure">The structured failure.</param>
+    /// <param name="innerException">The lower-level exception that caused the failure.</param>
     public ZeeKayDaConfigurationException(ZeeKayDaConfigurationFailure failure, Exception innerException)
         : base(ComposeMessage([failure]), innerException)
     {
@@ -73,16 +40,10 @@ public class ZeeKayDaConfigurationException : ZeeKayDaException
     /// Initialises a new instance from several structured <paramref name="failures"/>, preserving an
     /// originating exception as <see cref="Exception.InnerException"/>.
     /// </summary>
-    /// <param name="failures">
-    /// The structured failures. Must be non-empty; each entry carries a stable
-    /// <see cref="ZeeKayDaConfigurationFailure.Code"/> and a human-readable message.
-    /// </param>
+    /// <param name="failures">The structured failures; must be non-empty.</param>
     /// <param name="innerException">
-    /// The root cause behind one of <paramref name="failures"/> — for a startup phase in which
-    /// several checks failed and one of them threw unexpectedly, an
-    /// <see cref="AggregateException"/> over every such throw. Preserved so the aggregate of
-    /// actionable messages and the underlying exceptions reach operators together, rather than one
-    /// at the cost of the other.
+    /// The root cause behind one of <paramref name="failures"/>, or an <see cref="AggregateException"/>
+    /// over several.
     /// </param>
     public ZeeKayDaConfigurationException(
         IReadOnlyList<ZeeKayDaConfigurationFailure> failures, Exception innerException)
@@ -104,9 +65,7 @@ public class ZeeKayDaConfigurationException : ZeeKayDaException
             _ => new ZeeKayDaConfigurationException(failures, new AggregateException(rootCauses)),
         };
 
-    // ComposeMessage runs in the base constructor call, before any statement in this constructor
-    // could guard it, so a null list would surface as a NullReferenceException from a collection
-    // expression rather than the ArgumentNullException the params overload gives.
+    // Guards inside the base constructor call, where no statement of this constructor can run.
     private static IReadOnlyList<ZeeKayDaConfigurationFailure> NotNull(
         IReadOnlyList<ZeeKayDaConfigurationFailure> failures)
     {
@@ -114,17 +73,10 @@ public class ZeeKayDaConfigurationException : ZeeKayDaException
         return failures;
     }
 
-    /// <summary>
-    /// The structured validation failures that contributed to this exception.
-    /// Always contains at least one entry.
-    /// </summary>
+    /// <summary>The structured failures behind this exception; never empty.</summary>
     public IReadOnlyList<ZeeKayDaConfigurationFailure> AggregatedFailures { get; }
 
-    /// <summary>
-    /// Composes a human-readable message that lists every failure's code and description, so that
-    /// <see cref="Exception.ToString"/> (what console and most log sinks print at a startup crash)
-    /// is actionable on its own without inspecting <see cref="AggregatedFailures"/>.
-    /// </summary>
+    /// <summary>Lists every failure's code and message, so a logged startup crash is actionable on its own.</summary>
     private static string ComposeMessage(ZeeKayDaConfigurationFailure[] failures)
     {
         ArgumentNullException.ThrowIfNull(failures);

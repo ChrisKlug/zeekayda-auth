@@ -3,11 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace ZeeKayDa.Auth.Configuration;
 
-/// <summary>
-/// Freezes the collections and <see cref="DevelopmentOptions"/> switches on
-/// <see cref="AuthorizationServerOptions"/> once configuration has finished, so nothing can change
-/// what startup validation and verification approved.
-/// </summary>
+/// <summary>Freezes options once configuration finishes, so nothing can change what startup approved.</summary>
 internal static class FrozenOptions
 {
     /// <summary>A read-only copy of the host's values, in the host's order; null stays null.</summary>

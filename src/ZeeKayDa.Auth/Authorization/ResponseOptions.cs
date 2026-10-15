@@ -12,12 +12,9 @@ public sealed class ResponseOptions
     private bool _frozen;
 
     /// <summary>
-    /// Gets or sets the response types supported by this authorization server.
+    /// Gets or sets the response types published as <c>response_types_supported</c>.
     /// Defaults to <c>[<see cref="ResponseType.Code"/>]</c>.
     /// </summary>
-    /// <remarks>
-    /// Maps to the <c>response_types_supported</c> discovery metadata field.
-    /// </remarks>
     public ICollection<ResponseType> TypesSupported
     {
         get => _typesSupported;
@@ -25,12 +22,9 @@ public sealed class ResponseOptions
     }
 
     /// <summary>
-    /// Gets or sets the response modes supported by this authorization server.
+    /// Gets or sets the response modes published as <c>response_modes_supported</c>.
     /// Defaults to <c>[<see cref="ResponseMode.Query"/>]</c>.
     /// </summary>
-    /// <remarks>
-    /// Maps to the <c>response_modes_supported</c> discovery metadata field.
-    /// </remarks>
     public ICollection<ResponseMode> ModesSupported
     {
         get => _modesSupported;

@@ -6,14 +6,9 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Discovery;
 
 /// <summary>
-/// Represents an OpenID Connect Discovery 1.0 provider metadata document as specified in §3 of
-/// the OpenID Connect Discovery specification.
+/// The OpenID Connect Discovery 1.0 §3 provider metadata document, kept apart from
+/// <see cref="AuthorizationServerOptions"/> so configuration and wire format evolve independently.
 /// </summary>
-/// <remarks>
-/// This record is the stable wire-format contract for the discovery endpoint. It is intentionally
-/// separate from <see cref="AuthorizationServerOptions"/> so that the configuration model and the
-/// published JSON can evolve independently.
-/// </remarks>
 public sealed record OpenIdConfigurationDocument
 {
     /// <summary>Gets the issuer identifier of the authorization server.</summary>
@@ -21,10 +16,8 @@ public sealed record OpenIdConfigurationDocument
     public required string Issuer { get; init; }
 
     /// <summary>
-    /// Gets the URL of the authorization endpoint. Absent from the document when
-    /// <see langword="null"/>: a host whose <c>GrantTypesSupported</c> includes no grant that uses
-    /// the endpoint — no <c>authorization_code</c>, whatever else it lists — does not serve it
-    /// (RFC 8414 §2). Not <c>required</c>, so a document read back without the field binds.
+    /// Gets the URL of the authorization endpoint, or <see langword="null"/> and absent when no
+    /// supported grant uses it (RFC 8414 §2).
     /// </summary>
     [JsonPropertyName("authorization_endpoint")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -39,29 +32,24 @@ public sealed record OpenIdConfigurationDocument
     public required string JwksUri { get; init; }
 
     /// <summary>
-    /// Gets the URL of the UserInfo endpoint (OpenID Connect Core §5.3). Absent from the document
-    /// when <see langword="null"/>: the endpoint is served only alongside the authorization
-    /// endpoint, the one flow that issues an access token for an end user to present there.
+    /// Gets the URL of the UserInfo endpoint (OpenID Connect Core §5.3), served only alongside the
+    /// authorization endpoint; absent when <see langword="null"/>.
     /// </summary>
     [JsonPropertyName("userinfo_endpoint")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? UserInfoEndpoint { get; init; }
 
     /// <summary>
-    /// Gets the URL of the end-session endpoint, where a relying party sends the user to sign out
-    /// (OpenID Connect RP-Initiated Logout 1.0 §2.1). Absent from the document when
-    /// <see langword="null"/>: the endpoint is served only alongside the authorization endpoint,
-    /// the one flow that establishes a session for it to end.
+    /// Gets the URL of the end-session endpoint (RP-Initiated Logout 1.0 §2.1), served only
+    /// alongside the authorization endpoint; absent when <see langword="null"/>.
     /// </summary>
     [JsonPropertyName("end_session_endpoint")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? EndSessionEndpoint { get; init; }
 
     /// <summary>
-    /// Gets the OAuth 2.0 response types supported by this authorization server. Absent from the
-    /// document when <see langword="null"/>: a host that serves no authorization endpoint
-    /// supports none, and OpenID Connect Discovery §4.2 omits a zero-element claim rather than
-    /// publishing an empty array.
+    /// Gets the supported response types, or <see langword="null"/> and absent without an
+    /// authorization endpoint, since Discovery §4.2 omits a zero-element claim.
     /// </summary>
     [JsonPropertyName("response_types_supported")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -72,21 +60,15 @@ public sealed record OpenIdConfigurationDocument
     public required IReadOnlyCollection<string> ScopesSupported { get; init; }
 
     /// <summary>
-    /// Gets the claim names this authorization server may supply in an ID token or at the UserInfo
-    /// endpoint (OpenID Connect Discovery 1.0 §3, RECOMMENDED): the claims the discoverable scopes
-    /// unlock, plus the protocol claims an ID token carries. A claim listed here is one the server
-    /// <em>may</em> supply, not one it always does. Absent from the document when
-    /// <see langword="null"/>, on the same condition as <see cref="ResponseTypesSupported"/>: a
-    /// host that serves no authorization endpoint issues no ID token and answers no UserInfo
-    /// request, so it can supply none of them.
+    /// Gets the claims the server may supply in an ID token or at UserInfo (Discovery §3); absent
+    /// on the same condition as <see cref="ResponseTypesSupported"/>.
     /// </summary>
     [JsonPropertyName("claims_supported")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyCollection<string>? ClaimsSupported { get; init; }
 
     /// <summary>
-    /// Gets the response modes supported by this authorization server. Absent from the document
-    /// when <see langword="null"/>, on the same condition as <see cref="ResponseTypesSupported"/>.
+    /// Gets the supported response modes; absent on the same condition as <see cref="ResponseTypesSupported"/>.
     /// </summary>
     [JsonPropertyName("response_modes_supported")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -105,16 +87,11 @@ public sealed record OpenIdConfigurationDocument
     [JsonPropertyName("subject_types_supported")]
     public IReadOnlyCollection<string> SubjectTypesSupported { get; } = ["public"];
 
-    /// <summary>
-    /// Gets the JWS signing algorithms supported for ID tokens issued by this authorization server.
-    /// </summary>
+    /// <summary>Gets the JWS signing algorithms supported for ID tokens.</summary>
     [JsonPropertyName("id_token_signing_alg_values_supported")]
     public required IReadOnlyCollection<SigningAlgorithm> IdTokenSigningAlgValuesSupported { get; init; }
 
-    /// <summary>
-    /// Gets the PKCE code challenge methods supported by this authorization server.
-    /// Absent from the document when <see langword="null"/>.
-    /// </summary>
+    /// <summary>Gets the supported PKCE code challenge methods; absent when <see langword="null"/>.</summary>
     [JsonPropertyName("code_challenge_methods_supported")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyCollection<CodeChallengeMethod>? CodeChallengeMethodsSupported { get; init; }

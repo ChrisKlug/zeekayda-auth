@@ -6,10 +6,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
-/// <summary>
-/// Extension methods for registering <see cref="SigningKeyExpiryHealthCheck"/> against an
-/// <see cref="IHealthChecksBuilder"/>.
-/// </summary>
+/// <summary>Registers <see cref="SigningKeyExpiryHealthCheck"/> with an <see cref="IHealthChecksBuilder"/>.</summary>
 public static class ZeeKayDaSigningKeyHealthChecksBuilderExtensions
 {
     /// <summary>
@@ -18,21 +15,15 @@ public static class ZeeKayDaSigningKeyHealthChecksBuilderExtensions
     /// <param name="builder">The health checks builder to add the check to.</param>
     /// <param name="configure">An optional callback to configure <see cref="SigningKeyExpiryHealthCheckOptions"/>.</param>
     /// <param name="name">The health check's registered name.</param>
-    /// <param name="failureStatus">
-    /// The <see cref="HealthStatus"/> to report when the check reports failure; <see langword="null"/>
-    /// to use the check's own reported status.
-    /// </param>
+    /// <param name="failureStatus">The status to report on failure, or <see langword="null"/> for the check's own.</param>
     /// <param name="tags">Tags for filtering which health checks run for a given request.</param>
     /// <returns><paramref name="builder"/> for chaining.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
     /// </exception>
     /// <remarks>
-    /// Registers no <see cref="SigningKeyRing"/> and no <see cref="ISigningKeySource"/> — an
-    /// application that adds only this health check still starts, and the probe reports
-    /// <see cref="HealthStatus.Unhealthy"/> naming the missing registration rather than throwing.
-    /// Call <see cref="ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions.AddSigningKeySource{TSource}(ZeeKayDaAuthCoreBuilder)"/>
-    /// separately to register a ring for this check to report on.
+    /// Registers no signing key ring: without one, the probe reports <see cref="HealthStatus.Unhealthy"/>
+    /// naming the missing registration.
     /// </remarks>
     public static IHealthChecksBuilder AddZeeKayDaSigningKeys(
         this IHealthChecksBuilder builder,

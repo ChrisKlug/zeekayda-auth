@@ -6,11 +6,8 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
-/// Records at startup that <see cref="DevelopmentOptions.AllowHttpLoopbackCorsOrigins"/> is
-/// enabled: at <see cref="LogLevel.Information"/> in Development, where it is the expected choice,
-/// and at <see cref="LogLevel.Critical"/> anywhere else. It never fails startup, for the reason
-/// <see cref="HttpLoopbackIssuerVerifier"/> gives: the flag is itself the opt-out, and a non-loopback
-/// HTTP origin fails startup whatever the flag says.
+/// Logs that <see cref="DevelopmentOptions.AllowHttpLoopbackCorsOrigins"/> is on, critically outside
+/// Development, and never fails startup, as <see cref="HttpLoopbackIssuerVerifier"/> explains.
 /// </summary>
 internal sealed class HttpLoopbackCorsOriginsVerifier(
     IOptions<AuthorizationServerOptions> options,
