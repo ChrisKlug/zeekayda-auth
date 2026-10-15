@@ -1068,7 +1068,7 @@ public sealed class SigningKeyRingTests
             },
             () => { },
             SigningAlgorithm.ES256);
-        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        using var ring = new SigningKeyRing(source, clock, WithoutReadsBeforeTheDeadline(), new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         try
@@ -1112,7 +1112,7 @@ public sealed class SigningKeyRingTests
             },
             () => { },
             SigningAlgorithm.ES256);
-        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        using var ring = new SigningKeyRing(source, clock, WithoutReadsBeforeTheDeadline(), new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
@@ -1179,7 +1179,7 @@ public sealed class SigningKeyRingTests
             },
             () => { },
             SigningAlgorithm.ES256);
-        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        using var ring = new SigningKeyRing(source, clock, WithoutReadsBeforeTheDeadline(), new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
         await requested.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
@@ -1611,8 +1611,19 @@ public sealed class SigningKeyRingTests
     }
 
     /// <summary>
-    /// A fake clock that reports when a one-minute timer is created: in these tests only the ring's source
-    /// deadline is one, since their sources answer reads at once.
+    /// <see cref="TestSigningKeys.Options"/> with no read due in the day before the handover: a read would
+    /// arm a one-minute deadline of its own and trip <see cref="DeadlineClock"/> first.
+    /// </summary>
+    private static SigningKeyOptions WithoutReadsBeforeTheDeadline()
+    {
+        var options = TestSigningKeys.Options;
+        options.RefreshInterval = TimeSpan.FromDays(30);
+        return options;
+    }
+
+    /// <summary>
+    /// A fake clock that reports when a one-minute timer is created. The startup read and signer open arm
+    /// none, so with no refresh read due it is the handover's source deadline.
     /// </summary>
     private sealed class DeadlineClock(DateTimeOffset start) : FakeTimeProvider(start)
     {
