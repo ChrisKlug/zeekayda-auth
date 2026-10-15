@@ -61,19 +61,20 @@ internal sealed class AuthorizationCodeIssuer(
         var session = RequireAuthenticated(requestContext);
         var scopes = ResolveScopes(requestContext, client);
 
-        if (!scopes.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
-        {
-            await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-            return responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.InvalidScope, OpenIdNoLongerAllowed, requestContext.State);
-        }
-
         // Not from the constructor: this singleton is built at mapping, before startup verification.
         var store = context.RequestServices.GetRequiredService<AuthorizationCodeStore>();
 
         string code;
         try
         {
+            // Claimed before any answer reaches the client, refusals included: one interaction, one outcome.
             var now = await flow.ClaimCompletionAsync(context, requestContext).ConfigureAwait(false);
+
+            if (!scopes.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
+            {
+                await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+                return responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.InvalidScope, OpenIdNoLongerAllowed, requestContext.State);
+            }
 
             code = StoreKeyGenerator.Generate();
             await store.StoreAsync(code, BuildEntry(requestContext, session, scopes, now), context.RequestAborted).ConfigureAwait(false);

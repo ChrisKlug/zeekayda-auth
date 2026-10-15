@@ -662,6 +662,25 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
         await replay.ShouldHaveFoundNothingToContinueAsync("the interaction was discarded");
     }
 
+    [Fact]
+    public async Task A_registration_that_no_longer_allows_openid_tells_the_client_nothing_once_another_response_claimed_the_interaction()
+    {
+        // The deterministic form of the race: another response claimed the interaction and may still
+        // deliver its code, so this one must not also answer the client with invalid_scope.
+        var repository = new MutableClientRepository(ConsentingRegistration());
+        using var factory = NewFactory(repository, configureStores: builder => builder
+            .AddAuthorizationCodeStore<AlreadyClaimedBackingStore>()
+            .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true)
+            .AddInMemoryInteractionStore(allowOutsideDevelopment: true));
+        using var client = NewClient(factory);
+        var interactionId = await ReachConsentAsync(client);
+
+        repository.Current = ConsentingRegistration() with { AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "profile", "email" } };
+        using var grant = await GrantAsync(client, interactionId, "openid", "profile", "email");
+
+        await grant.ShouldHaveFoundNothingToContinueAsync();
+    }
+
     // ── What the store does with it ───────────────────────────────────────────────────────────
 
     [Fact]
