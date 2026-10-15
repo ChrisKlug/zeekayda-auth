@@ -3,9 +3,7 @@ using Microsoft.AspNetCore.Http;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// Records on the request that a terminal interaction outcome committed the response, so the
-/// framework can tell its own finished response apart from one the host started for reasons of
-/// its own.
+/// Marks a response a terminal interaction outcome committed, as opposed to one the host started.
 /// </summary>
 internal static class TerminalResponse
 {

@@ -73,12 +73,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// <see langword="null"/>.
     /// </exception>
     /// <remarks>
-    /// A collection key replaces the default list: setting one <c>Response:TypesSupported</c>
-    /// entry leaves that entry as the whole list, and an empty JSON array (<c>[]</c>) leaves it empty.
-    /// The framework reads these options once, so a configuration provider that reloads does not change
-    /// the running server; an <c>IOptionsSnapshot</c> a host resolves itself binds again and would see the
-    /// reloaded values. In every other respect this
-    /// is <see cref="AddZeeKayDaAuth(IServiceCollection, Action{AuthorizationServerOptions})"/>.
+    /// A collection key replaces the default list, and an empty JSON array (<c>[]</c>) empties it.
+    /// The framework reads these options once, so a reloading configuration provider does not change
+    /// the running server. In every other respect this is
+    /// <see cref="AddZeeKayDaAuth(IServiceCollection, Action{AuthorizationServerOptions})"/>.
     /// </remarks>
     public static ZeeKayDaAuthBuilder AddZeeKayDaAuth(
         this IServiceCollection services,
@@ -118,12 +116,9 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     /// <see langword="null"/>.
     /// </exception>
     /// <remarks>
-    /// Calls <c>AddZeeKayDaAuthCore(configure)</c>, which registers and validates
-    /// <see cref="AuthorizationServerOptions"/> so a misconfigured server fails loudly at startup
-    /// rather than at the first request, and adds the endpoints, cookies, interaction and external
-    /// providers on top. A repeated call adds its <paramref name="configure"/> delegate and registers
-    /// nothing twice. Call <c>app.UseRouting()</c> followed by <c>app.MapZeeKayDaAuth()</c> after
-    /// building the application to register the OIDC protocol endpoints.
+    /// Adds the endpoints, cookies and interaction services to <c>AddZeeKayDaAuthCore</c>, which
+    /// validates the options at startup. A repeated call adds only its <paramref name="configure"/>.
+    /// Map the endpoints with <c>app.UseRouting()</c>, then <c>app.MapZeeKayDaAuth()</c>.
     /// </remarks>
     public static ZeeKayDaAuthBuilder AddZeeKayDaAuth(
         this IServiceCollection services,
@@ -134,8 +129,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
 
         var builder = new ZeeKayDaAuthBuilder(services.AddZeeKayDaAuthCore(configure));
 
-        // A repeated call adds only its configure delegate: the cookie schemes below cannot be
-        // registered twice, so the HTTP surface is registered by the first call alone.
+        // The cookie schemes below cannot be registered twice.
         if (services.Any(descriptor => descriptor.ServiceType == typeof(IZeeKayDaEndpoint)))
             return builder;
 
@@ -157,8 +151,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<MatcherPolicy, ExactPathMatcherPolicy>());
 
-        // The composite is registered as its concrete type, not IClientAuthenticator, so it is
-        // excluded from IEnumerable<IClientAuthenticator> and cannot dispatch recursively.
+        // The composite as its concrete type, so it cannot dispatch to itself.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());
         services.TryAddSingleton(sp => new RegisteredAuthenticators(sp.GetServices<IClientAuthenticator>()));
@@ -178,11 +171,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         return builder;
     }
 
-    /// <summary>
-    /// Registers the services behind the authorization endpoint: the validating client resolver
-    /// every endpoint resolves clients through, request validation, and the error-interaction
-    /// handoff to the host's error page.
-    /// </summary>
+    /// <summary>Registers the services behind the authorization endpoint and the host's interaction pages.</summary>
     private static void AddAuthorizationRequestServices(IServiceCollection services)
     {
         services.AddHttpContextAccessor();
@@ -198,47 +187,35 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<InteractionAnswers>();
         services.TryAddSingleton<NothingToContinue>();
         services.TryAddSingleton<PageInteractionServices>();
-        // The interaction services are public sealed classes with internal constructors, which the
-        // container cannot call, so each is built here; a host can consume them but never supply one.
-        // Replaced, not tried: the framework is the only possible supplier, so its registration wins,
-        // and calling this twice still leaves one.
-        services.RemoveAll<ErrorInteraction>();
-        services.AddSingleton(sp => new ErrorInteraction(
+        AddFrameworkBuilt(services, sp => new ErrorInteraction(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<AuthorizeErrorTransport>()));
-        services.RemoveAll<LoginInteraction>();
-        services.AddSingleton(sp => new LoginInteraction(
+        AddFrameworkBuilt(services, sp => new LoginInteraction(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<IOptions<AuthorizationServerOptions>>(),
             sp.GetRequiredService<ProviderRegistry>(),
             sp.GetRequiredService<PageInteractionServices>()));
 
-        // Registered whether or not WithProviders is called: its job is to catch a host with
-        // neither a login page nor a provider, so nothing can sign a user in.
+        // Whether or not WithProviders is called: it catches a host with no way to sign anyone in.
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupVerifier, LoginDispatchVerifier>());
 
-        services.RemoveAll<ConsentInteraction>();
-        services.AddSingleton(sp => new ConsentInteraction(
+        AddFrameworkBuilt(services, sp => new ConsentInteraction(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<PageInteractionServices>()));
-        services.RemoveAll<ProviderSignInInteraction>();
-        services.AddSingleton(sp => new ProviderSignInInteraction(
+        AddFrameworkBuilt(services, sp => new ProviderSignInInteraction(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<ProviderRegistry>(),
             sp.GetRequiredService<PageInteractionServices>()));
         services.TryAddSingleton<LogoutRequestStore>();
         services.TryAddSingleton<EndSessionResponses>();
-        services.RemoveAll<LogoutInteraction>();
-        services.AddSingleton(sp => new LogoutInteraction(
+        AddFrameworkBuilt(services, sp => new LogoutInteraction(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<LogoutRequestStore>(),
             sp.GetRequiredService<EndSessionResponses>(),
             sp.GetRequiredService<SsoSession>(),
             sp.GetRequiredService<NothingToContinue>()));
 
-        // Lets a Razor Pages handler or controller action end with a plain await after a terminal
-        // call. Inert on a host without MVC, which never reads MvcOptions.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IConfigureOptions<MvcOptions>, TerminalInteractionMvcOptionsSetup>());
 
@@ -247,10 +224,19 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers what external providers need before any is registered: an empty scheme map that
-    /// <c>WithProviders</c> replaces, and the round trip — the challenge, one callback endpoint per
-    /// provider, and the resume endpoint, each of which maps nothing while the map is empty. The
-    /// pin, its validator and the provider startup checks are registered by <c>WithProviders</c>.
+    /// Registers a public interaction service whose constructor is internal, replacing any other
+    /// registration: the framework is its only possible supplier.
+    /// </summary>
+    private static void AddFrameworkBuilt<TService>(IServiceCollection services, Func<IServiceProvider, TService> factory)
+        where TService : class
+    {
+        services.RemoveAll<TService>();
+        services.AddSingleton(factory);
+    }
+
+    /// <summary>
+    /// Registers what external providers need before any is: an empty scheme map for
+    /// <c>WithProviders</c> to replace, and endpoints that map nothing while it is empty.
     /// </summary>
     private static void AddProviderServices(IServiceCollection services)
     {
@@ -262,28 +248,11 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             ServiceDescriptor.Singleton<IZeeKayDaEndpoint, ResumeEndpoint>());
     }
 
-    /// <summary>
-    /// Registers the cookie schemes the framework owns. Plain <c>AddCookie</c> schemes, not a
-    /// ZeeKayDa handler: every authentication-shaped question here is already answered by a
-    /// handler that ships with ASP.NET Core, and a framework scheme would be a vehicle with no
-    /// cargo.
-    /// </summary>
+    /// <summary>Registers the framework's cookie schemes, plain <c>AddCookie</c> ones.</summary>
     /// <remarks>
-    /// <para>
-    /// The host names none of these, and none of them may become a default scheme: a host with no
-    /// authentication of its own must keep failing closed rather than inheriting the SSO session
-    /// as the answer to <c>[Authorize]</c> or as the target of an unqualified
-    /// <c>HttpContext.SignInAsync</c>. Opting host pages into the SSO session is a separate,
-    /// explicit feature (#593).
-    /// </para>
-    /// <para>
-    /// <strong>Both are registered together, and that is load-bearing.</strong> ASP.NET Core
-    /// promotes a lone registered scheme to the automatic default, so registering only the
-    /// session scheme would hand a bare host exactly the silent grant described above.
-    /// <c>zkd.external</c> serves the external-provider round trip, and is registered whether or
-    /// not a provider is. The parked principal that <c>zkd.pending</c> once carried lives in the
-    /// interaction store, so no scheme backs that name.
-    /// </para>
+    /// None may become a default scheme, or a host with no authentication of its own would answer
+    /// <c>[Authorize]</c> with the SSO session. Both are always registered for that reason: ASP.NET
+    /// Core promotes a lone scheme to the default.
     /// </remarks>
     private static void AddInteractionCookies(IServiceCollection services)
     {
@@ -296,25 +265,20 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         {
             ConfigureFrameworkCookie(options, ZeeKayDaCookies.Session);
 
-            // Lax, not Strict: the session is read while answering a top-level GET the user
-            // arrived at from the client's site, which is exactly what Strict withholds.
+            // Not Strict: it is read on a top-level GET arriving from the client's site.
             options.Cookie.SameSite = SameSiteMode.Lax;
 
-            // Stated rather than inherited. This is the ASP.NET Core default; making the SSO
-            // session's lifetime configurable is #604.
+            // The ASP.NET Core default, stated rather than inherited.
             options.ExpireTimeSpan = TimeSpan.FromDays(14);
         });
 
         authentication.AddCookie(ZeeKayDaCookies.External, options =>
         {
-            // The provider handler's sign-in target, read back by /connect/resume in the same
-            // browser round trip and discarded — it exists for seconds.
+            // Read back and discarded by /connect/resume in the same round trip.
             ConfigureFrameworkCookie(options, ZeeKayDaCookies.External);
             options.Cookie.SameSite = SameSiteMode.Lax;
             options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
 
-            // Only a provider's callback endpoint may sign in here, and the provider is what that
-            // endpoint's route says: recorded from the request, refused without it.
             options.Events.OnSigningIn = ExternalTicket.RecordProvider;
         });
     }
@@ -326,14 +290,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
         options.Cookie.IsEssential = true;
 
-        // No sliding expiration anywhere: auth_time is a protocol value carried as a claim, never
-        // inferred from a ticket's age, and a renewing window is not what any of these hold.
+        // auth_time is carried as a claim, never inferred from a ticket's age.
         options.SlidingExpiration = false;
 
-        // Nothing redirects to a login page through these schemes — the authorization endpoint
-        // owns that decision and needs the interaction context written first. A challenge or
-        // forbid here is a bug, so it answers with a status code rather than a redirect that
-        // would silently appear to work.
+        // A challenge through these schemes is a bug; a redirect would hide it.
         options.Events.OnRedirectToLogin = context => WriteStatusCode(context, StatusCodes.Status401Unauthorized);
         options.Events.OnRedirectToAccessDenied = context => WriteStatusCode(context, StatusCodes.Status403Forbidden);
     }

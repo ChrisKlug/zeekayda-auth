@@ -3,8 +3,7 @@ using System.Security.Claims;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The arguments of a page's sign-in, checked and copied before anything is awaited: what was
-/// validated is what is signed in, whatever the caller does to its own arrays or claims afterwards.
+/// The arguments of a page's sign-in, checked and copied before anything is awaited.
 /// </summary>
 internal static class SessionPrincipal
 {
@@ -18,9 +17,8 @@ internal static class SessionPrincipal
     }
 
     /// <summary>
-    /// A copy of the page's additional claims with the reserved ones stripped. The subject is
-    /// refused rather than dropped: a page passing one expects it to be used, and silently
-    /// ignoring it would hide the mistake.
+    /// A copy of the page's additional claims, reserved ones stripped; a subject claim is refused,
+    /// not silently dropped.
     /// </summary>
     public static Claim[] AdditionalClaims(Claim[] additionalClaims)
     {
@@ -45,8 +43,7 @@ internal static class SessionPrincipal
     }
 
     /// <summary>
-    /// A copy of the authentication methods. Refused here rather than at the claim write, so the
-    /// blame lands on the caller's argument, not on a malformed session cookie several frames later.
+    /// A copy of the authentication methods, refused here so the blame lands on the caller's argument.
     /// </summary>
     public static string[] Methods(IEnumerable<string> authenticationMethods)
     {

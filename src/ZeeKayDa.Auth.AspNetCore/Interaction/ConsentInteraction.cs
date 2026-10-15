@@ -7,32 +7,34 @@ using ZeeKayDa.Auth.Scopes;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The host consent page's completion of an authorization request. One of the per-page
-/// interaction services: the host owns the page and its wording; this service owns the protocol.
+/// The host consent page's completion of an authorization request, at
+/// <c>AuthorizationEndpoint.Interaction.ConsentPath</c>. The host owns the page and its wording;
+/// this service owns the protocol.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The framework redirects the user here after sign-in when the client requires consent, at the
-/// configured <c>AuthorizationEndpoint.Interaction.ConsentPath</c>. As with the login page, the
-/// one thing the page must preserve is the <c>zkd_i</c> query parameter it was reached with,
-/// which an ordinary <c>&lt;form method="post"&gt;</c> does by default.
-/// </para>
-/// <para>
-/// Every method is bound to the interaction the request is addressed to <em>and</em> to the
-/// session that was authenticated for it: a consent decision is recorded by the user it was
+/// The page must preserve the <c>zkd_i</c> query parameter it was reached with, which an ordinary
+/// <c>&lt;form method="post"&gt;</c> does by default. Every method is bound to that interaction
+/// <em>and</em> to the session authenticated for it, so a decision is recorded by the user it was
 /// asked of, never by whoever holds the browser afterwards.
 /// </para>
 /// <para>
+/// <strong>Terminal methods</strong> — <see cref="GrantAsync"/> and <see cref="DenyAsync"/> — write
+/// and commit the response, so each must be the last thing the page does. A Razor Pages handler or
+/// controller action can simply end after it: the framework skips MVC's result. Anywhere else,
+/// returning a result of your own afterwards throws, because the response has started. Only a
+/// <c>POST</c> is accepted, checked before anything is read: the framework arrives at the page with
+/// a <c>GET</c>, so a page deciding in its render handler would grant every request on arrival.
+/// </para>
+/// <para>
 /// <strong>Nothing to continue is answered, not thrown.</strong> When a terminal method finds no
-/// interaction left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was
-/// already completed or was started in another browser; the session that authenticated it is no longer the one the browser holds; the client
-/// is no longer registered; or another response completed it while
-/// this one was being prepared — the framework answers the request itself. It sends the browser to
-/// the client's registered <c>InitiateLoginUri</c>, with <c>iss</c>, to start again when the browser
-/// can still say which client it came from, and to the error page with
-/// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal either way.
-/// A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it causes the same
-/// answer on every submission.
+/// interaction left to complete — no <c>zkd_i</c>; the interaction expired, was completed or belongs
+/// to another browser; the session that authenticated it has changed; the client is no longer
+/// registered; or another response completed it first — the framework sends the browser to the
+/// client's <c>InitiateLoginUri</c>, with <c>iss</c>, when it can still say which client it came
+/// from, and to the error page with <see cref="AuthorizationErrorKind.NothingToContinue"/>
+/// otherwise. A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it fails
+/// on every submission.
 /// </para>
 /// </remarks>
 public sealed class ConsentInteraction
@@ -48,7 +50,6 @@ public sealed class ConsentInteraction
         _services = services;
     }
 
-
     private const string Page = "consent";
 
     /// <summary>
@@ -56,12 +57,10 @@ public sealed class ConsentInteraction
     /// </summary>
     /// <param name="cancellationToken">Cancels the read; pass the request's own token.</param>
     /// <remarks>
-    /// The page takes a one-click decision, so the response this is called from is marked
-    /// unframeable (<c>Content-Security-Policy: frame-ancestors 'none'</c>, appended alongside
-    /// any policy of the host's, and <c>X-Frame-Options: DENY</c>) and uncacheable
-    /// (<c>Cache-Control: no-store</c>). A page renders nothing meaningful without this call, so
-    /// every rendered consent page carries the protection; one that renders without calling it is
-    /// on its own.
+    /// The page takes a one-click decision, so the response is marked unframeable
+    /// (<c>Content-Security-Policy: frame-ancestors 'none'</c>, appended to any policy of the host's,
+    /// and <c>X-Frame-Options: DENY</c>) and <c>Cache-Control: no-store</c>, before the read. A page
+    /// that renders without calling this is on its own.
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// There is no interaction to ask about: the request carries no <c>zkd_i</c>, or names an
@@ -86,13 +85,10 @@ public sealed class ConsentInteraction
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Stamped before the read, so whatever the page renders — the question, or its own
-        // "nothing to ask" after TryGetRequestAsync — is framed by nobody and cached by nothing.
         RenderedPage.Protect(context.Response);
         var (requestContext, client) = await ResolveAsync(context, cancellationToken).ConfigureAwait(false);
 
-        // The subject was written by the same promotion that wrote the session identifier
-        // ResolveAsync just matched, so it is present whenever that check passed.
+        // Written with the session identifier ResolveAsync just matched.
         return new ConsentRequest(
             new ClientInformation(requestContext.ClientId, client.DisplayName),
             requestContext.Scopes.ToImmutableArray(),
@@ -105,10 +101,9 @@ public sealed class ConsentInteraction
     /// </summary>
     /// <param name="cancellationToken">Cancels the read; pass the request's own token.</param>
     /// <remarks>
-    /// Exactly <see cref="GetRequestAsync"/>, including the headers it stamps, except that each case
-    /// <see cref="GetRequestAsync"/> reports with <see cref="ZeeKayDaInteractionException"/> returns
-    /// <see langword="null"/> instead. A request with no <c>zkd_i</c> is logged as a warning, since
-    /// a form that drops it looks like this on every submission.
+    /// Exactly <see cref="GetRequestAsync"/>, headers included, except that each case it reports with
+    /// <see cref="ZeeKayDaInteractionException"/> returns <see langword="null"/>. A request with no
+    /// <c>zkd_i</c> is logged as a warning.
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store could not be reached. Fail-closed: nothing is reported as absent.
@@ -138,31 +133,13 @@ public sealed class ConsentInteraction
     /// </summary>
     /// <param name="scopes">
     /// The scopes the user agreed to, typically the boxes they ticked. Only entries in
-    /// <see cref="ConsentRequest.Scopes"/> count; anything else is dropped without comment, so
-    /// a page cannot widen what was asked. <c>openid</c> need not be passed: it is always granted.
+    /// <see cref="ConsentRequest.Scopes"/> count; anything else is dropped without comment, so a
+    /// page cannot widen what was asked.
     /// </param>
     /// <remarks>
-    /// <para>
-    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
-    /// thing the page does. A Razor Pages handler or controller action can simply end after it:
-    /// the framework skips MVC's result, including one the handler returns. Anywhere else,
-    /// returning a result of your own after calling it throws, because the response has already
-    /// started.
-    /// </para>
-    /// <para>
-    /// A grant always includes <c>openid</c>: every request carries it, and agreeing to anything is
-    /// agreeing to be identified to the client. An empty grant therefore grants <c>openid</c> alone.
-    /// A page that wants to refuse calls <see cref="DenyAsync"/>.
-    /// </para>
-    /// <para>
-    /// Only a <c>POST</c> — the consent form's submission — is accepted, and that is checked
-    /// before anything is read. The framework arrives at the page with a <c>GET</c>, so a page
-    /// that decided in its render handler would grant every request on arrival.
-    /// </para>
-    /// <para>
-    /// With nothing left to complete, this answers the request itself rather than throwing — see the
-    /// class remarks.
-    /// </para>
+    /// Terminal (see the class remarks). A grant always includes <c>openid</c>: agreeing to anything
+    /// is agreeing to be identified to the client, so an empty grant grants <c>openid</c> alone. A
+    /// page that wants to refuse calls <see cref="DenyAsync"/>.
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
@@ -182,8 +159,6 @@ public sealed class ConsentInteraction
     {
         ArgumentNullException.ThrowIfNull(scopes);
 
-        // Materialised and checked before anything is resolved, so a bad argument is blamed on
-        // the caller's argument rather than surfacing as a mangled grant.
         var answered = scopes.ToArray();
         if (answered.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException("An entry in scopes is null or blank.", nameof(scopes));
@@ -195,46 +170,26 @@ public sealed class ConsentInteraction
     private async Task DecideAsync(HttpContext context, string[] answered)
     {
         var (requestContext, client) = await ResolveAsync(context, context.RequestAborted).ConfigureAwait(false);
-
-        // The page's answer can only narrow what was asked: intersected in request order, over
-        // ordinal comparison, so a page cannot grant a scope the request never carried. openid is
-        // the request itself, so it is kept whatever the page passed.
-        var granted = requestContext.Scopes
-            .Where(scope => scope == StandardScopes.OpenId.Name || answered.Contains(scope, StringComparer.Ordinal))
-            .ToImmutableArray();
+        var granted = NarrowToRequested(requestContext.Scopes, answered);
 
         await _services.Outcomes.CompleteConsentAsync(context, requestContext, client, granted).ConfigureAwait(false);
     }
+
+    /// <summary>The requested scopes the page's answer names, in request order, and always <c>openid</c>.</summary>
+    private static ImmutableArray<string> NarrowToRequested(IEnumerable<string> requested, string[] answered) =>
+        requested
+            .Where(scope => scope == StandardScopes.OpenId.Name || answered.Contains(scope, StringComparer.Ordinal))
+            .ToImmutableArray();
 
     /// <summary>
     /// Ends the authorization request without consent, answering the client with
     /// <c>access_denied</c> at its registered redirect URI. This is the Deny button.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
-    /// thing the page does. A Razor Pages handler or controller action can simply end after it:
-    /// the framework skips MVC's result, including one the handler returns. Anywhere else,
-    /// returning a result of your own after calling it throws, because the response has already
-    /// started.
-    /// </para>
-    /// <para>
-    /// The SSO session is left alone — declining one client does not sign the user out of
-    /// another. The interaction is discarded, so the declined request cannot afterwards be
-    /// resumed. The client receives an <c>error_description</c> stating that the user declined
-    /// at the consent page and, when it registered with <c>EnableZkdErrorCodes</c>, the
-    /// <c>zkd_error</c> <c>consent_declined</c>, so it can tell this apart from the other refusals
-    /// that also answer <c>access_denied</c>.
-    /// </para>
-    /// <para>
-    /// Only a <c>POST</c> — the form's submission — is accepted, and that is checked before
-    /// anything is read. A deny reachable by a link could be triggered cross-site by anyone who
-    /// learned the interaction identifier, ending the user's in-flight request.
-    /// </para>
-    /// <para>
-    /// With nothing left to complete, this answers the request itself rather than throwing — see the
-    /// class remarks.
-    /// </para>
+    /// Terminal (see the class remarks). The SSO session is left alone: declining one client does not
+    /// sign the user out of another. The interaction is discarded. A client registered with
+    /// <c>EnableZkdErrorCodes</c> also receives the <c>zkd_error</c> <c>consent_declined</c>, to tell
+    /// this apart from other <c>access_denied</c> refusals.
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
@@ -255,16 +210,9 @@ public sealed class ConsentInteraction
     }
 
     /// <summary>
-    /// The interaction this request may decide consent for, and the client it is for: addressed
-    /// by <c>zkd_i</c> on the login service's exact terms, authenticated by the session this
-    /// browser still holds, and sent by a client that is still registered.
+    /// The addressed interaction, if the session this browser holds authenticated it, and its client,
+    /// read again so that one removed since the handoff, or no longer listing the redirect URI, ends it.
     /// </summary>
-    /// <remarks>
-    /// The registration is read again here rather than remembered from the handoff. A client
-    /// removed or invalidated since then, or one that no longer lists the request's redirect URI,
-    /// has no page worth rendering and no redirect URI anyone vouches for any more, so the
-    /// request ends where it stands.
-    /// </remarks>
     private async ValueTask<(AuthorizationRequestContext RequestContext, IClient Client)> ResolveAsync(
         HttpContext context,
         CancellationToken cancellationToken)
@@ -295,12 +243,6 @@ public sealed class ConsentInteraction
             "ConsentInteraction requires an active HTTP request. Resolve it from request services " +
             "inside the consent page, not from a background service.");
 
-    /// <summary>
-    /// A decision is taken only from a form post. The framework itself arrives at the consent
-    /// page with a GET, so a page whose GET handler decided would grant every request the moment
-    /// the user landed on it — with no user action, which is the very thing consent exists to
-    /// require. Checked before any state is read, so a wrongly wired page changes nothing.
-    /// </summary>
     private HttpContext RequireStateChangingRequest()
     {
         var context = RequireHttpContext();

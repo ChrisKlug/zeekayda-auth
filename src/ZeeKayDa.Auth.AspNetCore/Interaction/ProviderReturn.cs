@@ -1,9 +1,8 @@
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// A trip to an external provider that brought the user back to the login page instead of
-/// signing them in: which provider, and whether the user declined there or the provider failed.
-/// Recorded by the framework from the provider's callback, never from anything the request says.
+/// A provider trip that brought the user back to the login page instead of signing them in,
+/// recorded from the callback, never from the request.
 /// </summary>
 public sealed class ProviderReturn
 {

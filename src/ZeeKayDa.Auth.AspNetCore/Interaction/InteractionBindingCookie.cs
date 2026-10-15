@@ -7,30 +7,19 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// Binds an interaction to the browser that started it: one small cookie per interaction, named
-/// <c>zkd.interaction.&lt;id&gt;</c>, holding a random secret that the store key for the
-/// interaction is derived from, and an encrypted hint naming the client the interaction is for.
+/// Binds an interaction to the browser that started it: a cookie per interaction,
+/// <c>zkd.interaction.&lt;id&gt;</c>, holding the random secret its store key is derived from and an
+/// encrypted hint naming its client.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The interaction identifier travels in a URL, and URLs leak — into <c>Referer</c> headers,
-/// browser history and request logs. Without the cookie, anyone who saw the URL could act on the
-/// interaction from their own browser. The value is a secret rather than a marker for the same
-/// reason: a fixed value could be set by hand in another browser once the identifier is known.
+/// The identifier travels in URLs, which leak; the secret keeps anyone who saw one from acting on
+/// the interaction from another browser.
 /// </para>
 /// <para>
-/// A cookie that names a client outlives its interaction by <see cref="RetainedFor"/>, and an
-/// interaction that ends leaves it behind as a tombstone: the secret removed, the client hint kept,
-/// at most <see cref="MaxRetired"/> of them at a time. A page submitted
-/// for an interaction that expired or already completed can then still say which client the user
-/// came from, so the framework can send them back to it rather than to a dead end. The hint only
-/// ever selects a registered client; it never carries a destination.
-/// </para>
-/// <para>
-/// One cookie per interaction rather than one per browser, so concurrent tabs share nothing. The
-/// count is capped: an authorize request that finds the cap already reached evicts the oldest
-/// before writing its own, so a run of abandoned or planted requests cannot grow the browser's
-/// <c>Cookie</c> header past what proxies accept.
+/// An ended interaction leaves a tombstone for <see cref="RetainedFor"/>: secret removed, client
+/// hint kept, so a late submission can still be sent back to its client. The hint only selects a
+/// registered client; it never carries a destination.
 /// </para>
 /// </remarks>
 internal sealed class InteractionBindingCookie(
@@ -41,19 +30,13 @@ internal sealed class InteractionBindingCookie(
     internal const string NamePrefix = ZeeKayDaCookies.Interaction + ".";
 
     /// <summary>
-    /// The most binding cookies one browser accumulates in sequence, live and retired together.
-    /// Generous for a person — two or three tabs is a busy sign-in — and, with a client hint of at
-    /// most a few hundred bytes, a bounded header cost. Enforced per response from the request's
-    /// own cookies, so requests made simultaneously overshoot it by their own count; that is a
-    /// user's tabs, since a browser stores these cookies only from a top-level navigation and
-    /// cross-site content cannot make several at once.
+    /// The most binding cookies one browser holds, live and retired together, so planted requests
+    /// cannot grow the <c>Cookie</c> header past what proxies accept. Simultaneous requests can
+    /// overshoot it by their own count.
     /// </summary>
     internal const int MaxPerBrowser = 10;
 
-    /// <summary>
-    /// The most retired bindings kept at once. They exist only for a late submission's client hint,
-    /// so a few recent ones are enough, and they are always evicted before a live one.
-    /// </summary>
+    /// <summary>The most retired bindings kept at once; they are always evicted before a live one.</summary>
     internal const int MaxRetired = 3;
 
     /// <summary>How long a binding is kept after its interaction ends, for its client hint.</summary>
@@ -69,9 +52,8 @@ internal sealed class InteractionBindingCookie(
     public static string NewSecret() => StoreKeyGenerator.Generate();
 
     /// <summary>
-    /// Writes the binding cookie <paramref name="issued"/> describes. The cookie lasts until the
-    /// interaction expires, plus <see cref="RetainedFor"/> when it names a client. Evicts retired,
-    /// then the oldest, bindings first when the browser already holds the maximum.
+    /// Writes the binding cookie, lasting until the interaction expires plus, when it names a
+    /// client, <see cref="RetainedFor"/>; evicts first when the browser is at the cap.
     /// </summary>
     public void Issue(HttpContext context, IssuedBinding issued)
     {
@@ -85,7 +67,6 @@ internal sealed class InteractionBindingCookie(
         var now = timeProvider.GetUtcNow();
         EvictOldest(context);
 
-        // Only a binding that names a client has anything to keep once its interaction is over.
         var lifetime = expiresAt - now + (clientId is null ? TimeSpan.Zero : RetainedFor);
         var binding = new Binding(
             now.ToUnixTimeSeconds(),
@@ -94,17 +75,11 @@ internal sealed class InteractionBindingCookie(
 
         Write(context, interactionId, binding, lifetime);
 
-        // The browser has not seen the cookie yet. A request that stores an interaction and then
-        // ends it — prompt=none with no session, a configuration gap — must still be able to
-        // address the entry it just wrote, so the binding stays with the request as well.
+        // A request that stores an interaction and then ends it must address it before the browser has the cookie.
         context.Items[ItemKey(interactionId)] = binding;
     }
 
-    /// <summary>
-    /// The secret bound to <paramref name="interactionId"/>: the one this request issued, or the
-    /// one the browser sent. <see langword="null"/> when there is neither, or the binding is a
-    /// tombstone.
-    /// </summary>
+    /// <summary>The live secret bound to <paramref name="interactionId"/>, issued by this request or sent by the browser.</summary>
     public string? Read(HttpContext context, string interactionId)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -113,11 +88,7 @@ internal sealed class InteractionBindingCookie(
         return Find(context, interactionId) is { Secret.Length: > 0 } binding ? binding.Secret : null;
     }
 
-    /// <summary>
-    /// The client the binding for <paramref name="interactionId"/> names, live or retired.
-    /// <see langword="null"/> when there is no binding, it names no client, or its hint cannot be
-    /// read — expired, tampered with, or sealed for another interaction.
-    /// </summary>
+    /// <summary>The client a live or retired binding names, if its hint is intact and unexpired.</summary>
     public string? ReadClientId(HttpContext context, string interactionId)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -136,18 +107,13 @@ internal sealed class InteractionBindingCookie(
             return null;
         }
 
-        // The expiry travels inside the protected payload and is judged on the framework's clock,
-        // as the interaction's own is: the cookie's max-age is the browser's to honour, not ours.
+        // Judged on the framework's clock: the cookie's max-age is the browser's to honour.
         return TryParseHint(payload, out var expiresAt, out var clientId) && timeProvider.GetUtcNow() < expiresAt
             ? clientId
             : null;
     }
 
-    /// <summary>
-    /// Ends the binding for <paramref name="interactionId"/>: the secret is removed, so nothing can
-    /// address the interaction through it again. A binding that names a client is left behind as a
-    /// tombstone for <see cref="RetainedFor"/>; one that names none is deleted.
-    /// </summary>
+    /// <summary>Removes the binding's secret, leaving a tombstone when it names a client.</summary>
     public void Retire(HttpContext context, string interactionId)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -162,19 +128,12 @@ internal sealed class InteractionBindingCookie(
             return;
         }
 
-        // Room for this one among the retired bindings the browser already holds.
         DeleteOldest(context, OtherBindings(context, interactionId).Where(other => !other.IsLive), MaxRetired - 1);
 
-        // The hint carries its own expiry, so a tombstone that outlives it only outlives it as
-        // bytes: it can no longer name a client.
         Write(context, interactionId, binding with { Secret = string.Empty }, RetainedFor);
     }
 
-    /// <summary>
-    /// Removes every binding cookie the request carries, tombstones included. Signing out ends
-    /// whatever this browser still has in flight, so no interaction outlives the session it may
-    /// have been started on.
-    /// </summary>
+    /// <summary>Removes every binding cookie the request carries, tombstones included, at sign-out.</summary>
     public static void DeleteAll(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -207,7 +166,6 @@ internal sealed class InteractionBindingCookie(
         context.Response.Cookies.Append(NamePrefix + interactionId, value, BuildCookieOptions(maxAge));
     }
 
-    // The data protector measures the lifetime on its own clock, so it is passed as a duration.
     private string ProtectHint(string interactionId, string clientId, DateTimeOffset expiresAt) =>
         HintProtectorFor(interactionId).Protect(
             string.Concat(expiresAt.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), HintSeparator, clientId));
@@ -232,12 +190,7 @@ internal sealed class InteractionBindingCookie(
     // Sealed per interaction, so a hint cannot be lifted into another interaction's cookie.
     private IDataProtector HintProtectorFor(string interactionId) => _hintProtector.CreateProtector(interactionId);
 
-    /// <summary>
-    /// Makes room for one more binding: retired bindings beyond what may be kept go first, then
-    /// enough of the rest — retired before live, oldest first — to stay under the cap. A value
-    /// that does not parse counts as the oldest retired binding of all: whatever wrote it, it is
-    /// not one this framework can use.
-    /// </summary>
+    /// <summary>Makes room for one more binding; an unparseable value counts as the oldest retired one.</summary>
     private static void EvictOldest(HttpContext context)
     {
         var bindings = OtherBindings(context, interactionId: null);
@@ -248,10 +201,7 @@ internal sealed class InteractionBindingCookie(
         DeleteOldest(context, remaining, MaxPerBrowser - 1);
     }
 
-    /// <summary>
-    /// Deletes the oldest of <paramref name="bindings"/> — retired before live — until at most
-    /// <paramref name="keep"/> remain, and returns the ones kept.
-    /// </summary>
+    /// <summary>Deletes the oldest, retired before live, until <paramref name="keep"/> remain; returns those kept.</summary>
     private static IEnumerable<CookieBinding> DeleteOldest(HttpContext context, IEnumerable<CookieBinding> bindings, int keep)
     {
         var ordered = bindings.OrderBy(binding => binding.IsLive).ThenBy(binding => binding.IssuedAt).ToArray();
@@ -274,10 +224,7 @@ internal sealed class InteractionBindingCookie(
     private static bool IsBindingCookie(string name) =>
         name.Length > NamePrefix.Length && name.StartsWith(NamePrefix, StringComparison.Ordinal);
 
-    /// <summary>
-    /// Reads <c>issuedAt.secret.hint</c>. The secret is empty on a tombstone and the hint empty when
-    /// the binding names no client; a value with neither is not one this framework writes.
-    /// </summary>
+    /// <summary>Reads <c>issuedAt.secret.hint</c>, either of the last two possibly empty, not both.</summary>
     private static bool TryParse(string? value, out Binding binding)
     {
         binding = default!;
@@ -298,24 +245,17 @@ internal sealed class InteractionBindingCookie(
     private static CookieOptions BuildCookieOptions(TimeSpan? maxAge) => new()
     {
         HttpOnly = true,
-        // Unconditionally Secure: the route group already refuses non-HTTPS except loopback, and a
-        // TLS-terminating proxy without UseForwardedHeaders must not silently downgrade the
-        // cookie.
+        // Even behind a TLS-terminating proxy without UseForwardedHeaders.
         Secure = true,
-        // Lax, not Strict: the interaction has to survive a top-level GET back from an external
-        // identity provider. Not None — nothing here is read from a cross-site POST.
+        // Survives a top-level GET back from an external identity provider.
         SameSite = SameSiteMode.Lax,
-        // Root path: the host's own login and consent pages read this, and they live wherever the
-        // host put them.
+        // The host's pages read it, wherever the host put them.
         Path = "/",
         MaxAge = maxAge,
         IsEssential = true,
     };
 
-    /// <summary>
-    /// A binding to write: the interaction it is for, when that interaction expires, the secret the
-    /// store key is derived from, and the client to name in its hint, if any.
-    /// </summary>
+    /// <summary>A binding to write, naming <c>ClientId</c> in its hint when there is one.</summary>
     internal sealed record IssuedBinding(string InteractionId, DateTimeOffset ExpiresAt, string Secret, string? ClientId);
 
     /// <summary>A binding as the cookie holds it: when it was issued, its secret, and its client hint.</summary>

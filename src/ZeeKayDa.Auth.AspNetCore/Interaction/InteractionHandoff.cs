@@ -6,30 +6,16 @@ using Microsoft.AspNetCore.WebUtilities;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The handoff between the framework and a host-rendered interaction page: the query parameter
-/// naming the interaction, written onto every redirect the framework makes to a host page, and
-/// read back when that page calls a terminal interaction method.
+/// The <c>zkd_i</c> query parameter naming the interaction, written onto every redirect to a host
+/// page and read back when the page completes it.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Consumption is bound by this parameter, and that binding is the point. Without it, a sign-in
-/// completes whatever interaction context the browser happens to be carrying — including one
-/// planted by an attacker's page navigating the victim to a valid authorization request for a
-/// client the attacker registered, whose PKCE verifier, <c>state</c> and <c>nonce</c> the
-/// attacker chose. Requiring the identifier to come back through the page means a user who
-/// reached the login page on their own has nothing to attach a planted context to.
-/// </para>
-/// <para>
-/// It also turns concurrent tabs from a silent failure into a loud one: without the check, tab A's
-/// sign-in would complete tab B's authorization request and send a code to B's client.
-/// </para>
+/// Without it a sign-in would complete whatever interaction the browser carries — one planted by
+/// an attacker's authorization request, or another tab's.
 /// </remarks>
 internal static class InteractionHandoff
 {
-    /// <summary>
-    /// The query parameter carrying the interaction identifier. Deliberately short and opaque: it
-    /// is an identifier, not a URL, so it carries no open-redirect surface of its own.
-    /// </summary>
+    /// <summary>The query parameter carrying the interaction identifier: an identifier, never a URL.</summary>
     public const string InteractionIdParameter = "zkd_i";
 
     /// <summary>Builds the redirect to a host interaction page for the given interaction.</summary>
@@ -37,16 +23,9 @@ internal static class InteractionHandoff
         QueryHelpers.AddQueryString(path, InteractionIdParameter, interactionId);
 
     /// <summary>
-    /// Reads the interaction identifier the page was reached with — from the query string, then
-    /// from the form body for a page that posts it as a hidden field. Returns
-    /// <see langword="null"/> when it is absent, empty, or supplied more than once.
+    /// The interaction identifier from the query string, else from a posted form field;
+    /// <see langword="null"/> when absent, empty, or supplied more than once.
     /// </summary>
-    /// <remarks>
-    /// A <c>&lt;form method="post"&gt;</c> with no <c>action</c> posts to the current URL including
-    /// its query string, so the common login page needs to do nothing at all. Reading the form as
-    /// well covers the page that regenerates its action from routing and passes the value back
-    /// explicitly.
-    /// </remarks>
     public static async ValueTask<string?> ReadInteractionIdAsync(HttpRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -61,30 +40,19 @@ internal static class InteractionHandoff
         return Single(form[InteractionIdParameter]);
     }
 
-    /// <summary>
-    /// Compares two interaction identifiers in fixed time. The identifier is never published — it
-    /// lives inside the encrypted context and on the URL of the page the framework redirected to —
-    /// so a comparison that leaked its bytes through timing would leak something the caller is not
-    /// otherwise given.
-    /// </summary>
+    /// <summary>Compares two interaction identifiers in fixed time: the identifier is never published.</summary>
     public static bool IdentifiersMatch(string expected, string supplied)
     {
         ArgumentNullException.ThrowIfNull(expected);
         ArgumentNullException.ThrowIfNull(supplied);
 
-        // Compared over the strings' own UTF-16 bytes, so a request-supplied value of any length
-        // costs no allocation, and a length mismatch answers false before any byte is compared —
-        // the length of an identifier is not a secret, its bytes are.
+        // No allocation for a request value of any length; the length is not a secret.
         return CryptographicOperations.FixedTimeEquals(
             MemoryMarshal.AsBytes(expected.AsSpan()),
             MemoryMarshal.AsBytes(supplied.AsSpan()));
     }
 
-    /// <summary>
-    /// A parameter supplied twice is refused rather than resolved, matching how the authorization
-    /// endpoint treats every duplicated parameter: picking one of two values is a decision an
-    /// attacker gets to influence.
-    /// </summary>
+    /// <summary>Refuses a duplicated parameter, as the authorization endpoint does: an attacker must not pick.</summary>
     private static string? Single(Microsoft.Extensions.Primitives.StringValues values) =>
         values.Count == 1 && !string.IsNullOrEmpty(values[0]) ? values[0] : null;
 }

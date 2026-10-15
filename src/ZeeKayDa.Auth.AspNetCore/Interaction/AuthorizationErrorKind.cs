@@ -10,9 +10,8 @@ public enum AuthorizationErrorKind
     RequestRejected,
 
     /// <summary>
-    /// A login, consent or logout page was submitted with no live interaction behind it: it
-    /// expired, was already completed, was started in another browser, or the page was reached
-    /// directly. The user can only start again from the application.
+    /// A login, consent or logout page was submitted with no live interaction behind it. The user
+    /// can only start again from the application.
     /// </summary>
     NothingToContinue,
 }

@@ -6,17 +6,12 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// How an interaction-store entry is addressed and sealed: the key the framework derives for it,
-/// and the Data Protection purpose its bytes are protected under. Both come from the interaction
-/// identifier and the secret in that interaction's binding cookie together, so that the store
-/// never holds either value and a forged cookie finds nothing.
+/// How an interaction-store entry is addressed and sealed, both derived from the interaction
+/// identifier and its binding secret together, so the store holds neither.
 /// </summary>
 /// <remarks>
-/// The key alone would leave one attack open. The identifier is treated as leakable, and a
-/// writer to the store — not a copy of it — could move an entry's valid ciphertext under the key
-/// for that identifier and a secret of their own choosing, then present that secret in a cookie
-/// of their own. Deriving the purpose from the same pair closes it: bytes sealed for one secret
-/// do not unprotect under another, whichever row they sit in.
+/// The sealing purpose is derived too, so a writer to the store cannot move an entry under a
+/// secret of their own choosing and present that secret in a cookie.
 /// </remarks>
 internal static class InteractionStoreKeys
 {
@@ -30,8 +25,7 @@ internal static class InteractionStoreKeys
     public static StoreKey Logout(string interactionId, string secret) => Derive("l", interactionId, secret);
 
     /// <summary>
-    /// The protector for one entry: <paramref name="root"/> — already carrying the purpose that
-    /// separates one kind of entry from another — narrowed to this interaction and this secret.
+    /// The protector for one entry: <paramref name="root"/>, per kind of entry, narrowed to this pair.
     /// </summary>
     public static IDataProtector ProtectorFor(IDataProtector root, string interactionId, string secret) =>
         root.CreateProtector(interactionId, secret);

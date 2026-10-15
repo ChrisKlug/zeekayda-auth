@@ -7,33 +7,41 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
 /// The host page's completion of an external sign-in that <c>ProviderSignInContext.RedirectToAsync</c>
-/// parked: the collect-more page, or the account-linking page. One of the per-page interaction
-/// services: the host owns the page and what it collects; this service owns the protocol.
+/// parked: the collect-more page, or the account-linking page. The host owns the page; this service
+/// owns the protocol.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The page needs no scheme name and no cookie name — the framework redirected the user here and
-/// knows which authorization request, and which parked principal, is being finished. The one
-/// thing the page must preserve is the <c>zkd_i</c> query parameter it was reached with, which an
-/// ordinary <c>&lt;form method="post"&gt;</c> does by default.
+/// The page must preserve the <c>zkd_i</c> query parameter it was reached with, which an ordinary
+/// <c>&lt;form method="post"&gt;</c> does by default.
 /// </para>
 /// <para>
-/// A page that only collects what the provider did not supply passes the collected claims to
-/// <see cref="SignInAsync"/>, and the framework builds the session principal the way it does when
-/// no page is involved: the provider's claims under the derived subject, never the upstream one.
-/// A page that links the external identity to a local account passes that account's subject to
+/// A page that collects what the provider did not supply calls <see cref="SignInAsync"/>, and the
+/// session holds the provider's claims under the derived subject, never the upstream one. A page
+/// that links the external identity to a local account calls
 /// <see cref="SignInWithReplacedAccountAsync(string, IEnumerable{string}, Claim[])"/>.
 /// </para>
 /// <para>
+/// <strong>Terminal methods</strong> — every one but <see cref="GetPendingPrincipalAsync"/> — write
+/// and commit the response, so each must be the last thing the page does. A Razor Pages handler or
+/// controller action can simply end after it: the framework skips MVC's result. Anywhere else,
+/// returning a result of your own afterwards throws, because the response has started. Only a
+/// <c>POST</c> is accepted, checked before anything is read: the framework's cookies accompany a
+/// cross-site top-level <c>GET</c>, so a step wired to a link could be triggered unseen.
+/// </para>
+/// <para>
 /// <strong>Nothing to continue is answered, not thrown.</strong> When a terminal method finds no
-/// interaction left to complete — the request carries no <c>zkd_i</c>; the interaction expired, was
-/// already completed or was started in another browser; no principal is parked for it any more; or another response completed it while
-/// this one was being prepared — the framework answers the request itself. It sends the browser to
-/// the client's registered <c>InitiateLoginUri</c>, with <c>iss</c>, to start again when the browser
-/// can still say which client it came from, and to the error page with
-/// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. The call is terminal either way.
-/// A missing <c>zkd_i</c> is also logged as a warning, since a form that drops it causes the same
-/// answer on every submission.
+/// interaction left to complete — no <c>zkd_i</c>; the interaction expired, was completed or belongs
+/// to another browser; nothing is parked for it; or another response completed it first — the
+/// framework sends the browser to the client's <c>InitiateLoginUri</c>, with <c>iss</c>, when it can
+/// still say which client it came from, and to the error page with
+/// <see cref="AuthorizationErrorKind.NothingToContinue"/> otherwise. A missing <c>zkd_i</c> is also
+/// logged as a warning, since a form that drops it fails on every submission.
+/// </para>
+/// <para>
+/// Every refusal of a sign-in is decided before the parked principal is taken, so a refused page
+/// can try again with it still parked. The exception is a principal parked by a second provider
+/// return while the sign-in was in flight: it is held to the same rules, and is gone if refused.
 /// </para>
 /// </remarks>
 public sealed class ProviderSignInInteraction
@@ -56,20 +64,16 @@ public sealed class ProviderSignInInteraction
 
     /// <summary>
     /// The principal the external provider authenticated, parked for the interaction this request
-    /// is addressed to, or <see langword="null"/> when there is none: the redirect did not come
-    /// from <c>RedirectToAsync</c>, the parked principal has expired, or it belongs to another
-    /// interaction, or the request carries no <c>zkd_i</c> at all. A page that gets
-    /// <see langword="null"/> has nothing to finish and should say so, not fail. A missing
-    /// <c>zkd_i</c> is also logged as a warning, since a form that drops it looks the same.
+    /// is addressed to, or <see langword="null"/> when there is none — it expired, belongs to
+    /// another interaction, or the request carries no <c>zkd_i</c>. A page that gets
+    /// <see langword="null"/> has nothing to finish and should say so, not fail.
     /// </summary>
     /// <param name="cancellationToken">Cancels the read; pass the request's own token.</param>
     /// <remarks>
-    /// The page shows the provider's identity and takes a one-click decision, so the response
-    /// this is called from is marked unframeable (<c>Content-Security-Policy: frame-ancestors
-    /// 'none'</c>, appended alongside any policy of the host's, and <c>X-Frame-Options: DENY</c>)
-    /// and uncacheable (<c>Cache-Control: no-store</c>), as the consent page's is — whatever the
-    /// read finds. A page renders nothing meaningful without this call, so every rendered page
-    /// carries the protection; one that renders without calling it is on its own.
+    /// Whatever the read finds, the response is marked unframeable (<c>Content-Security-Policy:
+    /// frame-ancestors 'none'</c>, appended to any policy of the host's, and <c>X-Frame-Options:
+    /// DENY</c>) and <c>Cache-Control: no-store</c>: the page shows the provider's identity and takes
+    /// a one-click decision. A page that renders without calling this is on its own.
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store could not be reached. Fail-closed: a parked principal that cannot be
@@ -86,8 +90,6 @@ public sealed class ProviderSignInInteraction
     {
         var context = RequireHttpContext();
 
-        // Stamped whatever the read finds: the page renders either way, and the one that shows the
-        // provider's identity and takes a decision is the one an attacker would frame.
         RenderedPage.Protect(context.Response);
 
         if (await InteractionHandoff.ReadInteractionIdAsync(context.Request).ConfigureAwait(false) is not { } interactionId)
@@ -108,39 +110,16 @@ public sealed class ProviderSignInInteraction
     /// added, and continues the authorization request that led here.
     /// </summary>
     /// <param name="additionalClaims">
-    /// What the page collected, added alongside the provider's claims — only the additions, not
-    /// the provider's claims over again. Held on the SSO session only: tokens and userinfo get
-    /// their claims from <c>IClaimsProvider</c>, never from here. The subject is the framework's:
-    /// a <c>sub</c> or <see cref="ClaimTypes.NameIdentifier"/> claim is refused, and claims in the
-    /// reserved <c>zkd:</c> namespace are stripped. Pass none to promote the parked principal as
-    /// it is.
+    /// What the page collected, added to the provider's claims; pass none to promote the parked
+    /// principal as it is. Held on the SSO session only: tokens and userinfo get their claims from
+    /// <c>IClaimsProvider</c>. A <c>sub</c> or <see cref="ClaimTypes.NameIdentifier"/> claim is
+    /// refused, and claims in the reserved <c>zkd:</c> namespace are stripped.
     /// </param>
     /// <remarks>
-    /// <para>
-    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
-    /// thing the page does. A Razor Pages handler or controller action can simply end after it:
-    /// the framework skips MVC's result, including one the handler returns. Anywhere else,
-    /// returning a result of your own after calling it throws, because the response has already
-    /// started.
-    /// </para>
-    /// <para>
-    /// The session holds what an external sign-in with no page involved would hold: the
-    /// provider's claims under a subject derived from the provider, the subject claim's issuer
-    /// and the upstream subject together, plus what was collected. No <c>amr</c> is reported,
-    /// since the framework was told nothing about how the user proved who they are at the
-    /// provider. The parked principal is consumed.
-    /// </para>
-    /// <para>
-    /// Every refusal of the sign-in itself is decided before the parked principal is taken, so
-    /// a refused page can try again, or send the user back to the login page, with the principal
-    /// still parked. Two things are found later: another response completing the interaction
-    /// first, and a principal parked by a second provider return while this sign-in was in flight,
-    /// which is promoted in place of the one read and, if it cannot be, is gone with the refusal.
-    /// </para>
-    /// <para>
-    /// With nothing left to complete, this answers the request itself rather than throwing — see the
-    /// class remarks.
-    /// </para>
+    /// Terminal (see the class remarks). The session holds what an external sign-in with no page
+    /// would hold — the provider's claims under the derived subject — plus what was collected. No
+    /// <c>amr</c> is reported: the framework was told nothing about how the user proved who they
+    /// are at the provider.
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// The parked principal cannot be promoted: its provider is no longer registered, it carries no
@@ -173,15 +152,11 @@ public sealed class ProviderSignInInteraction
     {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
-        // Validated on the parked principal before it is taken, so a principal that cannot be
-        // promoted stays where it is; built again from what was taken, so nothing stale is promoted.
-        Promote(parked);
+        RequirePromotable(parked);
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
         var promoted = Promote(taken);
         ((ClaimsIdentity)promoted.Identity!).AddClaims(additionalClaims);
 
-        // Nothing is stated about how the user proved who they are at the provider, as for an
-        // external sign-in that involved no page.
         await _services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], taken.Provider))
             .ConfigureAwait(false);
     }
@@ -201,10 +176,8 @@ public sealed class ProviderSignInInteraction
     /// list.
     /// </param>
     /// <param name="additionalClaims">
-    /// Claims held on the SSO session alongside the subject. Held on the session only: tokens and
-    /// userinfo get their claims from <c>IClaimsProvider</c>, never from here. A <c>sub</c> or
-    /// <see cref="ClaimTypes.NameIdentifier"/> claim is refused, and claims in the reserved
-    /// <c>zkd:</c> namespace are stripped.
+    /// Claims held on the SSO session alongside the subject, on the same terms as the overload
+    /// taking a list of methods.
     /// </param>
     /// <remarks>
     /// Exactly the overload taking a list of methods, with one method in it.
@@ -249,42 +222,16 @@ public sealed class ProviderSignInInteraction
     /// </param>
     /// <param name="additionalClaims">
     /// Claims held on the SSO session alongside the subject. Held on the session only: tokens and
-    /// userinfo get their claims from <c>IClaimsProvider</c>, never from here. A <c>sub</c> or
+    /// userinfo get their claims from <c>IClaimsProvider</c>. A <c>sub</c> or
     /// <see cref="ClaimTypes.NameIdentifier"/> claim is refused, and claims in the reserved
     /// <c>zkd:</c> namespace are stripped.
     /// </param>
     /// <remarks>
-    /// <para>
-    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
-    /// thing the page does. A Razor Pages handler or controller action can simply end after it:
-    /// the framework skips MVC's result, including one the handler returns. Anywhere else,
-    /// returning a result of your own after calling it throws, because the response has already
-    /// started.
-    /// </para>
-    /// <para>
-    /// This is account linking: the page decided the external identity belongs to one of the
-    /// host's own accounts — a stored link, a matched verified email, a local password entered
-    /// once — and the session is for that account. Nothing the provider returned is carried into
-    /// the session. The parked principal is consumed, and the provider that parked it is recorded
-    /// on the request. What it is not for is passing the upstream subject back: the session
-    /// subject of an external sign-in is never the upstream subject verbatim, and a replacement
-    /// naming it is refused.
-    /// </para>
-    /// <para>
-    /// The arguments are copied when the call is made: what was validated is what is signed in,
-    /// whatever the page does to them afterwards.
-    /// </para>
-    /// <para>
-    /// Every refusal of the sign-in itself is decided before the parked principal is taken, so
-    /// a refused page can try again with the principal still parked. Two things are found later:
-    /// another response completing the interaction first, and a principal parked by a second
-    /// provider return while this sign-in was in flight, which is held to the same subject rule
-    /// and, when refused, is gone with the refusal.
-    /// </para>
-    /// <para>
-    /// With nothing left to complete, this answers the request itself rather than throwing — see the
-    /// class remarks.
-    /// </para>
+    /// Terminal (see the class remarks). This is account linking: the page decided the external
+    /// identity belongs to one of the host's own accounts, and nothing the provider returned is
+    /// carried into the session. The upstream subject is refused as <paramref name="subject"/>: an
+    /// external sign-in's session subject is never the upstream one verbatim. The arguments are
+    /// copied when the call is made, so what was validated is what is signed in.
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// The parked principal's provider is no longer registered, or <paramref name="subject"/> is
@@ -319,19 +266,9 @@ public sealed class ProviderSignInInteraction
     {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
-        // Checked before the parked principal is taken: a replacement the session would refuse
-        // must not cost the page the one thing it needs to try again.
-        RequireRegistered(parked);
-        if (CarriesUpstreamSubject(replacement, parked.Principal))
-            throw UpstreamSubjectRefused();
-
-        // Checked again on what was taken: a principal parked between the read and the take is
-        // held to the same rule, at the cost of losing it — the concurrent re-park is the one
-        // path on which a refusal costs the page its retry.
+        RequireReplaceable(parked, replacement);
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
-        RequireRegistered(taken);
-        if (CarriesUpstreamSubject(replacement, taken.Principal))
-            throw UpstreamSubjectRefused();
+        RequireReplaceable(taken, replacement);
 
         await _services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(replacement, methods, taken.Provider))
             .ConfigureAwait(false);
@@ -343,29 +280,10 @@ public sealed class ProviderSignInInteraction
     /// page, and a linking page's refusal.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
-    /// thing the page does. A Razor Pages handler or controller action can simply end after it:
-    /// the framework skips MVC's result, including one the handler returns. Anywhere else,
-    /// returning a result of your own after calling it throws, because the response has already
-    /// started.
-    /// </para>
-    /// <para>
-    /// No SSO session is established, and an existing one is left alone. The interaction and the
-    /// principal parked for it are discarded, so the request cannot afterwards be resumed. The
-    /// client receives the same refusal <c>ProviderSignInContext.DenyAsync</c> sends — an
-    /// <c>error_description</c> naming a refusal after sign-in at the external provider and, for a
-    /// client registered with <c>EnableZkdErrorCodes</c>, the <c>zkd_error</c> <c>account_refused</c>.
-    /// </para>
-    /// <para>
-    /// Only a <c>POST</c> — the form's submission — is accepted, and that is checked before
-    /// anything is read. A cancel wired to a <c>GET</c> anchor would be triggerable cross-site by
-    /// anyone who learned the interaction identifier.
-    /// </para>
-    /// <para>
-    /// With nothing left to complete, this answers the request itself rather than throwing — see the
-    /// class remarks.
-    /// </para>
+    /// Terminal (see the class remarks). No SSO session is established, and an existing one is left
+    /// alone. The interaction and its parked principal are discarded. The client receives the same
+    /// refusal <c>ProviderSignInContext.DenyAsync</c> sends, including, for a client registered with
+    /// <c>EnableZkdErrorCodes</c>, the <c>zkd_error</c> <c>account_refused</c>.
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
@@ -385,10 +303,8 @@ public sealed class ProviderSignInInteraction
     }
 
     /// <summary>
-    /// The interaction the request is addressed to and the principal parked for it, read but not
-    /// taken. A sign-in from this page finishes an external sign-in, so an interaction with
-    /// nothing parked is refused before anything is promoted — the login page is where a sign-in
-    /// from nothing belongs.
+    /// The addressed interaction and the principal parked for it, read but not taken. Nothing parked
+    /// is refused: a sign-in from nothing belongs on the login page.
     /// </summary>
     private async Task<(AuthorizationRequestContext RequestContext, PendingTicket Parked)> ResolveParkedAsync(HttpContext context)
     {
@@ -401,10 +317,8 @@ public sealed class ProviderSignInInteraction
     }
 
     /// <summary>
-    /// Takes the parked principal out of the store: what is promoted is what was taken, so a
-    /// principal parked between the read and the take is promoted rather than discarded, and one
-    /// taken by another post in the meantime refuses this one. Two posts that both take the same
-    /// principal both promote the same person; the completion claim decides which one issues.
+    /// Takes the parked principal, which may have been re-parked since it was read. Taken by another
+    /// post in the meantime refuses this one; the completion claim decides between two that both took it.
     /// </summary>
     private async Task<PendingTicket> TakeParkedAsync(HttpContext context, AuthorizationRequestContext requestContext) =>
         await _services.Flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false)
@@ -420,6 +334,9 @@ public sealed class ProviderSignInInteraction
         "No external sign-in is parked for this interaction: it expired, was already used, or the " +
         "user did not arrive here through RedirectToAsync. Send the user back to the login page.");
 
+    /// <summary>Refuses, without taking it, a parked principal that <see cref="Promote"/> would refuse.</summary>
+    private void RequirePromotable(PendingTicket parked) => Promote(parked);
+
     /// <summary>The principal to promote for a parked ticket, from a provider still registered.</summary>
     private ClaimsPrincipal Promote(PendingTicket ticket)
     {
@@ -427,11 +344,7 @@ public sealed class ProviderSignInInteraction
         return ExternalSubject.ForPromotion(ticket.Provider, ticket.Principal);
     }
 
-    /// <summary>
-    /// A parked principal from a provider that has since been removed from the registration is
-    /// refused, as <see cref="GetPendingPrincipalAsync"/> reports none: what the host no longer
-    /// trusts to sign users in does not get to finish a sign-in it started.
-    /// </summary>
+    /// <summary>Refuses a parked principal whose provider the host no longer registers.</summary>
     private void RequireRegistered(PendingTicket ticket)
     {
         if (_providers.Find(ticket.Provider) is null)
@@ -442,11 +355,14 @@ public sealed class ProviderSignInInteraction
         }
     }
 
-    /// <summary>
-    /// Whether the replacement's subject is a subject the provider returned. Compared by value: a
-    /// host keying local accounts by the upstream subject verbatim is the very thing the derived
-    /// subject exists to prevent.
-    /// </summary>
+    private void RequireReplaceable(PendingTicket ticket, ClaimsPrincipal replacement)
+    {
+        RequireRegistered(ticket);
+        if (CarriesUpstreamSubject(replacement, ticket.Principal))
+            throw UpstreamSubjectRefused();
+    }
+
+    /// <summary>Whether the replacement's subject is, by value, a subject the provider returned.</summary>
     private static bool CarriesUpstreamSubject(ClaimsPrincipal replacement, ClaimsPrincipal parked) =>
         SubjectValues(replacement).Intersect(SubjectValues(parked), StringComparer.Ordinal).Any();
 
@@ -460,12 +376,6 @@ public sealed class ProviderSignInInteraction
             "ProviderSignInInteraction requires an active HTTP request. Resolve it from request " +
             "services inside the page, not from a background service.");
 
-    /// <summary>
-    /// A terminal step is taken only from a form post. The framework arrives at the page with a
-    /// GET, and the framework's cookies accompany a top-level GET from anywhere, so a sign-in or a
-    /// cancel wired to a link would be triggerable by a page that never showed the user anything.
-    /// Checked before any state is read, so a wrongly wired page changes nothing.
-    /// </summary>
     private HttpContext RequireStateChangingRequest()
     {
         var context = RequireHttpContext();

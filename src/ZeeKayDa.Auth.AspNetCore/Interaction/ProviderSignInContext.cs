@@ -79,7 +79,7 @@ public sealed class ProviderSignInContext
                 nameof(path));
         }
 
-        Claim();
+        EnsureFirstTerminalCall();
         return _redirect(path);
     }
 
@@ -90,10 +90,8 @@ public sealed class ProviderSignInContext
     /// <remarks>
     /// <strong>Terminal.</strong> This writes and commits the response; it must be the last thing
     /// the handler does, and at most one of this and <see cref="RedirectToAsync"/> may be called.
-    /// The client receives an <c>error_description</c> naming a refusal after sign-in at the
-    /// external provider and, when it registered with <c>EnableZkdErrorCodes</c>, the
-    /// <c>zkd_error</c> <c>account_refused</c>, so it can tell this apart from a cancellation at
-    /// the sign-in page.
+    /// A client registered with <c>EnableZkdErrorCodes</c> also receives the <c>zkd_error</c>
+    /// <c>account_refused</c>, to tell this apart from a cancellation at the sign-in page.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <see cref="RedirectToAsync"/> or <see cref="DenyAsync"/> has already been called on this
@@ -101,15 +99,11 @@ public sealed class ProviderSignInContext
     /// </exception>
     public Task DenyAsync()
     {
-        Claim();
+        EnsureFirstTerminalCall();
         return _deny();
     }
 
-    /// <summary>
-    /// Terminal means once. Enforced structurally rather than by the current call graph, so a
-    /// handler that calls both, or one of them twice, fails the first time it runs.
-    /// </summary>
-    private void Claim()
+    private void EnsureFirstTerminalCall()
     {
         if (Interlocked.CompareExchange(ref _completed, 1, 0) != 0)
         {
@@ -120,10 +114,9 @@ public sealed class ProviderSignInContext
     }
 
     /// <summary>
-    /// The principal as the provider returned it, with the framework's reserved claims removed.
-    /// A copy: what the framework parks or promotes is its own, so a change made here is not
-    /// carried into the session. A host that wants the session to hold something else redirects
-    /// to a page of its own and finishes there through <see cref="ProviderSignInInteraction"/>.
+    /// A copy of the principal as the provider returned it, reserved claims removed; changes to it
+    /// are not carried into the session. To change what the session holds, redirect to a page that
+    /// finishes through <see cref="ProviderSignInInteraction"/>.
     /// </summary>
     public ClaimsPrincipal Principal { get; }
 

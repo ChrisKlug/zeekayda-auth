@@ -1,9 +1,7 @@
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// What every per-page interaction service needs to advance a request: the interaction state, the
-/// outcomes that end it, and the answer for a page that has nothing left to continue. One
-/// dependency rather than three, since no page service has ever wanted a subset.
+/// What every per-page interaction service needs to advance a request.
 /// </summary>
 internal sealed class PageInteractionServices(
     AuthorizationFlow flow,
@@ -21,8 +19,7 @@ internal sealed class PageInteractionServices(
 }
 
 /// <summary>
-/// The two response writers a nothing-to-continue answer picks between: the authorization error
-/// page and the signed-out page.
+/// The two response writers a nothing-to-continue answer picks between.
 /// </summary>
 internal sealed class InteractionAnswers(AuthorizationResponses authorization, EndSessionResponses endSession)
 {

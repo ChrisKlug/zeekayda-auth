@@ -8,36 +8,22 @@ using ZeeKayDa.Auth.Clients;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// How a sign-out ends, and the pages the framework renders for a host that built none of its
-/// own: the confirmation, the signed-out page, and the two refusals.
+/// How a sign-out ends, and the framework's own pages for a host that built none. A redirect goes
+/// only to a registered post-logout redirect URI, unlogged.
 /// </summary>
-/// <remarks>
-/// A redirect back to a client goes only to a post-logout redirect URI matched against that
-/// client's registration, and carries its <c>state</c> without passing through a logger. The pages
-/// are framework text; the one value rendered, a client's display name, comes from its
-/// registration and is HTML-encoded.
-/// </remarks>
 internal sealed class EndSessionResponses(IOptions<AuthorizationServerOptions> options)
 {
-    /// <summary>
-    /// Ends the SSO session and every interaction this browser has in flight, then answers: at the
-    /// client's post-logout redirect URI, at the host's signed-out page, or with the framework's
-    /// own.
-    /// </summary>
+    /// <summary>Ends the SSO session and this browser's interactions, then answers at the client or a signed-out page.</summary>
     /// <param name="context">The request signing out.</param>
     /// <param name="redirect">Where to send the user back to the client, or <see langword="null"/>.</param>
     public async Task<IResult> SignOutAsync(HttpContext context, PostLogoutRedirect? redirect)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        // Only a browser that presented the session cookie gets one deleted. A cross-site form
-        // post carries no SameSite=Lax cookie, so answering it with a deletion would end the
-        // session without the question §2 requires — and would end interactions belonging to a
-        // browser that never signed in. A cookie that is present but unreadable is still cleared.
+        // A cross-site post carries no Lax session cookie, and must not end the session unasked (§2).
         if (context.Request.Cookies.ContainsKey(ZeeKayDaCookies.Session))
         {
-            // The cookie handler deletes the session cookie with the attributes it was issued
-            // with, which is what makes a browser actually drop it.
+            // Through the handler, so the deletion carries the attributes the browser needs to drop it.
             await context.SignOutAsync(ZeeKayDaCookies.Session).ConfigureAwait(false);
             InteractionBindingCookie.DeleteAll(context);
         }
@@ -58,10 +44,7 @@ internal sealed class EndSessionResponses(IOptions<AuthorizationServerOptions> o
             ? Results.Redirect(signedOutPath)
             : Page(StatusCodes.Status200OK, "Signed out", "<h1>You have been signed out.</h1>");
 
-    /// <summary>
-    /// The framework's confirmation page. Its form has no <c>action</c>, so it posts back to the
-    /// URL it was rendered at, <c>zkd_i</c> included.
-    /// </summary>
+    /// <summary>The framework's confirmation page, whose action-less form posts back with <c>zkd_i</c>.</summary>
     public static IResult Confirmation(ClientInformation? client)
     {
         var heading = client?.DisplayName is { } name

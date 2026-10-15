@@ -3,9 +3,8 @@ using System.Security.Claims;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// A principal an external provider authenticated that the host parked, through
-/// <see cref="ProviderSignInContext.RedirectToAsync"/>, rather than promoted: what the page it
-/// redirected to reads back with <see cref="ProviderSignInInteraction.GetPendingPrincipalAsync"/>.
+/// A principal parked through <see cref="ProviderSignInContext.RedirectToAsync"/>, as
+/// <see cref="ProviderSignInInteraction.GetPendingPrincipalAsync"/> reads it back.
 /// </summary>
 public sealed class PendingPrincipal
 {

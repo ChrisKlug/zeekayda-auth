@@ -6,18 +6,14 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
 /// Applies the login dispatch rules at startup: fails when nothing can authenticate a user, warns
-/// when a login page is needed and none is configured, and says nothing otherwise.
+/// when a needed login page is missing.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Gated on <c>GrantTypesSupported</c> containing <see cref="GrantType.AuthorizationCode"/>, the
-/// existing declaration of whether this host does user-facing grants at all. A
-/// <c>client_credentials</c>-only host has no login dispatch to check and starts clean.
+/// Skipped when <c>GrantTypesSupported</c> lacks <see cref="GrantType.AuthorizationCode"/>.
 /// </para>
 /// <para>
-/// A verifier, not an activator: it reads the framework's own options and its own scheme map.
-/// The conditions are exact, so the warning cries wolf for nobody — a warning that does trains
-/// people to ignore it.
+/// A verifier, not an activator: it reads only the framework's own options.
 /// </para>
 /// </remarks>
 internal sealed class LoginDispatchVerifier(

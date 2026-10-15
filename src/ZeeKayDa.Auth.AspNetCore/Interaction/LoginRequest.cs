@@ -1,10 +1,6 @@
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
-/// <summary>
-/// What the host's login page renders for: the client the user is signing in to, the ways they
-/// can sign in, and how their last trip to an external provider ended, if it did not sign them
-/// in. Read through <see cref="LoginInteraction.GetRequestAsync"/>.
-/// </summary>
+/// <summary>What the host's login page renders for, read through <see cref="LoginInteraction.GetRequestAsync"/>.</summary>
 public sealed class LoginRequest
 {
     internal LoginRequest(
@@ -28,33 +24,24 @@ public sealed class LoginRequest
     public ClientInformation Client { get; }
 
     /// <summary>
-    /// The external providers the host registered through <c>WithProviders</c>, in registration
-    /// order, for the page to render as a choice; empty when none are registered. A
-    /// <see cref="ProviderDescriptor.Id"/> is handed back to
-    /// <see cref="LoginInteraction.ChallengeAsync"/> to select that provider, never written by the
-    /// page.
+    /// The providers registered through <c>WithProviders</c>, in order, for the page to offer; the
+    /// chosen <see cref="ProviderDescriptor.Id"/> goes back to <see cref="LoginInteraction.ChallengeAsync"/>.
     /// </summary>
     public IReadOnlyList<ProviderDescriptor> Providers { get; }
 
-    /// <summary>
-    /// Whether the page should render a credential form of its own — the value of
-    /// <c>AuthorizationEndpoint.Interaction.SupportsLocalSignIn</c>.
-    /// </summary>
+    /// <summary>Whether to render a credential form: <c>AuthorizationEndpoint.Interaction.SupportsLocalSignIn</c>.</summary>
     public bool LocalLoginEnabled { get; }
 
     /// <summary>
-    /// How the user's last trip to an external provider ended when it brought them back here
-    /// instead of signing them in, or <see langword="null"/> on an ordinary arrival from the
-    /// authorization endpoint. Cleared when the user picks a provider again.
+    /// How the last provider trip ended when it brought the user back here instead of signing them
+    /// in; <see langword="null"/> on an ordinary arrival.
     /// </summary>
     public ProviderReturn? ProviderReturn { get; }
 
     /// <summary>
-    /// The <c>login_hint</c> the client sent (OIDC Core §3.1.2.1) — typically the user's email
-    /// address or phone number — for the page to pre-fill, or <see langword="null"/> when it sent
-    /// none. Verbatim and unverified, at most 256 characters with no control, invisible formatting or line-separator characters: a
-    /// convenience for the user, never an identity, so the page must not sign anyone in, or look
-    /// anyone up, on its strength alone. It is untrusted input: encode it as you would any other.
+    /// The client's <c>login_hint</c> (OIDC Core §3.1.2.1) for the page to pre-fill. Unverified
+    /// input, at most 256 characters with no control or formatting characters: encode it, and never
+    /// sign anyone in or look anyone up on its strength alone.
     /// </summary>
     public string? LoginHint { get; }
 }

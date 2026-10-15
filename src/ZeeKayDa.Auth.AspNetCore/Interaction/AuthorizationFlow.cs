@@ -8,22 +8,9 @@ using ZeeKayDa.Auth.Clients;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The interaction state of an authorization request, and the single seam through which every
-/// stage of the flow reads and writes it: the context the authorization endpoint writes, the SSO
-/// session, and the principal an external provider returned that a host page is still working on.
+/// The one seam through which every stage reads and writes an authorization request's interaction
+/// state, always addressed by interaction: one browser can have any number in flight.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Everything here is addressed by the interaction, never by "the current request's interaction as
-/// a global". Any number of interactions can be in flight in one browser, and each stage names
-/// the one it is working on.
-/// </para>
-/// <para>
-/// It is not an interface and does not want to be one. A single implementation does not justify
-/// an abstraction, and an interface designed against one implementation usually fits the second
-/// badly.
-/// </para>
-/// </remarks>
 internal sealed class AuthorizationFlow(
     AuthorizationRequestContextStore contexts,
     SsoSession session,
@@ -55,16 +42,11 @@ internal sealed class AuthorizationFlow(
         if (session is null || request.Prompts.Contains(PromptValue.Login))
             return true;
 
-        // max_age=0 asks for re-authentication unconditionally, and falls out of the comparison
-        // rather than needing a case of its own.
+        // max_age=0 falls out of the comparison.
         return request.MaxAge is { } maxAge && timeProvider.GetUtcNow() - session.AuthTime > maxAge;
     }
 
-    /// <summary>
-    /// Builds the context for a freshly validated request, carrying the authenticated session's
-    /// details when the flow continues on an existing session, and nothing but protocol state
-    /// when the user has yet to authenticate.
-    /// </summary>
+    /// <summary>The context for a freshly validated request, carrying the session it continues on, if any.</summary>
     public AuthorizationRequestContext CreateContext(
         ValidatedAuthorizeRequest request,
         SsoSessionState? session)
@@ -95,21 +77,14 @@ internal sealed class AuthorizationFlow(
     }
 
     /// <summary>
-    /// Whether the session this browser holds is the one that authenticated the request — the
-    /// same session identifier and the same subject. False before authentication, after a
-    /// sign-out, and after a sign-in as someone else.
+    /// Whether the session this browser holds, by identifier and subject, is the one that
+    /// authenticated the request. Ordinal, not fixed-time: both sides are framework-encrypted state.
     /// </summary>
-    /// <remarks>
-    /// Both values come from framework-written encrypted state, so this is an ordinary ordinal
-    /// comparison: nothing here is request input whose bytes a timing difference could leak.
-    /// </remarks>
     public async Task<bool> IsAuthenticatedByCurrentSessionAsync(HttpContext context, AuthorizationRequestContext requestContext)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
 
-        // The subject is written by the same promotion as the session identifier, so a context
-        // with the identifier has the subject too; the equality below fails for a missing one.
         if (requestContext.SsoSessionId is null)
             return false;
 
@@ -121,19 +96,12 @@ internal sealed class AuthorizationFlow(
     }
 
     /// <summary>
-    /// The validated registration of the client that sent the request, or <see langword="null"/>
-    /// when it is no longer registered, no longer validates, or no longer lists the redirect URI
-    /// the request was accepted with — resolved at the point of use, as every endpoint resolves
-    /// clients, never remembered from when the request was accepted. An operator who removes a
-    /// redirect URI from a live registration means nothing more to be sent there, error included.
+    /// The client's registration as it stands now, or <see langword="null"/> when it no longer
+    /// validates or no longer lists the request's redirect URI — nothing more is sent there.
     /// </summary>
     /// <remarks>
-    /// The resolver comes from the request's services rather than this singleton's constructor:
-    /// the endpoints are constructed when they are mapped, before startup verification runs, and
-    /// the client repository behind the resolver validates its registrations against the signing
-    /// key ring when it is built. Taking it eagerly would make endpoint mapping the first thing to
-    /// touch the ring, which is startup verification's job to do, and to refuse to do when a
-    /// cheaper check has already failed.
+    /// From request services, not the constructor: building the resolver touches the signing key
+    /// ring, which must wait for startup verification, and endpoints are built at mapping.
     /// </remarks>
     public async ValueTask<IClient?> ResolveClientAsync(
         HttpContext context,
@@ -152,10 +120,7 @@ internal sealed class AuthorizationFlow(
             : null;
     }
 
-    /// <summary>
-    /// The client as a host page sees it: the identifier the request named, and the display name
-    /// its registration carries today, if it still has one.
-    /// </summary>
+    /// <summary>The client as a host page sees it: the requested identifier and today's display name.</summary>
     public async ValueTask<ClientInformation> DescribeClientAsync(
         HttpContext context,
         AuthorizationRequestContext requestContext,
@@ -181,19 +146,12 @@ internal sealed class AuthorizationFlow(
         };
     }
 
-    /// <summary>
-    /// Reads the interaction <paramref name="interactionId"/> names, if this browser started it
-    /// and it is still alive.
-    /// </summary>
+    /// <summary>The interaction <paramref name="interactionId"/> names, if this browser started it and it is alive.</summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
     public ValueTask<AuthorizationRequestContext?> ReadAsync(HttpContext context, string interactionId) =>
         contexts.ReadAsync(context, interactionId, context.RequestAborted);
 
-    /// <summary>
-    /// Resolves the interaction this request is entitled to complete: the one the framework sent
-    /// the user to a host page for, named by <c>zkd_i</c> and bound to this browser. Never "the
-    /// current interaction".
-    /// </summary>
+    /// <summary>The interaction this request names by <c>zkd_i</c>, bound to this browser.</summary>
     /// <exception cref="NothingToContinueException">
     /// The request carries no <c>zkd_i</c>, or names an interaction this browser is not carrying.
     /// </exception>
@@ -208,10 +166,7 @@ internal sealed class AuthorizationFlow(
         if (requestContext is not null)
             return requestContext;
 
-        // The entry this binding addressed is gone, so the binding's secret addresses nothing and
-        // must not be left live: it would count against the per-browser cap ahead of a tab that is
-        // still running, and hold a usable secret for the rest of the cookie's life. Retiring keeps
-        // the client hint, which is what the restart below is built on.
+        // Retires the binding's secret, freeing its per-browser slot; the client hint the restart needs stays.
         await ClearAsync(context, interactionId).ConfigureAwait(false);
 
         throw new NothingToContinueException(
@@ -237,10 +192,8 @@ internal sealed class AuthorizationFlow(
     }
 
     /// <summary>
-    /// Claims the interaction's one terminal outcome for this response, or refuses. Every path that
-    /// ends an interaction at the client — a code or a denial — takes the claim first, so two
-    /// responses that both resolved the request alive cannot both end it. A refused claim discards
-    /// the interaction: whichever way, this request has nothing left to complete.
+    /// Claims the interaction's one terminal outcome — a code or a denial — for this response, or
+    /// discards the interaction and refuses.
     /// </summary>
     /// <returns>The time the claim was taken, for the outcome to be stamped with.</returns>
     /// <exception cref="NothingToContinueException">
@@ -249,17 +202,9 @@ internal sealed class AuthorizationFlow(
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">The authorization code store could not record the claim.</exception>
     /// <remarks>
-    /// <para>
-    /// The claim lives in the authorization code store, whose atomic insert every backend already
-    /// has to provide; resolved per request for the reason <see cref="ResolveClientAsync"/> is.
-    /// </para>
-    /// <para>
-    /// Expiry is checked before the claim, so a request that ran out is refused as expired rather
-    /// than handing the store a claim already past its lifetime, and again after it: the claim
-    /// lasts only as long as the interaction, so a response that outlived it could otherwise claim
-    /// again once the first response's claim had lapsed. Two claims can both succeed only if both
-    /// landed before the interaction expired, and the atomic insert already forbids that.
-    /// </para>
+    /// The claim lasts only as long as the interaction, so expiry is checked after it as well as
+    /// before: a response that outlived the interaction could otherwise claim again once the first
+    /// claim had lapsed.
     /// </remarks>
     public async ValueTask<DateTimeOffset> ClaimCompletionAsync(HttpContext context, AuthorizationRequestContext requestContext)
     {
@@ -299,11 +244,7 @@ internal sealed class AuthorizationFlow(
         throw new NothingToContinueException(NothingToContinueReason.AlreadyCompleted, reason);
     }
 
-    /// <summary>
-    /// Persists a freshly accepted request, bound to this browser. Returns <see langword="false"/>
-    /// when the request is larger than the interaction store may hold, in which case nothing was
-    /// written and the caller must fail the request.
-    /// </summary>
+    /// <summary>Persists a new request, bound to this browser; <see langword="false"/> when it is too large to store.</summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
     public ValueTask<bool> TryPersistAsync(HttpContext context, AuthorizationRequestContext requestContext) =>
         contexts.TryStoreAsync(context, requestContext, options.Value.AuthorizationEndpoint.MaxRequestContextBytes, context.RequestAborted);
@@ -314,19 +255,13 @@ internal sealed class AuthorizationFlow(
         contexts.UpdateAsync(context, requestContext, context.RequestAborted);
 
     /// <summary>
-    /// Discards the interaction. Called whenever a request ends, so that a completed, failed or
-    /// planted interaction is never left alive for a later sign-in to pick up. Best-effort: the
-    /// binding cookie always goes; a store that refuses the removal is logged, not thrown. A
-    /// principal still parked for the interaction shares that binding, so it becomes unreachable
-    /// here and is left to its own lifetime.
+    /// Discards the interaction, and with its binding any principal parked for it. Best-effort: the
+    /// binding cookie always goes; a store fault is logged.
     /// </summary>
     public ValueTask ClearAsync(HttpContext context, string interactionId) =>
         contexts.DeleteAsync(context, interactionId, context.RequestAborted);
 
-    /// <summary>
-    /// Parks a principal an external provider returned, with that provider, for
-    /// <paramref name="requestContext"/>'s interaction, under the binding this request carries.
-    /// </summary>
+    /// <summary>Parks a principal an external provider returned for the interaction, under this request's binding.</summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be written.</exception>
     public ValueTask ParkPendingAsync(HttpContext context, PendingTicket ticket, AuthorizationRequestContext requestContext) =>
         pending.ParkAsync(context, ticket, requestContext, context.RequestAborted);
@@ -336,10 +271,7 @@ internal sealed class AuthorizationFlow(
     public ValueTask<PendingTicket?> ReadPendingAsync(HttpContext context, string interactionId, CancellationToken cancellationToken) =>
         pending.ReadAsync(context, interactionId, cancellationToken);
 
-    /// <summary>
-    /// Reads and removes the parked principal: whichever sign-in or denial completes the
-    /// interaction takes it with it. Removal is best-effort; the read is not.
-    /// </summary>
+    /// <summary>Reads and removes the parked principal; removal is best-effort, the read is not.</summary>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
     public ValueTask<PendingTicket?> ConsumePendingAsync(HttpContext context, string interactionId) =>
         pending.ConsumeAsync(context, interactionId, context.RequestAborted);

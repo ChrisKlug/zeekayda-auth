@@ -35,29 +35,23 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        // Every registered options type is validated here, before routes exist, so the first
-        // error the host sees lists all of their failures, not only this method's own options'.
+        // Every options type, so the first error lists all their failures.
         ValidatedOptionsCheck.ThrowIfAnyInvalid(endpoints.ServiceProvider);
 
         var options = endpoints.ServiceProvider
             .GetRequiredService<IOptions<AuthorizationServerOptions>>()
             .Value;
 
-        // Precompute security header values once at map time — they are fixed for the lifetime
-        // of the application and do not need to be re-evaluated per request.
         var securityHeaders = options.SecurityHeaders;
         var referrerPolicyValue = SecurityHeaderValues.ToHeaderValue(securityHeaders.ReferrerPolicy);
         var corpValue = SecurityHeaderValues.ToHeaderValue(securityHeaders.CrossOriginResourcePolicy);
         var noSniff = securityHeaders.ContentTypeOptionsNoSniff;
         var allowHttpLoopbackIssuer = options.Development.AllowHttpLoopbackIssuer;
 
-        // All ZeeKayDa.Auth endpoints are grouped so that the security-headers filter applies
-        // only to protocol endpoints and not to the host application's own routes.
+        // The filters below apply to the framework's endpoints, never the host's routes.
         var group = endpoints.MapGroup("");
 
-        // Route literals match case-insensitively and tolerate a trailing '/', but a URL path is
-        // case-sensitive (RFC 3986 §6.2.2.1). The marker has ExactPathMatcherPolicy take a route out
-        // of matching unless the path is exact, so a wrong path is a 404 before any filter runs.
+        // A URL path is case-sensitive (RFC 3986 §6.2.2.1); routing literals are not.
         group.WithMetadata(ExactPathMetadata.Instance);
 
         group.AddEndpointFilter(async (context, next) =>
