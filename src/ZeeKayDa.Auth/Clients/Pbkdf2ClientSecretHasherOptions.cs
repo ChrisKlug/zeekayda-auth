@@ -14,10 +14,8 @@ public sealed class Pbkdf2ClientSecretHasherOptions
     /// PBKDF2 iteration count used when creating new hashed secrets.
     /// </summary>
     /// <remarks>
-    /// Must be between 600,000 and 2,000,000; startup fails otherwise. Configuring a higher value
-    /// strengthens brute-force resistance at the cost of increased CPU time per verification. Set it
-    /// with <c>ConfigurePbkdf2ClientSecretHasher(…)</c> or bind it from configuration. It is read
-    /// once at startup; a later configuration reload does not change it.
+    /// Between 600,000 and 2,000,000, or startup fails; higher costs more CPU per verification. Read once at
+    /// startup, so a configuration reload does not change it.
     /// </remarks>
     public int Iterations { get; set; } = DefaultIterations;
 }

@@ -2,12 +2,7 @@ using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// Validates <see cref="SigningKeyExpiryHealthCheckOptions"/> at startup.
-/// </summary>
-/// <remarks>
-/// Registered via <c>AddZeeKayDaSigningKeys()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
-/// </remarks>
+/// <summary>Validates <see cref="SigningKeyExpiryHealthCheckOptions"/> at startup.</summary>
 internal sealed class SigningKeyExpiryHealthCheckOptionsValidator : ZeeKayDaOptionsValidator<SigningKeyExpiryHealthCheckOptions>
 {
     /// <inheritdoc/>

@@ -10,20 +10,15 @@ namespace ZeeKayDa.Auth.Clients;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Owned by the framework, to be consumed, never replaced: a new algorithm is an
-/// <see cref="IClientSecretHasher"/>. Sealed, with an internal constructor, so a host cannot supply its own.
+/// Framework-owned and sealed: a new algorithm is an <see cref="IClientSecretHasher"/>.
 /// </para>
 /// <para>
-/// <strong>This is CPU-intensive.</strong> The default PBKDF2 hasher performs 600,000 iterations per
-/// call (~600 ms on typical server hardware). <see cref="Create(string)"/> is meant for administrative
-/// operations such as client registration or secret rotation, which must be rate-limited and
-/// authenticated at the application layer.
+/// <strong>This is CPU-intensive.</strong> The default PBKDF2 hasher runs 600,000 iterations, about
+/// 600 ms, so <see cref="Create(string)"/> belongs in rate-limited, authenticated administrative operations.
 /// </para>
 /// <para>
-/// <strong>The plaintext is sensitive.</strong> Never log, trace or serialise it, or pass it through
-/// anything that may capture method arguments. A caller holding it in a <c>char[]</c> uses the span
-/// overloads and zeroes the array afterwards; the string overload leaves a copy the garbage
-/// collector erases when it pleases.
+/// <strong>The plaintext is sensitive.</strong> Never log, trace or serialise it. A caller holding it in a
+/// <c>char[]</c> uses the span overloads and zeroes the array afterwards.
 /// </para>
 /// </remarks>
 public sealed class ClientSecrets
@@ -86,12 +81,9 @@ public sealed class ClientSecrets
     /// the hasher that declared its algorithm id.
     /// </summary>
     /// <remarks>
-    /// A failure always costs the same: two verifications by every registered hasher, whichever
-    /// secrets failed and however many there were — none included. So the time a refusal takes tells
-    /// neither whether the client exists nor whether it is mid-rotation. A match returns at once.
-    /// An authenticator returns the outcome through <c>ClientAuthenticationResult.From</c>, which
-    /// tells the token endpoint the failure is already padded. A hasher that throws counts as a
-    /// mismatch.
+    /// A failure always costs two verifications by every registered hasher, however many secrets there were,
+    /// none included, so a refusal's timing reveals neither whether the client exists nor whether it is
+    /// mid-rotation. A match returns at once. A hasher that throws counts as a mismatch.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="stored"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
@@ -101,8 +93,7 @@ public sealed class ClientSecrets
     {
         var candidates = WithinBudget(stored);
 
-        // An empty secret never verifies, and the built-in hasher returns without deriving for one,
-        // so trying it against each stored secret would cost nothing and pad short.
+        // An empty secret never verifies and the built-in hasher skips deriving, so it would pad short.
         var attempted = 0;
         if (!presented.IsEmpty)
         {
@@ -169,9 +160,8 @@ public sealed class ClientSecrets
     }
 
     /// <summary>
-    /// The hasher's answer; <see langword="false"/>, with <paramref name="threw"/> set, when it threw.
-    /// Logged once per hasher type, by exception type only: the trigger is a request, so logging
-    /// every throw would be an unauthenticated log-amplification lever.
+    /// The hasher's answer, or <see langword="false"/> with <paramref name="threw"/> set; logged once per hasher
+    /// type, since every request could otherwise trigger a log line.
     /// </summary>
     private bool SafeVerify(
         IClientSecretHasher hasher, ReadOnlySpan<char> presented, ClientSecret stored, out bool threw)

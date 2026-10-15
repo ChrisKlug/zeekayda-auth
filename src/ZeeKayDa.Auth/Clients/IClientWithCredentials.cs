@@ -5,22 +5,13 @@ namespace ZeeKayDa.Auth.Clients;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Custom <c>IClientRepository</c> implementations may make their own entity types implement
-/// this interface directly, avoiding a framework-type mapping step on the hot path.
+/// A custom repository's own entity may implement it directly. Depend on it only where authenticating the
+/// client is the job; everything else takes <see cref="IClient"/>, which also holds the string-set
+/// comparison invariant.
 /// </para>
 /// <para>
-/// This adds the client's credentials to <see cref="IClient"/> and nothing else. Depend on it
-/// only where authenticating the client is the job; everything else takes
-/// <see cref="IClient"/>, so secrets stay off code paths that never need them.
-/// </para>
-/// <para>
-/// See <see cref="IClient"/> for the string-set comparison invariant: which code may rely
-/// on the framework's ordinal copy of a registration, and which code MUST compare ordinally
-/// itself.
-/// </para>
-/// <para>
-/// See <see href="https://www.rfc-editor.org/rfc/rfc6749#section-2">RFC 6749 §2</see> for the
-/// public/confidential client distinction.
+/// See <see href="https://www.rfc-editor.org/rfc/rfc6749#section-2">RFC 6749 §2</see> for public and
+/// confidential clients.
 /// </para>
 /// </remarks>
 public interface IClientWithCredentials : IClient

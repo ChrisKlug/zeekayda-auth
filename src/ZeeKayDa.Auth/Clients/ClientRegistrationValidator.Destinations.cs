@@ -2,8 +2,7 @@ using Microsoft.Extensions.Logging;
 
 namespace ZeeKayDa.Auth.Clients;
 
-// Where the framework may send a browser on the client's behalf: its redirect URIs, post-logout
-// redirect URIs, and initiate-login URI.
+// Where the framework may send a browser for the client: redirect, post-logout and initiate-login URIs.
 internal sealed partial class ClientRegistrationValidator
 {
     private const int MaxUrisPerSet = 32;
@@ -18,8 +17,7 @@ internal sealed partial class ClientRegistrationValidator
         IReadOnlySet<string> uriSet,
         string propertyName)
     {
-        // Count what the set yields, not what its Count property claims: a custom registration's
-        // set may enumerate more entries than it reports, and the cap must see every one of them.
+        // Counted by enumerating: a custom set may yield more than its Count reports.
         var count = 0;
 
         foreach (var uriString in uriSet)
@@ -30,9 +28,7 @@ internal sealed partial class ClientRegistrationValidator
             foreach (var failure in uriFailures)
                 yield return failure;
 
-            // RFC 8252 §8.3, http only: a native app's loopback redirect is http (§7.3), while
-            // https://localhost is a web client on a dev certificate, where TLS already rules out
-            // the name-resolution risk. A URI rejected anyway gets no advisory on top.
+            // RFC 8252 §8.3, http only: https://localhost is a dev certificate, where TLS rules out the risk.
             var isValidHttpLocalhost = uriFailures.Count == 0 && RedirectUriRules.IsHttpLocalhost(uriString);
             if (isValidHttpLocalhost && FirstTime(clientId, "localhost-" + propertyName, uriString))
             {
@@ -99,8 +95,7 @@ internal sealed partial class ClientRegistrationValidator
             yield break;
         }
 
-        // Checked on the original string: .NET strips a zone ID from uri.Host at parse time. A zone
-        // ID binds to one network interface rather than the loopback stack, whatever the scheme.
+        // On the original string: .NET strips a zone ID from uri.Host at parse time.
         if (RedirectUriRules.HasIpv6ZoneId(uriString))
             yield return entry.Broke(ZoneIdRule);
 
@@ -154,9 +149,8 @@ internal sealed partial class ClientRegistrationValidator
     }
 
     /// <summary>
-    /// Parses as absolute and says so itself, authority and all: on Linux and macOS a rooted path
-    /// such as <c>/login</c> parses as a <c>file</c> URI, and a scheme-only form such as
-    /// <c>https:/login</c> parses as absolute while naming no origin at all.
+    /// Absolute as written, authority and all: on Unix <c>/login</c> parses as a <c>file</c> URI, and
+    /// <c>https:/login</c> parses while naming no origin.
     /// </summary>
     private static bool IsAbsoluteAsWritten(string uriString, out Uri uri) =>
         Uri.TryCreate(uriString, UriKind.Absolute, out uri!)

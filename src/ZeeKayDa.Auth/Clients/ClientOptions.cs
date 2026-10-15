@@ -9,13 +9,10 @@ namespace ZeeKayDa.Auth.Clients;
 /// configure.
 /// </summary>
 /// <remarks>
-/// An instance is handed to the <c>configure</c> callback of
-/// <see cref="InMemoryClientRegistrationBuilder.AddPublic"/> or
-/// <see cref="InMemoryClientRegistrationBuilder.AddConfidential"/>, or bound from a configuration
-/// section, pre-filled with the values a registration has when nothing is set. Every collection
-/// starts empty. A collection with a default gets it only if nothing is added, so a client that names
-/// its values gets exactly those. The values are copied into the registration when the callback
-/// returns; changing the instance after that has no effect.
+/// Handed to the <c>configure</c> callback of <see cref="InMemoryClientRegistrationBuilder.AddPublic"/> or
+/// <see cref="InMemoryClientRegistrationBuilder.AddConfidential"/>, or bound from configuration. A
+/// collection with a default gets it only when left empty, and the values are copied into the registration
+/// when the callback returns.
 /// </remarks>
 public abstract class ClientOptions
 {
@@ -78,9 +75,8 @@ public abstract class ClientOptions
     /// issued to this client. <see langword="true"/> by default.
     /// </summary>
     /// <remarks>
-    /// Consent is what lets a user notice an authorization request they never started, so turning
-    /// it off removes that protection for this client. Do so only for an operator's own
-    /// first-party applications.
+    /// Turning it off removes the user's chance to notice a request they never started; do so only for an
+    /// operator's own first-party applications.
     /// </remarks>
     public bool RequireConsent { get; set; } = ClientDefaults.RequireConsent;
 

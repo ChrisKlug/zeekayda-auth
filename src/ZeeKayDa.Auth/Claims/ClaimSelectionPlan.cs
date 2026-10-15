@@ -15,9 +15,8 @@ internal enum ClaimsDestination
 }
 
 /// <summary>
-/// The claim types wanted in each destination for one grant: the union of what the granted
-/// scopes unlock there, plus the client's additions for it. <see cref="All"/> is what the
-/// provider is told to fetch.
+/// The claim types each destination wants for one grant: what the granted scopes unlock there, plus the
+/// client's additions. <see cref="All"/> is what the provider is asked to fetch.
 /// </summary>
 internal sealed record ClaimSelectionPlan(
     IReadOnlySet<string> IdToken,
@@ -42,12 +41,8 @@ internal sealed record ClaimSelectionPlan(
     }
 
     /// <summary>
-    /// The plan narrowed to one destination, so the provider is asked for what that destination
-    /// will keep and nothing else. Claim values are personal data, and a claim type only the
-    /// access token unlocks is I/O a userinfo call has no use for — and a claim type only userinfo
-    /// unlocks, which the standard scopes make the common case, is I/O an exchange has no use for.
-    /// Narrowing also keeps a destination the request is not for from failing it: a claim a
-    /// selection would reject aborts only the destination that wanted it.
+    /// The plan narrowed to one destination, so the provider fetches no personal data that destination will
+    /// not keep, and a claim only another destination wants cannot fail this one.
     /// </summary>
     public ClaimSelectionPlan For(ClaimsDestination destination) => destination switch
     {
@@ -65,10 +60,8 @@ internal sealed record ClaimSelectionPlan(
         _ => this,
     };
 
-    // The scope lists need no null guard: every definition reaching here came through
-    // ValidatedScopeCatalog, which refuses a repository that serves a null one. A null from a
-    // custom registration is treated as empty — the registration validator refuses it, and empty
-    // withholds rather than grants, so nothing is widened by the fallback.
+    // Scope lists are never null past the catalog; a null client addition reads as empty, which
+    // withholds rather than grants.
     private static FrozenSet<string> Wanted(
         IEnumerable<IReadOnlyCollection<string>> unlockedByScopes,
         IReadOnlyCollection<string>? addedByClient) =>

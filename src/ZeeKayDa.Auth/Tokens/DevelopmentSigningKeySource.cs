@@ -5,16 +5,9 @@ using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// A development-only <see cref="ISigningKeySource"/> that generates an ephemeral RSA key on
-/// startup, with optional persistence to a local file so that tokens survive application restarts.
-/// </summary>
+/// <summary>A development-only source of one RSA key, generated at startup and optionally persisted to a local file.</summary>
 /// <remarks>
-/// Not suitable for production; registered via <c>AddInMemoryDevelopmentSigning()</c> or
-/// <c>AddPersistedDevelopmentSigning()</c>. The environment gate is enforced here via
-/// <see cref="DevelopmentSigningKeyGate.Enforce"/> so the hard fail holds even when
-/// <c>DevelopmentSigningKeyVerifier</c> is not running, and it refuses when the environment
-/// is unknown.
+/// Enforces the environment gate itself, so it holds even when the startup verifier does not run.
 /// </remarks>
 internal sealed class DevelopmentSigningKeySource(
     IOptions<DevelopmentSigningOptions> options,
@@ -23,25 +16,18 @@ internal sealed class DevelopmentSigningKeySource(
     // Minimum RSA key size per NIST SP 800-57 Part 1 Rev. 5 §5.6.1 Table 2.
     private const int MinimumRsaKeySize = 3072;
 
-    // Key file name within the persistence directory.
     private const string KeyFileName = "dev-signing-key.pem";
 
-    // Stable source-internal identifier for the single dev key. Never the JWKS/JWS kid — the ring
-    // derives that from the public key material.
     private static readonly SourceKeyId DevKeyId = new("development");
 
-    // Serialises reads so the key is generated or loaded exactly once even if two callers read
-    // concurrently — "only the ring calls this" is not something this type can enforce. Deliberately
-    // not disposed: disposing it would make a read that is already in flight at shutdown throw from
-    // its own Release, and would strand any reader queued behind it forever.
+    // Generates or loads the key exactly once. Never disposed: a read in flight at shutdown would throw
+    // from its own Release, and strand any reader queued behind it.
     private readonly SemaphoreSlim _readGate = new(1, 1);
 
-    // Holds the RSA key generated/loaded by ReadAsync until CreateSignerAsync claims it via
-    // Interlocked.Exchange, transferring ownership to the LocalSigner it returns.
+    // Held until CreateSignerAsync hands it to the LocalSigner it returns.
     private RSA? _pendingPrivateKey;
 
-    // The one listing this source ever reports. Every read after the first returns it unchanged: a
-    // fresh key per read would invalidate every token already issued under the previous one.
+    // Every read returns the first listing: a fresh key per read would invalidate every issued token.
     private SourceKeyListing? _listing;
 
     /// <inheritdoc/>
@@ -50,8 +36,7 @@ internal sealed class DevelopmentSigningKeySource(
     /// <inheritdoc/>
     public async Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
     {
-        // Enforced on every read, ahead of the memoized set, so a gate that would reject this host
-        // rejects it however often the source is read.
+        // On every read, ahead of the memoized listing.
         DevelopmentSigningKeyGate.Enforce(
             options.Value.EnvironmentName,
             options.Value.AllowedEnvironments);
@@ -75,8 +60,7 @@ internal sealed class DevelopmentSigningKeySource(
                     DevKeyId,
                     PublicKeyParameters.FromRsa(rsa.ExportParameters(false)));
 
-                // The listing is built before the private key is published, so a failure here can never
-                // leave a disposed key behind for CreateSignerAsync to lend.
+                // Built before the key is published, so a failure never leaves a disposed key to lend.
                 var listing = new SourceKeyListing([key], []);
 
                 _pendingPrivateKey = rsa;
@@ -86,8 +70,6 @@ internal sealed class DevelopmentSigningKeySource(
             }
             catch
             {
-                // Nothing will ever claim this key through CreateSignerAsync, so dispose it here
-                // rather than leaving it to finalization.
                 rsa.Dispose();
                 throw;
             }
@@ -118,13 +100,7 @@ internal sealed class DevelopmentSigningKeySource(
         return Task.FromResult<ISigner>(new LocalSigner(Algorithm, rsa));
     }
 
-    /// <summary>
-    /// Disposes the generated or loaded key when <see cref="CreateSignerAsync"/> never claimed it.
-    /// </summary>
-    /// <remarks>
-    /// A claimed key belongs to the <see cref="LocalSigner"/> handed out for it, which the ring
-    /// disposes before it disposes this source, so this never double-disposes.
-    /// </remarks>
+    /// <summary>Disposes the key when no signer claimed it; a claimed key is the signer's to dispose.</summary>
     public void Dispose() => Interlocked.Exchange(ref _pendingPrivateKey, null)?.Dispose();
 
     private static RSA GenerateEphemeralKey() => RSA.Create(MinimumRsaKeySize);
@@ -141,8 +117,7 @@ internal sealed class DevelopmentSigningKeySource(
         using (var generated = RSA.Create(MinimumRsaKeySize))
             await WriteKeyAsync(generated, keyPath, cancellationToken).ConfigureAwait(false);
 
-        // Loaded back whether this host wrote the key or another got there first: the key on disk is
-        // the one every host sharing the folder signs with.
+        // Loaded back: another host may have written the key first, and every host signs with the one on disk.
         return await LoadKeyFromFileAsync(keyPath, cancellationToken).ConfigureAwait(false);
     }
 
@@ -172,8 +147,7 @@ internal sealed class DevelopmentSigningKeySource(
         var rsa = RSA.Create();
         try
         {
-            // Decode the PEM bytes into a rented char[] so the private key material can be
-            // zeroed after import rather than lingering on the heap as an immutable string.
+            // A rented char[], zeroed after import, rather than an immutable string on the heap.
             var charCount = Encoding.UTF8.GetCharCount(keyFile.Bytes);
             var charBuffer = ArrayPool<char>.Shared.Rent(charCount);
             try

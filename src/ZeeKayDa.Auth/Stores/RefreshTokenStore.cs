@@ -11,18 +11,13 @@ using static ZeeKayDa.Auth.Stores.StoreGuard;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// The framework's refresh-token store: the protocol over an <see cref="IRefreshTokenBackingStore"/>.
+/// The refresh-token protocol over an <see cref="IRefreshTokenBackingStore"/>: hashed keys, encryption, the
+/// single-use pivot, fail-closed I/O, expiry and outcomes.
 /// </summary>
 /// <remarks>
-/// Owns everything protocol-critical: handle hashing into <see cref="StoreKey"/>, Data
-/// Protection encryption, the single-use compare-and-set pivot and its atomicity, fail-closed
-/// I/O, logical expiry/clock skew, and outcome selection — persisting cleartext queryable columns
-/// plus one encrypted payload through an injected <see cref="IRefreshTokenBackingStore"/>, which has
-/// no knowledge of any of the above. Reuse, revocation, expiry, and client mismatch are all
-/// decided from cleartext columns before anything is decrypted; the only <c>Unprotect</c> call is
-/// on the happy path, after the atomic consume-pivot has already committed, and its sole failure
-/// mode degrades to <see cref="RefreshTokenConsumptionResult.NotFound"/> — fail-closed, since the
-/// token is already dead and no successor is issued.
+/// Every decision is made from cleartext columns; the payload is decrypted only after the consume has
+/// committed, and a failure there is <see cref="RefreshTokenConsumptionResult.NotFound"/>, since the token is
+/// already dead.
 /// </remarks>
 internal sealed class RefreshTokenStore(
     IRefreshTokenBackingStore grantStore,
@@ -48,10 +43,7 @@ internal sealed class RefreshTokenStore(
         var key = BuildHandleKey(tokenHandle);
         var now = timeProvider.GetUtcNow();
 
-        // The whole family shares one absolute ceiling, applied here to the encrypted entry too, so
-        // a caller reading Consumed.Entry.ExpiresAt never sees a value larger than what the
-        // cleartext column actually enforces. RefreshTokenLifetime has no upper bound, so the
-        // addition saturates rather than throwing out of token issuance.
+        // Clamped in the encrypted entry too, so it never claims more than the cleartext column enforces.
         var expiresAt = Min(TokenLifetimes.ExpiresAt(now, _refreshTokenLifetime), entry.FamilyAbsoluteExpiry);
         var clampedEntry = entry with { ExpiresAt = expiresAt };
 
@@ -87,8 +79,7 @@ internal sealed class RefreshTokenStore(
         if (grant is null || grant.Status != RefreshGrantStatus.Active)
             return null;
 
-        // A successor inserted after RevokeFamilyAsync still reads Active on its own row, so
-        // introspection must not report it as a live grant either.
+        // A successor inserted after a revoke still reads Active on its own row.
         if (await Guarded(
                 () => grantStore.IsFamilyRevokedAsync(grant.FamilyId, cancellationToken),
                 "check whether the refresh token family is revoked").ConfigureAwait(false))
@@ -137,8 +128,7 @@ internal sealed class RefreshTokenStore(
         if (grant.Status == RefreshGrantStatus.Consumed)
             return new RefreshTokenConsumptionResult.AlreadyConsumed { FamilyId = grant.FamilyId };
 
-        // The family may have been revoked after this grant was inserted, so its own
-        // still-Active status is not the last word — re-check the family.
+        // A revoke after this grant was inserted leaves its own row Active.
         if (await Guarded(
                 () => grantStore.IsFamilyRevokedAsync(grant.FamilyId, cancellationToken),
                 "check whether the refresh token family is revoked").ConfigureAwait(false))
@@ -158,15 +148,14 @@ internal sealed class RefreshTokenStore(
         if (!won)
             return await ResolveLostRaceAsync(key, grant.FamilyId, cancellationToken).ConfigureAwait(false);
 
-        // We won the transition; now — and ONLY now — do we touch ciphertext.
+        // Only now is ciphertext touched.
         try
         {
             return new RefreshTokenConsumptionResult.Consumed { Entry = UnprotectEntry(grant.ProtectedPayload) };
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException)
         {
-            // The single catch site. The token is already dead (marked Consumed above), so no
-            // successor is issued and no reuse is enabled — fail-closed.
+            // Already consumed, so no successor is issued: fail-closed.
             _ = ex;
             return new RefreshTokenConsumptionResult.NotFound();
         }
@@ -178,8 +167,7 @@ internal sealed class RefreshTokenStore(
         ArgumentNullException.ThrowIfNull(familyId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Clocked at revoke time, so a first row born a moment later lives that moment longer than an
-        // unpadded record would be kept. The skew tolerance covers it, saturating like every other expiry.
+        // Clocked at revoke time; the skew tolerance covers a first row born a moment later.
         var rememberUntil = TokenLifetimes.ExpiresAt(
             _tokenEndpointOptions.ComputeFamilyAbsoluteExpiry(timeProvider.GetUtcNow()),
             _clockSkewTolerance);

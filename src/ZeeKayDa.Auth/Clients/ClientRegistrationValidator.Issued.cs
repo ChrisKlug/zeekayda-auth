@@ -3,8 +3,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Clients;
 
-// What the client is issued: how its tokens are signed, how long they live, and the claims added
-// to them.
+// What the client is issued: signing algorithms, token lifetimes and claim additions.
 internal sealed partial class ClientRegistrationValidator
 {
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateIssued(IClientWithCredentials client) =>
@@ -43,8 +42,7 @@ internal sealed partial class ClientRegistrationValidator
         if (undefinedValues.Count > 0)
             yield break;
 
-        // CurrentOrNull rather than Current: a custom repository may validate before the ring has
-        // been initialized, and throwing there would turn "cannot check yet" into a startup crash.
+        // A custom repository may validate before the ring is initialized; that is "cannot check yet".
         if (keyRing?.CurrentOrNull is not { } keySet)
         {
             WarnSigningUnchecked(client);
@@ -63,10 +61,7 @@ internal sealed partial class ClientRegistrationValidator
         WarnUnusedAlgorithms(client, algorithms, keySet.Algorithm);
     }
 
-    /// <summary>
-    /// Nothing to check against yet. The JWT issuer enforces the set again at signing, so only the
-    /// earlier message is lost; say so. With no ring at all the endpoints refuse to start anyway.
-    /// </summary>
+    /// <summary>Nothing to check against yet; the issuer enforces the set at signing, so only the early message is lost.</summary>
     private void WarnSigningUnchecked(IClientWithCredentials client)
     {
         if (keyRing is not null && FirstTime(client.ClientId, "signing-unchecked"))
@@ -81,9 +76,8 @@ internal sealed partial class ClientRegistrationValidator
     }
 
     /// <summary>
-    /// An acceptance list may name an algorithm the server never signs with — a client kept ready for
-    /// another server, or for a planned change of algorithm — so it only warns, once per client and
-    /// algorithm, since a repository may validate on every lookup.
+    /// An entry the server never signs with only warns, once per client and algorithm: a client may be kept
+    /// ready for another server or a planned change.
     /// </summary>
     private void WarnUnusedAlgorithms(
         IClientWithCredentials client, IReadOnlySet<SigningAlgorithm> algorithms, SigningAlgorithm signingAlgorithm)
@@ -101,9 +95,8 @@ internal sealed partial class ClientRegistrationValidator
     }
 
     /// <summary>
-    /// A client override must be positive; one past the family ceiling only warns, because a
-    /// custom repository may validate on resolution rather than at startup, and a warning there
-    /// is still read while a failure would take the request down with it.
+    /// An override must be positive; one past the family ceiling only warns, since a custom repository may
+    /// validate per request, where a failure would take the request down.
     /// </summary>
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateTokenLifetime(
         IClientWithCredentials client,
@@ -134,10 +127,8 @@ internal sealed partial class ClientRegistrationValidator
     }
 
     /// <summary>
-    /// An addition is a claim name selection can act on: present, non-blank, and not one of the
-    /// protocol names the framework writes itself, which selection would drop anyway. Whether it
-    /// collides with a scope is checked per grant, against the scope repository this validator
-    /// cannot see.
+    /// Each addition is a non-blank, non-reserved claim name; collisions with scopes are checked per grant,
+    /// against scopes this validator cannot see.
     /// </summary>
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateClaimAdditions(
         IClientWithCredentials client,

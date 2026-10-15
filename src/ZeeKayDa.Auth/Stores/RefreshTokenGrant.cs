@@ -1,15 +1,11 @@
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// One persisted refresh-token grant row, as seen by a persistence backend. The framework
-/// constructs and consumes these; a backend only stores, retrieves, and runs equality queries over
-/// them. The columns above <see cref="ProtectedPayload"/> are non-secret and queryable; the payload
-/// is opaque Data-Protection ciphertext a backend MUST store verbatim and never interpret.
+/// One persisted refresh-token grant row. A backend stores it, returns it and queries its non-secret
+/// columns; <see cref="ProtectedPayload"/> is ciphertext to store verbatim and never interpret.
 /// </summary>
 /// <remarks>
-/// <see cref="Subject"/> is deliberately cleartext (not a <see cref="StoreKey"/>) so it remains a
-/// plain equality predicate, and <see cref="FamilyId"/> stays a plain <see cref="string"/> rather
-/// than an opaque hash for the same reason — both must support direct queries.
+/// <see cref="Subject"/> and <see cref="FamilyId"/> are plain cleartext so they stay direct equality queries.
 /// </remarks>
 public sealed record RefreshTokenGrant
 {
@@ -20,9 +16,8 @@ public sealed record RefreshTokenGrant
     public required string FamilyId { get; init; }
 
     /// <summary>
-    /// Queryable. Cleartext subject identifier (PII, not a bearer credential). NOT a
-    /// <see cref="StoreKey"/>: it is honest cleartext, not opaque-already-hashed. Protected by
-    /// DB access control + encryption at rest. Index this.
+    /// Queryable. Cleartext subject identifier: PII, not a credential, protected by access control and
+    /// encryption at rest. Index this.
     /// </summary>
     public required string Subject { get; init; }
 

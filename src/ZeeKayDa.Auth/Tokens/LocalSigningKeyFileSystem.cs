@@ -7,15 +7,9 @@ using System.Security.Principal;
 
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// Stores the persisted development signing key with .NET's own file APIs: owner-only on creation,
-/// and refused on read if it is a symlink or, on Unix, if its mode lets anyone else reach it.
-/// </summary>
+/// <summary>Stores the development signing key owner-only, refusing a symlink or, on Unix, a broader mode on read.</summary>
 /// <remarks>
-/// The key only works in <c>Development</c>, so this protects a local key on a developer machine.
-/// It does not walk ancestor directories for foreign owners or symlinks; the production file
-/// provider in <c>ZeeKayDa.Auth.FileSystem</c> does. On Windows the ACL is set at creation and not
-/// re-checked on read.
+/// Protects a local key on a developer machine only: no ancestor walk, and no ACL re-check on Windows.
 /// </remarks>
 internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSystem
 {
@@ -34,18 +28,14 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
             EnsureDirectorySafeUnix(directory);
     }
 
-    /// <summary>
-    /// How long a host waits for the lock before failing. Writing one key under it takes well under a
-    /// second; a lock held this long is not a host taking its turn. Shortened only by tests.
-    /// </summary>
+    /// <summary>How long a host waits for the lock before failing; a lock held this long is not a host taking its turn.</summary>
     internal TimeSpan LockTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <inheritdoc/>
     public async ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
     {
-        // Hosts sharing the folder take turns on a lock file beside the key, and check for a key
-        // under it, so exactly one creates the key: on Unix File.Move's no-overwrite is a check then
-        // a rename, which two hosts can both pass.
+        // Exactly one host creates the key: on Unix File.Move's no-overwrite is a check then a rename,
+        // which two hosts can both pass.
         await using var turn = await TakeTurnAsync(keyPath + ".lock", cancellationToken).ConfigureAwait(false);
 
         // Refused before anything is written: File.Exists reports a dangling symlink as present on
@@ -62,8 +52,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         if (File.Exists(keyPath))
             return;
 
-        // Written beside the key and renamed into place, so a host loading the key never reads a
-        // half-written file.
+        // Renamed into place, so no host reads a half-written key.
         var pending = Path.Join(
             Path.GetDirectoryName(Path.GetFullPath(keyPath)),
             $"{Path.GetFileName(keyPath)}.{Path.GetRandomFileName()}.pending");
@@ -82,17 +71,12 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
         }
     }
 
-    /// <summary>
-    /// The step that moves a fully written pending file to the key's name. Replaceable by tests only,
-    /// so they can see the pending file at the instant it is published rather than after the fact.
-    /// </summary>
+    /// <summary>Moves the written pending file to the key's name; replaced by tests to observe that instant.</summary>
     internal Action<string, string> PublishPending { get; init; } = Publish;
 
     /// <summary>
-    /// Opens <paramref name="lockPath"/> exclusively, waiting while another host holds it. An
-    /// exclusive open is an <c>flock</c> on Unix and a share mode on Windows, so it excludes other
-    /// processes as well as other threads. The file is never deleted: a host deleting it while
-    /// another waits would let a third open a fresh one alongside.
+    /// Opens <paramref name="lockPath"/> exclusively, across processes, waiting while another host holds it.
+    /// Never deleted: deleting it while another waits would let a third open a fresh one.
     /// </summary>
     private async Task<FileStream> TakeTurnAsync(string lockPath, CancellationToken cancellationToken)
     {
@@ -134,8 +118,7 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
             UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
         });
 
-    // Internal rather than private so the losing half of the race can be driven directly,
-    // without depending on thread scheduling to produce it.
+    // Internal so a test can drive the losing half of the race directly.
     internal static void Publish(string pending, string keyPath)
     {
         try
@@ -151,9 +134,8 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// <inheritdoc/>
     public async ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
     {
-        // The mode is checked on the open handle, so the file checked is the file read. The symlink
-        // check re-reads the path, which leaves a window a swapped link could pass: the BCL has no
-        // O_NOFOLLOW to close it.
+        // The mode is checked on the open handle; the symlink check re-reads the path, a window the BCL
+        // has no O_NOFOLLOW to close.
         using var stream = File.Open(keyPath, FileMode.Open, FileAccess.Read, FileShare.Read);
 
         if (new FileInfo(stream.Name).LinkTarget is not null)
@@ -210,13 +192,9 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     }
 
     /// <summary>
-    /// Creates <paramref name="directory"/> and every missing component above it as <c>0700</c>.
+    /// Creates <paramref name="directory"/> and its missing parents as <c>0700</c>, one at a time, since
+    /// <c>Directory.CreateDirectory</c> modes only the last component.
     /// </summary>
-    /// <remarks>
-    /// Not a bare <c>Directory.CreateDirectory</c>: that applies the umask to every component, and
-    /// its <c>UnixFileMode</c> overload modes only the last one. Created one component at a time
-    /// with the mode, none of them ever exists at the umask.
-    /// </remarks>
     [UnsupportedOSPlatform("windows")]
     private static void CreateDirectoryChainOwnerOnlyUnix(string directory)
     {

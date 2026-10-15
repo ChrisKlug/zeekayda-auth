@@ -5,28 +5,11 @@ using Microsoft.Extensions.Options;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// The built-in PBKDF2-HMAC-SHA256 client secret hasher. This is the default hasher provided
-/// by ZeeKayDa.Auth and covers the vast majority of deployments.
+/// The built-in PBKDF2-HMAC-SHA256 hasher: 16-byte salt, 32-byte hash, 600,000 to 2,000,000 iterations.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Algorithm parameters:
-/// <list type="bullet">
-/// <item><description>Algorithm: PBKDF2-HMAC-SHA256</description></item>
-/// <item><description>Default iterations: 600,000 (OWASP PBKDF2-HMAC-SHA256 guidance as of 2025)</description></item>
-/// <item><description>Minimum iterations: 600,000; operators can only configure stronger</description></item>
-/// <item><description>Maximum iterations: 2,000,000 (see below)</description></item>
-/// <item><description>Salt: 16 bytes via <see cref="RandomNumberGenerator.GetBytes(int)"/></description></item>
-/// <item><description>Hash output: 32 bytes</description></item>
-/// </list>
-/// </para>
-/// <para>
-/// <strong>Maximum iteration cap.</strong> At 2,000,000 iterations a single verification takes
-/// roughly one second on typical server hardware, making the token endpoint impractical under any
-/// real load. <see cref="Pbkdf2ClientSecretHasherOptionsValidator"/> fails startup for a configured
-/// count outside 600,000–2,000,000, and this class reads the count from the same
-/// <see cref="IOptionsMonitor{TOptions}"/> that validation runs through, so it trusts the value.
-/// </para>
+/// The floor is OWASP's guidance; the cap keeps a verification near one second, so a misconfiguration
+/// cannot make the token endpoint its own denial of service.
 /// </remarks>
 internal sealed class Pbkdf2ClientSecretHasher(IOptionsMonitor<Pbkdf2ClientSecretHasherOptions> options)
     : IClientSecretHasher
@@ -41,15 +24,10 @@ internal sealed class Pbkdf2ClientSecretHasher(IOptionsMonitor<Pbkdf2ClientSecre
     /// </summary>
     internal const string IterationsParameter = "i";
 
-    /// <summary>
-    /// Minimum allowed iteration count (OWASP PBKDF2-HMAC-SHA256 minimum as of 2025).
-    /// </summary>
+    /// <summary>The minimum iteration count, OWASP's PBKDF2-HMAC-SHA256 guidance.</summary>
     internal const int MinIterations = 600_000;
 
-    /// <summary>
-    /// Maximum allowed iteration count, preventing self-inflicted denial of service from an operator
-    /// misconfiguration.
-    /// </summary>
+    /// <summary>The maximum iteration count, against a self-inflicted denial of service.</summary>
     internal const int MaxIterations = 2_000_000;
 
     internal const int SaltLength = 16;
@@ -63,9 +41,8 @@ internal sealed class Pbkdf2ClientSecretHasher(IOptionsMonitor<Pbkdf2ClientSecre
     private readonly int _iterations = RequireWithinBounds(options.CurrentValue.Iterations);
 
     /// <summary>
-    /// The last line behind <see cref="Pbkdf2ClientSecretHasherOptionsValidator"/>, for a host that
-    /// hands the hasher options the validator never saw. Out of range, the timing decoy would cost
-    /// nothing to verify and the failure-path padding would pad nothing.
+    /// The last line behind options validation, for options it never saw: out of range, the timing decoy
+    /// would pad nothing.
     /// </summary>
     private static int RequireWithinBounds(int iterations) =>
         iterations is >= MinIterations and <= MaxIterations
@@ -87,8 +64,7 @@ internal sealed class Pbkdf2ClientSecretHasher(IOptionsMonitor<Pbkdf2ClientSecre
         if (presented.IsEmpty || Read(stored.Value, out _) is not { Iterations: { } iterations } parts)
             return false;
 
-        // Validation refuses such a secret before it is ever served; this is the last line, because
-        // deriving would cost every verification for that client a CPU-bound denial of service.
+        // Validation refuses such a secret first; deriving it would be a CPU-bound denial of service.
         if (iterations > MaxIterations)
             return false;
 
@@ -141,11 +117,8 @@ internal sealed class Pbkdf2ClientSecretHasher(IOptionsMonitor<Pbkdf2ClientSecre
     }
 
     /// <summary>
-    /// A random salt and a random hash at the configured iteration count. <see cref="Verify"/>
-    /// derives from the presented value with the stored salt and iterations and only then compares,
-    /// so verifying against this costs exactly what a real secret costs — and no presented value
-    /// derives a random hash. Building it costs nothing, where deriving one would cost a full
-    /// derivation at host startup.
+    /// A random salt and hash at the configured count: verifying costs a full derivation, building it none,
+    /// and no presented value derives a random hash.
     /// </summary>
     ClientSecret IClientSecretHasher.CreateTimingDecoy() =>
         Format(

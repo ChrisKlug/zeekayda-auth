@@ -6,16 +6,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// Emits a startup warning when development signing keys are active, and enforces the environment
-/// gate.
-/// </summary>
-/// <remarks>
-/// When the host environment name is not in
-/// <see cref="DevelopmentSigningOptions.AllowedEnvironments"/>,
-/// startup fails so that an accidental development-key configuration is never silently deployed
-/// to a non-permitted host.
-/// </remarks>
+/// <summary>Enforces the development key's environment gate at startup, and reports that the key is active.</summary>
 internal sealed class DevelopmentSigningKeyVerifier(
     IHostEnvironment environment,
     IOptions<DevelopmentSigningOptions> devOptions) : IStartupVerifier
@@ -41,8 +32,6 @@ internal sealed class DevelopmentSigningKeyVerifier(
     {
         var currentEnvironment = environment.EnvironmentName;
 
-        // Production is always a hard fail; non-allowed environments also throw. The runner
-        // absorbs a thrown ZeeKayDaConfigurationException, preserving its Code verbatim.
         DevelopmentSigningKeyGate.Enforce(
             currentEnvironment,
             devOptions.Value.AllowedEnvironments);
@@ -57,9 +46,7 @@ internal sealed class DevelopmentSigningKeyVerifier(
         }
         else
         {
-            // Information, not Warning: in Development a development signing key is the expected
-            // choice, and a Warning an operator sees on every local start is one they learn to
-            // scroll past — which is what a real Warning then hides behind.
+            // Information: a Warning on every local start teaches operators to scroll past Warnings.
             context.AddWarning("signing.dev_keys.active", WarningMessage, LogLevel.Information);
         }
 
