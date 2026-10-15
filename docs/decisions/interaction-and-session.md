@@ -41,25 +41,19 @@ skips whatever result follows, so a Razor Pages handler ends with a plain `await
 result is dropped, not thrown. It keys on a marker the terminal exit sets, not on `HasStarted`, so
 an action that started its own response keeps MVC's ordinary behaviour.
 
-**A denial carries a fixed `error_description` naming the stage; the machine-readable
-discriminator is the opt-in `zkd_error` sub-code, not the prose.** `access_denied` is the only code
-RFC 6749 §4.1.2.1 offers for a cancelled sign-in, a refused consent and a policy refusal alike, so
-`DenyAsync()` populates the optional description with framework-owned text naming a cancellation at
-sign-in. That text is a courtesy to a developer reading their error page, never a contract. A
-client that needs to branch in code will get the `zkd_error` sub-code decision instead — opt-in per
-client precisely because which interaction step occurred is a distinction not every client is
-entitled to — and that is **not built for authorization responses**: `EnableZkdErrorCodes` governs
-token-endpoint responses today, so an authorization denial carries no machine-readable
-discriminator at all. Whoever adds one adds it there, not by making the description host-writable.
-Naming the stage in prose while gating it in the sub-code is a tension held open deliberately, not
-an oversight: a cancelled sign-in that reads as an unqualified refusal is the thing a client most
-needs to tell apart, and the wording is the maintainer's to revisit. The description is
-framework-owned for the same reason the sub-code is gated — host-supplied text on this channel is a
-disclosure primitive, since it reaches the client, browser history and proxy logs, and the phase-2
-rule in `docs/design/authorization-endpoint-interaction.md` that a description stays generic and
-echoes no value would have no enforcement left. The denial never becomes a redirect primitive
-either: the destination is the registered URI from the decrypted interaction context, so an expired
-context has no destination and the request has nothing to continue.
+**A denial is `access_denied` with a framework-owned `error_description` naming the stage, plus a `zkd_error`
+sub-code for a client registered with `EnableZkdErrorCodes`.** RFC 6749 §4.1.2.1 offers only `access_denied`
+for a cancelled sign-in, a declined consent and a refusal after the provider alike, so each denial site passes
+one fixed `Denial`: `login_cancelled`, `consent_declined`, `provider_declined` (single-provider path only;
+with a login page the user returns there and the client hears nothing) and `account_refused`. The description
+names the stage for every client: the stage is what the user did or already knows, not a secret, and the flag
+buys a stable value to branch on instead of prose. Neither field is ever host-writable — host text on this
+channel reaches the client, browser history and proxy logs, so it would be a disclosure primitive, and the
+phase-2 rule in `docs/design/authorization-endpoint-interaction.md` that a description stays generic and
+echoes no value would have no enforcement — which is why the providers' `DenyAsync` methods stay
+parameterless. The denial never becomes a redirect primitive either: the destination is the registered URI
+from the decrypted interaction context, so an expired context has no destination and the request has nothing
+to continue.
 
 **The SSO session identifier is framework-minted, unguessable and stable for the life of the
 session — and is not the cookie value, which is regenerated on every promotion so that
@@ -69,10 +63,10 @@ across re-authentication (`prompt=login` and `max_age` refresh `auth_time` only)
 or a changed subject mints a new one. None of those properties may be traded away: one derived from
 the cookie value breaks every binding the moment the cookie rotates, and one tracking authentication
 events could never key a denylist. Claims in the reserved `zkd:` namespace are stripped from the
-host's principal, or a host copying claims from an inbound token could choose its own identifier.
+claims a host supplies, or a host copying claims from an inbound token could choose its own identifier.
 
-**Framework cookie names are reserved, the `zkd.interaction.` prefix included; a host registering one
-fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and the
+**Framework cookie names are reserved, the `zkd.interaction.` and `zkd.challenge.` prefixes included; a host
+registering one fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and the
 binding cookies hold a random secret and a sealed hint. A session cookie needs `SameSite=None` only if silent authentication
 is supported; the rest take `Lax`: each is first read on a cross-site navigation, which `Strict` is withheld
 from — a control that silently breaks the feature is no control. The parked external principal is no cookie
@@ -109,8 +103,8 @@ A missing `zkd_i`, the one host-bug case, logs a warning; the rest log at inform
 **ZeeKayDa owns no interaction UI that needs a user model.** Login, consent and provider selection are the
 host's pages, with its own user store, branding and MFA — more host code than a shipped page, a cost accepted.
 Only the error, logout-confirmation and signed-out pages have unbranded framework fallbacks for a host that sets no path.
-Those, and every response a consent or logout page calls `GetRequestAsync`/`TryGetRequestAsync` from or a provider sign-in page
-`GetPendingPrincipalAsync`, are stamped `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `no-store`; the login page is not.
+Those, and every response a login, consent or logout page calls `GetRequestAsync`/`TryGetRequestAsync` from or a provider
+sign-in page `GetPendingPrincipalAsync`, are stamped `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `no-store`.
 
 **Provider schemes exist only in the framework's scheme map, and what would make them visible to the host fails
 at startup.** `WithProviders` replays the scheme-map configurers the host's callback appended, records the
@@ -123,21 +117,21 @@ at startup, because a post-configurer registered later would otherwise win silen
 wrong cookie or the callback to a path nothing serves. A host remote scheme whose callback path is a provider's
 route is refused for the same reason: the middleware would claim the callback first.
 
-**No handler is trusted for provider identity or interaction binding.** The challenge stamps the interaction
-identifier into the properties it hands the handler; the callback endpoint marks the request with the provider
-its route names before the handler runs; `zkd.external` records that mark at sign-in and refuses a sign-in
-without one; `/connect/resume` consumes the ticket first and refuses one naming another interaction or an
-unregistered provider. A handler that drops its properties fails loudly there and can complete nothing else.
-Only a refusal by the user at the provider reaches the client — recorded by the framework's own pinned
-access-denied event, and only for the interaction the browser carries; every other callback failure renders
-locally, logged by type never by message, and leaves the interaction alive. The session subject of an
-auto-promoted external principal is derived from provider, claim issuer and upstream subject together, never
-the upstream value: two providers can never share a session, and a subject without an issuer is refused.
+**No handler is trusted for provider identity or interaction binding.** The challenge stamps the interaction identifier into the
+properties it hands the handler; the callback endpoint marks the request with the provider its route names before the handler runs;
+`zkd.external` records that mark at sign-in and refuses a sign-in without one; `/connect/resume` consumes the ticket first and
+refuses one naming another interaction or an unregistered provider. A handler that drops its properties fails loudly there and can
+complete nothing else. A failed callback for an interaction the browser carries returns the user to the login page that challenged,
+the interaction alive and the outcome on `LoginRequest.ProviderReturn` — found by the handler's own properties, else by the one
+callback-scoped `zkd.challenge.<id>` cookie (none or several: the error page; a forged one changes only the message, accepted). With
+no login page only a refusal reaches the client, as `access_denied` on its own properties; the rest renders locally, logged by type
+never by message. The session subject of an auto-promoted external principal is derived from provider, claim issuer and upstream
+subject together, never the upstream value: two providers can never share a session, and a subject without an issuer is refused.
 
-**Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and `LoginPath` presence is the
-dispatch override.** The login page is also the provider-selection page, and the framework never skips a page the
-host built: `LoginPath` set → redirect there; unset with local off and one provider → challenge it directly; unset
-when the page is needed → `server_error`, warned at startup; local off with no providers → startup error. Checks
+**Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and whether a page is needed
+decides dispatch, not the path.** `LoginPath` defaults to `/login` and `ConsentPath` to `/consent`; a path is only an
+address. Local off with one provider → challenge it directly; otherwise `LoginPath` → redirect there; a `LoginPath`
+nulled when the page is needed → `server_error`, warned at startup; local off, no providers → startup error. Checks
 fire only when `GrantTypesSupported` contains `AuthorizationCode`, so a `client_credentials`-only host starts
 clean. The conditions are exact: a warning that cries wolf trains people to ignore it.
 

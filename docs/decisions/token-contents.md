@@ -13,14 +13,19 @@ the audiences, the lifetimes and the signing entries below describe shipped code
 `JwtTokenIssuer` reads `kid`/`alg` from the `SigningKey` the ring resolved for that exact call, so a
 header disagreeing with its signature is unrepresentable rather than detected. The key is resolved
 exactly once per token. A custom JWT issuer keeps this property by signing through
-`ISigningKeyRing.SignAsync` and building its header inside the callback — the atomicity guarantee
+`SigningKeyRing.SignAsync` and building its header inside the callback — the atomicity guarantee
 belongs to that path, not to the `ITokenIssuer` contract itself.
 
-**Exactly one component assembles the compact JWS, and it is the only caller of the signing service.**
-The signing service returns the encoded header and the signature and never a finished token, so `kid`
-and `alg` can never disagree with the key that signed; the writer's whole job is
-`header "." payload "." signature`. It is named for tokens rather than for JWTs, because the ID token,
-the access token and any future format share the one seam.
+**One type writes and reads the compact JWS, so what the issuer writes and a validator accepts cannot
+drift.** `JwtTokenIssuer`, the one caller of `SignAsync`, builds the signing input with `CompactJws`
+inside the ring's callback and serializes the token with it; the `id_token_hint` and userinfo
+validators parse with it. Its header is exactly `alg`, `typ` and `kid` on both sides, so a header with
+any other member, `crit` or a repeat included, is refused. The ring knows no format: it signs bytes,
+and `SigningKeyRing.Verify` checks a signature against every key the source lists, published or not,
+leaving the rest of the token, `exp` included, to the validator. A hint ignores `exp`, so it outlives
+its key's publication; only unlisting the key revokes it, at the first successful read that no longer
+lists it (a failed read keeps the last list, `signing-keys.md`). The issuer seam is named for tokens
+rather than for JWTs, because the ID token, the access token and any future format share it.
 
 **The ID token always carries `iss`, `sub`, `aud`, `exp`, `iat`, `auth_time` and `at_hash`, and
 `nonce` on the code grant.** OIDC Core §2 requires the first five, and `nonce` whenever the request had
@@ -99,8 +104,8 @@ derives from these values — key retirement is an operator emptying a slot, not
 
 **A client whose allowed ID-token algorithms exclude the signing key's algorithm fails closed.** The
 ring signs with one key, so `AllowedSigningAlgorithms` is enforced three times: the registration
-validator requires the current signing key's algorithm in the set once the ring has read its
-source, and that the set is a subset of the advertised algorithms; the token endpoint checks the
+validator requires the server's one algorithm in the set once the ring has read its source (an
+undefined value fails; any other entry only warns, once per client); the token endpoint checks the
 ring's current key against the set before it issues anything, so no access token is ever persisted
 for a client whose ID token would then be refused; and the JWT issuer checks the key the ring
 resolved against the set inside the signing callback, before an ID token is built. That last
@@ -110,9 +115,9 @@ silent failure at theirs. A host that replaces the ID-token issuer takes over th
 check and `at_hash`, which the framework does not verify after the fact; the endpoint's check
 against the ring's current key applies to every issuer, since the policy describes a JWS `alg`
 and the ring is the framework's one signer. ID tokens only, which is what the setting describes — an access
-token's algorithm is the resource server's concern. Ordinary rotation never trips this, since a new
-key keeps its algorithm; only an algorithm migration does, and the operator widens or clears the
-affected sets first. Not a per-algorithm key chooser: several signers would make the self-test, the
+token's algorithm is the resource server's concern. No rotation trips this, since a source signs
+under one algorithm; changing algorithm is a new source and a restart, and the operator widens or
+clears the affected sets first. Not a per-algorithm key chooser: several signers would make the self-test, the
 startup verification and the header-inside-callback guarantee per-key concerns, to serve an event
 most deployments never have.
 
@@ -126,4 +131,8 @@ spec-correct rather than a gap.
 
 ## Tried, didn't work
 
-Nothing reversed yet.
+- **Verifying a presented token against the published keys only.** A relying party keeps its ID token
+  for the whole session, longer than a retired key stays published, so after every rotation a hint
+  stopped identifying its client and the post-logout redirect was lost.
+- **One reader that looked up the key, verified and parsed the payload.** It put key knowledge in the
+  format layer; verifying is the ring's, the format is `CompactJws`'s, the claims are each validator's.

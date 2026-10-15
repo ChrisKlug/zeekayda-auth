@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
@@ -6,174 +7,113 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Clients;
 
-/// <summary>
-/// An in-memory <see cref="IClientRepository"/> populated at startup from configured
-/// <see cref="InMemoryClientRegistrationOptions"/>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Clients are validated at construction time via <see cref="IClientRegistrationValidator"/>.
-/// Any validation failure throws <see cref="ZeeKayDaConfigurationException"/> with all
-/// aggregated failures so operators see every problem in one pass.
-/// </para>
-/// <para>
-/// Suitable for development, testing, and simple deployments. For production scenarios with
-/// many clients or dynamic registration, implement a custom <see cref="IClientRepository"/>.
-/// </para>
-/// </remarks>
+/// <summary>An in-memory <see cref="IClientRepository"/>, populated at startup from <see cref="InMemoryClientRegistrationOptions"/>.</summary>
 internal sealed class InMemoryClientRepository : IClientRepository
 {
-    private readonly IReadOnlyDictionary<string, IClientRegistration> _clients;
+    private readonly IReadOnlyDictionary<string, IClientWithCredentials> _clients;
 
-    public InMemoryClientRepository(
-        IOptions<InMemoryClientRegistrationOptions> options,
-        CompositeClientSecretHasher hasher,
-        IClientRegistrationValidator validator,
-        IOptions<AuthorizationServerOptions> serverOptions,
-        ISanitizingLogger<InMemoryClientRepository> logger)
+    private InMemoryClientRepository(IReadOnlyDictionary<string, IClientWithCredentials> clients) =>
+        _clients = clients;
+
+    /// <summary>The DI factory <c>AddInMemoryClients</c> registers, and recognises as its own.</summary>
+    internal static readonly Func<IServiceProvider, IClientRepository> Factory = services => Build(
+        services.GetRequiredService<InMemoryClientRegistrationOptions>(),
+        services.GetRequiredService<ClientSecrets>(),
+        services.GetRequiredService<FrameworkThenHostValidator>());
+
+    /// <summary>
+    /// Hashes the pending secrets, then checks every registration. Plaintext is released only on success, so
+    /// building again fails the same way rather than succeed without those clients.
+    /// </summary>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// Any registration is invalid. Every failure across all of them is aggregated, so operators
+    /// see every problem in one pass.
+    /// </exception>
+    internal static InMemoryClientRepository Build(
+        InMemoryClientRegistrationOptions registrations,
+        ClientSecrets secrets,
+        FrameworkThenHostValidator validator)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(hasher);
-        ArgumentNullException.ThrowIfNull(validator);
-        ArgumentNullException.ThrowIfNull(serverOptions);
-        ArgumentNullException.ThrowIfNull(logger);
+        var (clients, failures) = HashPending(registrations.Pending, secrets);
+        clients.AddRange(registrations.PreBuilt);
 
-        var opts = options.Value;
-        var allRegistrations = new List<IClientRegistration>(opts.PreBuilt.Count + opts.Pending.Count);
+        failures.AddRange(FindDuplicateClientIds(clients));
+        failures.AddRange(clients.SelectMany(validator.Validate));
 
-        // Collect all failures: secret hashing + duplicates + per-client validation, so operators
-        // see every problem in one pass rather than the first hashing failure aborting the rest.
-        var allFailures = new List<ZeeKayDaConfigurationFailure>();
+        if (failures.Count > 0)
+            throw new ZeeKayDaConfigurationException([.. failures]);
 
-        // Build confidential clients from pending specs (hash plaintext secrets now)
-        AddPending(opts.Pending, hasher, allRegistrations, allFailures);
-
-        // All pending specs have been processed (hashed or converted to a failure). Clear the list
-        // so the PendingConfidentialClientSpec objects — and the plaintext secrets they contain —
-        // become GC-eligible. Because the options object is a plain singleton (no capturing closure
-        // holds a reference to the specs), clearing is sufficient to release them.
-        opts.Pending.Clear();
-
-        // Add pre-built registrations
-        allRegistrations.AddRange(opts.PreBuilt);
-
-        // The pre-built registrations have been snapshotted into allRegistrations; clear the
-        // source list so it is not retained alongside the snapshot.
-        opts.PreBuilt.Clear();
-
-        // Check for duplicate client_id (ordinal)
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var reg in allRegistrations.Where(reg => !seen.Add(reg.ClientId)))
-        {
-            allFailures.Add(new ZeeKayDaConfigurationFailure(
-                "client.client_id.duplicate",
-                $"A client with ClientId '{reg.ClientId}' has been registered more than once. " +
-                "Each client must have a unique ClientId (ordinal comparison)."));
-        }
-
-        // A validator's failures are absorbed so every registration is still validated, but the root
-        // cause behind one of them is on the exception and ZeeKayDaConfigurationFailure carries only
-        // strings. The absorbed exceptions are kept whole so their root causes survive the re-throw
-        // below, and a failure message that defers its detail to the inner exception still resolves.
-        var absorbed = new List<ZeeKayDaConfigurationException>();
-
-        // Validate each registration, accumulating failures
-        foreach (var reg in allRegistrations)
-        {
-            try
-            {
-                validator.Validate(reg);
-            }
-            catch (ZeeKayDaConfigurationException ex)
-            {
-                allFailures.AddRange(ex.AggregatedFailures);
-                absorbed.Add(ex);
-            }
-        }
-
-        if (allFailures.Count > 0)
-            throw Aggregate(allFailures, absorbed);
-
-        _clients = allRegistrations.ToDictionary(r => r.ClientId, StringComparer.Ordinal);
-
-        // AC #27: warn if "none" is advertised server-wide but no public client is registered
-        var serverAdvertisesNone = serverOptions.Value.TokenEndpoint.AuthMethodsSupported
-            .Any(m => string.Equals(m, TokenEndpointAuthMethods.None, StringComparison.Ordinal));
-
-        if (serverAdvertisesNone && !_clients.Values.Any(c => c.IsPublic))
-        {
-            logger.LogWarning(
-                "The server advertises 'none' as a supported token endpoint authentication method " +
-                "but no public clients (IsPublic=true) are registered. Consider removing " +
-                "TokenEndpointAuthMethods.None from AuthMethodsSupported if no public clients are expected.");
-        }
+        registrations.Pending.Clear();
+        return new InMemoryClientRepository(clients.ToDictionary(client => client.ClientId, StringComparer.Ordinal));
     }
 
-    // Turns each pending spec into a confidential registration, hashing its plaintext secret now.
-    // Both lists are the constructor's accumulators: a spec whose secret cannot be hashed adds a
-    // failure and is skipped rather than aborting, so the remaining clients are still built,
-    // validated, and reported in the same pass.
-    private static void AddPending(
+    /// <summary>The pending specs with their secrets set, and a failure for each without exactly one usable secret.</summary>
+    private static (List<IClientWithCredentials> Clients, List<ZeeKayDaConfigurationFailure> Failures) HashPending(
         IEnumerable<PendingConfidentialClientSpec> pending,
-        CompositeClientSecretHasher hasher,
-        List<IClientRegistration> registrations,
-        List<ZeeKayDaConfigurationFailure> failures)
+        ClientSecrets secrets)
     {
+        var clients = new List<IClientWithCredentials>();
+        var failures = new List<ZeeKayDaConfigurationFailure>();
+
         foreach (var spec in pending)
         {
-            IClientSecret hashedSecret;
-            try
+            if (CheckSecret(spec) is { } failure)
             {
-                hashedSecret = hasher.Create(spec.PlaintextSecret);
-            }
-            catch (ArgumentException)
-            {
-                // ClientSecretHasher<T>.Create throws on a null/empty/whitespace secret. Convert it
-                // to an aggregated failure and skip this spec so the remaining clients are still
-                // validated and reported.
-                failures.Add(new ZeeKayDaConfigurationFailure(
-                    "client.credentials.empty_plaintext_secret",
-                    $"Client '{spec.Registration.ClientId}' was registered with a null, empty, or whitespace plaintext secret. " +
-                    "Use a strong random secret loaded from a secrets manager or environment variable."));
+                failures.Add(failure);
                 continue;
             }
 
-            registrations.Add(spec.Registration with { Credentials = [hashedSecret] });
+            var secret = spec.SecretHash is { } hash ? new ClientSecret(hash) : secrets.Create(spec.PlaintextSecret!);
+            clients.Add(spec.Registration with { Secrets = [secret] });
         }
+
+        return (clients, failures);
     }
 
-    // Re-throws every accumulated failure as one exception, carrying whatever root causes the
-    // absorbed validator exceptions supplied. An absorbed exception with no InnerException
-    // contributes nothing, so a validator reporting a plain configuration failure is unchanged.
-    private static ZeeKayDaConfigurationException Aggregate(
-        IReadOnlyList<ZeeKayDaConfigurationFailure> failures,
-        IEnumerable<ZeeKayDaConfigurationException> absorbed)
-    {
-        var causes = absorbed.Select(ex => ex.InnerException).OfType<Exception>().ToList();
-
-        return causes.Count switch
+    private static ZeeKayDaConfigurationFailure? CheckSecret(PendingConfidentialClientSpec spec) =>
+        (spec.PlaintextSecret, spec.SecretHash) switch
         {
-            0 => new ZeeKayDaConfigurationException([.. failures]),
-            1 => new ZeeKayDaConfigurationException(failures, causes[0]),
-            _ => new ZeeKayDaConfigurationException(failures, new AggregateException(causes))
+            (null, null) => new ZeeKayDaConfigurationFailure(
+                "client.credentials.no_secret",
+                $"Confidential client '{spec.Registration.ClientId}' has neither a Secret nor a SecretHash. Set one of them."),
+            (not null, not null) => new ZeeKayDaConfigurationFailure(
+                "client.credentials.secret_and_secret_hash",
+                $"Confidential client '{spec.Registration.ClientId}' has both a Secret and a SecretHash. " +
+                "Set only one, so it is clear which secret the client authenticates with."),
+            ({ } plaintext, null) when string.IsNullOrWhiteSpace(plaintext) => new ZeeKayDaConfigurationFailure(
+                "client.credentials.empty_plaintext_secret",
+                $"Client '{spec.Registration.ClientId}' was registered with an empty or whitespace plaintext secret. " +
+                "Use a strong random secret loaded from a secrets manager or environment variable."),
+            (null, { } hash) when string.IsNullOrWhiteSpace(hash) => new ZeeKayDaConfigurationFailure(
+                "client.credentials.empty_secret_hash",
+                $"Confidential client '{spec.Registration.ClientId}' has an empty or whitespace SecretHash. " +
+                "Set it to a hashed secret such as '$pbkdf2-sha256$...'."),
+            _ => null,
         };
+
+    private static IEnumerable<ZeeKayDaConfigurationFailure> FindDuplicateClientIds(IEnumerable<IClientWithCredentials> clients)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        return clients.Where(client => !seen.Add(client.ClientId)).Select(client => new ZeeKayDaConfigurationFailure(
+            "client.client_id.duplicate",
+            $"A client with ClientId '{client.ClientId}' has been registered more than once. " +
+            "Each client must have a unique ClientId (ordinal comparison)."));
     }
 
     /// <summary>Every registration this repository serves, for the startup checks that read them all.</summary>
-    internal IEnumerable<IClientRegistration> Registrations => _clients.Values;
+    internal IEnumerable<IClientWithCredentials> Registrations => _clients.Values;
 
     /// <inheritdoc/>
-    public ValueTask<IClientRegistration?> FindByClientIdAsync(
+    public Task<IClientWithCredentials?> FindByClientIdAsync(
         string clientId,
         CancellationToken cancellationToken = default)
     {
-        // Dictionary<string, T>.TryGetValue throws ArgumentNullException on a null key, but the
-        // IClientRepository contract requires returning null for an unknown or malformed
-        // client_id — never throwing.
+        // The contract answers null, never throws, for a malformed client_id.
         if (clientId is null)
-            return ValueTask.FromResult<IClientRegistration?>(null);
+            return Task.FromResult<IClientWithCredentials?>(null);
 
         _clients.TryGetValue(clientId, out var reg);
-        return ValueTask.FromResult(reg);
+        return Task.FromResult(reg);
     }
 }

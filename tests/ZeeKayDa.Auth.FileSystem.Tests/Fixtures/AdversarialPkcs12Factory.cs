@@ -59,6 +59,36 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
+    /// A bundle whose MAC and certificate safe are under <paramref name="password"/> but whose
+    /// shrouded key bag is under <paramref name="keyPassword"/>. Reading the certificate succeeds;
+    /// importing the key with <paramref name="password"/> fails, so a read that imports the key fails.
+    /// </summary>
+    public static byte[] KeyBagUnderAnotherPassword(
+        string password, string keyPassword, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=test-key-bag-other-password", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var certificate = request.CreateSelfSigned(notBefore, notAfter);
+        using var publicOnly = X509CertificateLoader.LoadCertificate(certificate.Export(X509ContentType.Cert));
+
+        var localKeyId = new byte[] { 0x01 };
+
+        var certificates = new Pkcs12SafeContents();
+        certificates.AddCertificate(publicOnly).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var keys = new Pkcs12SafeContents();
+        keys.AddShroudedKey(key, keyPassword, Pbe).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
+        builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+        return builder.Encode();
+    }
+
+    /// <summary>
     /// A bundle whose certificate safe is <em>unencrypted</em> while its key bag is shrouded, sealed
     /// with a MAC under <paramref name="macPassword"/>. Reaching the certificate needs no password at
     /// all, so only the MAC can tell whether the file is the one the operator configured.
@@ -166,7 +196,7 @@ internal static class AdversarialPkcs12Factory
     /// <summary>
     /// The shape <c>openssl pkcs12 -export -nokeys</c> produces for a chain: no key bag at all, the
     /// issuer's certificate unmarked, and the leaf carrying the <c>localKeyId</c> of the key that was
-    /// stripped. The right shape for a published-only slot.
+    /// stripped. A bundle the source now rejects, because it can never sign.
     /// </summary>
     /// <returns>The bundle, and the public key of the certificate that should be selected.</returns>
     public static (byte[] Bundle, RSAParameters ExpectedPublicKey) CertificateOnlyChainWithMarkedLeaf(
@@ -219,6 +249,125 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
+    /// A chain bundle that also carries the issuer's private key, unmarked and stored before the
+    /// signing key, which is paired with the signing certificate by <c>localKeyId</c>. "The first key
+    /// in the file" is the issuer's, not the one that signs.
+    /// </summary>
+    /// <returns>The bundle, and the public key of the certificate that actually signs.</returns>
+    public static (byte[] Bundle, RSAParameters SigningPublicKey) IssuerKeyStoredBeforeSigningKey(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var caKey = RSA.Create(2048);
+        var caRequest = new CertificateRequest(
+            "CN=test-chain-ca", caKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        caRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+        using var ca = caRequest.CreateSelfSigned(notBefore.AddDays(-1), notAfter.AddDays(1));
+        using var caPublicOnly = X509CertificateLoader.LoadCertificate(ca.Export(X509ContentType.Cert));
+
+        using var leafKey = RSA.Create(2048);
+        var leafRequest = new CertificateRequest(
+            "CN=test-signing-leaf", leafKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        leafRequest.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+        using var leaf = leafRequest.Create(ca, notBefore, notAfter, [1, 2, 3, 4]);
+
+        var localKeyId = new byte[] { 0xAA, 0xBB };
+
+        var certificates = new Pkcs12SafeContents();
+        certificates.AddCertificate(caPublicOnly);
+        certificates.AddCertificate(leaf).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var keys = new Pkcs12SafeContents();
+        keys.AddShroudedKey(caKey, password, Pbe);
+        keys.AddShroudedKey(leafKey, password, Pbe).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
+        builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+        return (builder.Encode(), leafKey.ExportParameters(false));
+    }
+
+    /// <summary>
+    /// An RSA certificate paired by <c>localKeyId</c> with an unshrouded key bag that is not an RSA or
+    /// EC private key at all.
+    /// </summary>
+    public static byte[] PairedKeyBagNeitherRsaNorEc(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter) =>
+        RsaCertificatePairedWith(password, notBefore, notAfter,
+            keys =>
+            {
+                var notAPrivateKey = new Pkcs12KeyBag(new byte[] { 0x30, 0x03, 0x02, 0x01, 0x00 });
+                keys.AddSafeBag(notAPrivateKey);
+                return notAPrivateKey;
+            });
+
+    /// <summary>
+    /// An RSA certificate paired by <c>localKeyId</c> with an EC private key: the certificate the
+    /// listing publishes and the key the signer would import are of different types.
+    /// </summary>
+    public static byte[] RsaCertificatePairedWithEcKey(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        return RsaCertificatePairedWith(password, notBefore, notAfter,
+            keys => keys.AddShroudedKey(ecKey, password, Pbe));
+    }
+
+    /// <summary>
+    /// An Ed25519 certificate — neither RSA nor EC — paired by <c>localKeyId</c> with an EC private
+    /// key. The Ed25519 public key is written directly, because not every platform can generate one.
+    /// </summary>
+    public static byte[] Ed25519CertificatePairedWithEcKey(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var issuerKey = RSA.Create(2048);
+        var ed25519PublicKey = new PublicKey(
+            new Oid("1.3.101.112"), null, new AsnEncodedData(new byte[32]));
+        using var certificate = new CertificateRequest(
+                new X500DistinguishedName("CN=test-ed25519"), ed25519PublicKey, HashAlgorithmName.SHA256)
+            .Create(
+                new X500DistinguishedName("CN=test-ed25519-issuer"),
+                X509SignatureGenerator.CreateForRSA(issuerKey, RSASignaturePadding.Pkcs1),
+                notBefore, notAfter, [1, 2, 3, 4]);
+        using var ecKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+        return Paired(certificate, password, keys => keys.AddShroudedKey(ecKey, password, Pbe));
+    }
+
+    private static byte[] RsaCertificatePairedWith(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter,
+        Func<Pkcs12SafeContents, Pkcs12SafeBag> addKey)
+    {
+        using var rsaKey = RSA.Create(2048);
+        using var certificate = new CertificateRequest(
+                "CN=test-paired", rsaKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .CreateSelfSigned(notBefore, notAfter);
+        return Paired(certificate, password, addKey);
+    }
+
+    private static byte[] Paired(
+        X509Certificate2 certificate, string password, Func<Pkcs12SafeContents, Pkcs12SafeBag> addKey)
+    {
+        using var publicOnly = X509CertificateLoader.LoadCertificate(certificate.Export(X509ContentType.Cert));
+
+        var localKeyId = new byte[] { 0x01 };
+
+        var certificates = new Pkcs12SafeContents();
+        certificates.AddCertificate(publicOnly).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var keys = new Pkcs12SafeContents();
+        addKey(keys).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
+        builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+        return builder.Encode();
+    }
+
+    /// <summary>
     /// A bundle whose key bag names a <c>localKeyId</c> no certificate carries, with more than one
     /// certificate present — so the key's own certificate is not in the file.
     /// </summary>
@@ -266,9 +415,10 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
-    /// A bundle carrying two certificates and no key bag, so nothing identifies which one signs.
+    /// A bundle carrying two certificates and one private key with no <c>localKeyId</c>, so nothing
+    /// identifies which certificate the key belongs to.
     /// </summary>
-    public static byte[] TwoCertificatesNoKey(
+    public static byte[] TwoCertificatesUnmarkedKey(
         string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
     {
         using var firstKey = RSA.Create(2048);
@@ -282,8 +432,12 @@ internal static class AdversarialPkcs12Factory
         certificates.AddCertificate(first);
         certificates.AddCertificate(second);
 
+        var keys = new Pkcs12SafeContents();
+        keys.AddShroudedKey(firstKey, password, Pbe);
+
         var builder = new Pkcs12Builder();
         builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
         builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
 
         return builder.Encode();

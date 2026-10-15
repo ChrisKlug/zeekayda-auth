@@ -5,9 +5,8 @@ namespace ZeeKayDa.Auth.Claims;
 /// optional; a <see langword="null"/> member is omitted from the wire form.
 /// </summary>
 /// <remarks>
-/// Converts implicitly to <see cref="ClaimValue"/>, which writes the standard member names
-/// (<c>street_address</c>, <c>postal_code</c>, and so on) itself, so no serializer setting can
-/// change the wire form of the one standard object claim.
+/// Converts to <see cref="ClaimValue"/>, which writes the standard member names itself, so no serializer
+/// setting can change the wire form.
 /// </remarks>
 public sealed record AddressClaim
 {

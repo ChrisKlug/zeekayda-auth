@@ -1,19 +1,35 @@
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// What <see cref="ValidatedClientResolver"/> validates with: the framework's rules always, then a
-/// host's own <see cref="IClientRegistrationValidator"/> if it registered one. A host can add rules
-/// to what is served, never remove the framework's; the <c>none</c> client-authentication path
-/// relies on the framework's public ⇔ no credentials ⇔ <c>{ "none" }</c> rule.
+/// The framework's rules, then a host's own validator if registered: a host can add rules, never remove the
+/// ones the <c>none</c> authentication path relies on.
 /// </summary>
 internal sealed class FrameworkThenHostValidator(
     ClientRegistrationValidator framework,
     IClientRegistrationValidator host) : IClientRegistrationValidator
 {
-    public void Validate(IClientRegistration client)
+    public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
+        ReferenceEquals(host, framework)
+            ? framework.Validate(client)
+            : [.. framework.Validate(client), .. Checked(host, client)];
+
+    /// <summary>The host's failures, plus one <c>client.validator.malformed_result</c> for a null list or entry.</summary>
+    private static IReadOnlyList<ZeeKayDaConfigurationFailure> Checked(
+        IClientRegistrationValidator host,
+        IClientWithCredentials client)
     {
-        framework.Validate(client);
-        if (!ReferenceEquals(host, framework))
-            host.Validate(client);
+        // Copied once: a host's list may yield something different on each enumeration.
+        var found = host.Validate(client)?.ToArray();
+
+        return found is null || found.Any(failure => failure is null)
+            ?
+            [
+                .. (found ?? []).OfType<ZeeKayDaConfigurationFailure>(),
+                new ZeeKayDaConfigurationFailure(
+                    "client.validator.malformed_result",
+                    $"The IClientRegistrationValidator '{host.GetType().FullName}' returned a null list or a " +
+                    $"null failure for client '{client.ClientId}'. Return an empty list for a valid registration."),
+            ]
+            : found;
     }
 }

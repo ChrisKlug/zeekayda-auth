@@ -12,40 +12,84 @@ shows you how to register public and confidential clients using the built-in in-
 
 ## Quick start
 
-Call `AddInMemoryClients` on the builder returned by `AddZeeKayDaAuth` and use the provided
-builder callbacks to register your clients:
+Call `AddInMemoryClients` on the builder returned by `AddZeeKayDaAuth`. Each client is a client id
+plus a callback that sets its redirect URIs, scopes and other settings:
 
 ```csharp
 var builder = services.AddZeeKayDaAuth(options =>
 {
     options.Issuer = "https://id.example.com";
-    // Allow public clients (no client authentication)
-    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
 });
 
 builder.AddInMemoryClients(clients =>
 {
     // A public client (SPA or native app using PKCE)
-    clients.AddPublic(
-        clientId: "my-spa",
-        redirectUris: ["https://app.example.com/callback"],
-        postLogoutRedirectUris: ["https://app.example.com/logout"],
-        allowedScopes: ["openid", "profile"]);
+    clients.AddPublic("my-spa", client =>
+    {
+        client.RedirectUris.Add("https://app.example.com/callback");
+        client.PostLogoutRedirectUris.Add("https://app.example.com/logout");
+        client.AllowedScopes.UnionWith(["openid", "profile"]);
+    });
 
     // A confidential client (server-side app)
-    clients.AddConfidential(
-        clientId: "my-server-app",
-        clientSecret: "replace-with-a-real-secret",
-        redirectUris: ["https://server.example.com/callback"],
-        postLogoutRedirectUris: [],
-        allowedScopes: ["openid", "api"]);
+    clients.AddConfidential("my-server-app", client =>
+    {
+        client.SecretHash = configuration["ClientSecrets:MyServerApp"];
+        client.RedirectUris.Add("https://server.example.com/callback");
+        client.AllowedScopes.UnionWith(["openid", "api"]);
+    });
 });
 ```
 
-> **Warning:** The `clientSecret` parameter in `AddConfidential` accepts a plaintext string that
-> is hashed at repository construction time. **Never hardcode secrets in production code.** Load
-> them from environment variables, a secrets manager (e.g. Azure Key Vault), or a secure
-> configuration provider instead.
+## Clients from configuration
+
+Most hosts keep a fixed client list in configuration. Pass the section instead of a callback:
+
+```csharp
+builder.AddInMemoryClients(configuration.GetSection("Clients"));
+```
+
+```json
+"Clients": {
+  "Confidential": {
+    "my-server-app": {
+      "SecretHash": "$pbkdf2-sha256$i=600000$...",
+      "RedirectUris": [ "https://server.example.com/callback" ],
+      "AllowedScopes": [ "openid", "api" ]
+    }
+  },
+  "Public": {
+    "my-spa": {
+      "RedirectUris": [ "https://app.example.com/callback" ],
+      "AllowedScopes": [ "openid", "profile" ]
+    }
+  }
+}
+```
+
+Clients are keyed by client id, under `Confidential` or `Public`, and each client's keys are the
+properties of `ConfidentialClientOptions` or `PublicClientOptions`. Keying by client id gives every
+secret a stable path, so it can come from user secrets, environment variables or a vault rather than
+the JSON file: `Clients:Confidential:my-server-app:Secret`. A child other than `Confidential` or
+`Public`, or a key the options type does not have, fails at registration, so a misspelt setting is
+never silently left on its default, and so does a missing or empty section. The section is read
+once, when `AddInMemoryClients` is called.
+
+Configuration keys are case-insensitive, but a client id is matched exactly. `web-app` in one source
+and `Web-App` in another are the same configuration key, so they merge into one client, whose id is
+spelled as the first source spells it. Spell a client id the same way in every source.
+
+## Secrets
+
+A confidential client sets exactly one of two properties; startup fails if it sets neither or both:
+
+- `SecretHash` — a hash in PHC string format, such as `$pbkdf2-sha256$...`, stored as given. A
+  registered `IClientSecretHasher` must declare its algorithm id. Prefer this: the plaintext never
+  reaches the host.
+- `Secret` — a plaintext secret, hashed with the default `IClientSecretHasher` when the host starts.
+  This is a convenience for development and bootstrapping. The framework releases its copy after
+  hashing, but the configuration source it came from keeps its own for the life of the process.
+  **Never hardcode a secret in code or commit one to a configuration file.**
 
 ## Public clients
 
@@ -54,23 +98,17 @@ Public clients authenticate with no client credentials — they rely entirely on
 native apps.
 
 ```csharp
-clients.AddPublic(
-    clientId: "my-spa",
-    redirectUris: ["https://app.example.com/callback"],
-    postLogoutRedirectUris: ["https://app.example.com/logout"],
-    allowedScopes: ["openid", "profile", "email"]);
-```
-
-To allow public clients, the server must advertise `none` as a supported token endpoint
-authentication method:
-
-```csharp
-services.AddZeeKayDaAuth(options =>
+clients.AddPublic("my-spa", client =>
 {
-    options.Issuer = "https://id.example.com";
-    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+    client.RedirectUris.Add("https://app.example.com/callback");
+    client.PostLogoutRedirectUris.Add("https://app.example.com/logout");
+    client.AllowedScopes.UnionWith(["openid", "profile", "email"]);
 });
 ```
+
+The server advertises `none` as a token endpoint authentication method by default, so a public
+client needs no server-wide setting. A host that sets `TokenEndpoint.AdvertisedAuthMethods` to
+refuse public clients must leave `none` out of it, and a public client registration then fails startup.
 
 ## Confidential clients
 
@@ -79,38 +117,53 @@ for server-side web applications, background services, and APIs.
 
 ```csharp
 builder.AddInMemoryClients(clients =>
-    clients.AddConfidential(
-        clientId: "my-server-app",
-        clientSecret: configuration["ClientSecrets:MyServerApp"],
-        redirectUris: ["https://server.example.com/callback"],
-        postLogoutRedirectUris: ["https://server.example.com/logout"],
-        allowedScopes: ["openid"]));
+    clients.AddConfidential("my-server-app", client =>
+    {
+        client.Secret = configuration["ClientSecrets:MyServerApp"];
+        client.RedirectUris.Add("https://server.example.com/callback");
+        client.PostLogoutRedirectUris.Add("https://server.example.com/logout");
+        client.AllowedScopes.Add("openid");
+    }));
 ```
 
-The `clientSecret` value is hashed using the configured `IClientSecretHasher` (by default,
+A `Secret` is hashed using the configured default `IClientSecretHasher` (by default,
 PBKDF2-HMAC-SHA256 at 600,000 iterations) when the repository is first resolved from DI. The
-plaintext is not retained after hashing.
+framework does not keep the plaintext after hashing.
 
 ## Changing a client's other settings
 
-`AddPublic` and `AddConfidential` take an optional last argument: a callback that receives the
-client's settings, already filled with their defaults. Change only what you need:
+The callback of `AddPublic` and `AddConfidential` receives the client's settings, already filled
+with their defaults. Change only what you need:
 
 ```csharp
 builder.AddInMemoryClients(clients =>
-    clients.AddConfidential("first-party-web", secretValue,
-        ["https://app.example.com/callback"], [], ["openid", "profile"],
-        options =>
-        {
-            options.RequireConsent = false;
-            options.DisplayName = "Example Web";
-            options.AccessTokenLifetime = TimeSpan.FromMinutes(2);
-        }));
+    clients.AddConfidential("first-party-web", options =>
+    {
+        options.SecretHash = secretHash;
+        options.RedirectUris.Add("https://app.example.com/callback");
+        options.AllowedScopes.UnionWith(["openid", "profile"]);
+        options.RequireConsent = false;
+        options.DisplayName = "Example Web";
+        options.AccessTokenLifetime = TimeSpan.FromMinutes(2);
+    }));
 ```
 
 A public client's callback receives `PublicClientOptions`. A confidential client's receives
-`ConfidentialClientOptions`, which adds `RequirePkce` and
+`ConfidentialClientOptions`, which adds `Secret`, `SecretHash`, `RequirePkce` and
 `AllowedTokenEndpointAuthMethods` — settings a public client cannot have.
+
+The collections that have a default — grant types, response types, response modes and a
+confidential client's token endpoint authentication methods — start empty in the callback, and a
+collection named in configuration replaces the default rather than adding to it. Add
+the values you want and the client gets exactly those; add none and it gets the default:
+`authorization_code`, `client_secret_basic`, and the `code` response type and `query` response mode
+when the client may use `authorization_code`. A `client_credentials`-only client gets no response
+types or modes:
+
+```csharp
+options.AllowedGrantTypes.Add(GrantType.ClientCredentials);
+options.AllowedTokenEndpointAuthMethods.Add(TokenEndpointAuthMethods.ClientSecretPost); // only client_secret_post
+```
 
 > Turn `RequireConsent` off only for your own first-party applications. The consent page is what
 > lets a user notice an authorization request they never started.
@@ -143,13 +196,12 @@ app.MapMethods("/initiate-login", [HttpMethods.Get, HttpMethods.Post], async (Ht
 
 ## Registering a pre-built client
 
-If you already have a registration built elsewhere, construct a `ClientRegistration` directly and
-use `Add`:
+If you already have a registration built elsewhere, construct a `Client` directly and use `Add`:
 
 ```csharp
 using ZeeKayDa.Auth.Clients;
 
-var customClient = ClientRegistration.CreatePublic(
+var customClient = Client.CreatePublic(
     clientId: "custom-client",
     redirectUris: ["https://app.example.com/callback"],
     postLogoutRedirectUris: [],
@@ -162,13 +214,13 @@ var customClient = ClientRegistration.CreatePublic(
 builder.AddInMemoryClients(clients => clients.Add(customClient));
 ```
 
-`ClientRegistration` is a record, so `with` expressions work to override any property that was
+`Client` is a record, so `with` expressions work to override any property that was
 not set by the factory method.
 
-> `AllowedSigningAlgorithms` must be a subset of what the server advertises, and the server
-> advertises only the algorithms its configured signing keys use. The `ES256` above therefore
-> requires an ES256 signing key to be configured; without one, startup fails with
-> `client.signing_algorithms.not_subset`.
+> `AllowedSigningAlgorithms` must contain the algorithm the server signs with — the one its signing
+> source was registered for. The `ES256` above therefore requires an ES256 signing source; without
+> one, startup fails with `client.signing_algorithms.excludes_signing_key`. Any other entry has no
+> effect and is logged as a warning once.
 
 ## Multiple `AddInMemoryClients` calls
 
@@ -177,12 +229,15 @@ registrations. This is useful for separating concerns (for example, test clients
 clients, or clients from different configuration sources):
 
 ```csharp
-builder.AddInMemoryClients(clients =>
-    clients.AddPublic("spa", ["https://app.example.com/cb"], [], ["openid"]));
+builder.AddInMemoryClients(configuration.GetSection("Clients"));
 
-// Called later in a different extension method or configuration source:
-builder.AddInMemoryClients(clients =>
-    clients.AddConfidential("api-gateway", secretValue, ["https://api.example.com/cb"], [], ["openid"]));
+// Called later in a different extension method:
+builder.AddInMemoryClients(clients => clients.AddConfidential("api-gateway", client =>
+{
+    client.SecretHash = secretHash;
+    client.RedirectUris.Add("https://api.example.com/cb");
+    client.AllowedScopes.Add("openid");
+}));
 ```
 
 Both clients will be present in the repository.
@@ -190,25 +245,24 @@ Both clients will be present in the repository.
 ## Hasher selection when multiple hashers are registered
 
 When more than one `IClientSecretHasher` is registered, the framework must know which one to use
-as the default — that is, which hasher creates new secrets and generates the timing-pad dummy
-credential at startup. The `isDefault` parameter on `AddClientSecretHasher<T>()` controls this. The
+as the default — that is, which hasher creates new secrets. The `isDefault` parameter on `AddClientSecretHasher<T>()` controls this. The
 full selection matrix is:
 
-| Hashers registered | Explicit defaults (`isDefault: true`) | Outcome |
-|---|---|---|
-| 1 | 0 | That hasher is the default (auto-selected) |
-| 2 or more | 0 | **Startup failure** — ambiguous, cannot select a default |
-| 2 or more | 1 | The flagged hasher is the default |
-| 2 or more | 2 or more | **Startup failure** — multiple defaults conflict |
+| Explicit defaults (`isDefault: true`) | Outcome |
+|---|---|
+| 0 | PBKDF2 is the default |
+| 1 | The flagged hasher is the default |
+| 2 or more | **Startup failure** — `configuration.hashers.multiple_defaults` |
 
-The built-in PBKDF2 hasher is always registered and is the default, so it creates every new
-secret. To keep verifying secrets hashed with another algorithm, register that hasher alongside it:
+The built-in PBKDF2 hasher is always registered and, unless you mark another hasher as the
+default, creates every new secret. To keep verifying secrets hashed with another algorithm,
+register that hasher alongside it; to make your own hasher create new secrets, mark it
+`isDefault: true` — PBKDF2 stays registered, so existing PBKDF2 secrets keep verifying:
 
 ```csharp
-auth.AddClientSecretHasher<BcryptClientSecretHasher>();   // verifies old bcrypt secrets
+auth.AddClientSecretHasher<BcryptClientSecretHasher>();                  // verifies old bcrypt secrets
+auth.AddClientSecretHasher<Argon2ClientSecretHasher>(isDefault: true);   // creates new secrets
 ```
-
-A host cannot yet make its own hasher the default in place of PBKDF2.
 
 For the full `isDefault` rules and startup validation behaviour, see
 [Client secrets reference](../reference/client-secrets.md#isdefault-rules). To implement a
@@ -227,8 +281,12 @@ Common validation failures:
 | `client.redirect_uri.fragment` | Redirect URI contains a `#` fragment |
 | `client.redirect_uri.scheme_http_non_loopback` | `http://` URI for a non-loopback host |
 | `client.is_public.trinity_violation` | `IsPublic`, `Credentials`, and `AllowedTokenEndpointAuthMethods` are inconsistent |
-| `client.token_endpoint_auth_methods.not_subset` | Client auth method not in server's `AuthMethodsSupported` |
+| `client.grant_types.client_credentials_on_public` | A public client allows `client_credentials`, which only a confidential client may use (RFC 6749 §4.4) |
+| `client.token_endpoint_auth_methods.not_subset` | Client auth method not advertised by the server — no authenticator performs it, or `TokenEndpoint.AdvertisedAuthMethods` withholds it |
 | `client.client_id.duplicate` | Two clients with the same `ClientId` |
+| `client.credentials.no_secret` | A confidential client sets neither `Secret` nor `SecretHash` |
+| `client.credentials.secret_and_secret_hash` | A confidential client sets both `Secret` and `SecretHash` |
+| `client.validator.malformed_result` | A host `IClientRegistrationValidator` returned null, or a list with a null entry |
 
 ## See also
 

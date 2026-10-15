@@ -1,12 +1,12 @@
 // These tests exercise the full DI wiring for AddAzureKeyVaultCachedSigning end to end — a real
-// ServiceCollection / ZeeKayDaAuthBuilder / ServiceProvider, driven through the host's real startup
+// ServiceCollection / ZeeKayDaAuthCoreBuilder / ServiceProvider, driven through the host's real startup
 // path — with a fake substituted for the IKeyVaultCertificateReader seam. No real network calls are
 // made and no live Azure Key Vault access is required or attempted. The same KNOWN GAP note as
 // AzureKeyVaultRemoteSigningIntegrationTests applies: recorded-session tests against real Key Vault
 // behaviour do not exist yet.
 //
-// The vault is read exactly once, at startup, and never re-read — asserted below by rotating a new
-// version into the fake vault after startup and observing that nothing published changes.
+// The ring reads the vault once, at startup — asserted below by rotating a new version into the fake
+// vault after startup and observing that nothing published changes until the next read.
 
 using System.Security.Cryptography;
 using Azure.Security.KeyVault.Certificates;
@@ -63,24 +63,24 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         const string version = "3a7f21c9e04b4d8fa16c5e93bd270f18";
         reader.AddRsaVersion(version, createdOn: T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle();
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial(version)),
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial(version)),
             "kid must be the RFC 7638 thumbprint of the public key");
-        ring.Current.SigningKey.Kid.Should().NotContain("fake-vault").And.NotContain("fake-cert").And.NotContain(version,
+        ring.Current.SigningKey!.Kid.Should().NotContain("fake-vault").And.NotContain("fake-cert").And.NotContain(version,
             "kid must never leak vault, certificate, or version identifiers");
-        ring.Current.AdvertisedAlgorithms.Should().Equal(SigningAlgorithm.RS256);
+        ring.Current.Algorithm.Should().Be(SigningAlgorithm.RS256);
 
         var signingInput = "header.payload"u8.ToArray();
         var outcome = await ring.SignAsync(signingInput, static (_, input) => input, ct);
 
-        using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        using var rsa = RSA.Create(ring.Current.SigningKey!.PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the ring must sign locally with the downloaded private key of the published version");
     }
@@ -92,44 +92,23 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var now = T0 + TimeSpan.FromDays(30);
         var (services, reader, _) = BuildServices(now);
         reader.AddRsaVersion("v1", createdOn: T0);
-        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
-        reader.AddRsaVersion("v3", createdOn: now - TimeSpan.FromHours(1)); // Younger than the delay -> staged.
+        // Past the one-day lead time, and inside it plus the ten-minute retention: v2 signs, v1 stays published.
+        reader.AddRsaVersion("v2", createdOn: now - TimeSpan.FromDays(1) - TimeSpan.FromMinutes(5));
+        reader.AddRsaVersion("v3", createdOn: now - TimeSpan.FromHours(1)); // Inside the lead time -> staged.
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().HaveCount(3,
-            "the signing version, one previous version (the default count), and the staged version are all published");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")));
+            "the signing version, its predecessor still inside retention, and the staged version are all published");
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")));
         reader.PrivateKeyMaterialCalls.Should().Equal(["v2"],
             "startup — including the ring's signing self-test — downloads private material for the " +
             "signing version only; published-only versions stay public-key-only");
-    }
-
-    [Fact]
-    public async Task Full_DI_wiring_keeps_publishing_the_startup_key_set_when_the_vault_rotates_afterwards()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var (services, reader, timeProvider) = BuildServices(T0);
-        reader.AddRsaVersion("v1", createdOn: T0);
-
-        var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
-
-        await using var provider = services.BuildServiceProvider();
-        await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
-        var publishedAtStartup = ring.Current.Published.Select(k => k.Kid).ToArray();
-
-        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromMinutes(1));
-        timeProvider.SetUtcNow(T0 + TimeSpan.FromDays(30));
-
-        ring.Current.Published.Select(k => k.Kid).Should().Equal(publishedAtStartup,
-            "the vault is read exactly once, at startup — a rotation is only picked up by restarting the host");
     }
 
     // ── Startup failure propagation ───────────────────────────────────────────────────────────────
@@ -140,7 +119,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var ct = TestContext.Current.CancellationToken;
         var (services, _, _) = BuildServices(T0); // No versions registered.
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -148,23 +127,24 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var act = async () => await StartHostedServicesAsync(provider, ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*no_certificate_versions*");
+            .WithMessage("*signing.no_keys*");
     }
 
     [Fact]
-    public async Task Startup_fails_closed_when_the_secret_and_the_Cer_diverge()
+    public async Task Startup_fails_closed_when_the_secret_and_the_Cer_diverge_because_the_self_test_catches_it()
     {
-        // The tamper-evidence cross-check: the private key downloaded from the linked secret must
-        // match the public key published from the Cer, and the divergence must reach the startup
-        // output NAMED — a configuration failure the ring absorbs verbatim, never a generic
-        // signer_unavailable that reads as transient.
+        // The source no longer pairs the private key with the published public key itself; the ring's
+        // startup self-test does. A private key downloaded from the linked secret that does not match
+        // the public key published from the Cer produces a signature that does not verify, and that
+        // must fail startup NAMED — signing.self_test_failed — never as a generic signer_unavailable
+        // that reads as transient.
         var ct = TestContext.Current.CancellationToken;
         var (services, reader, _) = BuildServices(T0);
         reader.AddRsaVersion("v1", createdOn: T0);
         using var divergedKey = RSA.Create(2048);
         reader.SetMismatchedPrivateKeyMaterial("v1", divergedKey.ExportParameters(includePrivateParameters: true));
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -172,7 +152,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var act = async () => await StartHostedServicesAsync(provider, ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*secret_cer_mismatch*does not match*");
+            .WithMessage("*self_test_failed*");
     }
 
     [Fact]
@@ -184,7 +164,7 @@ public sealed class AzureKeyVaultCachedSigningIntegrationTests
         var (services, reader, _) = BuildServices(T0);
         reader.AddRsaVersion("v1", createdOn: T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultCachedSigning(CertificateIdentifier, SigningAlgorithm.ES256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();

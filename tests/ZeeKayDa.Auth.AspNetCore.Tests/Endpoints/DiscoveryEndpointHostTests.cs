@@ -320,7 +320,7 @@ public sealed class DiscoveryEndpointHostTests(
     [InlineData("POST", "/connect/authorize", HttpStatusCode.BadRequest)]
     [InlineData("POST", "/connect/token", HttpStatusCode.BadRequest)]
     [InlineData("GET", "/connect/jwks", HttpStatusCode.OK)]
-    public async Task HttpRequests_are_allowed_for_loopback_with_AllowInsecureIssuer_flag(
+    public async Task HttpRequests_are_allowed_for_loopback_with_AllowHttpLoopbackIssuer_flag(
         string method,
         string path,
         HttpStatusCode expectedStatusCode)
@@ -331,6 +331,25 @@ public sealed class DiscoveryEndpointHostTests(
         var response = await client.SendAsync(request, Cancellation);
 
         response.StatusCode.Should().Be(expectedStatusCode);
+    }
+
+    [Fact]
+    public async Task HttpRequests_are_rejected_for_loopback_with_only_the_AllowHttpLoopbackCorsOrigins_flag()
+    {
+        // The two loopback flags were one switch; the CORS one must not reopen plain HTTP serving.
+        using var factory = new TestWebAppFactoryWithRemoteIp(IPAddress.Loopback, opts =>
+        {
+            opts.Issuer = "https://localhost:5001";
+            opts.Development.AllowHttpLoopbackIssuer = false;
+            opts.Development.AllowHttpLoopbackCorsOrigins = true;
+            opts.CorsOrigins.Add("http://localhost:3000");
+        });
+        using var client = CreateClient(factory, "http://localhost:5001");
+
+        var response = await client.GetAsync(DiscoveryPath, Cancellation);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MisdirectedRequest);
+        response.Headers.TryGetValues("X-ZeeKayDa-Insecure-Issuer", out _).Should().BeFalse();
     }
 
     // ── Defensive security headers ────────────────────────────────────────────────────────────────
@@ -424,7 +443,7 @@ public sealed class DiscoveryEndpointHostTests(
     // ── Insecure-issuer header ────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetDiscoveryDocument_returns_insecure_issuer_header_when_AllowInsecureIssuer_is_true()
+    public async Task GetDiscoveryDocument_returns_insecure_issuer_header_when_AllowHttpLoopbackIssuer_is_true()
     {
         var client = loopback.Client;
 
@@ -435,7 +454,7 @@ public sealed class DiscoveryEndpointHostTests(
     }
 
     [Fact]
-    public async Task GetDiscoveryDocument_has_no_insecure_issuer_header_when_AllowInsecureIssuer_is_false()
+    public async Task GetDiscoveryDocument_has_no_insecure_issuer_header_when_AllowHttpLoopbackIssuer_is_false()
     {
         var response = await host.Client.GetAsync(DiscoveryPath, Cancellation);
 

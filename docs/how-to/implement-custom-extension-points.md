@@ -20,12 +20,12 @@ The repository and discovery interfaces are **fully asynchronous and cancellatio
 ```csharp
 public interface IScopeRepository
 {
-    ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default);
 }
 
 public interface IDiscoveryDocumentProvider
 {
-    ValueTask<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default);
+    Task<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default);
 }
 ```
 
@@ -33,7 +33,7 @@ public interface IDiscoveryDocumentProvider
 
 Both extension points sit on a hot request path: every call to the OpenID Connect discovery endpoint (and, in due course, every token request) reaches them. Real-world implementations are almost always I/O-bound — a database query, an HTTP call, a distributed cache lookup. Forcing those implementations to block a thread-pool thread is the well-known sync-over-async foot-gun: under load it causes thread-pool starvation, and it makes it impossible to honour request cancellation cleanly.
 
-`ValueTask<T>` is used (rather than `Task<T>`) because in-memory implementations complete synchronously and the per-call allocation savings matter on these hot paths. If your implementation is asynchronous, just `return` the awaited result as you would with `Task<T>` and the compiler-generated state machine handles the rest.
+Every asynchronous extension point returns `Task` or `Task<T>`, never `ValueTask`: a `Task` can be awaited more than once and stored without surprises. An implementation that completes synchronously returns `Task.FromResult(value)` or `Task.CompletedTask`.
 
 ## 1. Implement a custom scope repository
 
@@ -47,7 +47,7 @@ public sealed class DatabaseScopeRepository : IScopeRepository
     public DatabaseScopeRepository(IDbContextFactory<ScopeDbContext> factory)
         => _factory = factory;
 
-    public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(
+    public async Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(
         CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
@@ -93,7 +93,7 @@ public sealed class TenantAwareDiscoveryDocumentProvider : IDiscoveryDocumentPro
         _metadataClient = metadataClient;
     }
 
-    public async ValueTask<OpenIdConfigurationDocument> GetDocumentAsync(
+    public async Task<OpenIdConfigurationDocument> GetDocumentAsync(
         CancellationToken cancellationToken = default)
     {
         var metadata = await _metadataClient.FetchAsync(_tenant.Id, cancellationToken);
@@ -127,10 +127,10 @@ The framework passes `HttpContext.RequestAborted` to your implementation. You sh
 The in-tree `InMemoryScopeRepository` demonstrates the minimum pattern for synchronous in-memory implementations:
 
 ```csharp
-public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
 {
     cancellationToken.ThrowIfCancellationRequested();
-    return ValueTask.FromResult(_scopes);
+    return Task.FromResult(_scopes);
 }
 ```
 
@@ -140,8 +140,8 @@ If you only have a synchronous data source today and are tempted to wrap it like
 
 ```csharp
 // ❌ Don't do this.
-public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
-    => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>(LoadFromHttpClientSync());
+public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+    => Task.FromResult<IReadOnlyCollection<ScopeDefinition>>(LoadFromHttpClientSync());
 
 private IReadOnlyCollection<ScopeDefinition> LoadFromHttpClientSync()
     => _httpClient.GetAsync("/scopes").Result.Content.ReadFromJsonAsync<ScopeDto[]>().Result;
@@ -149,7 +149,7 @@ private IReadOnlyCollection<ScopeDefinition> LoadFromHttpClientSync()
 
 `.Result` and `.GetAwaiter().GetResult()` block a thread-pool thread for the duration of the I/O. Under load, every concurrent discovery request consumes a thread until the I/O completes, and the thread pool runs out — the symptom is rising request latency and eventually deadlocks under `SynchronizationContext`-bearing hosts.
 
-If your data source has only a synchronous API, the right answer is to put a real cache (`IMemoryCache`, `HybridCache`, `IDistributedCache`) in front of it and refresh the cache from a background `IHostedService` — then your `GetScopesAsync` returns a synchronous `ValueTask.FromResult(_cached)` and you have not introduced sync-over-async on the hot path.
+If your data source has only a synchronous API, the right answer is to put a real cache (`IMemoryCache`, `HybridCache`, `IDistributedCache`) in front of it and refresh the cache from a background `IHostedService` — then your `GetScopesAsync` returns `Task.FromResult(_cached)` and you have not introduced sync-over-async on the hot path.
 
 ## 4. Implement a custom client secret hasher
 
@@ -254,14 +254,19 @@ public sealed class BcryptClientSecretHasher : ClientSecretHasher<IBcryptClientS
 ### Step 4: Register with `AddClientSecretHasher<T>()`
 
 Register your hasher on the builder returned by `AddZeeKayDaAuth`. The composite verifier tries
-the matching hasher for each stored credential. The built-in PBKDF2 hasher is always registered and is the default, so it creates every new
-secret. To keep verifying secrets hashed with another algorithm, register that hasher alongside it:
+the matching hasher for each stored credential. The built-in PBKDF2 hasher is always registered and, unless you mark another hasher as the
+default, creates every new secret. To keep verifying secrets hashed with another algorithm,
+register that hasher alongside it; to make your own hasher create new secrets, mark it
+`isDefault: true` — PBKDF2 stays registered, so existing PBKDF2 secrets keep verifying:
 
 ```csharp
-auth.AddClientSecretHasher<BcryptClientSecretHasher>();   // verifies old bcrypt secrets
+auth.AddClientSecretHasher<BcryptClientSecretHasher>();                   // verifies old bcrypt secrets
+// or
+auth.AddClientSecretHasher<BcryptClientSecretHasher>(isDefault: true);   // also creates new secrets
 ```
 
-A host cannot yet make its own hasher the default in place of PBKDF2.
+Every registered hasher's `Create` runs once at startup to build its timing decoy, so a hasher that
+only verifies legacy secrets must still create one for a random value.
 
 ### Security contract for `VerifyCore` implementors
 
@@ -273,18 +278,18 @@ A host cannot yet make its own hasher the default in place of PBKDF2.
 | Be singleton-safe | Hashers are registered as singletons and called concurrently |
 
 > Warning: A hasher that does not use constant-time comparison undermines the timing protections
-> built into `CompositeClientSecretHasher`. Use `CryptographicOperations.FixedTimeEquals` for
+> built into the framework. Use `CryptographicOperations.FixedTimeEquals` for
 > raw byte comparisons, or your library's built-in constant-time verify function.
 
 > 💡 **Exception messages are now redacted by default.**
-> `SecretSanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,
+> `SanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,
 > replacing the exception `Message` with a fixed placeholder before it reaches any log sink. You no
 > longer need to avoid putting credential material in exception messages as a workaround — though
 > doing so remains good practice. To restore original exception messages in a development
 > environment, call `DisableExceptionSanitizing()` on the builder. See
 > [Configure host-level log hygiene](configure-host-log-hygiene.md) for details.
 
-> ⚠️ **Warning: `SecretSanitizingLogger` covers ZeeKayDa.Auth's own logs only.**
+> ⚠️ **Warning: `SanitizingLogger` covers ZeeKayDa.Auth's own logs only.**
 > The redaction wrapper intercepts log calls made by ZeeKayDa.Auth's internal services. It has no
 > effect on ASP.NET Core's `UseHttpLogging()`, Kestrel connection logging, W3CLogger, Application
 > Insights telemetry, or exception-handling middleware — all of which can capture the `Authorization`
@@ -302,7 +307,7 @@ external configuration service. The interface has a single read method:
 ```csharp
 public interface IClientRepository
 {
-    ValueTask<IClientRegistration?> FindByClientIdAsync(
+    Task<IClientRegistration?> FindByClientIdAsync(
         string clientId, CancellationToken cancellationToken = default);
 }
 ```
@@ -312,32 +317,32 @@ public interface IClientRepository
 | Scenario | Recommended approach |
 |---|---|
 | Clients known at startup | `AddInMemoryClients` — the builder hashes secrets automatically |
-| Clients created at runtime (admin API, credential rotation, future [RFC 7591 DCR](https://www.rfc-editor.org/rfc/rfc7591)) | Custom `IClientRepository` + inject `IClientSecretFactory` |
+| Clients created at runtime (admin API, credential rotation, future [RFC 7591 DCR](https://www.rfc-editor.org/rfc/rfc7591)) | Custom `IClientRepository` + inject `ClientSecrets` |
 
-### Using `IClientSecretFactory` to hash secrets at write time
+### Using `ClientSecrets` to hash secrets at write time
 
-Inject `IClientSecretFactory` into your repository to hash plaintext secrets at runtime using the
-same default hasher configured via `AddClientSecretHasher<T>`. `IClientSecretFactory` is registered
+Inject `ClientSecrets` into your repository to hash plaintext secrets at runtime using the
+same default hasher configured via `AddClientSecretHasher<T>`. `ClientSecrets` is registered
 automatically by `AddZeeKayDaAuth` as a singleton — no additional registration is required.
 
 ```csharp
 public sealed class DatabaseClientRepository : IClientRepository
 {
     private readonly IDbContextFactory<ClientDbContext> _factory;
-    private readonly IClientSecretFactory _secretFactory;
+    private readonly ClientSecrets _secrets;
     private readonly IClientRegistrationValidator _validator;
 
     public DatabaseClientRepository(
         IDbContextFactory<ClientDbContext> factory,
-        IClientSecretFactory secretFactory,
+        ClientSecrets secrets,
         IClientRegistrationValidator validator)
     {
         _factory = factory;
-        _secretFactory = secretFactory;
+        _secrets = secrets;
         _validator = validator;
     }
 
-    public async ValueTask<IClientRegistration?> FindByClientIdAsync(
+    public async Task<IClientRegistration?> FindByClientIdAsync(
         string clientId, CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
@@ -347,8 +352,8 @@ public sealed class DatabaseClientRepository : IClientRepository
 
     public async Task RegisterClientAsync(string clientId, string plaintextSecret)
     {
-        IClientSecret credential = _secretFactory.Create(plaintextSecret);
-        // _validator.Validate(registration) before persisting...
+        ClientSecret credential = _secrets.Create(plaintextSecret);
+        // Refuse the write if _validator.Validate(registration) returns any failures...
     }
 }
 ```
@@ -363,13 +368,13 @@ protocol — the framework validates every registration it serves and refuses a 
 unknown client — but it does mean the bad row is stored, and is found on a live request, in a log
 entry the operator has to act on, rather than where it was written.
 
-> ⚠️ **Warning: `IClientSecretFactory.Create` is CPU-intensive and must not be called on a hot
+> ⚠️ **Warning: `ClientSecrets.Create` is CPU-intensive and must not be called on a hot
 > request path.**
 > At the default iteration count of 600,000 PBKDF2-HMAC-SHA256 rounds, a single call takes
 > approximately 600 ms on typical server hardware. Calling it from a token-endpoint handler or any
 > other frequently-hit path will degrade throughput for all clients on the server.
 >
-> Reserve `IClientSecretFactory.Create` for admin operations only. The endpoint that calls it
+> Reserve `ClientSecrets.Create` for admin operations only. The endpoint that calls it
 > MUST be protected by strong authentication, rate-limited to prevent brute-force amplification,
 > and logged for audit purposes.
 
@@ -379,8 +384,8 @@ entry the operator has to act on, rather than where it was written.
 builder.Services.AddSingleton<IClientRepository, DatabaseClientRepository>();
 ```
 
-For the full `IClientSecretFactory` API reference, including lifetime and security notes, see
-[Client secrets reference — `IClientSecretFactory`](../reference/client-secrets.md#iclientsecretfactory).
+For the full `ClientSecrets` API reference, including lifetime and security notes, see
+[Client secrets reference — `ClientSecrets`](../reference/client-secrets.md#clientsecrets).
 
 ---
 
@@ -400,8 +405,7 @@ framework's dispatch pipeline. The built-in `ClientSecretAuthenticator` handles
 
 > **Note:** `none` is a special case — it is handled automatically by the composite dispatcher
 > as a fallback for public clients and does not require an `IClientAuthenticator` implementation.
-> To support public clients, add `TokenEndpointAuthMethods.None` to `AuthMethodsSupported` and
-> register a client with `IsPublic = true`.
+> The server advertises it by default, so registering a public client is all that is needed.
 
 The interface has three members:
 
@@ -410,9 +414,9 @@ public interface IClientAuthenticator
 {
     IReadOnlySet<string> AuthenticationMethods { get; }
 
-    bool CanHandle(TokenRequestContext context, out string? method);
+    ClientAuthenticatorMatch CanHandle(TokenRequestContext context);
 
-    ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+    Task<ClientAuthenticationResult> AuthenticateAsync(
         ClientAuthenticationContext context,
         CancellationToken cancellationToken);
 }
@@ -440,18 +444,20 @@ public sealed class PrivateKeyJwtAuthenticator : IClientAuthenticator
 repository lookup. It MUST be a cheap shape check — no crypto, no database access.
 
 ```csharp
-    public bool CanHandle(TokenRequestContext context, out string? method)
+    public ClientAuthenticatorMatch CanHandle(TokenRequestContext context)
     {
-        // Shape check only: does the request carry the expected credential material?
-        if (context.Form.ContainsKey("client_assertion") &&
-            context.Form["client_assertion_type"] == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
-        {
-            method = Method;
-            return true;
-        }
+        // Shape check only: does the request carry any of this method's parameters?
+        var hasAssertion = context.Form.ContainsKey("client_assertion");
+        var hasType = context.Form.ContainsKey("client_assertion_type");
+        if (!hasAssertion && !hasType)
+            return ClientAuthenticatorMatch.None;
 
-        method = null;
-        return false;
+        // Your shape, but partial or malformed: refuse. Never answer None here, or the request falls
+        // through to the `none` method and a public client is accepted with the assertion ignored.
+        return hasAssertion &&
+               context.Form["client_assertion_type"] == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+            ? ClientAuthenticatorMatch.For(Method)
+            : ClientAuthenticatorMatch.Refused;
     }
 ```
 
@@ -461,11 +467,12 @@ do not call a database or validate a signature here.
 
 ### Step 3: Implement `AuthenticateAsync`
 
-`AuthenticateAsync` is only invoked after `CanHandle` returned `true` and all composite allowlist
-checks have passed. The client is guaranteed to exist in the repository.
+`AuthenticateAsync` is only invoked after `CanHandle` matched a method and all composite allowlist
+checks have passed. The matched method is `context.Method`, and the client is guaranteed to exist in
+the repository.
 
 ```csharp
-    public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+    public Task<ClientAuthenticationResult> AuthenticateAsync(
         ClientAuthenticationContext context,
         CancellationToken cancellationToken)
     {
@@ -474,27 +481,20 @@ checks have passed. The client is guaranteed to exist in the repository.
         // Validate the JWT assertion against the client's registered public key.
         var valid = ValidateAssertion(assertion, context.Client, context.ClientId);
 
-        return ValueTask.FromResult(
+        return Task.FromResult(
             valid ? ClientAuthenticationResult.Valid() : ClientAuthenticationResult.NotValid());
     }
 ```
 
 ### Step 4: Register the authenticator
 
-Register on the `ZeeKayDaAuthBuilder` returned by `AddZeeKayDaAuth` and add the method to
-`AuthMethodsSupported`. Startup validation fails if either is missing:
+Register on the `ZeeKayDaAuthBuilder` returned by `AddZeeKayDaAuth`. The methods it declares in
+`AuthenticationMethods` are advertised and accepted from then on, unless
+`TokenEndpoint.AdvertisedAuthMethods` withholds them:
 
 ```csharp
-builder.Services.AddZeeKayDaAuth(options =>
-{
-    options.Issuer = "https://id.example.com";
-    options.TokenEndpoint.AuthMethodsSupported =
-    [
-        TokenEndpointAuthMethods.ClientSecretBasic,
-        // custom methods added to the server's supported list
-    ];
-})
-.AddClientAuthenticator<PrivateKeyJwtAuthenticator>();
+builder.Services.AddZeeKayDaAuth(options => options.Issuer = "https://id.example.com")
+    .AddClientAuthenticator<PrivateKeyJwtAuthenticator>();
 ```
 
 ### Security contract for `IClientAuthenticator` implementors
@@ -503,19 +503,20 @@ builder.Services.AddZeeKayDaAuth(options =>
 |---|---|
 | `CanHandle` MUST be a cheap shape check — no crypto, no DB | Called on every token request for every authenticator; a slow check multiplies latency across all clients |
 | `AuthenticateAsync` MUST use timing-safe comparison | Prevents timing oracles from revealing credential validity |
-| Never compare secrets as plain strings | Always delegate to `IClientSecretHasher.Verify` or an equivalent constant-time function |
+| Never compare secrets as plain strings or call a hasher yourself | Check a client secret with `ClientSecrets.Verify`, which pads a failure so the response time reveals nothing; a hasher called directly does not |
 | Be singleton-safe | Authenticators are registered as singletons and called concurrently |
-| Return `ClientAuthenticationResult.NotValid()` on failure — never throw | Throwing from `AuthenticateAsync` produces a 500 rather than a 401 |
+| Refuse with `ClientAuthenticationResult.NotValid()` when no secret was checked — never throw | Throwing from `AuthenticateAsync` produces a 500 rather than a 401; the token endpoint pads a `NotValid()` refusal so it takes as long as a wrong secret |
+| A client secret is checked with `ClientSecrets.Verify` and returned with `ClientAuthenticationResult.From(...)` | `Verify` has already padded the failure; `From` tells the token endpoint not to pad it twice |
 
 > 💡 **Exception messages are now redacted by default.**
-> `SecretSanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,
+> `SanitizingLogger` unconditionally wraps all logged exceptions in `RedactedExceptionWrapper`,
 > replacing the exception `Message` with a fixed placeholder before it reaches any log sink. You no
 > longer need to avoid putting credential material in exception messages as a workaround — though
 > doing so remains good practice. To restore original exception messages in a development
 > environment, call `DisableExceptionSanitizing()` on the builder. See
 > [Configure host-level log hygiene](configure-host-log-hygiene.md) for details.
 
-> ⚠️ **Warning: `SecretSanitizingLogger` covers ZeeKayDa.Auth's own logs only.**
+> ⚠️ **Warning: `SanitizingLogger` covers ZeeKayDa.Auth's own logs only.**
 > The redaction wrapper intercepts log calls made by ZeeKayDa.Auth's internal services. It has no
 > effect on ASP.NET Core's `UseHttpLogging()`, Kestrel connection logging, W3CLogger, Application
 > Insights telemetry, or exception-handling middleware — all of which can capture the `Authorization`
@@ -540,7 +541,7 @@ The interface has one member:
 ```csharp
 public interface ITokenIssuer
 {
-    ValueTask<IssuedToken> IssueAsync(
+    Task<IssuedToken> IssueAsync(
         TokenIssuanceContext context,
         TokenPayload payload,
         CancellationToken cancellationToken = default);
@@ -558,7 +559,7 @@ Security contract:
 |---|---|
 | Echo `context.Kind` in `IssuedToken.Kind`, always. | The call site asserts it received the kind it asked for; a mismatch must surface as a bug, not a mis-typed token. |
 | Never log or embed `IssuedToken.Value`; it is a live credential. | The framework's own record prints only the value's length for this reason. |
-| A JWT issuer MUST sign via `ISigningKeyRing.SignAsync` and build its JOSE header **inside the callback**, from the `SigningKey` the ring supplies. | The header's `kid`/`alg` and the signature then come from the same resolved key — disagreement is structurally impossible. Resolving key material any other way (for example via `ISigningKeySource` directly) reintroduces exactly that disagreement. |
+| A JWT issuer MUST sign via `SigningKeyRing.SignAsync` and build its JOSE header **inside the callback**, from the `SigningKey` the ring supplies. | The header's `kid`/`alg` and the signature then come from the same resolved key — disagreement is structurally impossible. Resolving key material any other way (for example via `ISigningKeySource` directly) reintroduces exactly that disagreement. |
 | Resolve the key at most once per token. | Two resolutions can straddle a key change; the callback shape gives you one for free. |
 | Claim values must be JSON primitives, arrays of them, or purpose-built claim shapes. | Values serialize by runtime type, whole object graph included — a domain object puts every property it references inside a token readable by whoever holds it. |
 
@@ -568,5 +569,5 @@ Security contract:
 - [Configure discovery](configure-discovery.md) — customise the discovery document with the built-in options.
 - [Configure host-level log hygiene](configure-host-log-hygiene.md) — prevent sensitive parameters from appearing in host-pipeline logs outside ZeeKayDa.Auth's redaction boundary.
 - [`AuthorizationServerOptions` reference](../reference/configuration.md) — full property list and validation rules.
-- [Client secrets reference](../reference/client-secrets.md) — `Pbkdf2ClientSecretHasherOptions` property reference and `IClientSecretFactory` API.
+- [Client secrets reference](../reference/client-secrets.md) — `Pbkdf2ClientSecretHasherOptions` property reference and `ClientSecrets` API.
 - [Cancellation in managed threads](https://learn.microsoft.com/dotnet/standard/threading/cancellation-in-managed-threads) — Microsoft's reference for the cancellation pattern this framework follows.

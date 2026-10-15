@@ -10,10 +10,8 @@ public sealed class UserInfoEndpointOptions
     /// discovery document. When <see langword="null"/>, the value is derived from the issuer.
     /// </summary>
     /// <remarks>
-    /// Must be an absolute URI sharing the issuer's authority, with no query or fragment: the
-    /// route matches on the path alone, so a query could never be honoured. The browser origins
-    /// allowed to read the response are <see cref="AuthorizationServerOptions.CorsOrigins"/>,
-    /// shared with the discovery and JWKS endpoints.
+    /// Absolute, on the issuer's authority, with no query or fragment, since the route matches on path alone.
+    /// CORS origins come from <see cref="AuthorizationServerOptions.CorsOrigins"/>.
     /// </remarks>
     public string? Uri { get; set; }
 }

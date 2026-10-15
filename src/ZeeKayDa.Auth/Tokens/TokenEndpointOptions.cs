@@ -1,3 +1,5 @@
+using ZeeKayDa.Auth.Configuration;
+
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
@@ -5,6 +7,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 public sealed class TokenEndpointOptions
 {
+    private ICollection<string>? _advertisedAuthMethods;
+    private bool _frozen;
+
     /// <summary>
     /// Gets or sets an explicit override for the <c>token_endpoint</c> URI published in the
     /// discovery document. When <see langword="null"/>, the value is derived from the issuer.
@@ -12,41 +17,38 @@ public sealed class TokenEndpointOptions
     public string? Uri { get; set; }
 
     /// <summary>
-    /// Gets or sets the client authentication methods supported by the token endpoint.
-    /// Defaults to <c>["client_secret_basic"]</c> (see <see cref="TokenEndpointAuthMethods.ClientSecretBasic"/>).
+    /// Gets or sets an optional narrowing filter on the client authentication methods the token
+    /// endpoint advertises and accepts. <see langword="null"/> — the default — advertises every
+    /// method a registered client authenticator performs, plus
+    /// <see cref="TokenEndpointAuthMethods.None"/>.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Maps to the <c>token_endpoint_auth_methods_supported</c> discovery metadata field.
-    /// Must not be null or empty and must contain at least one non-<c>"none"</c> method
-    /// (see <see cref="TokenEndpointAuthMethods.None"/>) if
+    /// This filter can only withhold a method, never add one no authenticator performs; naming such a
+    /// method warns at startup, and an empty filter fails startup.
+    /// </para>
+    /// <para>
+    /// <see cref="TokenEndpointAuthMethods.None"/> is how public clients authenticate, so leaving it out
+    /// refuses them. A filter that leaves only <c>none</c> fails startup while
     /// <see cref="AuthorizationServerOptions.GrantTypesSupported"/> includes
     /// <see cref="GrantType.ClientCredentials"/>.
     /// </para>
     /// <para>
-    /// Public clients (single-page and native apps) authenticate with nothing, so registering one
-    /// requires adding <see cref="TokenEndpointAuthMethods.None"/>. It is not in the default because
-    /// advertising it declares that the server accepts clients presenting no credentials; a server
-    /// with only confidential clients should not make that statement.
-    /// </para>
-    /// <para>
-    /// Well-known values are available as constants on <see cref="TokenEndpointAuthMethods"/>.
-    /// Custom authentication methods (e.g. <c>tls_client_auth</c>) can be expressed as plain
-    /// strings alongside those constants.
+    /// Maps to the <c>token_endpoint_auth_methods_supported</c> discovery metadata field.
     /// </para>
     /// </remarks>
-    public ICollection<string> AuthMethodsSupported { get; set; } =
-        [TokenEndpointAuthMethods.ClientSecretBasic];
+    public ICollection<string>? AdvertisedAuthMethods
+    {
+        get => _advertisedAuthMethods;
+        set => _advertisedAuthMethods = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.TokenEndpoint.AdvertisedAuthMethods");
+    }
 
     /// <summary>
-    /// Gets or sets the lifetime of issued refresh tokens.
-    /// Defaults to 14 days.
+    /// Gets or sets the lifetime of issued refresh tokens. Defaults to 14 days.
     /// </summary>
     /// <remarks>
-    /// Must be greater than <see cref="TimeSpan.Zero"/>; rejected at startup otherwise. No upper
-    /// bound is enforced — a longer lifetime increases the window in which an undetected family
-    /// revocation gap or a compromised token remains exploitable, so stricter deployments should
-    /// dial this down.
+    /// Must be greater than <see cref="TimeSpan.Zero"/>. No upper bound is enforced; a longer lifetime widens
+    /// the window in which a compromised token remains usable.
     /// </remarks>
     public TimeSpan RefreshTokenLifetime { get; set; } = TimeSpan.FromDays(14);
 
@@ -56,19 +58,13 @@ public sealed class TokenEndpointOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Baked into <c>FamilyAbsoluteExpiry</c> at family birth and propagated verbatim through
-    /// every rotation, so the whole chain shares one absolute ceiling. Each token's own expiry is
-    /// clamped to <c>min(now + RefreshTokenLifetime, FamilyAbsoluteExpiry)</c> —
-    /// <see cref="RefreshTokenLifetime"/> is the per-token idle window; this option is the
-    /// whole-family hard cap. Must be greater than <see cref="TimeSpan.Zero"/>; rejected at
-    /// startup otherwise.
+    /// Set at family birth and kept through every rotation; each token's own expiry is clamped to
+    /// <c>min(now + RefreshTokenLifetime, FamilyAbsoluteExpiry)</c>. Must be greater than
+    /// <see cref="TimeSpan.Zero"/>.
     /// </para>
     /// <para>
-    /// <strong>Escape hatch.</strong> Setting this to <see cref="TimeSpan.MaxValue"/> disables the
-    /// absolute cap: families then live indefinitely, bounded only by
-    /// <see cref="RefreshTokenLifetime"/> idle expiry. This causes unbounded row growth in a
-    /// persisted grant store, so the framework emits a startup warning whenever this sentinel is
-    /// configured.
+    /// <see cref="TimeSpan.MaxValue"/> disables the cap, so families live as long as they are used. That
+    /// grows a persisted grant store without bound, and warns at startup.
     /// </para>
     /// </remarks>
     public TimeSpan AbsoluteFamilyLifetime { get; set; } = TimeSpan.FromDays(90);
@@ -78,35 +74,23 @@ public sealed class TokenEndpointOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Short by design. An access token is a self-contained JWT that no code path checks against a
-    /// store, so a resource server accepts it until it expires however the grant behind it ended —
-    /// revoked, signed out, or deleted. This value is that window, plus whatever clock-skew
-    /// tolerance the resource server applies to <c>exp</c> on top of it; five minutes is a common
-    /// default there, so the real window is longer than this value alone.
-    /// <see href="https://www.rfc-editor.org/rfc/rfc7009#section-3">RFC 7009 §3</see> sanctions the
-    /// trade for self-contained tokens: keep them short-lived and renew them. Lengthening it widens
-    /// the window by exactly the amount added.
+    /// Short by design. An access token is a self-contained JWT no code path checks against a store, so a
+    /// resource server accepts it until it expires, however the grant behind it ended. This value, plus
+    /// the resource server's clock-skew tolerance, is that window;
+    /// <see href="https://www.rfc-editor.org/rfc/rfc7009#section-3">RFC 7009 §3</see> sanctions keeping
+    /// self-contained tokens short-lived and renewing them.
     /// </para>
     /// <para>
-    /// Renewal today is a fresh authorization request the client starts itself, the path
-    /// <see href="https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2">RFC 9700 §4.14.2</see>
-    /// describes for a server that issues no refresh token. A browser that
-    /// still holds its sign-in session is not asked to sign in again, but it is asked for consent
-    /// again unless the client is registered with
-    /// <see cref="Clients.IClientMetadata.RequireConsent"/> off — consent is not remembered
-    /// between requests, so a default registration prompts on every renewal. The refresh-token
-    /// grant is not served yet, so putting
-    /// <see cref="GrantType.RefreshToken"/> in
-    /// <see cref="AuthorizationServerOptions.GrantTypesSupported"/> advertises it in discovery
-    /// without making it work.
+    /// Renewal is a fresh authorization request
+    /// (<see href="https://www.rfc-editor.org/rfc/rfc9700#section-4.14.2">RFC 9700 §4.14.2</see>). A browser
+    /// still signed in is not asked to sign in again, but is asked for consent again unless the client has
+    /// <see cref="Clients.IClient.RequireConsent"/> off. The refresh-token grant is not served, so listing
+    /// <see cref="GrantType.RefreshToken"/> in <see cref="AuthorizationServerOptions.GrantTypesSupported"/>
+    /// advertises it without making it work.
     /// </para>
     /// <para>
-    /// A client registration may override it through
-    /// <see cref="Clients.IClientMetadata.AccessTokenLifetime"/>; a <see langword="null"/>
-    /// override means this value. Must be greater than <see cref="TimeSpan.Zero"/>; rejected at
-    /// startup otherwise. No upper bound is enforced — a value past
-    /// <see cref="AbsoluteFamilyLifetime"/> warns at startup, since a token would then outlive
-    /// the grant that produced it.
+    /// A client may override it through <see cref="Clients.IClient.AccessTokenLifetime"/>. Must be greater
+    /// than <see cref="TimeSpan.Zero"/>; a value past <see cref="AbsoluteFamilyLifetime"/> warns at startup.
     /// </para>
     /// </remarks>
     public TimeSpan AccessTokenLifetime { get; set; } = TimeSpan.FromMinutes(10);
@@ -115,26 +99,28 @@ public sealed class TokenEndpointOptions
     /// Gets or sets the server-wide lifetime of issued ID tokens. Defaults to five minutes.
     /// </summary>
     /// <remarks>
-    /// Short by design: an ID token is consumed once, by the client, on receipt. A client
-    /// registration may override it through <see cref="Clients.IClientMetadata.IdTokenLifetime"/>;
-    /// a <see langword="null"/> override means this value. Must be greater than
-    /// <see cref="TimeSpan.Zero"/>; rejected at startup otherwise. No upper bound is enforced.
+    /// Short by design: an ID token is consumed once, on receipt. A client may override it through
+    /// <see cref="Clients.IClient.IdTokenLifetime"/>. Must be greater than <see cref="TimeSpan.Zero"/>.
     /// </remarks>
     public TimeSpan IdTokenLifetime { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// Computes the <c>FamilyAbsoluteExpiry</c> to bake into a refresh token family at birth, from
-    /// <paramref name="now"/> and this instance's <see cref="AbsoluteFamilyLifetime"/>.
+    /// Computes the <c>FamilyAbsoluteExpiry</c> for a family born at <paramref name="now"/>, mapping an
+    /// overflow, such as the <see cref="TimeSpan.MaxValue"/> escape hatch, to <see cref="DateTimeOffset.MaxValue"/>.
     /// </summary>
     /// <param name="now">The current time, at family birth.</param>
-    /// <remarks>
-    /// Sentinel-safe: a naive <c>now + AbsoluteFamilyLifetime</c> would overflow when
-    /// <see cref="AbsoluteFamilyLifetime"/> is the <see cref="TimeSpan.MaxValue"/> escape hatch.
-    /// This method maps that sentinel (and any other overflowing addition) to
-    /// <see cref="DateTimeOffset.MaxValue"/> instead.
-    /// </remarks>
     public DateTimeOffset ComputeFamilyAbsoluteExpiry(DateTimeOffset now)
     {
         return TokenLifetimes.ExpiresAt(now, AbsoluteFamilyLifetime);
+    }
+
+    /// <summary>Makes every collection read-only and refuses any later replacement.</summary>
+    internal void Freeze()
+    {
+        if (_frozen)
+            return;
+
+        AdvertisedAuthMethods = FrozenOptions.Copy(AdvertisedAuthMethods);
+        _frozen = true;
     }
 }

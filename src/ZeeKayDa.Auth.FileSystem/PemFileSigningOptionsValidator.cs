@@ -3,71 +3,70 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem;
 
-/// <summary>
-/// Validates <see cref="PemFileSigningOptions"/> at startup.
-/// </summary>
-/// <remarks>
-/// Registered via <c>AddPemFileSigning()</c> and activated by <c>ValidateOnStart()</c>.
-/// </remarks>
-internal sealed class PemFileSigningOptionsValidator : IValidateOptions<PemFileSigningOptions>
+/// <summary>Validates <see cref="PemFileSigningOptions"/> at startup.</summary>
+internal sealed class PemFileSigningOptionsValidator : ZeeKayDaOptionsValidator<PemFileSigningOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, PemFileSigningOptions options)
+    protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(
+        string? name,
+        PemFileSigningOptions options)
     {
-        var errors = new List<string>();
-
-        if (options.Current is null)
+        if (options.Files.Count == 0)
         {
-            errors.Add(
-                "PemFileSigningOptions.Current must be set to the PEM file that signs. Previous and " +
-                "Next are optional; Current is not.");
+            yield return new(
+                "configuration.pem_file_signing.files.empty",
+                "PemFileSigningOptions.Files must list at least one PEM file.");
         }
 
-        AppendPathError(nameof(PemFileSigningOptions.Previous), options.Previous is not null, options.Previous?.Path, errors);
-        AppendPathError(nameof(PemFileSigningOptions.Current), options.Current is not null, options.Current?.Path, errors);
-        AppendPathError(nameof(PemFileSigningOptions.Next), options.Next is not null, options.Next?.Path, errors);
-        AppendCurrentKeyPathError(options.Current, errors);
+        for (var i = 0; i < options.Files.Count; i++)
+        {
+            foreach (var failure in FileFailures(i, options.Files[i]))
+                yield return failure;
+        }
 
         if (!Enum.IsDefined(options.Algorithm))
         {
-            errors.Add(
+            yield return new(
+                "configuration.pem_file_signing.algorithm.undefined_value",
                 $"PemFileSigningOptions.Algorithm value '{options.Algorithm}' is not a defined " +
                 $"{nameof(SigningAlgorithm)} member.");
         }
 
-        AppendDuplicatePathErrors(options, errors);
-
-        return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
-    }
-
-    // Previous and Next are PemCertificateFile, which has no KeyPath to check — only Current can
-    // name a private key at all, which is why there is no "a published-only slot named a key file"
-    // error to report here. A configured slot whose Path is null is reported like any other unusable
-    // path rather than skipped: the record's Path is non-nullable, so reaching here with null means a
-    // caller suppressed that, and silence would turn it into a confusing failure further in.
-    private static void AppendPathError(string slotName, bool slotConfigured, string? path, List<string> errors)
-    {
-        if (slotConfigured && string.IsNullOrWhiteSpace(path))
-            errors.Add($"PemFileSigningOptions.{slotName}.Path must be set to a non-empty file path.");
-    }
-
-    private static void AppendCurrentKeyPathError(PemSigningFile? current, List<string> errors)
-    {
-        if (current?.KeyPath is { } keyPath && string.IsNullOrWhiteSpace(keyPath))
+        var paths = options.Files.Where(f => f is not null).SelectMany(f => new[] { f.Path, f.KeyPath }).ToArray();
+        foreach (var failure in SigningFilePaths.PathFailures(
+            nameof(PemFileSigningOptions),
+            "configuration.pem_file_signing.paths",
+            "Every Path and KeyPath must be a distinct file.",
+            paths))
         {
-            errors.Add(
-                "PemFileSigningOptions.Current.KeyPath must be null (a combined cert+key Path) or a " +
-                "non-empty file path — never empty/whitespace-only.");
+            yield return failure;
         }
     }
 
-    private static void AppendDuplicatePathErrors(PemFileSigningOptions options, List<string> errors) =>
-        SigningFilePaths.AppendPathErrors(
-            nameof(PemFileSigningOptions),
-            "Every Path, and Current's KeyPath, must be a distinct file.",
-            errors,
-            options.Previous?.Path,
-            options.Current?.Path,
-            options.Current?.KeyPath,
-            options.Next?.Path);
+    // A null Path is a suppressed nullable annotation, reported like any other unusable path.
+    private static IEnumerable<ZeeKayDaConfigurationFailure> FileFailures(int index, PemSigningFile? file)
+    {
+        if (file is null)
+        {
+            yield return new(
+                "configuration.pem_file_signing.files.null_entry",
+                $"PemFileSigningOptions.Files[{index}] is null.");
+            yield break;
+        }
+
+        if (string.IsNullOrWhiteSpace(file.Path))
+        {
+            yield return new(
+                "configuration.pem_file_signing.files.path.missing",
+                $"PemFileSigningOptions.Files[{index}].Path must be set to a non-empty file path.");
+        }
+
+        if (file.KeyPath is { } keyPath && string.IsNullOrWhiteSpace(keyPath))
+        {
+            yield return new(
+                "configuration.pem_file_signing.files.key_path.blank",
+                $"PemFileSigningOptions.Files[{index}].KeyPath must be null (a combined cert+key Path) or a " +
+                "non-empty file path — never empty/whitespace-only.");
+        }
+    }
 }

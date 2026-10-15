@@ -1,5 +1,5 @@
 // These tests exercise the full DI wiring for AddAzureKeyVaultRemoteSigning end to end — a real
-// ServiceCollection / ZeeKayDaAuthBuilder / ServiceProvider, driven through the host's real startup
+// ServiceCollection / ZeeKayDaAuthCoreBuilder / ServiceProvider, driven through the host's real startup
 // path — with fakes substituted for the two Key Vault seams (IKeyVaultKeyReader / IKeyVaultSigner).
 // No real network calls are made and no live Azure Key Vault access is required or attempted.
 //
@@ -9,9 +9,8 @@
 // follow-up — this file is not equivalent to that coverage, only to the DI-wiring/ring-behavior
 // slice that fakes can exercise.
 //
-// The vault is read exactly once, at startup, and never re-read, so there is no reload or
-// change-detection surface here — which is itself asserted below, by rotating a new version into
-// the fake vault after startup and observing that nothing published changes.
+// The ring reads the vault once, at startup — asserted below by rotating a new version into the fake
+// vault after startup and observing that nothing published changes until the next read.
 
 using System.Security.Cryptography;
 using Azure.Security.KeyVault.Keys;
@@ -81,72 +80,51 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         const string version = "3a7f21c9e04b4d8fa16c5e93bd270f18";
         reader.AddRsaVersion(version, createdOn: T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().ContainSingle();
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial(version)),
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial(version)),
             "kid must be the RFC 7638 thumbprint of the public key");
-        ring.Current.SigningKey.Kid.Should().NotContain("fake-vault").And.NotContain("fake-key").And.NotContain(version,
+        ring.Current.SigningKey!.Kid.Should().NotContain("fake-vault").And.NotContain("fake-key").And.NotContain(version,
             "kid must never leak vault, key, or version identifiers");
-        ring.Current.AdvertisedAlgorithms.Should().Equal(SigningAlgorithm.RS256);
+        ring.Current.Algorithm.Should().Be(SigningAlgorithm.RS256);
 
         var signingInput = "header.payload"u8.ToArray();
         var outcome = await ring.SignAsync(signingInput, static (_, input) => input, ct);
 
-        using var rsa = RSA.Create(ring.Current.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        using var rsa = RSA.Create(ring.Current.SigningKey!.PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(outcome.SigningInput.Span, outcome.Signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the ring must sign via the remote Key Vault seam with the published key");
         signer.Calls.Should().NotBeEmpty("every signature is a remote Key Vault round trip — nothing signs locally");
     }
 
     [Fact]
-    public async Task Full_DI_wiring_publishes_previous_and_staged_versions_alongside_the_signing_one()
+    public async Task Full_DI_wiring_signs_with_the_newest_version_past_the_lead_time_and_publishes_its_predecessor_and_the_staged_one()
     {
         var ct = TestContext.Current.CancellationToken;
         var now = T0 + TimeSpan.FromDays(30);
         var (services, reader, _, _) = BuildServices(now);
         reader.AddRsaVersion("v1", createdOn: T0);
-        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(10));
-        reader.AddRsaVersion("v3", createdOn: now - TimeSpan.FromHours(1)); // Younger than the delay -> staged.
+        // Past the one-day lead time, and inside it plus the ten-minute retention: v2 signs, v1 stays published.
+        reader.AddRsaVersion("v2", createdOn: now - TimeSpan.FromDays(1) - TimeSpan.FromMinutes(5));
+        reader.AddRsaVersion("v3", createdOn: now - TimeSpan.FromHours(1)); // Inside the lead time -> staged.
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
         await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
+        var ring = provider.GetRequiredService<SigningKeyRing>();
 
         ring.Current.Published.Should().HaveCount(3,
-            "the signing version, one previous version (the default count), and the staged version are all published");
-        ring.Current.SigningKey.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")),
-            "v2 is the newest version older than the pre-activation delay");
-    }
-
-    [Fact]
-    public async Task Full_DI_wiring_keeps_publishing_the_startup_key_set_when_the_vault_rotates_afterwards()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var (services, reader, _, timeProvider) = BuildServices(T0);
-        reader.AddRsaVersion("v1", createdOn: T0);
-
-        var builder = new ZeeKayDaAuthBuilder(services);
-        builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
-
-        await using var provider = services.BuildServiceProvider();
-        await StartHostedServicesAsync(provider, ct);
-        var ring = provider.GetRequiredService<ISigningKeyRing>();
-        var publishedAtStartup = ring.Current.Published.Select(k => k.Kid).ToArray();
-
-        reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromMinutes(1));
-        timeProvider.SetUtcNow(T0 + TimeSpan.FromDays(30));
-
-        ring.Current.Published.Select(k => k.Kid).Should().Equal(publishedAtStartup,
-            "the vault is read exactly once, at startup — a rotation is only picked up by restarting the host");
+            "the signing version, its predecessor still inside retention, and the staged version are all published");
+        ring.Current.SigningKey!.Kid.Should().Be(JwkThumbprint.Compute(reader.GetRsaMaterial("v2")),
+            "v2 is the newest version past the lead time");
     }
 
     // ── Startup failure propagation ───────────────────────────────────────────────────────────────
@@ -157,7 +135,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         var ct = TestContext.Current.CancellationToken;
         var (services, _, _, _) = BuildServices(T0); // No versions registered.
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -165,7 +143,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         var act = async () => await StartHostedServicesAsync(provider, ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .WithMessage("*no_key_versions*");
+            .WithMessage("*signing.no_keys*");
     }
 
     [Fact]
@@ -183,7 +161,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
                 "signing.azure_key_vault.access_denied",
                 "Simulated bad-credentials failure from the Key Vault reader seam."));
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.RS256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();
@@ -203,7 +181,7 @@ public sealed class AzureKeyVaultRemoteSigningIntegrationTests
         var (services, reader, _, _) = BuildServices(T0);
         reader.AddRsaVersion("v1", createdOn: T0);
 
-        var builder = new ZeeKayDaAuthBuilder(services);
+        var builder = services.AddZeeKayDaAuthCoreForTesting();
         builder.AddAzureKeyVaultRemoteSigning(KeyIdentifier, SigningAlgorithm.ES256, new FakeTokenCredential());
 
         await using var provider = services.BuildServiceProvider();

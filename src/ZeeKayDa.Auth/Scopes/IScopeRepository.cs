@@ -4,13 +4,8 @@ namespace ZeeKayDa.Auth.Scopes;
 /// Provides scope definitions used by the authorization server.
 /// </summary>
 /// <remarks>
-/// <para>
-/// A custom implementation is a caller-supplied extension point whose output the framework
-/// validates on every read, the way it validates what a custom <c>IClientRepository</c> serves.
-/// An implementation that breaks the contract on <see cref="GetScopesAsync"/> fails startup with a
-/// named configuration failure, and fails any later request that reads it — it is never quietly
-/// worked around.
-/// </para>
+/// The framework validates what an implementation returns on every read; a breach of the
+/// <see cref="GetScopesAsync"/> contract fails startup and any later request, never worked around.
 /// </remarks>
 public interface IScopeRepository
 {
@@ -21,8 +16,7 @@ public interface IScopeRepository
     /// <returns>The configured scope definitions.</returns>
     /// <remarks>
     /// <para>
-    /// Implementations MUST satisfy all of the following. Each is checked on every call, and a
-    /// breach is reported to the operator under the configuration-failure code named beside it.
+    /// Implementations MUST satisfy all of the following; a breach is reported under the code beside it.
     /// </para>
     /// <list type="bullet">
     /// <item>
@@ -55,11 +49,9 @@ public interface IScopeRepository
     /// </item>
     /// </list>
     /// <para>
-    /// The framework copies each definition, claim lists included, before it reads one twice, so
-    /// mutating a definition after returning it changes nothing the protocol sees. It does not
-    /// make the definition safe to mutate: a repository shared across requests must return values
-    /// that are stable for the duration of a call.
+    /// The framework copies each definition before reading it twice, but values must still be stable
+    /// for the duration of a call.
     /// </para>
     /// </remarks>
-    ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default);
 }

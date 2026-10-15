@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using ZeeKayDa.Auth.AspNetCore.Clients;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Scopes;
 using ZeeKayDa.Auth.Tokens;
@@ -38,7 +37,7 @@ public sealed class TokenEndpointClaimsHostTests
 
     /// <summary>A host built by hand, for the one startup failure <see cref="EndpointHost"/> cannot express.</summary>
     private sealed class StartupFactory(
-        Action<IInMemoryClientRegistrationBuilder>? clients = null,
+        Action<InMemoryClientRegistrationBuilder>? clients = null,
         IEnumerable<ScopeDefinition>? scopes = null,
         bool registerProvider = true) : WebApplicationFactory<StartupFactory>
     {
@@ -54,10 +53,13 @@ public sealed class TokenEndpointClaimsHostTests
                 var auth = services.AddZeeKayDaAuth(options =>
                 {
                     options.Issuer = Issuer;
-                    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 })
                 .AddInMemoryScopes(scopes ?? StandardScopes.All)
-                .AddInMemoryClients(clients ?? (c => c.AddPublic(App, [Redirect], [], ["openid"])))
+                .AddInMemoryClients(clients ?? (c => c.AddPublic(App, client =>
+                {
+                    client.RedirectUris.UnionWith([Redirect]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                })))
                 .AddInMemoryStores(allowOutsideDevelopment: true)
                 .AddTestSigningKeys();
 

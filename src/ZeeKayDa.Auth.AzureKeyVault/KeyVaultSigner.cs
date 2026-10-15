@@ -8,14 +8,9 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.AzureKeyVault;
 
 /// <summary>
-/// <see cref="IKeyVaultSigner"/> implementation backed by real
-/// <see cref="Azure.Security.KeyVault.Keys.Cryptography.CryptographyClient"/> instances.
+/// Signs through a <see cref="CryptographyClient"/> cached per versioned key URI, never evicted: a
+/// version's key never changes.
 /// </summary>
-/// <remarks>
-/// One <see cref="CryptographyClient"/> is cached per versioned key URI, with no eviction: a
-/// versioned key URI's underlying key material never changes once minted, so a cached client for
-/// a given URI never goes stale.
-/// </remarks>
 internal sealed class KeyVaultSigner : IKeyVaultSigner
 {
     private static readonly IReadOnlyDictionary<SigningAlgorithm, SignatureAlgorithm> AlgorithmMap =
@@ -37,25 +32,20 @@ internal sealed class KeyVaultSigner : IKeyVaultSigner
 
     public KeyVaultSigner(IOptions<AzureKeyVaultRemoteSigningOptions> options)
     {
-        ArgumentNullException.ThrowIfNull(options);
         var credential = options.Value.Credential;
         ArgumentNullException.ThrowIfNull(credential);
 
         _clientFactory = uri => new CryptographyClient(uri, credential);
     }
 
-    /// <summary>
-    /// Test seam: lets unit tests inject a factory producing faked
-    /// <see cref="CryptographyClient"/> instances, making the signing fault-mapping paths
-    /// reachable without a live vault.
-    /// </summary>
+    /// <summary>Test seam: a factory of faked <see cref="CryptographyClient"/> instances.</summary>
     internal KeyVaultSigner(Func<Uri, CryptographyClient> clientFactory)
     {
         _clientFactory = clientFactory;
     }
 
     /// <inheritdoc/>
-    public async ValueTask<ReadOnlyMemory<byte>> SignAsync(
+    public async Task<ReadOnlyMemory<byte>> SignAsync(
         Uri keyVersionUri, string keyLabel, SigningAlgorithm algorithm, byte[] signingInput, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(keyVersionUri);

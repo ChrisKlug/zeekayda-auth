@@ -3,18 +3,6 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("ZeeKayDa.Auth.Tests")]
 [assembly: InternalsVisibleTo("ZeeKayDa.Auth.AspNetCore")]
 [assembly: InternalsVisibleTo("ZeeKayDa.Auth.AspNetCore.Tests")]
-// ZeeKayDa.Auth.FileSystem reuses PosixInterop.GetLinkOwnerUid (LocalSigningKeyFileSystem.cs) to
-// apply the same root-owned-directory trust anchor to its own symlink validation, rather than
-// duplicating the per-platform lstat() P/Invoke a second time — see
-// FileSigningKeyReader.ValidateNoUntrustedSymlinkedAncestorUnix.
-[assembly: InternalsVisibleTo("ZeeKayDa.Auth.FileSystem")]
-// ZeeKayDa.Auth.Windows reuses ProcessIdentityHelper (ProcessIdentityHelper.cs) for its
-// access-denied diagnostic messages, so the best-effort process-identity resolution and
-// formatting logic is implemented once rather than duplicated verbatim across the two signing
-// providers.
-[assembly: InternalsVisibleTo("ZeeKayDa.Auth.Windows")]
-// ZeeKayDa.Auth.TestKit ships the conformance kit for the IAuthorizationCodeBackingStore
-// extension point. It needs friend access to construct StoreKey internally so
-// that a genuine third party can derive the kit from their own test project without ever being
-// able to construct a StoreKey themselves (StoreKey's constructor stays internal — see StoreKey.cs).
+// The TestKit builds StoreKey, SigningKeyRing and SanitizingLogger for third-party tests, so their
+// constructors can stay internal.
 [assembly: InternalsVisibleTo("ZeeKayDa.Auth.TestKit")]

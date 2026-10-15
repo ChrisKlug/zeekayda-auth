@@ -9,14 +9,15 @@ Each item says whether it is **required** for the loop or **optional**, and how 
 
 ## 1. .NET SDK — required
 
-`global.json` pins the `10.0.3xx` band with patch roll-forward, so a `10.0.4xx` SDK alone does
-**not** satisfy it. Install system-wide so hooks and every subprocess see it on `PATH`:
+`global.json` pins the `10.0.4xx` band with patch roll-forward, so an SDK from any other band
+(`10.0.3xx`, `10.0.5xx`) does **not** satisfy it. Install system-wide so hooks and every subprocess
+see it on `PATH`:
 
 ```sh
 # Ubuntu/Debian, Microsoft package feed:
 sudo apt-get install -y dotnet-sdk-10.0
 # or, user-local, exact band:
-curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0.3xx --install-dir "$HOME/.dotnet"
+curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0.4xx --install-dir "$HOME/.dotnet"
 ```
 
 A user-local install is not on the `PATH` the Claude Code Stop hook runs with, so the hook fails
@@ -32,7 +33,7 @@ every turn with `dotnet: command not found`. Either install system-wide, or add 
 }
 ```
 
-Verify: `dotnet --version` prints `10.0.3xx`; `bash .claude/hooks/scripts/check-format.sh` runs
+Verify: `dotnet --version` prints `10.0.4xx`; `bash .claude/hooks/scripts/check-format.sh` runs
 without a "command not found".
 
 Then restore the repo's local tools (Stryker) and the optional report generator:
@@ -78,7 +79,7 @@ cannot send as JSON null — they send a stub, which replaces the file and retur
 ```sh
 git clone https://github.com/HYMMA/csharp-lsp-mcp ~/.claude/tools/csharp-lsp-mcp && cd ~/.claude/tools/csharp-lsp-mcp/csharp-lsp-mcp
 # retarget to the installed SDK
-perl -pi -e 's/"8\.0\.0"/"10.0.300"/' global.json
+perl -pi -e 's/"8\.0\.0"/"10.0.400"/' global.json
 perl -pi -e 's/net8\.0/net10.0/' src/CSharpLspMcp/CSharpLspMcp.csproj
 # make `content` optional, and read the file when it is absent, blank or the string "null"
 perl -pi -e 's/string\? content,(\r?)$/string? content = null,$1/; s/CancellationToken cancellationToken\)(\r?)$/CancellationToken cancellationToken = default)$1/; s/content \?\?= (await File\.ReadAllTextAsync\(filePath, ct\);)/if (string.IsNullOrWhiteSpace(content) || content == "null") content = $1/' src/CSharpLspMcp/Tools/CSharpTools.cs
@@ -210,7 +211,7 @@ returns matches rather than the `rtk` error.
 ## Verification checklist
 
 ```sh
-dotnet --version            # 10.0.3xx
+dotnet --version            # 10.0.4xx
 csharp-ls --version
 which csharp-lsp-mcp        # language server for background/parallel agents, section 2a
 /usr/bin/which rg           # a real binary, not Claude Code's shell function (section 8)

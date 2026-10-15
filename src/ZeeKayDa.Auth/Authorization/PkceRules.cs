@@ -6,12 +6,10 @@ namespace ZeeKayDa.Auth.Authorization;
 internal static class PkceRules
 {
     /// <summary>
-    /// Whether <paramref name="client"/> may send an authorization request without a code
-    /// challenge. Only a confidential client whose registration does not require PKCE: a public
-    /// client's PKCE is the only thing binding the redemption to the party that started the flow,
-    /// so it is required whatever the registration says.
+    /// Whether <paramref name="client"/> may omit the code challenge: only a confidential client not
+    /// requiring PKCE, since a public client's PKCE is all that binds redemption to the flow's starter.
     /// </summary>
-    public static bool MayOmitChallenge(IClientMetadata client)
+    public static bool MayOmitChallenge(IClient client)
     {
         ArgumentNullException.ThrowIfNull(client);
         return !client.RequirePkce && !client.IsPublic;

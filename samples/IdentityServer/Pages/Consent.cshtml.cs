@@ -3,7 +3,7 @@ using ZeeKayDa.Auth.AspNetCore.Interaction;
 
 namespace ZeeKayDa.Auth.Samples.IdentityServer.Pages;
 
-public sealed class ConsentModel(IConsentInteraction consent) : PageModel
+public sealed class ConsentModel(ConsentInteraction consent) : PageModel
 {
     /// <summary>What to ask, or <see langword="null"/> when there is nothing left to ask about.</summary>
     public ConsentRequest? ConsentRequest { get; private set; }

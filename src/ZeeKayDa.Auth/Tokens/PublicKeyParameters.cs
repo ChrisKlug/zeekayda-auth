@@ -3,13 +3,11 @@ using System.Security.Cryptography;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Public-only key parameters carried by a <see cref="SourceKey"/> — the public material minus
-/// the <c>kid</c> and algorithm, which live on <see cref="SourceKey"/> itself.
+/// The public material of a <see cref="SourceKey"/>, without the <c>kid</c> and algorithm.
 /// </summary>
 /// <remarks>
-/// Never carries private key material. A provider builds an instance from an <see cref="RSA"/> or
-/// <see cref="ECDsa"/> object's exported public parameters via <see cref="FromRsa"/>/<see cref="FromEc"/>
-/// without ever exposing the private half through this type.
+/// Never carries private key material: <see cref="FromRsa"/> and <see cref="FromEc"/> copy the public
+/// parameters only.
 /// </remarks>
 public sealed record PublicKeyParameters
 {
@@ -31,10 +29,7 @@ public sealed record PublicKeyParameters
     /// otherwise <see langword="null"/>.
     /// </summary>
     /// <remarks>
-    /// Returns a fresh defensive copy on every access. The framework's own copy of <c>Modulus</c>
-    /// and <c>Exponent</c> is never handed out by reference, so a caller mutating the returned
-    /// arrays can never corrupt the key material this instance — or a <see cref="SigningKey"/> built
-    /// from it — actually holds.
+    /// A fresh copy on every access, so a caller mutating it cannot corrupt the key material held here.
     /// </remarks>
     public RSAParameters? RsaPublicParameters => CopyRsa(_rsaPublicParameters);
 
@@ -43,8 +38,7 @@ public sealed record PublicKeyParameters
     /// otherwise <see langword="null"/>.
     /// </summary>
     /// <remarks>
-    /// Returns a fresh defensive copy on every access, for the same reason as
-    /// <see cref="RsaPublicParameters"/>.
+    /// A fresh copy on every access, as for <see cref="RsaPublicParameters"/>.
     /// </remarks>
     public ECParameters? EcPublicParameters => CopyEc(_ecPublicParameters);
 

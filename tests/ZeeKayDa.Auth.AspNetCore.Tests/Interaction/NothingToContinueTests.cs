@@ -280,6 +280,23 @@ public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHost
     }
 
     [Fact]
+    public async Task A_login_page_reached_without_an_interaction_id_reads_null_and_warns()
+    {
+        var page = await ReadJsonAsync(_client, LoginPath);
+
+        page.GetProperty("found").GetBoolean().Should().BeFalse();
+        _fixture.Logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Warning && entry.Message.Contains("login", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_login_page_with_nothing_to_sign_in_for_is_still_unframeable_and_uncacheable()
+    {
+        using var page = await _client.GetAsync(LoginPath, Cancellation);
+
+        page.ShouldBeProtectedFromFramingAndCaching();
+    }
+
+    [Fact]
     public async Task A_consent_page_with_nothing_to_ask_is_still_unframeable_and_uncacheable()
     {
         using var page = await _client.GetAsync(ConsentPath, Cancellation);
@@ -328,33 +345,37 @@ public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHost
         },
         mapEndpoints: MapHostPages);
 
-    internal static ClientRegistration RestartingRegistration() =>
-        ClientRegistration.CreatePublic(RestartingClient, [RegisteredRedirect], [], ["openid"]) with
+    internal static Client RestartingRegistration() =>
+        Client.CreatePublic(RestartingClient, [RegisteredRedirect], [], ["openid"]) with
         {
             InitiateLoginUri = InitiateLoginUri,
         };
 
-    internal static ClientRegistration PlainRegistration() =>
-        ClientRegistration.CreatePublic(PlainClient, [RegisteredRedirect], [], ["openid"]);
+    internal static Client PlainRegistration() =>
+        Client.CreatePublic(PlainClient, [RegisteredRedirect], [], ["openid"]);
 
     /// <summary>A first-party client the operator chose to exempt from consent.</summary>
-    internal static ClientRegistration TrustedRegistration() =>
-        ClientRegistration.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid"]) with { RequireConsent = false };
+    internal static Client TrustedRegistration() =>
+        Client.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid"]) with { RequireConsent = false };
 
     /// <summary>The host's pages, written as a host that renders its own "nothing here" would write them.</summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(LoginPath, (ILoginInteraction login) => login.SignInAsync(
-            new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
-            AuthenticationMethods.Password));
+        endpoints.MapPost(LoginPath, (LoginInteraction login) => login.SignInAsync("user-1", AuthenticationMethods.Password));
 
-        endpoints.MapGet(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
+        endpoints.MapGet(LoginPath, async (HttpContext context, LoginInteraction login) =>
+        {
+            var request = await login.TryGetRequestAsync(context.RequestAborted);
+            return Results.Json(new { found = request is not null, clientId = request?.Client.ClientId });
+        });
+
+        endpoints.MapGet(ConsentPath, async (HttpContext context, ConsentInteraction consent) =>
         {
             var request = await consent.TryGetRequestAsync(context.RequestAborted);
             return Results.Json(new { found = request is not null, clientId = request?.Client.ClientId });
         });
 
-        endpoints.MapPost(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
+        endpoints.MapPost(ConsentPath, async (HttpContext context, ConsentInteraction consent) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
 
@@ -364,13 +385,13 @@ public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHost
                 await consent.GrantAsync(form["scope"].Select(scope => scope ?? string.Empty));
         });
 
-        endpoints.MapGet(LogoutPath, async (HttpContext context, ILogoutInteraction logout) =>
+        endpoints.MapGet(LogoutPath, async (HttpContext context, LogoutInteraction logout) =>
         {
             var request = await logout.TryGetRequestAsync(context.RequestAborted);
             return Results.Json(new { found = request is not null, subject = request?.Subject });
         });
 
-        endpoints.MapGet(ErrorPath, async (HttpContext context, IErrorInteraction errors) =>
+        endpoints.MapGet(ErrorPath, async (HttpContext context, ErrorInteraction errors) =>
         {
             var details = await errors.GetErrorAsync(context.RequestAborted);
             return Results.Json(new { kind = details?.Kind.ToString(), error = details?.Error });
@@ -443,12 +464,12 @@ public sealed class NothingToContinueTests : IClassFixture<NothingToContinueHost
     }
 
     /// <summary>A repository holding one registration an operator can change or remove mid-flow.</summary>
-    private sealed class MutableClientRepository(IClientRegistration initial) : IClientRepository
+    private sealed class MutableClientRepository(IClientWithCredentials initial) : IClientRepository
     {
-        public IClientRegistration? Current { get; set; } = initial;
+        public IClientWithCredentials? Current { get; set; } = initial;
 
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            new(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientWithCredentials?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
     }
 }
 

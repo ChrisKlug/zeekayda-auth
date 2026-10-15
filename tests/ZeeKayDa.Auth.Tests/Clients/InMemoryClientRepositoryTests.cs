@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.Clients;
@@ -12,124 +11,79 @@ public sealed class InMemoryClientRepositoryTests
 {
     // ── Fake infrastructure ───────────────────────────────────────────────────────────────────────
 
-    private sealed class FakeSecret : IClientSecret { public IClientCredential Snapshot() => new FakeSecret(); }
-
-    private sealed class CapturingLogger : ISanitizingLogger<InMemoryClientRepository>
-    {
-        private readonly List<string> _warnings = new();
-
-        public IReadOnlyList<string> Warnings => _warnings;
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-        {
-            if (logLevel == LogLevel.Warning)
-                _warnings.Add(formatter(state, exception));
-        }
-    }
+    private static readonly ClientSecret FakeSecret = new("$fake-secret$x");
 
     private sealed class FakeHasher : IClientSecretHasher
     {
-        public bool CanHandle(IClientSecret secret) => secret is FakeSecret;
-        public bool Verify(IClientSecret stored, ReadOnlySpan<char> presented) => false;
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "fake-secret" };
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
 
-        public IClientSecret Create(ReadOnlySpan<char> plaintext)
-        {
-            // Mirror ClientSecretHasher<T>.Create: reject an empty/whitespace plaintext secret.
-            if (MemoryExtensions.IsWhiteSpace(plaintext))
-                throw new ArgumentException("Plaintext secret must not be empty.", nameof(plaintext));
-
-            return new FakeSecret();
-        }
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret;
     }
 
-    // A caller-supplied validator is an extension point, so it can throw a configuration exception
-    // that carries a root cause of its own.
-    private sealed class DelegatingValidator(Func<IClientRegistration, Exception?> onValidate)
+    private sealed class DelegatingValidator(Func<IClientWithCredentials, IReadOnlyList<ZeeKayDaConfigurationFailure>> onValidate)
         : IClientRegistrationValidator
     {
-        public void Validate(IClientRegistration client)
-        {
-            if (onValidate(client) is { } ex)
-                throw ex;
-        }
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => onValidate(client);
     }
 
-    private static CompositeClientSecretHasher MakeHasher()
-        => new CompositeClientSecretHasher(
-            [new FakeHasher()],
-            Options.Create(new ClientSecretHasherRegistrationOptions()));
+    private static ClientSecretHasherRegistry MakeRegistry()
+        => new([new FakeHasher()], Options.Create(new ClientSecretHasherRegistrationOptions()));
+
+    private static ClientSecrets MakeSecrets()
+        => new(MakeRegistry(), NullSanitizingLogger<ClientSecrets>.Instance);
 
     private static AuthorizationServerOptions DefaultServerOptions()
-    {
-        var opts = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-        // Include "none" so public clients pass the subset validation check.
-        opts.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-        return opts;
-    }
+        => new() { Issuer = "https://test.example.com" };
 
     private static ClientRegistrationValidator MakeValidator(
         AuthorizationServerOptions? serverOptions = null)
-        => new ClientRegistrationValidator(
-            Options.Create(serverOptions ?? DefaultServerOptions()),
-            MakeHasher(),
+    {
+        var options = serverOptions ?? DefaultServerOptions();
+        return new ClientRegistrationValidator(
+            Options.Create(options),
+            TestAuthMethods.Advertised(options),
+            MakeRegistry(),
             NullSanitizingLogger<ClientRegistrationValidator>.Instance,
             keyRing: null);
+    }
 
     private static InMemoryClientRepository MakeRepository(
         InMemoryClientRegistrationOptions opts,
-        AuthorizationServerOptions? serverOptions = null,
-        ISanitizingLogger<InMemoryClientRepository>? logger = null)
+        AuthorizationServerOptions? serverOptions = null)
     {
-        var so = serverOptions ?? DefaultServerOptions();
-        return new InMemoryClientRepository(
-            Options.Create(opts),
-            MakeHasher(),
-            MakeValidator(so),
-            Options.Create(so),
-            logger ?? NullSanitizingLogger<InMemoryClientRepository>.Instance);
+        var framework = MakeValidator(serverOptions);
+        return InMemoryClientRepository.Build(opts, MakeSecrets(), new FrameworkThenHostValidator(framework, framework));
     }
 
     private static InMemoryClientRepository MakeRepositoryWithValidator(
         InMemoryClientRegistrationOptions opts, IClientRegistrationValidator validator)
     {
-        var so = DefaultServerOptions();
-        return new InMemoryClientRepository(
-            Options.Create(opts),
-            MakeHasher(),
-            validator,
-            Options.Create(so),
-            NullSanitizingLogger<InMemoryClientRepository>.Instance);
+        return InMemoryClientRepository.Build(opts, MakeSecrets(), new FrameworkThenHostValidator(MakeValidator(), validator));
     }
 
-    private static ClientRegistration ValidPublicClient(string clientId = "test-client") =>
-        ClientRegistration.CreatePublic(
+    private static Client ValidPublicClient(string clientId = "test-client") =>
+        Client.CreatePublic(
             clientId,
             ["https://app.example.com/cb"],
             [],
             ["openid"]);
 
     private static PendingConfidentialClientSpec PendingSpec(
-        string clientId, string plaintextSecret, bool requireConsent = true) =>
+        string clientId, string? plaintextSecret, bool requireConsent = true, string? secretHash = null) =>
         new(
-            new ClientRegistration
+            new Client
             {
                 ClientId = clientId,
-                Credentials = [],
+                Secrets = [],
                 IsPublic = false,
                 RedirectUris = new HashSet<string>(["https://app.example.com/cb"], StringComparer.Ordinal),
                 PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
                 AllowedScopes = new HashSet<string>(["openid"], StringComparer.Ordinal),
                 RequireConsent = requireConsent,
             },
-            plaintextSecret);
+            plaintextSecret,
+            secretHash);
 
     // ── FindByClientIdAsync ───────────────────────────────────────────────────────────────────────
 
@@ -180,7 +134,7 @@ public sealed class InMemoryClientRepositoryTests
         opts.PreBuilt.Add(ValidPublicClient("known-client"));
         var repo = MakeRepository(opts);
 
-        IClientRegistration? found = null;
+        IClientWithCredentials? found = null;
         var act = async () => found = await repo.FindByClientIdAsync(null!, TestContext.Current.CancellationToken);
 
         await act.Should().NotThrowAsync();
@@ -215,7 +169,7 @@ public sealed class InMemoryClientRepositoryTests
     // ── Duplicate detection ───────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Constructor_throws_ZeeKayDaConfigurationException_for_duplicate_client_id()
+    public void Build_throws_ZeeKayDaConfigurationException_for_duplicate_client_id()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(ValidPublicClient("duplicate-id"));
@@ -230,14 +184,14 @@ public sealed class InMemoryClientRepositoryTests
     // ── Validation on construction ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Constructor_throws_ZeeKayDaConfigurationException_for_invalid_client()
+    public void Build_throws_ZeeKayDaConfigurationException_for_invalid_client()
     {
         var opts = new InMemoryClientRegistrationOptions();
         // A client with a fragment in its redirect URI
-        opts.PreBuilt.Add(new ClientRegistration
+        opts.PreBuilt.Add(new Client
         {
             ClientId = "bad-client",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb#bad"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -252,52 +206,45 @@ public sealed class InMemoryClientRepositoryTests
     }
 
     [Fact]
-    public void Constructor_failure_for_a_public_client_on_a_server_not_advertising_none_names_the_line_that_adds_it()
+    public void Build_failure_for_a_public_client_on_a_server_whose_filter_withholds_none_names_the_filter()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(ValidPublicClient("spa"));
-        // The default AuthMethodsSupported, which does not advertise "none".
-        var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
+        var serverOptions = DefaultServerOptions();
+        serverOptions.TokenEndpoint.AdvertisedAuthMethods = [TokenEndpointAuthMethods.ClientSecretBasic];
 
         var act = () => MakeRepository(opts, serverOptions);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
             .Which.AggregatedFailures.Should()
             .ContainSingle(f => f.Code == "client.token_endpoint_auth_methods.not_subset")
-            .Which.Message.Should().Contain(
-                "options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);");
+            .Which.Message.Should().Contain("TokenEndpoint.AdvertisedAuthMethods leaves 'none' out");
     }
 
     [Fact]
-    public void Constructor_failure_for_a_confidential_client_listing_none_does_not_suggest_advertising_none()
+    public void A_confidential_client_listing_none_fails_as_none_on_confidential_although_none_is_advertised()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(
-            ClientRegistration.CreateConfidential("web", new FakeSecret(), ["https://app.example.com/cb"], [], ["openid"])
+            Client.CreateConfidential("web", FakeSecret, ["https://app.example.com/cb"], [], ["openid"])
             with
             {
                 AllowedTokenEndpointAuthMethods = new HashSet<string>(
                     [TokenEndpointAuthMethods.None, TokenEndpointAuthMethods.ClientSecretBasic],
                     StringComparer.Ordinal),
             });
-        // The default AuthMethodsSupported, which does not advertise "none".
-        var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
-
-        var act = () => MakeRepository(opts, serverOptions);
+        var act = () => MakeRepository(opts);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should()
-            .ContainSingle(f => f.Code == "client.token_endpoint_auth_methods.not_subset")
-            .Which.Message.Should().NotContain(
-                "Public clients",
-                because: "a confidential client listing 'none' is fixed by removing it from the client, " +
-                         "and advertising 'none' on the server would not make its registration valid");
+            .Which.AggregatedFailures.Select(f => f.Code).Should().Equal(
+                ["client.token_endpoint_auth_methods.none_on_confidential"],
+                "the server advertising 'none' must not let a confidential client be called without credentials");
     }
 
     // ── Multiple clients ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Constructor_makes_all_clients_accessible_when_multiple_clients_are_registered()
+    public async Task Build_makes_all_clients_accessible_when_multiple_clients_are_registered()
     {
         var ct = TestContext.Current.CancellationToken;
         var opts = new InMemoryClientRegistrationOptions();
@@ -314,7 +261,7 @@ public sealed class InMemoryClientRepositoryTests
     // ── Confidential client via Pending spec ──────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Constructor_hashes_and_makes_accessible_pending_confidential_client()
+    public async Task Build_hashes_and_makes_accessible_pending_confidential_client()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.Pending.Add(PendingSpec("confidential-client", "super-secret"));
@@ -324,11 +271,11 @@ public sealed class InMemoryClientRepositoryTests
         var found = await repo.FindByClientIdAsync("confidential-client", TestContext.Current.CancellationToken);
         found.Should().NotBeNull();
         found!.IsPublic.Should().BeFalse();
-        found.Credentials.Should().ContainSingle(c => c is IClientSecret);
+        found.Secrets.Should().ContainSingle().Which.Should().Be(FakeSecret);
     }
 
     [Fact]
-    public async Task Constructor_keeps_the_pending_registration_settings_when_it_adds_the_hashed_secret()
+    public async Task Build_keeps_the_pending_registration_settings_when_it_adds_the_hashed_secret()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.Pending.Add(PendingSpec("confidential-client", "super-secret", requireConsent: false));
@@ -338,14 +285,14 @@ public sealed class InMemoryClientRepositoryTests
         var found = await repo.FindByClientIdAsync("confidential-client", TestContext.Current.CancellationToken);
         found.Should().NotBeNull();
         found!.RequireConsent.Should().BeFalse();
-        found.Credentials.Should().ContainSingle().Which.Should().BeOfType<FakeSecret>();
+        found.Secrets.Should().ContainSingle().Which.Should().Be(FakeSecret);
     }
 
     [Fact]
-    public async Task Constructor_stored_credential_is_not_equal_to_original_plaintext()
+    public async Task Build_stored_credential_is_not_equal_to_original_plaintext()
     {
-        // After hashing, the stored credential must be the opaque FakeSecret produced by FakeHasher,
-        // not a string equal to (or wrapping) the original plaintext. This verifies that the
+        // After hashing, the stored secret must be the FakeSecret produced by FakeHasher, not a
+        // value equal to (or wrapping) the original plaintext. This verifies that the
         // repository does not short-circuit the hasher and stash the plaintext directly.
         var ct = TestContext.Current.CancellationToken;
         const string plaintext = "super-secret";
@@ -356,30 +303,113 @@ public sealed class InMemoryClientRepositoryTests
 
         var found = await repo.FindByClientIdAsync("confidential-client", ct);
         found.Should().NotBeNull();
-        var credential = found!.Credentials.Single();
-        credential.Should().BeOfType<FakeSecret>();
+        found!.Secrets.Single().Should().Be(FakeSecret);
+    }
+
+    [Fact]
+    public async Task Build_stores_a_pending_secret_hash_as_given()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("confidential-client", plaintextSecret: null, secretHash: "$fake-secret$stored"));
+
+        var repo = MakeRepository(opts);
+
+        var found = await repo.FindByClientIdAsync("confidential-client", TestContext.Current.CancellationToken);
+        found!.Secrets.Should().ContainSingle().Which.Should().Be(new ClientSecret("$fake-secret$stored"));
+    }
+
+    [Fact]
+    public void Build_rejects_a_pending_client_with_neither_a_secret_nor_a_secret_hash()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("no-secret-client", plaintextSecret: null));
+
+        var act = () => MakeRepository(opts);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.no_secret")
+            .Which.Message.Should().Contain("no-secret-client");
+    }
+
+    [Fact]
+    public void Build_rejects_a_pending_client_with_both_a_secret_and_a_secret_hash()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("two-secret-client", "super-secret", secretHash: "$fake-secret$stored"));
+
+        var act = () => MakeRepository(opts);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.secret_and_secret_hash")
+            .Which.Message.Should().Contain("two-secret-client");
+    }
+
+    [Fact]
+    public void Build_rejects_a_pending_client_with_a_whitespace_secret_hash()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("blank-hash-client", plaintextSecret: null, secretHash: "  "));
+
+        var act = () => MakeRepository(opts);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.empty_secret_hash")
+            .Which.Message.Should().Contain("blank-hash-client");
+    }
+
+    [Fact]
+    public void Build_releases_the_pending_plaintext_secrets_once_the_repository_is_built()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("confidential-client", "super-secret"));
+
+        MakeRepository(opts);
+
+        opts.Pending.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Build_keeps_the_pending_secrets_when_it_fails_so_building_again_fails_the_same_way()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.Pending.Add(PendingSpec("confidential-client", "super-secret"));
+        opts.Pending.Add(PendingSpec("no-secret-client", plaintextSecret: null));
+
+        var act = () => MakeRepository(opts);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>();
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "client.credentials.no_secret");
+        opts.Pending.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void A_pending_spec_prints_its_type_name_and_never_its_plaintext_secret()
+    {
+        PendingSpec("confidential-client", "super-secret").ToString()
+            .Should().Be(nameof(PendingConfidentialClientSpec));
     }
 
     // ── Aggregates failures from multiple invalid clients ─────────────────────────────────────────
 
     [Fact]
-    public void Constructor_aggregates_all_failures_for_multiple_invalid_clients()
+    public void Build_aggregates_all_failures_for_multiple_invalid_clients()
     {
         var opts = new InMemoryClientRegistrationOptions();
-        opts.PreBuilt.Add(new ClientRegistration
+        opts.PreBuilt.Add(new Client
         {
             ClientId = "bad-client-1",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb#frag1"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
             AllowedTokenEndpointAuthMethods = new HashSet<string>(
                 [TokenEndpointAuthMethods.None], StringComparer.Ordinal)
         });
-        opts.PreBuilt.Add(new ClientRegistration
+        opts.PreBuilt.Add(new Client
         {
             ClientId = "bad-client-2",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb#frag2"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -393,65 +423,86 @@ public sealed class InMemoryClientRepositoryTests
             .Which.AggregatedFailures.Count.Should().BeGreaterThanOrEqualTo(2);
     }
 
-    // ── A validator's root cause survives the re-throw (#618) ─────────────────────────────────────
+    // ── A custom validator's failures are aggregated ──────────────────────────────────────────────
 
     [Fact]
-    public void Constructor_preserves_the_root_cause_behind_a_validators_configuration_exception()
-    {
-        var rootCause = new UnauthorizedAccessException("denied");
-        var opts = new InMemoryClientRegistrationOptions();
-        opts.PreBuilt.Add(ValidPublicClient("c1"));
-        var validator = new DelegatingValidator(_ => new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure("client.validator_failed", "See the inner exception."),
-            rootCause));
-
-        var act = () => MakeRepositoryWithValidator(opts, validator);
-
-        var ex = act.Should().Throw<ZeeKayDaConfigurationException>().Which;
-        ex.AggregatedFailures.Should().ContainSingle().Which.Code.Should().Be("client.validator_failed");
-        ex.InnerException.Should().BeSameAs(rootCause);
-    }
-
-    [Fact]
-    public void Constructor_leaves_the_aggregate_without_an_inner_exception_when_the_validator_supplied_none()
+    public void Build_aggregates_every_failure_a_validator_returns_across_all_clients()
     {
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(ValidPublicClient("c1"));
-        var validator = new DelegatingValidator(_ => new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure("client.validator_failed", "Simulated.")));
+        opts.PreBuilt.Add(ValidPublicClient("c2"));
+        var validator = new DelegatingValidator(client =>
+            [new ZeeKayDaConfigurationFailure("host.rule", $"Failed for {client.ClientId}.")]);
 
         var act = () => MakeRepositoryWithValidator(opts, validator);
 
         act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.InnerException.Should().BeNull(
-                "a configuration exception with no root cause behind it contributes nothing to carry");
+            .Which.AggregatedFailures.Select(f => f.Message)
+            .Should().Equal("Failed for c1.", "Failed for c2.");
     }
 
     [Fact]
-    public void Constructor_wraps_several_validator_root_causes_in_one_AggregateException()
+    public async Task Build_serves_every_client_when_the_validator_returns_no_failures()
     {
-        var firstCause = new UnauthorizedAccessException("first");
-        var secondCause = new NotSupportedException("second");
         var opts = new InMemoryClientRegistrationOptions();
         opts.PreBuilt.Add(ValidPublicClient("c1"));
-        opts.PreBuilt.Add(ValidPublicClient("c2"));
-        var validator = new DelegatingValidator(client => new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure("client.validator_failed", $"Failed for {client.ClientId}."),
-            client.ClientId == "c1" ? firstCause : secondCause));
+
+        var repository = MakeRepositoryWithValidator(opts, new DelegatingValidator(_ => []));
+
+        (await repository.FindByClientIdAsync("c1", TestContext.Current.CancellationToken)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Build_reports_a_validator_that_returns_a_null_failure_as_a_coded_configuration_failure()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(ValidPublicClient("c1"));
+
+        var act = () => MakeRepositoryWithValidator(opts, new DelegatingValidator(_ => [null!]));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Should().Match<ZeeKayDaConfigurationFailure>(failure =>
+                failure.Code == "client.validator.malformed_result"
+                && failure.Message.Contains("DelegatingValidator", StringComparison.Ordinal)
+                && failure.Message.Contains("'c1'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Build_applies_the_framework_rules_even_when_a_host_validator_accepts_everything()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(ValidPublicClient("c1") with
+        {
+            RedirectUris = new HashSet<string>(["https://app.example.com/cb#fragment"], StringComparer.Ordinal),
+        });
+
+        var act = () => MakeRepositoryWithValidator(opts, new DelegatingValidator(_ => []));
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.fragment",
+                "a host can add rules at startup, never remove the framework's");
+    }
+
+    [Fact]
+    public void Build_reports_a_null_failure_alongside_the_real_ones_a_validator_returned()
+    {
+        var opts = new InMemoryClientRegistrationOptions();
+        opts.PreBuilt.Add(ValidPublicClient("c1"));
+        var validator = new DelegatingValidator(_ =>
+            [new ZeeKayDaConfigurationFailure("host.rule", "A real problem."), null!]);
 
         var act = () => MakeRepositoryWithValidator(opts, validator);
 
-        var ex = act.Should().Throw<ZeeKayDaConfigurationException>().Which;
-        ex.AggregatedFailures.Should().HaveCount(2);
-        var causes = ex.InnerException.Should().BeOfType<AggregateException>().Which.InnerExceptions;
-        causes.Should().HaveCount(2);
-        causes.Should().Contain(firstCause).And.Contain(secondCause);
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Select(f => f.Code).Should()
+            .Equal("host.rule", "client.validator.malformed_result");
     }
 
     // ── Empty plaintext secret is aggregated, not thrown bare ─────────────────────────────────────
 
     [Fact]
-    public void Constructor_throws_aggregated_ZeeKayDaConfigurationException_for_pending_spec_with_empty_secret()
+    public void Build_throws_aggregated_ZeeKayDaConfigurationException_for_pending_spec_with_empty_secret()
     {
         // hasher.Create throws ArgumentException on a blank secret. The repository must convert that
         // into a structured failure rather than letting the bare ArgumentException abort construction.
@@ -468,16 +519,16 @@ public sealed class InMemoryClientRepositoryTests
     // ── Empty plaintext secret is aggregated, not thrown bare — part 2 ───────────────────────────
 
     [Fact]
-    public void Constructor_aggregates_both_failures_in_one_exception_for_empty_secret_and_other_invalid_client()
+    public void Build_aggregates_both_failures_in_one_exception_for_empty_secret_and_other_invalid_client()
     {
         // The empty-secret spec must not short-circuit construction: a second, separately invalid
         // client's problems must still be reported in the same exception.
         var opts = new InMemoryClientRegistrationOptions();
         opts.Pending.Add(PendingSpec("empty-secret-client", "   "));
-        opts.PreBuilt.Add(new ClientRegistration
+        opts.PreBuilt.Add(new Client
         {
             ClientId = "fragment-client",
-            Credentials = [],
+            Secrets = [],
             IsPublic = true,
             RedirectUris = new HashSet<string>(["https://app.example.com/cb#frag"], StringComparer.Ordinal),
             PostLogoutRedirectUris = new HashSet<string>(StringComparer.Ordinal),
@@ -491,33 +542,5 @@ public sealed class InMemoryClientRepositoryTests
             .Which.AggregatedFailures;
         failures.Should().Contain(f => f.Code == "client.credentials.empty_plaintext_secret");
         failures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
-    }
-
-    // ── None-advertised server-wide warning ───────────────────────────────────────────────────────
-
-    [Fact]
-    public void Constructor_logs_warning_when_none_is_advertised_but_no_public_clients_are_registered()
-    {
-        // Server advertises "none" but only confidential clients are registered → warning
-        var logger = new CapturingLogger();
-        var opts = new InMemoryClientRegistrationOptions();
-        opts.Pending.Add(PendingSpec("confidential-only", "super-secret"));
-
-        MakeRepository(opts, logger: logger);
-
-        logger.Warnings.Should().ContainSingle(w => w.Contains("none"));
-    }
-
-    [Fact]
-    public void Constructor_does_not_log_warning_when_none_is_advertised_and_public_client_is_present()
-    {
-        // Server advertises "none" and at least one public client is registered → no warning
-        var logger = new CapturingLogger();
-        var opts = new InMemoryClientRegistrationOptions();
-        opts.PreBuilt.Add(ValidPublicClient("public-client"));
-
-        MakeRepository(opts, logger: logger);
-
-        logger.Warnings.Should().NotContain(w => w.Contains("none"));
     }
 }

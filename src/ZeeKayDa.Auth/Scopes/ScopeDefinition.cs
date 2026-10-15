@@ -5,17 +5,13 @@ namespace ZeeKayDa.Auth.Scopes;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A scope names the claim types it unlocks in the ID token, at the userinfo endpoint, and in the
-/// access token. Claim type names are OpenID Connect wire names (<c>given_name</c>, <c>email</c>),
-/// never <c>ClaimTypes</c> URIs, and every value comes from the host's <c>IClaimsProvider</c>: a
-/// listed type the provider does not return is omitted, never written empty.
+/// Claim types are OpenID Connect wire names (<c>given_name</c>), never <c>ClaimTypes</c> URIs, and every
+/// value comes from the host's <c>IClaimsProvider</c>; a type it does not return is omitted.
 /// </para>
 /// <para>
-/// <see cref="StandardScopes"/> lists the OpenID Connect Core §5.4 claims of <c>profile</c>,
-/// <c>email</c>, <c>phone</c> and <c>address</c> in <see cref="UserInfoClaims"/> only, which is
-/// where §5.4 places them when an access token is issued, as it always is in the code flow;
-/// <c>openid</c> is the exception and lists <c>sub</c> in both. A host that wants one of the four
-/// scopes' claims in the ID token as well adds them:
+/// <see cref="StandardScopes"/> lists the §5.4 claims of <c>profile</c>, <c>email</c>, <c>phone</c> and
+/// <c>address</c> in <see cref="UserInfoClaims"/> only, where §5.4 places them when an access token is
+/// issued. To put them in the ID token too:
 /// <c>StandardScopes.Email with { IdTokenClaims = StandardScopes.Email.UserInfoClaims }</c>.
 /// </para>
 /// </remarks>
@@ -30,9 +26,7 @@ public sealed record ScopeDefinition
     /// Gets whether this scope should be published in discovery metadata.
     /// </summary>
     /// <remarks>
-    /// Defaults to <see langword="true"/>. Non-discoverable scopes may still exist in the
-    /// repository for internal or client-specific use, but they are excluded from
-    /// <c>scopes_supported</c>.
+    /// A non-discoverable scope still works, but is left out of <c>scopes_supported</c>.
     /// </remarks>
     public bool IsDiscoverable { get; init; } = true;
 
@@ -57,10 +51,8 @@ public sealed record ScopeDefinition
     /// an identity scope, whose audience is the issuer.
     /// </summary>
     /// <remarks>
-    /// Must be an absolute URI without a fragment (RFC 8707 §2), checked on every read of the
-    /// scope repository and not only at startup. Two scopes
-    /// with the same value are the same API. A request whose granted scopes name two distinct
-    /// values is refused with <c>invalid_scope</c>: one grant, one API.
+    /// Must be an absolute URI without a fragment (RFC 8707 §2), checked on every read. Granted scopes naming
+    /// two distinct audiences are refused with <c>invalid_scope</c>: one grant, one API.
     /// </remarks>
     public string? Audience { get; init; }
 }

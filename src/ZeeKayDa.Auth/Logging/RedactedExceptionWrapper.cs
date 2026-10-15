@@ -3,20 +3,13 @@ using System.Text;
 namespace ZeeKayDa.Auth.Logging;
 
 /// <summary>
-/// Wraps an exception so that its message — which may contain credential material — never reaches
-/// log sinks in plain text. The original exception object is never stored or exposed; only the
-/// type name, the placeholder message, and the stack trace are forwarded to sinks.
+/// An exception carrying only another's type name and stack trace, its inner chain wrapped the same
+/// way, so no message that may hold credentials reaches a log sink.
 /// </summary>
-/// <remarks>
-/// The <see cref="Exception.InnerException"/> chain is preserved as a recursively-wrapped
-/// <see cref="RedactedExceptionWrapper"/> tree rather than the original exception objects, so no
-/// un-redacted message text can leak through <c>InnerException.ToString()</c> or
-/// <c>InnerException.Message</c>.
-/// </remarks>
 internal sealed class RedactedExceptionWrapper : Exception
 {
     internal const string RedactedMessage =
-        "[exception message redacted by SecretSanitizingLogger]";
+        "[exception message redacted by SanitizingLogger]";
 
     private const int MaxDepth = 50;
 
@@ -37,9 +30,7 @@ internal sealed class RedactedExceptionWrapper : Exception
     private RedactedExceptionWrapper(Exception original, int depth)
         : base(RedactedMessage, BuildInner(original, depth))
     {
-        // ArgumentNullException.ThrowIfNull is intentionally absent here: BuildInner —
-        // evaluated in the base-constructor initializer above — already throws with the
-        // correct "original" parameter name before this body is reached.
+        // BuildInner has already thrown for a null original, in the base initializer.
         _original = original;
         OriginalExceptionType = original.GetType().FullName ?? original.GetType().Name;
     }
@@ -58,13 +49,7 @@ internal sealed class RedactedExceptionWrapper : Exception
     public string OriginalExceptionType { get; }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Returns the stack trace from the original exception so that operators retain
-    /// full diagnostic information even though the original is not stored as
-    /// <see cref="Exception.InnerException"/>. A stack trace contains only frame metadata
-    /// (method names, file names, and line numbers) — it never includes the exception
-    /// message text — so forwarding it does not create a message-leak vector.
-    /// </remarks>
+    /// <remarks>The original's; a stack trace holds frame metadata only, never message text.</remarks>
     public override string? StackTrace => _original.StackTrace;
 
     /// <inheritdoc/>
@@ -87,8 +72,6 @@ internal sealed class RedactedExceptionWrapper : Exception
         {
             sb.AppendLine();
             sb.Append(" ---> ");
-            // InnerException is always a RedactedExceptionWrapper — calling ToString() on it
-            // is safe and will never surface the original message text.
             sb.Append(InnerException);
         }
 

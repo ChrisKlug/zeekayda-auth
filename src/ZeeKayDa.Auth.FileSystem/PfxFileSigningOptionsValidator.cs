@@ -3,62 +3,68 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem;
 
-/// <summary>
-/// Validates <see cref="PfxFileSigningOptions"/> at startup.
-/// </summary>
-/// <remarks>
-/// Registered via <c>AddPfxFileSigning()</c> and activated by <c>ValidateOnStart()</c>.
-/// </remarks>
-internal sealed class PfxFileSigningOptionsValidator : IValidateOptions<PfxFileSigningOptions>
+/// <summary>Validates <see cref="PfxFileSigningOptions"/> at startup.</summary>
+internal sealed class PfxFileSigningOptionsValidator : ZeeKayDaOptionsValidator<PfxFileSigningOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, PfxFileSigningOptions options)
+    protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(
+        string? name,
+        PfxFileSigningOptions options)
     {
-        var errors = new List<string>();
-
-        if (options.Current is null)
+        if (options.Files.Count == 0)
         {
-            errors.Add(
-                "PfxFileSigningOptions.Current must be set to the PFX file that signs. Previous and " +
-                "Next are optional; Current is not.");
+            yield return new(
+                "configuration.pfx_file_signing.files.empty",
+                "PfxFileSigningOptions.Files must list at least one PFX file.");
         }
 
-        AppendSlotErrors(nameof(PfxFileSigningOptions.Previous), options.Previous, errors);
-        AppendSlotErrors(nameof(PfxFileSigningOptions.Current), options.Current, errors);
-        AppendSlotErrors(nameof(PfxFileSigningOptions.Next), options.Next, errors);
+        for (var i = 0; i < options.Files.Count; i++)
+        {
+            foreach (var failure in FileFailures(i, options.Files[i]))
+                yield return failure;
+        }
 
         if (!Enum.IsDefined(options.Algorithm))
         {
-            errors.Add(
+            yield return new(
+                "configuration.pfx_file_signing.algorithm.undefined_value",
                 $"PfxFileSigningOptions.Algorithm value '{options.Algorithm}' is not a defined " +
                 $"{nameof(SigningAlgorithm)} member.");
         }
 
-        AppendDuplicatePathErrors(options, errors);
-
-        return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
-    }
-
-    private static void AppendSlotErrors(string slotName, PfxFile? slot, List<string> errors)
-    {
-        if (slot is null)
-            return;
-
-        if (string.IsNullOrWhiteSpace(slot.Path))
-            errors.Add($"PfxFileSigningOptions.{slotName}.Path must be set to a non-empty file path.");
-
-        // Every slot needs a password to be opened at all, including a published-only one, whose
-        // certificate sits inside a password-protected safe.
-        if (slot.PasswordSource is null)
-            errors.Add($"PfxFileSigningOptions.{slotName}.PasswordSource must be set to a password-source delegate.");
-    }
-
-    private static void AppendDuplicatePathErrors(PfxFileSigningOptions options, List<string> errors) =>
-        SigningFilePaths.AppendPathErrors(
+        var paths = options.Files.Where(f => f is not null).Select(f => f.Path).ToArray();
+        foreach (var failure in SigningFilePaths.PathFailures(
             nameof(PfxFileSigningOptions),
-            "Every configured path must be a distinct file.",
-            errors,
-            options.Previous?.Path,
-            options.Current?.Path,
-            options.Next?.Path);
+            "configuration.pfx_file_signing.paths",
+            "Every listed path must be a distinct file.",
+            paths))
+        {
+            yield return failure;
+        }
+    }
+
+    private static IEnumerable<ZeeKayDaConfigurationFailure> FileFailures(int index, PfxFile? file)
+    {
+        if (file is null)
+        {
+            yield return new(
+                "configuration.pfx_file_signing.files.null_entry",
+                $"PfxFileSigningOptions.Files[{index}] is null.");
+            yield break;
+        }
+
+        if (string.IsNullOrWhiteSpace(file.Path))
+        {
+            yield return new(
+                "configuration.pfx_file_signing.files.path.missing",
+                $"PfxFileSigningOptions.Files[{index}].Path must be set to a non-empty file path.");
+        }
+
+        if (file.PasswordSource is null)
+        {
+            yield return new(
+                "configuration.pfx_file_signing.files.password_source.missing",
+                $"PfxFileSigningOptions.Files[{index}].PasswordSource must be set to a password-source delegate.");
+        }
+    }
 }

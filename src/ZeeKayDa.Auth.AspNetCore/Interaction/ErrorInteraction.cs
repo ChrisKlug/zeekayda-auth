@@ -3,33 +3,41 @@ using Microsoft.AspNetCore.Http;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// Default <see cref="IErrorInteraction"/> implementation reading the framework's encrypted
-/// error-transport cookie for the current request.
+/// The host error page's view of the authorization error it was asked to render; the host builds
+/// the page, this service supplies the data.
 /// </summary>
-internal sealed class ErrorInteraction : IErrorInteraction
+/// <remarks>
+/// Used by the page at <c>AuthorizationEndpoint.Interaction.ErrorPath</c>. Descriptions are
+/// deliberately generic: phase-1 failures never distinguish an unknown client from an
+/// unregistered redirect URI.
+/// </remarks>
+public sealed class ErrorInteraction
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly AuthorizeErrorTransport _transport;
 
-    public ErrorInteraction(IHttpContextAccessor httpContextAccessor, AuthorizeErrorTransport transport)
+    internal ErrorInteraction(
+        IHttpContextAccessor httpContextAccessor,
+        AuthorizeErrorTransport transport)
     {
-        ArgumentNullException.ThrowIfNull(httpContextAccessor);
-        ArgumentNullException.ThrowIfNull(transport);
-
         _httpContextAccessor = httpContextAccessor;
         _transport = transport;
     }
 
-    /// <inheritdoc/>
-    public ValueTask<AuthorizationErrorDetails?> GetErrorAsync(CancellationToken cancellationToken = default)
+    /// <summary>
+    /// The error details for the current request, or <see langword="null"/> when there are none,
+    /// for which the page should render a generic message.
+    /// </summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    public Task<AuthorizationErrorDetails?> GetErrorAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         var context = _httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException(
-                "IErrorInteraction requires an active HTTP request. Resolve it from request services " +
+                "ErrorInteraction requires an active HTTP request. Resolve it from request services " +
                 "inside the error page, not from a background service.");
 
-        return ValueTask.FromResult(_transport.TryRead(context));
+        return Task.FromResult(_transport.TryRead(context));
     }
 }

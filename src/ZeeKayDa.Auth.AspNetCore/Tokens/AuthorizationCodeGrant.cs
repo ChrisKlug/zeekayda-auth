@@ -22,51 +22,29 @@ namespace ZeeKayDa.Auth.AspNetCore.Tokens;
 /// attacker exactly one guess, and the legitimate client's own exchange then surfaces the theft
 /// as a replay.
 /// </remarks>
-internal sealed class AuthorizationCodeGrant
+internal sealed class AuthorizationCodeGrant(
+    IOptions<AuthorizationServerOptions> options,
+    TimeProvider time,
+    GrantClaimsResolver claims,
+    SanitizingLogger<AuthorizationCodeGrant> logger)
 {
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly TimeProvider _time;
-    private readonly GrantClaimsResolver _claims;
-    private readonly ISanitizingLogger<AuthorizationCodeGrant> _logger;
-
-    public AuthorizationCodeGrant(
-        IOptions<AuthorizationServerOptions> options,
-        TimeProvider time,
-        GrantClaimsResolver claims,
-        ISanitizingLogger<AuthorizationCodeGrant> logger)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(time);
-        ArgumentNullException.ThrowIfNull(claims);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _options = options;
-        _time = time;
-        _claims = claims;
-        _logger = logger;
-    }
+    private readonly GrantClaimsResolver _claims = claims;
 
     /// <summary>Exchanges the request's code for tokens on behalf of <paramref name="client"/>, which has been authenticated.</summary>
-    public async Task<IResult> ExchangeAsync(HttpContext context, TokenRequest request, IClientMetadata client)
+    public async Task<IResult> ExchangeAsync(HttpContext context, TokenRequest request, IClient client)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(client);
 
-        // Refused before the code is touched, as the form parser once did for every client: a
-        // client held to PKCE that forgot its verifier keeps its code. Only a client permitted
-        // to omit PKCE reaches the store without one, and there the code decides.
+        // Before the code is touched, so a PKCE client that forgot its verifier keeps its code.
         if (request.CodeVerifier is null && !PkceRules.MayOmitChallenge(client))
             return TokenResponses.Error(TokenError.InvalidRequest("The code_verifier parameter is required."));
 
-        // Resolved from the request's services rather than the constructor: this is a singleton
-        // whose store and signing-ring dependencies are host registrations, and constructor
-        // injection would surface their absence as a raw DI error instead of the startup
-        // verifiers' own messages.
-        var store = context.RequestServices.GetRequiredService<IAuthorizationCodeStore>();
+        // Not injected: a missing host registration must surface as the startup verifiers' message, not a DI error.
+        var store = context.RequestServices.GetRequiredService<AuthorizationCodeStore>();
 
-        // Minted before the redemption so the tombstone written by it carries the family every
-        // later replay must revoke — one fresh CSPRNG value per code, never a GUID.
+        // Before the redemption, so its tombstone carries the family a later replay revokes.
         var familyId = StoreKeyGenerator.Generate();
 
         AuthorizationCodeRedemptionResult redemption;
@@ -76,7 +54,7 @@ internal sealed class AuthorizationCodeGrant
         }
         catch (ZeeKayDaStoreException ex)
         {
-            _logger.LogError(ex, "Redeeming an authorization code for client {ClientId} failed.", client.ClientId);
+            logger.LogError(ex, "Redeeming an authorization code for client {ClientId} failed.", client.ClientId);
             return TokenResponses.ServerError();
         }
 
@@ -97,42 +75,35 @@ internal sealed class AuthorizationCodeGrant
     }
 
     /// <summary>The code is consumed; what it was bound to must now match what the request presents.</summary>
-    private async Task<IResult> IssueAsync(HttpContext context, TokenRequest request, IClientMetadata client, AuthorizationCodeEntry entry, string familyId)
+    private async Task<IResult> IssueAsync(HttpContext context, TokenRequest request, IClient client, AuthorizationCodeEntry entry, string familyId)
     {
         if (!string.Equals(request.RedirectUri, entry.RedirectUri, StringComparison.Ordinal))
         {
-            _logger.LogWarning("Client {ClientId} presented a redirect_uri that differs from the one its authorization code was issued to.", client.ClientId);
+            logger.LogWarning("Client {ClientId} presented a redirect_uri that differs from the one its authorization code was issued to.", client.ClientId);
             return InvalidGrant();
         }
 
-        // The code is consumed by now, so a verifier sent for a code that never had a challenge
-        // buys nothing; the error code is the spec's for a malformed exchange (OAuth 2.1 §3.2.4).
+        // OAuth 2.1 §3.2.4: a malformed exchange, and the code is already burnt.
         if (entry.Pkce is null && request.CodeVerifier is not null)
         {
-            _logger.LogWarning("Client {ClientId} presented a code_verifier for an authorization code issued without a code_challenge.", client.ClientId);
+            logger.LogWarning("Client {ClientId} presented a code_verifier for an authorization code issued without a code_challenge.", client.ClientId);
             return TokenResponses.Error(TokenError.InvalidRequest("The code_verifier parameter was sent, but the authorization request carried no code_challenge."));
         }
 
         if (!VerifierProvesTheChallengeTheCodeWasIssuedWith(request, entry))
         {
-            _logger.LogWarning("Client {ClientId} presented a code_verifier that does not match its authorization code's challenge.", client.ClientId);
+            logger.LogWarning("Client {ClientId} presented a code_verifier that does not match its authorization code's challenge.", client.ClientId);
             return InvalidGrant();
         }
 
-        // Decided before anything is issued: a client whose ID token the current key cannot sign
-        // must not be handed an access token first — a reference-token issuer would have persisted
-        // it by the time the ID token is refused. The signing callback repeats the check against
-        // the key that actually signs. The ring reads its source once, so the key cannot change
-        // between this check and that signing; a ring that rotates at runtime must keep one key
-        // across both issuances, which is a requirement on that ring, not on this grant.
-        if (!ClientAcceptsCurrentSigningKey(context, client))
+        // Before anything is issued: a reference-token issuer would already have persisted the access token.
+        if (!ClientAcceptsSigningAlgorithm(client, context.RequestServices.GetRequiredService<SigningKeyRing>().Current.Algorithm))
         {
-            _logger.LogError("Client {ClientId} does not allow ID tokens signed with the current signing key's algorithm; nothing was issued.", client.ClientId);
+            logger.LogError("Client {ClientId} does not allow ID tokens signed with the current signing key's algorithm; nothing was issued.", client.ClientId);
             return TokenResponses.ServerError();
         }
 
-        // Resolved fresh for this issuance, keyed on the family the code just started, so a
-        // subject the provider no longer serves gets nothing, and both tokens come from one pool.
+        // Fresh for this issuance, so a subject the provider no longer serves gets nothing.
         var claims = await _claims.ResolveAsync(
             context,
             new ClaimsRequest(client, entry.Sub, entry.Scope, familyId, ClaimsDestination.Tokens)).ConfigureAwait(false);
@@ -145,11 +116,11 @@ internal sealed class AuthorizationCodeGrant
         };
     }
 
-    private async Task<IResult> IssueTokensAsync(HttpContext context, IClientMetadata client, AuthorizationCodeEntry entry, GrantClaimsOutcome.Issue issue)
+    private async Task<IResult> IssueTokensAsync(HttpContext context, IClient client, AuthorizationCodeEntry entry, GrantClaimsOutcome.Issue issue)
     {
-        var now = _time.GetUtcNow();
-        var lifetimes = _options.Value.TokenEndpoint;
-        var payloads = new CodeGrantTokenPayloads(_options.Value.Issuer!, client, entry, now, issue.Claims, issue.ResourceAudience);
+        var now = time.GetUtcNow();
+        var lifetimes = options.Value.TokenEndpoint;
+        var payloads = new CodeGrantTokenPayloads(options.Value.Issuer!, client, entry, now, issue.Claims, issue.ResourceAudience);
         var accessTokenPayload = payloads.AccessToken(
             TokenLifetimes.Effective(client.AccessTokenLifetime, lifetimes.AccessTokenLifetime),
             jti: StoreKeyGenerator.Generate());
@@ -160,7 +131,7 @@ internal sealed class AuthorizationCodeGrant
         IssuedToken idToken;
         try
         {
-            // The access token first: the ID token is assembled after it so it can be bound to it.
+            // The ID token is bound to the access token, so it comes second.
             accessToken = await Issuer(context, TokenKind.AccessToken).IssueAsync(
                 new AccessTokenIssuanceContext(client),
                 accessTokenPayload.Payload,
@@ -174,7 +145,7 @@ internal sealed class AuthorizationCodeGrant
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Any failure to sign is the server's, and nothing half-issued reaches the client.
-            _logger.LogError(ex, "Issuing tokens for client {ClientId} failed.", client.ClientId);
+            logger.LogError(ex, "Issuing tokens for client {ClientId} failed.", client.ClientId);
             return TokenResponses.ServerError();
         }
 
@@ -187,34 +158,32 @@ internal sealed class AuthorizationCodeGrant
     }
 
     /// <summary>
-    /// A code presented twice is a stolen code or a broken client, and either way the family the
-    /// first exchange started must not stay alive (RFC 9700 §4.5.3). The revocation is the
-    /// server's own action, so a client dropping the connection does not cancel it; one the
-    /// store cannot perform is logged; the client is refused regardless.
+    /// Revokes the family the first exchange started (RFC 9700 §4.5.3). Not cancelled by the client
+    /// disconnecting: the revocation is the server's own action.
     /// </summary>
-    private async Task<IResult> RefuseReplayAsync(HttpContext context, IClientMetadata client, string familyId)
+    private async Task<IResult> RefuseReplayAsync(HttpContext context, IClient client, string familyId)
     {
-        _logger.LogWarning("Client {ClientId} presented an authorization code that was already redeemed; revoking the family it started.", client.ClientId);
+        logger.LogWarning("Client {ClientId} presented an authorization code that was already redeemed; revoking the family it started.", client.ClientId);
 
         if (familyId.Length > 0)
         {
             try
             {
-                var refreshTokens = context.RequestServices.GetRequiredService<IRefreshTokenStore>();
+                var refreshTokens = context.RequestServices.GetRequiredService<RefreshTokenStore>();
                 await refreshTokens.RevokeFamilyAsync(familyId, CancellationToken.None).ConfigureAwait(false);
             }
             catch (ZeeKayDaStoreException ex)
             {
-                _logger.LogError(ex, "Revoking the refresh token family of a replayed authorization code for client {ClientId} failed.", client.ClientId);
+                logger.LogError(ex, "Revoking the refresh token family of a replayed authorization code for client {ClientId} failed.", client.ClientId);
             }
         }
 
         return InvalidGrant();
     }
 
-    private IResult RefuseMismatchedClient(IClientMetadata client)
+    private IResult RefuseMismatchedClient(IClient client)
     {
-        _logger.LogWarning("Client {ClientId} presented an authorization code issued to a different client.", client.ClientId);
+        logger.LogWarning("Client {ClientId} presented an authorization code issued to a different client.", client.ClientId);
         return InvalidGrant();
     }
 
@@ -232,9 +201,8 @@ internal sealed class AuthorizationCodeGrant
     private static bool VerifierProvesTheChallengeTheCodeWasIssuedWith(TokenRequest request, AuthorizationCodeEntry entry) =>
         entry.Pkce is not { } pkce || (request.CodeVerifier is { } verifier && PkceVerifier.Verify(verifier, pkce));
 
-    private static bool ClientAcceptsCurrentSigningKey(HttpContext context, IClientMetadata client) =>
-        client.AllowedSigningAlgorithms is not { } allowed ||
-        allowed.Contains(context.RequestServices.GetRequiredService<ISigningKeyRing>().Current.SigningKey.Algorithm);
+    internal static bool ClientAcceptsSigningAlgorithm(IClient client, SigningAlgorithm algorithm) =>
+        client.AllowedSigningAlgorithms is not { } allowed || allowed.Contains(algorithm);
 
     private static ITokenIssuer Issuer(HttpContext context, TokenKind kind) =>
         context.RequestServices.GetRequiredKeyedService<ITokenIssuer>(kind);

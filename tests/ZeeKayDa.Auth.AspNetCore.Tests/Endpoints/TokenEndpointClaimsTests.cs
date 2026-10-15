@@ -85,12 +85,12 @@ public sealed class TokenEndpointClaimsTests : IDisposable
                 builder.Services.AddSingleton<IScopeRepository>(_scopes);
                 builder.Services.AddSingleton<IClaimsProvider>(_provider);
                 builder.AddInMemoryClients(clients => clients
-                    .Add(ClientRegistration.CreatePublic(App, [Redirect], [], ["openid", "profile", "email", "address", "orders.read", "orders.write", "reports.read"]) with { RequireConsent = false })
-                    .Add(ClientRegistration.CreatePublic(TenantApp, [Redirect], [], ["openid", "profile"]) with
+                    .Add(Client.CreatePublic(App, [Redirect], [], ["openid", "profile", "email", "address", "orders.read", "orders.write", "reports.read"]) with { RequireConsent = false })
+                    .Add(Client.CreatePublic(TenantApp, [Redirect], [], ["openid", "profile"]) with
                     {
                         RequireConsent = false,
-                        AdditionalIdTokenClaims = ["tenant"],
-                        AdditionalAccessTokenClaims = ["tenant"],
+                        AdditionalIdTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
+                        AdditionalAccessTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
                     }));
             });
     }
@@ -219,7 +219,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     {
         using var host = new EndpointHost(
             configureBuilder: builder => builder.AddInMemoryClients(clients => clients.Add(
-                ClientRegistration.CreatePublic("bad", [Redirect], [], ["openid"]) with { AdditionalAccessTokenClaims = ["email"] })));
+                Client.CreatePublic("bad", [Redirect], [], ["openid"]) with { AdditionalAccessTokenClaims = new HashSet<string>(["email"], StringComparer.Ordinal) })));
 
         var failure = await host.StartupFailureAsync();
 
@@ -456,7 +456,11 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     public async Task A_client_allowing_a_scope_no_repository_defines_fails_startup()
     {
         using var host = new EndpointHost(
-            configureBuilder: builder => builder.AddInMemoryClients(clients => clients.AddPublic("bad", [Redirect], [], ["openid", "undefined"])));
+            configureBuilder: builder => builder.AddInMemoryClients(clients => clients.AddPublic("bad", client =>
+            {
+                client.RedirectUris.UnionWith([Redirect]);
+                client.AllowedScopes.UnionWith(["openid", "undefined"]);
+            })));
 
         var failure = await host.StartupFailureAsync();
 
@@ -535,7 +539,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
                 builder.Services.AddLogging(logging => logging.AddProvider(_logs));
                 builder.AddClaimsProvider<UnconstructibleClaimsProvider>();
                 builder.AddInMemoryClients(clients => clients.Add(
-                    ClientRegistration.CreatePublic(App, [Redirect], [], ["openid", "profile"]) with { RequireConsent = false }));
+                    Client.CreatePublic(App, [Redirect], [], ["openid", "profile"]) with { RequireConsent = false }));
             });
         var code = await SeedCodeWithAsync(host, App, "openid profile");
 
@@ -647,7 +651,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
             ExpiresAt = now.AddSeconds(60),
         };
 
-        await host.Resolve<IAuthorizationCodeStore>().StoreAsync(code, entry, Cancellation);
+        await host.Resolve<AuthorizationCodeStore>().StoreAsync(code, entry, Cancellation);
         return code;
     }
 
@@ -715,11 +719,11 @@ public sealed class TokenEndpointClaimsTests : IDisposable
             get { lock (_calls) return [.. _calls]; }
         }
 
-        public ValueTask<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default)
+        public Task<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default)
         {
             lock (_calls) _calls.Add(context);
 
-            return ValueTask.FromResult(Script is { } script ? script(context) : Resolved(DefaultPool));
+            return Task.FromResult(Script is { } script ? script(context) : Resolved(DefaultPool));
         }
     }
 
@@ -728,7 +732,7 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     {
         public UnconstructibleClaimsProvider() => throw new InvalidOperationException("Could not open connection string Server=db;Password=hunter2");
 
-        public ValueTask<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
+        public Task<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
 
@@ -747,8 +751,8 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     /// <summary>A repository registered under the wrong lifetime; its answers are never read.</summary>
     private sealed class ScopedClientRepository : IClientRepository
     {
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IClientRegistration?>(null);
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientWithCredentials?>(null);
     }
 
     /// <summary>A scope repository whose definitions a test can change between requests.</summary>
@@ -756,8 +760,8 @@ public sealed class TokenEndpointClaimsTests : IDisposable
     {
         public IReadOnlyCollection<ScopeDefinition> Scopes { get; set; } = scopes;
 
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Scopes);
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Scopes);
     }
 
     /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>

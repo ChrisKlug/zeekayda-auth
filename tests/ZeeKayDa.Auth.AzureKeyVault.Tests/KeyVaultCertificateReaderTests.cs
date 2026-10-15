@@ -317,14 +317,14 @@ public sealed class KeyVaultCertificateReaderTests
 
         var act = () => InvokeExtractPublicKey(reader, "not a valid certificate"u8.ToArray());
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
+        act.Should().Throw<KeyVaultVersionMaterialException>()
             .WithMessage("*invalid_certificate_public_key*");
     }
 
     // ── No caught exception's Message reaches the operator-facing failure ─────────────────────────
     //
     // ZeeKayDaConfigurationFailure.Message is a plain string on public API surface that
-    // SecretSanitizingLogger cannot redact, so no caught exception's own Message may reach it.
+    // SanitizingLogger cannot redact, so no caught exception's own Message may reach it.
     // RequestFailedException.Message carries the response content and headers; a cryptographic
     // exception can echo the input it failed to parse. The type is named instead, and the original
     // travels as InnerException. See .claude/agents/developer.md.
@@ -599,7 +599,7 @@ public sealed class KeyVaultCertificateReaderTests
 
         var act = () => InvokeExtractPrivateKey(reader, BuildSecret(Convert.ToBase64String(pfx)));
 
-        act.Should().Throw<ZeeKayDaConfigurationException>()
+        act.Should().Throw<KeyVaultVersionMaterialException>()
             .WithMessage("*unsupported_key_type*");
     }
 
@@ -668,8 +668,20 @@ public sealed class KeyVaultCertificateReaderTests
             "the listing must be for the configured certificate, nothing else");
     }
 
+    [Fact]
+    public async Task GetCertificateVersionsAsync_lists_nothing_when_the_certificate_was_deleted()
+    {
+        var client = new FakeCertificateClient
+        {
+            OnGetVersions = () => FakeAsyncPageable<CertificateProperties>.Throwing(new RequestFailedException(404, "gone")),
+        };
+
+        var versions = await Collect(BuildReader(client));
+
+        versions.Should().BeEmpty();
+    }
+
     [Theory]
-    [InlineData(404, "certificate_not_found")]
     [InlineData(401, "access_denied")]
     [InlineData(403, "access_denied")]
     [InlineData(500, "startup_failure")]
@@ -996,7 +1008,7 @@ public sealed class KeyVaultCertificateReaderTests
 
         var act = () => InvokeExtractPublicKey(reader, CreateCerWithMalformedRsaPublicKey());
 
-        var thrown = act.Should().Throw<ZeeKayDaConfigurationException>()
+        var thrown = act.Should().Throw<KeyVaultVersionMaterialException>()
             .WithMessage("*invalid_certificate_public_key*");
         thrown.Which.Message.Should().Contain("carries a public key that could not be read",
             "this must reach the accessor arm, not LoadCertificate's — the two share a failure code "

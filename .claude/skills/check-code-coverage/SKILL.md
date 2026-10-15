@@ -45,36 +45,31 @@ dotnet test tests/ZeeKayDa.Auth.FileSystem.Tests/ \
 
 Rather than checking out and rebuilding `main` in a worktree, download the `coverage-Linux` artifact from `main`'s most recent CI run **that produced one** (the same artifact `coverage-regression` itself uses — see `.github/workflows/ci.yml`). This requires the `gh` CLI to be authenticated.
 
-**Not simply the most recent successful run.** `detect-changes` skips the coverage jobs on a docs-only push, so a run can be green and still have no artifact — and docs-only merges landing ahead of code is normal here. Taking `--limit 1` then fails with "no valid artifacts found" and the comparison never runs. Walk back until a run actually has it:
+**Not simply the most recent run, and not `gh run list`.** `detect-changes` skips the coverage jobs
+on a docs-only push, so a green run can have no artifact, and docs-only merges landing ahead of code
+is normal here. And `gh run list` has returned a page missing the newest runs, so a loop over it once
+silently took a two-week-old artifact and reported a branch-coverage regression that did not exist.
+So walk `main`'s own commits from git, newest first, and take the first one whose CI push run has the
+artifact:
 
 ```sh
-for id in $(gh run list --repo ChrisKlug/zeekayda-auth --workflow ci.yml --branch main --event push --status success --limit 15 --json databaseId --jq '.[].databaseId'); do
+git fetch -q origin main
+for sha in $(git rev-list --max-count=30 origin/main); do
+  id=$(gh api "repos/ChrisKlug/zeekayda-auth/actions/runs?head_sha=$sha&event=push"     --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .conclusion == "success")][0].id // empty')
+  [ -n "$id" ] || continue
   if gh api repos/ChrisKlug/zeekayda-auth/actions/runs/$id/artifacts --jq '[.artifacts[].name] | join(",")' | grep -q coverage-Linux; then
     gh run download --repo ChrisKlug/zeekayda-auth -n coverage-Linux -D ./TestResults/base "$id"
-    base_sha=$(gh api repos/ChrisKlug/zeekayda-auth/actions/runs/$id --jq .head_sha)
-    echo "baseline from run $id (${base_sha:0:8})"
-    git merge-base --is-ancestor "$base_sha" HEAD 2>/dev/null \
-      || echo "WARNING: baseline commit is not an ancestor of HEAD — the comparison is against a different main"
-    echo "commits on main since the baseline: $(git rev-list --count "$base_sha"..origin/main 2>/dev/null || echo '?')"
+    echo "baseline: run $id, commit ${sha:0:8}, $(git rev-list --count "$sha"..origin/main) newer commit(s) on main without coverage"
     break
   fi
 done
 ```
 
-If the loop finds nothing in 15 runs, the artifacts have aged out — raise the limit, or fall back to building `main` in a worktree.
-
-**Read the baseline SHA the loop prints, and check the commit count is 0.** The comparison is only
-meaningful against the `main` you branched from. A baseline several merges old produces a *plausible
-but wrong* verdict — regressions in files your branch never touched, which is the tell. This has cost
-a full detour once: a transient `gh run list` answer omitted the newest runs, the loop silently took a
-two-week-old artifact, and the check reported a branch-coverage regression that did not exist. If the
-count is not 0, or the ancestry warning fires, find the run for the current `origin/main` head
-directly and download that one instead:
-
-```sh
-rid=$(gh run list --repo ChrisKlug/zeekayda-auth --branch main --workflow CI --limit 1 --json databaseId --jq '.[0].databaseId')
-gh api repos/ChrisKlug/zeekayda-auth/actions/runs/$rid --jq '{head_sha, created_at}'
-```
+The commits it skips are ones whose CI produced no coverage — docs-only, or a run still in progress
+or failed. A docs-only skip cannot move coverage; if the skipped commits include code, wait for that
+run to finish rather than compare against an older one. Regressions in files your branch never
+touched mean the baseline is not the `main` you branched from: stop and find out why. If nothing is
+found in 30 commits, the artifacts have aged out — fall back to building `main` in a worktree.
 
 Never adjust a threshold or accept a regression to make a stale comparison pass.
 

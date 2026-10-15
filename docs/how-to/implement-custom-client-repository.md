@@ -16,7 +16,7 @@ service, or managed via an admin API, implement `IClientRepository` directly.
 ```csharp
 public interface IClientRepository
 {
-    ValueTask<IClientRegistration?> FindByClientIdAsync(
+    Task<IClientRegistration?> FindByClientIdAsync(
         string clientId,
         CancellationToken cancellationToken = default);
 }
@@ -24,9 +24,10 @@ public interface IClientRepository
 
 Two rules are **non-negotiable**:
 
-1. **Return `null` for unknown clients — never throw.** Throwing from this method changes response
-   timing and creates a timing oracle that enables client enumeration attacks. An unknown or
-   malformed `client_id` must always produce a `null` return, never an exception.
+1. **Return `null` for an unknown client — never throw for one.** Throwing changes response
+   timing and creates a timing oracle that enables client enumeration attacks. The framework never
+   passes a malformed `client_id`; it answers those itself. Throwing when your store cannot answer
+   at all — an outage, a timeout — is fine: the request fails with HTTP 500, never `invalid_client`.
 
 2. **Use parameterised queries — never concatenate `clientId` into a query string.** If your
    implementation queries a database, pass `clientId` as a parameter to prevent SQL injection.
@@ -78,14 +79,15 @@ public sealed class MyDatabaseClientRepository : IClientRepository
 
     public async Task SaveClientAsync(IClientRegistration client)
     {
-        // Throws ZeeKayDaConfigurationException with all violations in AggregatedFailures
-        // if the registration is invalid — see every problem in one pass.
-        _validator.Validate(client);
+        // Every violation, so the caller sees every problem in one pass; empty when valid.
+        var failures = _validator.Validate(client);
+        if (failures.Count > 0)
+            throw new ZeeKayDaConfigurationException([.. failures]);
 
         // persist ...
     }
 
-    public async ValueTask<IClientRegistration?> FindByClientIdAsync(
+    public async Task<IClientRegistration?> FindByClientIdAsync(
         string clientId,
         CancellationToken cancellationToken = default)
     {

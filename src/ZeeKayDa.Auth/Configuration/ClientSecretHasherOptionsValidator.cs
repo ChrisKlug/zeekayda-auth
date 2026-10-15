@@ -2,34 +2,22 @@ using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Configuration;
 
-/// <summary>
-/// Validates <see cref="ClientSecretHasherRegistrationOptions"/> at startup to catch
-/// hasher misconfiguration before the host accepts requests.
-/// </summary>
+/// <summary>Validates <see cref="ClientSecretHasherRegistrationOptions"/> at startup.</summary>
 internal sealed class ClientSecretHasherOptionsValidator
-    : IValidateOptions<ClientSecretHasherRegistrationOptions>
+    : ZeeKayDaOptionsValidator<ClientSecretHasherRegistrationOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, ClientSecretHasherRegistrationOptions options)
+    protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(
+        string? name,
+        ClientSecretHasherRegistrationOptions options)
     {
-        // The validator is only registered by AddClientSecretHasher<T>(), which always adds an entry
-        // before ValidateOnStart() runs. The 0-hashers case is therefore unreachable here;
-        // CompositeClientSecretHasher.ResolveDefault is the runtime guard for that path.
-        if (options.Registrations.Count == 1)
-            return ValidateOptionsResult.Success;
-
+        // None marked is valid: PBKDF2 is then the default.
         var defaultCount = options.Registrations.Count(r => r.IsDefault);
 
-        if (defaultCount == 0)
-            return ValidateOptionsResult.Fail(
-                "Multiple IClientSecretHasher implementations are registered but none is marked as default. " +
-                "Call AddClientSecretHasher<T>(isDefault: true) for exactly one hasher.");
-
         if (defaultCount > 1)
-            return ValidateOptionsResult.Fail(
+            yield return new(
+                "configuration.hashers.multiple_defaults",
                 $"{defaultCount} IClientSecretHasher implementations are marked as default. " +
-                "Exactly one hasher must have isDefault: true.");
-
-        return ValidateOptionsResult.Success;
+                "At most one hasher may have isDefault: true; with none, PBKDF2 is the default.");
     }
 }

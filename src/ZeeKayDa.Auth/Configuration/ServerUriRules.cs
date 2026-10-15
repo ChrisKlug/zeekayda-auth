@@ -1,9 +1,6 @@
 namespace ZeeKayDa.Auth.Configuration;
 
-/// <summary>
-/// Yes/no checks shared by the issuer and the endpoint URI overrides: both must use HTTPS, except
-/// that <c>AllowInsecureIssuer</c> admits HTTP to a loopback host for local development.
-/// </summary>
+/// <summary>The HTTPS rules shared by the issuer and the endpoint URI overrides.</summary>
 internal static class ServerUriRules
 {
     /// <summary>HTTPS, or HTTP when <paramref name="allowInsecure"/> is set.</summary>

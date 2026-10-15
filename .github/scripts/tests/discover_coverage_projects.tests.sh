@@ -179,6 +179,37 @@ else
     record_fail "test project paired with a sample is excluded, packages still listed (got: ${OUTPUT})"
 fi
 
+# Case 7: a host under tests/ that only its own tests drive (tests/<Name>/ beside
+# tests/<Name>.Tests/) is neither a test project breaking the naming convention nor a package:
+# both it and its tests are left out, and real packages still get listed.
+CASE7="${WORK_DIR}/case7"
+write_project "${CASE7}" "PkgA" "net10.0" "src"
+write_project "${CASE7}" "PkgA" "" "tests"
+write_project "${CASE7}" "Product.Host" "" "tests"
+mkdir -p "${CASE7}/tests/Product.Host"
+cat > "${CASE7}/tests/Product.Host/Product.Host.csproj" <<XML
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+</Project>
+XML
+cat > "${CASE7}/ZeeKayDa.Auth.slnx" <<XML
+<Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/PkgA.Tests/PkgA.Tests.csproj" />
+    <Project Path="tests/Product.Host.Tests/Product.Host.Tests.csproj" />
+    <Project Path="tests/Product.Host/Product.Host.csproj" />
+  </Folder>
+</Solution>
+XML
+OUTPUT="$(run_discover "${CASE7}")"
+if [[ "${OUTPUT}" == "PkgA" ]]; then
+    record_pass "a test host under tests/ and its tests are excluded, packages still listed"
+else
+    record_fail "a test host under tests/ and its tests are excluded, packages still listed (got: ${OUTPUT})"
+fi
+
 echo
 echo "Smoke test summary: ${PASS} passed, ${FAIL} failed"
 [[ "${FAIL}" -eq 0 ]]

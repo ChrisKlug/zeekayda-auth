@@ -11,29 +11,12 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.AzureKeyVault;
 
 /// <summary>
-/// <see cref="IKeyVaultCertificateReader"/> implementation backed by real
-/// <see cref="Azure.Security.KeyVault.Certificates.CertificateClient"/> and
-/// <see cref="Azure.Security.KeyVault.Secrets.SecretClient"/> instances.
+/// Reads certificate versions through the Key Vault SDK. The private key comes from the linked secret's
+/// PFX, parsed with <see cref="Pkcs12Info"/> so it is never written to an OS key store.
 /// </summary>
-/// <remarks>
-/// True private key export requires downloading the certificate's linked secret, since
-/// <c>KeyClient.GetKeyAsync</c> never returns private key material regardless of a key's
-/// exportable flag; the secret's value contains the full PFX only when the key policy is
-/// exportable. Every transport fault from the SDK is mapped to a
-/// <see cref="ZeeKayDaConfigurationException"/> carrying a stable failure code and enough context
-/// to be actionable, without ever including key material.
-/// <para>
-/// The downloaded PFX is parsed with <see cref="Pkcs12Info"/>, a pure managed ASN.1/PKCS#12
-/// parser, rather than <c>X509CertificateLoader.LoadPkcs12</c> — the latter always constructs an
-/// OS-backed <c>X509Certificate2</c>, and on macOS that requires writing the private key to a
-/// transient keychain on disk. Parsing directly and importing the key bag into an
-/// <see cref="RSA"/>/<see cref="ECDsa"/> instance keeps the private key in managed memory only.
-/// </para>
-/// </remarks>
 internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
 {
-    // Key Vault's default content type for a managed certificate's secret value. PEM-formatted
-    // secrets are out of scope here; such a certificate fails fast below instead.
+    // Key Vault's default for a managed certificate's secret; a PEM secret is refused.
     private const string Pkcs12ContentType = "application/x-pkcs12";
 
     private readonly CertificateClient _certificateClient;
@@ -45,7 +28,6 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
 
     public KeyVaultCertificateReader(IOptions<AzureKeyVaultCachedSigningOptions> options)
     {
-        ArgumentNullException.ThrowIfNull(options);
         var value = options.Value;
         var credential = value.Credential;
         ArgumentNullException.ThrowIfNull(credential);
@@ -58,12 +40,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         _createEcdsa = ECDsa.Create;
     }
 
-    /// <summary>
-    /// Test seam: lets unit tests inject faked <see cref="CertificateClient"/>/<see cref="SecretClient"/>
-    /// instances, making the SDK fault-mapping paths reachable without a live vault, and faked
-    /// <see cref="RSA"/>/<see cref="ECDsa"/> factories, making the private-key import failure arms
-    /// observable — a handle that fails to import is created and disposed entirely inside this class.
-    /// </summary>
+    /// <summary>Test seam: faked SDK clients and key factories.</summary>
     internal KeyVaultCertificateReader(
         CertificateClient certificateClient, SecretClient secretClient, KeyVaultCertificateIdentifier identifier,
         Func<RSA>? createRsa = null, Func<ECDsa>? createEcdsa = null)
@@ -83,15 +60,21 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         var pageable = _certificateClient.GetPropertiesOfCertificateVersionsAsync(_certificateName, cancellationToken);
         await using var enumerator = pageable.GetAsyncEnumerator(cancellationToken);
 
+        var listedAny = false;
         while (true)
         {
-            CertificateProperties current;
+            CertificateProperties? current;
             try
             {
                 if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
                     yield break;
 
                 current = enumerator.Current;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404 && !listedAny)
+            {
+                // A deleted certificate has no versions to list: deleting it revokes every key it held.
+                current = null;
             }
             catch (RequestFailedException ex)
             {
@@ -102,17 +85,17 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
                 throw MapUnexpectedFailure(ex);
             }
 
+            if (current is null)
+                yield break;
+
+            listedAny = true;
             yield return MapVersion(current, _certificateName, _vaultUri);
         }
     }
 
     /// <summary>
-    /// Maps one SDK <see cref="CertificateProperties"/> onto
-    /// <see cref="KeyVaultCertificateVersionInfo"/>, failing closed on a listing entry missing its
-    /// <c>Enabled</c> or <c>CreatedOn</c> attribute — the two fields the entire version-selection
-    /// derivation rests on. A default would be fail-open: an absent <c>CreatedOn</c> read as
-    /// ancient satisfies the pre-activation age gate immediately, and an absent <c>Enabled</c> read
-    /// as enabled bypasses the revocation lever.
+    /// Maps one listing entry, failing closed when <c>Enabled</c> or <c>CreatedOn</c> is missing: any
+    /// default for either would let a version sign early or survive being disabled.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// <paramref name="properties"/> carries no <c>Enabled</c> or no <c>CreatedOn</c> value.
@@ -150,8 +133,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
     {
         ArgumentException.ThrowIfNullOrEmpty(version);
 
-        // Deliberately does not touch _secretClient: CertificateClient's response already carries
-        // the public certificate (Cer) without requiring secrets/get or downloading the PFX.
+        // The Cer needs no secrets/get and no PFX download.
         var certificate = await GetCertificateVersionAsync(version, cancellationToken).ConfigureAwait(false);
         return ExtractPublicKey(certificate.Cer, version);
     }
@@ -206,12 +188,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         }
     }
 
-    /// <summary>
-    /// Reads the certificate's linked secret identifier without letting an absent sid escape as a
-    /// raw SDK exception: <see cref="KeyVaultCertificate.SecretId"/> parses the sid on every read
-    /// and throws when the certificate carries none at all. A missing sid and an unusable one are
-    /// the same operator-facing condition, so both fail closed through the caller's guard.
-    /// </summary>
+    /// <summary>The linked secret identifier; <see cref="KeyVaultCertificate.SecretId"/> throws when there is none.</summary>
     private static bool TryGetSecretIdentifier(
         KeyVaultCertificate certificate, out KeyVaultSecretIdentifier secretIdentifier)
     {
@@ -234,10 +211,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         return KeyVaultSecretIdentifier.TryCreate(secretId, out secretIdentifier);
     }
 
-    /// <summary>
-    /// Extracts the public key from a certificate version's CER-formatted public certificate,
-    /// never the linked secret/PFX, so this never requires <c>secrets/get</c>.
-    /// </summary>
+    /// <summary>Extracts the public key from the version's Cer, never its secret.</summary>
     private (AsymmetricAlgorithm, SigningKeyType) ExtractPublicKey(byte[] cerBytes, string version)
     {
         using var certificate = LoadCertificate(cerBytes, version);
@@ -256,18 +230,13 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         }
         catch (ZeeKayDaConfigurationException)
         {
-            // Re-throw before re-classifying, as GetKeyMaterialAsync does: UnsupportedKeyTypeException
-            // above is a well-formed failure and must keep its own code. Proven by
-            // ExtractPublicKey_rejects_a_certificate_whose_public_key_is_neither_rsa_nor_ec, which
-            // fails without this arm.
+            // Keeps its own code rather than being reclassified below.
             throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // A public-key accessor on a certificate that loaded can still throw — an unreadable or
-            // unsupported key algorithm surfaces as a CryptographicException. Without this the raw
-            // BCL exception escapes the reader instead of reaching the operator as a stable code.
-            throw new ZeeKayDaConfigurationException(
+            // A loaded certificate's key accessor can still throw on an unreadable key algorithm.
+            throw new KeyVaultVersionMaterialException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.invalid_certificate_public_key",
                     $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' " +
@@ -285,11 +254,8 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         }
         catch (CryptographicException ex)
         {
-            // The exception TYPE is named, never ex.Message. A cryptographic exception can echo the
-            // input it failed to parse, and ZeeKayDaConfigurationFailure.Message is a plain string on
-            // public API surface that SecretSanitizingLogger cannot redact. The root cause stays
-            // available to operators as InnerException.
-            throw new ZeeKayDaConfigurationException(
+            // Never ex.Message: a failure message is not redacted, so the cause travels as the inner exception.
+            throw new KeyVaultVersionMaterialException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.invalid_certificate_public_key",
                     $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' did " +
@@ -341,10 +307,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
         }
         catch (Exception ex) when (ex is CryptographicException or InvalidOperationException)
         {
-            // The exception TYPE is named, never ex.Message. A cryptographic exception can echo the
-            // input it failed to parse, and ZeeKayDaConfigurationFailure.Message is a plain string on
-            // public API surface that SecretSanitizingLogger cannot redact. The root cause stays
-            // available to operators as InnerException.
+            // Never ex.Message: a failure message is not redacted, so the cause travels as the inner exception.
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.invalid_certificate_secret",
@@ -365,26 +328,18 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
 
         foreach (var safeContents in pkcs12.AuthenticatedSafe)
         {
-            // A Key Vault-exported PFX has no real password; Decrypt(ReadOnlySpan<char>.Empty) is
-            // the "no password" case here.
+            // A Key Vault-exported PFX has an empty password.
             if (safeContents.ConfidentialityMode == Pkcs12ConfidentialityMode.Password)
                 safeContents.Decrypt(ReadOnlySpan<char>.Empty);
 
             foreach (var bag in safeContents.GetBags())
             {
-                switch (bag)
-                {
-                    case Pkcs12KeyBag keyBag:
-                        return ImportPrivateKey(keyBag.Pkcs8PrivateKey.Span, version);
-                    case Pkcs12ShroudedKeyBag shroudedKeyBag:
-                        return ImportShroudedPrivateKey(shroudedKeyBag.EncryptedPkcs8PrivateKey.Span, version);
-                }
+                if (bag is Pkcs12KeyBag or Pkcs12ShroudedKeyBag)
+                    return ImportPrivateKey(bag, version);
             }
         }
 
-        // When a certificate's key policy is non-exportable, Key Vault's secret endpoint still
-        // returns HTTP 200 with a PKCS#12 payload that simply omits the private key bag — "no key
-        // bag was found" is the only reliable signal for this case.
+        // A non-exportable certificate's secret is still a 200 with a PFX; the missing key bag is the only signal.
         throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(
                 "signing.azure_key_vault.certificate_not_exportable",
@@ -395,82 +350,15 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
                 "never leave Key Vault."));
     }
 
-    private (AsymmetricAlgorithm, SigningKeyType) ImportPrivateKey(ReadOnlySpan<byte> pkcs8PrivateKey, string version)
-    {
-        var rsa = _createRsa();
-        try
+    private (AsymmetricAlgorithm, SigningKeyType) ImportPrivateKey(Pkcs12SafeBag keyBag, string version) =>
+        Pkcs12PrivateKey.Import(keyBag, ReadOnlySpan<char>.Empty, _createRsa, _createEcdsa) switch
         {
-            rsa.ImportPkcs8PrivateKey(pkcs8PrivateKey, out _);
-            return (rsa, SigningKeyType.Rsa);
-        }
-        catch (CryptographicException)
-        {
-            rsa.Dispose();
-        }
-        catch
-        {
-            // This handle must never leak regardless of what gets thrown.
-            rsa.Dispose();
-            throw;
-        }
+            RSA rsa => (rsa, SigningKeyType.Rsa),
+            ECDsa ecdsa => (ecdsa, SigningKeyType.Ec),
+            _ => throw UnsupportedKeyTypeException(version),
+        };
 
-        var ecdsa = _createEcdsa();
-        try
-        {
-            ecdsa.ImportPkcs8PrivateKey(pkcs8PrivateKey, out _);
-            return (ecdsa, SigningKeyType.Ec);
-        }
-        catch (CryptographicException)
-        {
-            ecdsa.Dispose();
-            throw UnsupportedKeyTypeException(version);
-        }
-        catch
-        {
-            ecdsa.Dispose();
-            throw;
-        }
-    }
-
-    private (AsymmetricAlgorithm, SigningKeyType) ImportShroudedPrivateKey(
-        ReadOnlySpan<byte> encryptedPkcs8PrivateKey, string version)
-    {
-        var rsa = _createRsa();
-        try
-        {
-            rsa.ImportEncryptedPkcs8PrivateKey(ReadOnlySpan<char>.Empty, encryptedPkcs8PrivateKey, out _);
-            return (rsa, SigningKeyType.Rsa);
-        }
-        catch (CryptographicException)
-        {
-            rsa.Dispose();
-        }
-        catch
-        {
-            // This handle must never leak regardless of what gets thrown.
-            rsa.Dispose();
-            throw;
-        }
-
-        var ecdsa = _createEcdsa();
-        try
-        {
-            ecdsa.ImportEncryptedPkcs8PrivateKey(ReadOnlySpan<char>.Empty, encryptedPkcs8PrivateKey, out _);
-            return (ecdsa, SigningKeyType.Ec);
-        }
-        catch (CryptographicException)
-        {
-            ecdsa.Dispose();
-            throw UnsupportedKeyTypeException(version);
-        }
-        catch
-        {
-            ecdsa.Dispose();
-            throw;
-        }
-    }
-
-    private ZeeKayDaConfigurationException UnsupportedKeyTypeException(string version) =>
+    private KeyVaultVersionMaterialException UnsupportedKeyTypeException(string version) =>
         new(new ZeeKayDaConfigurationFailure(
             "signing.azure_key_vault.unsupported_key_type",
             $"Key Vault certificate '{_certificateName}' version '{version}' in vault '{_vaultUri}' does not " +
@@ -495,11 +383,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
                     "access policy, or the 'Key Vault Certificate User' built-in RBAC role) on this vault: " +
                     "every included version requires 'certificates/get', and the active signing version " +
                     "additionally requires 'secrets/get' to download its private key.")),
-            // The exception TYPE is named, never ex.Message. RequestFailedException.Message carries
-            // the response content and headers, and ZeeKayDaConfigurationFailure.Message is a plain
-            // string on public API surface that SecretSanitizingLogger cannot redact. The status and
-            // ErrorCode above are the safe, operator-actionable parts; the root cause stays available
-            // as InnerException.
+            // Never ex.Message: it carries the response content and headers.
             _ => new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.startup_failure",
@@ -509,10 +393,7 @@ internal sealed class KeyVaultCertificateReader : IKeyVaultCertificateReader
                 ex),
         };
 
-    // The exception TYPE is named, never ex.Message. An arbitrary underlying provider exception may
-    // carry credential material, and ZeeKayDaConfigurationFailure.Message is a plain string on public
-    // API surface that SecretSanitizingLogger cannot redact. The root cause stays available to
-    // operators as InnerException.
+    // Never ex.Message: a provider exception may carry credential material.
     private ZeeKayDaConfigurationException MapUnexpectedFailure(Exception ex) =>
         new(
             new ZeeKayDaConfigurationFailure(

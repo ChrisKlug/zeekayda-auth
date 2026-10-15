@@ -106,8 +106,8 @@ When the list is non-empty:
 
 Allowlist entries are validated at startup. Each entry must be an absolute origin
 (`scheme://host[:port]`) with no path, query, fragment, user information, wildcards, or the
-literal string `null`. Entries are canonicalized, deduplicated, and frozen into an immutable
-startup snapshot used by endpoint lookups. Invalid entries cause the host to fail fast at startup.
+literal string `null`. The option is frozen as configured; endpoint lookups use a canonical,
+de-duplicated form derived from it once at startup. Invalid entries cause the host to fail fast at startup.
 
 `https://` origins are accepted by default. `http://` origins are rejected unless
 `AllowInsecureIssuer = true`; when enabled, HTTP origins must still use loopback hosts.
@@ -134,9 +134,9 @@ what condition.
 | `scopes_supported` | `IScopeRepository` | By default, published from the built-in `InMemoryScopeRepository` seeded with `StandardScopes.All` (`openid`, `profile`, `email`, `phone`, `address`). |
 | `response_modes_supported` | `Response.ModesSupported` | Defaults to `["query"]`. |
 | `grant_types_supported` | `GrantTypesSupported` | Defaults to `["authorization_code"]`. |
-| `token_endpoint_auth_methods_supported` | `TokenEndpoint.AuthMethodsSupported` | Defaults to `["client_secret_basic"]`. |
+| `token_endpoint_auth_methods_supported` | The registered client authenticators | Derived: every method a registered `IClientAuthenticator` declares, plus `none` — `["client_secret_basic", "client_secret_post", "none"]` with the built-in one — optionally narrowed by `TokenEndpoint.AdvertisedAuthMethods`. |
 | `subject_types_supported` | Fixed value | Always `["public"]`. Pairwise subject identifiers are not currently supported. |
-| `id_token_signing_alg_values_supported` | The configured signing keys | Derived: the distinct algorithms of every published key, ascending by `SigningAlgorithm` value, optionally narrowed by `IdToken.AdvertisedSigningAlgorithms`. Required by OIDC Discovery 1.0 Section 3. |
+| `id_token_signing_alg_values_supported` | The signing key source | The one algorithm the signing source was registered for; every published key signs under it. Required by OIDC Discovery 1.0 Section 3. |
 | `claims_supported` | `IScopeRepository` + the ID token's protocol claims | Derived: the ID-token and userinfo claims of every discoverable scope, plus `iss`, `sub`, `aud`, `iat`, `exp`, `auth_time`, `at_hash`, `nonce`, `acr` and `amr`. A scope's access-token claims are not listed. Omitted on a host whose `GrantTypesSupported` lacks `authorization_code`, which issues no ID token. |
 | `code_challenge_methods_supported` | `AuthorizationEndpoint.CodeChallengeMethodsSupported` | `["S256"]` by default, the one method the token endpoint verifies. Omitted when `null`, which startup permits only on a host that does not serve the authorization code grant. |
 
@@ -224,7 +224,7 @@ This matters for issuers with path segments.
   "scopes_supported": ["openid", "profile", "api.read"],
   "response_modes_supported": ["query"],
   "grant_types_supported": ["authorization_code"],
-  "token_endpoint_auth_methods_supported": ["client_secret_basic"],
+  "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"],
   "subject_types_supported": ["public"],
   "id_token_signing_alg_values_supported": ["RS256"]
 }
@@ -245,7 +245,6 @@ Startup fails when:
 - `Issuer` contains user information
 - an endpoint override authority differs from `Issuer`
 - `Response.TypesSupported` is null or empty
-- `IdToken.AdvertisedSigningAlgorithms` is a non-null empty collection
 - no signing key source is registered, so there is no key set to derive
   `id_token_signing_alg_values_supported` from
 - any supported metadata collection is null

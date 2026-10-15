@@ -97,23 +97,20 @@ Severity:
 
 ```markdown
 **Adversarial review (architecture): ❌ findings**            ← or: ✅ no material findings
-Read: <N> files beyond the diff · Model: <the model you are>
+Read: <N> files beyond the diff · Looked at: <the areas you tried to break, comma-separated> · Model: <the model you are>
 
 | Sev | Conf | Where | Finding | Fix |
 |---|---|---|---|---|
-| High | 0.8 | `src/…/IThing.cs:12` | one sentence, the structural problem | one sentence, the reshape |
+| High | 0.8 | `src/…/IThing.cs:12` | two short plain sentences: what is wrong, and what it lets happen | one sentence, the reshape |
 
 ### Trade-offs
-For each High or Critical finding, and for each judgement call: what the proposed shape costs and
-what it buys. No architecture is free; say what this one pays.
+High and Critical findings only, at most three lines each: the concrete sequence to the bad
+outcome. Omit the section if there are none.
 
 ### Inferences
-Anything in the table that rests on something you could not verify from the source. Omit the section
-if there is nothing.
-
-### Checked and found sound
-Up to five things you specifically tried to misuse and could not, one line each.
+One line per finding that rests on something you could not verify. Omit the section if there is
+nothing.
 ```
 
-Stay near 400 words unless the findings genuinely need more. Report every finding that clears the
+Stay under 250 words. No section beyond the ones above. Report every finding that clears the
 bar; do not pre-filter to the ones you think will be fixed — that decision is the maintainer's.

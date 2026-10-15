@@ -1,0 +1,449 @@
+// These tests exercise the DI wiring for AddPemFileSigning/AddPfxFileSigning end to end — a real
+// ServiceCollection / ZeeKayDaAuthCoreBuilder / ServiceProvider. Neither extension method ever calls
+// GetSigningKeysAsync during registration, so a real (but never-loaded) path is sufficient here;
+// the real-filesystem load path itself is covered by PemFileSigningJwtSigningServiceTests /
+// PfxFileSigningJwtSigningServiceTests and Integration/FileSigningIntegrationTests.
+
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.FileSystem;
+using ZeeKayDa.Auth.Tokens;
+
+namespace ZeeKayDa.Auth.FileSystem.Tests.Extensions;
+
+public sealed class ZeeKayDaAuthCoreBuilderFileSigningExtensionsTests
+{
+    private const string PemPath = "/etc/zeekayda/signing.pem";
+    private const string PfxPath = "/etc/zeekayda/signing.pfx";
+
+    private static ZeeKayDaAuthCoreBuilder NewBuilder()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        return services.AddZeeKayDaAuthCoreForTesting();
+    }
+
+    /// <summary>Runs the registered hosted services' startup, which is where startup validation runs.</summary>
+    private static async Task StartAsync(Action<ZeeKayDaAuthCoreBuilder> configure)
+    {
+        var builder = NewBuilder();
+        builder.Services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
+        configure(builder);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        foreach (var hostedService in provider.GetServices<IHostedService>())
+            await hostedService.StartAsync(CancellationToken.None);
+    }
+
+    private static Func<CancellationToken, Task<string>> AnyPassword() => _ => Task.FromResult("password");
+
+    // ── AddPemFileSigning: argument validation ───────────────────────────────────────────────────
+
+    // The path overloads are not tested for a null builder: they delegate to the configure overloads,
+    // whose own guard throws the same ArgumentNullException("builder") before anything else runs, so
+    // the path overloads' guards only change which of two invalid arguments is reported first.
+
+    [Fact]
+    public void AddPemFileSigning_configure_overload_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthCoreBuilder)null!).AddPemFileSigning(SigningAlgorithm.RS256, _ => { });
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    [Fact]
+    public void AddPemFileSigning_configure_overload_throws_ArgumentNullException_when_configure_is_null()
+    {
+        // Without the eager guard the null callback would only surface when the options pipeline
+        // first materialises the value — far from the registration call that caused it.
+        var builder = NewBuilder();
+
+        var act = () => builder.AddPemFileSigning(SigningAlgorithm.RS256, configure: null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
+    }
+
+    [Fact]
+    public void AddPfxFileSigning_configure_overload_throws_ArgumentNullException_when_builder_is_null()
+    {
+        var act = () => ((ZeeKayDaAuthCoreBuilder)null!).AddPfxFileSigning(SigningAlgorithm.RS256, _ => { });
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
+    }
+
+    [Fact]
+    public void AddPfxFileSigning_configure_overload_throws_ArgumentNullException_when_configure_is_null()
+    {
+        var builder = NewBuilder();
+
+        var act = () => builder.AddPfxFileSigning(SigningAlgorithm.RS256, configure: null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AddPemFileSigning_throws_ArgumentException_when_path_is_null_or_whitespace(string? path)
+    {
+        var builder = NewBuilder();
+
+        var act = () => builder.AddPemFileSigning(path!, SigningAlgorithm.RS256);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("path");
+    }
+
+    // ── AddPemFileSigning(path, algorithm, keyPath: ...): the split-file case (issue #405) ──────────
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AddPemFileSigning_with_keyPath_throws_ArgumentException_when_certPath_is_null_or_whitespace(string? certPath)
+    {
+        var builder = NewBuilder();
+
+        var act = () => builder.AddPemFileSigning(certPath!, SigningAlgorithm.RS256, "/etc/zeekayda/signing.key");
+
+        act.Should().Throw<ArgumentException>().WithParameterName("path");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AddPemFileSigning_with_keyPath_throws_ArgumentException_when_keyPath_is_empty_or_whitespace(string keyPath)
+    {
+        var builder = NewBuilder();
+
+        var act = () => builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256, keyPath);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("keyPath");
+    }
+
+    [Fact]
+    public async Task AddPemFileSigning_with_keyPath_lists_one_file_with_both_paths()
+    {
+        var builder = NewBuilder();
+        const string keyPath = "/etc/zeekayda/signing.key";
+
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256, keyPath);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value;
+        options.Files.Should().Equal(new PemSigningFile(PemPath, keyPath));
+    }
+
+    // ── AddPfxFileSigning: argument validation ───────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AddPfxFileSigning_throws_ArgumentException_when_path_is_null_or_whitespace(string? path)
+    {
+        var builder = NewBuilder();
+
+        var act = () => builder.AddPfxFileSigning(path!, SigningAlgorithm.RS256, AnyPassword());
+
+        act.Should().Throw<ArgumentException>().WithParameterName("path");
+    }
+
+    [Fact]
+    public void AddPfxFileSigning_throws_ArgumentNullException_when_passwordSource_is_null()
+    {
+        var builder = NewBuilder();
+
+        var act = () => builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, passwordSource: null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("passwordSource");
+    }
+
+    // ── Double-registration guard (AC #13): any combination ─────────────────────────────────────
+
+
+
+    [Fact]
+    public void AddPfxFileSigning_after_AddPemFileSigning_on_the_same_builder_throws()
+    {
+        var builder = NewBuilder();
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
+
+        var act = () => builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
+
+        act.Should().Throw<InvalidOperationException>("AC #13: only one signing provider, of any kind, may be registered");
+    }
+
+    [Fact]
+    public void AddPemFileSigning_after_AddPfxFileSigning_on_the_same_builder_throws()
+    {
+        var builder = NewBuilder();
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
+
+        var act = () => builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
+
+        act.Should().Throw<InvalidOperationException>("AC #13: only one signing provider, of any kind, may be registered");
+    }
+
+    [Fact]
+    public void AddPemFileSigning_after_AddPemFileSigning_on_the_same_builder_throws()
+    {
+        var builder = NewBuilder();
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
+
+        var act = () => builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    /// <summary>
+    /// Issue #511: a second call with *different* options must fail loudly rather than silently
+    /// composing two configurations onto one registration. The guard throws before this call's
+    /// options callbacks are applied, so the surviving registration is the first one, unmodified.
+    /// </summary>
+    [Fact]
+    public void AddPfxFileSigning_after_AddPfxFileSigning_with_different_options_throws()
+    {
+        var builder = NewBuilder();
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
+
+        var act = () => builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.ES256, AnyPassword());
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    // ── Successful registration ──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AddPemFileSigning_registers_a_static_signing_key_ring()
+    {
+        var builder = NewBuilder();
+
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        provider.GetService<SigningKeyRing>().Should().BeOfType<SigningKeyRing>();
+    }
+
+    [Fact]
+    public async Task AddPemFileSigning_does_not_register_the_source_in_the_container()
+    {
+        // The ring constructs and owns the one source it reads from, so no application code can
+        // reach it.
+        var builder = NewBuilder();
+
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        provider.GetService<ISigningKeySource>().Should().BeNull();
+    }
+
+    [Fact]
+    public void AddPemFileSigning_throws_when_a_signing_key_source_is_already_registered()
+    {
+        var builder = NewBuilder();
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
+
+        var act = () => builder.AddPemFileSigning("/etc/zeekayda/other.pem", SigningAlgorithm.RS256);
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task AddPemFileSigning_does_not_apply_its_options_when_the_source_registration_is_rejected()
+    {
+        // The source is registered before any configuration callback runs, so a caller that catches
+        // the rejection is not left with the rejected call's files on the surviving registration.
+        var builder = NewBuilder();
+        builder.AddPemFileSigning(PemPath, SigningAlgorithm.RS256);
+
+        var act = () => builder.AddPemFileSigning(SigningAlgorithm.ES256, options =>
+            options.Files.Add(new PemSigningFile("/etc/zeekayda/rejected.pem")));
+
+        act.Should().Throw<InvalidOperationException>();
+        await using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value;
+        options.Files.Should().Equal(new PemSigningFile(PemPath));
+        options.Algorithm.Should().Be(SigningAlgorithm.RS256);
+    }
+
+    [Fact]
+    public async Task AddPfxFileSigning_registers_a_static_signing_key_ring()
+    {
+        var builder = NewBuilder();
+
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        provider.GetService<SigningKeyRing>().Should().BeOfType<SigningKeyRing>();
+    }
+
+    [Fact]
+    public async Task AddPfxFileSigning_lists_one_file_with_the_path_and_password_source()
+    {
+        var builder = NewBuilder();
+        var passwordSource = AnyPassword();
+
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, passwordSource);
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PfxFileSigningOptions>>().Value;
+        options.Files.Should().Equal(new PfxFile(PfxPath, passwordSource));
+    }
+
+    // ── AddPfxFileSigning: the configure overload ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AddPfxFileSigning_configure_overload_lists_every_file_the_callback_adds()
+    {
+        var builder = NewBuilder();
+        var firstPassword = AnyPassword();
+        var secondPassword = AnyPassword();
+
+        builder.AddPfxFileSigning(SigningAlgorithm.ES256, options =>
+        {
+            options.Files.Add(new PfxFile("/etc/zeekayda/first.pfx", firstPassword));
+            options.Files.Add(new PfxFile("/etc/zeekayda/second.pfx", secondPassword));
+        });
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PfxFileSigningOptions>>().Value;
+        options.Files.Should().Equal(
+            new PfxFile("/etc/zeekayda/first.pfx", firstPassword),
+            new PfxFile("/etc/zeekayda/second.pfx", secondPassword));
+        options.Algorithm.Should().Be(SigningAlgorithm.ES256);
+    }
+
+    [Fact]
+    public async Task AddPfxFileSigning_algorithm_argument_is_the_only_thing_that_sets_the_algorithm()
+    {
+        // PfxFileSigningOptions.Algorithm has an internal setter, mirroring PEM: the algorithm is
+        // said once, in the registration argument, and a configure callback cannot beat it.
+        typeof(PfxFileSigningOptions).GetProperty(nameof(PfxFileSigningOptions.Algorithm))!
+            .SetMethod!.IsAssembly.Should().BeTrue("a public setter would let a callback beat the argument");
+
+        var builder = NewBuilder();
+
+        builder.AddPfxFileSigning(SigningAlgorithm.ES256, options =>
+            options.Files.Add(new PfxFile("/etc/zeekayda/current.pfx", AnyPassword())));
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        provider.GetRequiredService<IOptions<PfxFileSigningOptions>>().Value.Algorithm
+            .Should().Be(SigningAlgorithm.ES256);
+    }
+
+    [Fact]
+    public void AddPfxFileSigning_throws_when_a_signing_key_source_is_already_registered()
+    {
+        var builder = NewBuilder();
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
+
+        var act = () => builder.AddPfxFileSigning("/etc/zeekayda/other.pfx", SigningAlgorithm.RS256, AnyPassword());
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task AddPfxFileSigning_does_not_apply_its_options_when_the_source_registration_is_rejected()
+    {
+        // The source is registered before any configuration callback runs, so a caller that catches
+        // the rejection is not left with the rejected call's files on the surviving registration.
+        var builder = NewBuilder();
+        var originalPassword = AnyPassword();
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, originalPassword);
+
+        var act = () => builder.AddPfxFileSigning(SigningAlgorithm.ES256, options =>
+            options.Files.Add(new PfxFile("/etc/zeekayda/rejected.pfx", AnyPassword())));
+
+        act.Should().Throw<InvalidOperationException>();
+        await using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PfxFileSigningOptions>>().Value;
+        options.Files.Should().Equal(new PfxFile(PfxPath, originalPassword));
+        options.Algorithm.Should().Be(SigningAlgorithm.RS256);
+    }
+
+    [Fact]
+    public async Task AddPfxFileSigning_does_not_register_the_source_in_the_container()
+    {
+        var builder = NewBuilder();
+
+        builder.AddPfxFileSigning(PfxPath, SigningAlgorithm.RS256, AnyPassword());
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        provider.GetService<ISigningKeySource>().Should().BeNull();
+    }
+
+    // ── ValidateOnStart wiring: the validators must actually gate host startup ───────────────────
+
+    [Fact]
+    public async Task AddPemFileSigning_fails_startup_validation_when_no_file_is_listed()
+    {
+        // Registering the options without their validator, or without AddZeeKayDaOptions, would
+        // leave startup nothing to run, and a misconfiguration would surface only on the first
+        // signing attempt.
+        var act = () => StartAsync(builder => builder.AddPemFileSigning(SigningAlgorithm.RS256, _ => { }));
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Where(e => e.AggregatedFailures.Any(f => f.Code == "configuration.pem_file_signing.files.empty"))
+            .WithMessage("*at least one PEM file*");
+    }
+
+    [Fact]
+    public async Task AddPfxFileSigning_fails_startup_validation_when_no_file_is_listed()
+    {
+        var act = () => StartAsync(builder => builder.AddPfxFileSigning(SigningAlgorithm.RS256, _ => { }));
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Where(e => e.AggregatedFailures.Any(f => f.Code == "configuration.pfx_file_signing.files.empty"))
+            .WithMessage("*at least one PFX file*");
+    }
+
+    // ── AddPemFileSigning: the configure overload ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AddPemFileSigning_configure_overload_lists_every_file_the_callback_adds()
+    {
+        var builder = NewBuilder();
+
+        builder.AddPemFileSigning(SigningAlgorithm.ES256, options =>
+        {
+            options.Files.Add(new PemSigningFile("/etc/zeekayda/first.pem"));
+            options.Files.Add(new PemSigningFile("/etc/zeekayda/second.crt", "/etc/zeekayda/second.key"));
+        });
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value;
+        options.Files.Should().Equal(
+            new PemSigningFile("/etc/zeekayda/first.pem"),
+            new PemSigningFile("/etc/zeekayda/second.crt", "/etc/zeekayda/second.key"));
+        options.Algorithm.Should().Be(SigningAlgorithm.ES256);
+    }
+
+    [Fact]
+    public async Task AddPemFileSigning_algorithm_argument_is_the_only_thing_that_sets_the_algorithm()
+    {
+        // Two halves, because this project holds InternalsVisibleTo to the FileSystem assembly and so
+        // cannot express the negative case by failing to compile: the setter really is internal, so a
+        // caller outside the assembly cannot beat the argument from a configure callback, and the
+        // argument really is what lands. The API-approval analyzers gate the first half at build time;
+        // the reflection assertion pins it here too, so the test name is true on its own terms.
+        typeof(PemFileSigningOptions).GetProperty(nameof(PemFileSigningOptions.Algorithm))!
+            .SetMethod!.IsAssembly.Should().BeTrue("a public setter would let a callback beat the argument");
+
+        var builder = NewBuilder();
+
+        builder.AddPemFileSigning(SigningAlgorithm.ES256, options =>
+            options.Files.Add(new PemSigningFile("/etc/zeekayda/current.pem")));
+
+        await using var provider = builder.Services.BuildServiceProvider();
+        provider.GetRequiredService<IOptions<PemFileSigningOptions>>().Value.Algorithm
+            .Should().Be(SigningAlgorithm.ES256);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
+
+}

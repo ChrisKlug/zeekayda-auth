@@ -6,24 +6,18 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
 /// Observes what a <c>WithProviders</c> callback registered, then takes the schemes for the
-/// framework: every <see cref="IConfigureOptions{TOptions}"/> of <see cref="AuthenticationOptions"/>
-/// the callback added is replayed into a throwaway options object to learn the schemes, and then
-/// removed, so the host's own <see cref="AuthenticationOptions"/> never learns they exist.
+/// framework: each scheme-map configurer is replayed into a throwaway options object and removed,
+/// so the host's <see cref="AuthenticationOptions"/> never sees them.
 /// </summary>
 /// <remarks>
-/// Every route into the scheme map — <c>AddScheme</c>, <c>AddRemoteScheme</c>,
-/// <c>AddPolicyScheme</c>, and a raw handler added by configuring
-/// <see cref="AuthenticationOptions"/> directly — ends as that one descriptor type, so the replay
-/// sees them identically. Everything else the callback registered (handler types, named options,
-/// their validation and post-configuration) stays in the shared container, which is exactly what
-/// the handler needs to run.
+/// Everything else the callback registered — handler types, named options — stays in the shared
+/// container, which is what the handler needs to run.
 /// </remarks>
 internal static class ProviderRegistrationWindow
 {
     /// <summary>
-    /// Runs <paramref name="configure"/> against <paramref name="services"/> and returns the
-    /// schemes it registered, having removed their scheme-map descriptors. A failure leaves the
-    /// collection partly changed; the caller restores it.
+    /// Runs <paramref name="configure"/> and returns the schemes it registered, their scheme-map
+    /// descriptors removed. A failure leaves the collection partly changed; the caller restores it.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// The callback did something other than append to the collection, registered a scheme-map
@@ -68,11 +62,7 @@ internal static class ProviderRegistrationWindow
             .ToArray();
     }
 
-    /// <summary>
-    /// The window is the tail of the collection, and only that. A callback that removed,
-    /// reordered or inserted ahead of an existing descriptor could leave a scheme in the host's
-    /// map the replay never saw.
-    /// </summary>
+    /// <summary>Refuses anything but appending: an edit ahead of the window could hide a scheme from the replay.</summary>
     private static void EnsureOnlyAppended(IServiceCollection services, ServiceDescriptor[] before)
     {
         var intact = services.Count >= before.Length
@@ -88,12 +78,7 @@ internal static class ProviderRegistrationWindow
         }
     }
 
-    /// <summary>
-    /// A post-configurer for the scheme map can neither be replayed nor safely removed, and an
-    /// open-generic configurer would close over <see cref="AuthenticationOptions"/> without ever
-    /// matching the filter the replay reads — both would put something in the host's map the
-    /// framework never saw.
-    /// </summary>
+    /// <summary>Refuses scheme-map configurers the replay cannot see: post-configurers and open generics.</summary>
     private static void RefuseUnreadableConfiguration(ServiceDescriptor[] window)
     {
         if (window.Any(descriptor => descriptor.ServiceType == typeof(IPostConfigureOptions<AuthenticationOptions>)))
@@ -116,12 +101,8 @@ internal static class ProviderRegistrationWindow
     }
 
     /// <summary>
-    /// Replays each scheme-map configurer into a throwaway options object. Only an instance
-    /// registration can be replayed — a factory or type registration can neither be read here nor
-    /// safely removed — and <c>AuthenticationBuilder</c> registers instances, so a host hits this
-    /// only by registering the interface itself. Also reports whether every configurer added a
-    /// scheme: one that did not is refused by the caller, since removing it would silently discard
-    /// whatever else it did — after the defaults check, whose message is the more specific one.
+    /// Replays each instance-registered scheme-map configurer, the only kind that can be read and
+    /// removed, and reports whether every one added a scheme.
     /// </summary>
     private static (AuthenticationOptions Observed, bool EveryConfigurerAddedAScheme) Replay(
         ServiceDescriptor[] configurers)
@@ -148,11 +129,7 @@ internal static class ProviderRegistrationWindow
         return (observed, everyConfigurerAddedAScheme);
     }
 
-    /// <summary>
-    /// A configurer in the window that also set a default belongs on <c>AddAuthentication</c>:
-    /// removing the descriptor would silently discard the default, and keeping it would put the
-    /// provider scheme in the host's map.
-    /// </summary>
+    /// <summary>Refuses a configurer that also set a default, which belongs on <c>AddAuthentication</c>.</summary>
     private static void RefuseDefaults(AuthenticationOptions observed)
     {
         var setsDefault = observed.DefaultScheme is not null

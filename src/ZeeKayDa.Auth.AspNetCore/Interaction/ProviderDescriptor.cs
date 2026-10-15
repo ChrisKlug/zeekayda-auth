@@ -1,13 +1,10 @@
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// One external provider the host registered through <c>WithProviders</c>, as the login page sees
-/// it: an identifier to post back when the user picks it, and a name to put on the button.
+/// One external provider registered through <c>WithProviders</c>, as the login page sees it.
 /// </summary>
 /// <remarks>
-/// <see cref="Id"/> is opaque to the host. The page reads it from
-/// <see cref="ILoginInteraction.Providers"/> and hands it back to the framework to select that
-/// provider; it never writes one, which is what keeps scheme names out of host code.
+/// <see cref="Id"/> is opaque: the page hands it back to select the provider, never writes one.
 /// </remarks>
 public sealed class ProviderDescriptor
 {
@@ -23,8 +20,7 @@ public sealed class ProviderDescriptor
     public string Id { get; }
 
     /// <summary>
-    /// The human-readable name registered for the provider, or <see langword="null"/> when the
-    /// registration gave none.
+    /// The provider's registered display name, or <see langword="null"/>.
     /// </summary>
     public string? DisplayName { get; }
 }

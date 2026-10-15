@@ -10,23 +10,14 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
 /// Answers a page submitted for an interaction this browser no longer has — a double submit, a
-/// page left open past its lifetime, a bookmarked page — instead of letting the host page fail.
+/// page left open too long, a bookmark — instead of letting the host page fail.
 /// </summary>
-/// <remarks>
-/// <para>
-/// A sign-in or consent step sends the user back to the client to start again, at the client's
-/// registered <see cref="IClientMetadata.InitiateLoginUri"/> with <c>iss</c>, when the browser's
-/// retired binding still names the client and the client registered one. Otherwise the user sees
-/// the host's error page, or the framework's, with <see cref="AuthorizationErrorKind.NothingToContinue"/>.
-/// </para>
-/// <para>
-/// A sign-out step shows the signed-out page when the browser holds no session, which is what
-/// the user asked for. A browser that is still signed in is not told otherwise: it gets the error
-/// page, and signing out is left to a fresh request, since the one it answered no longer exists
-/// to say which session it was about.
-/// </para>
-/// </remarks>
-internal sealed class NothingToContinue
+internal sealed class NothingToContinue(
+    InteractionBindingCookie binding,
+    InteractionAnswers answers,
+    SsoSession session,
+    IOptions<AuthorizationServerOptions> options,
+    SanitizingLogger<NothingToContinue> logger)
 {
     /// <summary>The error code a host's error page receives for an interaction there is nothing left of.</summary>
     internal const string ErrorCode = "interaction_not_found";
@@ -39,46 +30,11 @@ internal sealed class NothingToContinue
     private const string NoSignOutToContinue =
         "There is no sign-out to continue. It expired, or was started somewhere else. You are still signed in.";
 
-    private readonly InteractionBindingCookie _binding;
-    private readonly InteractionAnswers _answers;
-    private readonly SsoSession _session;
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly ISanitizingLogger<NothingToContinue> _logger;
-
-    public NothingToContinue(
-        InteractionBindingCookie binding,
-        InteractionAnswers answers,
-        SsoSession session,
-        IOptions<AuthorizationServerOptions> options,
-        ISanitizingLogger<NothingToContinue> logger)
-    {
-        ArgumentNullException.ThrowIfNull(binding);
-        ArgumentNullException.ThrowIfNull(answers);
-        ArgumentNullException.ThrowIfNull(session);
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _binding = binding;
-        _answers = answers;
-        _session = session;
-        _options = options;
-        _logger = logger;
-    }
-
-    /// <summary>
-    /// Runs a sign-in or consent step, and answers the request itself when the step finds nothing
-    /// to continue. Terminal either way.
-    /// </summary>
-    /// <param name="context">The request the host page is handling.</param>
-    /// <param name="page">The page, as the log names it.</param>
-    /// <param name="step">The step, which writes its own response when it completes.</param>
+    /// <summary>Runs a sign-in or consent step; with nothing to continue, restarts at the client or errors. Terminal.</summary>
     public Task SignInStepAsync(HttpContext context, string page, Func<Task> step) =>
         StepAsync(context, page, step, RestartOrErrorAsync);
 
-    /// <summary>
-    /// Runs a sign-out step, and answers the request itself when the step finds nothing to
-    /// continue. Terminal either way.
-    /// </summary>
+    /// <summary>Runs a sign-out step; with nothing to continue, signed-out page or error. Terminal.</summary>
     public Task SignOutStepAsync(HttpContext context, Func<Task> step) =>
         StepAsync(context, LogoutPage, step, SignedOutOrErrorAsync);
 
@@ -104,19 +60,15 @@ internal sealed class NothingToContinue
     /// <summary>Back to the client to start again, or the error page.</summary>
     private async ValueTask<IResult> RestartOrErrorAsync(HttpContext context) =>
         await RestartAtClientAsync(context).ConfigureAwait(false)
-        ?? _answers.Authorization.Local(context, AuthorizationErrorKind.NothingToContinue, ErrorCode, NoSignInToContinue);
+        ?? answers.Authorization.Local(context, AuthorizationErrorKind.NothingToContinue, ErrorCode, NoSignInToContinue);
 
     /// <summary>The signed-out page for a browser that holds no session, and the error page for one that does.</summary>
     private async ValueTask<IResult> SignedOutOrErrorAsync(HttpContext context) =>
-        await _session.ReadAsync(context).ConfigureAwait(false) is null
-            ? _answers.EndSession.SignedOut()
-            : _answers.Authorization.Local(context, AuthorizationErrorKind.NothingToContinue, ErrorCode, NoSignOutToContinue);
+        await session.ReadAsync(context).ConfigureAwait(false) is null
+            ? answers.EndSession.SignedOut()
+            : answers.Authorization.Local(context, AuthorizationErrorKind.NothingToContinue, ErrorCode, NoSignOutToContinue);
 
-    /// <summary>
-    /// Records that <paramref name="page"/> had nothing to continue. A missing <c>zkd_i</c> is the
-    /// one case that may be the host's bug — a form that regenerates its action drops it — so it
-    /// is a warning; everything else is a user doing something ordinary.
-    /// </summary>
+    /// <summary>Logs a missing <c>zkd_i</c>, possibly the host's bug, as a warning; everything else is ordinary.</summary>
     public void Log(string page, NothingToContinueException missing) => Log(page, missing.Reason);
 
     /// <inheritdoc cref="Log(string, NothingToContinueException)"/>
@@ -124,7 +76,7 @@ internal sealed class NothingToContinue
     {
         if (reason == NothingToContinueReason.NoInteractionId)
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "The {Page} page was reached without the '{Parameter}' parameter, so there was no interaction to " +
                 "continue. A bookmarked page does this; so does a form whose action drops the parameter — pass it " +
                 "back explicitly as a route value.",
@@ -133,30 +85,25 @@ internal sealed class NothingToContinue
             return;
         }
 
-        _logger.LogInformation(
+        logger.LogInformation(
             "The {Page} page was reached for an interaction there is nothing left of ({Reason}).",
             page,
             reason);
     }
 
-    /// <summary>
-    /// The client's login restart, when the browser's binding names a client that is still
-    /// registered and registered an <see cref="IClientMetadata.InitiateLoginUri"/>. The destination
-    /// comes from the registration, never from the request.
-    /// </summary>
+    /// <summary>The registered <see cref="IClient.InitiateLoginUri"/> of the client the browser's binding names, if any.</summary>
     private async ValueTask<IResult?> RestartAtClientAsync(HttpContext context)
     {
         var interactionId = await InteractionHandoff.ReadInteractionIdAsync(context.Request).ConfigureAwait(false);
-        if (interactionId is null || _binding.ReadClientId(context, interactionId) is not { } clientId)
+        if (interactionId is null || binding.ReadClientId(context, interactionId) is not { } clientId)
             return null;
 
         var clients = context.RequestServices.GetRequiredService<ValidatedClientResolver>();
-        var client = await clients.FindByClientIdAsync(clientId, context.RequestAborted).ConfigureAwait(false);
+        var client = await clients.FindClientAsync(clientId, context.RequestAborted).ConfigureAwait(false);
         if (client?.InitiateLoginUri is not { } initiateLoginUri)
             return null;
 
         // Unlogged: a registered address may carry query values of its own.
-        return new UnloggedRedirect(QueryHelpers.AddQueryString(initiateLoginUri, "iss", _options.Value.Issuer!));
+        return new UnloggedRedirect(QueryHelpers.AddQueryString(initiateLoginUri, "iss", options.Value.Issuer!));
     }
-
 }

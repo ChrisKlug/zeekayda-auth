@@ -21,18 +21,33 @@ Customisation is options plus the named service seams in `extension-surface.md`.
 the set is only discoverable by finding implementations rather than reading one call site —
 acceptable while it is internal, finite and auditable.
 
-**Core has zero ASP.NET Core knowledge, and the dependency never reverses.** `ZeeKayDa.Auth`
-takes all of `Microsoft.Extensions.*` (host-agnostic, no transitive web stack) and exactly one
-`Microsoft.AspNetCore.*` package: `Microsoft.AspNetCore.DataProtection.Abstractions`, which is
-host-agnostic despite its name. Any further `Microsoft.AspNetCore.*` reference in core needs its
-own justification. This is a review rule, not a build rule — nothing in CI enforces it.
+**Core holds everything with meaning outside an HTTP request; the dependency never reverses.** A
+type lives in `ZeeKayDa.Auth` unless it only means something inside a request. `ZeeKayDa.Auth.AspNetCore`
+keeps the endpoints and their wire types; the cookie, scheme and security-header names; the
+interaction flow and its contracts (`LoginInteraction` and its siblings act on the current request
+though no signature names `HttpContext`); the typed interaction stores, which bind an entry to a
+browser cookie; client authentication; and external providers. Options and their validation,
+clients, scopes, stores, token issuance and the startup checks on them are Core, registered by
+`AddZeeKayDaAuthCore(configure)`, which `AddZeeKayDaAuth(configure)` calls before adding the HTTP
+surface. Neither builder has a public constructor, so Core is always registered
+(`A_core_only_host_validates_the_server_options_at_startup`). Core takes `Microsoft.Extensions.*`
+and `Microsoft.AspNetCore.DataProtection` — host-agnostic despite its name, and what the Core token
+stores encrypt with. Any further package needs its own justification; a review rule, not CI-enforced.
+
+**Two builders, so an HTTP-only extension does not compile on a Core-only host.**
+`AddZeeKayDaAuthCore` returns `ZeeKayDaAuthCoreBuilder`; `AddZeeKayDaAuth` returns the sealed,
+derived `ZeeKayDa.Auth.AspNetCore.ZeeKayDaAuthBuilder`, which alone carries `WithProviders` and
+`AddClientAuthenticator`. Core extensions are generic over the builder (`where TBuilder :
+ZeeKayDaAuthCoreBuilder`) so a chain keeps its type. One with its own type argument cannot be — C#
+infers none while the caller supplies one — so AspNetCore redeclares it as a forwarding overload
+(`Every_core_extension_taking_the_core_builder_has_a_forwarding_overload`).
 
 **Every ZeeKayDa route is mapped into one group carrying two filters.** The first rejects any
 request that is not HTTPS with `421 Misdirected Request`; the only exemption is a loopback remote
-address *and* `AllowInsecureIssuer`, so plain HTTP on loopback is still refused by default. The
-second writes the configured security headers, and advertises `X-ZeeKayDa-Insecure-Issuer: true`
-whenever the insecure-issuer escape hatch is on. Grouping is what keeps both off the host's own
-routes. `AllowInsecureIssuer` is a loopback development hatch, never an assertion that the
+address *and* `Development.AllowHttpLoopbackIssuer`, so plain HTTP on loopback is still refused by
+default. The second writes the configured security headers, and advertises
+`X-ZeeKayDa-Insecure-Issuer: true` whenever that flag is on. Grouping is what keeps both off the host's own
+routes. `AllowHttpLoopbackIssuer` is a loopback development hatch, never an assertion that the
 deployment is safe.
 
 **Endpoint URIs must share the issuer's authority, and the issuer must be canonical.** Startup
@@ -65,9 +80,10 @@ only the issuer's path prefix reaches both documents alike. Rejecting
 path-based issuers would have been simpler but silently breaks a spec-permitted multi-tenant
 pattern, and path-based issuers are what RFC 9207 mix-up resistance relies on in those deployments.
 
-**Map-time and startup-time issuer errors are the same error.** `MapZeeKayDaAuth()` eagerly reads
-`IOptions<AuthorizationServerOptions>.Value`, so a bad issuer surfaces the validator's
-`OptionsValidationException` at map time exactly as `ValidateOnStart()` surfaces it.
+**Map-time and startup-time issuer errors are the same error.** `MapZeeKayDaAuth()` runs the same
+options check as the startup gate before it reads `AuthorizationServerOptions`, so a bad issuer
+surfaces at map time in the same coded `ZeeKayDaConfigurationException`, together with every other
+registered options type's failures.
 
 **The issuer is immutable after startup.** Endpoints resolve `IOptions<T>`, never
 `IOptionsSnapshot`/`IOptionsMonitor`. Changing an issuer at runtime invalidates every outstanding

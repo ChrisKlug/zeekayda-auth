@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.Tests.Tokens;
 
 public sealed class TokenIssuanceContextTests
 {
-    private sealed class TestClient : IClientMetadata
+    private sealed class TestClient : IClient
     {
         public string ClientId => "test-client";
         public bool IsPublic => true;

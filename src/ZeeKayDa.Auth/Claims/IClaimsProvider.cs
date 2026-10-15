@@ -6,25 +6,18 @@ namespace ZeeKayDa.Auth.Claims;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Register an implementation with <c>AddClaimsProvider&lt;TProvider&gt;()</c>; a host without one
-/// fails startup. The provider is resolved from the request scope, so it may take a per-request
-/// database context.
+/// Register with <c>AddClaimsProvider&lt;TProvider&gt;()</c>; a host without one fails startup. Resolved
+/// from the request scope, so it may take a per-request database context.
 /// </para>
 /// <para>
-/// The provider is called fresh on every issuance, including every refresh-token rotation, so a
-/// subject whose claims changed or whose account was disabled is reflected at the next token
-/// rather than at the end of an unbounded refresh chain. A provider that wants to spare its
-/// identity store may cache on <see cref="ClaimsProviderContext.Sub"/> together with
-/// <see cref="ClaimsProviderContext.FamilyId"/>, for a lifetime well under the shortest
-/// access-token lifetime it serves; the family id alone is never a key, since it is absent at
-/// userinfo.
+/// Called on every issuance, every refresh rotation included, so changed claims or a disabled account show
+/// at the next token. A cache keys on <see cref="ClaimsProviderContext.Sub"/> with
+/// <see cref="ClaimsProviderContext.FamilyId"/>, for well under the shortest access-token lifetime.
 /// </para>
 /// <para>
-/// What the provider returns is a pool. Which claims land in which token is decided afterwards
-/// from the granted scopes and the client's registration, so returning more than
-/// <see cref="ClaimsProviderContext.ClaimTypes"/> asks for is harmless, and returning less
-/// simply omits those claims. Protocol claims such as <c>sub</c>, <c>iss</c> and <c>aud</c> are
-/// written by the framework from the grant; a record with one of those names is discarded.
+/// The result is a pool: selection afterwards decides which claims land where, so extra claims are
+/// harmless and missing ones are omitted. A record named like a protocol claim (<c>sub</c>, <c>iss</c>,
+/// <c>aud</c>) is discarded.
 /// </para>
 /// </remarks>
 public interface IClaimsProvider
@@ -40,7 +33,7 @@ public interface IClaimsProvider
     /// tokens. An exception is treated as an infrastructure failure: nothing is issued and the
     /// client is answered <c>server_error</c>.
     /// </returns>
-    ValueTask<ClaimsResolutionResult> GetClaimsAsync(
+    Task<ClaimsResolutionResult> GetClaimsAsync(
         ClaimsProviderContext context,
         CancellationToken cancellationToken = default);
 }

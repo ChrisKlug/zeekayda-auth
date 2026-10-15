@@ -5,39 +5,26 @@ namespace ZeeKayDa.Auth.Windows;
 /// <see cref="CertificateLookup.ByThumbprint"/>.
 /// </summary>
 /// <remarks>
-/// Two lookups are equal when they are the same mode and name the same certificate, which is how
-/// <see cref="WindowsCertificateStoreSigningOptionsValidator"/> detects two slots configured with
-/// one certificate however each thumbprint happened to be written.
+/// Two lookups are equal when they name the same certificate, however each thumbprint was written.
 /// </remarks>
 public sealed class ThumbprintCertificateLookup : CertificateLookup
 {
-    // Internal: the only way to obtain one is CertificateLookup.ByThumbprint, so the normalization
-    // and validation it performs cannot be bypassed.
+    // Internal, so ByThumbprint's normalization and validation cannot be bypassed.
     internal ThumbprintCertificateLookup(string thumbprint) => Thumbprint = thumbprint;
 
-    /// <summary>
-    /// Gets the normalized, uppercase-hex thumbprint of the certificate this lookup finds. Never
-    /// empty.
-    /// </summary>
+    /// <summary>The normalized, uppercase-hex thumbprint this lookup finds; never empty.</summary>
     public string Thumbprint { get; }
 
     /// <inheritdoc/>
     internal override string NormalizedThumbprint => Thumbprint;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The cast is safe: <see cref="CertificateLookup.Equals(CertificateLookup)"/> has already
-    /// established that <paramref name="other"/> is non-null and of exactly this type.
-    /// </remarks>
     private protected override bool EqualsCore(CertificateLookup other) =>
         string.Equals(Thumbprint, ((ThumbprintCertificateLookup)other).Thumbprint, StringComparison.Ordinal);
 
     /// <inheritdoc/>
     private protected override int GetHashCodeCore() => StringComparer.Ordinal.GetHashCode(Thumbprint);
 
-    /// <summary>
-    /// Returns a diagnostic description naming the thumbprint. A thumbprint is public information —
-    /// it is derived from the certificate's public encoding — so this carries nothing sensitive.
-    /// </summary>
+    /// <summary>Returns a description naming the thumbprint, which is public information.</summary>
     public override string ToString() => $"thumbprint {Thumbprint}";
 }

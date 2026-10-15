@@ -142,7 +142,8 @@ C# language server (`csharp-lsp-<agent>`) and the `code-navigation` skill sends 
 result that says it navigated with grep because no language server was available means
 `csharp-lsp-mcp` is not on `PATH` — fix that (`.claude/machine-setup.md` §2a) rather than accepting
 the review. Alongside them, run CodeScene `analyze_change_set` yourself (agents reach only the MCP
-servers their own frontmatter names) — **production files only. Findings on `tests/` are ignored entirely, not
+servers their own frontmatter names), and **again before every push** — a fix round introduces its own
+smells, and PR CodeScene is a gate, not the first look — **production files only. Findings on `tests/` are ignored entirely, not
 argued with**: test code is specification, duplication is how specifications read, and clearly named
 repetitive tests beat clever compact ones.
 
@@ -161,6 +162,11 @@ Then the severity gate:
   diff only** — not a fresh review of the branch.
 - **Medium/Low and judgement calls:** collected into a list for Stage 4. The maintainer decides.
   There is no fix round for these and no review loop.
+
+**Questions before verification.** When the review results are in, put every open question that
+could change the code to the maintainer — a judgement Low, a scope question, a finding you think is
+wrong — **before** running the fix-diff verification or the full suite. One answer that means
+another change costs a whole new verification run, so verify once, on settled code.
 
 A fresh reviewer re-reading any code will always find something new — that is sampling noise, not a
 converging process, and it is not a reason for round N+1. One round plus fix-diff verification is
@@ -209,13 +215,27 @@ read** — never folded into the commit that prompted the question. The reviewer
 it touches their findings.
 
 On approval: push, `gh pr create` (the permission prompt is this gate — never work around it), then
-post each reviewer's **existing verdict** on the PR with `gh pr comment` as the durable record —
-the Copilot lenses included, each headed with its lens and model. That is a paste, not a re-review.
-A genuine re-review happens only if commits landed after the reviewer last looked at the branch.
+post **one** `gh pr comment` as the durable record of every review round — not a paste of each
+verdict. One table, one row per finding, from every reviewer and round:
+
+| Reviewer · round | Sev | Finding | Outcome |
+|---|---|---|---|
+| Copilot code lens (`gpt-6.1-sol`) · 1 | High | Certificate-only ACL allowed `ChangePermissions`: a broad principal could grant itself write and swap in its own key | Fixed `0f47b73` — `…_may_write_or_take_over_on_Windows` |
+
+The Finding cell is what is wrong and what it lets happen, in plain words — enough to understand
+without the code open. Outcome is the fixing commit and the test named for it, or "Accepted
+(maintainer)" with the reason in a few words. A reviewer round with no findings is one row saying so.
+Exploit narratives and "checked" lists stay in the session; the PR carries the decisions. A genuine
+re-review happens only if commits landed after the reviewer last looked at the branch.
 
 ## Stage 5 — Merge ⛔
 
-On the maintainer's approval: `gh pr merge` (which prompts), then `/post-merge-checks`.
+On the maintainer's approval, and once the PR's bots (CodeQL, CodeScene, Copilot) have run and any
+fix they caused is pushed: a change with a trust-boundary decision gets its security sign-off entry
+now, as the **last commit on the feature branch**, naming that branch head as the frozen code. Run
+the citation check and `/adversarial-review text` on that commit, push, then `gh pr merge` (which
+prompts) and `/post-merge-checks`. Anything that lands after the entry means rewriting the entry
+before merge. One PR per change: the sign-off is not a separate docs PR after the merge.
 
 ---
 
@@ -225,7 +245,7 @@ On the maintainer's approval: `gh pr merge` (which prompts), then `/post-merge-c
   touch it not at all.
 - **Security sign-off entries** (`docs/decisions/security-sign-offs.md`, trust-boundary decisions
   only): written **last, once, against frozen code**, after review has concluded — never in a commit
-  that is still under review. **Maximum ~15 lines.** Every claim cites its proof:
+  that is still under review — as the feature PR's final commit (Stage 5). **Maximum ~15 lines.** Every claim cites its proof:
   "closed — proven by `ManualRingRegistration_IsRejected`", not a paragraph a future reviewer must
   re-probe by hand. A residual is one sentence plus a test name.
 - **A fix that changes a documented rule re-checks the documents** — the register, the CHANGELOG

@@ -13,30 +13,15 @@ public sealed class DiscoveryDocumentProviderTests
     private static async Task<OpenIdConfigurationDocument> GetDocumentAsync(
         AuthorizationServerOptions options,
         IScopeRepository? scopeRepository = null,
-        SigningKeySet? keySet = null)
+        SigningKeyRing? ring = null)
     {
         var optionsWrapper = Microsoft.Extensions.Options.Options.Create(options);
         var provider = new DiscoveryDocumentProvider(
             optionsWrapper,
             new ValidatedScopeCatalog(scopeRepository ?? new InMemoryScopeRepository(StandardScopes.All)),
-            new FakeSigningKeyRing(keySet ?? TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
+            ring ?? TestSigningKeys.Ring(SigningAlgorithm.RS256),
+            TestAuthMethods.Advertised(options));
         return await provider.GetDocumentAsync(TestContext.Current.CancellationToken);
-    }
-
-    private sealed class FakeSigningKeyRing(SigningKeySet current) : ISigningKeyRing
-    {
-        public SigningKeySet Current => current;
-
-        public ValueTask<SigningOutcome> SignAsync<TState>(
-            TState state,
-            Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput,
-            CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        SigningKeySet? ISigningKeyRing.CurrentOrNull => current;
     }
 
     // ── Issuer passthrough (RFC 9207 §4) ─────────────────────────────────────────────────────────
@@ -206,7 +191,8 @@ public sealed class DiscoveryDocumentProviderTests
         doc.ScopesSupported.Should().Equal(StandardScopes.All.Select(scope => scope.Name));
         doc.ResponseModesSupported.Should().ContainSingle().Which.Should().Be(ResponseMode.Query);
         doc.GrantTypesSupported.Should().ContainSingle().Which.Should().Be(GrantType.AuthorizationCode);
-        doc.TokenEndpointAuthMethodsSupported.Should().ContainSingle().Which.Should().Be(TokenEndpointAuthMethods.ClientSecretBasic);
+        doc.TokenEndpointAuthMethodsSupported.Should().Equal(
+            TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.ClientSecretPost, TokenEndpointAuthMethods.None);
         doc.SubjectTypesSupported.Should().ContainSingle().Which.Should().Be("public");
         doc.IdTokenSigningAlgValuesSupported.Should().ContainSingle().Which.Should().Be(SigningAlgorithm.RS256);
     }
@@ -229,17 +215,17 @@ public sealed class DiscoveryDocumentProviderTests
                 ModesSupported = [ResponseMode.Query],
             },
             GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
-            TokenEndpoint = { AuthMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic, "tls_client_auth"] },
-        }, scopeRepository, TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.PS256));
+            TokenEndpoint = { AdvertisedAuthMethods = [TokenEndpointAuthMethods.ClientSecretBasic, "tls_client_auth"] },
+        }, scopeRepository, TestSigningKeys.Ring(SigningAlgorithm.PS256, keyCount: 2));
 
         doc.ResponseTypesSupported.Should().Equal(ResponseType.Code);
         doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
         doc.ResponseModesSupported.Should().Equal(ResponseMode.Query);
         doc.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode, GrantType.RefreshToken);
         doc.TokenEndpointAuthMethodsSupported.Should().Equal(
-            TokenEndpointAuthMethods.ClientSecretBasic,
-            "tls_client_auth");
-        doc.IdTokenSigningAlgValuesSupported.Should().Equal(SigningAlgorithm.RS256, SigningAlgorithm.PS256);
+            [TokenEndpointAuthMethods.ClientSecretBasic],
+            "the filter narrows what the server performs, and no authenticator performs tls_client_auth");
+        doc.IdTokenSigningAlgValuesSupported.Should().Equal(SigningAlgorithm.PS256);
     }
 
     [Fact]
@@ -502,87 +488,26 @@ public sealed class DiscoveryDocumentProviderTests
         doc.ClaimsSupported.Should().OnlyHaveUniqueItems();
     }
 
-    // ── id_token_signing_alg_values_supported is derived from the key set ────────────────────────
+    // ── id_token_signing_alg_values_supported is the source's algorithm ──────────────────────────
 
     [Fact]
     public async Task GetDocument_advertises_the_signing_keys_algorithm()
     {
         var doc = await GetDocumentAsync(
             new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
-            keySet: TestSigningKeys.KeySet(SigningAlgorithm.ES384));
+            ring: TestSigningKeys.Ring(SigningAlgorithm.ES384));
 
         doc.IdTokenSigningAlgValuesSupported.Should().Equal(SigningAlgorithm.ES384);
     }
 
     [Fact]
-    public async Task GetDocument_advertises_every_published_slots_algorithm_not_only_the_signers()
-    {
-        // Previous and Next are published but never sign. Their algorithms must stay advertised:
-        // tokens signed under a Previous key are still live and its kid is still in the JWKS.
-        var doc = await GetDocumentAsync(
-            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
-            keySet: TestSigningKeys.KeySet(
-                SigningAlgorithm.RS256, SigningAlgorithm.ES256, SigningAlgorithm.PS512));
-
-        doc.IdTokenSigningAlgValuesSupported.Should().Equal(
-            SigningAlgorithm.RS256, SigningAlgorithm.ES256, SigningAlgorithm.PS512);
-    }
-
-    [Fact]
-    public async Task GetDocument_advertises_distinct_algorithms_ascending_by_enum_value()
-    {
-        // Slots configured signer-first (PS512), so the ascending order below can only come from
-        // the derivation, not from the order the keys happen to be listed in.
-        var doc = await GetDocumentAsync(
-            new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
-            keySet: TestSigningKeys.KeySet(
-                SigningAlgorithm.PS512, SigningAlgorithm.ES256, SigningAlgorithm.RS256));
-
-        doc.IdTokenSigningAlgValuesSupported.Should().Equal(
-            SigningAlgorithm.RS256, SigningAlgorithm.ES256, SigningAlgorithm.PS512);
-    }
-
-    [Fact]
-    public async Task GetDocument_narrows_the_advertised_set_to_the_configured_filter()
-    {
-        var doc = await GetDocumentAsync(
-            new AuthorizationServerOptions
-            {
-                Issuer = "https://auth.example.com",
-                IdToken = { AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256] },
-            },
-            keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
-
-        doc.IdTokenSigningAlgValuesSupported.Should().Equal(SigningAlgorithm.RS256);
-    }
-
-    [Fact]
-    public async Task GetDocument_never_advertises_an_algorithm_the_filter_names_but_no_key_uses()
-    {
-        var doc = await GetDocumentAsync(
-            new AuthorizationServerOptions
-            {
-                Issuer = "https://auth.example.com",
-                IdToken =
-                {
-                    AdvertisedSigningAlgorithms = [SigningAlgorithm.RS256, SigningAlgorithm.ES512],
-                },
-            },
-            keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256));
-
-        // The filter narrows what the keys allow and can never add to it.
-        doc.IdTokenSigningAlgValuesSupported.Should().Equal(SigningAlgorithm.RS256);
-    }
-
-    [Fact]
-    public async Task GetDocument_advertises_the_whole_published_set_when_no_filter_is_configured()
+    public async Task GetDocument_advertises_one_algorithm_however_many_keys_are_published()
     {
         var doc = await GetDocumentAsync(
             new AuthorizationServerOptions { Issuer = "https://auth.example.com" },
-            keySet: TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256));
+            ring: TestSigningKeys.Ring(SigningAlgorithm.ES256, keyCount: 3));
 
-        doc.IdTokenSigningAlgValuesSupported.Should().Equal(
-            SigningAlgorithm.RS256, SigningAlgorithm.ES256);
+        doc.IdTokenSigningAlgValuesSupported.Should().Equal(SigningAlgorithm.ES256);
     }
 
     // ── Cancellation contract ────────────────────────────────────────────────────────────────────
@@ -595,7 +520,8 @@ public sealed class DiscoveryDocumentProviderTests
         var provider = new DiscoveryDocumentProvider(
             options,
             new ValidatedScopeCatalog(new InMemoryScopeRepository(StandardScopes.All)),
-            new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
+            TestSigningKeys.Ring(SigningAlgorithm.RS256),
+            TestAuthMethods.Advertised(options.Value));
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -614,7 +540,8 @@ public sealed class DiscoveryDocumentProviderTests
         var provider = new DiscoveryDocumentProvider(
             options,
             new ValidatedScopeCatalog(capturingRepository),
-            new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
+            TestSigningKeys.Ring(SigningAlgorithm.RS256),
+            TestAuthMethods.Advertised(options.Value));
 
         using var cts = new CancellationTokenSource();
 
@@ -631,7 +558,8 @@ public sealed class DiscoveryDocumentProviderTests
         var provider = new DiscoveryDocumentProvider(
             options,
             new ValidatedScopeCatalog(new ThrowingScopeRepository()),
-            new FakeSigningKeyRing(TestSigningKeys.KeySet(SigningAlgorithm.RS256)));
+            TestSigningKeys.Ring(SigningAlgorithm.RS256),
+            TestAuthMethods.Advertised(options.Value));
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -645,19 +573,19 @@ public sealed class DiscoveryDocumentProviderTests
     {
         public CancellationToken ObservedToken { get; private set; }
 
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
         {
             ObservedToken = cancellationToken;
-            return ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
+            return Task.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
         }
     }
 
     private sealed class ThrowingScopeRepository : IScopeRepository
     {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([]);
+            return Task.FromResult<IReadOnlyCollection<ScopeDefinition>>([]);
         }
     }
 
@@ -691,7 +619,7 @@ public sealed class DiscoveryDocumentProviderTests
     /// <summary>A custom repository whose scopes carry null claim lists — the type system permits it.</summary>
     private sealed class NullClaimListRepository(IScopeRepository inner) : IScopeRepository
     {
-        public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+        public async Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
             [.. (await inner.GetScopesAsync(cancellationToken)).Select(scope => scope with
             {
                 IdTokenClaims = null!,
@@ -703,7 +631,7 @@ public sealed class DiscoveryDocumentProviderTests
     /// <summary>A custom repository that slips a null and a blank name into a claim list.</summary>
     private sealed class BlankClaimNameRepository(IScopeRepository inner) : IScopeRepository
     {
-        public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+        public async Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
             [.. (await inner.GetScopesAsync(cancellationToken)).Select(scope => scope with
             {
                 IdTokenClaims = [.. scope.IdTokenClaims, null!, "   "],

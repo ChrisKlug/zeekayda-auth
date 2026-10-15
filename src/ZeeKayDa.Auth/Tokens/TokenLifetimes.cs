@@ -2,7 +2,7 @@ namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
 /// The arithmetic every token lifetime shares: a client override that inherits the server value
-/// when <see langword="null"/>, and an expiry that saturates instead of throwing.
+/// when <see langword="null"/>, and expiries and sums that saturate instead of throwing.
 /// </summary>
 internal static class TokenLifetimes
 {
@@ -11,10 +11,8 @@ internal static class TokenLifetimes
         clientOverride ?? serverDefault;
 
     /// <summary>
-    /// <paramref name="now"/> plus <paramref name="lifetime"/>, saturating at
-    /// <see cref="DateTimeOffset.MaxValue"/>. Every lifetime that reaches here passed startup
-    /// validation, so no configured value may fail at issuance — including the
-    /// <see cref="TimeSpan.MaxValue"/> sentinel, whose naive addition overflows.
+    /// <paramref name="now"/> plus <paramref name="lifetime"/>, saturating at <see cref="DateTimeOffset.MaxValue"/>,
+    /// so no value startup accepted, <see cref="TimeSpan.MaxValue"/> included, fails at issuance.
     /// </summary>
     public static DateTimeOffset ExpiresAt(DateTimeOffset now, TimeSpan lifetime)
     {
@@ -29,5 +27,17 @@ internal static class TokenLifetimes
         {
             return DateTimeOffset.MaxValue;
         }
+    }
+
+    /// <summary>The sum, saturating rather than throwing, so even an invalid negative setting reaches its own rule.</summary>
+    public static TimeSpan Sum(TimeSpan first, TimeSpan second)
+    {
+        if (second > TimeSpan.Zero && first > TimeSpan.MaxValue - second)
+            return TimeSpan.MaxValue;
+
+        if (second < TimeSpan.Zero && first < TimeSpan.MinValue - second)
+            return TimeSpan.MinValue;
+
+        return first + second;
     }
 }

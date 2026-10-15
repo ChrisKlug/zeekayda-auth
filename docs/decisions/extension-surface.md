@@ -10,9 +10,9 @@ both a protocol to enforce and a genuinely variable part, the variable part gets
 and the protocol gets a type a third party structurally cannot join. It shows up four times, arrived
 at independently:
 
-- **Gate versus verifier.** `IStartupVerifier` is public and third parties register into it; the gate
-  collection ahead of it is `internal`, so no verifier can claim the position ahead of the
-  sanitizing-logger check (`startup-verification.md`).
+- **The sanitizing logger.** `SanitizingLogger<T>` is a public class every package can inject, but its
+  only constructor is `internal`, so no third party can supply or derive one that skips redaction
+  (`startup-verification.md`).
 - **Coordinator versus backing store.** The store coordinators are `public` so the ASP.NET Core
   package can inject them, but each carries an `internal` member only a friend assembly can satisfy.
   Publicly consumable, not third-party implementable — the asymmetry actually needed
@@ -21,9 +21,8 @@ at independently:
   constructor is internal, so "hash the handle before you key anything on it" is unrepresentable in
   third-party code rather than documented.
 - **Source versus ring.** `ISigningKeySource` is public and third-party-implementable; the
-  `ISigningKeyRing` it feeds is framework-sealed (`InitializeAsync` and `CurrentOrNull` are
-  `internal`), so a source can never bypass the startup self-test by implementing the ring itself
-  (`signing-keys.md`).
+  `SigningKeyRing` it feeds is a sealed class with an internal constructor, so nothing can stand in
+  for the ring and skip the startup self-test (`signing-keys.md`).
 
 Reach for this before reaching for a doc comment. It is what the register means by making the wrong
 thing impossible instead of forbidden.
@@ -32,8 +31,9 @@ thing impossible instead of forbidden.
 implementable directly, so a provider bypassing the framework base class also bypassed the derived
 `kid`, the load-time key validation and the active-signer self-test; the mitigation was a runtime
 warning naming the concrete type. #511 deleted that contract. `ISigningKeySource` reports data and
-lends a signer, and `ISigningKeyRing` — which owns selection, `kid` derivation, validation and the
-self-test — is framework-sealed, so the bypass is now unrepresentable rather than warned about.
+lends a signer, and `SigningKeyRing` — which owns selection, `kid` derivation, validation and the
+self-test — is a sealed class only the framework constructs, so the bypass is now unrepresentable rather
+than warned about.
 
 **`internal` plus `InternalsVisibleTo` is a correctness boundary, not a security one.** The assemblies
 are not strong-named and the attribute matches on simple assembly name alone, so anything that can
@@ -47,32 +47,43 @@ referencing only core has no other way to reach them. Attempting to solve a thir
 friend grant is the mistake this rule exists to prevent — it can serve exactly one named package, and
 never the next one without a new core release.
 
-**Three friend grants to shipped packages, each a reviewed exception.** The file-system provider
-reuses core's POSIX `stat`/`lstat` interop rather than forking security-critical, ABI-fragile P/Invoke
-that has already needed a security fix once. The Windows provider reuses core's process-identity
-helper for access-denied diagnostics. The conformance kit needs to construct store keys so a third
-party can derive the fixtures from their own test project without any grant of their own. All three
-ship in lockstep with core. The rule around them: **anything expressible through core's public surface
-must use it** — these are not a pattern to copy.
+**One friend grant to a shipped package, a reviewed exception.** The conformance kit needs to construct
+store keys so a third party can derive the fixtures from their own test project without any grant of their
+own, to build the signing key ring for `SigningKeyRingHarness`, and to build a `SanitizingLogger<T>` for
+`TestSanitizingLogger`, so any provider's tests, first-party or not, reach what they need through it. It
+ships in lockstep with core. Provider packages and their tests get no grant: they are held to what a third
+party could build, and code two providers share is a linked source file, not core internals.
 
 **The enumerated public extension surface is the SemVer contract.** What a third party may implement:
-the startup verifier, the scope repository, the discovery document provider, the client repository,
-the client metadata, registration and credential interfaces, a client secret hasher (via the abstract base), the
-client registration validator, the two store backing contracts, the client authenticator, the token issuer (`ITokenIssuer`,
-keyed per `TokenKind`), a
-signing provider via the abstract signing base and its signer type, and a signing key source via
-`ISigningKeySource`. Everything else public is
-consume-only. Adding to this list is a minor version; changing anything on it is a major one. The
+the startup verifier (`IStartupVerifier`) and startup activator (`IStartupActivator`), the claims
+provider (`IClaimsProvider`, registered with `AddClaimsProvider<T>()`), the scope repository, the
+discovery document provider, the client repository, the client and client-with-credentials interfaces,
+a client secret hasher (`IClientSecretHasher`), the client registration validator, the two store
+backing contracts, the client authenticator, the token issuer (`ITokenIssuer`, keyed per `TokenKind`),
+a signing key source (`ISigningKeySource`) and the signer it lends (`ISigner`), and an options validator
+via `ZeeKayDaOptionsValidator<TOptions>`, which returns its coded failures and is registered as
+`IValidateOptions<TOptions>`. Everything else public is
+consume-only. A framework layer that enforces the rules between a seam and its consumers is a public
+sealed class with an internal constructor, never an interface: a host injects it and cannot supply
+its own. So are the five interaction services, which complete every protocol step for a page
+(`An_interaction_service_cannot_be_supplied_by_a_host`), and `ClientSecrets`, which verifies and pads
+(`ClientSecrets_cannot_be_supplied_by_a_host`). Unsealing one is additive. Adding to this list is a
+minor version; changing anything on it is a major one. The
 question asked of every new public member before it lands is whether it can be changed later without a
 breaking change.
 
-**The sanitizing logger is inject-only by convention, backed by a startup gate.** The interface is
-public so provider packages can constructor-inject it, and it is a marker over `ILogger<T>` with no
-members of its own. A host registering its own implementation before the framework's would shadow
-redaction for every framework service, which is why a hard-failing gate runs ahead of every other
-startup check and rejects an unexpected open-generic implementation or any closed-generic override.
-Making the concrete wrapper public and sealed would turn "do not implement this" into something the
-type system enforces, and remains available as a later hardening step.
+**The public API returns `Task`, never `ValueTask`, unless a measurement justifies it.** Every public
+async member — interface members, delegates, and members a third party overrides — returns `Task` or
+`Task<T>`. A `ValueTask` must be awaited exactly once and never stored, and an implementer or caller who
+breaks that compiles cleanly and fails intermittently; a `Task` has no such rule. A specific hot path
+moves to `ValueTask` only with a measurement showing the allocation matters. Internal code may use
+either, and a member whose type a BCL contract fixes (`IAsyncDisposable.DisposeAsync`) keeps it.
+
+**The sanitizing logger is inject-only, enforced by the type system.** `SanitizingLogger<T>` is a
+public class so provider packages can constructor-inject it, with an `internal` constructor so nothing
+outside the framework can derive one, or construct one except through the TestKit's `TestSanitizingLogger`,
+which builds the same redacting logger for tests; any instance is therefore the framework's redacting
+logger. Accepted cost: a host cannot decorate it.
 
 **Coordinator interfaces grow by adding members outright, not by splitting into capability
 interfaces.** Capability splitting is refused: it multiplies the interfaces a backend must discover,
@@ -106,6 +117,14 @@ first request and shared by every later one — a `DbContext` held open for the 
 catches this in Development only, which leaves the unwatched deployment to find it. Per-request
 dependencies are resolved inside the repository from an injected `IServiceScopeFactory`.
 
+**Registration lives in Microsoft's namespaces; everything else groups by feature.** Every public `Add…`
+and `Map…` extension method is declared in `Microsoft.Extensions.DependencyInjection` or
+`Microsoft.AspNetCore.Builder`, so registering and mapping the framework in `Program.cs` needs no
+ZeeKayDa `using`. The types a host or extension author names in its own code sit in the feature
+namespace they belong to — `AspNetCore.Interaction`, `Claims`, `Clients`, `Tokens`, `Stores` — and a
+provider package brings its own namespace for its options. A host file should need at most two ZeeKayDa `using` directives; no type
+is hoisted into the root namespace just to save one.
+
 ## Tried, didn't work
 
 - **A third-party-implementable store protocol.** The original shipped contract let a consumer
@@ -113,6 +132,9 @@ dependencies are resolved inside the repository from an injected `IServiceScopeF
   could violate while compiling outnumbered the one thing a third party actually wanted to vary. The
   full reversal is in `token-stores.md`; it is listed here because it is the case that produced the
   house pattern.
+- **Interaction services as public interfaces.** Hosts could swap them in DI, so the framework's
+  guarantee for each protocol step came to rest on a startup check. Sealed classes with internal
+  constructors make the swap unrepresentable instead.
 - **A friend grant as a substitute for public contracts.** The Azure Key Vault provider's first
   attempt at reaching core's signing helpers. It works for exactly one first-party package and can
   never serve a third party. Public contracts with internal crypto is the fix.

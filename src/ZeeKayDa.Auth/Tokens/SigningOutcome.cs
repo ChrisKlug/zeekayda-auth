@@ -1,13 +1,12 @@
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// The result of <see cref="ISigningKeyRing.SignAsync{TState}"/>: the exact bytes that were signed,
+/// The result of <see cref="SigningKeyRing.SignAsync{TState}"/>: the exact bytes that were signed,
 /// the resulting signature, and the key that signed them.
 /// </summary>
 /// <param name="SigningInput">
-/// The exact bytes the <c>buildSigningInput</c> callback produced and that were signed — for a JWS,
-/// <c>base64url(header) + '.' + base64url(payload)</c>, so the caller can assemble the final token
-/// as <c>SigningInput + '.' + base64url(Signature)</c> with no rebuild and no mismatch risk.
+/// The exact bytes the <c>buildSigningInput</c> callback produced and that were signed, so the token is
+/// <c>SigningInput + '.' + base64url(Signature)</c> with no rebuild.
 /// </param>
 /// <param name="Signature">The raw signature bytes.</param>
 /// <param name="Key">The key that signed <paramref name="SigningInput"/>.</param>
@@ -18,19 +17,17 @@ public readonly record struct SigningOutcome(ReadOnlyMemory<byte> SigningInput, 
     /// <summary>Gets the key that signed <see cref="SigningInput"/>.</summary>
     /// <exception cref="InvalidOperationException">
     /// Thrown when this instance is <see langword="default"/>(<see cref="SigningOutcome"/>) rather
-    /// than one returned by <see cref="ISigningKeyRing.SignAsync{TState}"/>.
+    /// than one returned by <see cref="SigningKeyRing.SignAsync{TState}"/>.
     /// </exception>
     public SigningKey Key
     {
         get => _key ?? throw new InvalidOperationException(
             $"{nameof(SigningOutcome)} was default-initialized; it must be obtained from " +
-            $"{nameof(ISigningKeyRing)}.{nameof(ISigningKeyRing.SignAsync)}.");
+            $"{nameof(SigningKeyRing)}.{nameof(SigningKeyRing.SignAsync)}.");
         init => _key = value;
     }
 
-    // The record's synthesized PrintMembers reads Key, so ToString() on a default instance would
-    // throw from the guard above — a debugger watch or a log line is the last place that should
-    // fail. Print the default as such instead.
+    // The synthesized one reads Key, which throws on a default instance, from a debugger watch or a log line.
     private bool PrintMembers(System.Text.StringBuilder builder)
     {
         if (_key is null)

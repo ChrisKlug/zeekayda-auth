@@ -1,12 +1,19 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
+using ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Configuration;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
@@ -14,17 +21,33 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Extensions;
 public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
 {
     [Fact]
-    public void AddZeeKayDaAuth_always_registers_ExceptionSanitizingDisabledWarningService_as_IStartupVerifier()
+    public async Task AddZeeKayDaAuth_called_twice_starts_with_each_cookie_scheme_registered_once()
     {
-        // The warning verifier reads the flag at startup and emits a warning only when the flag
-        // is set. It is always registered (unconditionally) so no additional method call is needed.
+        using var host = new EndpointHost(configureBuilder: builder =>
+            builder.Services.AddZeeKayDaAuth(options => options.ClockSkewTolerance = TimeSpan.FromSeconds(10)));
+
+        await host.EnsureStartedAsync();
+
+        var schemes = await host.Resolve<IAuthenticationSchemeProvider>().GetAllSchemesAsync();
+        schemes.Select(scheme => scheme.Name).Should().OnlyHaveUniqueItems().And.Contain(["zkd.session", "zkd.external"]);
+        host.Resolve<IOptions<AuthorizationServerOptions>>().Value.ClockSkewTolerance.Should().Be(TimeSpan.FromSeconds(10));
+    }
+
+    [Theory]
+    [InlineData(typeof(HttpLoopbackIssuerVerifier))]
+    [InlineData(typeof(HttpLoopbackCorsOriginsVerifier))]
+    [InlineData(typeof(ExceptionSanitizingDisabledVerifier))]
+    public void AddZeeKayDaAuth_always_registers_a_verifier_for_each_Development_switch(Type verifierType)
+    {
+        // Each verifier reads its flag at startup and reports only when the flag is set, so it is
+        // registered unconditionally and no additional method call is needed.
         var services = new ServiceCollection();
 
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
 
         services.Should().Contain(sd =>
             sd.ServiceType == typeof(IStartupVerifier) &&
-            sd.ImplementationType == typeof(ExceptionSanitizingDisabledWarningService));
+            sd.ImplementationType == verifierType);
     }
 
     [Theory]
@@ -47,9 +70,9 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     {
         // The none path trusts IsPublic because the resolver enforces public <=> no credentials.
         // A host's own IClientRegistrationValidator, however lax, must not replace that check.
-        var corrupt = ClientRegistration.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"])
+        var corrupt = Client.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"])
             with
-        { Credentials = [new Pbkdf2ClientSecret(600_000, new byte[16], new byte[32])] };
+        { Secrets = [Pbkdf2ClientSecretHasher.Format(600_000, new byte[16], new byte[32])] };
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IClientRegistrationValidator, AcceptEverythingValidator>();
@@ -57,12 +80,11 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         services.AddZeeKayDaAuth(options =>
         {
             options.Issuer = "https://auth.example.com";
-            options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         });
         using var provider = services.BuildServiceProvider();
 
         var served = await provider.GetRequiredService<ValidatedClientResolver>()
-            .FindByClientIdAsync("public-client", TestContext.Current.CancellationToken);
+            .FindClientWithCredentialsAsync("public-client", TestContext.Current.CancellationToken);
 
         served.Should().BeNull();
         provider.GetRequiredService<IClientRegistrationValidator>().Should().BeOfType<AcceptEverythingValidator>(
@@ -72,7 +94,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     [Fact]
     public async Task ValidatedClientResolver_also_runs_the_hosts_own_validator_on_what_it_serves()
     {
-        var valid = ClientRegistration.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"]);
+        var valid = Client.CreatePublic("public-client", ["https://app.example.com/cb"], [], ["openid"]);
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IClientRegistrationValidator, RejectEverythingValidator>();
@@ -80,105 +102,100 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         services.AddZeeKayDaAuth(options =>
         {
             options.Issuer = "https://auth.example.com";
-            options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
         });
         using var provider = services.BuildServiceProvider();
 
         var served = await provider.GetRequiredService<ValidatedClientResolver>()
-            .FindByClientIdAsync("public-client", TestContext.Current.CancellationToken);
+            .FindClientWithCredentialsAsync("public-client", TestContext.Current.CancellationToken);
 
         served.Should().BeNull("a host's stricter rule applies to what is served, on top of the framework's");
     }
 
+    [Fact]
+    public void In_memory_clients_are_held_to_the_framework_rules_at_startup_when_the_host_registers_its_own_validator()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IClientRegistrationValidator, AcceptEverythingValidator>();
+        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com")
+            .AddInMemoryClients(clients => clients.AddPublic("spa", client =>
+            {
+                client.RedirectUris.UnionWith(["https://app.example.com/cb#fragment"]);
+                client.AllowedScopes.UnionWith(["openid"]);
+            }));
+        using var provider = services.BuildServiceProvider();
+
+        var act = () => provider.GetRequiredService<IClientRepository>();
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().Contain(f => f.Code == "client.redirect_uri.fragment");
+    }
+
     private sealed class RejectEverythingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientRegistration client) =>
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure("host.tenant_rule", "Redirect URIs must be on the tenant domain."));
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
+            [new ZeeKayDaConfigurationFailure("host.tenant_rule", "Redirect URIs must be on the tenant domain.")];
     }
 
     private sealed class AcceptEverythingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientRegistration client) { }
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => [];
     }
 
-    private sealed class SingleClientRepository(IClientRegistration client) : IClientRepository
+    private sealed class SingleClientRepository(IClientWithCredentials client) : IClientRepository
     {
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(clientId == client.ClientId ? client : null);
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+            => Task.FromResult(clientId == client.ClientId ? client : null);
     }
 
-    // ── IClientSecretFactory DI wiring (AC1–AC4, issue #135) ─────────────────────────────────────
+    // ── ClientSecrets DI wiring (AC1–AC4, issue #135) ─────────────────────────────────────
 
     [Fact]
-    public void AddZeeKayDaAuth_IClientSecretFactory_is_same_instance_as_CompositeClientSecretHasher()
+    public void AddZeeKayDaAuth_ClientSecrets_is_one_singleton()
     {
-        // AC2: the IClientSecretFactory registration must be an alias for the already-constructed
-        // CompositeClientSecretHasher singleton — same object reference, not a second instance.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
         using var provider = services.BuildServiceProvider();
 
-        var factory = provider.GetRequiredService<IClientSecretFactory>();
-        var composite = provider.GetRequiredService<CompositeClientSecretHasher>();
+        var first = provider.GetRequiredService<ClientSecrets>();
 
-        factory.Should().BeSameAs(composite);
+        first.Should().BeOfType<ClientSecrets>()
+            .And.BeSameAs(provider.GetRequiredService<ClientSecrets>());
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_IClientSecretFactory_Create_returns_IClientSecret()
+    public void AddZeeKayDaAuth_ClientSecrets_Create_returns_a_ClientSecret()
     {
-        // AC3: IClientSecretFactory.Create must delegate to the default hasher and return
-        // a valid IClientSecret, reachable through the interface (not the concrete type).
+        // ClientSecrets.Create delegates to the default hasher.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
         using var provider = services.BuildServiceProvider();
 
-        var factory = provider.GetRequiredService<IClientSecretFactory>();
+        var secrets = provider.GetRequiredService<ClientSecrets>();
 
-        var secret = factory.Create("s3cr3t-v4lu3");
+        var secret = secrets.Create("s3cr3t-v4lu3");
 
-        secret.Should().NotBeNull();
-        secret.Should().BeAssignableTo<IClientSecret>();
-    }
-
-    [Fact]
-    public void AddZeeKayDaAuth_does_not_override_pre_registered_IClientSecretFactory()
-    {
-        // AC4 (runtime): a pre-registered IClientSecretFactory must survive AddZeeKayDaAuth.
-        // This verifies TryAddSingleton semantics — the first registration always wins.
-        var services = new ServiceCollection();
-        services.AddLogging();
-        var preRegistered = new FakeClientSecretFactory();
-        services.AddSingleton<IClientSecretFactory>(preRegistered);
-
-        services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
-        using var provider = services.BuildServiceProvider();
-
-        var resolved = provider.GetRequiredService<IClientSecretFactory>();
-
-        resolved.Should().BeSameAs(preRegistered,
-            "TryAddSingleton must not replace the pre-registered IClientSecretFactory");
+        secret.Value.Should().StartWith("$pbkdf2-sha256$");
     }
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void AddZeeKayDaAuth_IClientSecretFactory_Create_throws_on_invalid_plaintext(string? plaintext)
+    public void AddZeeKayDaAuth_ClientSecrets_Create_throws_on_invalid_plaintext(string? plaintext)
     {
-        // AC3 (negative): IClientSecretFactory.Create must reject null, empty, and whitespace
+        // AC3 (negative): ClientSecrets.Create must reject null, empty, and whitespace
         // plaintext — as documented in the interface's XML doc.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddZeeKayDaAuth(options => options.Issuer = "https://auth.example.com");
         using var provider = services.BuildServiceProvider();
 
-        var factory = provider.GetRequiredService<IClientSecretFactory>();
+        var secrets = provider.GetRequiredService<ClientSecrets>();
 
-        var act = () => factory.Create(plaintext!);
+        var act = () => secrets.Create(plaintext!);
 
         act.Should().Throw<ArgumentException>();
     }
@@ -228,7 +245,7 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_records_Pbkdf2ClientSecretHasher_registration_in_options()
+    public void AddZeeKayDaAuth_registers_PBKDF2_unmarked_and_it_is_the_default()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -238,16 +255,14 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         var opts = provider.GetRequiredService<IOptions<ClientSecretHasherRegistrationOptions>>().Value;
 
         opts.Registrations.Should().ContainSingle(r =>
-            r.HasherType == typeof(Pbkdf2ClientSecretHasher) && r.IsDefault);
+            r.HasherType == typeof(Pbkdf2ClientSecretHasher) && !r.IsDefault);
+        opts.DefaultHasherType.Should().Be(typeof(Pbkdf2ClientSecretHasher));
     }
 
     [Fact]
-    public void AddZeeKayDaAuth_binds_DisableExceptionSanitizing_from_configuration()
+    public void AddZeeKayDaAuth_binds_the_Development_switches_from_configuration()
     {
-        // Verify the documented appsettings.Development.json path actually works — i.e., that
-        // the JSON key "ZeeKayDaAuth:Logging:DisableExceptionSanitizing" binds to the correct
-        // property on AuthorizationServerOptions.
-        var json = """{"ZeeKayDaAuth":{"Logging":{"DisableExceptionSanitizing":true}}}""";
+        var json = """{"ZeeKayDaAuth":{"Development":{"AllowHttpLoopbackIssuer":true,"AllowHttpLoopbackCorsOrigins":true,"DisableExceptionSanitizing":true}}}""";
         var jsonBytes = System.Text.Encoding.UTF8.GetBytes(json);
         using var jsonStream = new System.IO.MemoryStream(jsonBytes);
         var configuration = new ConfigurationBuilder()
@@ -263,17 +278,8 @@ public sealed class ZeeKayDaAuthServiceCollectionExtensionsTests
         using var provider = services.BuildServiceProvider();
         var opts = provider.GetRequiredService<IOptions<AuthorizationServerOptions>>().Value;
 
-        opts.Logging.DisableExceptionSanitizing.Should().BeTrue();
-    }
-
-    // ── Test doubles ─────────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Stand-in IClientSecretFactory used to verify pre-registration is not overwritten
-    /// by TryAddSingleton inside AddZeeKayDaAuth.
-    /// </summary>
-    private sealed class FakeClientSecretFactory : IClientSecretFactory
-    {
-        public IClientSecret Create(string plaintext) => throw new NotImplementedException();
+        opts.Development.AllowHttpLoopbackIssuer.Should().BeTrue();
+        opts.Development.AllowHttpLoopbackCorsOrigins.Should().BeTrue();
+        opts.Development.DisableExceptionSanitizing.Should().BeTrue();
     }
 }

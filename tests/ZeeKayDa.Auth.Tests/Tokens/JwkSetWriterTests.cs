@@ -2,12 +2,37 @@ using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
 
 public sealed class JwkSetWriterTests
 {
+    // A P-521 public key whose x begins with two zero bytes, with its RFC 7638 thumbprint computed outside
+    // .NET (Python's cryptography package and hashlib). A platform that strips the leading pad bytes
+    // from an exported coordinate would change both the thumbprint and the served x.
+    private const string P521XBase64Url =
+        "AADTvKb7nLf_9dONkSSZ-rzjuWp2OZTbRWi6SLYBNhwu" +
+        "sYdQBQJ5yC4siNZApUUtUytiImU2pPU4skilmrHC89wS";
+
+    private const string P521YBase64Url =
+        "AVts1dKk6J9Y3we5sT0rFEtm4YBMpFeyv8tzOxlQhh07" +
+        "vfhdW6PvL6mQiMYkBDHuQzd40rfS0YAiHSQI-i-0V5QI";
+
+    private const string P521ExpectedThumbprint = "Th6T9Ta3BhkuIbguPr7mvbkyw4f-Icd61KNnKkyXnA8";
+
+    /// <summary>The fixed P-521 key, imported into and exported back out of the platform's ECDsa.</summary>
+    private static ECParameters P521RoundTrippedThroughThePlatform()
+    {
+        using var ec = ECDsa.Create(new ECParameters
+        {
+            Curve = ECCurve.NamedCurves.nistP521,
+            Q = new ECPoint { X = DecodeBase64Url(P521XBase64Url), Y = DecodeBase64Url(P521YBase64Url) },
+        });
+        return ec.ExportParameters(includePrivateParameters: false);
+    }
+
     // The RSA key RFC 7638 §3.1 uses for its worked thumbprint example — the same key as
     // RFC 7517 Appendix A.1's RSA entry — reproduced verbatim so serialising it verifies
     // interoperability with the specifications' own examples, not just internal consistency.
@@ -46,7 +71,8 @@ public sealed class JwkSetWriterTests
     [Fact]
     public void Write_serialises_the_rfc7517_A1_ec_key_with_its_exact_coordinate_encodings()
     {
-        var keySet = BuildKeySet(current: EcSourceKey("ec", Rfc7517EcXBase64Url, Rfc7517EcYBase64Url));
+        var keySet = BuildKeySet(
+            current: EcSourceKey("ec", Rfc7517EcXBase64Url, Rfc7517EcYBase64Url), algorithm: SigningAlgorithm.ES256);
 
         var jwk = SingleKey(JwkSetWriter.Write(keySet.Published));
 
@@ -59,6 +85,21 @@ public sealed class JwkSetWriterTests
     }
 
     [Fact]
+    public void Write_serialises_an_externally_computed_P521_vector_with_its_leading_zero_bytes_kept()
+    {
+        var keySet = BuildKeySet(
+            new SourceKey(new SourceKeyId("p521"), PublicKeyParameters.FromEc(P521RoundTrippedThroughThePlatform())),
+            algorithm: SigningAlgorithm.ES512);
+
+        var jwk = SingleKey(JwkSetWriter.Write(keySet.Published));
+
+        jwk.GetProperty("crv").GetString().Should().Be("P-521");
+        jwk.GetProperty("x").GetString().Should().Be(P521XBase64Url);
+        jwk.GetProperty("y").GetString().Should().Be(P521YBase64Url);
+        jwk.GetProperty("kid").GetString().Should().Be(P521ExpectedThumbprint);
+    }
+
+    [Fact]
     public void Write_encodes_a_zero_padded_modulus_minimally_so_the_served_n_rederives_the_kid()
     {
         var minimalModulus = DecodeBase64Url(Rfc7638ModulusBase64Url);
@@ -67,13 +108,11 @@ public sealed class JwkSetWriterTests
 
         var keySet = BuildKeySet(current: new SourceKey(
             new SourceKeyId("padded"),
-            SigningAlgorithm.RS256,
             PublicKeyParameters.FromRsa(new RSAParameters
             {
                 Modulus = paddedModulus,
                 Exponent = DecodeBase64Url(Rfc7638ExponentBase64Url),
-            }),
-            ExpiresAt: null));
+            })));
 
         var jwk = SingleKey(JwkSetWriter.Write(keySet.Published));
 
@@ -88,19 +127,13 @@ public sealed class JwkSetWriterTests
     {
         using var rsa = RSA.Create(2048);
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var keySet = BuildKeySet(
-            previous: new SourceKey(
-                new SourceKeyId("rsa"),
-                SigningAlgorithm.RS256,
-                PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: true)),
-                ExpiresAt: null),
-            current: new SourceKey(
-                new SourceKeyId("ec"),
-                SigningAlgorithm.ES256,
-                PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: true)),
-                ExpiresAt: null));
+        var rsaSet = BuildKeySet(new SourceKey(
+            new SourceKeyId("rsa"), PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: true))));
+        var ecSet = BuildKeySet(
+            new SourceKey(new SourceKeyId("ec"), PublicKeyParameters.FromEc(ec.ExportParameters(includePrivateParameters: true))),
+            algorithm: SigningAlgorithm.ES256);
 
-        using var document = JsonDocument.Parse(JwkSetWriter.Write(keySet.Published));
+        using var document = JsonDocument.Parse(JwkSetWriter.Write([.. rsaSet.Published, .. ecSet.Published]));
 
         var allowedMembers = new[] { "kid", "kty", "use", "alg", "n", "e", "crv", "x", "y" };
         foreach (var jwk in document.RootElement.GetProperty("keys").EnumerateArray())
@@ -115,8 +148,7 @@ public sealed class JwkSetWriterTests
     [Fact]
     public void Write_preserves_the_given_key_order()
     {
-        var keySet = TestSigningKeys.KeySet(
-            SigningAlgorithm.RS256, SigningAlgorithm.RS384, SigningAlgorithm.ES256);
+        var keySet = TestSigningKeys.KeySet(SigningAlgorithm.RS256, keyCount: 3);
 
         using var document = JsonDocument.Parse(JwkSetWriter.Write(keySet.Published));
 
@@ -128,7 +160,7 @@ public sealed class JwkSetWriterTests
     [Fact]
     public void Write_produces_byte_identical_output_for_the_same_key_list()
     {
-        var keySet = TestSigningKeys.KeySet(SigningAlgorithm.RS256, SigningAlgorithm.ES256);
+        var keySet = TestSigningKeys.KeySet(SigningAlgorithm.RS256, keyCount: 2);
 
         var first = JwkSetWriter.Write(keySet.Published);
         var second = JwkSetWriter.Write(keySet.Published);
@@ -138,24 +170,21 @@ public sealed class JwkSetWriterTests
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
-    private static SigningKeySet BuildKeySet(SourceKey current, SourceKey? previous = null)
-        => SigningKeySetBuilder.Build(SourceKeySet.Create(previous, current, next: null));
+    private static SigningKeySet BuildKeySet(SourceKey current, SigningAlgorithm algorithm = SigningAlgorithm.RS256)
+        => SigningKeySetBuilder.Build(new SourceKeyListing([current], []), algorithm, TestSigningKeys.Options).At(DateTimeOffset.UtcNow);
 
     private static SourceKey RsaSourceKey(string id, string modulusBase64Url, string exponentBase64Url)
         => new(
             new SourceKeyId(id),
-            SigningAlgorithm.RS256,
             PublicKeyParameters.FromRsa(new RSAParameters
             {
                 Modulus = DecodeBase64Url(modulusBase64Url),
                 Exponent = DecodeBase64Url(exponentBase64Url),
-            }),
-            ExpiresAt: null);
+            }));
 
     private static SourceKey EcSourceKey(string id, string xBase64Url, string yBase64Url)
         => new(
             new SourceKeyId(id),
-            SigningAlgorithm.ES256,
             PublicKeyParameters.FromEc(new ECParameters
             {
                 Curve = ECCurve.NamedCurves.nistP256,
@@ -164,8 +193,7 @@ public sealed class JwkSetWriterTests
                     X = DecodeBase64Url(xBase64Url),
                     Y = DecodeBase64Url(yBase64Url),
                 },
-            }),
-            ExpiresAt: null);
+            }));
 
     private static JsonElement SingleKey(byte[] jwkSetBytes)
     {

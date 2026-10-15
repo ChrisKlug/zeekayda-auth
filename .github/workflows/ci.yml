@@ -372,11 +372,11 @@ jobs:
       - name: Run log hygiene script smoke tests
         run: bash .github/scripts/tests/check_log_hygiene.tests.sh
 
-  # The OpenID Foundation conformance suite, run against samples/IdentityServer. Both plans (the
-  # config plan and the 35-module basic code-flow plan) run on every pull request and every push
-  # to main, rather than nightly: measured warm on a developer machine the pair takes about
-  # 2 min 11 s, and a broken login flow is exactly what a PR breaks by accident — a nightly-only
-  # basic plan would report it a day late. conformance/README.md carries the measurement.
+  # The OpenID Foundation conformance suite, run against tests/ZeeKayDa.Auth.ConformanceHost. Both
+  # plans (the config plan and the 35-module basic code-flow plan) run on every pull request and
+  # every push to main, rather than nightly: measured warm on a developer machine the pair takes
+  # about 2 min 11 s, and a broken login flow is exactly what a PR breaks by accident — a
+  # nightly-only basic plan would report it a day late. conformance/README.md carries the measurement.
   #
   # The gate is conformance/expected/*.json, not the run's raw output: the suite's runner fails
   # when a failure, warning or skip occurs that those manifests do not account for, and equally

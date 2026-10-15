@@ -1,0 +1,28 @@
+using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.StartupVerification;
+
+namespace ZeeKayDa.Auth.Configuration;
+
+/// <summary>Warns when <c>TokenEndpoint.AbsoluteFamilyLifetime</c> is the unbounded <see cref="TimeSpan.MaxValue"/>.</summary>
+internal sealed class AbsoluteFamilyLifetimeUnboundedVerifier(
+    IOptions<AuthorizationServerOptions> options) : IStartupVerifier
+{
+    /// <inheritdoc/>
+    public string Name => "AbsoluteFamilyLifetimeUnbounded";
+
+    /// <inheritdoc/>
+    public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
+    {
+        if (options.Value.TokenEndpoint.AbsoluteFamilyLifetime == TimeSpan.MaxValue)
+        {
+            context.AddWarning(
+                "tokens.absolute_family_lifetime_unbounded",
+                "AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime is set to the " +
+                "unbounded escape-hatch sentinel (TimeSpan.MaxValue). Refresh token families will " +
+                "never hit an absolute lifetime cap, causing unbounded row growth in a persisted " +
+                "refresh-token grant store over time. Ensure this is an intentional choice.");
+        }
+
+        return Task.CompletedTask;
+    }
+}

@@ -36,7 +36,9 @@ code untested; do not write a test whose only function is to satisfy it.
 
 On **non-security** types, the following are explicitly not wanted:
 
-- Guard-clause tests (`ArgumentNullException` / throws-on-null assertions)
+- Guard-clause tests (`ArgumentNullException` / throws-on-null assertions). On **any** type, security
+  surface included, a constructor built only by DI has no guard to test: internal DI-built classes
+  use primary constructors without null checks (`.claude/agents/developer.md`).
 - DI-resolution assertions ("service X resolves from the container")
 - `ToString` tests
 - Trivial property round-trips and "constructor sets property" tests
@@ -84,7 +86,8 @@ survives every future run.
 **A mutation report does not override the section above.** Guard-clause and DI-resolution mutants on
 a non-security type stay unkilled and are justified in the PR; closing them is not a reason to write
 a test this repository does not want. On a security surface — a signer, a key source, the
-registration of a security control — those same tests are wanted, and the carve-out is why.
+registration of a security control — those same tests are wanted, and the carve-out is why: a guard
+on a public member a third party calls, or on a value the host configures, is tested there.
 
 ## Quality Standards
 

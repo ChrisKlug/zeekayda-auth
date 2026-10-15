@@ -4,11 +4,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// Provides read access to registered OAuth 2.0 / OpenID Connect clients.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Custom implementations must return <see langword="null"/> (never throw) for unknown or
-/// malformed <c>client_id</c> values — throwing changes timing and undermines enumeration
-/// defence. See RFC 9700 §2.1.
-/// </para>
+/// Called only with a well-formed <c>client_id</c>.
 /// </remarks>
 public interface IClientRepository
 {
@@ -17,11 +13,10 @@ public interface IClientRepository
     /// <see langword="null"/> if no client with that identifier is registered.
     /// </summary>
     /// <remarks>
-    /// Implementations MUST return <see langword="null"/> for unknown or malformed
-    /// <c>client_id</c> values — never throw. Throwing from this method changes response
-    /// timing and enables client enumeration attacks.
+    /// MUST return <see langword="null"/> for an unknown <c>client_id</c>, never throw, since throwing changes
+    /// timing and enables enumeration (RFC 9700 §2.1). Throwing for an outage is allowed and answers HTTP 500.
     /// </remarks>
-    ValueTask<IClientRegistration?> FindByClientIdAsync(
+    Task<IClientWithCredentials?> FindByClientIdAsync(
         string clientId,
         CancellationToken cancellationToken = default);
 }

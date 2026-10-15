@@ -3,18 +3,15 @@ using ZeeKayDa.Auth.Clients;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// What an <see cref="ITokenIssuer"/> is told about the issuance it is performing. The concrete
-/// type says which token is being issued — <see cref="AccessTokenIssuanceContext"/> or
-/// <see cref="IdTokenIssuanceContext"/> — and only those two exist, so what each kind of
-/// issuance carries is a property of its type rather than a value that may or may not be set.
+/// What an <see cref="ITokenIssuer"/> is told about the issuance it performs. The concrete type,
+/// <see cref="AccessTokenIssuanceContext"/> or <see cref="IdTokenIssuanceContext"/>, says which token it is.
 /// </summary>
 /// <remarks>
-/// The hierarchy is closed: the constructor is reachable only from this assembly. The context
-/// deliberately carries no tenant field; multi-tenancy is not decided.
+/// The hierarchy is closed: the constructor is reachable only from this assembly.
 /// </remarks>
 public abstract class TokenIssuanceContext
 {
-    private protected TokenIssuanceContext(IClientMetadata client)
+    private protected TokenIssuanceContext(IClient client)
     {
         ArgumentNullException.ThrowIfNull(client);
         Client = client;
@@ -27,10 +24,10 @@ public abstract class TokenIssuanceContext
         $"{GetType().Name} {{ {nameof(Client)} = {Client.ClientId} }}";
 
     /// <summary>
-    /// Gets the client the token is issued for. Carried as <see cref="IClientMetadata"/>, not
+    /// Gets the client the token is issued for. Carried as <see cref="IClient"/>, not
     /// the full registration, so the issuance path never holds the client's credentials.
     /// </summary>
-    public IClientMetadata Client { get; }
+    public IClient Client { get; }
 }
 
 /// <summary>The issuance of an access token to a client.</summary>
@@ -41,16 +38,15 @@ public sealed class AccessTokenIssuanceContext : TokenIssuanceContext
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="client"/> is <see langword="null"/>.
     /// </exception>
-    public AccessTokenIssuanceContext(IClientMetadata client)
+    public AccessTokenIssuanceContext(IClient client)
         : base(client)
     {
     }
 }
 
 /// <summary>
-/// The issuance of an ID token to a client, bound to the access token issued in the same
-/// response through <c>at_hash</c> (OpenID Connect Core §3.1.3.6). An ID token is never issued
-/// unbound, so the access token is a required part of the context, not an optional one.
+/// The issuance of an ID token, bound through <c>at_hash</c> to the access token issued in the same
+/// response (OpenID Connect Core §3.1.3.6); an ID token is never issued unbound.
 /// </summary>
 public sealed class IdTokenIssuanceContext : TokenIssuanceContext
 {
@@ -70,7 +66,7 @@ public sealed class IdTokenIssuanceContext : TokenIssuanceContext
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="accessToken"/> is not an access token.
     /// </exception>
-    public IdTokenIssuanceContext(IClientMetadata client, IssuedToken accessToken)
+    public IdTokenIssuanceContext(IClient client, IssuedToken accessToken)
         : base(client)
     {
         ArgumentNullException.ThrowIfNull(accessToken);

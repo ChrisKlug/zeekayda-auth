@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# Runs the OpenID Foundation conformance suite against the sample identity server.
+# Runs the OpenID Foundation conformance suite against the conformance host
+# (tests/ZeeKayDa.Auth.ConformanceHost).
 #
 #   ./run-conformance.sh [config|basic|all]
 #
-# Boots the suite (MongoDB, nginx, the Java server) and the sample identity server, runs the
+# Boots the suite (MongoDB, nginx, the Java server) and the conformance host, runs the
 # requested test plan headlessly, writes the results under results/, and tears everything down.
 # Docker and the .NET SDK are the only prerequisites.
 #
@@ -30,9 +31,9 @@ export CONFORMANCE_DIR="${HERE}"
 SUITE_REF="${SUITE_REF:-release-v5.3.1}"
 export IMAGE_TAG="${IMAGE_TAG:-${SUITE_REF}}"
 
-# Fixed, not overridable. The name also appears literally in the sample's issuer
-# (samples/IdentityServer/appsettings.Conformance.json) and in the browser-match strings
-# (config/zeekayda.json), which no environment variable can reach, so an override here would
+# Fixed, not overridable. The name also appears literally in the conformance host's issuer
+# (tests/ZeeKayDa.Auth.ConformanceHost/appsettings.Conformance.json) and in the browser-match
+# strings (config/zeekayda.json), which no environment variable can reach, so an override here would
 # change the certificate and the container's host mapping while the issuer stayed behind — a
 # broken run wearing the look of a supported knob. Changing the hostname means editing those two
 # files, docker-compose.override.yml and make-certs.sh alongside this line.
@@ -184,9 +185,9 @@ if ! curl -ksf "${SUITE_URL}/api/runner/available" >/dev/null 2>&1; then
     exit 1
 fi
 
-# --- the sample identity server -------------------------------------------------------------------
-echo "==> starting the sample identity server on ${OP_BASE}"
-dotnet run --project "${REPO_ROOT}/samples/IdentityServer" --launch-profile Conformance \
+# --- the conformance host ------------------------------------------------------------------------
+echo "==> starting the conformance host on ${OP_BASE}"
+dotnet run --project "${REPO_ROOT}/tests/ZeeKayDa.Auth.ConformanceHost" --launch-profile Conformance \
     > "${RESULT_DIR}/identity-server.log" 2>&1 &
 OP_PID=$!
 
@@ -197,7 +198,7 @@ for _ in $(seq 1 90); do
         break
     fi
     if ! kill -0 "${OP_PID}" 2>/dev/null; then
-        echo " the identity server exited"
+        echo " the conformance host exited"
         tail -30 "${RESULT_DIR}/identity-server.log" >&2
         exit 1
     fi

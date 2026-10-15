@@ -13,6 +13,8 @@
     <Project Path="src/ZeeKayDa.Auth/ZeeKayDa.Auth.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/ZeeKayDa.Auth.ConformanceHost.Tests/ZeeKayDa.Auth.ConformanceHost.Tests.csproj" />
+    <Project Path="tests/ZeeKayDa.Auth.ConformanceHost/ZeeKayDa.Auth.ConformanceHost.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.AspNetCore.Tests/ZeeKayDa.Auth.AspNetCore.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.AzureKeyVault.Tests/ZeeKayDa.Auth.AzureKeyVault.Tests.csproj" />
     <Project Path="tests/ZeeKayDa.Auth.FileSystem.Tests/ZeeKayDa.Auth.FileSystem.Tests.csproj" />

@@ -1,12 +1,13 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.DependencyInjection;
-using ZeeKayDa.Auth.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem.Tests.Extensions;
 
 /// <summary>
-/// Proves both <c>AddZeeKayDaSigningKeySource</c> overloads, including the one-source-per-application
+/// Proves <c>AddSigningKeySource</c>, including the one-source-per-application
 /// guard's different-source failure, work for source types defined entirely outside this framework's
 /// own assemblies. Unlike <c>ZeeKayDa.Auth.Tests</c>, this assembly carries no
 /// <c>InternalsVisibleTo</c> grant from core, so this test compiling and passing is the actual proof
@@ -18,17 +19,19 @@ public sealed class ThirdPartySigningKeySourceRegistrationTests
 {
     private sealed class ExternalSigningKeySource : ISigningKeySource
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
         {
             using var rsa = RSA.Create(2048);
             var current = new SourceKey(
-                new SourceKeyId("current"), SigningAlgorithm.RS256,
-                PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), DateTimeOffset.UtcNow.AddDays(90));
+                new SourceKeyId("current"),
+                PublicKeyParameters.FromRsa(rsa.ExportParameters(false)), expiresAt: DateTimeOffset.UtcNow.AddDays(90));
 
-            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult(new SourceKeyListing([current], []));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
 
@@ -36,42 +39,34 @@ public sealed class ThirdPartySigningKeySourceRegistrationTests
     /// registering a different source than one already registered fails loudly.</summary>
     private sealed class OtherExternalSigningKeySource : ISigningKeySource
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
     }
 
     [Fact]
-    public void AddZeeKayDaSigningKeySource_registers_an_ISigningKeyRing_for_a_third_party_source()
+    public void AddSigningKeySource_registers_an_SigningKeyRing_for_a_third_party_source()
     {
         var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
 
-        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
+        services.AddZeeKayDaAuthCoreForTesting().AddSigningKeySource<ExternalSigningKeySource>();
 
         using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISigningKeyRing>().Should().NotBeNull();
+        provider.GetRequiredService<SigningKeyRing>().Should().NotBeNull();
     }
 
     [Fact]
-    public void AddZeeKayDaSigningKeySource_with_factory_registers_an_ISigningKeyRing_for_a_third_party_source()
+    public void AddSigningKeySource_called_with_a_different_source_throws_InvalidOperationException()
     {
-        var services = new ServiceCollection();
+        var builder = new ServiceCollection().AddZeeKayDaAuthCoreForTesting();
+        builder.AddSigningKeySource<ExternalSigningKeySource>();
 
-        services.AddZeeKayDaSigningKeySource(_ => new ExternalSigningKeySource());
-
-        using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISigningKeyRing>().Should().NotBeNull();
-    }
-
-    [Fact]
-    public void AddZeeKayDaSigningKeySource_called_with_a_different_source_throws_InvalidOperationException()
-    {
-        var services = new ServiceCollection();
-        services.AddZeeKayDaSigningKeySource<ExternalSigningKeySource>();
-
-        var act = () => services.AddZeeKayDaSigningKeySource<OtherExternalSigningKeySource>();
+        var act = () => builder.AddSigningKeySource<OtherExternalSigningKeySource>();
 
         act.Should().Throw<InvalidOperationException>();
     }

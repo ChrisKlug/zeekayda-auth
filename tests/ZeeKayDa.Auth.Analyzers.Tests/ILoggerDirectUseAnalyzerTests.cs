@@ -153,7 +153,7 @@ public sealed class ILoggerDirectUseAnalyzerTests
     [Fact]
     public async Task No_diagnostic_for_ILoggerT_parameter_in_class_that_implements_ILoggerT()
     {
-        // SecretSanitizingLogger itself accepts ILogger<T> as its inner wrapper target;
+        // SanitizingLogger itself accepts ILogger<T> as its inner wrapper target;
         // the analyzer must not fire on classes that ARE the ILogger<T> implementation.
         var source = """
             using System;
@@ -161,10 +161,9 @@ public sealed class ILoggerDirectUseAnalyzerTests
             using Microsoft.Extensions.Logging;
             namespace ZeeKayDa.Auth.Logging
             {
-                internal interface ISanitizingLogger<T> : ILogger<T> { }
-                internal sealed class SecretSanitizingLogger<T> : ISanitizingLogger<T>
+                public class SanitizingLogger<T> : ILogger<T>
                 {
-                    public SecretSanitizingLogger(ILogger<T> inner) { }
+                    internal SanitizingLogger(ILogger<T> inner) { }
                     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
                     public bool IsEnabled(LogLevel level) => false;
                     public void Log<TState>(LogLevel level, EventId id, TState state, Exception? ex, Func<TState, Exception?, string> f) { }

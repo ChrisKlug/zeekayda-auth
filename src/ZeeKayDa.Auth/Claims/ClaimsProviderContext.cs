@@ -8,30 +8,20 @@ namespace ZeeKayDa.Auth.Claims;
 /// </summary>
 /// <param name="Sub">The subject identifier the tokens are for.</param>
 /// <param name="Scopes">
-/// The granted scopes, in order. A custom scope's meaning to the host is the provider's to
-/// interpret; the standard scopes are already expressed by <paramref name="ClaimTypes"/>.
+/// The granted scopes, in order; the standard ones are already expressed by <paramref name="ClaimTypes"/>.
 /// </param>
 /// <param name="ClaimTypes">
-/// Every claim type that selection will keep for the operation in hand, the client's own
-/// additions included: at a token exchange the ID token's and access token's types, at userinfo
-/// the userinfo types. It is not the union across all three, so it is a fetch hint and never a
-/// disclosure plan — a claim absent here may still be released to the same grant by the other
-/// operation. Nor is it a filter: a record of a type not listed is dropped, and a listed type
-/// the provider does not return is omitted.
+/// The claim types selection will keep for this operation, client additions included: the ID and
+/// access tokens' at a token exchange, the userinfo types at userinfo. A fetch hint, never a disclosure
+/// plan, since the other operation may release more to the same grant.
 /// </param>
 /// <param name="FamilyId">
-/// The refresh-token family of the grant, stable across every rotation of it, or
-/// <see langword="null"/> at userinfo, where there is no grant. Together with
-/// <paramref name="Sub"/> it is the natural cache key for a provider that wants to spare its
-/// identity store on rotation.
+/// The grant's refresh-token family, stable across rotations, or <see langword="null"/> at userinfo;
+/// with <paramref name="Sub"/>, the natural cache key.
 /// </param>
 /// <remarks>
-/// The client that asked is deliberately absent. Claims resolution is a subject-level concern;
-/// the only client-dependent step is selection, which runs after the provider returns and can
-/// only widen what is kept. The collections are snapshotted at construction into read-only
-/// copies the context owns, and the three members that carry them are get-only, so a provider
-/// holds no reference to the grant's own scope list and nothing it does to what it was handed
-/// can reach a token.
+/// The client is deliberately absent: resolution is per subject, and selection afterwards is the only
+/// client-dependent step. The collections are read-only copies, so nothing a provider does reaches a token.
 /// </remarks>
 /// <exception cref="ArgumentException">Thrown when <paramref name="Sub"/> is <see langword="null"/> or empty.</exception>
 /// <exception cref="ArgumentNullException">Thrown when <paramref name="Scopes"/> or <paramref name="ClaimTypes"/> is <see langword="null"/>.</exception>
@@ -56,8 +46,7 @@ public sealed record ClaimsProviderContext(
     public override string ToString() =>
         $"ClaimsProviderContext {{ Scopes = [{string.Join(' ', Scopes)}], ClaimTypes = {ClaimTypes.Count}, FamilyId = {(FamilyId is null ? "none" : "present")} }}";
 
-    // A copy the context owns: the grant's list stays the endpoint's, and what the provider is
-    // handed cannot be downcast to a writable collection.
+    // A copy the context owns, which cannot be downcast to a writable collection.
     private static IReadOnlyList<string> Snapshot(IReadOnlyList<string> scopes) =>
         Array.AsReadOnly(scopes.ToArray());
 

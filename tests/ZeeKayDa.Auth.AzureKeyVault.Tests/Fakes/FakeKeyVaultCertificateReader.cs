@@ -288,10 +288,14 @@ internal sealed class FakeKeyVaultCertificateReader : IKeyVaultCertificateReader
         throw new KeyNotFoundException($"No fake certificate private key material registered for version '{version}'.");
     }
 
+    /// <summary>Runs inside each public-material fetch — after the versions were listed — to act mid-read.</summary>
+    public Action? DuringPublicKeyMaterial { get; set; }
+
     public ValueTask<(AsymmetricAlgorithm PublicKey, SigningKeyType KeyType)> GetPublicKeyMaterialAsync(
         string version, CancellationToken cancellationToken)
     {
         PublicKeyMaterialCalls.Add(version);
+        DuringPublicKeyMaterial?.Invoke();
 
         if (_publicKeyExceptions.TryGetValue(version, out var exception))
             throw exception;

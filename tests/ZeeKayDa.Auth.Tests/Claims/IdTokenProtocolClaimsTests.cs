@@ -6,6 +6,7 @@ using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Claims;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Stores;
+using ZeeKayDa.Auth.Tests.Tokens;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Claims;
@@ -42,13 +43,13 @@ public sealed class IdTokenProtocolClaimsTests
         // Asserting equality fails in both directions: a claim added to the token and not
         // advertised, and a claim advertised that the token stopped carrying.
         using var rsa = RSA.Create(2048);
-        ISigningKeyRing ring = new StaticSigningKeyRing(new SingleKeySource(rsa), new FakeTimeProvider(Now));
+        SigningKeyRing ring = new SigningKeyRing(new SingleKeySource(rsa), new FakeTimeProvider(Now), TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
 
         // Everything optional is present, so the token carries every name the set claims it may.
         var payload = new CodeGrantTokenPayloads(
             Issuer,
-            ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]),
+            Client.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]),
             Entry(),
             Now,
             SelectedClaims.None,
@@ -56,7 +57,7 @@ public sealed class IdTokenProtocolClaimsTests
 
         var idToken = await new JwtTokenIssuer(ring).IssueAsync(
             new IdTokenIssuanceContext(
-                ClientRegistration.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]),
+                Client.CreatePublic("app", ["https://app.example.com/cb"], [], ["openid"]),
                 new IssuedToken("header.payload.signature", TokenKind.AccessToken)),
             payload,
             TestContext.Current.CancellationToken);
@@ -99,21 +100,21 @@ public sealed class IdTokenProtocolClaimsTests
 
     private sealed class SingleKeySource(RSA rsa) : ISigningKeySource
     {
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default) =>
-            new(SourceKeySet.Create(
-                previous: null,
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SourceKeyListing(
+            [
                 new SourceKey(
                     new SourceKeyId("current"),
-                    SigningAlgorithm.RS256,
-                    PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false)),
-                    ExpiresAt: null),
-                next: null));
+                    PublicKeyParameters.FromRsa(rsa.ExportParameters(includePrivateParameters: false))),
+            ], []));
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             var copy = RSA.Create();
             copy.ImportParameters(rsa.ExportParameters(includePrivateParameters: true));
-            return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, copy));
+            return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, copy));
         }
     }
 }

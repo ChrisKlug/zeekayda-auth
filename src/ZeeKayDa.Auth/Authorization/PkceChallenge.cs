@@ -1,14 +1,9 @@
 namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
-/// The PKCE binding of an authorization request (RFC 7636 §4.3): the code challenge and the
-/// method it was derived with, carried as one value so a code either has a complete binding or
-/// none at all.
+/// The PKCE binding of an authorization request (RFC 7636 §4.3): challenge and method as one value,
+/// so a code has a complete binding or none.
 /// </summary>
-/// <remarks>
-/// The token endpoint recomputes the challenge from the presented <c>code_verifier</c> with
-/// <see cref="Method"/> and compares it to <see cref="Challenge"/> in fixed time.
-/// </remarks>
 public sealed record PkceChallenge
 {
     /// <summary>Creates a binding from the challenge a client sent and the method it named.</summary>

@@ -9,7 +9,7 @@ namespace ZeeKayDa.Auth.Analyzers;
 
 /// <summary>
 /// Enforces log hygiene at compile time: ZeeKayDa services must inject
-/// <c>ISanitizingLogger&lt;T&gt;</c> rather than <c>ILogger&lt;T&gt;</c> directly.
+/// <c>SanitizingLogger&lt;T&gt;</c> rather than <c>ILogger&lt;T&gt;</c> directly.
 /// Diagnostic ID: ZEEKAYDA0001, category: LogHygiene, severity: Error.
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -21,7 +21,7 @@ public sealed class ILoggerDirectUseAnalyzer : DiagnosticAnalyzer
     private static readonly DiagnosticDescriptor Rule = new(
         DiagnosticId,
         title: "Direct ILogger<T> use in ZeeKayDa service",
-        messageFormat: "Inject ISanitizingLogger<T> instead of ILogger<T> in ZeeKayDa services",
+        messageFormat: "Inject SanitizingLogger<T> instead of ILogger<T> in ZeeKayDa services",
         category: "LogHygiene",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -33,11 +33,7 @@ public sealed class ILoggerDirectUseAnalyzer : DiagnosticAnalyzer
     /// <inheritdoc/>
     public override void Initialize(AnalysisContext context)
     {
-        // This is a security control enforcing the log-never list, not a style
-        // preference, so the usual "don't nag about generated code" convention does not apply:
-        // classifying a file as generated (by filename, header, [GeneratedCode], or
-        // generated_code = true) would otherwise silently suppress the rule with no rule ID
-        // in the diff.
+        // A security control, not a style rule: marking a file as generated must not switch it off.
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.Analyze | GeneratedCodeAnalysisFlags.ReportDiagnostics);
         context.EnableConcurrentExecution();
 
@@ -68,11 +64,7 @@ public sealed class ILoggerDirectUseAnalyzer : DiagnosticAnalyzer
             context.ReportDiagnostic(Diagnostic.Create(Rule, field.Declaration.Type.GetLocation()));
     }
 
-    /// <summary>
-    /// Returns true when the containing type itself implements <c>ILogger&lt;T&gt;</c> — i.e. it
-    /// IS a logger wrapper (like <c>SecretSanitizingLogger&lt;T&gt;</c>) and therefore legitimately
-    /// accepts a raw <c>ILogger&lt;T&gt;</c> as its inner target.
-    /// </summary>
+    /// <summary>A logger wrapper such as <c>SanitizingLogger&lt;T&gt;</c> legitimately takes a raw <c>ILogger&lt;T&gt;</c> to wrap.</summary>
     private static bool IsInLoggerImplementation(SyntaxNodeAnalysisContext context, SyntaxNode node)
     {
         var typeDecl = node.Ancestors().OfType<BaseTypeDeclarationSyntax>().FirstOrDefault();

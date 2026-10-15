@@ -6,25 +6,15 @@ using Microsoft.AspNetCore.WebUtilities;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The session subject of an external principal the framework promotes itself. Upstream
-/// subjects are unique only within their issuer, so the subject is derived from the provider, the
-/// subject claim's issuer and the upstream value together — collision-resistant, fixed-length,
-/// and stable for the life of the upstream account. Two providers returning the same value can
-/// never share a session, and the provider's identity is the registration name, so re-registering
-/// a name keeps every subject while moving a name to a different upstream is a new provider.
+/// The session subject of an external principal, derived from the provider's registration name,
+/// the subject claim's issuer and the upstream value: upstream subjects are unique only per issuer.
 /// </summary>
 internal static class ExternalSubject
 {
-    /// <summary>
-    /// The claim the upstream subject is read from, in order: <c>sub</c> from a provider that
-    /// thinks in OpenID Connect, the .NET name identifier from one that maps claims.
-    /// </summary>
+    /// <summary>The claims the upstream subject is read from, in order.</summary>
     internal static readonly string[] SubjectClaimTypes = ["sub", ClaimTypes.NameIdentifier];
 
-    /// <summary>
-    /// Builds the principal to promote: the provider's claims with the upstream subject replaced
-    /// by the derived one.
-    /// </summary>
+    /// <summary>The provider's claims with the upstream subject replaced by the derived one.</summary>
     /// <exception cref="ZeeKayDaInteractionException">
     /// The principal carries no subject claim, or its subject claim names no issuer.
     /// </exception>
@@ -39,9 +29,7 @@ internal static class ExternalSubject
                 $"identity. A provider handler must add a 'sub' or '{ClaimTypes.NameIdentifier}' claim " +
                 "identifying the user at the provider.");
 
-        // A JWT-validating handler stamps the token issuer, an OAuth handler stamps ClaimsIssuer,
-        // and a hand-written handler sets it when it creates the claim; the default issuer names
-        // no namespace, and a subject with no namespace is one line away from compliant.
+        // Every stock handler stamps an issuer; the default one names no namespace to derive from.
         if (string.Equals(subject.Issuer, ClaimsIdentity.DefaultIssuer, StringComparison.Ordinal))
         {
             throw new ZeeKayDaInteractionException(
@@ -57,12 +45,7 @@ internal static class ExternalSubject
         return new ClaimsPrincipal(new ClaimsIdentity(claims, providerId));
     }
 
-    /// <summary>
-    /// The upstream subject claim of a provider's principal, or <see langword="null"/> when it
-    /// carries none. Only an authenticated identity may name the subject: a provider can attach
-    /// an unauthenticated auxiliary identity, and a subject taken from there would let its value
-    /// win over the one the provider actually authenticated.
-    /// </summary>
+    /// <summary>The upstream subject claim, read only from an authenticated identity, never an auxiliary one.</summary>
     public static Claim? FindSubject(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -78,10 +61,7 @@ internal static class ExternalSubject
     /// <summary>Whether <paramref name="claimType"/> names the subject, compared as claims are looked up.</summary>
     public static bool IsSubjectClaimType(string claimType) => SubjectClaimTypes.Contains(claimType, StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// <c>base64url(SHA-256(length-prefixed provider, issuer, subject))</c>. The length prefixes
-    /// leave no separator to collide on.
-    /// </summary>
+    /// <summary><c>base64url(SHA-256(length-prefixed provider, issuer, subject))</c>: no separator to collide on.</summary>
     public static string Derive(string providerId, string issuer, string subject)
     {
         ArgumentException.ThrowIfNullOrEmpty(providerId);

@@ -20,7 +20,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 /// minted when it does.
 /// </summary>
 /// <remarks>
-/// The test host maps a login page whose handler calls <see cref="ILoginInteraction.SignInAsync"/>
+/// The test host maps a login page whose handler calls <see cref="LoginInteraction.SignInAsync"/>
 /// exactly as a real one would, and a <c>/test/session</c> probe that reports the session claims
 /// the framework wrote — the session cookie is encrypted, so its contents are otherwise only
 /// observable through a handler.
@@ -64,12 +64,30 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
     /// </summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
+        // The login page's render: what the framework says to show.
+        endpoints.MapGet(LoginPath, async (HttpContext context, LoginInteraction login) =>
+        {
+            // A host with a content security policy of its own sets it as it always did.
+            context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'");
+
+            var request = await login.GetRequestAsync(context.RequestAborted);
+
+            return Results.Ok(new
+            {
+                clientId = request.Client.ClientId,
+                local = request.LocalLoginEnabled,
+                providers = request.Providers.Count,
+                providerReturn = request.ProviderReturn is not null,
+                loginHint = request.LoginHint,
+            });
+        });
+
+        endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var subject = form["sub"].FirstOrDefault() ?? "user-1";
 
-            var claims = new List<Claim> { new("sub", subject), new("name", "Test User") };
+            var claims = new List<Claim> { new("name", "Test User") };
 
             // A host that copies claims from somewhere else could carry a framework-reserved one
             // in with them — under any casing, since claim types are matched case-insensitively.
@@ -77,42 +95,37 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
             if (form["forge_type"].FirstOrDefault() is { Length: > 0 } forgedType)
                 claims.Add(new Claim(forgedType, form["forge_value"].FirstOrDefault() ?? string.Empty));
 
-            // Absent, the page reports a password — the ordinary case, and what most tests here
-            // want. "amr_omit" drives the report-nothing case; repeated "amr" fields drive the
+            // Absent, the page reports a password through the single-method overload — the
+            // ordinary case, and what most tests here want. "amr_one" names that one method;
+            // "amr_omit" drives the report-nothing case; repeated "amr" fields drive the
             // multi-factor one.
-            string[] methods =
-                form.ContainsKey("amr_omit") ? []
-                : form.ContainsKey("amr") ? [.. form["amr"].Select(value => value ?? string.Empty)]
-                : [AuthenticationMethods.Password];
-
-            await login.SignInAsync(
-                new ClaimsPrincipal(new ClaimsIdentity(claims, "test")),
-                methods);
+            if (form.ContainsKey("amr_omit"))
+                await login.SignInAsync(subject, [], [.. claims]);
+            else if (form.TryGetValue("amr", out var methods))
+                await login.SignInAsync(subject, [.. methods.Select(value => value ?? string.Empty)], [.. claims]);
+            else
+                await login.SignInAsync(subject, form["amr_one"].FirstOrDefault() ?? AuthenticationMethods.Password, [.. claims]);
         });
 
         // The Cancel button, exactly as the issue's sample host writes it.
-        endpoints.MapPost(CancelPath, (ILoginInteraction login) => login.DenyAsync());
+        endpoints.MapPost(CancelPath, (LoginInteraction login) => login.DenyAsync());
 
         // Pages wired the way the XML docs say not to: a terminal step taken from a GET — the
         // request the framework itself arrives with, and one a link from anywhere can make.
-        endpoints.MapGet(SignInByLinkPath, (ILoginInteraction login) => login.SignInAsync(
-            new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
-            AuthenticationMethods.Password));
-        endpoints.MapGet(CancelByLinkPath, (ILoginInteraction login) => login.DenyAsync());
-        endpoints.MapGet(ChallengeByLinkPath, (ILoginInteraction login) => login.ChallengeAsync("acme"));
+        endpoints.MapGet(SignInByLinkPath, (LoginInteraction login) => login.SignInAsync("user-1", AuthenticationMethods.Password));
+        endpoints.MapGet(CancelByLinkPath, (LoginInteraction login) => login.DenyAsync());
+        endpoints.MapGet(ChallengeByLinkPath, (LoginInteraction login) => login.ChallengeAsync("acme"));
 
         // Pages that do the thing the XML docs tell hosts not to do: call a terminal method and
         // then return a result of their own. The framework must not let the second one land.
-        endpoints.MapPost(SignInThenReturnPath, async (ILoginInteraction login) =>
+        endpoints.MapPost(SignInThenReturnPath, async (LoginInteraction login) =>
         {
-            await login.SignInAsync(
-                new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")),
-                AuthenticationMethods.Password);
+            await login.SignInAsync("user-1", AuthenticationMethods.Password);
 
             return Results.Redirect(HijackTarget);
         });
 
-        endpoints.MapPost(CancelThenReturnPath, async (ILoginInteraction login) =>
+        endpoints.MapPost(CancelThenReturnPath, async (LoginInteraction login) =>
         {
             await login.DenyAsync();
             return Results.Redirect(HijackTarget);
@@ -134,6 +147,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
                 {
                     sid = result.Principal!.FindFirstValue(SsoSessionClaimTypes.SessionId),
                     sub = result.Principal.FindFirstValue("sub"),
+                    name = result.Principal.FindFirstValue("name"),
                     authTime = result.Principal.FindFirstValue(SsoSessionClaimTypes.AuthTime),
                     amr = result.Principal.FindAll(SsoSessionClaimTypes.Amr).Select(c => c.Value).ToArray(),
                 })
@@ -219,10 +233,10 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
     {
         private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
 
-        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             _inner.SetAsync(key, value, expiresAt, cancellationToken);
 
-        public async ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
+        public async Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken)
         {
             if (key.ToString().StartsWith("zkd:interaction:c:", StringComparison.Ordinal))
                 await beforeContextRead();
@@ -230,8 +244,62 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
             return await _inner.GetAsync(key, cancellationToken);
         }
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             _inner.RemoveAsync(key, cancellationToken);
+    }
+
+    // ── GetRequestAsync ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetRequestAsync_reports_the_client_and_no_provider_return_on_an_ordinary_arrival()
+    {
+        var handoff = await AuthorizeAsync();
+
+        var response = await _client.GetAsync(WithInteractionId(LoginPath, InteractionIdFrom(handoff)), TestContext.Current.CancellationToken);
+
+        var page = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).RootElement;
+        page.GetProperty("clientId").GetString().Should().Be("test-client");
+        page.GetProperty("local").GetBoolean().Should().BeTrue();
+        page.GetProperty("providerReturn").GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_reports_the_login_hint_the_client_sent()
+    {
+        var query = ValidQuery();
+        query["login_hint"] = "alice@example.com";
+        var handoff = await AuthorizeAsync(query);
+
+        var response = await _client.GetAsync(WithInteractionId(LoginPath, InteractionIdFrom(handoff)), TestContext.Current.CancellationToken);
+
+        var page = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).RootElement;
+        page.GetProperty("loginHint").GetString().Should().Be("alice@example.com");
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_makes_the_rendered_page_unframeable_and_uncacheable()
+    {
+        // The page takes credentials, so an attacker who can frame it can overlay what the user
+        // types into. Stamped alongside a policy the host set itself, not instead of it.
+        var handoff = await AuthorizeAsync();
+
+        var response = await _client.GetAsync(WithInteractionId(LoginPath, InteractionIdFrom(handoff)), TestContext.Current.CancellationToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("Content-Security-Policy")
+            .Should().BeEquivalentTo(["default-src 'self'", "frame-ancestors 'none'"]);
+        response.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_without_an_interaction_id_is_refused()
+    {
+        await AuthorizeAsync();
+
+        var read = async () => await _client.GetAsync(LoginPath, TestContext.Current.CancellationToken);
+
+        await read.Should().ThrowAsync<ZeeKayDaInteractionException>();
     }
 
     /// <summary>The interaction identifier the framework put on the login redirect.</summary>
@@ -422,20 +490,19 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
     }
 
     [Fact]
-    public async Task SignInAsync_promotes_the_principal_as_validated_not_as_later_changed()
+    public async Task SignInAsync_holds_the_additional_claims_as_validated_not_as_later_changed()
     {
-        // A host that keeps a reference to the principal it passed and changes it while the
-        // store is awaited signs in what was validated, not the change.
+        // A host that keeps a reference to the array it passed and changes it while the store is
+        // awaited signs in what was validated, not the change.
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var factory = HoldingFactory(entered, proceed, endpoints =>
-            endpoints.MapPost(MutatingSignInPath, async (ILoginInteraction login) =>
+            endpoints.MapPost(MutatingSignInPath, async (LoginInteraction login) =>
             {
-                var identity = new ClaimsIdentity([new Claim("sub", "user-1")], "test");
-                var signingIn = login.SignInAsync(new ClaimsPrincipal(identity), AuthenticationMethods.Password);
+                var claims = new[] { new Claim("name", "Test User") };
+                var signingIn = login.SignInAsync("user-1", AuthenticationMethods.Password, claims);
                 await entered.Task;
-                identity.RemoveClaim(identity.FindFirst("sub"));
-                identity.AddClaim(new Claim("sub", "hijacked"));
+                claims[0] = new Claim("name", "hijacked");
                 proceed.SetResult();
                 await signingIn;
             }));
@@ -445,40 +512,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
         var signIn = await PostEmptyFormAsync(client, WithInteractionId(MutatingSignInPath, InteractionIdFrom(handoff)));
 
         signIn.ShouldHaveReachedConsent();
-        (await ReadSessionAsync(client)).GetProperty("sub").GetString().Should().Be("user-1");
-    }
-
-    [Fact]
-    public async Task SignInAsync_copies_an_identity_whose_Clone_returns_itself()
-    {
-        // The copy is rebuilt from the claims on the framework's own identity type, so a host
-        // identity that overrides Clone to hand back the same instance still cannot change what
-        // is signed in after the call.
-        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var factory = HoldingFactory(entered, proceed, endpoints =>
-            endpoints.MapPost(MutatingSignInPath, async (ILoginInteraction login) =>
-            {
-                var identity = new SelfCloningIdentity([new Claim("sub", "user-1")]);
-                var signingIn = login.SignInAsync(new ClaimsPrincipal(identity), AuthenticationMethods.Password);
-                await entered.Task;
-                identity.RemoveClaim(identity.FindFirst("sub"));
-                identity.AddClaim(new Claim("sub", "hijacked"));
-                proceed.SetResult();
-                await signingIn;
-            }));
-        using var client = NewClient(factory);
-        var handoff = await client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
-
-        var signIn = await PostEmptyFormAsync(client, WithInteractionId(MutatingSignInPath, InteractionIdFrom(handoff)));
-
-        signIn.ShouldHaveReachedConsent();
-        (await ReadSessionAsync(client)).GetProperty("sub").GetString().Should().Be("user-1");
-    }
-
-    private sealed class SelfCloningIdentity(IEnumerable<Claim> claims) : ClaimsIdentity(claims, "test")
-    {
-        public override ClaimsIdentity Clone() => this;
+        (await ReadSessionAsync(client)).GetProperty("name").GetString().Should().Be("Test User");
     }
 
     [Fact]
@@ -487,10 +521,10 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var factory = HoldingFactory(entered, proceed, endpoints =>
-            endpoints.MapPost(MutatingSignInPath, async (ILoginInteraction login) =>
+            endpoints.MapPost(MutatingSignInPath, async (LoginInteraction login) =>
             {
                 var methods = new[] { AuthenticationMethods.Password };
-                var signingIn = login.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "user-1")], "test")), methods);
+                var signingIn = login.SignInAsync("user-1", methods);
                 await entered.Task;
                 methods[0] = " ";
                 proceed.SetResult();
@@ -882,6 +916,57 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
             InteractionIdFrom(handoff), ("sub", "user-1"), ("amr", "  "));
 
         await signIn.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task A_blank_single_authentication_method_is_refused()
+    {
+        var handoff = await AuthorizeAsync();
+
+        var signIn = async () => await PostLoginAsync(
+            InteractionIdFrom(handoff), ("sub", "user-1"), ("amr_one", "  "));
+
+        await signIn.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task A_blank_subject_is_refused()
+    {
+        var handoff = await AuthorizeAsync();
+
+        var signIn = async () => await PostLoginAsync(InteractionIdFrom(handoff), ("sub", "  "));
+
+        await signIn.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData("sub")]
+    [InlineData("SUB")]
+    [InlineData(ClaimTypes.NameIdentifier)]
+    public async Task An_additional_claim_naming_the_subject_is_refused(string claimType)
+    {
+        var handoff = await AuthorizeAsync();
+
+        // The subject is the argument; a second one among the claims is the page's mistake, and
+        // picking either silently would hide it.
+        var signIn = async () => await PostLoginAsync(
+            InteractionIdFrom(handoff),
+            ("sub", "user-1"),
+            ("forge_type", claimType),
+            ("forge_value", "someone-else"));
+
+        await signIn.Should().ThrowAsync<ArgumentException>();
+        (await ReadSessionIdAsync()).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_additional_claims_are_held_on_the_session()
+    {
+        var handoff = await AuthorizeAsync();
+
+        await PostLoginAsync(InteractionIdFrom(handoff), ("sub", "user-1"));
+
+        (await ReadSessionAsync()).GetProperty("name").GetString().Should().Be("Test User");
     }
 
     [Fact]

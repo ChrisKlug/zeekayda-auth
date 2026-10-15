@@ -51,7 +51,7 @@ public sealed class UserInfoEndpointTests : IDisposable
                 builder.Services.AddSingleton<IScopeRepository>(_scopes);
                 builder.Services.AddSingleton<IClaimsProvider>(_provider);
                 builder.AddInMemoryClients(clients => clients
-                    .Add(ClientRegistration.CreatePublic(App, [Redirect], [], ["openid", "profile", "email", "orders.read"]) with { RequireConsent = false }));
+                    .Add(Client.CreatePublic(App, [Redirect], [], ["openid", "profile", "email", "orders.read"]) with { RequireConsent = false }));
             });
     }
 
@@ -466,7 +466,7 @@ public sealed class UserInfoEndpointTests : IDisposable
     private async Task<string> MintAccessTokenAsync(string scope, string? audience = null)
     {
         await _host.EnsureStartedAsync();
-        var ring = _host.Resolve<ISigningKeyRing>();
+        var ring = _host.Resolve<SigningKeyRing>();
         var claims = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["iss"] = Issuer,
@@ -510,8 +510,8 @@ public sealed class UserInfoEndpointTests : IDisposable
     {
         public IReadOnlyCollection<ScopeDefinition> Scopes { get; set; } = scopes;
 
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Scopes);
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Scopes);
     }
 
     /// <summary>Answers from <see cref="Script"/> when set, otherwise the default pool; records every context it is handed.</summary>
@@ -531,11 +531,11 @@ public sealed class UserInfoEndpointTests : IDisposable
             lock (_calls) _calls.Clear();
         }
 
-        public ValueTask<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default)
+        public Task<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default)
         {
             lock (_calls) _calls.Add(context);
 
-            return ValueTask.FromResult(Script is { } script ? script(context) : Resolved(DefaultPool));
+            return Task.FromResult(Script is { } script ? script(context) : Resolved(DefaultPool));
         }
     }
 }

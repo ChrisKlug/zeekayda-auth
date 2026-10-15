@@ -47,7 +47,7 @@ public sealed class DevelopmentSigningKeySourceTests
 
         public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
         {
-            _files[keyPath] = new string(pem.Span);
+            _files.TryAdd(keyPath, new string(pem.Span));
             return ValueTask.CompletedTask;
         }
 
@@ -109,23 +109,23 @@ public sealed class DevelopmentSigningKeySourceTests
             => throw new InvalidOperationException("The file system must not be touched in ephemeral mode.");
     }
 
-    // ── Constructor validation ───────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Constructor_throws_when_options_is_null()
+    /// <summary>
+    /// Another host creates the key file between this host's existence check and its write: the
+    /// check finds nothing, and the write leaves the other host's key in place.
+    /// </summary>
+    private sealed class LosesTheCreateRaceFileSystem(string winnersPem) : IDevelopmentSigningKeyFileSystem
     {
-        var act = () => new DevelopmentSigningKeySource(null!, new InMemorySigningKeyFileSystem());
+        public void EnsureDirectorySafe(string directory)
+        {
+        }
 
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
-    }
+        public ValueTask WriteKeyFileAsync(string keyPath, ReadOnlyMemory<char> pem, CancellationToken cancellationToken)
+            => ValueTask.CompletedTask;
 
-    [Fact]
-    public void Constructor_throws_when_fileSystem_is_null()
-    {
-        var act = () => new DevelopmentSigningKeySource(
-            Options.Create(new DevelopmentSigningKeyOptions()), null!);
+        public ValueTask<KeyFileContent> ReadKeyFileAsync(string keyPath, CancellationToken cancellationToken)
+            => ValueTask.FromResult(new KeyFileContent(Encoding.UTF8.GetBytes(winnersPem)));
 
-        act.Should().Throw<ArgumentNullException>().WithParameterName("fileSystem");
+        public bool FileExists(string path) => false;
     }
 
     // ── Ephemeral key generation ─────────────────────────────────────────────────────────────────
@@ -135,20 +135,27 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
-        set.Keys.Should().ContainSingle();
-        set.SigningKey.Should().BeSameAs(set.Keys[0]);
+        set.Should().ContainSingle();
     }
 
     [Fact]
-    public async Task ReadAsync_reports_the_key_under_RS256()
+    public async Task ReadAsync_reports_no_per_entry_failures()
     {
         using var sut = BuildEphemeral();
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var listing = await sut.ReadAsync(TestContext.Current.CancellationToken);
 
-        set.SigningKey.Algorithm.Should().Be(SigningAlgorithm.RS256);
+        listing.Failures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Source_signs_under_RS256()
+    {
+        using var sut = BuildEphemeral();
+
+        sut.Algorithm.Should().Be(SigningAlgorithm.RS256);
     }
 
     [Fact]
@@ -156,11 +163,11 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
-        set.SigningKey.PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
+        set.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
         using var rsa = RSA.Create();
-        rsa.ImportParameters(set.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        rsa.ImportParameters(set.Single().PublicKey.RsaPublicParameters!.Value);
         rsa.KeySize.Should().BeGreaterThanOrEqualTo(3072);
     }
 
@@ -171,9 +178,9 @@ public sealed class DevelopmentSigningKeySourceTests
         // is taken only when PersistToDirectory is set.
         using var sut = BuildEphemeral(new ThrowOnAnyUseFileSystem());
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
-        set.Keys.Should().ContainSingle();
+        set.Should().ContainSingle();
     }
 
     [Fact]
@@ -181,9 +188,9 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
-        set.SigningKey.ExpiresAt.Should().BeNull(
+        set.Single().ExpiresAt.Should().Be(DateTimeOffset.MaxValue,
             "a development key's lifetime is the process's, not a certificate's");
     }
 
@@ -192,9 +199,9 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
-        set.SigningKey.Id.Should().Be(new SourceKeyId("development"));
+        set.Single().Id.Should().Be(new SourceKeyId("development"));
     }
 
     // ── Lending the signer ───────────────────────────────────────────────────────────────────────
@@ -204,14 +211,13 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
-        var set = await sut.ReadAsync(ct);
+        var set = (await sut.ReadAsync(ct)).Keys;
 
-        using var signer = await sut.CreateSignerAsync(set.SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(set.Single().Id, ct);
         var signature = await signer.SignAsync("payload"u8.ToArray(), ct);
 
-        signer.Algorithm.Should().Be(SigningAlgorithm.RS256);
         SigningAlgorithms.Verify(
-                SigningAlgorithm.RS256, set.SigningKey.PublicKey, "payload"u8, signature.Span)
+                SigningAlgorithm.RS256, set.Single().PublicKey, "payload"u8, signature.Span)
             .Should().BeTrue("the lent signer must hold the private half of the reported key");
     }
 
@@ -220,10 +226,10 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
-        var set = await sut.ReadAsync(ct);
-        using var first = await sut.CreateSignerAsync(set.SigningKey.Id, ct);
+        var set = (await sut.ReadAsync(ct)).Keys;
+        using var first = await sut.CreateSignerAsync(set.Single().Id, ct);
 
-        var act = () => sut.CreateSignerAsync(set.SigningKey.Id, ct).AsTask();
+        var act = () => sut.CreateSignerAsync(set.Single().Id, ct);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*no pending private key is available*");
@@ -236,7 +242,7 @@ public sealed class DevelopmentSigningKeySourceTests
         var ct = TestContext.Current.CancellationToken;
         await sut.ReadAsync(ct);
 
-        var act = () => sut.CreateSignerAsync(new SourceKeyId("someone-elses-key"), ct).AsTask();
+        var act = () => sut.CreateSignerAsync(new SourceKeyId("someone-elses-key"), ct);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*which this source did not report*");
@@ -248,7 +254,7 @@ public sealed class DevelopmentSigningKeySourceTests
         using var sut = BuildEphemeral();
 
         var act = () => sut.CreateSignerAsync(
-            new SourceKeyId("development"), TestContext.Current.CancellationToken).AsTask();
+            new SourceKeyId("development"), TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*no pending private key is available*");
@@ -260,8 +266,8 @@ public sealed class DevelopmentSigningKeySourceTests
     public async Task Development_keys_are_served_through_the_ring_and_can_sign_a_jws()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var ring = new StaticSigningKeyRing(BuildEphemeral(), new FakeTimeProvider());
-        await ((ISigningKeyRing)ring).EnsureInitializedAsync(ct);
+        using var ring = new SigningKeyRing(BuildEphemeral(), new FakeTimeProvider(), TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        await ring.EnsureInitializedAsync(ct);
 
         var outcome = await ring.SignAsync(
             """{"sub":"alice"}"""u8.ToArray(),
@@ -269,7 +275,7 @@ public sealed class DevelopmentSigningKeySourceTests
             ct);
 
         ring.Current.Published.Should().ContainSingle();
-        outcome.Key.Kid.Should().Be(ring.Current.SigningKey.Kid);
+        outcome.Key.Kid.Should().Be(ring.Current.SigningKey!.Kid);
         SigningAlgorithms.Verify(
                 outcome.Key.Algorithm, outcome.Key.PublicKey, outcome.SigningInput.Span, outcome.Signature.Span)
             .Should().BeTrue();
@@ -311,16 +317,29 @@ public sealed class DevelopmentSigningKeySourceTests
         byte[] firstModulus;
         using (var first = BuildPersisted(fs))
         {
-            var set = await first.ReadAsync(ct);
-            firstModulus = set.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus!;
+            var set = (await first.ReadAsync(ct)).Keys;
+            firstModulus = set.Single().PublicKey.RsaPublicParameters!.Value.Modulus!;
         }
 
         using var second = BuildPersisted(fs);
-        var secondSet = await second.ReadAsync(ct);
+        var secondSet = (await second.ReadAsync(ct)).Keys;
 
-        secondSet.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus
+        secondSet.Single().PublicKey.RsaPublicParameters!.Value.Modulus
             .Should().Equal(firstModulus,
                 "a persisted key must survive a restart, or tokens issued before it would stop verifying");
+    }
+
+    [Fact]
+    public async Task A_host_that_loses_the_race_to_create_the_key_file_uses_the_winners_key()
+    {
+        using var winner = RSA.Create(3072);
+        using var sut = BuildPersisted(new LosesTheCreateRaceFileSystem(winner.ExportRSAPrivateKeyPem()));
+
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
+
+        set.Single().PublicKey.RsaPublicParameters!.Value.Modulus
+            .Should().Equal(winner.ExportParameters(false).Modulus,
+                "hosts sharing a key folder must sign with the one key on disk, not each with its own");
     }
 
     // ── Disposal of an unclaimed key ─────────────────────────────────────────────────────────────
@@ -345,14 +364,14 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
-        var set = await sut.ReadAsync(ct);
-        using var signer = await sut.CreateSignerAsync(set.SigningKey.Id, ct);
+        var set = (await sut.ReadAsync(ct)).Keys;
+        using var signer = await sut.CreateSignerAsync(set.Single().Id, ct);
 
         sut.Dispose();
 
         var signature = await signer.SignAsync("payload"u8.ToArray(), ct);
         SigningAlgorithms.Verify(
-                SigningAlgorithm.RS256, set.SigningKey.PublicKey, "payload"u8, signature.Span)
+                SigningAlgorithm.RS256, set.Single().PublicKey, "payload"u8, signature.Span)
             .Should().BeTrue("the signer owns the key once it is lent, so the source must not dispose it");
     }
 
@@ -362,11 +381,11 @@ public sealed class DevelopmentSigningKeySourceTests
         using var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
 
-        var first = await sut.ReadAsync(ct);
-        var second = await sut.ReadAsync(ct);
+        var first = (await sut.ReadAsync(ct)).Keys;
+        var second = (await sut.ReadAsync(ct)).Keys;
 
-        second.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus
-            .Should().Equal(first.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus,
+        second.Single().PublicKey.RsaPublicParameters!.Value.Modulus
+            .Should().Equal(first.Single().PublicKey.RsaPublicParameters!.Value.Modulus,
                 "minting a fresh key on a later read would invalidate every token already issued");
     }
 
@@ -375,14 +394,14 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildEphemeral();
         var ct = TestContext.Current.CancellationToken;
-        var set = await sut.ReadAsync(ct);
+        var set = (await sut.ReadAsync(ct)).Keys;
         await sut.ReadAsync(ct);
 
-        using var signer = await sut.CreateSignerAsync(set.SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(set.Single().Id, ct);
         var signature = await signer.SignAsync("payload"u8.ToArray(), ct);
 
         SigningAlgorithms.Verify(
-                SigningAlgorithm.RS256, set.SigningKey.PublicKey, "payload"u8, signature.Span)
+                SigningAlgorithm.RS256, set.Single().PublicKey, "payload"u8, signature.Span)
             .Should().BeTrue("the memoized key set and the pending private key must stay in step");
     }
 
@@ -396,14 +415,14 @@ public sealed class DevelopmentSigningKeySourceTests
             Enumerable.Range(0, 8).Select(_ => Task.Run(async () => await sut.ReadAsync(ct), ct)));
 
         var moduli = sets
-            .Select(set => Convert.ToHexString(set.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus!))
+            .Select(set => Convert.ToHexString(set.Keys.Single().PublicKey.RsaPublicParameters!.Value.Modulus!))
             .Distinct();
         moduli.Should().ContainSingle("concurrent reads must not each mint their own key");
 
-        using var signer = await sut.CreateSignerAsync(sets[0].SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(sets[0].Keys.Single().Id, ct);
         var signature = await signer.SignAsync("payload"u8.ToArray(), ct);
         SigningAlgorithms.Verify(
-                SigningAlgorithm.RS256, sets[0].SigningKey.PublicKey, "payload"u8, signature.Span)
+                SigningAlgorithm.RS256, sets[0].Keys.Single().PublicKey, "payload"u8, signature.Span)
             .Should().BeTrue();
     }
 
@@ -414,7 +433,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildPersisted(new InMemorySigningKeyFileSystem { DirectoryTooPermissive = true });
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
             .WithMessage("*directory_too_permissive*");
@@ -427,7 +446,7 @@ public sealed class DevelopmentSigningKeySourceTests
         fs.SeedFile(Path.Join(PersistDirectory, KeyFileName), "dummy content");
         using var sut = BuildPersisted(fs);
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
             .WithMessage("*file_too_permissive*");
@@ -440,7 +459,7 @@ public sealed class DevelopmentSigningKeySourceTests
         fs.SeedFile(Path.Join(PersistDirectory, KeyFileName), "dummy content");
         using var sut = BuildPersisted(fs);
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
             .WithMessage("*symlink_detected*");
@@ -453,7 +472,7 @@ public sealed class DevelopmentSigningKeySourceTests
         fs.SeedFile(Path.Join(PersistDirectory, KeyFileName), "this is not a valid PEM");
         using var sut = BuildPersisted(fs);
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<Exception>("corrupt PEM must cause an exception");
     }
@@ -463,7 +482,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildPersisted(new ThrowOnWriteFileSystem());
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<IOException>("failure to write the key file must bubble out");
     }
@@ -478,7 +497,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildForEnvironment(environmentName, allowed: ["Production"]);
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>().WithMessage("*Production*");
     }
@@ -490,7 +509,7 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildForEnvironment(environmentName, allowed: null);
 
-        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>().WithMessage($"*{environmentName}*");
     }
@@ -503,9 +522,9 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildForEnvironment(environmentName, allowed: null);
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
-        set.Keys.Should().ContainSingle();
+        set.Should().ContainSingle();
     }
 
     [Fact]
@@ -513,9 +532,9 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         using var sut = BuildForEnvironment("Staging", allowed: ["Development", "Staging"]);
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var set = (await sut.ReadAsync(TestContext.Current.CancellationToken)).Keys;
 
-        set.Keys.Should().ContainSingle();
+        set.Should().ContainSingle();
     }
 
     [Fact]
@@ -523,48 +542,52 @@ public sealed class DevelopmentSigningKeySourceTests
     {
         // Memoizing the key set must not memoize the decision to allow it: a read that skipped the
         // gate because an earlier read passed it would be the one fail-open this source can have.
-        var options = new DevelopmentSigningKeyOptions { EnvironmentName = "Development" };
+        var options = new DevelopmentSigningOptions { EnvironmentName = "Development" };
         using var sut = new DevelopmentSigningKeySource(
             Options.Create(options), new InMemorySigningKeyFileSystem());
         var ct = TestContext.Current.CancellationToken;
         await sut.ReadAsync(ct);
 
-        options.AllowedDevelopmentJwtSigningKeysEnvironments = ["Staging"];
-        var act = () => sut.ReadAsync(ct).AsTask();
+        options.AllowedEnvironments = ["Staging"];
+        var act = () => sut.ReadAsync(ct);
 
         await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
             .WithMessage("*Development*");
     }
 
     [Fact]
-    public async Task ReadAsync_skips_the_gate_when_EnvironmentName_is_null()
+    public async Task ReadAsync_refuses_when_the_environment_is_unknown()
     {
+        // A source built by hand, outside the registration methods, may also be one the startup
+        // verifier never runs for, so it must refuse on its own rather than assume Development.
         using var sut = BuildForEnvironment(environmentName: null, allowed: null);
 
-        var set = await sut.ReadAsync(TestContext.Current.CancellationToken);
+        var act = () => sut.ReadAsync(TestContext.Current.CancellationToken);
 
-        set.Keys.Should().ContainSingle("no host means no environment to gate on");
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle()
+            .Which.Code.Should().Be("signing.dev_keys.unknown_environment");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     private static DevelopmentSigningKeySource BuildEphemeral(IDevelopmentSigningKeyFileSystem? fileSystem = null)
         => new(
-            Options.Create(new DevelopmentSigningKeyOptions()),
+            Options.Create(new DevelopmentSigningOptions { EnvironmentName = "Development" }),
             fileSystem ?? new InMemorySigningKeyFileSystem());
 
     private static DevelopmentSigningKeySource BuildPersisted(IDevelopmentSigningKeyFileSystem fileSystem)
         => new(
-            Options.Create(new DevelopmentSigningKeyOptions { PersistToDirectory = PersistDirectory }),
+            Options.Create(new DevelopmentSigningOptions { EnvironmentName = "Development", PersistToDirectory = PersistDirectory }),
             fileSystem);
 
     private static DevelopmentSigningKeySource BuildForEnvironment(
         string? environmentName, IReadOnlyList<string>? allowed)
     {
-        var options = new DevelopmentSigningKeyOptions { EnvironmentName = environmentName };
+        var options = new DevelopmentSigningOptions { EnvironmentName = environmentName };
 
         if (allowed is not null)
-            options.AllowedDevelopmentJwtSigningKeysEnvironments = allowed;
+            options.AllowedEnvironments = allowed;
 
         return new DevelopmentSigningKeySource(Options.Create(options), new InMemorySigningKeyFileSystem());
     }

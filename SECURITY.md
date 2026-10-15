@@ -38,7 +38,7 @@ This policy covers the `ZeeKayDa.Auth` and `ZeeKayDa.Auth.AspNetCore` NuGet pack
 
 ## Security boundaries
 
-ZeeKayDa.Auth includes a `SecretSanitizingLogger` that intercepts every log call made by the
+ZeeKayDa.Auth includes a `SanitizingLogger` that intercepts every log call made by the
 library's own services and replaces known-sensitive OAuth parameters — `client_secret`,
 `code_verifier`, `Authorization`, `access_token`, `refresh_token`, and others — with `[REDACTED]`
 before they reach the underlying log sink.

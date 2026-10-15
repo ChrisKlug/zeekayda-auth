@@ -410,31 +410,31 @@ public sealed class AuthorizationRequestContextStoreTests
             (_entries[first], _entries[second]) = (_entries[second], _entries[first]);
         }
 
-        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+        public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
         {
             _entries[key] = value.ToArray();
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         }
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
-            ValueTask.FromResult(_entries.TryGetValue(key, out var value) ? (ReadOnlyMemory<byte>?)value : null);
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            Task.FromResult(_entries.TryGetValue(key, out var value) ? (ReadOnlyMemory<byte>?)value : null);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken)
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken)
         {
             _entries.Remove(key);
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         }
     }
 
     private sealed class ThrowingStore : IInteractionBackingStore
     {
-        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("store is down");
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("store is down");
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("store is down");
     }
 }

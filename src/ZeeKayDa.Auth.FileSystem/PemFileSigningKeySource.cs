@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Options;
@@ -6,136 +8,160 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// An <see cref="ISigningKeySource"/> that reads the PEM certificates configured into
-/// <see cref="PemFileSigningOptions"/>'s three slots and signs locally, in process, with
-/// <see cref="PemFileSigningOptions.Current"/>'s private key.
+/// Lists the configured PEM certificates and signs in process with the one the ring chooses. A plain
+/// key is imported only by <see cref="CreateSignerAsync"/>; an encrypted key is also decrypted once per
+/// version of the files at listing, so a wrong password fails before the key is chosen to sign.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Read once, never re-read: the slots are fixed at configuration time and the ring reads this
-/// source exactly once at startup. Picking up a replaced or rotated-in file requires a restart.
-/// </para>
-/// <para>
-/// <see cref="ReadAsync"/> parses only each slot's certificate — no private key material is read
-/// for any slot. Only <see cref="CreateSignerAsync"/> reads private material, and only for
-/// <see cref="PemFileSigningOptions.Current"/>, so a <c>Previous</c> or <c>Next</c> private key is
-/// never loaded into this process at all.
-/// </para>
-/// <para>
-/// This source performs no algorithm/key-type check of its own.
-/// <see cref="SigningKeySetBuilder"/> validates every reported key's algorithm against its key type
-/// and EC curve, keyed on the source id — which here is the configured file path, so its failures
-/// still name the offending file.
-/// </para>
-/// </remarks>
-internal sealed class PemFileSigningKeySource : ISigningKeySource
+internal sealed class PemFileSigningKeySource(
+    IOptions<PemFileSigningOptions> options,
+    FileSigningKeyReader reader) : ISigningKeySource
 {
-    private readonly IOptions<PemFileSigningOptions> _options;
-    private readonly FileSigningKeyReader _reader;
+    private readonly IOptions<PemFileSigningOptions> _options = options;
 
-    // Serialises reads so the slots are parsed exactly once even if two callers read concurrently —
-    // "only the ring calls this" is not something this type can enforce. Deliberately not disposed:
-    // disposing it would make a read already in flight at shutdown throw from its own Release, and
-    // would strand any reader queued behind it.
-    private readonly SemaphoreSlim _readGate = new(1, 1);
+    // Keyed by Path: the hash of the certificate and key text whose password last verified.
+    private readonly ConcurrentDictionary<string, byte[]> _verifiedVersions = new(StringComparer.Ordinal);
 
-    // The one key set this source ever reports. Assigned only once every slot has been read and
-    // validated, so a failed read is never cached and a retry re-reads from disk; once a read has
-    // succeeded, no later one can observe a file replaced after startup. Read-once is therefore a
-    // property of this source, not only of the ring.
-    private SourceKeySet? _keySet;
-
-    public PemFileSigningKeySource(IOptions<PemFileSigningOptions> options, FileSigningKeyReader reader)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(reader);
-
-        _options = options;
-        _reader = reader;
-    }
+    private const string RsaKeyAlgorithmOid = "1.2.840.113549.1.1.1";
 
     /// <inheritdoc/>
-    public async ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
-    {
-        await _readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            if (_keySet is not null)
-                return _keySet;
-
-            var options = _options.Value;
-
-            // Every slot is read by certificate path alone. Previous and Next have no private-key
-            // path to pass even in principle, and Current's is deliberately not passed here.
-            var previous = await ReadSlotAsync(options.Previous?.Path, options.Algorithm, cancellationToken).ConfigureAwait(false);
-            var current = await ReadSlotAsync(options.Current?.Path, options.Algorithm, cancellationToken).ConfigureAwait(false);
-            var next = await ReadSlotAsync(options.Next?.Path, options.Algorithm, cancellationToken).ConfigureAwait(false);
-
-            return _keySet = SourceKeySet.Create(previous, current, next);
-        }
-        finally
-        {
-            _readGate.Release();
-        }
-    }
+    public SigningAlgorithm Algorithm => _options.Value.Algorithm;
 
     /// <inheritdoc/>
-    public async ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+    public async Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
     {
         var options = _options.Value;
-        var current = options.Current;
+        var keys = new List<SourceKey>(options.Files.Count);
+        var failures = new List<SourceKeyFailure>();
 
-        // Only Current is ever openable for signing. Previous and Next are published, never signed
-        // with, so an id naming either of them is a defect in the caller rather than a request this
-        // source should honour by reading a private key it otherwise never touches.
-        if (current is null || !string.Equals(current.Path, id.Value, StringComparison.Ordinal))
+        foreach (var file in options.Files)
         {
-            throw new InvalidOperationException(
-                $"{nameof(CreateSignerAsync)} was called for key '{id.Value}', which is not the " +
-                $"configured {nameof(PemFileSigningOptions.Current)} PEM file. This source reads its " +
-                "slots exactly once, so they must not change after startup, and only Current ever " +
-                "signs.");
+            var id = new SourceKeyId(file.Path);
+            try
+            {
+                if (await ListAsync(file, id, cancellationToken).ConfigureAwait(false) is { } key)
+                    keys.Add(key);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                failures.Add(SigningFileFailure.Of(file.Path, ex));
+            }
         }
 
-        using var certificate = await LoadSigningCertificateAsync(current, cancellationToken).ConfigureAwait(false);
-        var (privateKey, _) = FileSigningKeyExtractor.ExtractPrivateKey(certificate, current.Path);
-
-        return new LocalSigner(options.Algorithm, privateKey);
+        return new SourceKeyListing(keys, failures);
     }
 
-    private async ValueTask<SourceKey?> ReadSlotAsync(
-        string? certificatePath, SigningAlgorithm algorithm, CancellationToken cancellationToken)
+    /// <inheritdoc/>
+    public async Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
     {
-        if (certificatePath is null)
-            return null;
+        var options = _options.Value;
+        var file = options.Files.FirstOrDefault(f => string.Equals(f.Path, id.Value, StringComparison.Ordinal))
+            ?? throw new InvalidOperationException(
+                $"{nameof(CreateSignerAsync)} was called for key '{id.Value}', which is not a listed PEM file.");
 
-        using var certificate = await LoadPublicCertificateAsync(certificatePath, cancellationToken).ConfigureAwait(false);
-
-        return FileSigningKeyExtractor.ToSourceKey(certificate, certificatePath, algorithm);
+        using var certificate = await LoadSigningCertificateAsync(file, cancellationToken).ConfigureAwait(false);
+        return LocalSigner.FromCertificate(certificate, options.Algorithm);
     }
 
     /// <summary>
-    /// Parses only the certificate at <paramref name="certificatePath"/> — no private key material is
-    /// ever read or parsed, including for the <c>Current</c> slot.
+    /// Parses the certificate and checks the file can sign, since any listed file may be chosen to.
+    /// <see langword="null"/> when the certificate or a separate key file does not exist, which unlists the key.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
-    /// The file does not contain a valid PEM-encoded certificate.
+    /// The certificate is not valid PEM or its key type is unsupported; a key file is symlinked or too
+    /// permissive; the key blocks fail <see cref="PemKeyBlocks.Check"/>; or an encrypted key does not
+    /// decrypt and pair.
     /// </exception>
-    private async ValueTask<X509Certificate2> LoadPublicCertificateAsync(
-        string certificatePath, CancellationToken cancellationToken)
+    private async ValueTask<SourceKey?> ListAsync(PemSigningFile file, SourceKeyId id, CancellationToken cancellationToken)
     {
-        var certPem = await _reader.ReadPemTextAsync(certificatePath, cancellationToken).ConfigureAwait(false);
+        using var texts = await ReadPemTextsAsync(
+            file, (path, content) => reader.TryReadPemAsync(path, content, cancellationToken)).ConfigureAwait(false);
+        if (texts is null)
+            return null;
+
+        using var certificate = ParseCertificate(texts.Cert.Span, file.Path);
+        PemKeyBlocks.Check(file, texts);
+        var key = SourceKey.FromCertificate(certificate, id);
+
+        if (file.PasswordSource is not null)
+            await VerifyPasswordOncePerVersionAsync(file, certificate, texts, cancellationToken).ConfigureAwait(false);
+
+        return key;
+    }
+
+    /// <summary>
+    /// The certificate and key text of <paramref name="file"/>, each file read through
+    /// <paramref name="read"/>, or <see langword="null"/> when <paramref name="read"/> reports a file missing.
+    /// </summary>
+    private static async ValueTask<PemTexts?> ReadPemTextsAsync(
+        PemSigningFile file, Func<string, SigningFileContent, ValueTask<PemText?>> read)
+    {
+        if (file.KeyPath is null)
+        {
+            return await read(file.Path, SigningFileContent.PrivateKey).ConfigureAwait(false) is { } combined
+                ? new(combined, combined)
+                : null;
+        }
+
+        if (await read(file.Path, SigningFileContent.CertificateOnly).ConfigureAwait(false) is not { } certPem)
+            return null;
 
         try
         {
-            return X509Certificate2.CreateFromPem(certPem);
+            if (await read(file.KeyPath, SigningFileContent.PrivateKey).ConfigureAwait(false) is { } keyPem)
+                return new(certPem, keyPem);
+        }
+        catch
+        {
+            certPem.Dispose();
+            throw;
+        }
+
+        certPem.Dispose();
+        return null;
+    }
+
+    private async Task VerifyPasswordOncePerVersionAsync(
+        PemSigningFile file, X509Certificate2 certificate, PemTexts texts, CancellationToken cancellationToken)
+    {
+        var version = VersionOf(file, texts);
+        if (_verifiedVersions.TryGetValue(file.Path, out var verified) && verified.AsSpan().SequenceEqual(version))
+            return;
+
+        _verifiedVersions.TryRemove(file.Path, out _);
+        var password = await ReadPasswordAsync(file, cancellationToken).ConfigureAwait(false);
+        using var withKey = WithDecryptedKey(file, certificate, texts.Key.Span, password);
+        _verifiedVersions[file.Path] = version;
+    }
+
+    // Hashed separately so a byte moving between the two files is still a new version.
+    private static byte[] VersionOf(PemSigningFile file, PemTexts texts) =>
+        file.KeyPath is null ? texts.Cert.Hash.ToArray() : [.. texts.Cert.Hash, .. texts.Key.Hash];
+
+    /// <summary>
+    /// The configured password. An empty one is <c>password_unavailable</c>: it is most often a missing
+    /// secret bound to <c>""</c>, and a key encrypted under it is a plain key in disguise.
+    /// </summary>
+    private static async Task<string> ReadPasswordAsync(PemSigningFile file, CancellationToken cancellationToken)
+    {
+        var password = await SigningFilePassword.ReadAsync(file.Path, file.PasswordSource!, cancellationToken).ConfigureAwait(false);
+        return password.Length > 0
+            ? password
+            : throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.password_unavailable",
+                    $"The password source for '{file.Path}' returned an empty password."));
+    }
+
+    private static X509Certificate2 ParseCertificate(ReadOnlySpan<char> certPem, string certificatePath)
+    {
+        X509Certificate2 certificate;
+        try
+        {
+            certificate = X509Certificate2.CreateFromPem(certPem);
         }
         catch (Exception ex) when (ex is CryptographicException or ArgumentException or FormatException)
         {
-            // The exception TYPE is named, never ex.Message. A PEM parse error is raised over the
-            // file's own content, and a failure message is a plain public-API string that neither
-            // by-key redaction nor RedactedExceptionWrapper can reach. The root cause travels as
-            // the inner exception instead.
+            // Never ex.Message: a failure message is not redacted, so the cause travels as the inner exception.
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.file_signing.invalid_pem",
@@ -144,50 +170,158 @@ internal sealed class PemFileSigningKeySource : ISigningKeySource
                     "the root cause."),
                 ex);
         }
+
+        return RefuseRootFirstChain(certificate, certPem, certificatePath);
     }
 
     /// <summary>
-    /// Parses the certificate and private key at <paramref name="slot"/>. Used only by
-    /// <see cref="CreateSignerAsync"/>, for the <c>Current</c> slot.
+    /// Refuses a chain whose first certificate is a CA. <c>CreateFromPem</c> takes a file's first
+    /// <c>CERTIFICATE</c> block, so a chain written root-first would publish the CA's key, then fail to
+    /// pair with the private key when it is chosen to sign. A lone certificate is not a chain: a
+    /// self-signed one from <c>openssl req -x509</c> is marked as a CA by default.
     /// </summary>
+    private static X509Certificate2 RefuseRootFirstChain(X509Certificate2 certificate, ReadOnlySpan<char> certPem, string certificatePath)
+    {
+        if (!IsMarkedCa(certificate) || CertificateCount(certPem) < 2)
+            return certificate;
+
+        certificate.Dispose();
+        throw new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure(
+                "signing.file_signing.certificate_is_a_ca",
+                $"The first certificate in '{certificatePath}' is a CA certificate. The signing certificate must " +
+                "come first in the file, followed by its issuers; reorder the chain leaf-first."));
+    }
+
+    private static bool IsMarkedCa(X509Certificate2 certificate) =>
+        certificate.Extensions.OfType<X509BasicConstraintsExtension>().FirstOrDefault() is { CertificateAuthority: true };
+
+    private static int CertificateCount(ReadOnlySpan<char> pem)
+    {
+        var count = 0;
+        while (PemEncoding.TryFind(pem, out var fields))
+        {
+            if (pem[fields.Label].SequenceEqual("CERTIFICATE"))
+                count++;
+
+            pem = pem[fields.Location.End.Value..];
+        }
+
+        return count;
+    }
+
+    /// <summary>Parses the certificate and private key, fetching the password when one is configured.</summary>
     /// <exception cref="ZeeKayDaConfigurationException">
-    /// The file(s) do not contain a valid PEM-encoded certificate and private key.
+    /// The file(s) do not contain a valid PEM-encoded certificate and private key, or the password does
+    /// not decrypt the key.
     /// </exception>
     private async ValueTask<X509Certificate2> LoadSigningCertificateAsync(
-        PemSigningFile slot, CancellationToken cancellationToken)
+        PemSigningFile file, CancellationToken cancellationToken)
     {
-        // Reads through FileSigningKeyReader.ReadPemTextAsync and calls X509Certificate2.CreateFromPem
-        // rather than X509Certificate2.CreateFromPemFile, which performs its own unvalidated file I/O
-        // and would bypass FileSigningKeyReader's permission/symlink validation.
-        var certPem = await _reader.ReadPemTextAsync(slot.Path, cancellationToken).ConfigureAwait(false);
+        // Never CreateFromPemFile: its own file I/O would skip the reader's permission and symlink checks.
+        using var texts = await ReadPemTextsAsync(
+                file, async (path, content) => await reader.ReadPemAsync(path, content, cancellationToken).ConfigureAwait(false))
+            .ConfigureAwait(false)
+            ?? throw new UnreachableException("ReadPemAsync throws on a missing file rather than returning null.");
 
-        // With no separate key path, the combined file carries both PEM blocks, so the same text is
-        // passed for both the certificate and the key source.
-        var keyPem = slot.KeyPath is null
-            ? certPem
-            : await _reader.ReadPemTextAsync(slot.KeyPath, cancellationToken).ConfigureAwait(false);
+        // The files may have changed since they were listed.
+        PemKeyBlocks.Check(file, texts);
+
+        if (file.PasswordSource is not null)
+        {
+            var password = await ReadPasswordAsync(file, cancellationToken).ConfigureAwait(false);
+            using var certificate = ParseCertificate(texts.Cert.Span, file.Path);
+            return WithDecryptedKey(file, certificate, texts.Key.Span, password);
+        }
 
         try
         {
-            return X509Certificate2.CreateFromPem(certPem, keyPem);
+            // Parsed first so a root-first chain is reported as one rather than as a key that does not pair.
+            ParseCertificate(texts.Cert.Span, file.Path).Dispose();
+
+            return X509Certificate2.CreateFromPem(texts.Cert.Span, texts.Key.Span);
         }
         catch (Exception ex) when (ex is CryptographicException or ArgumentException or FormatException)
         {
-            var description = slot.KeyPath is null
-                ? $"'{slot.Path}'"
-                : $"certificate '{slot.Path}' / private key '{slot.KeyPath}'";
-
-            // The exception TYPE is named, never ex.Message — and most sharply here, where the
-            // text being parsed is private key material. A failure message is a plain public-API
-            // string that neither by-key redaction nor RedactedExceptionWrapper can reach. The root
-            // cause travels as the inner exception instead.
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.file_signing.invalid_pem",
-                    $"The file(s) at {description} do not contain a valid PEM-encoded certificate " +
-                    $"and private key: {ex.GetType().FullName} was thrown. See the inner exception " +
-                    "for the root cause."),
-                ex);
+            // Never ex.Message: here the text being parsed is private key material.
+            throw InvalidKeyPair(file, ex);
         }
     }
+
+    /// <summary>
+    /// A copy of <paramref name="certificate"/> carrying the private key decrypted from
+    /// <paramref name="keyPem"/>'s <c>ENCRYPTED PRIVATE KEY</c> block (RFC 5958 §3).
+    /// </summary>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// <c>key_password_rejected</c> when the key does not decrypt; <c>invalid_pem</c> when it does not
+    /// belong to the certificate.
+    /// </exception>
+    private static X509Certificate2 WithDecryptedKey(
+        PemSigningFile file, X509Certificate2 certificate, ReadOnlySpan<char> keyPem, string password)
+    {
+        // SourceKey.FromCertificate refuses any key type but RSA and EC at listing.
+        if (certificate.GetKeyAlgorithm() == RsaKeyAlgorithmOid)
+        {
+            using var rsa = RSA.Create();
+            Decrypt(file, rsa, keyPem, password);
+            return Pair(file, () => certificate.CopyWithPrivateKey(rsa));
+        }
+
+        using var ecdsa = ECDsa.Create();
+        Decrypt(file, ecdsa, keyPem, password);
+        return Pair(file, () => certificate.CopyWithPrivateKey(ecdsa));
+    }
+
+    private static void Decrypt(PemSigningFile file, AsymmetricAlgorithm key, ReadOnlySpan<char> keyPem, string password)
+    {
+        try
+        {
+            key.ImportFromEncryptedPem(keyPem, password);
+        }
+        catch (CryptographicException ex)
+        {
+            // Never ex.Message, and never the password: only the exception type is named.
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.file_signing.key_password_rejected",
+                    $"The encrypted private key in '{KeyFileOf(file)}' could not be decrypted with the " +
+                    $"configured password, or is not a key of the certificate's type: {ex.GetType().FullName} was " +
+                    "thrown. Check the password source, and that the key belongs to the certificate. See the " +
+                    "inner exception for the root cause."),
+                ex);
+        }
+        catch (ArgumentException ex)
+        {
+            throw InvalidKeyPair(file, ex);
+        }
+    }
+
+    private static X509Certificate2 Pair(PemSigningFile file, Func<X509Certificate2> copyWithPrivateKey)
+    {
+        try
+        {
+            return copyWithPrivateKey();
+        }
+        catch (Exception ex) when (ex is CryptographicException or ArgumentException)
+        {
+            throw InvalidKeyPair(file, ex);
+        }
+    }
+
+    private static ZeeKayDaConfigurationException InvalidKeyPair(PemSigningFile file, Exception cause)
+    {
+        var description = file.KeyPath is null
+            ? $"'{file.Path}'"
+            : $"certificate '{file.Path}' / private key '{file.KeyPath}'";
+
+        return new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure(
+                "signing.file_signing.invalid_pem",
+                $"The file(s) at {description} do not contain a valid PEM-encoded certificate " +
+                $"and its private key: {cause.GetType().FullName} was thrown. See the inner exception " +
+                "for the root cause."),
+            cause);
+    }
+
+    private static string KeyFileOf(PemSigningFile file) => file.KeyPath ?? file.Path;
 }

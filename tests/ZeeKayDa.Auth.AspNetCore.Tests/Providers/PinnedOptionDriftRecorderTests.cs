@@ -5,7 +5,7 @@ using ZeeKayDa.Auth.AspNetCore.Providers;
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Providers;
 
 /// <summary>
-/// The recorder is how <c>HandlerOptionsStartupActivator</c> knows which of an options resolution's
+/// The recorder is how <c>HandlerOptionsActivator</c> knows which of an options resolution's
 /// validation failures the framework itself produced. Recovering that from the failure strings is
 /// what this type exists to replace, so its identity and lifetime rules are the guarantee: a
 /// reading that is not scoped to the attempt it describes would let the activator name a member the

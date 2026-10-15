@@ -8,11 +8,20 @@ ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.SignedOutPath.get -> strin
 ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.SignedOutPath.set -> void
 ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions.Uri.set -> void
-ZeeKayDa.Auth.AuthorizationServerOptions.CorsOrigins.get -> System.Collections.Generic.IList<string!>!
+ZeeKayDa.Auth.AuthorizationServerOptions.CorsOrigins.get -> System.Collections.Generic.ICollection<string!>!
+ZeeKayDa.Auth.AuthorizationServerOptions.CorsOrigins.set -> void
 ZeeKayDa.Auth.AuthorizationServerOptions.EndSessionEndpoint.get -> ZeeKayDa.Auth.Authorization.EndSessionEndpointOptions!
-ZeeKayDa.Auth.Clients.ClientRegistration.SkipLogoutConfirmation.get -> bool
-ZeeKayDa.Auth.Clients.ClientRegistration.SkipLogoutConfirmation.init -> void
-ZeeKayDa.Auth.Clients.IClientMetadata.SkipLogoutConfirmation.get -> bool
+ZeeKayDa.Auth.Clients.Client.SkipLogoutConfirmation.get -> bool
+ZeeKayDa.Auth.Clients.Client.SkipLogoutConfirmation.init -> void
+ZeeKayDa.Auth.Clients.IClient.SkipLogoutConfirmation.get -> bool
+ZeeKayDa.Auth.Configuration.DevelopmentOptions
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.AllowHttpLoopbackCorsOrigins.get -> bool
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.AllowHttpLoopbackCorsOrigins.set -> void
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.AllowHttpLoopbackIssuer.get -> bool
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.AllowHttpLoopbackIssuer.set -> void
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.DevelopmentOptions() -> void
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.DisableExceptionSanitizing.get -> bool
+ZeeKayDa.Auth.Configuration.DevelopmentOptions.DisableExceptionSanitizing.set -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.EndSessionEndpoint.get -> string?
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.EndSessionEndpoint.init -> void
 ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions
@@ -60,8 +69,6 @@ ZeeKayDa.Auth.Authorization.ResponseOptions.TypesSupported.set -> void
 ZeeKayDa.Auth.Authorization.ResponseType
 ZeeKayDa.Auth.Authorization.ResponseType.Code = 0 -> ZeeKayDa.Auth.Authorization.ResponseType
 ZeeKayDa.Auth.AuthorizationServerOptions
-ZeeKayDa.Auth.AuthorizationServerOptions.AllowInsecureIssuer.get -> bool
-ZeeKayDa.Auth.AuthorizationServerOptions.AllowInsecureIssuer.set -> void
 ZeeKayDa.Auth.AuthorizationServerOptions.AuthorizationEndpoint.get -> ZeeKayDa.Auth.Authorization.AuthorizationEndpointOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.AuthorizationServerOptions() -> void
 ZeeKayDa.Auth.AuthorizationServerOptions.ClockSkewTolerance.get -> System.TimeSpan
@@ -69,113 +76,80 @@ ZeeKayDa.Auth.AuthorizationServerOptions.ClockSkewTolerance.set -> void
 ZeeKayDa.Auth.AuthorizationServerOptions.DiscoveryDocument.get -> ZeeKayDa.Auth.Discovery.DiscoveryOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.GrantTypesSupported.get -> System.Collections.Generic.ICollection<ZeeKayDa.Auth.GrantType>!
 ZeeKayDa.Auth.AuthorizationServerOptions.GrantTypesSupported.set -> void
-ZeeKayDa.Auth.AuthorizationServerOptions.IdToken.get -> ZeeKayDa.Auth.Tokens.IdTokenOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.Issuer.get -> string?
 ZeeKayDa.Auth.AuthorizationServerOptions.Issuer.set -> void
 ZeeKayDa.Auth.AuthorizationServerOptions.JwksEndpoint.get -> ZeeKayDa.Auth.Discovery.JwksEndpointOptions!
-ZeeKayDa.Auth.AuthorizationServerOptions.Logging.get -> ZeeKayDa.Auth.Logging.LoggingOptions!
+ZeeKayDa.Auth.AuthorizationServerOptions.Development.get -> ZeeKayDa.Auth.Configuration.DevelopmentOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.Response.get -> ZeeKayDa.Auth.Authorization.ResponseOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.SecurityHeaders.get -> ZeeKayDa.Auth.Security.SecurityHeadersOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.TokenEndpoint.get -> ZeeKayDa.Auth.Tokens.TokenEndpointOptions!
 ZeeKayDa.Auth.AuthorizationServerOptions.UserInfoEndpoint.get -> ZeeKayDa.Auth.Claims.UserInfoEndpointOptions!
-ZeeKayDa.Auth.Clients.ClientRegistration
-ZeeKayDa.Auth.Clients.ClientRegistration.<Clone>$() -> ZeeKayDa.Auth.Clients.ClientRegistration!
-ZeeKayDa.Auth.Clients.ClientRegistration.AccessTokenLifetime.get -> System.TimeSpan?
-ZeeKayDa.Auth.Clients.ClientRegistration.AccessTokenLifetime.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedGrantTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.GrantType>!
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedGrantTypes.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedPromptValues.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.PromptValue>!
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedPromptValues.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedResponseModes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseMode>!
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedResponseModes.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedResponseTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseType>!
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedResponseTypes.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedScopes.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedScopes.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedSigningAlgorithms.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedSigningAlgorithms.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Clients.ClientRegistration.AllowedTokenEndpointAuthMethods.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.RequirePkce.get -> bool
-ZeeKayDa.Auth.Clients.ClientRegistration.RequirePkce.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.ClientId.get -> string!
-ZeeKayDa.Auth.Clients.ClientRegistration.ClientId.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.ClientRegistration() -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.Credentials.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Clients.IClientCredential!>!
-ZeeKayDa.Auth.Clients.ClientRegistration.Credentials.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.DisplayName.get -> string?
-ZeeKayDa.Auth.Clients.ClientRegistration.DisplayName.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.InitiateLoginUri.get -> string?
-ZeeKayDa.Auth.Clients.ClientRegistration.InitiateLoginUri.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.EnableZkdErrorCodes.get -> bool
-ZeeKayDa.Auth.Clients.ClientRegistration.EnableZkdErrorCodes.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.Equals(ZeeKayDa.Auth.Clients.ClientRegistration? other) -> bool
-ZeeKayDa.Auth.Clients.ClientRegistration.IdTokenLifetime.get -> System.TimeSpan?
-ZeeKayDa.Auth.Clients.ClientRegistration.IdTokenLifetime.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.IsPublic.get -> bool
-ZeeKayDa.Auth.Clients.ClientRegistration.IsPublic.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.PostLogoutRedirectUris.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Clients.ClientRegistration.PostLogoutRedirectUris.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.RedirectUris.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Clients.ClientRegistration.RedirectUris.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.RequireConsent.get -> bool
-ZeeKayDa.Auth.Clients.ClientRegistration.RequireConsent.init -> void
-ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>
-ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.CanHandle(ZeeKayDa.Auth.Clients.IClientSecret! secret) -> bool
-ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.ClientSecretHasher() -> void
-ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.Create(System.ReadOnlySpan<char> plaintext) -> ZeeKayDa.Auth.Clients.IClientSecret!
-ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.Verify(ZeeKayDa.Auth.Clients.IClientSecret! stored, System.ReadOnlySpan<char> presented) -> bool
-ZeeKayDa.Auth.Clients.IClientCredential
-ZeeKayDa.Auth.Clients.IClientCredential.Snapshot() -> ZeeKayDa.Auth.Clients.IClientCredential!
-ZeeKayDa.Auth.Clients.IClientMetadata
-ZeeKayDa.Auth.Clients.IClientMetadata.AccessTokenLifetime.get -> System.TimeSpan?
-ZeeKayDa.Auth.Clients.IClientMetadata.AllowedGrantTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.GrantType>!
-ZeeKayDa.Auth.Clients.IClientMetadata.AllowedPromptValues.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.PromptValue>!
-ZeeKayDa.Auth.Clients.IClientMetadata.AllowedResponseModes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseMode>!
-ZeeKayDa.Auth.Clients.IClientMetadata.AllowedResponseTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseType>!
-ZeeKayDa.Auth.Clients.IClientMetadata.AllowedScopes.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Clients.IClientMetadata.AllowedSigningAlgorithms.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
-ZeeKayDa.Auth.Clients.IClientMetadata.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Clients.IClientMetadata.RequirePkce.get -> bool
-ZeeKayDa.Auth.Clients.IClientMetadata.ClientId.get -> string!
-ZeeKayDa.Auth.Clients.IClientMetadata.DisplayName.get -> string?
-ZeeKayDa.Auth.Clients.IClientMetadata.InitiateLoginUri.get -> string?
-ZeeKayDa.Auth.Clients.IClientMetadata.EnableZkdErrorCodes.get -> bool
-ZeeKayDa.Auth.Clients.IClientMetadata.IdTokenLifetime.get -> System.TimeSpan?
-ZeeKayDa.Auth.Clients.IClientMetadata.IsPublic.get -> bool
-ZeeKayDa.Auth.Clients.IClientMetadata.PostLogoutRedirectUris.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Clients.IClientMetadata.RedirectUris.get -> System.Collections.Generic.IReadOnlySet<string!>!
-ZeeKayDa.Auth.Clients.IClientMetadata.RequireConsent.get -> bool
-ZeeKayDa.Auth.Clients.IClientRegistration
-ZeeKayDa.Auth.Clients.IClientRegistration.Credentials.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Clients.IClientCredential!>!
+ZeeKayDa.Auth.Clients.Client
+ZeeKayDa.Auth.Clients.Client.<Clone>$() -> ZeeKayDa.Auth.Clients.Client!
+ZeeKayDa.Auth.Clients.Client.AccessTokenLifetime.get -> System.TimeSpan?
+ZeeKayDa.Auth.Clients.Client.AccessTokenLifetime.init -> void
+ZeeKayDa.Auth.Clients.Client.AllowedGrantTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.GrantType>!
+ZeeKayDa.Auth.Clients.Client.AllowedGrantTypes.init -> void
+ZeeKayDa.Auth.Clients.Client.AllowedPromptValues.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.PromptValue>!
+ZeeKayDa.Auth.Clients.Client.AllowedPromptValues.init -> void
+ZeeKayDa.Auth.Clients.Client.AllowedResponseModes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseMode>!
+ZeeKayDa.Auth.Clients.Client.AllowedResponseModes.init -> void
+ZeeKayDa.Auth.Clients.Client.AllowedResponseTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseType>!
+ZeeKayDa.Auth.Clients.Client.AllowedResponseTypes.init -> void
+ZeeKayDa.Auth.Clients.Client.AllowedScopes.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.Client.AllowedScopes.init -> void
+ZeeKayDa.Auth.Clients.Client.AllowedSigningAlgorithms.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
+ZeeKayDa.Auth.Clients.Client.AllowedSigningAlgorithms.init -> void
+ZeeKayDa.Auth.Clients.Client.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.Client.AllowedTokenEndpointAuthMethods.init -> void
+ZeeKayDa.Auth.Clients.Client.RequirePkce.get -> bool
+ZeeKayDa.Auth.Clients.Client.RequirePkce.init -> void
+ZeeKayDa.Auth.Clients.Client.ClientId.get -> string!
+ZeeKayDa.Auth.Clients.Client.ClientId.init -> void
+ZeeKayDa.Auth.Clients.Client.Client() -> void
+ZeeKayDa.Auth.Clients.Client.DisplayName.get -> string?
+ZeeKayDa.Auth.Clients.Client.DisplayName.init -> void
+ZeeKayDa.Auth.Clients.Client.InitiateLoginUri.get -> string?
+ZeeKayDa.Auth.Clients.Client.InitiateLoginUri.init -> void
+ZeeKayDa.Auth.Clients.Client.EnableZkdErrorCodes.get -> bool
+ZeeKayDa.Auth.Clients.Client.EnableZkdErrorCodes.init -> void
+ZeeKayDa.Auth.Clients.Client.Equals(ZeeKayDa.Auth.Clients.Client? other) -> bool
+ZeeKayDa.Auth.Clients.Client.IdTokenLifetime.get -> System.TimeSpan?
+ZeeKayDa.Auth.Clients.Client.IdTokenLifetime.init -> void
+ZeeKayDa.Auth.Clients.Client.IsPublic.get -> bool
+ZeeKayDa.Auth.Clients.Client.IsPublic.init -> void
+ZeeKayDa.Auth.Clients.Client.PostLogoutRedirectUris.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.Client.PostLogoutRedirectUris.init -> void
+ZeeKayDa.Auth.Clients.Client.RedirectUris.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.Client.RedirectUris.init -> void
+ZeeKayDa.Auth.Clients.Client.RequireConsent.get -> bool
+ZeeKayDa.Auth.Clients.Client.RequireConsent.init -> void
+ZeeKayDa.Auth.Clients.IClient
+ZeeKayDa.Auth.Clients.IClient.AccessTokenLifetime.get -> System.TimeSpan?
+ZeeKayDa.Auth.Clients.IClient.AllowedGrantTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.GrantType>!
+ZeeKayDa.Auth.Clients.IClient.AllowedPromptValues.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.PromptValue>!
+ZeeKayDa.Auth.Clients.IClient.AllowedResponseModes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseMode>!
+ZeeKayDa.Auth.Clients.IClient.AllowedResponseTypes.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.ResponseType>!
+ZeeKayDa.Auth.Clients.IClient.AllowedScopes.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClient.AllowedSigningAlgorithms.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
+ZeeKayDa.Auth.Clients.IClient.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClient.RequirePkce.get -> bool
+ZeeKayDa.Auth.Clients.IClient.ClientId.get -> string!
+ZeeKayDa.Auth.Clients.IClient.DisplayName.get -> string?
+ZeeKayDa.Auth.Clients.IClient.InitiateLoginUri.get -> string?
+ZeeKayDa.Auth.Clients.IClient.EnableZkdErrorCodes.get -> bool
+ZeeKayDa.Auth.Clients.IClient.IdTokenLifetime.get -> System.TimeSpan?
+ZeeKayDa.Auth.Clients.IClient.IsPublic.get -> bool
+ZeeKayDa.Auth.Clients.IClient.PostLogoutRedirectUris.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClient.RedirectUris.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClient.RequireConsent.get -> bool
+ZeeKayDa.Auth.Clients.IClientWithCredentials
 ZeeKayDa.Auth.Clients.IClientRegistrationValidator
-ZeeKayDa.Auth.Clients.IClientRegistrationValidator.Validate(ZeeKayDa.Auth.Clients.IClientRegistration! client) -> void
+ZeeKayDa.Auth.Clients.IClientRegistrationValidator.Validate(ZeeKayDa.Auth.Clients.IClientWithCredentials! client) -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
 ZeeKayDa.Auth.Clients.IClientRepository
-ZeeKayDa.Auth.Clients.IClientRepository.FindByClientIdAsync(string! clientId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Clients.IClientRegistration?>
-ZeeKayDa.Auth.Clients.IClientSecret
-ZeeKayDa.Auth.Clients.IClientSecretFactory
-ZeeKayDa.Auth.Clients.IClientSecretFactory.Create(string! plaintext) -> ZeeKayDa.Auth.Clients.IClientSecret!
+ZeeKayDa.Auth.Clients.IClientRepository.FindByClientIdAsync(string! clientId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Clients.IClientWithCredentials?>!
+ZeeKayDa.Auth.Clients.ClientSecrets
 ZeeKayDa.Auth.Clients.IClientSecretHasher
-ZeeKayDa.Auth.Clients.IClientSecretHasher.CanHandle(ZeeKayDa.Auth.Clients.IClientSecret! secret) -> bool
-ZeeKayDa.Auth.Clients.IClientSecretHasher.Create(System.ReadOnlySpan<char> plaintext) -> ZeeKayDa.Auth.Clients.IClientSecret!
-ZeeKayDa.Auth.Clients.IClientSecretHasher.Create(string! plaintext) -> ZeeKayDa.Auth.Clients.IClientSecret!
-ZeeKayDa.Auth.Clients.IClientSecretHasher.GetRegistrationFailures(ZeeKayDa.Auth.Clients.IClientSecret! credential, string! clientId) -> System.Collections.Generic.IEnumerable<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
-ZeeKayDa.Auth.Clients.IClientSecretHasher.Verify(ZeeKayDa.Auth.Clients.IClientSecret! stored, System.ReadOnlySpan<char> presented) -> bool
-ZeeKayDa.Auth.Clients.IPbkdf2ClientSecret
-ZeeKayDa.Auth.Clients.IPbkdf2ClientSecret.Hash.get -> byte[]!
-ZeeKayDa.Auth.Clients.IPbkdf2ClientSecret.Iterations.get -> int
-ZeeKayDa.Auth.Clients.IPbkdf2ClientSecret.Salt.get -> byte[]!
-ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret
-ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.<Clone>$() -> ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret!
-ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.Deconstruct(out int Iterations, out byte[]! Salt, out byte[]! Hash) -> void
-ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.Equals(ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret? other) -> bool
-ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.Hash.get -> byte[]!
-ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.Hash.init -> void
-ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.Iterations.get -> int
-ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.Iterations.init -> void
-ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.Pbkdf2ClientSecret(int Iterations, byte[]! Salt, byte[]! Hash) -> void
-ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.Salt.get -> byte[]!
-ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.Salt.init -> void
 ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasherOptions
 ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasherOptions.Iterations.get -> int
 ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasherOptions.Iterations.set -> void
@@ -185,7 +159,7 @@ ZeeKayDa.Auth.Discovery.DiscoveryOptions.CacheMaxAge.get -> System.TimeSpan
 ZeeKayDa.Auth.Discovery.DiscoveryOptions.CacheMaxAge.set -> void
 ZeeKayDa.Auth.Discovery.DiscoveryOptions.DiscoveryOptions() -> void
 ZeeKayDa.Auth.Discovery.IDiscoveryDocumentProvider
-ZeeKayDa.Auth.Discovery.IDiscoveryDocumentProvider.GetDocumentAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument!>
+ZeeKayDa.Auth.Discovery.IDiscoveryDocumentProvider.GetDocumentAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument!>!
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CacheMaxAge.get -> System.TimeSpan
 ZeeKayDa.Auth.Discovery.JwksEndpointOptions.CacheMaxAge.set -> void
@@ -223,27 +197,26 @@ ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpointAuthMethodsSupp
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.TokenEndpointAuthMethodsSupported.init -> void
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.UserInfoEndpoint.get -> string?
 ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.UserInfoEndpoint.init -> void
-ZeeKayDa.Auth.Extensions.ZeeKayDaAuthCoreServiceCollectionExtensions
-ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyHealthChecksBuilderExtensions
-ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions
+Microsoft.Extensions.DependencyInjection.ZeeKayDaSigningKeyHealthChecksBuilderExtensions
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions
 ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.AuthorizationCode = 0 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.ClientCredentials = 2 -> ZeeKayDa.Auth.GrantType
 ZeeKayDa.Auth.GrantType.RefreshToken = 1 -> ZeeKayDa.Auth.GrantType
-ZeeKayDa.Auth.IStartupActivator
-ZeeKayDa.Auth.IStartupCheck
-ZeeKayDa.Auth.IStartupCheck.Name.get -> string!
-ZeeKayDa.Auth.IStartupCheck.VerifyAsync(ZeeKayDa.Auth.StartupVerificationContext! context, System.IServiceProvider! scopedServices, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
-ZeeKayDa.Auth.IStartupVerifier
-ZeeKayDa.Auth.Logging.ISanitizingLogger<T>
-ZeeKayDa.Auth.Logging.LoggingOptions
-ZeeKayDa.Auth.Logging.LoggingOptions.DisableExceptionSanitizing.get -> bool
-ZeeKayDa.Auth.Logging.LoggingOptions.DisableExceptionSanitizing.set -> void
-ZeeKayDa.Auth.Logging.LoggingOptions.LoggingOptions() -> void
+ZeeKayDa.Auth.StartupVerification.IStartupActivator
+ZeeKayDa.Auth.StartupVerification.IStartupActivator.Name.get -> string!
+ZeeKayDa.Auth.StartupVerification.IStartupActivator.VerifyAsync(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.StartupVerification.IStartupVerifier
+ZeeKayDa.Auth.StartupVerification.IStartupVerifier.Name.get -> string!
+ZeeKayDa.Auth.StartupVerification.IStartupVerifier.VerifyAsync(ZeeKayDa.Auth.StartupVerification.StartupVerificationContext! context, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.Logging.SanitizingLogger<T>
+ZeeKayDa.Auth.Logging.SanitizingLogger<T>.BeginScope<TState>(TState state) -> System.IDisposable?
+ZeeKayDa.Auth.Logging.SanitizingLogger<T>.IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) -> bool
+ZeeKayDa.Auth.Logging.SanitizingLogger<T>.Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, System.Exception? exception, System.Func<TState, System.Exception?, string!>! formatter) -> void
 ZeeKayDa.Auth.Scopes.IScopeRepository
-ZeeKayDa.Auth.Scopes.IScopeRepository.GetScopesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Scopes.ScopeDefinition!>!>
+ZeeKayDa.Auth.Scopes.IScopeRepository.GetScopesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Scopes.ScopeDefinition!>!>!
 ZeeKayDa.Auth.Scopes.InMemoryScopeRepository
-ZeeKayDa.Auth.Scopes.InMemoryScopeRepository.GetScopesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Scopes.ScopeDefinition!>!>
+ZeeKayDa.Auth.Scopes.InMemoryScopeRepository.GetScopesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Scopes.ScopeDefinition!>!>!
 ZeeKayDa.Auth.Scopes.InMemoryScopeRepository.InMemoryScopeRepository(System.Collections.Generic.IEnumerable<ZeeKayDa.Auth.Scopes.ScopeDefinition!>! scopes) -> void
 ZeeKayDa.Auth.Scopes.ScopeDefinition
 ZeeKayDa.Auth.Scopes.ScopeDefinition.<Clone>$() -> ZeeKayDa.Auth.Scopes.ScopeDefinition!
@@ -275,131 +248,41 @@ ZeeKayDa.Auth.Security.SecurityHeadersOptions.CrossOriginResourcePolicy.set -> v
 ZeeKayDa.Auth.Security.SecurityHeadersOptions.ReferrerPolicy.get -> ZeeKayDa.Auth.Security.ReferrerPolicy
 ZeeKayDa.Auth.Security.SecurityHeadersOptions.ReferrerPolicy.set -> void
 ZeeKayDa.Auth.Security.SecurityHeadersOptions.SecurityHeadersOptions() -> void
-ZeeKayDa.Auth.StartupVerificationContext
-ZeeKayDa.Auth.StartupVerificationContext.AddFailure(string! code, string! message) -> void
-ZeeKayDa.Auth.StartupVerificationContext.AddWarning(string! code, string! messageTemplate, Microsoft.Extensions.Logging.LogLevel level, params object?[]! args) -> void
-ZeeKayDa.Auth.StartupVerificationContext.AddWarning(string! code, string! messageTemplate, params object?[]! args) -> void
-ZeeKayDa.Auth.StartupVerificationContext.Failures.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
-ZeeKayDa.Auth.StartupVerificationContext.StartupVerificationContext() -> void
-ZeeKayDa.Auth.StartupVerificationContext.Warnings.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.StartupVerificationWarning!>!
-ZeeKayDa.Auth.StartupVerificationWarning
-ZeeKayDa.Auth.StartupVerificationWarning.<Clone>$() -> ZeeKayDa.Auth.StartupVerificationWarning!
-ZeeKayDa.Auth.StartupVerificationWarning.Args.get -> System.Collections.Generic.IReadOnlyList<object?>!
-ZeeKayDa.Auth.StartupVerificationWarning.Args.init -> void
-ZeeKayDa.Auth.StartupVerificationWarning.Code.get -> string!
-ZeeKayDa.Auth.StartupVerificationWarning.Code.init -> void
-ZeeKayDa.Auth.StartupVerificationWarning.Deconstruct(out string! Code, out string! MessageTemplate, out Microsoft.Extensions.Logging.LogLevel Level, out System.Collections.Generic.IReadOnlyList<object?>! Args) -> void
-ZeeKayDa.Auth.StartupVerificationWarning.Equals(ZeeKayDa.Auth.StartupVerificationWarning? other) -> bool
-ZeeKayDa.Auth.StartupVerificationWarning.Level.get -> Microsoft.Extensions.Logging.LogLevel
-ZeeKayDa.Auth.StartupVerificationWarning.Level.init -> void
-ZeeKayDa.Auth.StartupVerificationWarning.MessageTemplate.get -> string!
-ZeeKayDa.Auth.StartupVerificationWarning.MessageTemplate.init -> void
-ZeeKayDa.Auth.StartupVerificationWarning.StartupVerificationWarning(string! Code, string! MessageTemplate, Microsoft.Extensions.Logging.LogLevel Level, System.Collections.Generic.IReadOnlyList<object?>! Args) -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.<Clone>$() -> ZeeKayDa.Auth.Stores.AuthorizationCodeEntry!
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Acr.get -> string?
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Acr.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Amr.get -> System.Collections.Generic.IReadOnlyList<string!>?
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Amr.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.AuthTime.get -> System.DateTimeOffset
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.AuthTime.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.AuthorizationCodeEntry() -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.ClientId.get -> string!
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.ClientId.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Equals(ZeeKayDa.Auth.Stores.AuthorizationCodeEntry? other) -> bool
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.ExpiresAt.get -> System.DateTimeOffset
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.ExpiresAt.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.InteractionId.get -> string!
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.InteractionId.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.IssuedAt.get -> System.DateTimeOffset
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.IssuedAt.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Nonce.get -> string?
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Nonce.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Pkce.get -> ZeeKayDa.Auth.Authorization.PkceChallenge?
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Pkce.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.RedirectUri.get -> string!
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.RedirectUri.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Scope.get -> System.Collections.Generic.IReadOnlyList<string!>!
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Scope.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.SsoSessionId.get -> string!
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.SsoSessionId.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Sub.get -> string!
-ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Sub.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult.AlreadyRedeemed
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult.AlreadyRedeemed.AlreadyRedeemed() -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult.AlreadyRedeemed.FamilyId.get -> string!
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult.AlreadyRedeemed.FamilyId.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult.ClientMismatch
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult.ClientMismatch.ClientMismatch() -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult.NotFound
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult.NotFound.NotFound() -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult.Redeemed
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult.Redeemed.Entry.get -> ZeeKayDa.Auth.Stores.AuthorizationCodeEntry!
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult.Redeemed.Entry.init -> void
-ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult.Redeemed.Redeemed() -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.AddFailure(string! code, string! message) -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.AddWarning(string! code, string! messageTemplate, Microsoft.Extensions.Logging.LogLevel level, params object?[]! args) -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.AddWarning(string! code, string! messageTemplate, params object?[]! args) -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.Failures.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.StartupVerificationContext() -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationContext.Warnings.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning!>!
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.<Clone>$() -> ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning!
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Args.get -> System.Collections.Generic.IReadOnlyList<object?>!
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Args.init -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Code.get -> string!
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Code.init -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Deconstruct(out string! Code, out string! MessageTemplate, out Microsoft.Extensions.Logging.LogLevel Level, out System.Collections.Generic.IReadOnlyList<object?>! Args) -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Equals(ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning? other) -> bool
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Level.get -> Microsoft.Extensions.Logging.LogLevel
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Level.init -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.MessageTemplate.get -> string!
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.MessageTemplate.init -> void
+ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.StartupVerificationWarning(string! Code, string! MessageTemplate, Microsoft.Extensions.Logging.LogLevel Level, System.Collections.Generic.IReadOnlyList<object?>! Args) -> void
 ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore
-ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.GetAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>?>
-ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.RemoveAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
-ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.TryInsertAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.ReadOnlyMemory<byte> value, System.DateTimeOffset expiresAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
-ZeeKayDa.Auth.Stores.IAuthorizationCodeStore
-ZeeKayDa.Auth.Stores.IAuthorizationCodeStore.StoreAsync(string! code, ZeeKayDa.Auth.Stores.AuthorizationCodeEntry! entry, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.Stores.IAuthorizationCodeStore.TryRedeemAsync(string! code, string! clientId, string! familyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Stores.AuthorizationCodeRedemptionResult!>
-ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore
-ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore.FindByHandleAsync(ZeeKayDa.Auth.Stores.StoreKey handleHash, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Stores.RefreshTokenGrant?>
-ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore.InsertAsync(ZeeKayDa.Auth.Stores.RefreshTokenGrant! grant, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
-ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore.IsFamilyRevokedAsync(string! familyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
-ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore.RevokeBySubjectAsync(string! subject, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
-ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore.RevokeFamilyAsync(string! familyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask
-ZeeKayDa.Auth.Stores.IRefreshTokenGrantStore.TryMarkConsumedAsync(ZeeKayDa.Auth.Stores.StoreKey handleHash, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
-ZeeKayDa.Auth.Stores.IRefreshTokenStore
-ZeeKayDa.Auth.Stores.IRefreshTokenStore.FindAsync(string! tokenHandle, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Stores.RefreshTokenEntry?>
-ZeeKayDa.Auth.Stores.IRefreshTokenStore.RevokeFamilyAsync(string! familyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.Stores.IRefreshTokenStore.StoreAsync(string! tokenHandle, ZeeKayDa.Auth.Stores.RefreshTokenEntry! entry, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.Stores.IRefreshTokenStore.TryConsumeAsync(string! tokenHandle, string! clientId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult!>
+ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.GetAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.ReadOnlyMemory<byte>?>!
+ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.RemoveAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.Stores.IAuthorizationCodeBackingStore.TryInsertAsync(ZeeKayDa.Auth.Stores.StoreKey key, System.ReadOnlyMemory<byte> value, System.DateTimeOffset expiresAt, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.FindByHandleAsync(ZeeKayDa.Auth.Stores.StoreKey handleHash, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Stores.RefreshTokenGrant?>!
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.InsertAsync(ZeeKayDa.Auth.Stores.RefreshTokenGrant! grant, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.IsFamilyRevokedAsync(string! familyId, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.RevokeBySubjectAsync(string! subject, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.RevokeFamilyAsync(string! familyId, System.DateTimeOffset rememberUntil, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.Stores.IRefreshTokenBackingStore.TryMarkConsumedAsync(ZeeKayDa.Auth.Stores.StoreKey handleHash, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<bool>!
 ZeeKayDa.Auth.Stores.RefreshGrantStatus
 ZeeKayDa.Auth.Stores.RefreshGrantStatus.Active = 0 -> ZeeKayDa.Auth.Stores.RefreshGrantStatus
 ZeeKayDa.Auth.Stores.RefreshGrantStatus.Consumed = 1 -> ZeeKayDa.Auth.Stores.RefreshGrantStatus
 ZeeKayDa.Auth.Stores.RefreshGrantStatus.Revoked = 2 -> ZeeKayDa.Auth.Stores.RefreshGrantStatus
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.AlreadyConsumed
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.AlreadyConsumed.AlreadyConsumed() -> void
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.AlreadyConsumed.FamilyId.get -> string!
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.AlreadyConsumed.FamilyId.init -> void
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.ClientMismatch
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.ClientMismatch.ClientMismatch() -> void
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.Consumed
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.Consumed.Consumed() -> void
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.Consumed.Entry.get -> ZeeKayDa.Auth.Stores.RefreshTokenEntry!
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.Consumed.Entry.init -> void
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.NotFound
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.NotFound.NotFound() -> void
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.Revoked
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.Revoked.FamilyId.get -> string!
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.Revoked.FamilyId.init -> void
-ZeeKayDa.Auth.Stores.RefreshTokenConsumptionResult.Revoked.Revoked() -> void
-ZeeKayDa.Auth.Stores.RefreshTokenEntry
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.<Clone>$() -> ZeeKayDa.Auth.Stores.RefreshTokenEntry!
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.ClientId.get -> string!
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.ClientId.init -> void
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.Equals(ZeeKayDa.Auth.Stores.RefreshTokenEntry? other) -> bool
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.ExpiresAt.get -> System.DateTimeOffset
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.ExpiresAt.init -> void
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.FamilyAbsoluteExpiry.get -> System.DateTimeOffset
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.FamilyAbsoluteExpiry.init -> void
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.FamilyId.get -> string!
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.FamilyId.init -> void
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.IssuedAt.get -> System.DateTimeOffset
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.IssuedAt.init -> void
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.PreviousTokenHandleHash.get -> string?
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.PreviousTokenHandleHash.init -> void
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.RefreshTokenEntry() -> void
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.Scope.get -> System.Collections.Generic.IReadOnlyList<string!>!
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.Scope.init -> void
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.SsoSessionId.get -> string!
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.SsoSessionId.init -> void
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.Sub.get -> string!
-ZeeKayDa.Auth.Stores.RefreshTokenEntry.Sub.init -> void
 ZeeKayDa.Auth.Stores.RefreshTokenGrant
 ZeeKayDa.Auth.Stores.RefreshTokenGrant.<Clone>$() -> ZeeKayDa.Auth.Stores.RefreshTokenGrant!
 ZeeKayDa.Auth.Stores.RefreshTokenGrant.ClientId.get -> string!
@@ -424,36 +307,20 @@ ZeeKayDa.Auth.Stores.StoreKey
 ZeeKayDa.Auth.Stores.StoreKey.Equals(ZeeKayDa.Auth.Stores.StoreKey other) -> bool
 ZeeKayDa.Auth.Stores.StoreKey.StoreKey() -> void
 ZeeKayDa.Auth.Tokens.AccessTokenIssuanceContext
-ZeeKayDa.Auth.Tokens.AccessTokenIssuanceContext.AccessTokenIssuanceContext(ZeeKayDa.Auth.Clients.IClientMetadata! client) -> void
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.get -> System.Collections.Generic.IReadOnlyList<string!>!
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.set -> void
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.DevelopmentSigningKeyOptions() -> void
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.EnvironmentName.get -> string?
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.PersistToDirectory.get -> string?
-ZeeKayDa.Auth.Tokens.DevelopmentSigningKeyOptions.PersistToDirectory.set -> void
+ZeeKayDa.Auth.Tokens.AccessTokenIssuanceContext.AccessTokenIssuanceContext(ZeeKayDa.Auth.Clients.IClient! client) -> void
+ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions
+ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions.AllowedEnvironments.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions.AllowedEnvironments.set -> void
+ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions.DevelopmentSigningOptions() -> void
 ZeeKayDa.Auth.Tokens.ISigner
-ZeeKayDa.Auth.Tokens.ISigner.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
-ZeeKayDa.Auth.Tokens.ISigner.SignAsync(System.ReadOnlyMemory<byte> signingInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>>
-ZeeKayDa.Auth.Tokens.ISigningKeyRing
-ZeeKayDa.Auth.Tokens.ISigningKeyRing.Current.get -> ZeeKayDa.Auth.Tokens.SigningKeySet!
-ZeeKayDa.Auth.Tokens.ISigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SigningOutcome>
+ZeeKayDa.Auth.Tokens.ISigner.SignAsync(System.ReadOnlyMemory<byte> signingInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.ReadOnlyMemory<byte>>!
 ZeeKayDa.Auth.Tokens.ISigningKeySource
-ZeeKayDa.Auth.Tokens.ISigningKeySource.CreateSignerAsync(ZeeKayDa.Auth.Tokens.SourceKeyId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.ISigner!>
-ZeeKayDa.Auth.Tokens.ISigningKeySource.ReadAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SourceKeySet!>
+ZeeKayDa.Auth.Tokens.ISigningKeySource.CreateSignerAsync(ZeeKayDa.Auth.Tokens.SourceKeyId id, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.ISigner!>!
 ZeeKayDa.Auth.Tokens.ITokenIssuer
-ZeeKayDa.Auth.Tokens.ITokenIssuer.IssueAsync(ZeeKayDa.Auth.Tokens.TokenIssuanceContext! context, ZeeKayDa.Auth.Tokens.TokenPayload! payload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.IssuedToken!>
+ZeeKayDa.Auth.Tokens.ITokenIssuer.IssueAsync(ZeeKayDa.Auth.Tokens.TokenIssuanceContext! context, ZeeKayDa.Auth.Tokens.TokenPayload! payload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.IssuedToken!>!
 ZeeKayDa.Auth.Tokens.IdTokenIssuanceContext
 ZeeKayDa.Auth.Tokens.IdTokenIssuanceContext.AccessToken.get -> ZeeKayDa.Auth.Tokens.IssuedToken!
-ZeeKayDa.Auth.Tokens.IdTokenIssuanceContext.IdTokenIssuanceContext(ZeeKayDa.Auth.Clients.IClientMetadata! client, ZeeKayDa.Auth.Tokens.IssuedToken! accessToken) -> void
-ZeeKayDa.Auth.Tokens.IdTokenOptions
-ZeeKayDa.Auth.Tokens.IdTokenOptions.AdvertisedSigningAlgorithms.get -> System.Collections.Generic.ICollection<ZeeKayDa.Auth.Tokens.SigningAlgorithm>?
-ZeeKayDa.Auth.Tokens.IdTokenOptions.AdvertisedSigningAlgorithms.set -> void
-ZeeKayDa.Auth.Tokens.IdTokenOptions.IdTokenOptions() -> void
-ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions
-ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.get -> System.Collections.Generic.IReadOnlyList<string!>!
-ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments.set -> void
-ZeeKayDa.Auth.Tokens.InMemoryDevelopmentSigningKeyOptions.InMemoryDevelopmentSigningKeyOptions() -> void
+ZeeKayDa.Auth.Tokens.IdTokenIssuanceContext.IdTokenIssuanceContext(ZeeKayDa.Auth.Clients.IClient! client, ZeeKayDa.Auth.Tokens.IssuedToken! accessToken) -> void
 ZeeKayDa.Auth.Tokens.IssuedToken
 ZeeKayDa.Auth.Tokens.IssuedToken.<Clone>$() -> ZeeKayDa.Auth.Tokens.IssuedToken!
 ZeeKayDa.Auth.Tokens.IssuedToken.Deconstruct(out string! Value, out ZeeKayDa.Auth.Tokens.TokenKind Kind) -> void
@@ -465,13 +332,12 @@ ZeeKayDa.Auth.Tokens.IssuedToken.Value.get -> string!
 ZeeKayDa.Auth.Tokens.IssuedToken.Value.init -> void
 ZeeKayDa.Auth.Tokens.JwkThumbprint
 ZeeKayDa.Auth.Tokens.JwtTokenIssuer
-ZeeKayDa.Auth.Tokens.JwtTokenIssuer.IssueAsync(ZeeKayDa.Auth.Tokens.TokenIssuanceContext! context, ZeeKayDa.Auth.Tokens.TokenPayload! payload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.IssuedToken!>
-ZeeKayDa.Auth.Tokens.JwtTokenIssuer.JwtTokenIssuer(ZeeKayDa.Auth.Tokens.ISigningKeyRing! keyRing) -> void
+ZeeKayDa.Auth.Tokens.JwtTokenIssuer.IssueAsync(ZeeKayDa.Auth.Tokens.TokenIssuanceContext! context, ZeeKayDa.Auth.Tokens.TokenPayload! payload, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.IssuedToken!>!
+ZeeKayDa.Auth.Tokens.JwtTokenIssuer.JwtTokenIssuer(ZeeKayDa.Auth.Tokens.SigningKeyRing! keyRing) -> void
 ZeeKayDa.Auth.Tokens.LocalSigner
-ZeeKayDa.Auth.Tokens.LocalSigner.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
 ZeeKayDa.Auth.Tokens.LocalSigner.Dispose() -> void
 ZeeKayDa.Auth.Tokens.LocalSigner.LocalSigner(ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Security.Cryptography.AsymmetricAlgorithm! privateKey) -> void
-ZeeKayDa.Auth.Tokens.LocalSigner.SignAsync(System.ReadOnlyMemory<byte> signingInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>>
+ZeeKayDa.Auth.Tokens.LocalSigner.SignAsync(System.ReadOnlyMemory<byte> signingInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.ReadOnlyMemory<byte>>!
 ZeeKayDa.Auth.Tokens.PublicKeyParameters
 ZeeKayDa.Auth.Tokens.PublicKeyParameters.<Clone>$() -> ZeeKayDa.Auth.Tokens.PublicKeyParameters!
 ZeeKayDa.Auth.Tokens.PublicKeyParameters.EcPublicParameters.get -> System.Security.Cryptography.ECParameters?
@@ -493,14 +359,12 @@ ZeeKayDa.Auth.Tokens.SigningContext.Key.get -> ZeeKayDa.Auth.Tokens.SigningKey!
 ZeeKayDa.Auth.Tokens.SigningContext.SigningContext() -> void
 ZeeKayDa.Auth.Tokens.SigningKey
 ZeeKayDa.Auth.Tokens.SigningKey.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
-ZeeKayDa.Auth.Tokens.SigningKey.ExpiresAt.get -> System.DateTimeOffset?
 ZeeKayDa.Auth.Tokens.SigningKey.Kid.get -> string!
-ZeeKayDa.Auth.Tokens.SigningKey.NotBefore.get -> System.DateTimeOffset?
 ZeeKayDa.Auth.Tokens.SigningKey.PublicKey.get -> ZeeKayDa.Auth.Tokens.PublicKeyParameters!
 ZeeKayDa.Auth.Tokens.SigningKey.SourceId.get -> ZeeKayDa.Auth.Tokens.SourceKeyId
 ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheck
 ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
-ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheck.SigningKeyExpiryHealthCheck(ZeeKayDa.Auth.Tokens.ISigningKeyRing? ring, System.TimeProvider! timeProvider, Microsoft.Extensions.Options.IOptions<ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions!>! options) -> void
+ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheck.SigningKeyExpiryHealthCheck(ZeeKayDa.Auth.Tokens.SigningKeyRing? ring, System.TimeProvider! timeProvider, Microsoft.Extensions.Options.IOptions<ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions!>! options) -> void
 ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions
 ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions.DegradedThreshold.get -> System.TimeSpan
 ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions.DegradedThreshold.set -> void
@@ -519,10 +383,8 @@ ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.RemainingLifetime.get -> System.Time
 ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.RemainingLifetime.init -> void
 ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.SigningKeyExpiryStatus(string! Kid, bool IsSigningKey, System.DateTimeOffset? ExpiresAt, System.TimeSpan? RemainingLifetime) -> void
 ZeeKayDa.Auth.Tokens.SigningKeySet
-ZeeKayDa.Auth.Tokens.SigningKeySet.AdvertisedAlgorithms.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SigningAlgorithm>!
 ZeeKayDa.Auth.Tokens.SigningKeySet.Published.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SigningKey!>!
-ZeeKayDa.Auth.Tokens.SigningKeySet.SigningKey.get -> ZeeKayDa.Auth.Tokens.SigningKey!
-ZeeKayDa.Auth.Tokens.SigningKeySetBuilder
+ZeeKayDa.Auth.Tokens.SigningKeySet.SigningKey.get -> ZeeKayDa.Auth.Tokens.SigningKey?
 ZeeKayDa.Auth.Tokens.SigningKeyType
 ZeeKayDa.Auth.Tokens.SigningKeyType.Ec = 1 -> ZeeKayDa.Auth.Tokens.SigningKeyType
 ZeeKayDa.Auth.Tokens.SigningKeyType.Rsa = 0 -> ZeeKayDa.Auth.Tokens.SigningKeyType
@@ -539,19 +401,9 @@ ZeeKayDa.Auth.Tokens.SigningOutcome.SigningOutcome() -> void
 ZeeKayDa.Auth.Tokens.SigningOutcome.SigningOutcome(System.ReadOnlyMemory<byte> SigningInput, System.ReadOnlyMemory<byte> Signature, ZeeKayDa.Auth.Tokens.SigningKey! Key) -> void
 ZeeKayDa.Auth.Tokens.SourceKey
 ZeeKayDa.Auth.Tokens.SourceKey.<Clone>$() -> ZeeKayDa.Auth.Tokens.SourceKey!
-ZeeKayDa.Auth.Tokens.SourceKey.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
-ZeeKayDa.Auth.Tokens.SourceKey.Algorithm.init -> void
-ZeeKayDa.Auth.Tokens.SourceKey.Deconstruct(out ZeeKayDa.Auth.Tokens.SourceKeyId Id, out ZeeKayDa.Auth.Tokens.SigningAlgorithm Algorithm, out ZeeKayDa.Auth.Tokens.PublicKeyParameters! PublicKey, out System.DateTimeOffset? ExpiresAt, out System.DateTimeOffset? NotBefore) -> void
 ZeeKayDa.Auth.Tokens.SourceKey.Equals(ZeeKayDa.Auth.Tokens.SourceKey? other) -> bool
-ZeeKayDa.Auth.Tokens.SourceKey.ExpiresAt.get -> System.DateTimeOffset?
-ZeeKayDa.Auth.Tokens.SourceKey.ExpiresAt.init -> void
 ZeeKayDa.Auth.Tokens.SourceKey.Id.get -> ZeeKayDa.Auth.Tokens.SourceKeyId
-ZeeKayDa.Auth.Tokens.SourceKey.Id.init -> void
-ZeeKayDa.Auth.Tokens.SourceKey.NotBefore.get -> System.DateTimeOffset?
-ZeeKayDa.Auth.Tokens.SourceKey.NotBefore.init -> void
 ZeeKayDa.Auth.Tokens.SourceKey.PublicKey.get -> ZeeKayDa.Auth.Tokens.PublicKeyParameters!
-ZeeKayDa.Auth.Tokens.SourceKey.PublicKey.init -> void
-ZeeKayDa.Auth.Tokens.SourceKey.SourceKey(ZeeKayDa.Auth.Tokens.SourceKeyId Id, ZeeKayDa.Auth.Tokens.SigningAlgorithm Algorithm, ZeeKayDa.Auth.Tokens.PublicKeyParameters! PublicKey, System.DateTimeOffset? ExpiresAt, System.DateTimeOffset? NotBefore = null) -> void
 ZeeKayDa.Auth.Tokens.SourceKeyId
 ZeeKayDa.Auth.Tokens.SourceKeyId.Deconstruct(out string! Value) -> void
 ZeeKayDa.Auth.Tokens.SourceKeyId.Equals(ZeeKayDa.Auth.Tokens.SourceKeyId other) -> bool
@@ -559,22 +411,18 @@ ZeeKayDa.Auth.Tokens.SourceKeyId.SourceKeyId() -> void
 ZeeKayDa.Auth.Tokens.SourceKeyId.SourceKeyId(string! Value) -> void
 ZeeKayDa.Auth.Tokens.SourceKeyId.Value.get -> string!
 ZeeKayDa.Auth.Tokens.SourceKeyId.Value.init -> void
-ZeeKayDa.Auth.Tokens.SourceKeySet
-ZeeKayDa.Auth.Tokens.SourceKeySet.Keys.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SourceKey!>!
-ZeeKayDa.Auth.Tokens.SourceKeySet.SigningKey.get -> ZeeKayDa.Auth.Tokens.SourceKey!
-ZeeKayDa.Auth.Tokens.SourceKeySet.SourceKeySet(ZeeKayDa.Auth.Tokens.SourceKey! signingKey, params ZeeKayDa.Auth.Tokens.SourceKey![]! alsoPublished) -> void
-ZeeKayDa.Auth.Tokens.StaticSigningKeyRing
-ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.Current.get -> ZeeKayDa.Auth.Tokens.SigningKeySet!
-ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Tokens.SigningOutcome>
-ZeeKayDa.Auth.Tokens.StaticSigningKeyRing.StaticSigningKeyRing(ZeeKayDa.Auth.Tokens.ISigningKeySource! source, System.TimeProvider! timeProvider) -> void
+ZeeKayDa.Auth.Tokens.SigningKeyRing
+ZeeKayDa.Auth.Tokens.SigningKeyRing.Current.get -> ZeeKayDa.Auth.Tokens.SigningKeySet!
+ZeeKayDa.Auth.Tokens.SigningKeyRing.SignAsync<TState>(TState state, System.Func<ZeeKayDa.Auth.Tokens.SigningContext, TState, System.ReadOnlyMemory<byte>>! buildSigningInput, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.SigningOutcome>!
+ZeeKayDa.Auth.Tokens.SigningKeyRing.Verify(string! kid, System.ReadOnlySpan<byte> signingInput, System.ReadOnlySpan<byte> signature) -> ZeeKayDa.Auth.Tokens.SigningKey?
 ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AbsoluteFamilyLifetime.get -> System.TimeSpan
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AbsoluteFamilyLifetime.set -> void
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AccessTokenLifetime.get -> System.TimeSpan
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AccessTokenLifetime.set -> void
-ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AuthMethodsSupported.get -> System.Collections.Generic.ICollection<string!>!
-ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AuthMethodsSupported.set -> void
+ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AdvertisedAuthMethods.get -> System.Collections.Generic.ICollection<string!>?
+ZeeKayDa.Auth.Tokens.TokenEndpointOptions.AdvertisedAuthMethods.set -> void
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.ComputeFamilyAbsoluteExpiry(System.DateTimeOffset now) -> System.DateTimeOffset
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.IdTokenLifetime.get -> System.TimeSpan
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.IdTokenLifetime.set -> void
@@ -584,7 +432,7 @@ ZeeKayDa.Auth.Tokens.TokenEndpointOptions.TokenEndpointOptions() -> void
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Tokens.TokenEndpointOptions.Uri.set -> void
 ZeeKayDa.Auth.Tokens.TokenIssuanceContext
-ZeeKayDa.Auth.Tokens.TokenIssuanceContext.Client.get -> ZeeKayDa.Auth.Clients.IClientMetadata!
+ZeeKayDa.Auth.Tokens.TokenIssuanceContext.Client.get -> ZeeKayDa.Auth.Clients.IClient!
 ZeeKayDa.Auth.Tokens.TokenKind
 ZeeKayDa.Auth.Tokens.TokenKind.AccessToken = 0 -> ZeeKayDa.Auth.Tokens.TokenKind
 ZeeKayDa.Auth.Tokens.TokenKind.IdToken = 1 -> ZeeKayDa.Auth.Tokens.TokenKind
@@ -595,9 +443,6 @@ ZeeKayDa.Auth.Tokens.TokenPayload.Claims.init -> void
 ZeeKayDa.Auth.Tokens.TokenPayload.Deconstruct(out System.Collections.Generic.IReadOnlyDictionary<string!, object?>! Claims) -> void
 ZeeKayDa.Auth.Tokens.TokenPayload.Equals(ZeeKayDa.Auth.Tokens.TokenPayload? other) -> bool
 ZeeKayDa.Auth.Tokens.TokenPayload.TokenPayload(System.Collections.Generic.IReadOnlyDictionary<string!, object?>! Claims) -> void
-ZeeKayDa.Auth.ZeeKayDaAuthBuilder
-ZeeKayDa.Auth.ZeeKayDaAuthBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-ZeeKayDa.Auth.ZeeKayDaAuthBuilder.ZeeKayDaAuthBuilder(Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> void
 ZeeKayDa.Auth.ZeeKayDaConfigurationException
 ZeeKayDa.Auth.ZeeKayDaConfigurationException.AggregatedFailures.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
 ZeeKayDa.Auth.ZeeKayDaConfigurationException.ZeeKayDaConfigurationException(System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>! failures, System.Exception! innerException) -> void
@@ -621,8 +466,6 @@ ZeeKayDa.Auth.ZeeKayDaInteractionException.ZeeKayDaInteractionException(string! 
 ZeeKayDa.Auth.ZeeKayDaStoreException
 ZeeKayDa.Auth.ZeeKayDaStoreException.ZeeKayDaStoreException(string! message) -> void
 ZeeKayDa.Auth.ZeeKayDaStoreException.ZeeKayDaStoreException(string! message, System.Exception! innerException) -> void
-abstract ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.CreateCore(string! plaintext) -> TSecret
-abstract ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.VerifyCore(TSecret stored, System.ReadOnlySpan<char> presented) -> bool
 const ZeeKayDa.Auth.Authorization.AuthenticationMethods.FacialRecognition = "face" -> string!
 const ZeeKayDa.Auth.Authorization.AuthenticationMethods.Fingerprint = "fpt" -> string!
 const ZeeKayDa.Auth.Authorization.AuthenticationMethods.HardwareKey = "hwk" -> string!
@@ -642,27 +485,18 @@ const ZeeKayDa.Auth.Tokens.TokenEndpointAuthMethods.None = "none" -> string!
 override ZeeKayDa.Auth.Authorization.PkceChallenge.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.Authorization.PkceChallenge.GetHashCode() -> int
 override ZeeKayDa.Auth.Authorization.PkceChallenge.ToString() -> string!
-override ZeeKayDa.Auth.Clients.ClientRegistration.Equals(object? obj) -> bool
-override ZeeKayDa.Auth.Clients.ClientRegistration.GetHashCode() -> int
-override ZeeKayDa.Auth.Clients.ClientRegistration.ToString() -> string!
-override ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.Equals(object? obj) -> bool
-override ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.GetHashCode() -> int
-override ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.ToString() -> string!
+override ZeeKayDa.Auth.Clients.Client.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.Clients.Client.GetHashCode() -> int
+override ZeeKayDa.Auth.Clients.Client.ToString() -> string!
 override ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.GetHashCode() -> int
 override ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.ToString() -> string!
 override ZeeKayDa.Auth.Scopes.ScopeDefinition.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.Scopes.ScopeDefinition.GetHashCode() -> int
 override ZeeKayDa.Auth.Scopes.ScopeDefinition.ToString() -> string!
-override ZeeKayDa.Auth.StartupVerificationWarning.Equals(object? obj) -> bool
-override ZeeKayDa.Auth.StartupVerificationWarning.GetHashCode() -> int
-override ZeeKayDa.Auth.StartupVerificationWarning.ToString() -> string!
-override ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.Equals(object? obj) -> bool
-override ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.GetHashCode() -> int
-override ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.ToString() -> string!
-override ZeeKayDa.Auth.Stores.RefreshTokenEntry.Equals(object? obj) -> bool
-override ZeeKayDa.Auth.Stores.RefreshTokenEntry.GetHashCode() -> int
-override ZeeKayDa.Auth.Stores.RefreshTokenEntry.ToString() -> string!
+override ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.GetHashCode() -> int
+override ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.ToString() -> string!
 override ZeeKayDa.Auth.Stores.RefreshTokenGrant.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.Stores.RefreshTokenGrant.GetHashCode() -> int
 override ZeeKayDa.Auth.Stores.RefreshTokenGrant.ToString() -> string!
@@ -693,18 +527,12 @@ override ZeeKayDa.Auth.ZeeKayDaConfigurationFailure.ToString() -> string!
 static ZeeKayDa.Auth.Authorization.AuthenticationMethods.Mfa(string! first, string! second, params string![]! rest) -> string![]!
 static ZeeKayDa.Auth.Authorization.PkceChallenge.operator !=(ZeeKayDa.Auth.Authorization.PkceChallenge? left, ZeeKayDa.Auth.Authorization.PkceChallenge? right) -> bool
 static ZeeKayDa.Auth.Authorization.PkceChallenge.operator ==(ZeeKayDa.Auth.Authorization.PkceChallenge? left, ZeeKayDa.Auth.Authorization.PkceChallenge? right) -> bool
-static ZeeKayDa.Auth.Clients.ClientRegistration.CreateConfidential(string! clientId, ZeeKayDa.Auth.Clients.IClientCredential! credential, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes) -> ZeeKayDa.Auth.Clients.ClientRegistration!
-static ZeeKayDa.Auth.Clients.ClientRegistration.CreatePublic(string! clientId, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes) -> ZeeKayDa.Auth.Clients.ClientRegistration!
-static ZeeKayDa.Auth.Clients.ClientRegistration.operator !=(ZeeKayDa.Auth.Clients.ClientRegistration? left, ZeeKayDa.Auth.Clients.ClientRegistration? right) -> bool
-static ZeeKayDa.Auth.Clients.ClientRegistration.operator ==(ZeeKayDa.Auth.Clients.ClientRegistration? left, ZeeKayDa.Auth.Clients.ClientRegistration? right) -> bool
-static ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.operator !=(ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret? left, ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret? right) -> bool
-static ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret.operator ==(ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret? left, ZeeKayDa.Auth.Clients.Pbkdf2ClientSecret? right) -> bool
+static ZeeKayDa.Auth.Clients.Client.CreatePublic(string! clientId, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes) -> ZeeKayDa.Auth.Clients.Client!
+static ZeeKayDa.Auth.Clients.Client.operator !=(ZeeKayDa.Auth.Clients.Client? left, ZeeKayDa.Auth.Clients.Client? right) -> bool
+static ZeeKayDa.Auth.Clients.Client.operator ==(ZeeKayDa.Auth.Clients.Client? left, ZeeKayDa.Auth.Clients.Client? right) -> bool
 static ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.operator !=(ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? left, ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? right) -> bool
 static ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument.operator ==(ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? left, ZeeKayDa.Auth.Discovery.OpenIdConfigurationDocument? right) -> bool
-static ZeeKayDa.Auth.Extensions.ZeeKayDaAuthCoreServiceCollectionExtensions.AddZeeKayDaAuthCore(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyHealthChecksBuilderExtensions.AddZeeKayDaSigningKeys(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, System.Action<ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions!>? configure = null, string! name = "zeekayda-signing-keys", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
-static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource<TSource>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static ZeeKayDa.Auth.Extensions.ZeeKayDaSigningKeyServiceCollectionExtensions.AddZeeKayDaSigningKeySource<TSource>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Func<System.IServiceProvider!, TSource!>! implementationFactory) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaSigningKeyHealthChecksBuilderExtensions.AddZeeKayDaSigningKeys(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, System.Action<ZeeKayDa.Auth.Tokens.SigningKeyExpiryHealthCheckOptions!>? configure = null, string! name = "zeekayda-signing-keys", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
 static ZeeKayDa.Auth.Scopes.ScopeDefinition.operator !=(ZeeKayDa.Auth.Scopes.ScopeDefinition? left, ZeeKayDa.Auth.Scopes.ScopeDefinition? right) -> bool
 static ZeeKayDa.Auth.Scopes.ScopeDefinition.operator ==(ZeeKayDa.Auth.Scopes.ScopeDefinition? left, ZeeKayDa.Auth.Scopes.ScopeDefinition? right) -> bool
 static ZeeKayDa.Auth.Scopes.StandardScopes.Address.get -> ZeeKayDa.Auth.Scopes.ScopeDefinition!
@@ -713,12 +541,8 @@ static ZeeKayDa.Auth.Scopes.StandardScopes.Email.get -> ZeeKayDa.Auth.Scopes.Sco
 static ZeeKayDa.Auth.Scopes.StandardScopes.OpenId.get -> ZeeKayDa.Auth.Scopes.ScopeDefinition!
 static ZeeKayDa.Auth.Scopes.StandardScopes.Phone.get -> ZeeKayDa.Auth.Scopes.ScopeDefinition!
 static ZeeKayDa.Auth.Scopes.StandardScopes.Profile.get -> ZeeKayDa.Auth.Scopes.ScopeDefinition!
-static ZeeKayDa.Auth.StartupVerificationWarning.operator !=(ZeeKayDa.Auth.StartupVerificationWarning? left, ZeeKayDa.Auth.StartupVerificationWarning? right) -> bool
-static ZeeKayDa.Auth.StartupVerificationWarning.operator ==(ZeeKayDa.Auth.StartupVerificationWarning? left, ZeeKayDa.Auth.StartupVerificationWarning? right) -> bool
-static ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.operator !=(ZeeKayDa.Auth.Stores.AuthorizationCodeEntry? left, ZeeKayDa.Auth.Stores.AuthorizationCodeEntry? right) -> bool
-static ZeeKayDa.Auth.Stores.AuthorizationCodeEntry.operator ==(ZeeKayDa.Auth.Stores.AuthorizationCodeEntry? left, ZeeKayDa.Auth.Stores.AuthorizationCodeEntry? right) -> bool
-static ZeeKayDa.Auth.Stores.RefreshTokenEntry.operator !=(ZeeKayDa.Auth.Stores.RefreshTokenEntry? left, ZeeKayDa.Auth.Stores.RefreshTokenEntry? right) -> bool
-static ZeeKayDa.Auth.Stores.RefreshTokenEntry.operator ==(ZeeKayDa.Auth.Stores.RefreshTokenEntry? left, ZeeKayDa.Auth.Stores.RefreshTokenEntry? right) -> bool
+static ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.operator !=(ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning? left, ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning? right) -> bool
+static ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning.operator ==(ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning? left, ZeeKayDa.Auth.StartupVerification.StartupVerificationWarning? right) -> bool
 static ZeeKayDa.Auth.Stores.RefreshTokenGrant.operator !=(ZeeKayDa.Auth.Stores.RefreshTokenGrant? left, ZeeKayDa.Auth.Stores.RefreshTokenGrant? right) -> bool
 static ZeeKayDa.Auth.Stores.RefreshTokenGrant.operator ==(ZeeKayDa.Auth.Stores.RefreshTokenGrant? left, ZeeKayDa.Auth.Stores.RefreshTokenGrant? right) -> bool
 static ZeeKayDa.Auth.Stores.StoreKey.operator !=(ZeeKayDa.Auth.Stores.StoreKey left, ZeeKayDa.Auth.Stores.StoreKey right) -> bool
@@ -733,19 +557,16 @@ static ZeeKayDa.Auth.Tokens.PublicKeyParameters.operator !=(ZeeKayDa.Auth.Tokens
 static ZeeKayDa.Auth.Tokens.PublicKeyParameters.operator ==(ZeeKayDa.Auth.Tokens.PublicKeyParameters? left, ZeeKayDa.Auth.Tokens.PublicKeyParameters? right) -> bool
 static ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.operator !=(ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? left, ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? right) -> bool
 static ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus.operator ==(ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? left, ZeeKayDa.Auth.Tokens.SigningKeyExpiryStatus? right) -> bool
-static ZeeKayDa.Auth.Tokens.SigningKeySetBuilder.Build(ZeeKayDa.Auth.Tokens.SourceKeySet! keys) -> ZeeKayDa.Auth.Tokens.SigningKeySet!
 static ZeeKayDa.Auth.Tokens.SigningOutcome.operator !=(ZeeKayDa.Auth.Tokens.SigningOutcome left, ZeeKayDa.Auth.Tokens.SigningOutcome right) -> bool
 static ZeeKayDa.Auth.Tokens.SigningOutcome.operator ==(ZeeKayDa.Auth.Tokens.SigningOutcome left, ZeeKayDa.Auth.Tokens.SigningOutcome right) -> bool
 static ZeeKayDa.Auth.Tokens.SourceKey.operator !=(ZeeKayDa.Auth.Tokens.SourceKey? left, ZeeKayDa.Auth.Tokens.SourceKey? right) -> bool
 static ZeeKayDa.Auth.Tokens.SourceKey.operator ==(ZeeKayDa.Auth.Tokens.SourceKey? left, ZeeKayDa.Auth.Tokens.SourceKey? right) -> bool
 static ZeeKayDa.Auth.Tokens.SourceKeyId.operator !=(ZeeKayDa.Auth.Tokens.SourceKeyId left, ZeeKayDa.Auth.Tokens.SourceKeyId right) -> bool
 static ZeeKayDa.Auth.Tokens.SourceKeyId.operator ==(ZeeKayDa.Auth.Tokens.SourceKeyId left, ZeeKayDa.Auth.Tokens.SourceKeyId right) -> bool
-static ZeeKayDa.Auth.Tokens.SourceKeySet.Create(ZeeKayDa.Auth.Tokens.SourceKey? previous, ZeeKayDa.Auth.Tokens.SourceKey? current, ZeeKayDa.Auth.Tokens.SourceKey? next) -> ZeeKayDa.Auth.Tokens.SourceKeySet!
 static ZeeKayDa.Auth.Tokens.TokenPayload.operator !=(ZeeKayDa.Auth.Tokens.TokenPayload? left, ZeeKayDa.Auth.Tokens.TokenPayload? right) -> bool
 static ZeeKayDa.Auth.Tokens.TokenPayload.operator ==(ZeeKayDa.Auth.Tokens.TokenPayload? left, ZeeKayDa.Auth.Tokens.TokenPayload? right) -> bool
 static ZeeKayDa.Auth.ZeeKayDaConfigurationFailure.operator !=(ZeeKayDa.Auth.ZeeKayDaConfigurationFailure? left, ZeeKayDa.Auth.ZeeKayDaConfigurationFailure? right) -> bool
 static ZeeKayDa.Auth.ZeeKayDaConfigurationFailure.operator ==(ZeeKayDa.Auth.ZeeKayDaConfigurationFailure? left, ZeeKayDa.Auth.ZeeKayDaConfigurationFailure? right) -> bool
-virtual ZeeKayDa.Auth.Clients.ClientSecretHasher<TSecret>.CreateCore(System.ReadOnlySpan<char> plaintext) -> TSecret
 ~override ZeeKayDa.Auth.Tokens.SigningOutcome.Equals(object obj) -> bool
 ~override ZeeKayDa.Auth.Tokens.SigningOutcome.ToString() -> string
 ~override ZeeKayDa.Auth.Tokens.SourceKeyId.Equals(object obj) -> bool
@@ -793,16 +614,10 @@ ZeeKayDa.Auth.Claims.ClaimsResolutionResult.Resolved.Resolved() -> void
 ZeeKayDa.Auth.Claims.ClaimsResolutionResult.SubjectInvalid
 ZeeKayDa.Auth.Claims.ClaimsResolutionResult.SubjectInvalid.SubjectInvalid() -> void
 ZeeKayDa.Auth.Claims.IClaimsProvider
-ZeeKayDa.Auth.Claims.IClaimsProvider.GetClaimsAsync(ZeeKayDa.Auth.Claims.ClaimsProviderContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeeKayDa.Auth.Claims.ClaimsResolutionResult!>
-ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalAccessTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalAccessTokenClaims.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalIdTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalIdTokenClaims.init -> void
-ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalUserInfoClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-ZeeKayDa.Auth.Clients.ClientRegistration.AdditionalUserInfoClaims.init -> void
-ZeeKayDa.Auth.Clients.IClientMetadata.AdditionalAccessTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-ZeeKayDa.Auth.Clients.IClientMetadata.AdditionalIdTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
-ZeeKayDa.Auth.Clients.IClientMetadata.AdditionalUserInfoClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+ZeeKayDa.Auth.Claims.IClaimsProvider.GetClaimsAsync(ZeeKayDa.Auth.Claims.ClaimsProviderContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Claims.ClaimsResolutionResult!>!
+ZeeKayDa.Auth.Clients.Client.AdditionalAccessTokenClaims.init -> void
+ZeeKayDa.Auth.Clients.Client.AdditionalIdTokenClaims.init -> void
+ZeeKayDa.Auth.Clients.Client.AdditionalUserInfoClaims.init -> void
 ZeeKayDa.Auth.Scopes.ScopeDefinition.AccessTokenClaims.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
 ZeeKayDa.Auth.Scopes.ScopeDefinition.AccessTokenClaims.init -> void
 ZeeKayDa.Auth.Scopes.ScopeDefinition.Audience.get -> string?
@@ -844,3 +659,152 @@ ZeeKayDa.Auth.Claims.UserInfoEndpointOptions
 ZeeKayDa.Auth.Claims.UserInfoEndpointOptions.Uri.get -> string?
 ZeeKayDa.Auth.Claims.UserInfoEndpointOptions.Uri.set -> void
 ZeeKayDa.Auth.Claims.UserInfoEndpointOptions.UserInfoEndpointOptions() -> void
+Microsoft.Extensions.DependencyInjection.ZeeKayDaOptionsServiceCollectionExtensions
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaOptionsServiceCollectionExtensions.AddZeeKayDaOptions<TOptions>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.Options.OptionsBuilder<TOptions!>!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaOptionsServiceCollectionExtensions.ValidateWithZeeKayDa<TOptions>(this Microsoft.Extensions.Options.OptionsBuilder<TOptions!>! builder) -> Microsoft.Extensions.Options.OptionsBuilder<TOptions!>!
+ZeeKayDa.Auth.ZeeKayDaOptionsValidator<TOptions>
+ZeeKayDa.Auth.ZeeKayDaOptionsValidator<TOptions>.ZeeKayDaOptionsValidator() -> void
+abstract ZeeKayDa.Auth.ZeeKayDaOptionsValidator<TOptions>.Validate(string? name, TOptions! options) -> System.Collections.Generic.IEnumerable<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderClaimsExtensions
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderClientExtensions
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderHasherExtensions
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderScopeExtensions
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderSigningExtensions
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderStoreExtensions
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreServiceCollectionExtensions
+ZeeKayDa.Auth.Clients.ClientOptions
+ZeeKayDa.Auth.Clients.ClientOptions.AccessTokenLifetime.get -> System.TimeSpan?
+ZeeKayDa.Auth.Clients.ClientOptions.AccessTokenLifetime.set -> void
+ZeeKayDa.Auth.Clients.ClientOptions.AdditionalAccessTokenClaims.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.Clients.ClientOptions.AdditionalIdTokenClaims.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.Clients.ClientOptions.AdditionalUserInfoClaims.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.Clients.ClientOptions.AllowedGrantTypes.get -> System.Collections.Generic.ISet<ZeeKayDa.Auth.GrantType>!
+ZeeKayDa.Auth.Clients.ClientOptions.AllowedPromptValues.get -> System.Collections.Generic.ISet<ZeeKayDa.Auth.Authorization.PromptValue>!
+ZeeKayDa.Auth.Clients.ClientOptions.AllowedResponseModes.get -> System.Collections.Generic.ISet<ZeeKayDa.Auth.Authorization.ResponseMode>!
+ZeeKayDa.Auth.Clients.ClientOptions.AllowedResponseTypes.get -> System.Collections.Generic.ISet<ZeeKayDa.Auth.Authorization.ResponseType>!
+ZeeKayDa.Auth.Clients.ClientOptions.AllowedSigningAlgorithms.get -> System.Collections.Generic.ISet<ZeeKayDa.Auth.Tokens.SigningAlgorithm>!
+ZeeKayDa.Auth.Clients.ClientOptions.DisplayName.get -> string?
+ZeeKayDa.Auth.Clients.ClientOptions.DisplayName.set -> void
+ZeeKayDa.Auth.Clients.ClientOptions.EnableZkdErrorCodes.get -> bool
+ZeeKayDa.Auth.Clients.ClientOptions.EnableZkdErrorCodes.set -> void
+ZeeKayDa.Auth.Clients.ClientOptions.IdTokenLifetime.get -> System.TimeSpan?
+ZeeKayDa.Auth.Clients.ClientOptions.IdTokenLifetime.set -> void
+ZeeKayDa.Auth.Clients.ClientOptions.InitiateLoginUri.get -> string?
+ZeeKayDa.Auth.Clients.ClientOptions.InitiateLoginUri.set -> void
+ZeeKayDa.Auth.Clients.ClientOptions.RequireConsent.get -> bool
+ZeeKayDa.Auth.Clients.ClientOptions.RequireConsent.set -> void
+ZeeKayDa.Auth.Clients.ClientOptions.SkipLogoutConfirmation.get -> bool
+ZeeKayDa.Auth.Clients.ClientOptions.SkipLogoutConfirmation.set -> void
+ZeeKayDa.Auth.Clients.ClientOptions.AllowedScopes.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.Clients.ClientOptions.PostLogoutRedirectUris.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.Clients.ClientOptions.RedirectUris.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.Clients.ConfidentialClientOptions
+ZeeKayDa.Auth.Clients.ConfidentialClientOptions.AllowedTokenEndpointAuthMethods.get -> System.Collections.Generic.ISet<string!>!
+ZeeKayDa.Auth.Clients.ConfidentialClientOptions.RequirePkce.get -> bool
+ZeeKayDa.Auth.Clients.ConfidentialClientOptions.RequirePkce.set -> void
+ZeeKayDa.Auth.Clients.ConfidentialClientOptions.Secret.get -> string?
+ZeeKayDa.Auth.Clients.ConfidentialClientOptions.Secret.set -> void
+ZeeKayDa.Auth.Clients.ConfidentialClientOptions.SecretHash.get -> string?
+ZeeKayDa.Auth.Clients.ConfidentialClientOptions.SecretHash.set -> void
+ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder
+ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder.Add(ZeeKayDa.Auth.Clients.IClientWithCredentials! registration) -> ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder!
+ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder.AddConfidential(string! clientId, System.Action<ZeeKayDa.Auth.Clients.ConfidentialClientOptions!>! configure) -> ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder!
+ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder.AddPublic(string! clientId, System.Action<ZeeKayDa.Auth.Clients.PublicClientOptions!>! configure) -> ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder!
+ZeeKayDa.Auth.Clients.PublicClientOptions
+ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder
+ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderClaimsExtensions.AddClaimsProvider<TProvider>(this ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder! builder) -> ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderClientExtensions.AddInMemoryClients<TBuilder>(this TBuilder! builder, System.Action<ZeeKayDa.Auth.Clients.InMemoryClientRegistrationBuilder!>! configure) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderHasherExtensions.AddClientSecretHasher<THasher>(this ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder! builder, bool isDefault = false) -> ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderHasherExtensions.ConfigurePbkdf2ClientSecretHasher<TBuilder>(this TBuilder! builder, System.Action<ZeeKayDa.Auth.Clients.Pbkdf2ClientSecretHasherOptions!>! configure) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderScopeExtensions.AddInMemoryScopes<TBuilder>(this TBuilder! builder, System.Collections.Generic.IEnumerable<ZeeKayDa.Auth.Scopes.ScopeDefinition!>! scopes) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderSigningExtensions.AddInMemoryDevelopmentSigning<TBuilder>(this TBuilder! builder, System.Action<ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions!>? configure = null) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderSigningExtensions.AddPersistedDevelopmentSigning<TBuilder>(this TBuilder! builder, string? persistTo = null, System.Action<ZeeKayDa.Auth.Tokens.DevelopmentSigningOptions!>? configure = null) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderSigningKeySourceExtensions.AddSigningKeySource<TSource>(this ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder! builder) -> ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderStoreExtensions.AddAuthorizationCodeStore<T>(this ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder! builder) -> ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderStoreExtensions.AddDistributedCacheInteractionStore<TBuilder>(this TBuilder! builder, bool allowMemoryCacheOutsideDevelopment = false) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderStoreExtensions.AddInMemoryAuthorizationCodeStore<TBuilder>(this TBuilder! builder, bool allowOutsideDevelopment = false) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderStoreExtensions.AddInMemoryInteractionStore<TBuilder>(this TBuilder! builder, bool allowOutsideDevelopment = false) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderStoreExtensions.AddInMemoryRefreshTokenStore<TBuilder>(this TBuilder! builder, bool allowOutsideDevelopment = false) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderStoreExtensions.AddInMemoryStores<TBuilder>(this TBuilder! builder, bool allowOutsideDevelopment = false) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderStoreExtensions.AddRefreshTokenStore<T>(this ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder! builder) -> ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreServiceCollectionExtensions.AddZeeKayDaAuthCore(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<ZeeKayDa.Auth.AuthorizationServerOptions!>! configure) -> ZeeKayDa.Auth.ZeeKayDaAuthCoreBuilder!
+ZeeKayDa.Auth.Clients.Client.AdditionalAccessTokenClaims.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.Client.AdditionalIdTokenClaims.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.Client.AdditionalUserInfoClaims.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClient.AdditionalAccessTokenClaims.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClient.AdditionalIdTokenClaims.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClient.AdditionalUserInfoClaims.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.Client.Secrets.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Clients.ClientSecret!>!
+ZeeKayDa.Auth.Clients.Client.Secrets.init -> void
+ZeeKayDa.Auth.Clients.ClientSecret
+ZeeKayDa.Auth.Clients.ClientSecret.<Clone>$() -> ZeeKayDa.Auth.Clients.ClientSecret!
+ZeeKayDa.Auth.Clients.ClientSecret.ClientSecret(string! Value) -> void
+ZeeKayDa.Auth.Clients.ClientSecret.Deconstruct(out string! Value) -> void
+ZeeKayDa.Auth.Clients.ClientSecret.Equals(ZeeKayDa.Auth.Clients.ClientSecret? other) -> bool
+ZeeKayDa.Auth.Clients.ClientSecret.Value.get -> string!
+ZeeKayDa.Auth.Clients.ClientSecret.Value.init -> void
+ZeeKayDa.Auth.Clients.ClientSecrets.Create(System.ReadOnlySpan<char> plaintext) -> ZeeKayDa.Auth.Clients.ClientSecret!
+ZeeKayDa.Auth.Clients.ClientSecrets.Create(string! plaintext) -> ZeeKayDa.Auth.Clients.ClientSecret!
+ZeeKayDa.Auth.Clients.ClientSecrets.Verify(System.ReadOnlySpan<char> presented, System.Collections.Generic.IReadOnlyCollection<ZeeKayDa.Auth.Clients.ClientSecret!>! stored) -> ZeeKayDa.Auth.Clients.SecretVerification!
+ZeeKayDa.Auth.Clients.IClientSecretHasher.AlgorithmIds.get -> System.Collections.Generic.IReadOnlySet<string!>!
+ZeeKayDa.Auth.Clients.IClientSecretHasher.Create(System.ReadOnlySpan<char> plaintext) -> ZeeKayDa.Auth.Clients.ClientSecret!
+ZeeKayDa.Auth.Clients.IClientSecretHasher.ValidateStoredSecret(ZeeKayDa.Auth.Clients.ClientSecret! stored) -> System.Collections.Generic.IEnumerable<ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!>!
+ZeeKayDa.Auth.Clients.IClientSecretHasher.Verify(System.ReadOnlySpan<char> presented, ZeeKayDa.Auth.Clients.ClientSecret! stored) -> bool
+ZeeKayDa.Auth.Clients.IClientWithCredentials.Secrets.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Clients.ClientSecret!>!
+ZeeKayDa.Auth.Clients.PhcString
+ZeeKayDa.Auth.Clients.PhcString.Hash.get -> System.ReadOnlyMemory<byte>
+ZeeKayDa.Auth.Clients.PhcString.Id.get -> string!
+ZeeKayDa.Auth.Clients.PhcString.Parameters.get -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string!, string!>>!
+ZeeKayDa.Auth.Clients.PhcString.PhcString(string! id, System.ReadOnlySpan<byte> salt, System.ReadOnlySpan<byte> hash, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, string!>>? parameters = null, int? version = null) -> void
+ZeeKayDa.Auth.Clients.PhcString.Salt.get -> System.ReadOnlyMemory<byte>
+ZeeKayDa.Auth.Clients.PhcString.Version.get -> int?
+override ZeeKayDa.Auth.Clients.ClientSecret.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.Clients.ClientSecret.GetHashCode() -> int
+override ZeeKayDa.Auth.Clients.ClientSecret.ToString() -> string!
+override ZeeKayDa.Auth.Clients.PhcString.ToString() -> string!
+static ZeeKayDa.Auth.Clients.Client.CreateConfidential(string! clientId, ZeeKayDa.Auth.Clients.ClientSecret! secret, System.Collections.Generic.IEnumerable<string!>! redirectUris, System.Collections.Generic.IEnumerable<string!>! postLogoutRedirectUris, System.Collections.Generic.IEnumerable<string!>! allowedScopes) -> ZeeKayDa.Auth.Clients.Client!
+static ZeeKayDa.Auth.Clients.ClientSecret.operator !=(ZeeKayDa.Auth.Clients.ClientSecret? left, ZeeKayDa.Auth.Clients.ClientSecret? right) -> bool
+static ZeeKayDa.Auth.Clients.ClientSecret.operator ==(ZeeKayDa.Auth.Clients.ClientSecret? left, ZeeKayDa.Auth.Clients.ClientSecret? right) -> bool
+static ZeeKayDa.Auth.Clients.PhcString.TryParse(string? value, out ZeeKayDa.Auth.Clients.PhcString? result) -> bool
+ZeeKayDa.Auth.Clients.SecretVerification
+ZeeKayDa.Auth.Clients.SecretVerification.Matched.get -> bool
+ZeeKayDa.Auth.AuthorizationServerOptions.SigningKeys.get -> ZeeKayDa.Auth.Tokens.SigningKeyOptions!
+ZeeKayDa.Auth.Tokens.SigningKey.ExpiresAt.get -> System.DateTimeOffset
+ZeeKayDa.Auth.Tokens.SigningKey.NotBefore.get -> System.DateTimeOffset
+ZeeKayDa.Auth.Tokens.SigningKeyOptions
+ZeeKayDa.Auth.Tokens.SigningKeyOptions.LeadTime.get -> System.TimeSpan
+ZeeKayDa.Auth.Tokens.SigningKeyOptions.LeadTime.set -> void
+ZeeKayDa.Auth.Tokens.SigningKeyOptions.RetainRetiredKeysFor.get -> System.TimeSpan?
+ZeeKayDa.Auth.Tokens.SigningKeyOptions.RetainRetiredKeysFor.set -> void
+ZeeKayDa.Auth.Tokens.SigningKeyOptions.RefreshInterval.get -> System.TimeSpan
+ZeeKayDa.Auth.Tokens.SigningKeyOptions.RefreshInterval.set -> void
+ZeeKayDa.Auth.Tokens.SigningKeyOptions.SigningKeyOptions() -> void
+ZeeKayDa.Auth.Tokens.SourceKey.ExpiresAt.get -> System.DateTimeOffset
+ZeeKayDa.Auth.Tokens.SourceKey.NotBefore.get -> System.DateTimeOffset
+static ZeeKayDa.Auth.Tokens.LocalSigner.FromCertificate(System.Security.Cryptography.X509Certificates.X509Certificate2! certificate, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm) -> ZeeKayDa.Auth.Tokens.LocalSigner!
+ZeeKayDa.Auth.Tokens.ISigningKeySource.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
+ZeeKayDa.Auth.Tokens.SigningKeySet.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
+ZeeKayDa.Auth.Tokens.SourceKey.SourceKey(ZeeKayDa.Auth.Tokens.SourceKeyId id, ZeeKayDa.Auth.Tokens.PublicKeyParameters! publicKey, System.DateTimeOffset? notBefore = null, System.DateTimeOffset? expiresAt = null) -> void
+static ZeeKayDa.Auth.Tokens.SourceKey.FromCertificate(System.Security.Cryptography.X509Certificates.X509Certificate2! certificate, ZeeKayDa.Auth.Tokens.SourceKeyId id) -> ZeeKayDa.Auth.Tokens.SourceKey!
+override ZeeKayDa.Auth.Tokens.SourceKeyFailure.Equals(object? obj) -> bool
+override ZeeKayDa.Auth.Tokens.SourceKeyFailure.GetHashCode() -> int
+override ZeeKayDa.Auth.Tokens.SourceKeyFailure.ToString() -> string!
+static ZeeKayDa.Auth.Tokens.SourceKeyFailure.operator !=(ZeeKayDa.Auth.Tokens.SourceKeyFailure? left, ZeeKayDa.Auth.Tokens.SourceKeyFailure? right) -> bool
+static ZeeKayDa.Auth.Tokens.SourceKeyFailure.operator ==(ZeeKayDa.Auth.Tokens.SourceKeyFailure? left, ZeeKayDa.Auth.Tokens.SourceKeyFailure? right) -> bool
+ZeeKayDa.Auth.Tokens.ISigningKeySource.ReadAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.Tokens.SourceKeyListing!>!
+ZeeKayDa.Auth.Tokens.SourceKeyFailure
+ZeeKayDa.Auth.Tokens.SourceKeyFailure.<Clone>$() -> ZeeKayDa.Auth.Tokens.SourceKeyFailure!
+ZeeKayDa.Auth.Tokens.SourceKeyFailure.Deconstruct(out ZeeKayDa.Auth.Tokens.SourceKeyId Id, out ZeeKayDa.Auth.ZeeKayDaConfigurationFailure! Failure) -> void
+ZeeKayDa.Auth.Tokens.SourceKeyFailure.Equals(ZeeKayDa.Auth.Tokens.SourceKeyFailure? other) -> bool
+ZeeKayDa.Auth.Tokens.SourceKeyFailure.Failure.get -> ZeeKayDa.Auth.ZeeKayDaConfigurationFailure!
+ZeeKayDa.Auth.Tokens.SourceKeyFailure.Failure.init -> void
+ZeeKayDa.Auth.Tokens.SourceKeyFailure.Id.get -> ZeeKayDa.Auth.Tokens.SourceKeyId
+ZeeKayDa.Auth.Tokens.SourceKeyFailure.Id.init -> void
+ZeeKayDa.Auth.Tokens.SourceKeyFailure.SourceKeyFailure(ZeeKayDa.Auth.Tokens.SourceKeyId Id, ZeeKayDa.Auth.ZeeKayDaConfigurationFailure! Failure) -> void
+ZeeKayDa.Auth.Tokens.SourceKeyListing
+ZeeKayDa.Auth.Tokens.SourceKeyListing.Failures.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SourceKeyFailure!>!
+ZeeKayDa.Auth.Tokens.SourceKeyListing.Failures.init -> void
+ZeeKayDa.Auth.Tokens.SourceKeyListing.Keys.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SourceKey!>!
+ZeeKayDa.Auth.Tokens.SourceKeyListing.Keys.init -> void
+ZeeKayDa.Auth.Tokens.SourceKeyListing.SourceKeyListing(System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SourceKey!>! keys, System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.Tokens.SourceKeyFailure!>! failures) -> void

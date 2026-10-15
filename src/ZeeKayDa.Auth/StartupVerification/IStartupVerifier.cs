@@ -1,29 +1,27 @@
-namespace ZeeKayDa.Auth;
+namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>
-/// A cheap startup check run by <c>StartupVerificationHostedService</c> after every internal startup
-/// gate has passed, and before any <see cref="IStartupActivator"/>. Implement this to add a
-/// framework- or provider-owned check that reads configuration or inspects the container and needs
-/// async I/O or a DI scope — anything
-/// <see cref="Microsoft.Extensions.Options.IValidateOptions{TOptions}"/> structurally cannot host
-/// because its <c>Validate</c> method is synchronous.
-///
-/// <para>
-/// A check that calls into a caller-supplied extension point, performs I/O, or forces expensive
-/// construction belongs in <see cref="IStartupActivator"/> instead — its phase does not run at all
-/// when a verifier has already failed, so a broken configuration is reported before the work is
-/// done.
-/// </para>
+/// A cheap startup check that reads configuration or inspects the container, for what the
+/// synchronous <see cref="Microsoft.Extensions.Options.IValidateOptions{TOptions}"/> cannot host.
+/// A check that calls caller-supplied code or does I/O is an <see cref="IStartupActivator"/>.
 /// </summary>
 /// <remarks>
-/// Report failures and warnings by calling <see cref="StartupVerificationContext.AddFailure"/> and
-/// <see cref="StartupVerificationContext.AddWarning(string, string, Microsoft.Extensions.Logging.LogLevel, object?[])"/>
-/// on the context passed to <see cref="IStartupCheck.VerifyAsync"/> — never throw except for a genuinely
-/// unexpected failure (a DI resolution error, a third-party bug), which the runner wraps or
-/// absorbs and still aborts startup on. Never log directly: the runner logs every warning on your
-/// behalf, under a log category matching your own implementation type, after the internal gate
-/// phase has completed. Resolve only genuine singletons from the constructor; resolve anything
-/// scoped from the <see cref="IServiceProvider"/> passed to <see cref="IStartupCheck.VerifyAsync"/> — the runner
-/// creates a fresh <c>AsyncServiceScope</c> for every invocation.
+/// <para>
+/// <strong>Register a verifier as scoped</strong>; the verifiers in a phase share one scope.
+/// </para>
+/// <para>
+/// Report on the context rather than throwing or logging; the runner logs warnings under your
+/// type's category. A thrown <see cref="ZeeKayDaConfigurationException"/> counts as its failures
+/// reported, and any other exception as an unexpected failure.
+/// </para>
 /// </remarks>
-public interface IStartupVerifier : IStartupCheck;
+public interface IStartupVerifier
+{
+    /// <summary>A stable name for log attribution only; it has no effect on execution order.</summary>
+    string Name { get; }
+
+    /// <summary>Runs this check, reporting what it finds on <paramref name="context"/>.</summary>
+    /// <param name="context">Accumulates the failures and warnings this invocation produces.</param>
+    /// <param name="cancellationToken">Signalled if the host shuts down while startup verification runs.</param>
+    Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken);
+}

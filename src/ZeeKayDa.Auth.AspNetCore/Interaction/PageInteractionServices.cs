@@ -1,51 +1,31 @@
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// What every per-page interaction service needs to advance a request: the interaction state, the
-/// outcomes that end it, and the answer for a page that has nothing left to continue. One
-/// dependency rather than three, since no page service has ever wanted a subset.
+/// What every per-page interaction service needs to advance a request.
 /// </summary>
-internal sealed class PageInteractionServices
+internal sealed class PageInteractionServices(
+    AuthorizationFlow flow,
+    InteractionOutcomes outcomes,
+    NothingToContinue nothingToContinue)
 {
-    public PageInteractionServices(AuthorizationFlow flow, InteractionOutcomes outcomes, NothingToContinue nothingToContinue)
-    {
-        ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(outcomes);
-        ArgumentNullException.ThrowIfNull(nothingToContinue);
-
-        Flow = flow;
-        Outcomes = outcomes;
-        NothingToContinue = nothingToContinue;
-    }
-
     /// <summary>The interaction state of the authorization request.</summary>
-    public AuthorizationFlow Flow { get; }
+    public AuthorizationFlow Flow { get; } = flow;
 
     /// <summary>The ways an interaction step ends.</summary>
-    public InteractionOutcomes Outcomes { get; }
+    public InteractionOutcomes Outcomes { get; } = outcomes;
 
     /// <summary>The answer to a page with nothing left to continue.</summary>
-    public NothingToContinue NothingToContinue { get; }
+    public NothingToContinue NothingToContinue { get; } = nothingToContinue;
 }
 
 /// <summary>
-/// The two response writers a nothing-to-continue answer picks between: the authorization error
-/// page and the signed-out page.
+/// The two response writers a nothing-to-continue answer picks between.
 /// </summary>
-internal sealed class InteractionAnswers
+internal sealed class InteractionAnswers(AuthorizationResponses authorization, EndSessionResponses endSession)
 {
-    public InteractionAnswers(AuthorizationResponses authorization, EndSessionResponses endSession)
-    {
-        ArgumentNullException.ThrowIfNull(authorization);
-        ArgumentNullException.ThrowIfNull(endSession);
-
-        Authorization = authorization;
-        EndSession = endSession;
-    }
-
     /// <summary>How an authorization request is answered.</summary>
-    public AuthorizationResponses Authorization { get; }
+    public AuthorizationResponses Authorization { get; } = authorization;
 
     /// <summary>How a sign-out is answered.</summary>
-    public EndSessionResponses EndSession { get; }
+    public EndSessionResponses EndSession { get; } = endSession;
 }

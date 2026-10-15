@@ -2,39 +2,26 @@ using ZeeKayDa.Auth.Authorization;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
-/// <summary>
-/// Where an authorization request that must authenticate its user is sent, decided once from
-/// configuration and read by both the authorization endpoint and the startup check that warns or
-/// fails ahead of it.
-/// </summary>
+/// <summary>Where a request that must authenticate its user is sent, decided from configuration.</summary>
 internal enum LoginDispatchRule
 {
-    /// <summary>A login page is configured: redirect there, always.</summary>
+    /// <summary>A login page is needed and configured: redirect there.</summary>
     LoginPage,
 
-    /// <summary>
-    /// No login page, local sign-in off, exactly one provider: the framework can choose, so the
-    /// request goes straight to that provider.
-    /// </summary>
+    /// <summary>Local sign-in off and exactly one provider: straight there, whatever the login path.</summary>
     SingleProvider,
 
     /// <summary>
-    /// No login page, but one is needed — local sign-in is on, or there are two or more providers
-    /// and the framework never chooses between them. Warned at startup, <c>server_error</c> at
-    /// runtime.
+    /// A login page is needed — local sign-in, or providers to choose between — but not configured.
+    /// Warned at startup, <c>server_error</c> at runtime.
     /// </summary>
     PageNeeded,
 
-    /// <summary>
-    /// Local sign-in off and no providers: nothing can authenticate anyone. A startup failure.
-    /// </summary>
+    /// <summary>Local sign-in off and no providers: nothing can authenticate anyone. A startup failure.</summary>
     NoSignInMethod,
 }
 
-/// <summary>
-/// The dispatch rules for an authorization request that must authenticate its user. The presence
-/// of a login page is the override: the framework never skips a page the host built.
-/// </summary>
+/// <summary>The dispatch rules: whether a page is needed is decided first; the login path is only where it lives.</summary>
 internal static class LoginDispatch
 {
     public static LoginDispatchRule Decide(InteractionOptions interaction, int providerCount)
@@ -45,12 +32,16 @@ internal static class LoginDispatch
         if (!interaction.SupportsLocalSignIn && providerCount == 0)
             return LoginDispatchRule.NoSignInMethod;
 
-        if (interaction.LoginPath is not null)
-            return LoginDispatchRule.LoginPage;
-
         if (!interaction.SupportsLocalSignIn && providerCount == 1)
             return LoginDispatchRule.SingleProvider;
 
+        if (interaction.LoginPath is not null)
+            return LoginDispatchRule.LoginPage;
+
         return LoginDispatchRule.PageNeeded;
     }
+
+    /// <summary>The login page provider challenges start from and return to; <see langword="null"/> without one.</summary>
+    public static string? LoginPageFor(InteractionOptions interaction, int providerCount) =>
+        Decide(interaction, providerCount) == LoginDispatchRule.LoginPage ? interaction.LoginPath : null;
 }

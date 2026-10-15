@@ -5,14 +5,10 @@ using ZeeKayDa.Auth.AspNetCore.Interaction;
 namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
-/// The framework-owned scheme map: every external provider <c>WithProviders</c> observed, and the
-/// only place those schemes exist. Immutable — each <c>WithProviders</c> call builds a new
-/// registry from the previous one and re-registers it.
+/// The framework-owned, immutable scheme map of every provider <c>WithProviders</c> observed.
 /// </summary>
 /// <remarks>
-/// Names are matched ordinally, as scheme names are everywhere in ASP.NET Core, and registered
-/// uniquely ignoring case, because routing and <c>PathString</c> comparison are case-insensitive
-/// and two providers whose callback routes differ only by case would share one.
+/// Matched ordinally, but unique ignoring case: callback routes compare case-insensitively.
 /// </remarks>
 internal sealed class ProviderRegistry
 {
@@ -28,10 +24,7 @@ internal sealed class ProviderRegistry
             .ToImmutableArray();
     }
 
-    /// <summary>
-    /// The registry currently registered in <paramref name="services"/>, or <see cref="Empty"/>
-    /// when <c>WithProviders</c> has not been called yet.
-    /// </summary>
+    /// <summary>The registry registered in <paramref name="services"/>, or <see cref="Empty"/>.</summary>
     public static ProviderRegistry FindIn(IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -42,10 +35,7 @@ internal sealed class ProviderRegistry
             .LastOrDefault() ?? Empty;
     }
 
-    /// <summary>
-    /// Registers <paramref name="registry"/> as the one and only registry, replacing whatever was
-    /// registered before.
-    /// </summary>
+    /// <summary>Registers <paramref name="registry"/>, replacing whatever was registered before.</summary>
     public static void RegisterIn(IServiceCollection services, ProviderRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -61,11 +51,7 @@ internal sealed class ProviderRegistry
         services.AddSingleton(registry);
     }
 
-    /// <summary>
-    /// Returns a registry holding these registrations and <paramref name="added"/>, refusing a
-    /// name outside the grammar, a reserved framework name, or one already registered, ignoring
-    /// case.
-    /// </summary>
+    /// <summary>A registry with <paramref name="added"/> too, refusing invalid, reserved or duplicate names.</summary>
     /// <exception cref="InvalidOperationException">
     /// A name in <paramref name="added"/> does not satisfy <see cref="ProviderName"/>, is one of
     /// the framework's reserved cookie or scheme names, or collides with a registered one ignoring
@@ -89,9 +75,7 @@ internal sealed class ProviderRegistry
                     $"{ProviderName.Grammar}: it becomes a segment of the provider's callback route.");
             }
 
-            // The scheme-backed reserved names would be caught at startup as a collision with the
-            // framework's own schemes; zkd.interaction has no scheme behind it and would not be.
-            // Refusing all four here is one rule instead of two.
+            // All reserved names, including those no startup scheme check would catch.
             if (ZeeKayDaCookies.ReservedNames.Contains(registration.Name, StringComparer.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException(

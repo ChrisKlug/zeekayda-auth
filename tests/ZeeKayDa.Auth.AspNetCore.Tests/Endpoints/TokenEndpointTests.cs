@@ -5,13 +5,13 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tokens;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
@@ -38,8 +38,10 @@ public sealed class TokenEndpointTests : IDisposable
     private const string ConfidentialSecret = "very-secret";
     private const string OtherClient = "other-client";
     private const string NoCodeGrantClient = "no-code-grant-client";
+    private const string NoCodeGrantSecret = "no-code-grant-secret";
     private const string PkceOptionalClient = "pkce-optional-client";
     private const string PkceOptionalSecret = "also-very-secret";
+    private const string ThrowingHasherClient = "throwing-hasher-client";
     private const string Nonce = "n-0S6_WzA2Mj";
     private const string Subject = "user-1";
 
@@ -56,7 +58,7 @@ public sealed class TokenEndpointTests : IDisposable
 
     private readonly FakeTimeProvider _time = new(Now);
     private readonly CapturingLoggerProvider _logs = new();
-    private readonly RecordingRefreshTokenStore _refreshTokens = new();
+    private readonly RecordingRefreshTokenBackingStore _refreshTokens = new();
     private readonly SwitchableBackingStore _backingStore = new();
     private readonly EndpointHost _host;
 
@@ -69,12 +71,14 @@ public sealed class TokenEndpointTests : IDisposable
 
     private static CancellationToken Cancellation => TestContext.Current.CancellationToken;
 
-    private EndpointHost NewHost(Action<AuthorizationServerOptions>? configureOptions = null) => new(
+    private EndpointHost NewHost(
+        Action<AuthorizationServerOptions>? configureOptions = null,
+        bool withThrowingHasher = false) => new(
         configureOptions: options =>
         {
-            // Served so the no-code-grant client, allowed only refresh_token, is a registration
+            // Served so the no-code-grant client, allowed only client_credentials, is a registration
             // startup accepts: a client may be allowed only the grants its server serves.
-            options.GrantTypesSupported.Add(GrantType.RefreshToken);
+            options.GrantTypesSupported.Add(GrantType.ClientCredentials);
             configureOptions?.Invoke(options);
         },
         configureBuilder: builder =>
@@ -84,39 +88,56 @@ public sealed class TokenEndpointTests : IDisposable
             builder.AddInMemoryClients(clients => clients
                 .Add(PublicRegistration())
                 .Add(NoCodeGrantRegistration())
-                .AddConfidential(ConfidentialClient, ConfidentialSecret, [RegisteredRedirect], [], ["openid", "profile"])
+                .AddConfidential(ConfidentialClient, client =>
+                {
+                    client.Secret = ConfidentialSecret;
+                    client.RedirectUris.UnionWith([RegisteredRedirect]);
+                    client.AllowedScopes.UnionWith(["openid", "profile"]);
+                })
                 .Add(PkceOptionalRegistration())
-                .AddPublic(OtherClient, ["https://other.example.com/callback"], [], ["openid"]));
+                .AddPublic(OtherClient, client =>
+                {
+                    client.RedirectUris.UnionWith(["https://other.example.com/callback"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }));
+
+            if (withThrowingHasher)
+            {
+                builder.AddClientSecretHasher<ThrowingVerifyHasher>();
+                builder.AddInMemoryClients(clients => clients.Add(Client.CreateConfidential(
+                    ThrowingHasherClient, new ClientSecret("$throws$x"), [RegisteredRedirect], [], ["openid"])));
+            }
 
             // The interaction store is required by startup for a host serving the code grant, even
             // though these tests never drive an interaction: a code arrives here already seeded.
             builder.AddInMemoryInteractionStore(allowOutsideDevelopment: true);
-            builder.AddAuthorizationCodeStore<SwitchableBackingStore>();
             builder.Services.AddSingleton<IAuthorizationCodeBackingStore>(_backingStore);
-            builder.Services.AddSingleton<IRefreshTokenStore>(_refreshTokens);
+            builder.Services.AddSingleton<IRefreshTokenBackingStore>(_refreshTokens);
         });
 
     /// <summary>A first-party public client: no consent, so sign-in ends the flow with a code.</summary>
-    private static ClientRegistration PublicRegistration() =>
-        ClientRegistration.CreatePublic(PublicClient, [RegisteredRedirect], [], ["openid", "profile", "email"])
+    private static Client PublicRegistration() =>
+        Client.CreatePublic(PublicClient, [RegisteredRedirect], [], ["openid", "profile", "email"])
             with
         { RequireConsent = false };
 
-    private static ClientRegistration NoCodeGrantRegistration() =>
-        ClientRegistration.CreatePublic(NoCodeGrantClient, [RegisteredRedirect], [], ["openid"])
+    /// <summary>A confidential client allowed only client_credentials, the grant RFC 6749 §4.4 keeps to confidential clients.</summary>
+    private static Client NoCodeGrantRegistration() =>
+        Client.CreateConfidential(NoCodeGrantClient, Pbkdf2(NoCodeGrantSecret), [RegisteredRedirect], [], ["openid"])
             with
-        { AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken } };
+        { AllowedGrantTypes = new HashSet<GrantType> { GrantType.ClientCredentials } };
 
     /// <summary>A first-party confidential client the operator trusts to check the nonce, so it may leave PKCE out.</summary>
-    private static ClientRegistration PkceOptionalRegistration() =>
-        ClientRegistration.CreateConfidential(PkceOptionalClient, Pbkdf2(PkceOptionalSecret), [RegisteredRedirect], [], ["openid", "profile"])
+    private static Client PkceOptionalRegistration() =>
+        Client.CreateConfidential(PkceOptionalClient, Pbkdf2(PkceOptionalSecret), [RegisteredRedirect], [], ["openid", "profile"])
             with
         { RequirePkce = false, RequireConsent = false };
 
-    private static Pbkdf2ClientSecret Pbkdf2(string secret)
+    private static ClientSecret Pbkdf2(string secret)
     {
         var salt = new byte[16];
-        return new Pbkdf2ClientSecret(600_000, salt, Rfc2898DeriveBytes.Pbkdf2(secret, salt, 600_000, HashAlgorithmName.SHA256, 32));
+        return Pbkdf2ClientSecretHasher.Format(
+            600_000, salt, Rfc2898DeriveBytes.Pbkdf2(secret, salt, 600_000, HashAlgorithmName.SHA256, 32));
     }
 
     // ── Seeding a code directly into the store ───────────────────────────────────────────────
@@ -157,7 +178,7 @@ public sealed class TokenEndpointTests : IDisposable
             ExpiresAt = Now + CodeLifetime,
         };
 
-        await host.Resolve<IAuthorizationCodeStore>().StoreAsync(code, entry, Cancellation);
+        await host.Resolve<AuthorizationCodeStore>().StoreAsync(code, entry, Cancellation);
         return code;
     }
 
@@ -397,9 +418,8 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_client_pinned_to_an_algorithm_the_current_key_does_not_use_fails_startup()
     {
-        // ES256 is published as the next key, so the subset rule passes; the key that signs is
-        // RS256, and a client that will accept only ES256 could never be issued an ID token.
-        using var keys = new RsaCurrentEcNextKeySource();
+        // The source signs RS256, and a client that will accept only ES256 could never be issued an
+        // ID token.
         using var host = new EndpointHost(
             configureBuilder: builder =>
             {
@@ -407,52 +427,42 @@ public sealed class TokenEndpointTests : IDisposable
                 {
                     AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 },
                 }));
-                builder.Services.AddZeeKayDaSigningKeySource(_ => keys);
+                builder.AddSigningKeySource<RsaKeySource>();
             });
 
         var failure = await host.StartupFailureAsync();
 
         var messages = failure.AllMessages();
         messages.Should().Contain("excludes_signing_key");
-        messages.Should().Contain("RS256", "the validator requires the current signing key's algorithm in the set");
+        messages.Should().Contain("RS256", "the validator requires the algorithm the server signs with in the set");
+    }
+
+    // The grant re-checks the client's allowed algorithms against the signing key before anything
+    // is issued. Registration validation already refuses such a client and a source signs under one
+    // algorithm, so no request can reach the refusal end to end; the decision itself is pinned here.
+
+    [Fact]
+    public void A_signing_key_the_client_does_not_allow_is_not_accepted()
+    {
+        var client = PublicRegistration() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 } };
+
+        AuthorizationCodeGrant.ClientAcceptsSigningAlgorithm(client, SigningAlgorithm.ES256).Should().BeFalse();
     }
 
     [Fact]
-    public async Task A_key_the_client_no_longer_accepts_is_refused_before_any_token_is_issued()
+    public void A_signing_key_the_client_allows_is_accepted()
     {
-        // The client passed registration against an RS256 key; the ring then rotates to ES256.
-        // The endpoint must refuse before the access token is issued, so an issuer that persists
-        // access tokens is never handed one whose ID token will be refused.
-        var ring = new SwitchableRing(_time);
-        var accessTokens = new CountingAccessTokenIssuer();
-        using var host = new EndpointHost(
-            configureBuilder: builder =>
-            {
-                builder.Services.AddSingleton<TimeProvider>(_time);
-                builder.Services.AddLogging(logging => logging.AddProvider(_logs));
-                builder.AddInMemoryClients(clients => clients.Add(PublicRegistration() with
-                {
-                    AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 },
-                }));
-                builder.Services.AddSingleton<ISigningKeyRing>(ring);
-                builder.Services.AddKeyedSingleton<ITokenIssuer>(TokenKind.AccessToken, accessTokens);
-            });
-        var code = await SeedCodeWithAsync(host);
+        var client = PublicRegistration() with { AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.ES256 } };
 
-        // The client is resolved once while the ring still offers RS256, which is what the
-        // authorization request did before the code was issued. ValidatedClientResolver caches its
-        // verdict, so without this the rotation below would make the token request fail client
-        // resolution instead of reaching the signing refusal this test is about.
-        (await host.Resolve<ValidatedClientResolver>().FindByClientIdAsync(PublicClient, Cancellation))
-            .Should().NotBeNull();
+        AuthorizationCodeGrant.ClientAcceptsSigningAlgorithm(client, SigningAlgorithm.ES256).Should().BeTrue();
+    }
 
-        ring.SwitchToEs256();
+    [Fact]
+    public void Any_signing_key_is_accepted_for_a_client_with_no_algorithm_restriction()
+    {
+        var client = PublicRegistration() with { AllowedSigningAlgorithms = null };
 
-        var response = await PostTokenWithAsync(host, TokenForm(code));
-
-        await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
-        accessTokens.IssuedCount.Should().Be(0, "the refusal precedes every issuance");
-        _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains(PublicClient, StringComparison.Ordinal));
+        AuthorizationCodeGrant.ClientAcceptsSigningAlgorithm(client, SigningAlgorithm.ES256).Should().BeTrue();
     }
 
     // ── Lifetimes ─────────────────────────────────────────────────────────────────────────────
@@ -803,6 +813,35 @@ public sealed class TokenEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_hasher_that_throws_from_Verify_produces_invalid_client_not_a_500()
+    {
+        using var host = NewHost(withThrowingHasher: true);
+        var form = TokenForm(StoreKeyGenerator.Generate(), ThrowingHasherClient);
+        form.Remove("client_id");
+
+        var response = await PostTokenWithAsync(host, form, basic: (ThrowingHasherClient, "any-secret"));
+
+        await ShouldBeErrorAsync(response, "invalid_client", HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>
+    /// Owns the <c>throws</c> algorithm id and throws from every verification of a presented secret.
+    /// It refuses the empty one cleanly, so registration accepts it and the throw happens at request time.
+    /// </summary>
+    private sealed class ThrowingVerifyHasher : IClientSecretHasher
+    {
+        public IReadOnlySet<string> AlgorithmIds { get; } = new HashSet<string> { "throws" };
+        public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored)
+        {
+            if (presented.IsEmpty)
+                return false;
+
+            throw new InvalidOperationException();
+        }
+        public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$throws$x");
+    }
+
+    [Fact]
     public async Task A_confidential_client_without_credentials_is_refused()
     {
         var code = await SeedCodeAsync(ConfidentialClient);
@@ -826,7 +865,8 @@ public sealed class TokenEndpointTests : IDisposable
     [Fact]
     public async Task A_client_not_allowed_the_code_grant_is_refused_with_unauthorized_client()
     {
-        var response = await PostTokenAsync(TokenForm(StoreKeyGenerator.Generate(), NoCodeGrantClient));
+        var response = await PostTokenAsync(
+            TokenForm(StoreKeyGenerator.Generate(), NoCodeGrantClient), basic: (NoCodeGrantClient, NoCodeGrantSecret));
 
         await ShouldBeErrorAsync(response, "unauthorized_client");
     }
@@ -939,6 +979,26 @@ public sealed class TokenEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_client_store_outage_is_a_server_error_not_invalid_client()
+    {
+        var repository = new OutageRepository(PublicRegistration());
+        using var host = new EndpointHost(
+            configureBuilder: builder =>
+            {
+                builder.Services.AddSingleton<TimeProvider>(_time);
+                builder.Services.AddSingleton<IClientRepository>(repository);
+            });
+        var code = await SeedCodeWithAsync(host);
+        repository.Down = true;
+
+        var act = () => PostTokenWithAsync(host, TokenForm(code));
+
+        // Unhandled, which the host answers with a 500; the test server rethrows it instead.
+        // invalid_client would tell every caller their credentials are wrong while the store is down.
+        await act.Should().ThrowAsync<TimeoutException>();
+    }
+
+    [Fact]
     public async Task A_replay_whose_family_revocation_fails_is_still_refused_and_the_failure_is_logged()
     {
         var code = await SeedCodeAsync();
@@ -950,6 +1010,28 @@ public sealed class TokenEndpointTests : IDisposable
         await ShouldBeErrorAsync(replay, "invalid_grant");
         _logs.Entries.Should().Contain(entry => entry.Level == LogLevel.Error && entry.Message.Contains("family", StringComparison.Ordinal));
         LogsShouldCarryNoProtocolMaterial(code, Verifier);
+    }
+
+    [Fact]
+    public async Task The_token_endpoint_answers_server_error_while_signing_has_stopped()
+    {
+        // Starts a refresh interval early, so the read that sees the revocation lands at the code's issue time.
+        var time = new FakeTimeProvider(Now - new SigningKeyOptions().RefreshInterval);
+        var revocation = new SigningRevocation();
+        using var host = new EndpointHost(
+            configureBuilder: builder =>
+            {
+                builder.Services.AddSingleton<TimeProvider>(time);
+                builder.Services.AddSingleton(revocation);
+                builder.AddSigningKeySource<RevocableTestSigningKeySource>();
+                builder.AddInMemoryClients(clients => clients.Add(PublicRegistration()));
+            });
+        await revocation.RevokeAsync(host, time);
+        var code = await SeedCodeWithAsync(host);
+
+        var response = await PostTokenWithAsync(host, TokenForm(code));
+
+        await ShouldBeErrorAsync(response, "server_error", HttpStatusCode.InternalServerError);
     }
 
     [Fact]
@@ -974,7 +1056,7 @@ public sealed class TokenEndpointTests : IDisposable
     // ── Fakes ─────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>A repository answering with one registration on the first read after a reset and another on every read after it.</summary>
-    private sealed class FirstReadThenOtherRepository(IClientRegistration first, IClientRegistration other) : IClientRepository
+    private sealed class FirstReadThenOtherRepository(IClientWithCredentials first, IClientWithCredentials other) : IClientRepository
     {
         private int _reads;
 
@@ -982,118 +1064,57 @@ public sealed class TokenEndpointTests : IDisposable
 
         public void ResetToFirst() => Interlocked.Exchange(ref _reads, 0);
 
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
         {
             var registration = Interlocked.Increment(ref _reads) == 1 ? first : other;
-            return new(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
+            return Task.FromResult<IClientWithCredentials?>(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
         }
     }
 
-    /// <summary>
-    /// A ring over two real static rings, RS256 first and ES256 on demand: the one runtime
-    /// rotation the static ring cannot perform, so the endpoint's own pre-issuance check can be
-    /// exercised against a key the client's registration was never validated against.
-    /// </summary>
-    private sealed class SwitchableRing : ISigningKeyRing
+    private sealed class OutageRepository(IClientWithCredentials registration) : IClientRepository
     {
-        private readonly StaticSigningKeyRing _rsa;
-        private readonly StaticSigningKeyRing _ec;
-        private volatile ISigningKeyRing _active;
+        public volatile bool Down;
 
-        public SwitchableRing(TimeProvider time)
-        {
-            _rsa = new StaticSigningKeyRing(new SingleKeySource(SigningAlgorithm.RS256), time);
-            _ec = new StaticSigningKeyRing(new SingleKeySource(SigningAlgorithm.ES256), time);
-            _active = _rsa;
-        }
-
-        public void SwitchToEs256() => _active = _ec;
-
-        public SigningKeySet Current => _active.Current;
-
-        public ValueTask<SigningOutcome> SignAsync<TState>(TState state, Func<SigningContext, TState, ReadOnlyMemory<byte>> buildSigningInput, CancellationToken cancellationToken = default) =>
-            _active.SignAsync(state, buildSigningInput, cancellationToken);
-
-        async ValueTask ISigningKeyRing.EnsureInitializedAsync(CancellationToken cancellationToken)
-        {
-            await ((ISigningKeyRing)_rsa).EnsureInitializedAsync(cancellationToken);
-            await ((ISigningKeyRing)_ec).EnsureInitializedAsync(cancellationToken);
-        }
-
-        SigningKeySet? ISigningKeyRing.CurrentOrNull => _active.CurrentOrNull;
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Down
+                ? throw new TimeoutException("The client store did not answer.")
+                : Task.FromResult<IClientWithCredentials?>(string.Equals(registration.ClientId, clientId, StringComparison.Ordinal) ? registration : null);
     }
 
-    /// <summary>A source over one freshly generated key of the given algorithm.</summary>
-    private sealed class SingleKeySource(SigningAlgorithm algorithm) : ISigningKeySource
-    {
-        private readonly RSA? _rsa = algorithm == SigningAlgorithm.RS256 ? RSA.Create(2048) : null;
-        private readonly ECDsa? _ecdsa = algorithm == SigningAlgorithm.ES256 ? ECDsa.Create(ECCurve.NamedCurves.nistP256) : null;
-
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
-        {
-            var publicKey = _rsa is not null
-                ? PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false))
-                : PublicKeyParameters.FromEc(_ecdsa!.ExportParameters(includePrivateParameters: false));
-            var current = new SourceKey(new SourceKeyId(algorithm.ToString().ToLowerInvariant()), algorithm, publicKey, ExpiresAt: null);
-            return new(SourceKeySet.Create(previous: null, current, next: null));
-        }
-
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
-            new(_rsa is not null
-                ? new LocalSigner(algorithm, RSA.Create(_rsa.ExportParameters(includePrivateParameters: true)))
-                : new LocalSigner(algorithm, ECDsa.Create(_ecdsa!.ExportParameters(includePrivateParameters: true))));
-    }
-
-    /// <summary>An access-token issuer that counts how often it was asked to issue, standing in for one that would persist what it issues.</summary>
-    private sealed class CountingAccessTokenIssuer : ITokenIssuer
-    {
-        private int _issued;
-
-        public int IssuedCount => Volatile.Read(ref _issued);
-
-        public ValueTask<IssuedToken> IssueAsync(TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default)
-        {
-            Interlocked.Increment(ref _issued);
-            return new(new IssuedToken("opaque-" + StoreKeyGenerator.Generate(), TokenKind.AccessToken));
-        }
-    }
-
-    /// <summary>A source whose current key is RS256 and whose next key is ES256, so ES256 is advertised while RS256 signs.</summary>
-    private sealed class RsaCurrentEcNextKeySource : ISigningKeySource, IDisposable
+    /// <summary>A source signing RS256 with one key.</summary>
+    private sealed class RsaKeySource : ISigningKeySource, IDisposable
     {
         private readonly RSA _rsa = RSA.Create(2048);
-        private readonly ECDsa _ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
-        {
-            var current = new SourceKey(new SourceKeyId("rsa-current"), SigningAlgorithm.RS256,
-                PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)), ExpiresAt: null);
-            var next = new SourceKey(new SourceKeyId("ec-next"), SigningAlgorithm.ES256,
-                PublicKeyParameters.FromEc(_ecdsa.ExportParameters(includePrivateParameters: false)), ExpiresAt: null);
-            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next));
-        }
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
-            new(id.Value == "ec-next"
-                ? new LocalSigner(SigningAlgorithm.ES256, ECDsa.Create(_ecdsa.ExportParameters(includePrivateParameters: true)))
-                : new LocalSigner(SigningAlgorithm.RS256, RSA.Create(_rsa.ExportParameters(includePrivateParameters: true))));
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SourceKeyListing(
+            [
+                new SourceKey(
+                    new SourceKeyId("rsa-current"),
+                    PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false))),
+            ], []));
 
-        public void Dispose()
-        {
-            _rsa.Dispose();
-            _ecdsa.Dispose();
-        }
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<ISigner>(
+                new LocalSigner(SigningAlgorithm.RS256, RSA.Create(_rsa.ExportParameters(includePrivateParameters: true))));
+
+        public void Dispose() => _rsa.Dispose();
     }
 
     /// <summary>An issuer standing in for a signing key ring that cannot sign.</summary>
     private sealed class FailingTokenIssuer : ITokenIssuer
     {
-        public ValueTask<IssuedToken> IssueAsync(TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default) =>
+        public Task<IssuedToken> IssueAsync(TokenIssuanceContext context, TokenPayload payload, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("The signing key ring is unavailable.");
     }
 
-    /// <summary>A refresh-token store that records which families were revoked; nothing else is reached in this flow.</summary>
-    private sealed class RecordingRefreshTokenStore : IRefreshTokenStore
+    /// <summary>
+    /// A backing store under the real refresh-token store that records which families were
+    /// revoked; nothing else is reached in this flow.
+    /// </summary>
+    private sealed class RecordingRefreshTokenBackingStore : IRefreshTokenBackingStore
     {
         private readonly List<string> _revoked = [];
 
@@ -1106,27 +1127,32 @@ public sealed class TokenEndpointTests : IDisposable
             get { lock (_revoked) return [.. _revoked]; }
         }
 
-        public Task StoreAsync(string tokenHandle, RefreshTokenEntry entry, CancellationToken cancellationToken) =>
+        // The revocation writes its family marker through here before revoking the rows.
+        public Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken) =>
+            Task.FromResult<RefreshTokenGrant?>(null);
+
+        public Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken) =>
             throw new NotSupportedException("The code grant issues no refresh token yet.");
 
-        public ValueTask<RefreshTokenEntry?> FindAsync(string tokenHandle, CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public ValueTask<RefreshTokenConsumptionResult> TryConsumeAsync(string tokenHandle, string clientId, CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public Task RevokeFamilyAsync(string familyId, CancellationToken cancellationToken)
+        public Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken)
         {
             RevocationWasCancellable = cancellationToken.CanBeCanceled;
 
             if (FailRevocation)
-                throw new ZeeKayDaStoreException("The grant store is unreachable.");
+                throw new IOException("The grant store is unreachable.");
 
             lock (_revoked) _revoked.Add(familyId);
             return Task.CompletedTask;
         }
 
-        void IRefreshTokenStore.SealAsFrameworkOwnedProtocol() { }
+        public Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken) =>
+            Task.FromResult(false);
     }
 
     /// <summary>An in-memory backing store that can be made to fail every operation, as an unreachable cache would.</summary>
@@ -1136,13 +1162,13 @@ public sealed class TokenEndpointTests : IDisposable
 
         public bool Fail { get; set; }
 
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             Fail ? throw new IOException("The cache is unreachable.") : _inner.TryInsertAsync(key, value, expiresAt, cancellationToken);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
             Fail ? throw new IOException("The cache is unreachable.") : _inner.GetAsync(key, cancellationToken);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             Fail ? throw new IOException("The cache is unreachable.") : _inner.RemoveAsync(key, cancellationToken);
     }
 

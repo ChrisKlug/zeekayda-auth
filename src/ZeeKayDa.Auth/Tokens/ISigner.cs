@@ -1,39 +1,13 @@
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Produces signature bytes over a formed JWS signing input for exactly one activation of one
-/// signing key. Returned by <see cref="ISigningKeySource.CreateSignerAsync"/> for the key a
-/// <see cref="StaticSigningKeyRing"/> has selected as its signer.
+/// Signs for one activation of one key, as returned by <see cref="ISigningKeySource.CreateSignerAsync"/>.
+/// The ring self-tests it against the key's public material before it signs.
 /// </summary>
 /// <remarks>
-/// <para>
-/// One behavioural method (<see cref="SignAsync"/>); async so a remote signer (Azure Key Vault, a
-/// KMS, an HSM) can make a network round trip. Local providers (development, File/PEM, PFX, Windows
-/// Certificate Store) construct <see cref="LocalSigner"/> in <c>CreateSignerAsync</c> rather than
-/// implementing this interface themselves; only genuinely remote providers implement
-/// <see cref="ISigner"/> directly.
-/// </para>
-/// <para>
-/// <b><see cref="IDisposable.Dispose"/> is a normative contract, not advisory prose.</b> A
-/// <see cref="StaticSigningKeyRing"/> calls <see cref="ISigningKeySource.CreateSignerAsync"/>
-/// exactly once, at startup, and owns the returned instance for the process lifetime, disposing it
-/// exactly once, at shutdown. <c>Dispose</c> on an implementation of this interface <b>MUST</b>
-/// release only the per-activation handle or resource this specific instance introduced. A remote
-/// implementation whose <see cref="SignAsync"/> uses a shared, DI-owned SDK client (an Azure Key
-/// Vault client, say) <b>MUST NOT</b> tear that shared client down on <c>Dispose</c> — doing so
-/// would break every other <see cref="ISigner"/> instance, and every future caller, that also
-/// depends on the same shared client. Only <see cref="LocalSigner"/>'s own wrapped
-/// <see cref="System.Security.Cryptography.AsymmetricAlgorithm"/> is safe to dispose
-/// unconditionally, because it is never shared with anything else.
-/// </para>
-/// <para>
-/// <b>Ownership direction is the other half of this contract.</b> Every call to
-/// <see cref="ISigningKeySource.CreateSignerAsync"/> <b>MUST</b> return a freshly created
-/// <see cref="ISigner"/> instance that is exclusively owned by the caller; it <b>MUST NOT</b> cache
-/// a previously returned instance and re-lend it from a second call. A
-/// <see cref="StaticSigningKeyRing"/> hands the instance to every <c>SignAsync</c> call for the
-/// rest of the process, and assumes the instance handed back has no other live holder.
-/// </para>
+/// <see cref="ISigningKeySource.CreateSignerAsync"/> returns a new instance on every call, which the
+/// caller then owns; <see cref="IDisposable.Dispose"/> releases only what this instance created, never
+/// a shared client it was handed.
 /// </remarks>
 public interface ISigner : IDisposable
 {
@@ -41,32 +15,11 @@ public interface ISigner : IDisposable
     /// Produces the raw signature bytes for <paramref name="signingInput"/>.
     /// </summary>
     /// <param name="signingInput">
-    /// The exact bytes to sign. For a token that is the JWS signing input,
-    /// <c>base64url(header) + '.' + base64url(payload)</c>; the ring's self-test also hands a signer
-    /// a short non-JWS payload once at startup, so a signer must sign whatever bytes it is given
-    /// rather than validate their shape.
+    /// The exact bytes to sign: a JWS signing input, or the self-test's non-JWS payload, so sign
+    /// whatever is given rather than validate its shape.
     /// </param>
-    /// <param name="cancellationToken">
-    /// A token to cancel the operation. Cancel with this token, not a linked one: the ring's
-    /// self-test treats an <see cref="OperationCanceledException"/> carrying any other token as the
-    /// signer failing, and reports it as such rather than as the caller's cancellation.
-    /// </param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The raw signature bytes in the format required by the key's algorithm.</returns>
-    ValueTask<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default);
+    Task<ReadOnlyMemory<byte>> SignAsync(ReadOnlyMemory<byte> signingInput, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// The algorithm this signer actually signs under.
-    /// </summary>
-    /// <remarks>
-    /// This MUST be the true algorithm <see cref="SignAsync"/> uses to produce its signature bytes —
-    /// not merely the algorithm the provider intended or was asked for. Immediately after
-    /// <see cref="ISigningKeySource.CreateSignerAsync"/> returns an <see cref="ISigner"/> for a given
-    /// key, <see cref="StaticSigningKeyRing"/> compares this property against that same key's
-    /// <see cref="SigningKey.Algorithm"/> — already validated for algorithm/key-strength
-    /// compatibility when the set was built — and rejects the signer on any mismatch. Without this check a provider bug could silently produce a JWS
-    /// whose header names one algorithm while the signature bytes were actually produced under
-    /// another: not a forged signature, but a wrong one, and one that would only surface as an
-    /// opaque signature-verification failure downstream rather than a clear configuration error here.
-    /// </remarks>
-    SigningAlgorithm Algorithm { get; }
 }

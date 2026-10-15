@@ -3,140 +3,47 @@ using ZeeKayDa.Auth.Authorization;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// Represents all claims and metadata associated with a single authorization code that the store
-/// must persist between the authorization endpoint response and the token endpoint redemption.
+/// What one authorization code grants, stored between the authorization response and its redemption.
+/// Keyed by a hash of the handle and never holding it, so a store breach yields no redeemable code.
 /// </summary>
-/// <remarks>
-/// <para>
-/// The raw code handle is intentionally absent from this record. Replay detection is performed
-/// via a SHA-256 hash of the handle, which is used as the cache/store key. The entry itself
-/// never contains the cleartext code, so a store breach cannot yield redeemable handles.
-/// </para>
-/// <para>
-/// All properties marked <see langword="required"/> must be set at construction time via object
-/// initialiser syntax (or a positional constructor if the record is extended). Nullable properties
-/// are optional and may be omitted for pure OAuth 2.0 flows that do not use the corresponding
-/// feature.
-/// </para>
-/// <para>
-/// Authorization codes are short-lived. The framework enforces a configurable maximum lifetime
-/// (default: 60 seconds per RFC 6749 §4.1.2 guidance). Implementations should honour
-/// <see cref="ExpiresAt"/> and refuse to return an entry past its expiry.
-/// </para>
-/// </remarks>
-public sealed record AuthorizationCodeEntry
+internal sealed record AuthorizationCodeEntry
 {
-    /// <summary>
-    /// The client identifier to which this code was issued (RFC 6749 §4.1.2).
-    /// </summary>
-    /// <remarks>
-    /// The token endpoint MUST verify that the presenting <c>client_id</c> matches this value
-    /// before accepting the code. A mismatch MUST be surfaced as
-    /// <see cref="AuthorizationCodeRedemptionResult.ClientMismatch"/>.
-    /// </remarks>
+    /// <summary>The client the code was issued to; redemption by another is a <see cref="AuthorizationCodeRedemptionResult.ClientMismatch"/>.</summary>
     public required string ClientId { get; init; }
 
-    /// <summary>
-    /// The redirect URI to which the authorization response was delivered (RFC 6749 §4.1.3).
-    /// </summary>
-    /// <remarks>
-    /// The token endpoint MUST perform an exact byte-for-byte comparison of the
-    /// <c>redirect_uri</c> parameter against this value and reject the request if they differ.
-    /// </remarks>
+    /// <summary>The redirect URI the response went to, which redemption must match exactly (RFC 6749 §4.1.3).</summary>
     public required string RedirectUri { get; init; }
 
-    /// <summary>
-    /// The PKCE binding the authorization request carried (RFC 7636 §4.3), or
-    /// <see langword="null"/> for a code issued to a client that was permitted to omit PKCE
-    /// and did.
-    /// </summary>
-    /// <remarks>
-    /// The token endpoint requires and verifies a <c>code_verifier</c> against a non-null
-    /// binding, and refuses a request that presents one for a code whose binding is
-    /// <see langword="null"/>.
-    /// </remarks>
+    /// <summary>The request's PKCE binding (RFC 7636 §4.3), or <see langword="null"/> for a client allowed to omit it that did.</summary>
     public required PkceChallenge? Pkce { get; init; }
 
-    /// <summary>
-    /// The subject identifier (<c>sub</c>) of the authenticated end-user.
-    /// </summary>
+    /// <summary>The authenticated user's <c>sub</c>.</summary>
     public required string Sub { get; init; }
 
-    /// <summary>
-    /// The list of scope values granted to the client for this authorization.
-    /// </summary>
-    /// <remarks>
-    /// The granted scope may be equal to or narrower than the requested scope. The token endpoint
-    /// MUST use this value — not the original request — when issuing access and refresh tokens.
-    /// </remarks>
+    /// <summary>The granted scopes, which issuance uses rather than the requested ones.</summary>
     public required IReadOnlyList<string> Scope { get; init; }
 
-    /// <summary>
-    /// The OpenID Connect nonce value carried forward from the authorization request, or
-    /// <see langword="null"/> when the request carried none, which the code flow allows
-    /// (OpenID Connect Core 1.0 §3.1.2.1).
-    /// </summary>
-    /// <remarks>
-    /// When non-null, this value MUST be included verbatim in the <c>nonce</c> claim of the
-    /// ID token issued at the token endpoint (OpenID Connect Core 1.0 §3.1.3.7).
-    /// </remarks>
+    /// <summary>The request's <c>nonce</c>, written verbatim into the ID token (OpenID Connect Core 1.0 §3.1.3.7), or <see langword="null"/>.</summary>
     public string? Nonce { get; init; }
 
-    /// <summary>
-    /// The UTC timestamp at which the end-user was authenticated.
-    /// </summary>
-    /// <remarks>
-    /// Used to populate the <c>auth_time</c> claim in the ID token
-    /// (OpenID Connect Core 1.0 §2).
-    /// </remarks>
+    /// <summary>When the user authenticated: the <c>auth_time</c> claim.</summary>
     public required DateTimeOffset AuthTime { get; init; }
 
-    /// <summary>
-    /// The Authentication Context Class Reference (<c>acr</c>) value, or
-    /// <see langword="null"/> if not determined during authentication.
-    /// </summary>
-    /// <remarks>
-    /// When non-null, included in the <c>acr</c> claim of the ID token
-    /// (OpenID Connect Core 1.0 §2).
-    /// </remarks>
+    /// <summary>The <c>acr</c> claim, or <see langword="null"/> when none was determined.</summary>
     public string? Acr { get; init; }
 
-    /// <summary>
-    /// The Authentication Methods References (<c>amr</c>) list, or <see langword="null"/> if
-    /// not determined during authentication.
-    /// </summary>
-    /// <remarks>
-    /// When non-null, included as the <c>amr</c> claim (an array) in the ID token
-    /// (OpenID Connect Core 1.0 §2).
-    /// </remarks>
+    /// <summary>The <c>amr</c> claim, or <see langword="null"/> when none was determined.</summary>
     public IReadOnlyList<string>? Amr { get; init; }
 
-    /// <summary>
-    /// The SSO session identifier that produced this authorization code. Binds the code to
-    /// the user's active session so that the session can be referenced or invalidated at
-    /// token endpoint time.
-    /// </summary>
+    /// <summary>The SSO session that produced the code.</summary>
     public required string SsoSessionId { get; init; }
 
-    /// <summary>
-    /// The interaction context identifier that produced this authorization code. Correlates
-    /// the token-endpoint redemption back to the original authorization interaction for
-    /// auditing and consent tracking.
-    /// </summary>
+    /// <summary>The interaction that produced the code.</summary>
     public required string InteractionId { get; init; }
 
-    /// <summary>
-    /// The UTC timestamp at which this authorization code was issued.
-    /// </summary>
+    /// <summary>When the code was issued.</summary>
     public required DateTimeOffset IssuedAt { get; init; }
 
-    /// <summary>
-    /// The UTC timestamp at which this authorization code expires.
-    /// </summary>
-    /// <remarks>
-    /// Store implementations MUST treat entries past this timestamp as non-existent, returning
-    /// <see cref="AuthorizationCodeRedemptionResult.NotFound"/> rather than exposing expired
-    /// entries to callers.
-    /// </remarks>
+    /// <summary>When the code expires; a store treats it as absent afterwards.</summary>
     public required DateTimeOffset ExpiresAt { get; init; }
 }

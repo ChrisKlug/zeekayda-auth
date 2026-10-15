@@ -2,10 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// Yes/no checks on token endpoint authentication method names, shared by the server's
-/// <c>TokenEndpoint.AuthMethodsSupported</c> and a client's <c>AllowedTokenEndpointAuthMethods</c>.
-/// </summary>
+/// <summary>Checks on auth method names, shared by the server's filter and a client's allowed methods.</summary>
 internal static class TokenEndpointAuthMethodRules
 {
     /// <summary>Null, empty, or whitespace only.</summary>
@@ -21,14 +18,23 @@ internal static class TokenEndpointAuthMethodRules
         && !HasSurroundingWhitespace(method)
         && !HasControlCharacters(method);
 
-    /// <summary>
-    /// Whether the methods include <c>none</c>. Compares ordinally rather than trusting the set's
-    /// own comparer, which a custom registration may have made case-insensitive.
-    /// </summary>
+    /// <summary>Whether the methods include <c>none</c>, compared ordinally whatever the set's own comparer.</summary>
     internal static bool AllowsNone(IEnumerable<string> methods) => methods.Any(IsNone);
 
-    /// <summary>Whether every method is <c>none</c>; vacuously true when there are no methods.</summary>
-    internal static bool AllowsOnlyNone(IEnumerable<string> methods) => methods.All(IsNone);
+    /// <summary>Whether there is at least one method and every one is <c>none</c>: no methods allows nothing.</summary>
+    internal static bool AllowsOnlyNone(IEnumerable<string> methods)
+    {
+        var any = false;
+        foreach (var method in methods)
+        {
+            if (!IsNone(method))
+                return false;
+
+            any = true;
+        }
+
+        return any;
+    }
 
     private static bool IsNone(string? method)
         => string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal);

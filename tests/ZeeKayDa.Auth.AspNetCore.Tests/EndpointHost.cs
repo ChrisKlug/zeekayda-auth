@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.Clients;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
@@ -65,7 +64,6 @@ internal sealed class EndpointHost : IDisposable
         var authBuilder = services.AddZeeKayDaAuth(options =>
         {
             options.Issuer = "https://test.example.com";
-            options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             options.AuthorizationEndpoint.Interaction.LoginPath = "/account/login";
             options.AuthorizationEndpoint.Interaction.ConsentPath = "/account/consent";
 
@@ -79,7 +77,7 @@ internal sealed class EndpointHost : IDisposable
 
         configureBuilder?.Invoke(authBuilder);
 
-        if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IAuthorizationCodeStore)))
+        if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IAuthorizationCodeBackingStore)))
             authBuilder.AddInMemoryStores(allowOutsideDevelopment: true);
 
         authBuilder.AddTestSigningKeys();

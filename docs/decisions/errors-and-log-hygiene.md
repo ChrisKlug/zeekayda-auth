@@ -27,6 +27,23 @@ and operator alerting switch on. The composed exception message lists every fail
 message so a startup crash is actionable from `ToString()` alone — which means every failure message
 is part of a public string, and the rule below binds all of them.
 
+**Options validation fails in the same shape, all at once.** Every framework options validator
+derives from the public `ZeeKayDaOptionsValidator<T>`, which throws `ZeeKayDaConfigurationException`
+with every failure its subclass returned, never `ValidateOptionsResult.Fail`; the options factory lets it through. A code is
+`configuration.` + the option's path in snake_case + the problem, `AuthorizationServerOptions` being
+the root (`configuration.issuer.not_https`); a runtime guard for the same mistake uses the same code.
+Options are registered with the public `AddZeeKayDaOptions<T>()` or `.ValidateWithZeeKayDa()`, not
+`ValidateOnStart()`, which stops at the first throw. `MapZeeKayDaAuth()` and a startup gate read
+every registered type and throw one exception with all their failures. The registration is public
+so a third-party package gets the same without friend access, and derives its validator from the
+same base; one that returns `Fail` instead becomes one `configuration.options_invalid` failure naming
+the type, its text only in the inner exception. The check reads each type as its consumers do and, when that fails, runs every validator
+on its own, so one that throws never hides the next, a host's own included.
+
+**A failure message never repeats a configured URI's user information, query or fragment.** They
+can hold a password or a signed token, and nothing redacts a failure message, so the URI is shown as
+scheme, host, port and path only (`ConfiguredUri`), and a value that does not parse is not shown.
+
 **Never copy `ex.Message`; name the exception type instead.** When the framework turns an arbitrary
 exception into a reported failure, it records `ex.GetType().FullName` and a fixed description, never
 the message text. An exception message is untrusted text that may embed a connection string, a
@@ -86,8 +103,8 @@ nothing in the diff to notice. The startup runner's `{ErrorCode}` prefix is one 
 rule, not a local quirk.
 
 **The redaction opt-out is public, bindable, and named to read as a risk escalation.** It lives on the
-`Logging` options group because it is configuration data, not a DI registration; the options group has
-to stay `public` because the root is bound from `IConfiguration`; and the property name is
+`Development` options group, with every other switch that weakens security, because it is
+configuration data, not a DI registration; the options group has to stay `public` because the root is bound from `IConfiguration`; and the property name is
 deliberately explicit and unambiguous so it cannot slip through a configuration review as an
 innocuous flag. It is read from the singleton options binding and cannot be toggled at runtime, which
 is correct for a security policy switch. It emits a startup warning on every boot when enabled.
@@ -119,6 +136,11 @@ resolution, with no escape hatch at all. The two controls cover for each other's
 script covered the startup-warning API before the analyzer did, and the script is what stops the
 analyzer being switched off. Neither is a substitute for the other. A canary project that must fail to
 build, asserted per rule ID, is what proves the analyzers are still firing.
+
+**`zkd_error` codes are public contract: a closed set that tells a client only what the user did or already knows.**
+`login_cancelled`, `consent_declined`, `provider_declined`, `account_refused`, on the authorization error redirect beside
+an unchanged `access_denied`, for opted-in clients only; none says whether an account exists, which credential failed,
+whether a `client_id` exists, or which provider. The token endpoint sends none. A new code is decided here first.
 
 ## Tried, didn't work
 

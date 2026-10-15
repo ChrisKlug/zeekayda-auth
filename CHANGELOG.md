@@ -8,6 +8,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- **A PEM private key is never held in an immutable string** (#918). The PEM file source read each
+  file into a `string`, on every refresh and for every signer, so an unencrypted private key stayed on
+  the heap until collected. Files are now read into a pooled buffer that is wiped after use, and parsed
+  from spans.
+
+- **A PEM chain whose first certificate is a CA is refused** (#918). `CreateFromPem` takes a file's
+  first certificate, so a chain written root-first published the CA's key, then failed at the handover
+  that chose it. A chain whose first certificate is a CA now fails with
+  `signing.file_signing.certificate_is_a_ca`. A lone self-signed certificate marked as a CA, which
+  `openssl req -x509` produces by default, is still accepted.
+
+- **A PFX bundle's private key no longer touches a platform key store** (#434). Opening a PFX
+  signer used `X509CertificateLoader.LoadPkcs12`, which builds an OS-backed certificate: on Windows
+  the key was written into the user's key store on disk, with residue under
+  `%APPDATA%\Microsoft\Crypto` after an abnormal exit, and on macOS into a transient keychain. The
+  signer now imports the key bag paired with the listed certificate straight into an in-memory
+  `RSA` or `ECDsa`, using the same managed import the Azure Key Vault cached reader already used.
+  A bundle that has lost its key since it was listed now fails with
+  `signing.file_signing.invalid_pfx` instead of `signing.certificate.private_key_not_found`.
+
+- **A development signing key refuses to sign when it cannot tell the host environment** (#825).
+  The environment gate used to let a source built outside the registration methods, with no
+  environment set, sign as though it were in `Development`. It now fails with
+  `signing.dev_keys.unknown_environment`.
+
 - **A signing-key provider's failure message no longer repeats the underlying parser's text** (#764).
   The PEM and PFX file sources and the Windows certificate-store reader interpolated a caught
   `CryptographicException`'s (or equivalent's) `Message` into the `ZeeKayDaConfigurationFailure` they
@@ -35,6 +60,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   is no longer treated as provenance anywhere.
 
 ### Added
+
+- **A signing key source's tests can drive the ring that reads it** (#929).
+  `SigningKeyRingHarness`, in `ZeeKayDa.Auth.TestKit`, starts a `SigningKeyRing` over any
+  `ISigningKeySource` on a `FakeTimeProvider` the test passes in. `AdvanceAsync(by)` moves the clock in
+  one jump and returns once the ring has caught up: at most one source read, then every handover due.
+  `ReadAsync()` moves it one `RefreshInterval`, so the ring reads exactly once. Disposing the harness
+  disposes the ring and, through it, the source. A provider's tests need no friend access to the core.
+
+- **In-memory clients can be bound from configuration** (#780).
+  `AddInMemoryClients(IConfiguration section)`, in `ZeeKayDa.Auth.AspNetCore`, reads a `Confidential`
+  and a `Public` child, each keyed by client id, and binds every client's keys onto
+  `ConfidentialClientOptions` or `PublicClientOptions`, with no mapping code in the host. Keying by
+  client id gives every secret a stable path for user secrets or a vault, such as
+  `Clients:Confidential:web-app:Secret`. A missing or empty section, any child other than
+  `Confidential` or `Public` (matched ignoring case), or a key the options type does not have throws
+  `InvalidOperationException` at registration, so a misspelt setting is never silently left on its
+  default.
+
+- **`AddZeeKayDaOptions<T>()` and `.ValidateWithZeeKayDa()` register options that ZeeKayDa.Auth
+  validates together** (#796). They replace `ValidateOnStart()` for the framework's own options and
+  are public so a third-party package, a signing source for example, gets the same behaviour: its
+  failures arrive in the one `ZeeKayDaConfigurationException` with everyone else's. A validator
+  derived from the new `ZeeKayDaOptionsValidator<TOptions>` returns its coded failures from
+  `protected abstract IEnumerable<ZeeKayDaConfigurationFailure> Validate(string? name, TOptions options)` and
+  the base throws them (#797); one that returns `ValidateOptionsResult.Fail` is reported as
+  `configuration.options_invalid`, with its messages in the inner exception.
 
 - **The discovery document advertises `claims_supported`** (#716). `OpenIdConfigurationDocument`
   gains an optional `ClaimsSupported`, which OpenID Connect Discovery 1.0 §3 lists as RECOMMENDED
@@ -241,9 +292,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   Claim[] additionalClaims)` has the framework build the session principal the way it does when
   no page is involved — the subject derived from the provider, the issuer and the upstream
   subject, the provider's claims, plus what the page collected — and refuses a subject claim;
-  `SignInWithReplacedPrincipalAsync(ClaimsPrincipal, params string[])` links the external
-  identity to a local account, with the host's own principal replacing the parked one, and
-  refuses a principal whose subject is the upstream one the provider returned. Between them, a
+  `SignInWithReplacedAccountAsync(subject, authenticationMethod, params Claim[])` links the
+  external identity to a local account, whose subject replaces the parked principal, and refuses
+  a subject that is the upstream one the provider returned. Between them, a
   page can no longer put the raw upstream `sub` into the session. `DenyAsync` refuses with the
   same `access_denied` the `OnProviderSignIn` handler's refusal sends. Both sign-ins refuse when
   nothing is parked for the interaction or its provider is no longer registered, and every
@@ -425,10 +476,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
   `/connect/authorize` no longer stops at `501` for a request that needs a user. With no session it
   redirects to the new `AuthorizationEndpoint.Interaction.LoginPath`, and the host's login page ends
-  by calling the new `ILoginInteraction.SignInAsync(principal, params authenticationMethods)` — a
+  by calling the new `LoginInteraction.SignInAsync(subject, authenticationMethod)` — a
   terminal call that establishes the SSO session and continues the request. The methods are the
   `amr` the client is told about; `AuthenticationMethods` names the RFC 8176 values, several may be
-  given for a multi-factor sign-in, and passing none omits the claim rather than assuming a
+  given for a multi-factor sign-in, and passing `[]` omits the claim rather than assuming a
   password. The page needs no `ReturnUrl`, no scheme
   name and no cookie name; the one thing it must preserve is the `zkd_i` query parameter it was
   reached with, which an ordinary `<form method="post">` does by default. A request that arrives on
@@ -514,51 +565,341 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `TokenIssuanceContext` carries the client as `IClientMetadata` (#557), so an issuer can vary what
   it issues per client without ever holding the client's credentials.
 
-- **`AddZeeKayDaSigningKeySource` now accepts a factory, for signing key sources that cannot be DI-activated, and nothing is registered in the container for the source itself** (#525, #530)
+- **A signing-key source is registered on the builder, once, and nothing is registered in the container for the source itself** (#525, #530, #824)
 
-  `AddZeeKayDaSigningKeySource<TSource>(this IServiceCollection services, Func<IServiceProvider, TSource> implementationFactory)`
-  constructs `TSource` via a factory instead of DI activation, for a source whose constructor needs a
-  connection string, a slot name, or a pre-built client — for example an HSM or KMS integration owned
-  by a third-party package. Both overloads funnel through the same one-source-per-application guard:
-  a second registration throws `InvalidOperationException`, whichever overload either call used and
-  whether or not `TSource` matches, naming both the rejected and the incumbent source with their full
-  type and assembly names. A repeat registration of the same type is deliberately not a no-op — a
-  provider's `Add<Provider>Signing()` method registers the source *and* configures its options beside
-  it, so a second call treated as a no-op here would still have applied a second configuration
-  callback. Passing an abstract type or interface (including `ISigningKeySource` itself) as
-  `TSource` throws `ArgumentException`.
+  `builder.AddSigningKeySource<TSource>()` registers the application's one signing-key source; a
+  provider package calls it first from its own `Add<Provider>Signing()`, then registers its options.
+  The source takes its dependencies through its constructor. A second call throws
+  `InvalidOperationException`, whether or not `TSource` matches, naming both sources with their type
+  and assembly names — a provider configures options beside its source, so a repeat is never a no-op.
+  Passing an abstract type or interface as `TSource` throws `ArgumentException`, as does a source
+  implementing `IAsyncDisposable` without `IDisposable`. The check sees only calls on the same service
+  collection; a hand-registered `ISigningKeyRing` is not policed.
 
-  The guard also covers composition: when two independently-built `IServiceCollection`s each
-  registered a signing key source and are composed into one host, resolving `ISigningKeyRing` throws
-  `ZeeKayDaConfigurationException` (`signing.source_registration_mismatch`) — whether the composed set
-  names two different source types or the same one twice, since each collection also configured that
-  source's options and only one of those configurations describes what the application actually signs
-  with. The check runs before the source is constructed, so a failing composition never executes the
-  winning registration's side effects.
-
-  Nothing is registered in the container for `ISigningKeySource` at all — the `ISigningKeyRing`
-  factory constructs and owns the source directly, by `ActivatorUtilities` or the caller's factory
-  closure, so it is not reachable via `GetService`, `GetServices`, or any keyed lookup. **A
-  third-party source author must act on one rule as a result: the ring, not the container, now owns
-  the source's disposal.** It disposes the source once, at shutdown, after the `ISigner` it opened —
-  via `IDisposable.Dispose` or `IAsyncDisposable.DisposeAsync`, whichever the host's own disposal path
-  selects — except when `Dispose`/`DisposeAsync` races `InitializeAsync` before the signer is
-  committed, in which case the source is disposed first and the signer once `InitializeAsync`
-  completes and observes the disposed flag. A source implementing `IAsyncDisposable` without also
-  implementing `IDisposable` is rejected with `ArgumentException`, both at registration on
-  `typeof(TSource)` and by `StaticSigningKeyRing`'s own constructor on the actual constructed
-  instance — so that shape can never reach a running ring, and nothing throws at shutdown.
-
-  Registering an *unkeyed* `ISigningKeyRing` directly, ahead of `AddZeeKayDaSigningKeySource`, is
-  rejected: it throws `InvalidOperationException` naming the offending descriptor's implementation type
-  (or its factory/instance shape when there is no implementation type to name). A keyed
-  `ISigningKeyRing` descriptor is ignored, since it can never win the unkeyed resolution the guard and
-  the framework both use. This closes only the ordering the call can actually observe — an
-  `ISigningKeyRing` already registered at the moment it runs. A manual `ISigningKeyRing` registered
-  *after* `AddZeeKayDaSigningKeySource` wins outright under MS DI's last-registration-wins resolution
-  and is not detectable from this method.
+  Nothing is registered in the container for `ISigningKeySource` — the ring constructs and owns the
+  source, so it is not reachable through any lookup. **A third-party source author must act on one
+  rule as a result: the ring, not the container, owns the source's disposal.** It disposes the source
+  once, at shutdown, after the `ISigner` it opened, via `Dispose` or `DisposeAsync`, whichever the
+  host's disposal path selects.
 
 ### Changed
+
+- **A key due to sign that cannot sign is skipped, not fatal** (#916). A running ring whose key due
+  to sign was dropped for bad material or dates no longer stops signing: the previous key signs on,
+  an Error is logged, and `SigningKeyExpiryHealthCheck` reports `Degraded` naming the failure code,
+  the same as a successor whose signer fails. Either kind of key, fixed only once the key it would
+  replace is superseded, never takes over. Startup still refuses a dropped key due now. Startup
+  with every key expired no longer fails with `signing.signing_key_expired`: the last key to expire
+  signs on, an Error is logged, and the health check reports `Unhealthy`, as a running ring already
+  did. A JWK carries no validity dates (RFC 7517 §4), so relying parties cannot tell the key expired.
+
+- **BREAKING: the signing key ring re-reads its source every `SigningKeys.RefreshInterval`** (#527).
+  The new option defaults to five minutes and must be at least one minute
+  (`configuration.signing_keys.refresh_interval.below_minimum`). `SigningKeys.LeadTime` must now
+  cover `JwksEndpoint.CacheMaxAge` plus `RefreshInterval`; the code is renamed
+  `configuration.signing_keys.lead_time.shorter_than_jwks_cache_max_age_plus_refresh_interval`. A
+  key added to the source is published within one interval, without a restart. A read that throws,
+  or does not complete within a minute, keeps the last list, logs an Error and makes
+  `SigningKeyExpiryHealthCheck` report `Degraded`; no second read starts while an abandoned one is
+  still running. A read listing no keys is a full revocation. So is a list the ring must refuse (a
+  `null` entry, a duplicate source id or `kid`, an undated key among several). In both, signing
+  stops: `SigningKeySet.SigningKey` is now nullable and is `null`,
+  `Published` and the JWKS are empty (served `Cache-Control: no-store`), `SignAsync` throws
+  `InvalidOperationException` (the token endpoint answers `server_error`), and the health check
+  reports `Unhealthy`. A later read listing usable keys resumes signing; the health check stays
+  `Unhealthy` until the resumed key's handover completes. A signing key the source stops listing
+  stops signing and is unpublished at that read, not when its successor takes over.
+  `SigningKeySet.Algorithm` is a stored value, read from the source once at startup, so a source
+  cannot change it at runtime. A successor whose signer failed is set aside until the next read
+  rather than until a restart, and for good once its predecessor is superseded. The signer of a key
+  absent from two reads in a row is disposed. Removing a key at its source now revokes it:
+  - the PEM and PFX sources list nothing for a certificate file, or separate key file, that does
+    not exist, with a Warning;
+  - the Windows store source lists nothing for a certificate no longer in the store;
+  - the Key Vault sources list nothing for a deleted object, or when every version is disabled.
+
+  Startup with nothing listed fails with `signing.no_keys`.
+  `signing.azure_key_vault.no_enabled_version`, `.no_key_versions` and `.no_certificate_versions`
+  are removed, and `signing.file_signing.file_not_found` and
+  `signing.windows_certificate_store.certificate_not_found` no longer fail a read.
+
+- **BREAKING: a signing source declares one algorithm, and the server signs only with it; the
+  advertised-algorithm filter is gone** (#905). `ISigningKeySource` gains
+  `SigningAlgorithm Algorithm { get; }`, and `SourceKey` loses its algorithm: it is
+  `(Id, PublicKey, DateTimeOffset? notBefore = null, DateTimeOffset? expiresAt = null)`, and
+  `SourceKey.FromCertificate(certificate, id)` no longer takes one. A source therefore cannot list a
+  key under another algorithm; a key whose material does not suit the source's algorithm fails
+  startup under the existing codes (`signing.key_algorithm_mismatch`,
+  `signing.ec_curve_algorithm_mismatch`), and an undefined source algorithm under
+  `signing.undefined_algorithm`. The first-party providers move the algorithm they already took at
+  registration from each key to the source. `SigningKeySet.AdvertisedAlgorithms` is replaced by
+  `SigningKeySet.Algorithm`, and `id_token_signing_alg_values_supported` is that one algorithm.
+  `AuthorizationServerOptions.IdToken` and its `AdvertisedSigningAlgorithms` filter are removed, with
+  their codes `configuration.id_token.advertised_signing_algorithms.empty`,
+  `signing.advertised_algorithms.excludes_signing_key`, `.withholds_published_algorithm` and
+  `.absent_from_key_set`; the `signing.advertised_algorithms.rs256_absent` warning stays. A client's
+  `AllowedSigningAlgorithms` is an acceptance list: it must contain the server's algorithm
+  (`client.signing_algorithms.excludes_signing_key`), an undefined value fails with
+  `client.signing_algorithms.undefined`, and any other entry is logged as a warning once per client
+  instead of failing — `client.signing_algorithms.not_subset` is gone. Changing algorithm means a
+  new source and a restart. Mixing algorithms in one ring made every key change a possible change of
+  algorithm, which a ring that follows the clock cannot check ahead of time.
+
+- **Signing-key sources only list keys; the framework decides from their dates which one signs**
+  (#823). `ISigningKeySource.ReadAsync` returns `IReadOnlyList<SourceKey>`; `SourceKeySet` and its
+  "which key signs" designation are gone. `SourceKey` is
+  `(Id, Algorithm, PublicKey, DateTimeOffset? notBefore = null, DateTimeOffset? expiresAt = null)`,
+  and an undated key is accepted only when it is the source's only key. Every unexpired key is
+  published; the newest key whose `NotBefore` is at least `AuthorizationServerOptions.SigningKeys.LeadTime`
+  (default one day; positive, and never shorter than `JwksEndpoint.CacheMaxAge`) old signs. When none is, the oldest
+  unexpired key signs and a Warning is logged. An older key stays published until a newer one is
+  `LeadTime + SigningKeys.RetainRetiredKeysFor` old, and an expired key (which never signs) until
+  `RetainRetiredKeysFor` after expiry. Retention defaults to the longer of the server-wide access and ID
+  token lifetimes plus `ClockSkewTolerance`, and must be raised by hand for longer per-client lifetimes.
+  `ISigner.Algorithm` and `signing.signer_algorithm_mismatch` are removed: the startup self-test,
+  which verifies under the key's own algorithm, rejects a signer signing under another with
+  `signing.self_test_failed`. A signer that links the caller's token to its own is no longer reported
+  as broken on shutdown. The Key Vault sources list every enabled version, dated from the later of its
+  creation and its `nbf`; `PreActivationDelay` and `PreviousVersionsToPublish` are removed, and
+  `signing.azure_key_vault.no_active_key` is renamed `signing.azure_key_vault.no_enabled_version`.
+
+- **The signing key ring follows the clock: a successor takes over at its lead time, with no
+  restart** (#823). The ring still reads its source once, then re-evaluates the listed keys at each
+  instant the key set can change — a key passing its lead time, expiring, or leaving retention —
+  so the JWKS, discovery and the signing key change on schedule. The signing key's predecessor is
+  no longer kept published for as long as the signing key signs; it stays until the signing key is
+  `LeadTime + RetainRetiredKeysFor` old, as every older key does. `NotBefore` is no longer a
+  validity gate: `signing.signing_key_not_yet_valid` and the five-minute clock-skew grace are
+  removed, and a sole key dated in the future signs at once. A successor whose signer fails to open
+  or self-test, or does not open within a minute, when it is due is set aside until a restart: it never signs, but stays published so
+  every replica serves the same key set, the keys around it keep signing and keep their ordinary
+  retention, and an Error is logged. `SigningKeyExpiryHealthCheck` reports `Unhealthy` when the key
+  signing now has expired, or is published only because it signs (once replicas whose handover
+  succeeded have dropped it), and `Degraded` when a handover failed or has not completed, or when no key
+  will be able to sign `DegradedThreshold` from now; a staged successor that takes over in time keeps
+  it `Healthy`. `SigningKeys.RetainRetiredKeysFor` now defaults to two days, or to the longer token
+  lifetime plus `ClockSkewTolerance` when that is longer, so a replica whose handover is slow or has
+  failed keeps signing with tokens every replica can verify while the key is fixed; a lower value
+  logs `signing.retain_retired_keys_for.below_default` at startup. A problem with one listed key —
+  weak or malformed material, material that does not suit the source's algorithm, an expiry not after
+  its `NotBefore` — now drops that key with a Warning instead of failing startup: it is neither
+  published nor ever signs, the health check reports `Degraded`, and startup warns when the remaining
+  keys stop covering as long as the listed ones would have. Startup still fails when the dropped key is
+  the one due to sign, when every key is dropped, and for a problem with the list itself (no keys, a
+  `null` entry, an empty or duplicate source id, an undated key among several).
+
+- **The PEM, PFX and Windows signing sources take a list instead of three slots** (#823).
+  `PemFileSigningOptions.Files`, `PfxFileSigningOptions.Files` and
+  `WindowsCertificateStoreSigningOptions.Certificates` replace `Previous`/`Current`/`Next`, and
+  `PemCertificateFile` is removed. Any listed key may sign, so every entry must carry its private key; a PFX
+  bundle without one fails at startup. The single-file registration overloads are unchanged. A certificate's
+  `NotBefore` counts as its publication date: list a new certificate as soon as it is issued. New public
+  helpers `SourceKey.FromCertificate` and `LocalSigner.FromCertificate` build a key and a signer from an
+  `X509Certificate2`, converting its local-time dates correctly; their failures are
+  `signing.certificate.unsupported_key_type` and `signing.certificate.private_key_not_found`, replacing the
+  `signing.file_signing.*` codes of the same name and `signing.windows_certificate_store.unsupported_key_type`.
+  Every listed entry is checked at startup for a usable private key — a PEM key file's permissions or a combined
+  file's key block, a Windows certificate's installed key — without importing it. No source keeps a read lock or a cached key set any more.
+  Both Key Vault sources gain `MaxVersions` (default all enabled versions, minimum 3) to fetch public keys for
+  only the newest N versions, and the cached source's own pairing check, `signing.azure_key_vault.secret_cer_mismatch`,
+  is removed: the startup self-test rejects the same divergence as `signing.self_test_failed`.
+
+- **Sign-in pages pass a subject, not a hand-built `ClaimsPrincipal`** (#781).
+  `LoginInteraction.SignInAsync` and the account-linking call, renamed
+  `ProviderSignInInteraction.SignInWithReplacedAccountAsync`, take the subject string, the
+  authentication method — or, in a second overload, a list of them, `[]` omitting `amr` — and
+  optional `params Claim[] additionalClaims`; the framework builds the session principal:
+  `await login.SignInAsync(user.Subject, AuthenticationMethods.Password)`. A blank subject or
+  method, and a `sub` or `NameIdentifier` among the additional claims, are refused with
+  `ArgumentException`; `zkd:` claims are stripped. Additional claims, here and on
+  `ProviderSignInInteraction.SignInAsync`, are held on the SSO session only: tokens and userinfo
+  get their claims from `IClaimsProvider`. The session now reads its subject from `sub` alone.
+
+- **The advertised token endpoint auth methods are derived from the registered authenticators**
+  (#778). `TokenEndpoint.AuthMethodsSupported` is replaced by `TokenEndpoint.AdvertisedAuthMethods`
+  (configuration key `TokenEndpoint:AdvertisedAuthMethods`), a nullable filter that defaults to
+  `null`. `token_endpoint_auth_methods_supported` is now every method a registered
+  `IClientAuthenticator` declares, plus `none`: `client_secret_basic`, `client_secret_post` and
+  `none` with the built-in authenticator, where it was `client_secret_basic` alone. A host with a
+  public client no longer adds `none` server-wide, and a custom authenticator's methods are
+  advertised by registering it. The filter can only withhold: an entry no authenticator performs
+  logs `token_endpoint.advertised_auth_methods.unperformable` at startup instead of failing with
+  `authenticators.method_uncovered`, an empty filter fails with
+  `configuration.token_endpoint.advertised_auth_methods.empty`, and `client_credentials` with only
+  `none` advertised now fails at startup with
+  `token_endpoint.advertised_auth_methods.only_none_with_client_credentials`. The in-memory client
+  store no longer warns when `none` is advertised with no public client registered.
+
+- **Client registration takes a client id and one options callback** (#780). `AddPublic(clientId,
+  configure)` and `AddConfidential(clientId, configure)` replace the positional redirect URI,
+  post-logout redirect URI and scope lists: those are now `RedirectUris`, `PostLogoutRedirectUris`
+  and `AllowedScopes` on the options, and `configure` is required. The confidential client's secret
+  moves onto `ConfidentialClientOptions` as `Secret` (plaintext, hashed at startup) or `SecretHash`
+  (a PHC string stored as given); exactly one must be set, or startup fails with
+  `client.credentials.no_secret` or `client.credentials.secret_and_secret_hash`, and a blank
+  `SecretHash` fails with `client.credentials.empty_secret_hash`. The in-memory repository now
+  releases the plaintext secrets once it is built; before, it kept them for the process lifetime
+  although the documentation said otherwise.
+  `IInMemoryClientRegistrationBuilder` is replaced by the sealed `InMemoryClientRegistrationBuilder`.
+
+- **`IClientRegistrationValidator.Validate` returns its failures instead of throwing** (#811). It
+  returns `IReadOnlyList<ZeeKayDaConfigurationFailure>`, empty for a valid registration; an invalid
+  client is an expected outcome, not an exception. The caller decides what to do: the in-memory
+  repository throws them aggregated at startup, and the client resolver serves the client as unknown
+  and logs them. A custom validator that throws is still refused as unknown, but the in-memory
+  repository no longer carries a thrown validator exception's root cause into its aggregate.
+
+- **Startup checks are constructor-injected, and the sanitizing logger is a class** (#771).
+  `IStartupVerifier` and `IStartupActivator` each declare `Name` and
+  `VerifyAsync(StartupVerificationContext, CancellationToken)` directly; the `IServiceProvider`
+  parameter and the shared `IStartupCheck` base are gone. Register a check as scoped — any other
+  lifetime fails startup with `startup.check_not_scoped` — and constructor-inject its dependencies: the runner resolves each phase's checks from one scope, so the
+  checks in a phase share it, and no activator is constructed when a verifier failed.
+  `ISanitizingLogger<T>` is replaced by the class `SanitizingLogger<T>`, which only the framework can
+  construct, so no registration can substitute a logger that skips redaction; inject it as before.
+  The startup gate that detected such a substitution, and its failure codes
+  `logging.sanitizing_logger_shadowed`, `logging.sanitizing_logger_closed_override` and
+  `startup.check_registered_as_base_interface`, are removed. A warning that fails to log now carries
+  its root cause as the aggregate's inner exception.
+- **Every bindable not-for-production switch lives in one `Development` options group, one flag per effect**
+  (#773). `AuthorizationServerOptions.AllowInsecureIssuer` is replaced by
+  `Development.AllowHttpLoopbackIssuer` (HTTP loopback issuer, endpoint URIs and requests) and
+  `Development.AllowHttpLoopbackCorsOrigins` (HTTP loopback `CorsOrigins` entries); a host that used
+  the old flag for both sets both. `Logging.DisableExceptionSanitizing` moved to
+  `Development.DisableExceptionSanitizing`, and the now-empty `Logging` group and `LoggingOptions` are
+  removed. Configuration keys move with them (`ZeeKayDaAuth:Development:…`). The CORS flag gets its own
+  startup record (`cors_origins.http_loopback_allowed` at `Information` in `Development`,
+  `cors_origins.http_loopback_allowed_outside_development` at `Critical` elsewhere), and the
+  issuer check is renamed `HttpLoopbackIssuer`; existing warning codes are unchanged. Disabled
+  exception sanitizing now follows the same split: `logging.exception_sanitizing_disabled` at
+  `Information` in `Development`, `logging.exception_sanitizing_disabled_outside_development` at
+  `Critical` elsewhere, instead of a flat `Warning`. All three switches are fixed once configuration
+  finishes; a later change fails with `configuration.options_frozen`.
+- **Startup checks are named by their phase and live with the feature they check** (#770). Every
+  `IStartupVerifier` now ends in `Verifier` and every `IStartupActivator` in `Activator`, replacing six
+  suffixes that hid the phase (`*Validator`, `*StartupValidator`, `*Verifier`, `*StartupVerifier`,
+  `*WarningService`, `*StartupActivator`); `SigningKeyRingStartupVerifier`, for one, was an activator. Each moved into the folder and
+  namespace of its feature, and the public startup-check interfaces and types (`IStartupCheck`,
+  `IStartupVerifier`, `IStartupActivator`, `StartupVerificationContext`, `StartupVerificationWarning`)
+  moved to the `ZeeKayDa.Auth.StartupVerification` namespace; add a `using` for it. Failure codes and
+  check names are unchanged.
+- **Everything that does not need an HTTP request moved from `ZeeKayDa.Auth.AspNetCore` to
+  `ZeeKayDa.Auth`** (#768). `AddZeeKayDaAuthCore(configure)` now takes the same
+  `Action<AuthorizationServerOptions>` as `AddZeeKayDaAuth`, returns the `ZeeKayDaAuthBuilder`, lives
+  in `Microsoft.Extensions.DependencyInjection` like every other registration method, and
+  registers and validates the server options, clients, scopes, stores, token issuance, Data
+  Protection, and every startup check that does not need HTTP. Before this, a host that called only
+  `AddZeeKayDaAuthCore()` got server options that were never validated. `AddZeeKayDaAuth(configure)`
+  calls it and adds the endpoints, cookies, interaction and external providers. The client options
+  and in-memory client builder moved from `ZeeKayDa.Auth.AspNetCore.Clients` to
+  `ZeeKayDa.Auth.Clients`. The claims, client, hasher, scope, signing and store builder extensions
+  now ship in `ZeeKayDa.Auth`, in the same namespace. `ZeeKayDaAuthBuilder`'s constructor is no
+  longer public, and the signing packages no longer call `AddZeeKayDaAuthCore()` themselves.
+  `ZeeKayDa.Auth` references `Microsoft.AspNetCore.DataProtection`, which has no ASP.NET Core
+  dependency, in place of its abstractions package. A package's tests get a Core-only host that
+  passes every startup check from `services.AddZeeKayDaAuthCoreForTesting()` in
+  `ZeeKayDa.Auth.TestKit`. `AddZeeKayDaOptions<T>()` and `ValidateWithZeeKayDa()` no longer register
+  the startup runner; only `AddZeeKayDaAuthCore` does. `AddZeeKayDaSigningKeys()` moved to namespace
+  `Microsoft.Extensions.DependencyInjection`. A Core-only host whose signing keys do not advertise
+  RS256 now gets the same OpenID Connect Discovery 1.0 §3 warning as an ASP.NET Core host. Both
+  `AddZeeKayDaAuth` and `AddZeeKayDaAuthCore` can now be called more than once: a repeated call adds
+  its `configure` delegate and registers nothing twice, where before it threw.
+
+- **Every public async member returns `Task` or `Task<T>`; none returns `ValueTask`** (#784). The
+  public API mixed the two with no rule. A `ValueTask` must be awaited exactly once and never stored,
+  which is easy to get wrong when implementing or calling an interface, so the public surface now uses
+  `Task` throughout. The changed members are `IClientRepository.FindByClientIdAsync`,
+  `IScopeRepository.GetScopesAsync`, `IDiscoveryDocumentProvider.GetDocumentAsync`,
+  `IClaimsProvider.GetClaimsAsync`, `IStartupCheck.VerifyAsync` (and so every `IStartupVerifier` and
+  `IStartupActivator`), every member of `IAuthorizationCodeBackingStore` and
+  `IRefreshTokenBackingStore`, `ISigner.SignAsync`, `ISigningKeySource.ReadAsync` and
+  `CreateSignerAsync`, `ISigningKeyRing.SignAsync`, `ITokenIssuer.IssueAsync`,
+  `IClientAuthenticator.AuthenticateAsync`, `IErrorInteraction.GetErrorAsync`, and the PFX password
+  source (`PfxFile.PasswordSource` and the `passwordSource` parameter of `AddPfxFileSigning`), which is
+  now `Func<CancellationToken, Task<string>>`. The shipped implementations change with them. An
+  implementation that completes synchronously returns `Task.FromResult(value)` or
+  `Task.CompletedTask`. Behaviour is unchanged.
+
+- **Every collection on `AuthorizationServerOptions` is frozen read-only after configuration**
+  (#774). Only `CorsOrigins` and `IdToken.AdvertisedSigningAlgorithms` used to be, so code holding
+  `IOptions<AuthorizationServerOptions>` could still add to or clear `GrantTypesSupported`,
+  `TokenEndpoint.AuthMethodsSupported`, `AuthorizationEndpoint.CodeChallengeMethodsSupported`,
+  `Response.TypesSupported` or `Response.ModesSupported` after startup validation had approved them.
+  Each is now replaced by a read-only copy of the configured values, in the configured order, before
+  validation runs; a `null` collection stays `null`. From then on a setter refuses to replace a
+  collection, with `configuration.options_frozen`, so a `PostConfigure` registered after
+  `AddZeeKayDaAuth` fails startup instead of slipping past validation. `CorsOrigins` changes from `IList<string>` with
+  an internal setter to `ICollection<string>` with a public one, the same shape as every other
+  collection, so a host can assign it as well as add to it. The `ClockSkewTolerance` documentation
+  now says what the code already did: it is one server-wide tolerance, used by access token
+  validation as well as the token stores.
+
+- **Options-validation failures throw `ZeeKayDaConfigurationException` with a stable code for each
+  failure** (#796). The framework's options validators, for `AuthorizationServerOptions`, the client
+  secret hashers, the development, file, Azure Key Vault and Windows certificate-store signing
+  sources and the signing-key expiry health check, used to fail with an `OptionsValidationException`
+  of plain strings, so an operator could alert on a missing signing key but not on a bad issuer. They
+  now throw the same exception as every other startup check, at host start and from
+  `MapZeeKayDaAuth()` alike. A code is `configuration.` + the option's path in snake_case + the
+  problem, e.g. `configuration.issuer.not_https`; the full list for `AuthorizationServerOptions` is
+  in the configuration reference. Every options type is validated together, when `MapZeeKayDaAuth()`
+  runs and again at host start, so one exception lists every failure across them. Provider handler
+  options are unchanged: they still report `provider.options_invalid`.
+
+- **`AuthorizationServerOptions.CorsOrigins` keeps the host's entries exactly as configured**
+  (#799). It is still frozen read-only after configuration, but no longer rewritten into lowercase,
+  de-duplicated form. The canonical allowlist the endpoints match `Origin` against is derived
+  internally, once, from the validated entries. CORS behaviour is unchanged.
+
+- **A persisted development key no longer walks its ancestor directories** (#826). The key file
+  is still created `0600` in a `0700` directory (a non-inherited owner-only ACL on Windows), and
+  loading still refuses a broader mode or a symlinked key file. What is gone is the walk up the
+  path that refused a directory owned by another user, a group-writable one or a symlinked one.
+  That only protects a development key on a shared multi-user machine, and the environment gate
+  still keeps it out of production. The error codes `signing.dev_keys.directory_not_owned_by_current_user`,
+  `…directory_component_writable_by_others`, `…directory_component_not_a_directory` and
+  `…directory_ownership_undetermined` are no longer raised. Core no longer contains native
+  interop; the `lstat` owner check used by `ZeeKayDa.Auth.FileSystem` now lives in that package.
+
+- **Development signing is renamed to match the other providers, with one options type** (#825).
+  `AddInMemoryDevelopmentJwtSigningKeys()` is now `AddInMemoryDevelopmentSigning()`, and
+  `AddPersistedDevelopmentJwtSigningKeys()` is now `AddPersistedDevelopmentSigning()`. Both
+  callbacks take `DevelopmentSigningOptions` (was `DevelopmentSigningKeyOptions`), whose only public
+  member is `AllowedEnvironments` (was `AllowedDevelopmentJwtSigningKeysEnvironments`).
+  `InMemoryDevelopmentSigningKeyOptions` is gone. The persist directory is set only through
+  `AddPersistedDevelopmentSigning`'s parameter.
+
+- **A client's defaulted collections start empty, and the default applies only if the callback adds
+  nothing** (#779). In the `AddPublic`/`AddConfidential` callback, `AllowedGrantTypes`,
+  `AllowedResponseTypes`, `AllowedResponseModes` and `AllowedTokenEndpointAuthMethods` used to arrive
+  holding their defaults, so a client that added its own values also kept the default unless it
+  called `Clear()` first. Now a client that names values gets exactly those. Left empty, grant types
+  default to `authorization_code` and auth methods to `client_secret_basic`, and response types and
+  modes default to `code` and `query` only when the client may use `authorization_code`, so a
+  `client_credentials`-only client no longer carries them. A client allowed `refresh_token` without
+  `authorization_code`, the only grant that issues one, now logs a warning at validation: usually a
+  mistake, but a client whose code grant was withdrawn may still be draining refresh tokens. A public
+  client allowed `client_credentials` now fails validation
+  (`client.grant_types.client_credentials_on_public`), since RFC 6749 §4.4 keeps that grant to
+  confidential clients.
+
+- **The framework's token stores are internal; every third-party store contract ends in
+  `BackingStore`** (#827). `IAuthorizationCodeStore` and `IRefreshTokenStore` are gone: nobody
+  outside the framework could implement them, and nothing public exposed them. The entry and result
+  types only they used (`AuthorizationCodeEntry`, `RefreshTokenEntry`,
+  `AuthorizationCodeRedemptionResult`, `RefreshTokenConsumptionResult`) are internal too. A host implements
+  `IAuthorizationCodeBackingStore`, `IRefreshTokenBackingStore` (was `IRefreshTokenGrantStore`) or
+  the interaction store's backing contract. `AddRefreshTokenGrantStore<T>()` is now
+  `AddRefreshTokenStore<T>()`. All three stores key their records as
+  `zkd:{store}:{kind}:{hex(sha256(value))}`; refresh-token keys change from bare base64url to
+  `zkd:refresh:h:…`.
+
+- **`IRefreshTokenBackingStore.RevokeFamilyAsync` takes `rememberUntil` and records the revoked
+  family; `IsFamilyRevokedAsync` answers from that record** (#828). The framework no longer inserts a
+  fake revoked grant (the "revocation sentinel") to mark a family that has no rows yet, so a backing
+  store never holds a row that is not a grant. An implementation needs a small second record: the
+  revoked family id, kept at least until `rememberUntil` and never shortened by a repeat call. The
+  authorization-code tombstone now holds only the family id, with no Data Protection.
 
 - **`IScopeRepository` has a documented contract, and the framework enforces it on every read**
   (#759). `GetScopesAsync` now states what an implementation must return: a non-null collection
@@ -610,7 +951,79 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   them, which the `WebClient` sample already does. `claims_supported` in the discovery document is
   unchanged: it is the union across both destinations.
 
+### Removed
+
+- **The distributed-cache token stores** (#829). `AddDistributedCacheAuthorizationCodeStore`,
+  `AddDistributedCacheRefreshTokenStore` and `AddDistributedCacheTokenStores` are gone.
+  `IDistributedCache` has no atomic check-and-set, so on a shared cache they could redeem a code
+  twice or miss refresh-token reuse. Use `AddInMemoryStores()` in development, and a backing store
+  with a native atomic operation in production. The distributed-cache interaction store is
+  unchanged. The TestKit's `SupportsAtomicInsert` and `SupportsAtomicConsume` switches went with
+  them: the atomicity tests can no longer be turned off.
+
 ### Fixed
+
+- **A world-readable certificate-only PEM file is accepted** (#918). certbot writes `fullchain.pem`
+  as `0644`, which the PEM source refused. A file named as the certificate beside a separate key file
+  may now be read by anyone, but only a trusted owner may replace it: on Unix it must be owned by root
+  or the process's user and not writable by group or other users; on Windows no broad principal may
+  write, delete, change the permissions of, or take ownership of it. Every rule on the key file stays.
+  Such a file must carry no private key marker at all, refused with
+  `signing.file_signing.private_key_in_certificate_file` with or without a password, which replaces
+  `key_encryption_mismatch` for that case.
+
+- **A password-protected PEM key refuses a plaintext copy that lost its footer** (#918). Only
+  well-formed blocks were judged, so an unencrypted copy missing its `END` line passed beside the
+  encrypted key and defeated the password. Any unencrypted key boundary line is now refused with
+  `signing.file_signing.key_encryption_mismatch`.
+
+- **The Azure Key Vault sources fetch a version's public key once** (#918). Every refresh re-fetched the
+  public material of every listed version; a refresh is now the version listing plus one fetch per
+  version not seen before. The registration docs no longer claim the vault is read only at startup.
+
+- **`SourceKey` rejects a null public key or id** (#918) with an `ArgumentNullException` at
+  construction.
+
+- **An `id_token_hint` still identifies its client after the key that signed it is retired** (#899).
+  The end-session endpoint verified a hint only against the keys the JWKS serves, and a key leaves the
+  JWKS `SigningKeys.RetainRetiredKeysFor` (two days by default) after its successor takes over, while a
+  relying party keeps its ID token for the whole session. After a rotation, sign-out could no longer
+  tell which client sent the user, and the post-logout redirect was lost. A hint, and an access token
+  at userinfo, now verify against every key the signing source still lists, published or not. A key
+  stops verifying at the first successful read of the source that no longer lists it; a failed read
+  keeps the last list, as it does for signing. At userinfo the token's own `exp` still decides. The new public `SigningKeyRing.Verify` is the read-side counterpart of `SignAsync`: it
+  checks a signature against the listed keys and knows nothing of token format. A presented token
+  whose header carries anything but `alg`, `typ` and `kid` is now refused, since that is all the
+  framework's issuer writes; a host that replaced the issuer and writes more members must stop.
+
+- **A certificate renewed with its key reused no longer stops signing** (#914). A source listing one
+  key pair under two source ids, as during the overlap of a renewal that keeps its key (Azure Key Vault
+  `reuseKey: true`, cert-manager `rotationPolicy: Never`), failed startup with `signing.duplicate_kid`,
+  and stopped signing at a later read. The entries now build into one key: one JWK, published from the
+  first entry's `NotBefore` to the last one's expiry, with its signer opened through the entry that
+  expires last. If that signer fails to open, the earlier entry's signer signs on and the next read
+  tries again. An Information line names the source ids once each time the listing changes.
+  `signing.duplicate_kid` is removed; duplicate source ids are still refused.
+
+- **A host client validator that returns a null failure no longer hides the real ones** (#881). The
+  framework reported only `client.validator.malformed_result`; it now reports that alongside every
+  real failure the validator returned.
+
+- **In-memory clients are held to the framework's registration rules at startup even when the host
+  registers its own `IClientRegistrationValidator`** (#876). The in-memory repository was built with
+  whichever validator DI resolved, so a host validator replaced the framework's rules at startup
+  (the request-time resolver still applied both). It now validates with the framework's rules first,
+  then the host's, the same as the resolver.
+
+- **Hosts starting together no longer race on creating the persisted development key** (#853).
+  `AddPersistedDevelopmentSigning()` checked for the key file and then created it, so two hosts
+  sharing a key folder could both find none: on Unix the slower one failed to start, and on Windows
+  it overwrote the file the other may have been reading. Hosts now take turns on a lock file beside
+  the key, so exactly one creates it and the rest load that key, and the key is written beside its
+  final name and renamed into place, so no host ever reads a half-written file. A host that cannot
+  take the lock within 30 seconds fails with `signing.dev_keys.lock_timeout`, and a key path that
+  is a directory or a dangling symlink fails with `signing.dev_keys.key_path_not_a_file` before
+  anything is written.
 
 - **A client registration that cannot be read is logged once, not on every request** (#698). A
   registration whose property getter throws — a lazy-loaded navigation property read outside its

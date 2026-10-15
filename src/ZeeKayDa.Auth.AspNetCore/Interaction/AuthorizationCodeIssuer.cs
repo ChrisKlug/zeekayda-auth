@@ -11,79 +11,29 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The last step of a successful authorization request: claims the interaction, mints the
-/// authorization code, stores the entry the token endpoint will redeem, discards the
-/// interaction, and delivers the code to the client's registered redirect URI.
+/// The last step of a successful authorization request: claims the interaction, stores the code
+/// entry the token endpoint redeems, discards the interaction, and delivers the code.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Everything the entry binds comes from the interaction context — the session identifier, the
-/// subject, the authentication time, the PKCE challenge, the nonce — never from request input
-/// and never minted here. The callers that reach this step have already bound the context to the
-/// session the browser holds: the authorization endpoint builds it from the session it just read,
-/// a sign-in from the state it just promoted, and the consent service refuses a decision from any
-/// other session. Issuance asserts that binding was made rather than reading the session cookie
-/// again, which on the sign-in path would see the cookie the request arrived with, not the one
-/// this response is writing.
-/// </para>
-/// <para>
-/// The scopes written into the code are those present in all of: the request's effective scopes,
-/// the allowed scopes of the registration as it is now, and the scopes the user granted when
-/// consent was asked. The registration is the one the caller resolved in this same request, so a
-/// client narrowed since the request was accepted issues a narrower code, and one that no longer
-/// allows <c>openid</c> ends the request as one that dropped its redirect URI does.
-/// </para>
-/// <para>
-/// One terminal outcome per interaction. Two responses racing to complete the same interaction —
-/// a consent form posted twice before the first response landed, or a grant and a deny together —
-/// each read the interaction alive, so the store decides: the code store's atomic claim on the
-/// interaction is taken before a code is minted, and the response that loses it issues nothing.
-/// </para>
+/// Everything the entry binds comes from the interaction context, never from request input. The
+/// session binding is asserted, not re-read: on the sign-in path the cookie the request arrived
+/// with is not the one this response writes.
 /// </remarks>
-internal sealed class AuthorizationCodeIssuer
+internal sealed class AuthorizationCodeIssuer(
+    AuthorizationFlow flow,
+    AuthorizationResponses responses,
+    IOptions<AuthorizationServerOptions> options,
+    SanitizingLogger<AuthorizationCodeIssuer> logger)
 {
-    /// <summary>
-    /// What a registration that changed underneath the request tells the user. The same text
-    /// the post-authentication dispatch uses for a client that no longer answers, since it is
-    /// the same situation: the request was accepted against a registration that no longer
-    /// vouches for it.
-    /// </summary>
+    /// <summary>What the user is told when the client's registration no longer vouches for the request.</summary>
     internal const string ClientNoLongerAnswers =
         "The client that sent the authorization request is no longer registered, or no longer lists its redirect URI.";
 
     private const string CouldNotIssue = "The authorization server could not issue an authorization code.";
 
-    private readonly AuthorizationFlow _flow;
-    private readonly AuthorizationResponses _responses;
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly TimeProvider _timeProvider;
-    private readonly ISanitizingLogger<AuthorizationCodeIssuer> _logger;
-
-    public AuthorizationCodeIssuer(
-        AuthorizationFlow flow,
-        AuthorizationResponses responses,
-        IOptions<AuthorizationServerOptions> options,
-        TimeProvider timeProvider,
-        ISanitizingLogger<AuthorizationCodeIssuer> logger)
-    {
-        ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(responses);
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _flow = flow;
-        _responses = responses;
-        _options = options;
-        _timeProvider = timeProvider;
-        _logger = logger;
-    }
-
     /// <summary>
-    /// Issues the authorization code for <paramref name="requestContext"/> to
-    /// <paramref name="client"/>, the registration the caller resolved in this request. Not
-    /// terminal — the caller writes the result. The interaction is discarded whichever way this
-    /// ends: a request that reached issuance is never resumed.
+    /// Issues the code to <paramref name="client"/> as resolved in this request, discarding the
+    /// interaction whichever way it ends. Not terminal.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// The context carries no authenticated session, or consent was required and the context
@@ -97,7 +47,7 @@ internal sealed class AuthorizationCodeIssuer
     public async Task<IResult> IssueAsync(
         HttpContext context,
         AuthorizationRequestContext requestContext,
-        IClientMetadata client)
+        IClient client)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
@@ -111,41 +61,35 @@ internal sealed class AuthorizationCodeIssuer
 
         if (!scopes.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
         {
-            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-            return _responses.Local(context, AuthorizeRequestErrors.InvalidRequest, ClientNoLongerAnswers);
+            await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+            return responses.Local(context, AuthorizeRequestErrors.InvalidRequest, ClientNoLongerAnswers);
         }
 
-        // Resolved from the request's services rather than the constructor, for the reason
-        // AuthorizationFlow resolves the client resolver that way: this singleton is built when
-        // the endpoints are mapped, before startup verification has said whether a store is
-        // registered at all.
-        var store = context.RequestServices.GetRequiredService<IAuthorizationCodeStore>();
+        // Not from the constructor: this singleton is built at mapping, before startup verification.
+        var store = context.RequestServices.GetRequiredService<AuthorizationCodeStore>();
 
         string code;
         try
         {
-            var now = await _flow.ClaimCompletionAsync(context, requestContext).ConfigureAwait(false);
+            var now = await flow.ClaimCompletionAsync(context, requestContext).ConfigureAwait(false);
 
             code = StoreKeyGenerator.Generate();
             await store.StoreAsync(code, BuildEntry(requestContext, session, scopes, now), context.RequestAborted).ConfigureAwait(false);
         }
         catch (ZeeKayDaStoreException ex)
         {
-            // Nothing was handed out, so nothing needs revoking. The client learns the server
-            // failed; the operator learns which store operation did, through the sanitizing logger.
-            _logger.LogError(ex, "Storing the authorization code for client {ClientId} failed.", client.ClientId);
+            // Nothing was handed out, so nothing needs revoking.
+            logger.LogError(ex, "Storing the authorization code for client {ClientId} failed.", client.ClientId);
 
-            await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-            return _responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.ServerError, CouldNotIssue, requestContext.State);
+            await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+            return responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.ServerError, CouldNotIssue, requestContext.State);
         }
 
-        // The code is stored, so the response carries it whatever the discard does: a store that
-        // refuses the removal is logged by the discard itself and the entry left to expire.
-        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-        return _responses.CodeAtClient(requestContext.RedirectUri, code, requestContext.State);
+        await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
+        return responses.CodeAtClient(requestContext.RedirectUri, code, requestContext.State);
     }
 
-    /// <summary>The entry the token endpoint will redeem: everything it binds comes from the context and the session that authenticated it.</summary>
+    /// <summary>The entry the token endpoint will redeem.</summary>
     private AuthorizationCodeEntry BuildEntry(
         AuthorizationRequestContext requestContext,
         (string SessionId, string Subject, DateTimeOffset AuthTime) session,
@@ -165,13 +109,10 @@ internal sealed class AuthorizationCodeIssuer
             SsoSessionId = session.SessionId,
             InteractionId = requestContext.Id,
             IssuedAt = now,
-            ExpiresAt = now + _options.Value.AuthorizationEndpoint.AuthorizationCodeLifetime,
+            ExpiresAt = now + options.Value.AuthorizationEndpoint.AuthorizationCodeLifetime,
         };
 
-    /// <summary>
-    /// The session the context was authenticated by. A context without one has not been through
-    /// sign-in, and no caller should have reached issuance with it.
-    /// </summary>
+    /// <summary>The session the context was authenticated by.</summary>
     private static (string SessionId, string Subject, DateTimeOffset AuthTime) RequireAuthenticated(
         AuthorizationRequestContext requestContext)
     {
@@ -183,11 +124,8 @@ internal sealed class AuthorizationCodeIssuer
             "Every path to issuance promotes or reads the SSO session first.");
     }
 
-    /// <summary>
-    /// The scopes the code carries: those the request asked for that the registration still
-    /// allows, narrowed further by the user's decision when consent was asked.
-    /// </summary>
-    private static string[] ResolveScopes(AuthorizationRequestContext requestContext, IClientMetadata client)
+    /// <summary>The requested scopes the registration still allows and the user granted, if asked.</summary>
+    private static string[] ResolveScopes(AuthorizationRequestContext requestContext, IClient client)
     {
         var granted = requestContext.GrantedScopes;
 
@@ -205,6 +143,6 @@ internal sealed class AuthorizationCodeIssuer
     }
 
     /// <summary>Whether this request had to go through the consent page: the registration says so, or the request asked.</summary>
-    private static bool ConsentWasRequired(AuthorizationRequestContext requestContext, IClientMetadata client) =>
+    private static bool ConsentWasRequired(AuthorizationRequestContext requestContext, IClient client) =>
         client.RequireConsent || requestContext.Prompts.Contains(PromptValue.Consent);
 }

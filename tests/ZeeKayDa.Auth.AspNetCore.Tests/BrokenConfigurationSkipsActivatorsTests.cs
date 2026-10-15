@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using ZeeKayDa.Auth.Extensions;
+using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests;
@@ -35,6 +35,8 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
     /// <summary>Static counters: the ring owns its source, so a test cannot hold the instance.</summary>
     private sealed class RecordingSigningKeySource : ISigningKeySource
     {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
         public static int ConstructionCount { get; private set; }
 
         public static int ReadAsyncCallCount { get; private set; }
@@ -50,13 +52,13 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
             CreateSignerAsyncCallCount = 0;
         }
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
         {
             ReadAsyncCallCount++;
             throw new NotSupportedException();
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             CreateSignerAsyncCallCount++;
             throw new NotSupportedException();
@@ -78,16 +80,19 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
                 services.AddZeeKayDaAuth(options =>
                 {
                     options.Issuer = "https://test.example.com";
-                    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 })
                 .AddInMemoryClients(clients =>
-                    clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]))
+                    clients.AddPublic("test-client", client =>
+                    {
+                        client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                        client.AllowedScopes.UnionWith(["openid"]);
+                    }))
                 .AddInMemoryStores(allowOutsideDevelopment: true).AddTestClaimsProvider();
 
                 // Fails a cheap verifier: no IDistributedCache is registered for the distributed
                 // store check to find. Nothing in the activator phase should run afterwards.
-                services.AddZeeKayDaSigningKeySource<RecordingSigningKeySource>();
-                services.AddSingleton<IStartupVerifier>(new AlwaysFailingVerifier());
+                new ZeeKayDaAuthCoreBuilder(services).AddSigningKeySource<RecordingSigningKeySource>();
+                services.AddScoped<IStartupVerifier>(_ => new AlwaysFailingVerifier());
             });
 
             builder.Configure(app =>
@@ -102,11 +107,10 @@ public sealed class BrokenConfigurationSkipsActivatorsTests
     {
         public string Name => "AlwaysFails";
 
-        public ValueTask VerifyAsync(
-            StartupVerificationContext context, IServiceProvider scopedServices, CancellationToken cancellationToken)
+        public Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
         {
             context.AddFailure("test.cheap_failure", "A cheap configuration check failed.");
-            return ValueTask.CompletedTask;
+            return Task.CompletedTask;
         }
     }
 }

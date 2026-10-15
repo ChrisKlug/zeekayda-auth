@@ -1,38 +1,45 @@
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// The immutable state every consumer of the static signing key ring reads: every published key,
-/// which one signs, and which algorithms to advertise.
+/// The immutable state every consumer of the signing key ring reads: every published key, which one
+/// signs, and the one algorithm they all sign under.
 /// </summary>
 /// <remarks>
-/// The only way to obtain an instance is <see cref="SigningKeySetBuilder.Build"/>, and its
-/// constructor is <see langword="internal"/>.
+/// Only the framework constructs one. When <see cref="SigningKey"/> is set it is among
+/// <see cref="Published"/>, and every published key has <see cref="Algorithm"/>.
 /// </remarks>
 public sealed class SigningKeySet
 {
-    internal SigningKeySet(
-        SigningKey signingKey, IReadOnlyList<SigningKey> published, IReadOnlyList<SigningAlgorithm> advertisedAlgorithms)
+    internal SigningKeySet(SigningAlgorithm algorithm, SigningKey? signingKey, IReadOnlyList<SigningKey> published)
     {
+        if (signingKey is not null && !published.Any(key => string.Equals(key.Kid, signingKey.Kid, StringComparison.Ordinal)))
+            throw new ArgumentException("The signing key must be among the published keys.", nameof(published));
+
+        if (published.Any(key => key.Algorithm != algorithm))
+            throw new ArgumentException("Every published key must sign under the set's algorithm.", nameof(published));
+
+        Algorithm = algorithm;
         SigningKey = signingKey;
         Published = published;
-        AdvertisedAlgorithms = advertisedAlgorithms;
     }
 
-    /// <summary>Gets the key that signs.</summary>
-    public SigningKey SigningKey { get; }
+    /// <summary>
+    /// Gets the key that signs, or <see langword="null"/> while signing has stopped or is resuming.
+    /// </summary>
+    public SigningKey? SigningKey { get; }
 
-    /// <summary>Gets every key to publish, signing key included.</summary>
+    /// <summary>
+    /// Gets every key to publish, signing key included, oldest first; empty when signing has stopped.
+    /// </summary>
     public IReadOnlyList<SigningKey> Published { get; }
 
     /// <summary>
-    /// Gets the distinct algorithms of <see cref="Published"/>, in ascending order by
-    /// <see cref="SigningAlgorithm"/> value — stable across restarts and across replicas with
-    /// differently ordered configuration.
+    /// Gets the algorithm every published key signs under — the source's
+    /// <see cref="ISigningKeySource.Algorithm"/>, read once at startup, and the one value of
+    /// <c>id_token_signing_alg_values_supported</c>.
     /// </summary>
-    /// <remarks>
-    /// Derived from the published set, not from <see cref="SigningKey"/> alone, so an algorithm
-    /// does not drop out of discovery while tokens signed under it are still live (a <c>Previous</c>
-    /// key's algorithm remains advertised for as long as that key is published).
-    /// </remarks>
-    public IReadOnlyList<SigningAlgorithm> AdvertisedAlgorithms { get; }
+    public SigningAlgorithm Algorithm { get; }
+
+    /// <summary>The set served while signing has stopped: no signing key, nothing published.</summary>
+    internal static SigningKeySet Stopped(SigningAlgorithm algorithm) => new(algorithm, null, []);
 }

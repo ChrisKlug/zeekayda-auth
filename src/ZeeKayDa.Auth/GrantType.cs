@@ -2,13 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace ZeeKayDa.Auth;
 
-/// <summary>
-/// OAuth 2.0 grant type values that can be advertised in discovery metadata.
-/// </summary>
-/// <remarks>
-/// Values are based on <see href="https://www.rfc-editor.org/rfc/rfc6749#section-1.3">RFC 6749
-/// §1.3</see>.
-/// </remarks>
+/// <summary>OAuth 2.0 grant types (RFC 6749 §1.3) that can be advertised in discovery metadata.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<GrantType>))]
 public enum GrantType
 {

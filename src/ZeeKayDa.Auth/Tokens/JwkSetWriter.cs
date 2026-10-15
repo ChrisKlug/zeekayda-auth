@@ -4,23 +4,14 @@ using System.Text.Json;
 
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// Serialises published signing keys as an RFC 7517 §5 JWK Set document.
-/// </summary>
+/// <summary>Serialises published signing keys as an RFC 7517 §5 JWK Set.</summary>
 /// <remarks>
-/// Hand-rolled over <see cref="Utf8JsonWriter"/> so nothing but the intended public members can
-/// reach the output: <c>kid</c>, <c>kty</c>, <c>use</c>, <c>alg</c>, and the public parameters for
-/// the key type. The keys appear in the order given, and every member is written in a fixed order,
-/// so the same key list always produces byte-identical output. RSA <c>n</c>/<c>e</c> are encoded
-/// with the same RFC 7518 §6.3.1.1 minimal encoding <see cref="JwkThumbprint"/> hashes, so a
-/// served key's parameters always re-derive its own <c>kid</c>.
+/// Hand-written so nothing but the intended public members reach the output, in a fixed order, with RSA
+/// parameters encoded as <see cref="JwkThumbprint"/> hashes them, so a served key re-derives its <c>kid</c>.
 /// </remarks>
 internal static class JwkSetWriter
 {
-    /// <summary>
-    /// Writes <paramref name="keys"/> as the UTF-8 bytes of a JWK Set document.
-    /// </summary>
-    /// <param name="keys">The keys to publish, in the order they should appear.</param>
+    /// <summary>Writes <paramref name="keys"/>, in order, as the UTF-8 bytes of a JWK Set.</summary>
     public static byte[] Write(IReadOnlyList<SigningKey> keys)
     {
         var buffer = new ArrayBufferWriter<byte>();

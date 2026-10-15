@@ -11,7 +11,7 @@ public class ClientRegistrationSnapshotTests
 {
     /// <summary>
     /// The guard that makes the snapshot's coverage rule enforceable rather than advisory. A
-    /// member added to <see cref="IClientRegistration"/> or <see cref="IClientMetadata"/> and not
+    /// member added to <see cref="IClientWithCredentials"/> or <see cref="IClient"/> and not
     /// copied by the snapshot keeps reading through to the store's instance, which is the bug the
     /// snapshot exists to close — so this test fails the build until both are updated together.
     /// If you are here because it failed: copy the member in the snapshot, then add a mutation for
@@ -21,29 +21,28 @@ public class ClientRegistrationSnapshotTests
     public void Snapshot_covers_every_IClientRegistration_member()
     {
         // Type.GetProperties() on an interface does not return inherited members, so the whole
-        // implemented-interface set is walked — the same reason the fingerprint's guard does it.
+        // implemented-interface set is walked.
         DeclaredProperties().Select(p => p.Name).Should().BeEquivalentTo(MemberMutations().Keys);
     }
 
     /// <summary>
     /// The guard that catches a member the snapshot forgot to copy. Such a member is not a compile
-    /// error — <see cref="IClientMetadata"/>'s newer members are default interface implementations,
+    /// error — <see cref="IClient"/>'s newer members are default interface implementations,
     /// so an uncopied one silently answers the interface default instead of the store's value.
-    /// Fingerprint equality is the check because the fingerprint covers every member and has its
-    /// own guard saying so, and the fixture leaves no member at a default an omission could match.
+    /// The fixture leaves no member at a default an omission could match.
     /// </summary>
     [Fact]
     public void A_snapshot_carries_every_value_of_the_registration_it_copied()
     {
         var registration = FullyPopulated();
 
-        ClientRegistrationFingerprint.Compute(ClientRegistrationSnapshot.Of(registration)).Value
-            .Should().Be(ClientRegistrationFingerprint.Compute(registration).Value);
+        ValuesOf(ClientRegistrationSnapshot.Of(registration))
+            .Should().BeEquivalentTo(ValuesOf(registration));
     }
 
     /// <summary>
     /// Keeps the test above honest. A member the fixture left at <see langword="false"/>,
-    /// <see langword="null"/> or empty would fingerprint identically whether it was copied or
+    /// <see langword="null"/> or empty would compare identically whether it was copied or
     /// forgotten, so the omission would pass unnoticed.
     /// </summary>
     [Fact]
@@ -72,16 +71,16 @@ public class ClientRegistrationSnapshotTests
     {
         var registration = new MutableRegistration();
         var snapshot = ClientRegistrationSnapshot.Of(registration);
-        var before = ClientRegistrationFingerprint.Compute(snapshot).Value;
+        var before = ValuesOf(snapshot);
 
         mutate(registration);
 
         // Guards the theory against a mutation that changes nothing: unless the live registration
-        // now fingerprints differently, the assertion below would pass vacuously.
-        ClientRegistrationFingerprint.Compute(registration).Value
-            .Should().NotBe(before, $"the {member} mutation must be a real change");
-        ClientRegistrationFingerprint.Compute(snapshot).Value
-            .Should().Be(before, $"{member} is copied, not read through to the store's instance");
+        // now differs, the assertion below would pass vacuously.
+        ValuesOf(registration).Should().NotBeEquivalentTo(
+            before, $"the {member} mutation must be a real change");
+        ValuesOf(snapshot).Should().BeEquivalentTo(
+            before, $"{member} is copied, not read through to the store's instance");
     }
 
     [Fact]
@@ -98,49 +97,15 @@ public class ClientRegistrationSnapshotTests
     }
 
     [Fact]
-    public void Adding_a_credential_after_the_snapshot_leaves_the_snapshot_alone()
+    public void Adding_a_secret_after_the_snapshot_leaves_the_snapshot_alone()
     {
-        var credentials = new List<IClientCredential>();
-        var snapshot = ClientRegistrationSnapshot.Of(new MutableRegistration { Credentials = credentials });
+        var secrets = new List<ClientSecret>();
+        var snapshot = ClientRegistrationSnapshot.Of(new MutableRegistration { Secrets = secrets });
 
-        credentials.Add(new StubPbkdf2Secret());
+        secrets.Add(StoredSecret);
 
-        snapshot.Credentials.Should().BeEmpty(
-            "a store must not be able to hand a client a credential behind the verdict that called it public");
-    }
-
-    [Theory]
-    [MemberData(nameof(CredentialEdits))]
-    public void Editing_a_credential_in_place_after_the_snapshot_leaves_the_snapshot_alone(
-        string edit,
-        Action<MutablePbkdf2Secret> apply)
-    {
-        // Copying the credential list is not enough: a store entity's salt and hash are arrays it
-        // still holds, and writing into them would change the secret the authenticator checks after
-        // validation approved the old one.
-        var credential = new MutablePbkdf2Secret();
-        var snapshot = ClientRegistrationSnapshot.Of(new MutableRegistration { Credentials = [credential] });
-        var before = ClientRegistrationFingerprint.Compute(snapshot).Value;
-
-        apply(credential);
-
-        ClientRegistrationFingerprint.Compute(snapshot).Value.Should().Be(
-            before, $"a store that {edit} must not change the credential validation approved");
-    }
-
-    [Fact]
-    public void Writing_into_a_served_credential_leaves_the_store_s_credential_alone()
-    {
-        // The registration reaches host code through TokenIssuanceContext.Client, and a downcast
-        // reaches its credentials. The in-memory repository keeps one credential instance for the
-        // host's lifetime, so a write reaching it would change the secret for every later request.
-        var credential = new MutablePbkdf2Secret();
-        var snapshot = ClientRegistrationSnapshot.Of(new MutableRegistration { Credentials = [credential] });
-        var served = (IPbkdf2ClientSecret)snapshot.Credentials.Single();
-
-        served.Hash[0] ^= 0xFF;
-
-        credential.Hash.Should().Equal(MutablePbkdf2Secret.OriginalHash);
+        snapshot.Secrets.Should().BeEmpty(
+            "a store must not be able to hand a client a secret behind the verdict that called it public");
     }
 
     [Fact]
@@ -204,7 +169,7 @@ public class ClientRegistrationSnapshotTests
     [Fact]
     public void String_sets_are_rebuilt_with_ordinal_comparison()
     {
-        // The IClientMetadata string-set invariant says a set's own comparer is not trusted. Past
+        // The IClient string-set invariant says a set's own comparer is not trusted. Past
         // the snapshot it cannot be the wrong one, because the framework chose it — so a
         // case-insensitive registration can no longer make a consumer match a URI it did not register.
         var snapshot = ClientRegistrationSnapshot.Of(new MutableRegistration
@@ -250,16 +215,31 @@ public class ClientRegistrationSnapshotTests
     /// inherited members, so the whole implemented-interface set is walked — naming the interfaces
     /// by hand would let a member on a newly inserted base interface escape both guards.
     /// </summary>
+    /// <summary>
+    /// Every member's value, collections materialized into lists so a later edit to the
+    /// registration's own set cannot reach back into what was captured.
+    /// </summary>
+    private static Dictionary<string, object?> ValuesOf(IClientWithCredentials registration) =>
+        DeclaredProperties().ToDictionary(
+            p => p.Name,
+            p => p.GetValue(registration) switch
+            {
+                string text => text,
+                IEnumerable values => values.Cast<object>().ToList(),
+                var value => value,
+            },
+            StringComparer.Ordinal);
+
     private static IEnumerable<PropertyInfo> DeclaredProperties() =>
-        typeof(IClientRegistration).GetInterfaces()
-            .Append(typeof(IClientRegistration))
+        typeof(IClientWithCredentials).GetInterfaces()
+            .Append(typeof(IClientWithCredentials))
             .SelectMany(t => t.GetProperties())
             .DistinctBy(p => p.Name, StringComparer.Ordinal);
 
     /// <summary>
     /// A registration with every member set away from the value an uncopied one would hold. It is
     /// not a valid registration — a public client with a credential, for one — which neither the
-    /// snapshot nor the fingerprint cares about; only the validator does.
+    /// snapshot nor this test cares about; only the validator does.
     /// </summary>
     private static MutableRegistration FullyPopulated() => new()
     {
@@ -282,20 +262,13 @@ public class ClientRegistrationSnapshotTests
         AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 },
         AccessTokenLifetime = TimeSpan.FromMinutes(10),
         IdTokenLifetime = TimeSpan.FromMinutes(5),
-        AdditionalIdTokenClaims = ["tenant"],
-        AdditionalUserInfoClaims = ["department"],
-        AdditionalAccessTokenClaims = ["region"],
-        // The framework's own type, because the snapshot serves every IPbkdf2ClientSecret as one and
-        // the fingerprint includes the credential's type.
-        Credentials = [new Pbkdf2ClientSecret(600_000, [9, 9, 9], [1, 2, 3])],
+        AdditionalIdTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
+        AdditionalUserInfoClaims = new HashSet<string>(["department"], StringComparer.Ordinal),
+        AdditionalAccessTokenClaims = new HashSet<string>(["region"], StringComparer.Ordinal),
+        Secrets = [StoredSecret],
     };
 
-    public static TheoryData<string, Action<MutablePbkdf2Secret>> CredentialEdits() => new()
-    {
-        { "writes into the salt", c => c.Salt[0] ^= 0xFF },
-        { "writes into the hash", c => c.Hash[0] ^= 0xFF },
-        { "changes the iteration count", c => c.Iterations++ },
-    };
+    private static readonly ClientSecret StoredSecret = new("$fake$x");
 
     private static Dictionary<string, Action<MutableRegistration>> MemberMutations() =>
         new(StringComparer.Ordinal)
@@ -321,10 +294,10 @@ public class ClientRegistrationSnapshotTests
                 r.AllowedSigningAlgorithms = new HashSet<SigningAlgorithm> { SigningAlgorithm.RS256 },
             ["AccessTokenLifetime"] = r => r.AccessTokenLifetime = TimeSpan.FromMinutes(10),
             ["IdTokenLifetime"] = r => r.IdTokenLifetime = TimeSpan.FromMinutes(1),
-            ["AdditionalIdTokenClaims"] = r => r.AdditionalIdTokenClaims = ["tenant"],
-            ["AdditionalUserInfoClaims"] = r => r.AdditionalUserInfoClaims = ["tenant"],
-            ["AdditionalAccessTokenClaims"] = r => r.AdditionalAccessTokenClaims = ["tenant"],
-            ["Credentials"] = r => r.Credentials = [new StubPbkdf2Secret()],
+            ["AdditionalIdTokenClaims"] = r => r.AdditionalIdTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
+            ["AdditionalUserInfoClaims"] = r => r.AdditionalUserInfoClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
+            ["AdditionalAccessTokenClaims"] = r => r.AdditionalAccessTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal),
+            ["Secrets"] = r => r.Secrets = [StoredSecret],
         };
 
     private static IReadOnlySet<string> Ordinal(params string[] values) =>
@@ -334,7 +307,7 @@ public class ClientRegistrationSnapshotTests
     /// What a custom store is free to hand back: every member settable, so the test can change one
     /// after the snapshot has been taken.
     /// </summary>
-    public sealed class MutableRegistration : IClientRegistration
+    public sealed class MutableRegistration : IClientWithCredentials
     {
         public string ClientId { get; set; } = "client-1";
 
@@ -374,16 +347,16 @@ public class ClientRegistrationSnapshotTests
 
         public TimeSpan? IdTokenLifetime { get; set; }
 
-        public IReadOnlyCollection<string> AdditionalIdTokenClaims { get; set; } = [];
+        public IReadOnlySet<string> AdditionalIdTokenClaims { get; set; } = new HashSet<string>(StringComparer.Ordinal);
 
-        public IReadOnlyCollection<string> AdditionalUserInfoClaims { get; set; } = [];
+        public IReadOnlySet<string> AdditionalUserInfoClaims { get; set; } = new HashSet<string>(StringComparer.Ordinal);
 
-        public IReadOnlyCollection<string> AdditionalAccessTokenClaims { get; set; } = [];
+        public IReadOnlySet<string> AdditionalAccessTokenClaims { get; set; } = new HashSet<string>(StringComparer.Ordinal);
 
-        public IReadOnlyList<IClientCredential> Credentials { get; set; } = [];
+        public IReadOnlyList<ClientSecret> Secrets { get; set; } = [];
     }
 
-    private sealed class ThrowingRegistration : IClientRegistration
+    private sealed class ThrowingRegistration : IClientWithCredentials
     {
         public string ClientId => throw new InvalidOperationException("The store could not read this registration.");
 
@@ -405,30 +378,6 @@ public class ClientRegistrationSnapshotTests
 
         public IReadOnlySet<ResponseMode> AllowedResponseModes => new HashSet<ResponseMode>();
 
-        public IReadOnlyList<IClientCredential> Credentials => [];
-    }
-
-    private sealed class StubPbkdf2Secret : IPbkdf2ClientSecret
-    {
-        public int Iterations => 600_000;
-
-        public byte[] Salt => [9, 9, 9];
-
-        public byte[] Hash => [1, 2, 3];
-    }
-
-    /// <summary>
-    /// A store entity implementing <see cref="IPbkdf2ClientSecret"/> directly, as an ORM entity
-    /// would: its arrays are its own, and it hands them out rather than copies.
-    /// </summary>
-    public sealed class MutablePbkdf2Secret : IPbkdf2ClientSecret
-    {
-        public static IReadOnlyList<byte> OriginalHash { get; } = [1, 2, 3];
-
-        public int Iterations { get; set; } = 600_000;
-
-        public byte[] Salt { get; } = [9, 9, 9];
-
-        public byte[] Hash { get; } = [.. OriginalHash];
+        public IReadOnlyList<ClientSecret> Secrets => [];
     }
 }

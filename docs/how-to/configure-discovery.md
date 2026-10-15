@@ -29,7 +29,7 @@ builder.Services.AddZeeKayDaAuth(options =>
     options.Response.TypesSupported = [ResponseType.Code];
     options.Response.ModesSupported = [ResponseMode.Query];
     options.GrantTypesSupported = [GrantType.AuthorizationCode];
-    options.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.ClientSecretBasic];
+    options.TokenEndpoint.AdvertisedAuthMethods = [TokenEndpointAuthMethods.ClientSecretBasic];
 });
 
 var app = builder.Build();
@@ -91,7 +91,7 @@ metadata fields from `AuthorizationServerOptions`.
 | built-in `InMemoryScopeRepository` | `scopes_supported` | `["openid", "profile", "email", "phone", "address"]` |
 | `Response.ModesSupported` | `response_modes_supported` | `["query"]` |
 | `GrantTypesSupported` | `grant_types_supported` | `["authorization_code"]` |
-| `TokenEndpoint.AuthMethodsSupported` | `token_endpoint_auth_methods_supported` | `["client_secret_basic"]` |
+| `TokenEndpoint.AdvertisedAuthMethods` (a filter) | `token_endpoint_auth_methods_supported` | `["client_secret_basic", "client_secret_post", "none"]`, derived from the registered client authenticators |
 
 `scopes_supported` is described by
 [OIDC Discovery 1.0 Section 3](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata)
@@ -99,11 +99,10 @@ and [RFC 8414 Section 2](https://www.rfc-editor.org/rfc/rfc8414.html#section-2).
 `grant_types_supported` and `token_endpoint_auth_methods_supported` are authorization server
 metadata fields from [RFC 8414 Section 2](https://www.rfc-editor.org/rfc/rfc8414.html#section-2).
 
-`TokenEndpoint.AuthMethodsSupported` accepts any string value, not just the well-known constants in
-`TokenEndpointAuthMethods`. Custom authentication methods (e.g. `"tls_client_auth"` from RFC 8705)
-can be included as plain strings. A custom `IClientAuthenticator` registration alone does **not**
-add a method to the discovery advertisement — you must also add it to
-`TokenEndpoint.AuthMethodsSupported` explicitly.
+`token_endpoint_auth_methods_supported` is derived: every method a registered `IClientAuthenticator`
+declares, plus `none`. Registering a custom authenticator for `"tls_client_auth"` (RFC 8705) is all it
+takes to advertise it. `TokenEndpoint.AdvertisedAuthMethods` can only withhold methods from that set;
+an entry no authenticator performs has no effect and logs a startup warning.
 
 By default, `scopes_supported` is sourced from the built-in
 `InMemoryScopeRepository(StandardScopes.All)`. If you want to customize that set or attach

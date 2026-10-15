@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Tokens;
@@ -11,6 +12,19 @@ public sealed class SigningKeyExpiryHealthCheckOptionsValidatorTests
 {
     private readonly SigningKeyExpiryHealthCheckOptionsValidator _sut = new();
 
+    private IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(SigningKeyExpiryHealthCheckOptions options)
+    {
+        try
+        {
+            ((IValidateOptions<SigningKeyExpiryHealthCheckOptions>)_sut).Validate(name: null, options);
+            return [];
+        }
+        catch (ZeeKayDaConfigurationException exception)
+        {
+            return exception.AggregatedFailures;
+        }
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -18,9 +32,10 @@ public sealed class SigningKeyExpiryHealthCheckOptionsValidatorTests
     {
         var options = new SigningKeyExpiryHealthCheckOptions { DegradedThreshold = TimeSpan.FromSeconds(seconds) };
 
-        var result = _sut.Validate(name: null, options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
+        failures.Should().ContainSingle(f => f.Code == "configuration.signing_key_expiry_health_check.degraded_threshold.not_positive")
+            .Which.Message.Should().Contain("greater than zero");
     }
 
     [Fact]
@@ -28,8 +43,8 @@ public sealed class SigningKeyExpiryHealthCheckOptionsValidatorTests
     {
         var options = new SigningKeyExpiryHealthCheckOptions { DegradedThreshold = TimeSpan.FromDays(14) };
 
-        var result = _sut.Validate(name: null, options);
+        var failures = Validate(options);
 
-        result.Succeeded.Should().BeTrue();
+        failures.Should().BeEmpty();
     }
 }

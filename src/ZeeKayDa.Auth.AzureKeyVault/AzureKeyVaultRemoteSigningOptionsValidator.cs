@@ -3,53 +3,43 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AzureKeyVault;
 
-/// <summary>
-/// Validates <see cref="AzureKeyVaultRemoteSigningOptions"/> at startup.
-/// </summary>
-/// <remarks>
-/// Registered via <c>AddAzureKeyVaultRemoteSigning()</c> and activated by <c>ValidateOnStart()</c>.
-/// </remarks>
-internal sealed class AzureKeyVaultRemoteSigningOptionsValidator : IValidateOptions<AzureKeyVaultRemoteSigningOptions>
+/// <summary>Validates <see cref="AzureKeyVaultRemoteSigningOptions"/> at startup.</summary>
+internal sealed class AzureKeyVaultRemoteSigningOptionsValidator : ZeeKayDaOptionsValidator<AzureKeyVaultRemoteSigningOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, AzureKeyVaultRemoteSigningOptions options)
+    protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(
+        string? name,
+        AzureKeyVaultRemoteSigningOptions options)
     {
-        var errors = new List<string>();
-
         if (options.KeyIdentifier.VaultUri is null)
         {
-            errors.Add(
+            yield return new(
+                "configuration.azure_key_vault_remote_signing.key_identifier.missing",
                 "AzureKeyVaultRemoteSigningOptions.KeyIdentifier must be set to a valid Key Vault key identifier " +
                 "(construct one with 'new KeyVaultKeyIdentifier(keyUri)').");
         }
 
         if (options.Credential is null)
         {
-            errors.Add(
+            yield return new(
+                "configuration.azure_key_vault_remote_signing.credential.missing",
                 "AzureKeyVaultRemoteSigningOptions.Credential must be set to a non-null TokenCredential.");
         }
 
         if (!Enum.IsDefined(options.Algorithm))
         {
-            errors.Add(
+            yield return new(
+                "configuration.azure_key_vault_remote_signing.algorithm.undefined_value",
                 $"AzureKeyVaultRemoteSigningOptions.Algorithm value '{options.Algorithm}' is not a defined " +
                 $"{nameof(SigningAlgorithm)} member.");
         }
 
-        if (options.PreviousVersionsToPublish < 0)
+        if (options.MaxVersions < KeyVaultVersions.MinimumMaxVersions)
         {
-            errors.Add(
-                $"AzureKeyVaultRemoteSigningOptions.PreviousVersionsToPublish ({options.PreviousVersionsToPublish}) " +
-                "must be zero or greater. Use 0 to publish no versions older than the signing one.");
+            yield return new(
+                "configuration.azure_key_vault_remote_signing.max_versions.too_small",
+                $"AzureKeyVaultRemoteSigningOptions.MaxVersions is {options.MaxVersions}, but must be at least {KeyVaultVersions.MinimumMaxVersions}: " +
+                "a rotation has a staged, a signing and a previous version live at once.");
         }
-
-        if (options.PreActivationDelay < TimeSpan.Zero)
-        {
-            errors.Add(
-                $"AzureKeyVaultRemoteSigningOptions.PreActivationDelay ({options.PreActivationDelay}) must be " +
-                "zero or greater. Use TimeSpan.Zero to let a newly created key version sign immediately.");
-        }
-
-        return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 }

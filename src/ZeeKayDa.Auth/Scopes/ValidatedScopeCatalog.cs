@@ -3,53 +3,16 @@ using ZeeKayDa.Auth.Claims;
 namespace ZeeKayDa.Auth.Scopes;
 
 /// <summary>
-/// The framework's only path from <see cref="IScopeRepository"/> to a scope definition. Copies
-/// what the repository returned and refuses the copy, with a
-/// <see cref="ZeeKayDaConfigurationException"/>, when it breaks the contract
-/// <see cref="IScopeRepository.GetScopesAsync"/> documents.
+/// The framework's only path from <see cref="IScopeRepository"/> to scope definitions: copies what it
+/// returns, checks the copy against the documented contract, and throws when it is broken.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <see cref="ScopeDefinition"/> declares a name and three claim lists that are never null, and
-/// <see cref="InMemoryScopeRepository"/> refuses a blank, duplicated or unnamed entry in its
-/// constructor — but a custom <see cref="IScopeRepository"/> runs neither that constructor nor the
-/// nullable annotations, which are not enforced at runtime. Consumers had each been defending
-/// themselves instead, reading a null claim list as empty in four separate places, which keeps the
-/// process up and tells the operator nothing. This type makes the guarantee structural: every
-/// consumer takes the catalog, never the repository.
-/// </para>
-/// <para>
-/// <strong>What is validated is what is served.</strong> Each definition is copied, claim lists
-/// included, before it is checked, and it is the copy that is returned. A repository free to
-/// mutate what it handed back would otherwise have one set of scopes approved and a different set
-/// used to issue a token.
-/// </para>
-/// <para>
-/// <strong>Validated on every call, with no cache.</strong> Unlike
-/// <c>ValidatedClientResolver</c>, whose verdicts are memoized because validation runs a PBKDF2
-/// derivation, the work here is a linear pass over a handful of definitions. A cache would buy
-/// nothing and would hide a repository whose answer changed after startup — which is the gap that
-/// checking at startup alone leaves open.
-/// </para>
-/// <para>
-/// A broken repository throws rather than degrading. There is no safe reduced answer: serving no
-/// scopes would fail the client's request with <c>invalid_scope</c> for what is the operator's
-/// bug, and serving the scopes that happen to be well-formed would issue tokens against half a
-/// configuration. At startup <c>ScopePresenceStartupValidator</c> turns the same failures into
-/// named startup failures, so a misconfigured host does not reach a request at all.
-/// </para>
+/// The copy is what is served, so a repository mutating what it returned cannot have one set approved and
+/// another issued. Checked on every call with no cache, so an answer that changed after startup is caught.
+/// A broken repository throws: no reduced answer is safe.
 /// </remarks>
-internal sealed class ValidatedScopeCatalog
+internal sealed class ValidatedScopeCatalog(IScopeRepository repository)
 {
-    private readonly IScopeRepository _repository;
-
-    public ValidatedScopeCatalog(IScopeRepository repository)
-    {
-        ArgumentNullException.ThrowIfNull(repository);
-
-        _repository = repository;
-    }
-
     /// <summary>
     /// The scopes the repository serves, copied and checked against the
     /// <see cref="IScopeRepository.GetScopesAsync"/> contract.
@@ -63,11 +26,9 @@ internal sealed class ValidatedScopeCatalog
     /// </exception>
     public async ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken)
     {
-        var served = await _repository.GetScopesAsync(cancellationToken).ConfigureAwait(false);
+        var served = await repository.GetScopesAsync(cancellationToken).ConfigureAwait(false);
 
-        // A null collection is reported alone. Every check below would fire against the empty
-        // list that stands in for it — "the openid scope is missing" above all — and an operator
-        // reading a list of consequences has to work out which one is the cause.
+        // Reported alone: every check below would also fire against an empty stand-in and bury the cause.
         if (served is null)
         {
             throw new ScopeContractException(new ZeeKayDaConfigurationFailure(
@@ -92,16 +53,9 @@ internal sealed class ValidatedScopeCatalog
     }
 
     /// <summary>
-    /// An independent copy of every definition the repository served, with a failure recorded for
-    /// a null element. A null element is dropped rather than carried, so the checks below read a
-    /// list they can dereference; the failure is what the operator acts on.
+    /// An independent copy of every definition, dropping a null element and reading a null claim list as
+    /// empty, so later checks need no null guards; both are reported as failures.
     /// </summary>
-    /// <remarks>
-    /// A null claim list is copied as empty rather than thrown on here, because
-    /// <see cref="CheckClaims"/> reports it as the named failure it is. Copying it first keeps
-    /// every later check able to enumerate the list without a null guard of its own — the guards
-    /// this type exists to remove.
-    /// </remarks>
     private static List<ScopeDefinition> Copy(
         IReadOnlyCollection<ScopeDefinition> served,
         List<ZeeKayDaConfigurationFailure> failures)
@@ -119,11 +73,7 @@ internal sealed class ValidatedScopeCatalog
 
             ReportNullClaimLists(scope, failures);
 
-            // `with`, not a member-by-member initializer: a property later added to
-            // ScopeDefinition is then carried by the copy automatically, where a listed-out
-            // initializer would drop it silently with no compiler error to say so. Only the three
-            // collections need replacing, because only they can be edited by the repository after
-            // it has handed them back.
+            // `with`, so a property added later is copied too; only the collections can still be mutated.
             copies.Add(scope with
             {
                 IdTokenClaims = CopyClaims(scope.IdTokenClaims),
@@ -144,22 +94,11 @@ internal sealed class ValidatedScopeCatalog
         return copies;
     }
 
-    /// <summary>
-    /// A claim list as its own array, reading a null list as empty. The null is reported by
-    /// <see cref="ReportNullClaimLists"/>, which runs against the same original definition.
-    /// </summary>
+    /// <summary>A claim list as its own array, reading a null list as empty.</summary>
     private static IReadOnlyCollection<string> CopyClaims(IReadOnlyCollection<string>? claims) =>
         claims is null ? [] : [.. claims];
 
-    /// <summary>
-    /// A failure for each destination whose claim list the repository served as null, named as the
-    /// property an operator would go and fix.
-    /// </summary>
-    /// <remarks>
-    /// Runs against the definition the repository served, before the copy substitutes an empty
-    /// list for each — which is what lets every check after this one enumerate a claim list
-    /// without a null guard of its own.
-    /// </remarks>
+    /// <summary>A failure per claim list the repository served as null, run on the original before the copy.</summary>
     private static void ReportNullClaimLists(ScopeDefinition scope, List<ZeeKayDaConfigurationFailure> failures)
     {
         ReportIfNull(scope, scope.IdTokenClaims, nameof(ScopeDefinition.IdTokenClaims), failures);
@@ -197,21 +136,9 @@ internal sealed class ValidatedScopeCatalog
     }
 
     /// <summary>
-    /// No two scopes share a name. Names are compared ordinally because that is how a requested
-    /// scope is matched (<see cref="ScopeResolution.TryResolve"/>) and how the discovery document
-    /// publishes them.
+    /// No two scopes share an ordinal name: a duplicate resolves to whichever came first. Two sets rather than
+    /// a <c>GroupBy</c>, since this runs on every request; one failure per repeated name.
     /// </summary>
-    /// <remarks>
-    /// Two scopes with one name resolve ambiguously — whichever the repository happens to return
-    /// first wins, and it decides the claims unlocked and the audience the access token carries.
-    /// Both are also published to <c>scopes_supported</c>, which then names the same scope twice.
-    /// <para>
-    /// Two sets rather than a <c>GroupBy</c>: this runs on every authorize, token, userinfo and
-    /// discovery request, and what is wanted is "seen before", not the grouping itself.
-    /// <c>reported</c> keeps a name appearing three times to one failure. An unnamed scope is
-    /// <see cref="CheckNamesArePresent"/>'s to report, not this one's.
-    /// </para>
-    /// </remarks>
     private static void CheckNamesAreUnique(List<ScopeDefinition> scopes, List<ZeeKayDaConfigurationFailure> failures)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -234,14 +161,9 @@ internal sealed class ValidatedScopeCatalog
     }
 
     /// <summary>
-    /// Every claim a scope lists is named, and none names a protocol claim the framework writes
-    /// from the grant. A null list is reported during the copy, by
-    /// <see cref="ReportNullClaimLists"/>.
+    /// Every listed claim is named, at most one failure per scope, and none is a protocol claim the framework
+    /// writes from the grant.
     /// </summary>
-    /// <remarks>
-    /// At most one blank-claim failure per scope: the failure says the scope lists an unnamed
-    /// claim, and repeating it per blank entry tells the operator nothing new about the same fix.
-    /// </remarks>
     private static void CheckClaims(List<ScopeDefinition> scopes, List<ZeeKayDaConfigurationFailure> failures)
     {
         foreach (var scope in scopes)
@@ -265,10 +187,7 @@ internal sealed class ValidatedScopeCatalog
         }
     }
 
-    /// <summary>
-    /// An <see cref="ScopeDefinition.Audience"/> that is set is a resource indicator, because the
-    /// value becomes the access token's <c>aud</c> claim as written.
-    /// </summary>
+    /// <summary>A set <see cref="ScopeDefinition.Audience"/> is a resource indicator, since it becomes <c>aud</c> as written.</summary>
     private static void CheckAudiences(List<ScopeDefinition> scopes, List<ZeeKayDaConfigurationFailure> failures)
     {
         foreach (var scope in scopes.Where(scope => scope.Audience is not null && !ResourceIndicator.IsValid(scope.Audience)))
@@ -296,10 +215,7 @@ internal sealed class ValidatedScopeCatalog
     private static IEnumerable<string> AllClaimsListedBy(ScopeDefinition scope) =>
         scope.IdTokenClaims.Concat(scope.UserInfoClaims).Concat(scope.AccessTokenClaims);
 
-    /// <summary>
-    /// Every reserved protocol name a scope's lists carry, except <c>sub</c>, which the standard
-    /// <c>openid</c> scope lists for readability and which every token carries regardless.
-    /// </summary>
+    /// <summary>The reserved names a scope lists, except <c>sub</c>, which <c>openid</c> lists for readability.</summary>
     private static IEnumerable<string> ReservedClaimsListedBy(ScopeDefinition scope) =>
         AllClaimsListedBy(scope)
             .Where(claim => claim is not null && ReservedClaimNames.IsReserved(claim) && !string.Equals(claim, "sub", StringComparison.Ordinal))

@@ -14,20 +14,17 @@ public sealed class LogoutRequest
     }
 
     /// <summary>
-    /// The client that sent the user here to sign out, for the page to name it; or
-    /// <see langword="null"/> when the request named no registered client — a sign-out the user
-    /// started by visiting the endpoint directly, for instance.
+    /// The client that sent the user here to sign out, or <see langword="null"/> when the request
+    /// named none, as when the user visited the endpoint directly.
     /// </summary>
     public ClientInformation? Client { get; }
 
     /// <summary>
-    /// The subject identifier of the user being signed out, as the host's sign-in supplied it, for
-    /// the page to name them.
+    /// The subject identifier of the user being signed out, as the host's sign-in supplied it.
     /// </summary>
     /// <remarks>
-    /// The user who was signed in when the sign-out was started, which is the only session it may
-    /// end: <see cref="ILogoutInteraction.SignOutAsync"/> refuses if the browser is no longer
-    /// carrying that session, so this never names one user and signs out another.
+    /// The only session the sign-out may end: <see cref="LogoutInteraction.SignOutAsync"/> refuses
+    /// once the browser holds another.
     /// </remarks>
     public string Subject { get; }
 }

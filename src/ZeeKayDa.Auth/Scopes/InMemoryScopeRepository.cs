@@ -15,33 +15,9 @@ public sealed class InMemoryScopeRepository : IScopeRepository
     /// Thrown when <paramref name="scopes"/> is <see langword="null"/>.
     /// </exception>
     /// <remarks>
-    /// <para>
-    /// <strong>The scopes are copied but not judged here.</strong> Every rule a scope must keep —
-    /// a name, no duplicate name, claim lists that exist and are named, an audience that is a
-    /// resource indicator, the presence of <c>openid</c> — belongs to
-    /// <c>ValidatedScopeCatalog</c>, which is the one path from any
-    /// <see cref="IScopeRepository"/> to a definition and holds a custom repository to exactly the
-    /// same rules. Enforcing a subset of them a second time here made this type a second
-    /// authority that disagreed with the first in three ways: it reported through
-    /// <see cref="ArgumentException"/> rather than a named
-    /// <see cref="ZeeKayDaConfigurationFailure"/> an operator can search for, it threw on the
-    /// first problem rather than reporting every one at once, and it never checked
-    /// <c>openid</c> at all.
-    /// </para>
-    /// <para>
-    /// The cost is that a mistake surfaces at startup rather than at the
-    /// <c>AddInMemoryScopes</c> call. That is the better trade: the operator gets every problem
-    /// in one pass, under the codes the documentation lists, and an in-memory host and a
-    /// database-backed one fail the same way.
-    /// </para>
-    /// <para>
-    /// The enumerable is materialised so that a lazy sequence is not re-run on every read, and
-    /// wrapped read-only so the returned collection cannot be downcast to its backing array and
-    /// mutated — what this repository serves must not change under a caller that merely read it.
-    /// The definitions themselves are not deep-copied: <c>ValidatedScopeCatalog</c> copies each
-    /// one, claim lists included, on every read, so what the protocol sees is already insulated
-    /// from a caller that edits a list it passed in.
-    /// </para>
+    /// Copied but not judged: every scope rule belongs to the catalog that holds every repository to the same
+    /// rules, so a mistake surfaces at startup with every problem at once. The list is materialised and wrapped
+    /// read-only.
     /// </remarks>
     public InMemoryScopeRepository(IEnumerable<ScopeDefinition> scopes)
     {
@@ -51,10 +27,10 @@ public sealed class InMemoryScopeRepository : IScopeRepository
     }
 
     /// <inheritdoc />
-    public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return ValueTask.FromResult(_scopes);
+        return Task.FromResult(_scopes);
     }
 }

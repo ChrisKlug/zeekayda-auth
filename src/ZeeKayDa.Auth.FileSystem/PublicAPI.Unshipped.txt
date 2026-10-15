@@ -1,64 +1,44 @@
 #nullable enable
-Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderFileSigningExtensions
-ZeeKayDa.Auth.FileSystem.PemCertificateFile
-ZeeKayDa.Auth.FileSystem.PemCertificateFile.<Clone>$() -> ZeeKayDa.Auth.FileSystem.PemCertificateFile!
-ZeeKayDa.Auth.FileSystem.PemCertificateFile.Deconstruct(out string! Path) -> void
-ZeeKayDa.Auth.FileSystem.PemCertificateFile.Equals(ZeeKayDa.Auth.FileSystem.PemCertificateFile? other) -> bool
-ZeeKayDa.Auth.FileSystem.PemCertificateFile.Path.get -> string!
-ZeeKayDa.Auth.FileSystem.PemCertificateFile.Path.init -> void
-ZeeKayDa.Auth.FileSystem.PemCertificateFile.PemCertificateFile(string! Path) -> void
+Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderFileSigningExtensions
 ZeeKayDa.Auth.FileSystem.PemFileSigningOptions
 ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
-ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Current.get -> ZeeKayDa.Auth.FileSystem.PemSigningFile?
-ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Current.set -> void
-ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Next.get -> ZeeKayDa.Auth.FileSystem.PemCertificateFile?
-ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Next.set -> void
 ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.PemFileSigningOptions() -> void
-ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Previous.get -> ZeeKayDa.Auth.FileSystem.PemCertificateFile?
-ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Previous.set -> void
 ZeeKayDa.Auth.FileSystem.PemSigningFile
 ZeeKayDa.Auth.FileSystem.PemSigningFile.<Clone>$() -> ZeeKayDa.Auth.FileSystem.PemSigningFile!
-ZeeKayDa.Auth.FileSystem.PemSigningFile.Deconstruct(out string! Path, out string? KeyPath) -> void
+ZeeKayDa.Auth.FileSystem.PemSigningFile.Deconstruct(out string! Path, out string? KeyPath, out System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<string!>!>? PasswordSource) -> void
 ZeeKayDa.Auth.FileSystem.PemSigningFile.Equals(ZeeKayDa.Auth.FileSystem.PemSigningFile? other) -> bool
 ZeeKayDa.Auth.FileSystem.PemSigningFile.KeyPath.get -> string?
 ZeeKayDa.Auth.FileSystem.PemSigningFile.KeyPath.init -> void
 ZeeKayDa.Auth.FileSystem.PemSigningFile.Path.get -> string!
 ZeeKayDa.Auth.FileSystem.PemSigningFile.Path.init -> void
-ZeeKayDa.Auth.FileSystem.PemSigningFile.PemSigningFile(string! Path, string? KeyPath = null) -> void
+ZeeKayDa.Auth.FileSystem.PemSigningFile.PemSigningFile(string! Path, string? KeyPath = null, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<string!>!>? PasswordSource = null) -> void
+ZeeKayDa.Auth.FileSystem.PemSigningFile.PasswordSource.get -> System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<string!>!>?
+ZeeKayDa.Auth.FileSystem.PemSigningFile.PasswordSource.init -> void
 ZeeKayDa.Auth.FileSystem.PfxFileSigningOptions
 ZeeKayDa.Auth.FileSystem.PfxFileSigningOptions.Algorithm.get -> ZeeKayDa.Auth.Tokens.SigningAlgorithm
-ZeeKayDa.Auth.FileSystem.PfxFileSigningOptions.Current.get -> ZeeKayDa.Auth.FileSystem.PfxFile?
-ZeeKayDa.Auth.FileSystem.PfxFileSigningOptions.Current.set -> void
-ZeeKayDa.Auth.FileSystem.PfxFileSigningOptions.Next.get -> ZeeKayDa.Auth.FileSystem.PfxFile?
-ZeeKayDa.Auth.FileSystem.PfxFileSigningOptions.Next.set -> void
 ZeeKayDa.Auth.FileSystem.PfxFileSigningOptions.PfxFileSigningOptions() -> void
-ZeeKayDa.Auth.FileSystem.PfxFileSigningOptions.Previous.get -> ZeeKayDa.Auth.FileSystem.PfxFile?
-ZeeKayDa.Auth.FileSystem.PfxFileSigningOptions.Previous.set -> void
 ZeeKayDa.Auth.FileSystem.PfxFile
 ZeeKayDa.Auth.FileSystem.PfxFile.<Clone>$() -> ZeeKayDa.Auth.FileSystem.PfxFile!
-ZeeKayDa.Auth.FileSystem.PfxFile.Deconstruct(out string! Path, out System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<string!>>! PasswordSource) -> void
+ZeeKayDa.Auth.FileSystem.PfxFile.Deconstruct(out string! Path, out System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<string!>!>! PasswordSource) -> void
 ZeeKayDa.Auth.FileSystem.PfxFile.Equals(ZeeKayDa.Auth.FileSystem.PfxFile? other) -> bool
-ZeeKayDa.Auth.FileSystem.PfxFile.PasswordSource.get -> System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<string!>>!
+ZeeKayDa.Auth.FileSystem.PfxFile.PasswordSource.get -> System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<string!>!>!
 ZeeKayDa.Auth.FileSystem.PfxFile.PasswordSource.init -> void
 ZeeKayDa.Auth.FileSystem.PfxFile.Path.get -> string!
 ZeeKayDa.Auth.FileSystem.PfxFile.Path.init -> void
-ZeeKayDa.Auth.FileSystem.PfxFile.PfxFile(string! Path, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<string!>>! PasswordSource) -> void
-override ZeeKayDa.Auth.FileSystem.PemCertificateFile.Equals(object? obj) -> bool
-override ZeeKayDa.Auth.FileSystem.PemCertificateFile.GetHashCode() -> int
-override ZeeKayDa.Auth.FileSystem.PemCertificateFile.ToString() -> string!
+ZeeKayDa.Auth.FileSystem.PfxFile.PfxFile(string! Path, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<string!>!>! PasswordSource) -> void
 override ZeeKayDa.Auth.FileSystem.PemSigningFile.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.FileSystem.PemSigningFile.GetHashCode() -> int
 override ZeeKayDa.Auth.FileSystem.PemSigningFile.ToString() -> string!
 override ZeeKayDa.Auth.FileSystem.PfxFile.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.FileSystem.PfxFile.GetHashCode() -> int
 override ZeeKayDa.Auth.FileSystem.PfxFile.ToString() -> string!
-static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderFileSigningExtensions.AddPemFileSigning(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Action<ZeeKayDa.Auth.FileSystem.PemFileSigningOptions!>! configure) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
-static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderFileSigningExtensions.AddPemFileSigning(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, string! path, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, string? keyPath = null) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
-static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderFileSigningExtensions.AddPfxFileSigning(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Action<ZeeKayDa.Auth.FileSystem.PfxFileSigningOptions!>! configure) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
-static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderFileSigningExtensions.AddPfxFileSigning(this ZeeKayDa.Auth.ZeeKayDaAuthBuilder! builder, string! path, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<string!>>! passwordSource) -> ZeeKayDa.Auth.ZeeKayDaAuthBuilder!
-static ZeeKayDa.Auth.FileSystem.PemCertificateFile.operator !=(ZeeKayDa.Auth.FileSystem.PemCertificateFile? left, ZeeKayDa.Auth.FileSystem.PemCertificateFile? right) -> bool
-static ZeeKayDa.Auth.FileSystem.PemCertificateFile.operator ==(ZeeKayDa.Auth.FileSystem.PemCertificateFile? left, ZeeKayDa.Auth.FileSystem.PemCertificateFile? right) -> bool
 static ZeeKayDa.Auth.FileSystem.PemSigningFile.operator !=(ZeeKayDa.Auth.FileSystem.PemSigningFile? left, ZeeKayDa.Auth.FileSystem.PemSigningFile? right) -> bool
 static ZeeKayDa.Auth.FileSystem.PemSigningFile.operator ==(ZeeKayDa.Auth.FileSystem.PemSigningFile? left, ZeeKayDa.Auth.FileSystem.PemSigningFile? right) -> bool
 static ZeeKayDa.Auth.FileSystem.PfxFile.operator !=(ZeeKayDa.Auth.FileSystem.PfxFile? left, ZeeKayDa.Auth.FileSystem.PfxFile? right) -> bool
 static ZeeKayDa.Auth.FileSystem.PfxFile.operator ==(ZeeKayDa.Auth.FileSystem.PfxFile? left, ZeeKayDa.Auth.FileSystem.PfxFile? right) -> bool
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderFileSigningExtensions.AddPemFileSigning<TBuilder>(this TBuilder! builder, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Action<ZeeKayDa.Auth.FileSystem.PemFileSigningOptions!>! configure) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderFileSigningExtensions.AddPemFileSigning<TBuilder>(this TBuilder! builder, string! path, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, string? keyPath = null, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<string!>!>? passwordSource = null) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderFileSigningExtensions.AddPfxFileSigning<TBuilder>(this TBuilder! builder, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Action<ZeeKayDa.Auth.FileSystem.PfxFileSigningOptions!>! configure) -> TBuilder!
+static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthCoreBuilderFileSigningExtensions.AddPfxFileSigning<TBuilder>(this TBuilder! builder, string! path, ZeeKayDa.Auth.Tokens.SigningAlgorithm algorithm, System.Func<System.Threading.CancellationToken, System.Threading.Tasks.Task<string!>!>! passwordSource) -> TBuilder!
+ZeeKayDa.Auth.FileSystem.PemFileSigningOptions.Files.get -> System.Collections.Generic.IList<ZeeKayDa.Auth.FileSystem.PemSigningFile!>!
+ZeeKayDa.Auth.FileSystem.PfxFileSigningOptions.Files.get -> System.Collections.Generic.IList<ZeeKayDa.Auth.FileSystem.PfxFile!>!

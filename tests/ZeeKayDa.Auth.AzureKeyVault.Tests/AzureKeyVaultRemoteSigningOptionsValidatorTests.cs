@@ -16,8 +16,18 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
         Algorithm = SigningAlgorithm.RS256,
     };
 
-    private static ValidateOptionsResult Validate(AzureKeyVaultRemoteSigningOptions options)
-        => new AzureKeyVaultRemoteSigningOptionsValidator().Validate(null, options);
+    private static IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(AzureKeyVaultRemoteSigningOptions options)
+    {
+        try
+        {
+            ((IValidateOptions<AzureKeyVaultRemoteSigningOptions>)new AzureKeyVaultRemoteSigningOptionsValidator()).Validate(null, options);
+            return [];
+        }
+        catch (ZeeKayDaConfigurationException exception)
+        {
+            return exception.AggregatedFailures;
+        }
+    }
 
     // ── Valid options ─────────────────────────────────────────────────────────────────────────────
 
@@ -26,9 +36,7 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
     {
         var options = ValidOptions();
 
-        var result = Validate(options);
-
-        result.Succeeded.Should().BeTrue();
+        Validate(options).Should().BeEmpty();
     }
 
     // ── KeyIdentifier ─────────────────────────────────────────────────────────────────────────────
@@ -39,10 +47,10 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
         var options = ValidOptions();
         options.KeyIdentifier = default;
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("KeyIdentifier");
+        failures.Should().ContainSingle(f => f.Code == "configuration.azure_key_vault_remote_signing.key_identifier.missing")
+            .Which.Message.Should().Contain("KeyIdentifier");
     }
 
     // ── Credential ────────────────────────────────────────────────────────────────────────────────
@@ -53,10 +61,10 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Credential = null;
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Credential");
+        failures.Should().ContainSingle(f => f.Code == "configuration.azure_key_vault_remote_signing.credential.missing")
+            .Which.Message.Should().Contain("Credential");
     }
 
     // ── Algorithm ─────────────────────────────────────────────────────────────────────────────────
@@ -67,60 +75,46 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
         var options = ValidOptions();
         options.Algorithm = (SigningAlgorithm)999;
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Algorithm");
+        failures.Should().ContainSingle(f => f.Code == "configuration.azure_key_vault_remote_signing.algorithm.undefined_value")
+            .Which.Message.Should().Contain("Algorithm");
     }
 
-    // ── PreviousVersionsToPublish ─────────────────────────────────────────────────────────────────
+    // ── MaxVersions ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_PreviousVersionsToPublish_is_negative()
+    public void Validate_accepts_a_null_MaxVersions_meaning_every_enabled_version()
     {
         var options = ValidOptions();
-        options.PreviousVersionsToPublish = -1;
+        options.MaxVersions = null;
 
-        var result = Validate(options);
-
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("PreviousVersionsToPublish");
+        Validate(options).Should().BeEmpty();
     }
 
     [Fact]
-    public void Validate_succeeds_when_PreviousVersionsToPublish_is_zero()
+    public void Validate_accepts_a_MaxVersions_of_exactly_three()
     {
         var options = ValidOptions();
-        options.PreviousVersionsToPublish = 0;
+        options.MaxVersions = 3;
 
-        var result = Validate(options);
-
-        result.Succeeded.Should().BeTrue();
+        Validate(options).Should().BeEmpty("three is the smallest count that holds a staged, a signing and a previous version");
     }
 
-    // ── PreActivationDelay ────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Validate_fails_when_PreActivationDelay_is_negative()
+    [Theory]
+    [InlineData(2)]
+    [InlineData(1)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_rejects_a_MaxVersions_below_three(int maxVersions)
     {
         var options = ValidOptions();
-        options.PreActivationDelay = TimeSpan.FromSeconds(-1);
+        options.MaxVersions = maxVersions;
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("PreActivationDelay");
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_PreActivationDelay_is_zero()
-    {
-        var options = ValidOptions();
-        options.PreActivationDelay = TimeSpan.Zero;
-
-        var result = Validate(options);
-
-        result.Succeeded.Should().BeTrue();
+        failures.Should().ContainSingle(f => f.Code == "configuration.azure_key_vault_remote_signing.max_versions.too_small")
+            .Which.Message.Should().Contain("MaxVersions").And.Contain(maxVersions.ToString());
     }
 
     // ── Batched, not fail-fast ────────────────────────────────────────────────────────────────────
@@ -132,16 +126,14 @@ public sealed class AzureKeyVaultRemoteSigningOptionsValidatorTests
         options.KeyIdentifier = default;
         options.Credential = null;
         options.Algorithm = (SigningAlgorithm)999;
-        options.PreviousVersionsToPublish = -1;
-        options.PreActivationDelay = TimeSpan.FromSeconds(-1);
 
-        var result = Validate(options);
+        var failures = Validate(options);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().Contain(f => f.Contains("KeyIdentifier"));
-        result.Failures.Should().Contain(f => f.Contains("Credential"));
-        result.Failures.Should().Contain(f => f.Contains("Algorithm"));
-        result.Failures.Should().Contain(f => f.Contains("PreviousVersionsToPublish"));
-        result.Failures.Should().Contain(f => f.Contains("PreActivationDelay"));
+        failures.Select(f => f.Code).Should().Contain(
+        [
+            "configuration.azure_key_vault_remote_signing.key_identifier.missing",
+            "configuration.azure_key_vault_remote_signing.credential.missing",
+            "configuration.azure_key_vault_remote_signing.algorithm.undefined_value",
+        ]);
     }
 }

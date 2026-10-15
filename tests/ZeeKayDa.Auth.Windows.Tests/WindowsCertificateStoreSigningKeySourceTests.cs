@@ -11,43 +11,38 @@ namespace ZeeKayDa.Auth.Windows.Tests;
 /// Direct-construction tests for <see cref="WindowsCertificateStoreSigningKeySource"/>, bypassing DI
 /// and the <c>AddWindowsCertificateStoreSigning</c> extension methods entirely, and mirroring
 /// <c>PemFileSigningKeySourceTests</c>'s shape. The Windows Certificate Store-specific concern they
-/// add is the bundled-format least-privilege obligation: a store entry always carries its private
-/// key, so "a published-only slot's private key is never opened" has to be proven rather than being
-/// unrepresentable the way it is for a certificate-only PEM file.
+/// add is the access-path obligation: a store entry always carries its private key, so "listing a
+/// certificate never opens its private key" has to be proven rather than being unrepresentable the
+/// way it is for a certificate-only PEM file.
 /// </summary>
 /// <remarks>
-/// The source reads its three slots exactly once and never re-reads them, so there is no reload or
-/// change-detection surface here — a rotated-in, removed, or replaced certificate is never picked up
-/// without a restart. Which key signs is decided entirely by which slot it is configured in, never
-/// by the clock, so this type holds no <c>TimeProvider</c>: the one clock check that remains, on the
-/// signing key's own validity window, belongs to <c>StaticSigningKeyRing</c> and is tested there.
+/// The source holds no cache and no lock: every <c>ReadAsync</c> re-reads the store, so a removed or
+/// replaced certificate is observed on the next read. Which key signs is decided by the core from
+/// each listed key's validity window, never by this source, so it holds no <c>TimeProvider</c>.
 /// The source depends only on <see cref="ICertificateStoreReader"/>, so these tests run on any OS,
 /// unlike <c>Integration/WindowsCertificateStoreSigningIntegrationTests</c>.
 /// </remarks>
 public sealed class WindowsCertificateStoreSigningKeySourceTests
 {
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
-    private const string PreviousThumbprint = "1111111111111111111111111111111111111A";
+    private const string OtherThumbprint = "1111111111111111111111111111111111111A";
     private const string CurrentThumbprint = "AABBCCDDEEFF00112233445566778899AABBCCD";
     private const string NextThumbprint = "2222222222222222222222222222222222222B";
 
     private static WindowsCertificateStoreSigningKeySource BuildSource(
         FakeCertificateStoreReader reader,
-        string? current = CurrentThumbprint,
-        string? previous = null,
-        string? next = null,
+        string[]? thumbprints = null,
         SigningAlgorithm algorithm = SigningAlgorithm.RS256,
         ICertificateKeyExtractor? keyExtractor = null)
     {
         var options = new WindowsCertificateStoreSigningOptions
         {
-            Previous = previous is null ? null : CertificateLookup.ByThumbprint(previous),
-            Current = current is null ? null : CertificateLookup.ByThumbprint(current),
-            Next = next is null ? null : CertificateLookup.ByThumbprint(next),
             Algorithm = algorithm,
             StoreLocation = StoreLocation.CurrentUser,
             StoreName = StoreName.My,
         };
+        foreach (var thumbprint in thumbprints ?? [CurrentThumbprint])
+            options.Certificates.Add(CertificateLookup.ByThumbprint(thumbprint));
 
         return new WindowsCertificateStoreSigningKeySource(
             Options.Create(options), reader, keyExtractor ?? new FakeCertificateKeyExtractor());
@@ -60,7 +55,7 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
     // ── Happy path ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_reports_the_Current_certificates_public_key_as_the_signing_key()
+    public async Task ReadAsync_reports_the_listed_certificates_public_key()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
@@ -68,13 +63,13 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
         reader.AddCertificate(CurrentThumbprint, certificate);
         var sut = BuildSource(reader);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
-        keySet.Keys.Should().ContainSingle();
-        keySet.SigningKey.Id.Should().Be(new SourceKeyId(CurrentThumbprint));
-        keySet.SigningKey.Algorithm.Should().Be(SigningAlgorithm.RS256);
-        keySet.SigningKey.PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
-        keySet.SigningKey.PublicKey.RsaPublicParameters.Should().NotBeNull(
+        keySet.Should().ContainSingle();
+        keySet.Single().Id.Should().Be(new SourceKeyId(CurrentThumbprint));
+        sut.Algorithm.Should().Be(SigningAlgorithm.RS256);
+        keySet.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Rsa);
+        keySet.Single().PublicKey.RsaPublicParameters.Should().NotBeNull(
             "only public material may ever leave this source's read path");
     }
 
@@ -87,10 +82,10 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
         reader.AddCertificate(CurrentThumbprint, certificate);
         var sut = BuildSource(reader);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
-        keySet.SigningKey.NotBefore.Should().Be(new DateTimeOffset(certificate.NotBefore));
-        keySet.SigningKey.ExpiresAt.Should().Be(new DateTimeOffset(certificate.NotAfter));
+        keySet.Single().NotBefore.Should().Be(new DateTimeOffset(certificate.NotBefore));
+        keySet.Single().ExpiresAt.Should().Be(new DateTimeOffset(certificate.NotAfter));
     }
 
     [Fact]
@@ -101,122 +96,99 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
         using var certificate = CreateRsaCertificate();
         reader.AddCertificate(CurrentThumbprint, certificate);
         var sut = BuildSource(reader);
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
-        using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         var signingInput = "header.payload"u8.ToArray();
         var signature = await signer.SignAsync(signingInput, ct);
 
-        signer.Algorithm.Should().Be(SigningAlgorithm.RS256);
-        using var rsa = RSA.Create(keySet.SigningKey.PublicKey.RsaPublicParameters!.Value);
+        using var rsa = RSA.Create(keySet.Single().PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the signer must be opened over the same key pair the read reported");
     }
 
-    // ── The three slots ──────────────────────────────────────────────────────────────────────────
+    // ── Several listed certificates ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_publishes_every_configured_slot_and_signs_with_Current()
+    public async Task ReadAsync_lists_every_configured_certificate()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
-        using var previousCertificate = CreateRsaCertificate();
-        using var currentCertificate = CreateRsaCertificate();
-        using var nextCertificate = CreateRsaCertificate();
-        reader.AddCertificate(PreviousThumbprint, previousCertificate);
-        reader.AddCertificate(CurrentThumbprint, currentCertificate);
-        reader.AddCertificate(NextThumbprint, nextCertificate);
-        var sut = BuildSource(reader, previous: PreviousThumbprint, next: NextThumbprint);
+        using var firstCertificate = CreateRsaCertificate();
+        using var secondCertificate = CreateRsaCertificate();
+        using var thirdCertificate = CreateRsaCertificate();
+        reader.AddCertificate(OtherThumbprint, firstCertificate);
+        reader.AddCertificate(CurrentThumbprint, secondCertificate);
+        reader.AddCertificate(NextThumbprint, thirdCertificate);
+        var sut = BuildSource(reader, [OtherThumbprint, CurrentThumbprint, NextThumbprint]);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
-        keySet.Keys.Should().HaveCount(3);
-        keySet.SigningKey.Id.Should().Be(new SourceKeyId(CurrentThumbprint));
-        keySet.Keys.Select(k => k.Id.Value).Should()
-            .BeEquivalentTo([CurrentThumbprint, PreviousThumbprint, NextThumbprint]);
+        keySet.Select(k => k.Id.Value).Should()
+            .BeEquivalentTo([CurrentThumbprint, OtherThumbprint, NextThumbprint]);
     }
 
     [Fact]
-    public async Task ReadAsync_throws_when_no_Current_slot_is_configured()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var reader = new FakeCertificateStoreReader();
-        using var certificate = CreateRsaCertificate();
-        reader.AddCertificate(NextThumbprint, certificate);
-        var sut = BuildSource(reader, current: null, next: NextThumbprint);
-
-        var act = async () => await sut.ReadAsync(ct);
-
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.no_current_key");
-    }
-
-    [Fact]
-    public async Task ReadAsync_extracts_no_private_key_handle_for_any_slot()
+    public async Task ReadAsync_extracts_no_private_key_handle_for_any_certificate()
     {
         // The access-path guarantee, which is the honest one for this provider. Opening a store entry
-        // hands back the private-key association whatever the caller wants, so "a published slot's
-        // private key never materializes" is not something this source can promise the way the PEM
-        // provider's certificate-only slots can. What it can promise, and what this pins, is that no
-        // read path asks the extractor for a private key at all.
+        // hands back the private-key association whatever the caller wants, so "a listed
+        // certificate's private key never materializes" is not something this source can promise the
+        // way the PEM provider's certificate-only files can. What it can promise, and what this pins,
+        // is that no read path asks the extractor for a private key at all.
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         var keyExtractor = new FakeCertificateKeyExtractor();
-        using var previousCertificate = CreateRsaCertificate();
-        using var currentCertificate = CreateRsaCertificate();
-        using var nextCertificate = CreateRsaCertificate();
-        reader.AddCertificate(PreviousThumbprint, previousCertificate);
-        reader.AddCertificate(CurrentThumbprint, currentCertificate);
-        reader.AddCertificate(NextThumbprint, nextCertificate);
-        var sut = BuildSource(reader, previous: PreviousThumbprint, next: NextThumbprint, keyExtractor: keyExtractor);
+        using var firstCertificate = CreateRsaCertificate();
+        using var secondCertificate = CreateRsaCertificate();
+        reader.AddCertificate(OtherThumbprint, firstCertificate);
+        reader.AddCertificate(CurrentThumbprint, secondCertificate);
+        var sut = BuildSource(reader, [OtherThumbprint, CurrentThumbprint], keyExtractor: keyExtractor);
 
         await sut.ReadAsync(ct);
 
-        keyExtractor.PrivateKeyExtractions.Should().BeEmpty(
-            "a read publishes public material only, for every slot including Current");
-        keyExtractor.PublicKeyExtractions.Should()
-            .BeEquivalentTo([PreviousThumbprint, CurrentThumbprint, NextThumbprint]);
+        keyExtractor.PrivateKeyExtractions.Should().BeEmpty("a read publishes public material only, for every certificate");
     }
 
     [Fact]
-    public async Task CreateSignerAsync_extracts_the_private_key_of_Current_alone()
+    public async Task CreateSignerAsync_extracts_the_private_key_of_the_requested_certificate_alone()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         var keyExtractor = new FakeCertificateKeyExtractor();
-        using var previousCertificate = CreateRsaCertificate();
-        using var currentCertificate = CreateRsaCertificate();
-        reader.AddCertificate(PreviousThumbprint, previousCertificate);
-        reader.AddCertificate(CurrentThumbprint, currentCertificate);
-        var sut = BuildSource(reader, previous: PreviousThumbprint, keyExtractor: keyExtractor);
-        var keySet = await sut.ReadAsync(ct);
+        using var firstCertificate = CreateRsaCertificate();
+        using var secondCertificate = CreateRsaCertificate();
+        reader.AddCertificate(OtherThumbprint, firstCertificate);
+        reader.AddCertificate(CurrentThumbprint, secondCertificate);
+        var sut = BuildSource(reader, [OtherThumbprint, CurrentThumbprint], keyExtractor: keyExtractor);
+        await sut.ReadAsync(ct);
 
-        using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(new SourceKeyId(CurrentThumbprint), ct);
 
         signer.Should().NotBeNull();
         keyExtractor.PrivateKeyExtractions.Should().Equal([CurrentThumbprint]);
     }
 
-    // ── Read-once ────────────────────────────────────────────────────────────────────────────────
+    // ── Every read hits the store ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_returns_the_same_key_set_after_the_Current_certificate_is_removed_from_the_store()
+    public async Task ReadAsync_no_longer_lists_a_certificate_removed_from_the_store_so_removing_it_revokes_the_key()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         using var certificate = CreateRsaCertificate();
         reader.AddCertificate(CurrentThumbprint, certificate);
         var sut = BuildSource(reader);
-
-        var first = await sut.ReadAsync(ct);
+        await sut.ReadAsync(ct);
         reader.RemoveCertificate(CurrentThumbprint);
-        var second = await sut.ReadAsync(ct);
 
-        second.Should().BeSameAs(first, "the source reads its slots exactly once and never re-reads them");
+        var keys = (await sut.ReadAsync(ct)).Keys;
+
+        keys.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task ReadAsync_returns_the_same_key_set_after_a_configured_certificate_is_replaced_in_the_store()
+    public async Task ReadAsync_observes_a_replaced_certificate_on_the_next_read()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
@@ -225,115 +197,76 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
         reader.AddCertificate(CurrentThumbprint, certificate);
         var sut = BuildSource(reader);
 
-        var first = await sut.ReadAsync(ct);
+        var first = (await sut.ReadAsync(ct)).Keys;
         reader.AddCertificate(CurrentThumbprint, replacement);
-        var second = await sut.ReadAsync(ct);
+        var second = (await sut.ReadAsync(ct)).Keys;
 
-        second.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus
-            .Should().BeEquivalentTo(first.SigningKey.PublicKey.RsaPublicParameters!.Value.Modulus);
+        second.Single().PublicKey.RsaPublicParameters!.Value.Modulus
+            .Should().Equal(replacement.GetRSAPublicKey()!.ExportParameters(false).Modulus)
+            .And.NotEqual(first.Single().PublicKey.RsaPublicParameters!.Value.Modulus);
     }
 
     [Fact]
-    public async Task ReadAsync_caches_nothing_when_a_slot_fails_to_read_and_a_retry_re_reads()
+    public async Task ReadAsync_reads_each_listed_certificate_from_the_store_on_every_call()
     {
-        // Memoization must happen only after every slot has read and validated. If a failed read were
-        // cached, a process that hit a transient store failure at startup would be permanently stuck
-        // on it, and — worse — a later successful read could never correct it.
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        using var firstCertificate = CreateRsaCertificate();
+        using var secondCertificate = CreateRsaCertificate();
+        reader.AddCertificate(OtherThumbprint, firstCertificate);
+        reader.AddCertificate(CurrentThumbprint, secondCertificate);
+        var sut = BuildSource(reader, [OtherThumbprint, CurrentThumbprint]);
+
+        await sut.ReadAsync(ct);
+        await sut.ReadAsync(ct);
+
+        reader.Calls.Should().Equal([OtherThumbprint, CurrentThumbprint, OtherThumbprint, CurrentThumbprint]);
+    }
+
+    [Fact]
+    public async Task ReadAsync_recovers_on_retry_after_a_failed_read()
+    {
+        // Nothing is remembered between reads: a process that hit a transient store failure is not
+        // stuck on it, and the next read observes the store as it then is.
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         using var certificate = CreateRsaCertificate();
+        reader.AddCertificate(CurrentThumbprint, certificate);
+        reader.ExceptionToThrow = new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
+            "signing.windows_certificate_store.store_inaccessible", "Simulated store outage."));
         var sut = BuildSource(reader);
 
         var failing = async () => await sut.ReadAsync(ct);
-        await failing.Should().ThrowAsync<ZeeKayDaConfigurationException>(
-            "no certificate is in the store yet");
+        await failing.Should().ThrowAsync<ZeeKayDaConfigurationException>("the store cannot be opened yet");
 
-        reader.AddCertificate(CurrentThumbprint, certificate);
-        var keySet = await sut.ReadAsync(ct);
+        reader.ExceptionToThrow = null;
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
-        keySet.SigningKey.Id.Should().Be(new SourceKeyId(CurrentThumbprint),
-            "the failed read must not have been cached, so the retry reads the store again");
-    }
-
-    [Fact]
-    public async Task ReadAsync_caches_nothing_when_the_slots_fail_validation_and_a_retry_re_reads()
-    {
-        // The same rule one step later: Current is missing, so every slot reads cleanly and
-        // SourceKeySet.Create is what rejects the set. That rejection must not be cached either.
-        var ct = TestContext.Current.CancellationToken;
-        var reader = new FakeCertificateStoreReader();
-        using var nextCertificate = CreateRsaCertificate();
-        using var currentCertificate = CreateRsaCertificate();
-        reader.AddCertificate(NextThumbprint, nextCertificate);
-        reader.AddCertificate(CurrentThumbprint, currentCertificate);
-        var options = new WindowsCertificateStoreSigningOptions
-        {
-            Next = CertificateLookup.ByThumbprint(NextThumbprint),
-            Algorithm = SigningAlgorithm.RS256,
-            StoreLocation = StoreLocation.CurrentUser,
-            StoreName = StoreName.My,
-        };
-        var sut = new WindowsCertificateStoreSigningKeySource(
-            Options.Create(options), reader, new FakeCertificateKeyExtractor());
-
-        var failing = async () => await sut.ReadAsync(ct);
-        await failing.Should().ThrowAsync<ZeeKayDaConfigurationException>("no Current slot is configured");
-
-        options.Current = CertificateLookup.ByThumbprint(CurrentThumbprint);
-        var keySet = await sut.ReadAsync(ct);
-
-        keySet.SigningKey.Id.Should().Be(new SourceKeyId(CurrentThumbprint));
-    }
-
-    [Fact]
-    public async Task ReadAsync_reads_each_configured_slot_from_the_store_exactly_once_however_often_it_is_called()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var reader = new FakeCertificateStoreReader();
-        using var previousCertificate = CreateRsaCertificate();
-        using var currentCertificate = CreateRsaCertificate();
-        reader.AddCertificate(PreviousThumbprint, previousCertificate);
-        reader.AddCertificate(CurrentThumbprint, currentCertificate);
-        var sut = BuildSource(reader, previous: PreviousThumbprint);
-
-        await sut.ReadAsync(ct);
-        await sut.ReadAsync(ct);
-        await sut.ReadAsync(ct);
-
-        reader.Calls.Should().Equal([PreviousThumbprint, CurrentThumbprint]);
-    }
-
-    [Fact]
-    public async Task A_published_only_slots_store_entry_is_never_reopened_after_the_read()
-    {
-        // The bundled-format least-privilege obligation: Previous is read once, transiently, for its
-        // public half, and signing reopens only Current.
-        var ct = TestContext.Current.CancellationToken;
-        var reader = new FakeCertificateStoreReader();
-        using var previousCertificate = CreateRsaCertificate();
-        using var currentCertificate = CreateRsaCertificate();
-        reader.AddCertificate(PreviousThumbprint, previousCertificate);
-        reader.AddCertificate(CurrentThumbprint, currentCertificate);
-        var sut = BuildSource(reader, previous: PreviousThumbprint);
-        var keySet = await sut.ReadAsync(ct);
-
-        using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
-
-        signer.Should().NotBeNull();
-        reader.Calls.Should().Equal([PreviousThumbprint, CurrentThumbprint, CurrentThumbprint]);
-        reader.Calls.Count(thumbprint => thumbprint == PreviousThumbprint).Should().Be(1);
+        keySet.Single().Id.Should().Be(new SourceKeyId(CurrentThumbprint));
     }
 
     // ── Missing certificate and missing private key ──────────────────────────────────────────────
 
     [Fact]
-    public async Task ReadAsync_throws_ZeeKayDaConfigurationException_when_the_certificate_is_not_found()
+    public async Task ReadAsync_lists_nothing_when_the_certificate_is_not_in_the_store()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         var sut = BuildSource(reader);
 
-        var act = async () => await sut.ReadAsync(ct);
+        var keys = (await sut.ReadAsync(ct)).Keys;
+
+        keys.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_throws_certificate_not_found_when_the_certificate_left_the_store()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var reader = new FakeCertificateStoreReader();
+        var sut = BuildSource(reader);
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(ThumbprintFormat.Normalize(CurrentThumbprint)), ct);
 
         (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
             .Which.AggregatedFailures.Should()
@@ -341,36 +274,46 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_succeeds_for_a_certificate_with_no_private_key()
+    public async Task ReadAsync_rejects_a_listed_certificate_with_no_private_key_without_extracting_one()
     {
-        // A read only ever needs public material, so a certificate installed without its private key
-        // still publishes. The failure belongs at the point signing is attempted, not before.
+        // Any listed certificate may be chosen to sign, so one installed without its private key is
+        // reported at the read rather than found at the restart that chooses it. No handle is
+        // extracted to find out.
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         using var certificate = CreateRsaCertificate(withPrivateKey: false);
         reader.AddCertificate(CurrentThumbprint, certificate);
-        var sut = BuildSource(reader);
+        var extractor = new FakeCertificateKeyExtractor();
+        var sut = BuildSource(reader, keyExtractor: extractor);
 
-        var keySet = await sut.ReadAsync(ct);
+        var listing = await sut.ReadAsync(ct);
 
-        keySet.SigningKey.PublicKey.RsaPublicParameters.Should().NotBeNull();
+        listing.Keys.Should().BeEmpty();
+        listing.Failures.Should().ContainSingle()
+            .Which.Should().Match<SourceKeyFailure>(f =>
+                f.Id == new SourceKeyId(CurrentThumbprint)
+                && f.Failure.Code == "signing.windows_certificate_store.private_key_not_found");
+        extractor.PrivateKeyExtractions.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task CreateSignerAsync_throws_when_the_Current_certificate_has_no_private_key()
+    public async Task ReadAsync_reports_a_certificate_without_a_private_key_as_a_per_entry_failure_and_lists_the_rest()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
-        using var certificate = CreateRsaCertificate(withPrivateKey: false);
-        reader.AddCertificate(CurrentThumbprint, certificate);
-        var sut = BuildSource(reader);
-        var keySet = await sut.ReadAsync(ct);
+        using var goodCertificate = CreateRsaCertificate();
+        using var keylessCertificate = CreateRsaCertificate(withPrivateKey: false);
+        reader.AddCertificate(CurrentThumbprint, goodCertificate);
+        reader.AddCertificate(OtherThumbprint, keylessCertificate);
+        var sut = BuildSource(reader, [CurrentThumbprint, OtherThumbprint]);
 
-        var act = async () => await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+        var listing = await sut.ReadAsync(ct);
 
-        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
-            .Which.AggregatedFailures.Should()
-            .ContainSingle(f => f.Code == "signing.windows_certificate_store.private_key_not_found");
+        listing.Keys.Select(k => k.Id).Should().Equal(new SourceKeyId(CurrentThumbprint));
+        listing.Failures.Should().ContainSingle()
+            .Which.Should().Match<SourceKeyFailure>(f =>
+                f.Id == new SourceKeyId(OtherThumbprint)
+                && f.Failure.Code == "signing.windows_certificate_store.private_key_not_found");
     }
 
     // ── EC certificates ──────────────────────────────────────────────────────────────────────────
@@ -385,10 +328,10 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
         reader.AddCertificate(CurrentThumbprint, certificate);
         var sut = BuildSource(reader, algorithm: SigningAlgorithm.ES256);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
-        keySet.SigningKey.PublicKey.KeyType.Should().Be(SigningKeyType.Ec);
-        keySet.SigningKey.Algorithm.Should().Be(SigningAlgorithm.ES256);
+        keySet.Single().PublicKey.KeyType.Should().Be(SigningKeyType.Ec);
+        sut.Algorithm.Should().Be(SigningAlgorithm.ES256);
     }
 
     [Fact]
@@ -400,13 +343,13 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
             "test", T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365));
         reader.AddCertificate(CurrentThumbprint, certificate);
         var sut = BuildSource(reader, algorithm: SigningAlgorithm.ES256);
-        var keySet = await sut.ReadAsync(ct);
+        var keySet = (await sut.ReadAsync(ct)).Keys;
 
-        using var signer = await sut.CreateSignerAsync(keySet.SigningKey.Id, ct);
+        using var signer = await sut.CreateSignerAsync(keySet.Single().Id, ct);
         var signingInput = "header.payload"u8.ToArray();
         var signature = await signer.SignAsync(signingInput, ct);
 
-        using var ecdsa = ECDsa.Create(keySet.SigningKey.PublicKey.EcPublicParameters!.Value);
+        using var ecdsa = ECDsa.Create(keySet.Single().PublicKey.EcPublicParameters!.Value);
         ecdsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256)
             .Should().BeTrue("the signer must be opened over the same key pair the read reported");
     }
@@ -414,27 +357,24 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
     // ── Algorithm/key-type mismatch is the key set builder's call, not this source's ─────────────
 
     [Fact]
-    public async Task ReadAsync_reports_a_mismatched_algorithm_verbatim_and_leaves_the_rejection_to_the_key_set_builder()
+    public async Task ReadAsync_lists_a_certificate_whose_key_does_not_suit_the_algorithm_for_the_builder_to_reject()
     {
-        // The provider's own algorithm/key-type check is deliberately gone: SigningKeySetBuilder
-        // rejects the same mismatch centrally, plus EC curve pairing the local check never covered,
-        // keyed on the source id — the thumbprint — so its failure still names the certificate.
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         using var certificate = CreateRsaCertificate();
         reader.AddCertificate(CurrentThumbprint, certificate);
         var sut = BuildSource(reader, algorithm: SigningAlgorithm.ES256);
 
-        var keySet = await sut.ReadAsync(ct);
+        var keys = (await sut.ReadAsync(ct)).Keys;
 
-        keySet.SigningKey.Algorithm.Should().Be(SigningAlgorithm.ES256, "the source reports what it was configured with");
-        keySet.SigningKey.PublicKey.KeyType.Should().Be(SigningKeyType.Rsa, "and the key type it actually found");
+        keys.Should().ContainSingle().Which.Id.Should().Be(new SourceKeyId(CurrentThumbprint));
+        sut.Algorithm.Should().Be(SigningAlgorithm.ES256);
     }
 
-    // ── Defensive invariant: only Current is ever openable for signing ───────────────────────────
+    // ── CreateSignerAsync opens any listed certificate, and only a listed one ────────────────────
 
     [Fact]
-    public async Task CreateSignerAsync_throws_when_called_for_a_key_id_that_is_not_configured_at_all()
+    public async Task CreateSignerAsync_throws_when_called_for_a_key_id_that_is_not_listed()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
@@ -445,23 +385,22 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
         var act = async () => await sut.CreateSignerAsync(new SourceKeyId("DEADBEEF"), ct);
 
         (await act.Should().ThrowAsync<InvalidOperationException>())
-            .WithMessage("*DEADBEEF*not the configured Current certificate*");
+            .WithMessage("*DEADBEEF*not a listed certificate*");
     }
 
     [Fact]
-    public async Task CreateSignerAsync_throws_when_called_for_the_Previous_slot()
+    public async Task CreateSignerAsync_throws_for_a_certificate_that_is_in_the_store_but_not_listed()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
         var keyExtractor = new FakeCertificateKeyExtractor();
-        using var previousCertificate = CreateRsaCertificate();
-        using var currentCertificate = CreateRsaCertificate();
-        reader.AddCertificate(PreviousThumbprint, previousCertificate);
-        reader.AddCertificate(CurrentThumbprint, currentCertificate);
-        var sut = BuildSource(reader, previous: PreviousThumbprint, keyExtractor: keyExtractor);
-        await sut.ReadAsync(ct);
+        using var listedCertificate = CreateRsaCertificate();
+        using var unlistedCertificate = CreateRsaCertificate();
+        reader.AddCertificate(CurrentThumbprint, listedCertificate);
+        reader.AddCertificate(OtherThumbprint, unlistedCertificate);
+        var sut = BuildSource(reader, [CurrentThumbprint], keyExtractor: keyExtractor);
 
-        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(PreviousThumbprint), ct);
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(OtherThumbprint), ct);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         keyExtractor.PrivateKeyExtractions.Should().BeEmpty(
@@ -469,22 +408,22 @@ public sealed class WindowsCertificateStoreSigningKeySourceTests
     }
 
     [Fact]
-    public async Task CreateSignerAsync_throws_when_called_for_the_Next_slot()
+    public async Task CreateSignerAsync_opens_a_signer_for_any_listed_certificate()
     {
         var ct = TestContext.Current.CancellationToken;
         var reader = new FakeCertificateStoreReader();
-        var keyExtractor = new FakeCertificateKeyExtractor();
-        using var currentCertificate = CreateRsaCertificate();
-        using var nextCertificate = CreateRsaCertificate();
-        reader.AddCertificate(CurrentThumbprint, currentCertificate);
-        reader.AddCertificate(NextThumbprint, nextCertificate);
-        var sut = BuildSource(reader, next: NextThumbprint, keyExtractor: keyExtractor);
-        await sut.ReadAsync(ct);
+        using var firstCertificate = CreateRsaCertificate();
+        using var secondCertificate = CreateRsaCertificate();
+        reader.AddCertificate(OtherThumbprint, firstCertificate);
+        reader.AddCertificate(CurrentThumbprint, secondCertificate);
+        var sut = BuildSource(reader, [CurrentThumbprint, OtherThumbprint]);
+        var signingInput = "header.payload"u8.ToArray();
 
-        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(NextThumbprint), ct);
+        using var signer = await sut.CreateSignerAsync(new SourceKeyId(OtherThumbprint), ct);
+        var signature = await signer.SignAsync(signingInput, ct);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
-        keyExtractor.PrivateKeyExtractions.Should().BeEmpty(
-            "a rejected request must not have opened the private key it was refused");
+        firstCertificate.GetRSAPublicKey()!
+            .VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .Should().BeTrue("the signer must be opened over the certificate that was asked for, not the first listed");
     }
 }

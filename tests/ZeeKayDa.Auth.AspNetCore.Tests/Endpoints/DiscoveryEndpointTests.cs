@@ -3,9 +3,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.Authorization;
+using ZeeKayDa.Auth.Discovery;
 using ZeeKayDa.Auth.Scopes;
 using ZeeKayDa.Auth.Security;
 using ZeeKayDa.Auth.Tokens;
@@ -202,10 +204,10 @@ public sealed class DiscoveryEndpointTests
             .Select(element => element.GetString())
             .Should().Equal("authorization_code");
 
-        // The default test configuration adds None on top of the default (ClientSecretBasic only).
+        // Derived: what the built-in client-secret authenticator performs, plus none.
         doc.GetProperty("token_endpoint_auth_methods_supported").EnumerateArray()
             .Select(element => element.GetString())
-            .Should().BeEquivalentTo(new[] { "client_secret_basic", "none" });
+            .Should().Equal("client_secret_basic", "client_secret_post", "none");
     }
 
     [Fact]
@@ -469,12 +471,12 @@ public sealed class DiscoveryEndpointTests
     }
 
     [Fact]
-    public async Task Startup_rejects_an_HTTP_Issuer_without_the_AllowInsecureIssuer_flag()
+    public async Task Startup_rejects_an_HTTP_Issuer_without_the_AllowHttpLoopbackIssuer_flag()
     {
         using var host = new EndpointHost(opts =>
         {
             opts.Issuer = "http://auth.example.com";
-            opts.AllowInsecureIssuer = false;
+            opts.Development.AllowHttpLoopbackIssuer = false;
         });
 
         var failure = await host.StartupFailureAsync();
@@ -519,25 +521,11 @@ public sealed class DiscoveryEndpointTests
     }
 
     [Fact]
-    public async Task Startup_accepts_the_None_auth_method_without_the_AuthorizationCode_grant()
-    {
-        using var host = new EndpointHost(opts =>
-        {
-            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
-            opts.GrantTypesSupported = [GrantType.RefreshToken];
-        });
-
-        var act = async () => await host.EnsureStartedAsync();
-
-        await act.Should().NotThrowAsync();
-    }
-
-    [Fact]
     public async Task Startup_accepts_the_None_auth_method_with_the_AuthorizationCode_grant()
     {
         using var host = new EndpointHost(opts =>
         {
-            opts.TokenEndpoint.AuthMethodsSupported = [TokenEndpointAuthMethods.None];
+            opts.TokenEndpoint.AdvertisedAuthMethods = [TokenEndpointAuthMethods.None];
             opts.GrantTypesSupported = [GrantType.AuthorizationCode];
         });
 
@@ -559,11 +547,11 @@ public sealed class DiscoveryEndpointTests
     [Fact]
     public async Task Startup_rejects_a_whitespace_TokenEndpointAuthMethod()
     {
-        using var host = new EndpointHost(opts => opts.TokenEndpoint.AuthMethodsSupported = ["   "]);
+        using var host = new EndpointHost(opts => opts.TokenEndpoint.AdvertisedAuthMethods = ["   "]);
 
         var failure = await host.StartupFailureAsync();
 
-        failure.AllMessages().Should().Contain("TokenEndpoint.AuthMethodsSupported");
+        failure.AllMessages().Should().Contain("TokenEndpoint.AdvertisedAuthMethods");
     }
 
     [Fact]
@@ -588,7 +576,7 @@ public sealed class DiscoveryEndpointTests
     [InlineData("https://*.example.com", "wildcard")]
     [InlineData("null", "null literal")]
     [InlineData("https://example.com\r\n", "CRLF")]
-    [InlineData("http://app.example.com", "http scheme without AllowInsecureIssuer")]
+    [InlineData("http://app.example.com", "http scheme without AllowHttpLoopbackIssuer")]
     public async Task Startup_rejects_an_invalid_CORS_origin(string invalidOrigin, string reason)
     {
         using var host = new EndpointHost(opts => opts.CorsOrigins.Add(invalidOrigin));
@@ -621,8 +609,8 @@ public sealed class DiscoveryEndpointTests
 
     private sealed class CustomScopeRepositoryWithoutOpenId : IScopeRepository
     {
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
-            => ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.Profile]);
     }
 
     [Fact]
@@ -685,22 +673,46 @@ public sealed class DiscoveryEndpointTests
         body.Should().NotContain("Password=").And.NotContain("Server=db");
     }
 
+    [Fact]
+    public async Task A_provider_returning_no_document_answers_500_and_logs_the_broken_contract()
+    {
+        var logs = new CapturingLoggerProvider();
+        using var host = new EndpointHost(
+            configureBuilder: builder =>
+            {
+                builder.Services.AddLogging(logging => logging.AddProvider(logs));
+                builder.Services.Replace(ServiceDescriptor.Singleton<IDiscoveryDocumentProvider, NullDocumentProvider>());
+            });
+
+        using var response = await GetAsync(host);
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        logs.Entries.Should().Contain(entry =>
+            entry.Level == LogLevel.Error && entry.Message.Contains("the provider returned null", StringComparison.Ordinal));
+    }
+
+    private sealed class NullDocumentProvider : IDiscoveryDocumentProvider
+    {
+        public Task<OpenIdConfigurationDocument> GetDocumentAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<OpenIdConfigurationDocument>(null!);
+    }
+
     /// <summary>Answers correctly until <see cref="Fail"/> is set, then throws as a store would.</summary>
     private sealed class ThrowingAfterStartupRepository : IScopeRepository
     {
         public bool Fail { get; set; }
 
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
             Fail
                 ? throw new InvalidOperationException("Login failed for Server=db;Password=hunter2")
-                : ValueTask.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
+                : Task.FromResult<IReadOnlyCollection<ScopeDefinition>>([StandardScopes.OpenId]);
     }
 
     private sealed class MutableScopeRepository(IReadOnlyCollection<ScopeDefinition> scopes) : IScopeRepository
     {
         public IReadOnlyCollection<ScopeDefinition> Scopes { get; set; } = scopes;
 
-        public ValueTask<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(Scopes);
+        public Task<IReadOnlyCollection<ScopeDefinition>> GetScopesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Scopes);
     }
 }

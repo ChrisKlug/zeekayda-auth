@@ -78,7 +78,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase1_loopback_redirect_may_vary_its_port()
     {
-        var client = Client() with
+        var client = NewClient() with
         {
             RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "http://127.0.0.1/cb" },
         };
@@ -93,7 +93,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase1_non_loopback_registration_gets_no_port_variance()
     {
-        var client = Client() with
+        var client = NewClient() with
         {
             RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "http://127.0.0.1/cb" },
         };
@@ -155,7 +155,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase2_client_without_authorization_code_grant_is_unauthorized_client()
     {
-        var client = Client() with { AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken } };
+        var client = NewClient() with { AllowedGrantTypes = new HashSet<GrantType> { GrantType.RefreshToken } };
 
         var result = await Validate(ValidParameters(), client);
 
@@ -208,7 +208,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase2_openid_dropped_by_narrowing_is_invalid_scope()
     {
-        var client = Client() with
+        var client = NewClient() with
         {
             AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "profile" },
         };
@@ -222,7 +222,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase2_an_effective_scope_with_no_definition_is_invalid_scope()
     {
-        var client = Client() with
+        var client = NewClient() with
         {
             AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "profile", "undefined" },
         };
@@ -250,7 +250,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase2_two_granted_scopes_with_different_audiences_are_invalid_scope()
     {
-        var client = Client() with
+        var client = NewClient() with
         {
             AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "orders.read", "reports.read" },
         };
@@ -266,7 +266,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase2_one_API_scope_with_openid_is_valid()
     {
-        var client = Client() with
+        var client = NewClient() with
         {
             AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "orders.read", "orders.write" },
         };
@@ -281,7 +281,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase2_a_second_audience_the_client_may_not_request_is_narrowed_away_not_refused()
     {
-        var client = Client() with
+        var client = NewClient() with
         {
             AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "orders.read" },
         };
@@ -298,7 +298,7 @@ public class AuthorizeRequestValidatorTests
     {
         // Startup refuses the shape; only a repository that changed afterwards reaches this, and
         // that is the operator's fault, not the client's request.
-        var client = Client() with { AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "orders.read" } };
+        var client = NewClient() with { AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "orders.read" } };
         var parameters = ValidParameters();
         parameters["scope"] = ["openid orders.read"];
 
@@ -312,7 +312,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase2_two_malformed_audiences_are_still_the_operators_server_error_not_the_clients_invalid_scope()
     {
-        var client = Client() with { AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "a", "b" } };
+        var client = NewClient() with { AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "openid", "a", "b" } };
         var parameters = ValidParameters();
         parameters["scope"] = ["openid a b"];
 
@@ -330,7 +330,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase2_a_client_addition_naming_a_scope_claim_is_server_error_with_a_generic_description()
     {
-        var client = Client() with { AdditionalAccessTokenClaims = ["email"] };
+        var client = NewClient() with { AdditionalAccessTokenClaims = new HashSet<string>(["email"], StringComparer.Ordinal) };
 
         var result = await Validate(ValidParameters(), client);
 
@@ -342,7 +342,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase2_a_client_addition_no_scope_unlocks_is_valid()
     {
-        var client = Client() with { AdditionalIdTokenClaims = ["tenant"] };
+        var client = NewClient() with { AdditionalIdTokenClaims = new HashSet<string>(["tenant"], StringComparer.Ordinal) };
 
         var result = await Validate(ValidParameters(), client);
 
@@ -508,7 +508,7 @@ public class AuthorizeRequestValidatorTests
         parameters.Remove("code_challenge");
         parameters.Remove("code_challenge_method");
 
-        var result = await Validate(parameters, Client() with { RequirePkce = false });
+        var result = await Validate(parameters, NewClient() with { RequirePkce = false });
 
         result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
             .Subject.Error.Should().Be("invalid_request");
@@ -541,7 +541,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase2_prompt_value_outside_client_allowlist_is_invalid_request()
     {
-        var client = Client() with
+        var client = NewClient() with
         {
             AllowedPromptValues = new HashSet<PromptValue> { PromptValue.Login },
         };
@@ -627,7 +627,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase1_client_without_query_response_mode_fails_even_when_mode_is_omitted()
     {
-        var client = Client() with
+        var client = NewClient() with
         {
             AllowedResponseModes = new HashSet<ResponseMode>(),
         };
@@ -656,7 +656,7 @@ public class AuthorizeRequestValidatorTests
     [Fact]
     public async Task Phase1_loopback_redirect_target_comes_from_the_registration_not_the_raw_request()
     {
-        var client = Client() with
+        var client = NewClient() with
         {
             RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "http://127.0.0.1/cb" },
         };
@@ -671,6 +671,88 @@ public class AuthorizeRequestValidatorTests
         var error = result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>().Subject;
         error.RedirectUri.Should().Be("http://127.0.0.1:49152/cb");
         error.RedirectUri.Should().NotContain("..");
+    }
+
+    [Fact]
+    public async Task Phase2_login_hint_longer_than_the_limit_is_invalid_request()
+    {
+        var parameters = ValidParameters();
+        parameters["login_hint"] = [new string('a', AuthorizeRequestValidator.MaxLoginHintLength + 1)];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_request");
+    }
+
+    [Fact]
+    public async Task A_login_hint_at_the_limit_is_carried_verbatim()
+    {
+        var hint = "user+tag@example.com" + new string('x', AuthorizeRequestValidator.MaxLoginHintLength - 20);
+        var parameters = ValidParameters();
+        parameters["login_hint"] = [hint];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.LoginHint.Should().Be(hint);
+    }
+
+    [Theory]
+    [InlineData("alice\n@example.com")]
+    [InlineData("alice\u0000")]
+    [InlineData("\u202Ealice")]
+    [InlineData("alice\U000E0041")]
+    [InlineData("alice\u2028x")]
+    [InlineData("alice\u2029x")]
+    public async Task Phase2_login_hint_with_a_control_or_format_character_is_invalid_request(string hint)
+    {
+        var parameters = ValidParameters();
+        parameters["login_hint"] = [hint];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_request");
+    }
+
+    [Theory]
+    [InlineData("\u0645\u06CC\u200C\u0644@example.com")]
+    [InlineData("\u0915\u094D\u200D\u0937@example.com")]
+    public async Task A_login_hint_with_a_zero_width_joiner_is_kept(string hint)
+    {
+        // Internationalized email addresses in Persian and several Indic scripts need them (RFC 5892 CONTEXTJ).
+        var parameters = ValidParameters();
+        parameters["login_hint"] = [hint];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.LoginHint.Should().Be(hint);
+    }
+
+    [Fact]
+    public async Task A_login_hint_with_ordinary_spaces_is_kept()
+    {
+        var parameters = ValidParameters();
+        parameters["login_hint"] = ["+46 70 123 45 67"];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.LoginHint.Should().Be("+46 70 123 45 67");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task An_absent_empty_or_whitespace_login_hint_is_carried_as_none(string? hint)
+    {
+        var parameters = ValidParameters();
+        if (hint is not null)
+            parameters["login_hint"] = [hint];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.LoginHint.Should().BeNull();
     }
 
     // ── Valid request ─────────────────────────────────────────────────────────────────────────
@@ -704,17 +786,17 @@ public class AuthorizeRequestValidatorTests
     private static bool IsLegalErrorDescriptionCharacter(char c) =>
         c is (>= '\x20' and <= '\x21') or (>= '\x23' and <= '\x5B') or (>= '\x5D' and <= '\x7E');
 
-    private static ClientRegistration Client() =>
-        ClientRegistration.CreatePublic(
+    private static Client NewClient() =>
+        Client.CreatePublic(
             ClientId,
             redirectUris: [RedirectUri],
             postLogoutRedirectUris: [],
             allowedScopes: ["openid", "profile"]);
 
-    private static ClientRegistration ConfidentialClientPermittedToOmitPkce() =>
-        ClientRegistration.CreateConfidential(
+    private static Client ConfidentialClientPermittedToOmitPkce() =>
+        Client.CreateConfidential(
             ClientId,
-            new Pbkdf2ClientSecret(Iterations: 600_000, Salt: new byte[16], Hash: new byte[32]),
+            Pbkdf2ClientSecretHasher.Format(600_000, new byte[16], new byte[32]),
             redirectUris: [RedirectUri],
             postLogoutRedirectUris: [],
             allowedScopes: ["openid", "profile"])
@@ -737,11 +819,11 @@ public class AuthorizeRequestValidatorTests
 
     private static async Task<AuthorizeRequestValidationResult> Validate(
         Dictionary<string, IReadOnlyList<string?>> parameters,
-        ClientRegistration? client = null,
+        Client? client = null,
         IEnumerable<ScopeDefinition>? scopes = null)
     {
         var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(client ?? Client()),
+            new SingleClientRepository(client ?? NewClient()),
             new PassingValidator(),
             NullSanitizingLogger<ValidatedClientResolver>.Instance);
         var validator = new AuthorizeRequestValidator(
@@ -752,35 +834,18 @@ public class AuthorizeRequestValidatorTests
         return await validator.ValidateAsync(parameters, TestContext.Current.CancellationToken);
     }
 
-    private sealed class SingleClientRepository(IClientRegistration client) : IClientRepository
+    private sealed class SingleClientRepository(IClientWithCredentials client) : IClientRepository
     {
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(
+        public Task<IClientWithCredentials?> FindByClientIdAsync(
             string clientId, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IClientRegistration?>(
+            Task.FromResult<IClientWithCredentials?>(
                 string.Equals(clientId, client.ClientId, StringComparison.Ordinal) ? client : null);
     }
 
     private sealed class PassingValidator : IClientRegistrationValidator
     {
-        public void Validate(IClientRegistration client)
-        {
-            // These tests exercise request validation; registration validation has its own suite.
-        }
+        // These tests exercise request validation; registration validation has its own suite.
+        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => [];
     }
 
-    private sealed class NullSanitizingLogger<T> : ISanitizingLogger<T>
-    {
-        public static readonly NullSanitizingLogger<T> Instance = new();
-
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => false;
-        public void Log<TState>(
-            Microsoft.Extensions.Logging.LogLevel logLevel,
-            Microsoft.Extensions.Logging.EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter)
-        {
-        }
-    }
 }

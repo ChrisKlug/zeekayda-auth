@@ -82,18 +82,10 @@ public sealed class KeyVaultKeyReaderTests
     // ── The public constructor, the one DI actually calls ────────────────────────────────────────
     //
     // Every other test here builds the reader through the internal test seam, which left the
-    // production constructor unexercised: both of its argument guards could be deleted and the
-    // suite stayed green.
+    // production constructor unexercised: its credential guard could be deleted and the suite
+    // stayed green.
 
     private static readonly Uri KeyIdentifierUri = new("https://fake-vault.vault.azure.net/keys/fake-key");
-
-    [Fact]
-    public void Constructor_rejects_null_options()
-    {
-        var act = () => new KeyVaultKeyReader(null!);
-
-        act.Should().Throw<ArgumentNullException>().WithParameterName("options");
-    }
 
     [Fact]
     public void Constructor_rejects_options_carrying_no_credential()
@@ -179,8 +171,20 @@ public sealed class KeyVaultKeyReaderTests
             "the listing must be for the configured key, nothing else");
     }
 
+    [Fact]
+    public async Task GetKeyVersionsAsync_lists_nothing_when_the_key_was_deleted()
+    {
+        var client = new FakeKeyClient
+        {
+            OnGetVersions = () => FakeAsyncPageable<KeyProperties>.Throwing(new RequestFailedException(404, "gone")),
+        };
+
+        var versions = await Collect(BuildReader(client));
+
+        versions.Should().BeEmpty();
+    }
+
     [Theory]
-    [InlineData(404, "key_not_found")]
     [InlineData(401, "access_denied")]
     [InlineData(403, "access_denied")]
     [InlineData(500, "startup_failure")]
@@ -325,7 +329,7 @@ public sealed class KeyVaultKeyReaderTests
         var act = () => BuildReader(client)
             .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
 
-        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
+        await act.Should().ThrowAsync<KeyVaultVersionMaterialException>()
             .WithMessage("*unsupported_key_type*");
     }
 
@@ -394,6 +398,25 @@ public sealed class KeyVaultKeyReaderTests
                 "an absent SDK error code must not leave a dangling 'ErrorCode:' clause in the operator message");
     }
 
+    [Theory]
+    [InlineData(404)]
+    [InlineData(403)]
+    [InlineData(500)]
+    public async Task GetKeyMaterialAsync_never_reports_a_vault_failure_as_a_failure_of_the_versions_material(int status)
+    {
+        // The source reports only a material failure against one version; a vault failure must fail the whole read.
+        var client = new FakeKeyClient
+        {
+            OnGetKey = _ => throw new RequestFailedException(status, "boom"),
+        };
+
+        var act = () => BuildReader(client)
+            .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.Should().NotBeOfType<KeyVaultVersionMaterialException>();
+    }
+
     [Fact]
     public async Task GetKeyMaterialAsync_maps_an_unexpected_exception_to_startup_failure()
     {
@@ -410,7 +433,7 @@ public sealed class KeyVaultKeyReaderTests
     }
 
     // ZeeKayDaConfigurationFailure.Message is a plain string on public API surface that
-    // SecretSanitizingLogger cannot redact, so no caught exception's own Message may reach it.
+    // SanitizingLogger cannot redact, so no caught exception's own Message may reach it.
     // RequestFailedException.Message carries the response content and headers; a cryptographic
     // exception can echo the input it failed to parse. The type is named instead, and the original
     // travels as InnerException. See docs/decisions and .claude/agents/developer.md.
@@ -467,22 +490,40 @@ public sealed class KeyVaultKeyReaderTests
     }
 
     [Fact]
-    public async Task GetKeyMaterialAsync_maps_a_malformed_jwk_to_startup_failure()
+    public async Task GetKeyMaterialAsync_maps_a_malformed_jwk_to_invalid_key_material_naming_the_exception_type_not_its_message()
     {
-        // The JWK conversion stays inside the fault-mapping try for this reason: a vault that
-        // returns an RSA-typed key with unusable parameters makes ToRSA throw, and that must reach
-        // the operator as a stable failure code, not as a raw CryptographicException from the SDK.
+        // A vault that returns an RSA-typed key with unusable parameters makes ToRSA throw. That is a
+        // problem with this one version's material, not with the vault, so it gets its own stable
+        // code, which the source reports against the version rather than failing the whole read.
         using var rsa = RSA.Create(2048);
         var jsonWebKey = new JsonWebKey(rsa, includePrivateParameters: false);
         jsonWebKey.N = [];
         jsonWebKey.E = [];
+        var importFailure = Record.Exception(() => jsonWebKey.ToRSA(includePrivateParameters: false));
         var client = new FakeKeyClient { OnGetKey = _ => BuildKey(jsonWebKey) };
 
         var act = () => BuildReader(client)
             .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
 
-        await act.Should().ThrowAsync<ZeeKayDaConfigurationException>()
-            .WithMessage("*startup_failure*");
+        importFailure.Should().NotBeNull("the fixture must be material the SDK cannot import");
+        var thrown = (await act.Should().ThrowAsync<KeyVaultVersionMaterialException>()).Which;
+        thrown.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.azure_key_vault.invalid_key_material");
+        thrown.AggregatedFailures[0].Message.Should().Contain(importFailure!.GetType().FullName);
+        thrown.AggregatedFailures[0].Message.Should().NotContain(importFailure.Message);
+        thrown.InnerException.Should().BeOfType(importFailure.GetType());
+    }
+
+    [Fact]
+    public async Task GetKeyMaterialAsync_maps_a_version_without_key_material_to_startup_failure()
+    {
+        // A vault answer with no key at all is a vault problem, not this version's material: it fails the whole read.
+        var client = new FakeKeyClient { OnGetKey = _ => BuildKey(null!) };
+
+        var act = () => BuildReader(client)
+            .GetKeyMaterialAsync("v1", TestContext.Current.CancellationToken).AsTask();
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.azure_key_vault.startup_failure");
     }
 
     [Fact]

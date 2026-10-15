@@ -9,28 +9,9 @@ namespace ZeeKayDa.Auth.Authorization;
 internal static class AuthorizeRedirectUriMatcher
 {
     /// <summary>
-    /// Attempts to match <paramref name="presented"/> against a member of
-    /// <paramref name="registered"/>, yielding in <paramref name="redirectTarget"/> the URI that
-    /// is safe to use as the redirect destination.
+    /// Matches <paramref name="presented"/> ordinally against <paramref name="registered"/>, whatever
+    /// the set's comparer, yielding a target built from the registered URI, never the presented one.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Membership is checked with explicit <see cref="StringComparer.Ordinal"/> semantics rather
-    /// than the set's own comparer. The set comes from the client resolver's copy and is ordinal
-    /// already; the explicit comparison keeps a set from anywhere else safe too (see the
-    /// <see cref="Clients.IClientMetadata"/> string-set invariant). The loopback exception compares scheme, host, path and query exactly and ignores
-    /// only the port, and applies only when both URIs are <c>http</c> on a loopback host — the
-    /// sole registrable combination where the port varies at runtime.
-    /// </para>
-    /// <para>
-    /// <strong>The yielded target is derived from the registered URI, never the raw presented
-    /// string.</strong> For an exact match the two are byte-identical; for a loopback match the
-    /// target is the registered URI with the presented port substituted. This guarantees the
-    /// redirect destination carries only components a client-registration validator already
-    /// vetted — a raw presented string could smuggle control characters, userinfo, or dot
-    /// segments past the canonicalizing comparison and into the <c>Location</c> header.
-    /// </para>
-    /// </remarks>
     public static bool TryMatch(string presented, IReadOnlySet<string> registered, out string redirectTarget)
     {
         var exact = registered.FirstOrDefault(
@@ -60,8 +41,7 @@ internal static class AuthorizeRedirectUriMatcher
         if (match is null)
             return false;
 
-        // Rebuild from the trusted registered URI, substituting only the presented port, so
-        // nothing from the raw presented string reaches the response.
+        // Only the port comes from the presented string, so nothing unvetted reaches Location.
         redirectTarget = new UriBuilder(match) { Port = presentedUri.Port }
             .Uri.GetComponents(UriComponents.AbsoluteUri, UriFormat.UriEscaped);
         return true;

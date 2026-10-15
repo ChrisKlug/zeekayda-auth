@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
 
 public sealed class PublicMetadataHeadersTests
 {
-    private static readonly HashSet<string> NoOrigins = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly CorsAllowlist NoOrigins = new(Options.Create(new AuthorizationServerOptions()));
 
     [Theory]
     [InlineData(3600, "public, max-age=3600, must-revalidate")]

@@ -44,18 +44,21 @@ public sealed class DevelopmentSigningKeyIntegrationTests
                 var authBuilder = services.AddZeeKayDaAuth(options =>
                 {
                     options.Issuer = "https://test.example.com";
-                    options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 });
                 authBuilder
                     .AddInMemoryClients(clients =>
-                        clients.AddPublic("test-client", ["https://test.example.com/callback"], [], ["openid"]))
+                        clients.AddPublic("test-client", client =>
+                        {
+                            client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                            client.AllowedScopes.UnionWith(["openid"]);
+                        }))
                     // Integration test hosts run as "Production" by default; allow in-memory stores.
                     .AddInMemoryStores(allowOutsideDevelopment: true)
                     .AddTestClaimsProvider()
-                    .AddInMemoryDevelopmentJwtSigningKeys(o =>
+                    .AddInMemoryDevelopmentSigning(o =>
                     {
                         if (allowedEnvironments is not null)
-                            o.AllowedDevelopmentJwtSigningKeysEnvironments = allowedEnvironments;
+                            o.AllowedEnvironments = allowedEnvironments;
                     });
             });
 
@@ -82,7 +85,7 @@ public sealed class DevelopmentSigningKeyIntegrationTests
         using var factory = new DevSigningKeyFactory("Production");
         var act = () => factory.CreateClient();
 
-        // The ZeeKayDaConfigurationException is thrown from DevelopmentSigningKeyWarningService.VerifyAsync,
+        // The ZeeKayDaConfigurationException is thrown from DevelopmentSigningKeyVerifier.VerifyAsync,
         // absorbed and re-aggregated by the startup verification runner, and propagates out of
         // CreateClient as the inner exception of a HostAbortedException or AggregateException.
         act.Should().Throw<Exception>()

@@ -9,11 +9,11 @@ namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 /// <c>client_secret_post</c> (client secret in the request body).
 /// </summary>
 /// <remarks>
-/// Delegates stored-secret verification to <see cref="CompositeClientSecretHasher"/> — never
-/// compares secret strings directly. Tries all <see cref="IClientSecret"/> credentials before
-/// returning a failure to support credential rotation.
+/// Uses only the public contract a third-party authenticator has: a malformed request is refused with
+/// <see cref="ClientAuthenticationResult.NotValid"/>, and a presented secret is checked by
+/// <see cref="ClientSecrets.Verify"/>, never compared directly.
 /// </remarks>
-internal sealed class ClientSecretAuthenticator : IClientAuthenticator
+internal sealed class ClientSecretAuthenticator(ClientSecrets secrets) : IClientAuthenticator
 {
     private static readonly IReadOnlySet<string> _authMethods =
         new HashSet<string>(StringComparer.Ordinal)
@@ -22,118 +22,49 @@ internal sealed class ClientSecretAuthenticator : IClientAuthenticator
             TokenEndpointAuthMethods.ClientSecretPost,
         };
 
-    private readonly CompositeClientSecretHasher _hasher;
-
-    public ClientSecretAuthenticator(CompositeClientSecretHasher hasher)
-    {
-        ArgumentNullException.ThrowIfNull(hasher);
-        _hasher = hasher;
-    }
-
     /// <inheritdoc/>
     public IReadOnlySet<string> AuthenticationMethods => _authMethods;
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Returns <see langword="true"/> with <c>client_secret_basic</c> when an
-    /// <c>Authorization: Basic</c> header is present — including the case where a
-    /// simultaneous <c>client_secret</c> form field is present, which
-    /// <see cref="AuthenticateAsync"/> rejects. Returns <see langword="true"/> with
-    /// <c>client_secret_post</c> when only a <c>client_secret</c> form field is present.
-    /// Returns <see langword="false"/> when neither is present.
+    /// An <c>Authorization: Basic</c> header is <c>client_secret_basic</c> and a <c>client_secret</c>
+    /// form field is <c>client_secret_post</c>. Both at once is refused: RFC 6749 §2.3 allows one
+    /// authentication method per request. So is a Basic header that does not decode to a
+    /// <c>username:password</c> pair, a bare <c>Basic</c> included (RFC 7617 §2).
     /// </remarks>
-    public bool CanHandle(TokenRequestContext context, out string? method)
+    public ClientAuthenticatorMatch CanHandle(TokenRequestContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var hasBasic = BasicAuthorizationHeader.IsPresent(context.Headers);
+        var headers = context.HttpContext.Request.Headers;
+        var hasBasic = BasicAuthorizationHeader.IsPresent(headers);
         var hasPost = context.Form.ContainsKey("client_secret");
 
-        if (hasBasic)
+        return (hasBasic, hasPost) switch
         {
-            method = TokenEndpointAuthMethods.ClientSecretBasic;
-            return true;
-        }
-
-        if (hasPost)
-        {
-            method = TokenEndpointAuthMethods.ClientSecretPost;
-            return true;
-        }
-
-        method = null;
-        return false;
+            (true, true) => ClientAuthenticatorMatch.Refused,
+            (true, false) when !BasicAuthorizationHeader.TryParse(headers, out _, out _) => ClientAuthenticatorMatch.Refused,
+            (true, false) => ClientAuthenticatorMatch.For(TokenEndpointAuthMethods.ClientSecretBasic),
+            (false, true) => ClientAuthenticatorMatch.For(TokenEndpointAuthMethods.ClientSecretPost),
+            _ => ClientAuthenticatorMatch.None,
+        };
     }
 
     /// <inheritdoc/>
-    public ValueTask<ClientAuthenticationResult> AuthenticateAsync(
+    public Task<ClientAuthenticationResult> AuthenticateAsync(
         ClientAuthenticationContext context,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var hasBasic = BasicAuthorizationHeader.IsPresent(context.Headers);
-        var hasPost = context.Form.ContainsKey("client_secret");
-
-        // RFC 6749 §2.3: a client MUST NOT use more than one authentication method per request.
-        if (hasBasic && hasPost)
-        {
-            _hasher.PadFailureToCredentialBudget(0);
-            return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
-        }
-
-        string presented;
-        if (hasBasic)
-        {
-            // RFC 6749 §2.3.1: the Basic-auth username is the authoritative client_id.
-            if (!BasicAuthorizationHeader.TryParse(context.Headers, out var username, out var password) ||
-                !string.Equals(username, context.ClientId, StringComparison.Ordinal))
-            {
-                _hasher.PadFailureToCredentialBudget(0);
-                return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
-            }
-
-            // If the form body also carries a client_id it must agree with the Basic-auth
-            // username — two conflicting client_id values in one request is a protocol error
-            // regardless of which one the caller used to look up the client.
-            var formClientId = context.Form["client_id"].ToString();
-            if (formClientId.Length > 0 &&
-                !string.Equals(formClientId, username, StringComparison.Ordinal))
-            {
-                _hasher.PadFailureToCredentialBudget(0);
-                return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
-            }
-
-            presented = password;
-        }
-        else
-        {
-            presented = context.Form["client_secret"].ToString();
-        }
-
-        var secrets = context.Client.Credentials.OfType<IClientSecret>().ToList();
-
-        // An empty secret can never verify, and the built-in hasher returns without deriving for
-        // one, so trying it against each stored credential would cost nothing. Counted as attempts,
-        // those would pad short, and timing would tell a known client — and how many secrets it
-        // holds — from an unknown one. It is padded from zero instead, like no credentials at all.
-        if (secrets.Count == 0 || presented.Length == 0)
-        {
-            _hasher.PadFailureToCredentialBudget(0);
-            return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
-        }
-
-        var attempted = 0;
-        foreach (var stored in secrets)
-        {
-            attempted++;
-            if (_hasher.Verify(stored, presented.AsSpan()))
-                return ValueTask.FromResult(ClientAuthenticationResult.Valid());
-        }
-
-        // Pad timing to the credential budget so a client with fewer active secrets is not
-        // distinguishable from one with the maximum by timing.
-        _hasher.PadFailureToCredentialBudget(attempted);
-        return ValueTask.FromResult(ClientAuthenticationResult.NotValid());
+        return Task.FromResult(PresentedSecret(context) is { } presented
+            ? ClientAuthenticationResult.From(secrets.Verify(presented, context.Client.Secrets))
+            : ClientAuthenticationResult.NotValid());
     }
+
+    /// <summary>The secret the request presents, or <see langword="null"/> when the request is malformed.</summary>
+    private static string? PresentedSecret(ClientAuthenticationContext context) =>
+        context.Method == TokenEndpointAuthMethods.ClientSecretBasic
+            ? BasicAuthorizationHeader.SecretFor(context.HttpContext.Request.Headers, context.ClientId, context.Form)
+            : context.Form["client_secret"].ToString();
 }

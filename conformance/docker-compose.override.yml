@@ -4,7 +4,7 @@
 # folder's own files are reached through CONFORMANCE_DIR, which the script exports, never '..'.
 #
 # Two things this adds:
-#   * the suite's Java server can resolve the sample identity server's hostname, which points at
+#   * the suite's Java server can resolve the conformance host's hostname, which points at
 #     127.0.0.1 in public DNS and would otherwise mean "this container";
 #   * a runner container for the suite's own run-test-plan.py, so a run needs only Docker.
 services:
@@ -40,7 +40,7 @@ services:
     environment:
       CONFORMANCE_SERVER: https://localhost.emobix.co.uk:8443/
       # The suite's nginx serves a certificate this container has no reason to trust. Verification
-      # that matters — the sample identity server's certificate — is done by the Java server, which
+      # that matters — the conformance host's certificate — is done by the Java server, which
       # trusts only the CA baked into it by Dockerfile.suite-server.
       CONFORMANCE_DEV_MODE: "1"
       # The runner aborts a run after this many modules in a row fail to complete. Three is right

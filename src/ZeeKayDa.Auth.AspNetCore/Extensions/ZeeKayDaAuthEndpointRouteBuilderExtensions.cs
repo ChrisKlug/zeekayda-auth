@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth;
 using ZeeKayDa.Auth.AspNetCore;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
+using ZeeKayDa.Auth.StartupVerification;
 
 namespace Microsoft.AspNetCore.Builder;
 
@@ -34,33 +35,29 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        // Force eager options evaluation so Map-time failures match ValidateOnStart
-        // (OptionsValidationException with the validator's exact messages).
+        // Every options type, so the first error lists all their failures.
+        ValidatedOptionsCheck.ThrowIfAnyInvalid(endpoints.ServiceProvider);
+
         var options = endpoints.ServiceProvider
             .GetRequiredService<IOptions<AuthorizationServerOptions>>()
             .Value;
 
-        // Precompute security header values once at map time — they are fixed for the lifetime
-        // of the application and do not need to be re-evaluated per request.
         var securityHeaders = options.SecurityHeaders;
         var referrerPolicyValue = SecurityHeaderValues.ToHeaderValue(securityHeaders.ReferrerPolicy);
         var corpValue = SecurityHeaderValues.ToHeaderValue(securityHeaders.CrossOriginResourcePolicy);
         var noSniff = securityHeaders.ContentTypeOptionsNoSniff;
-        var allowInsecureIssuer = options.AllowInsecureIssuer;
+        var allowHttpLoopbackIssuer = options.Development.AllowHttpLoopbackIssuer;
 
-        // All ZeeKayDa.Auth endpoints are grouped so that the security-headers filter applies
-        // only to protocol endpoints and not to the host application's own routes.
+        // The filters below apply to the framework's endpoints, never the host's routes.
         var group = endpoints.MapGroup("");
 
-        // Route literals match case-insensitively and tolerate a trailing '/', but a URL path is
-        // case-sensitive (RFC 3986 §6.2.2.1). The marker has ExactPathMatcherPolicy take a route out
-        // of matching unless the path is exact, so a wrong path is a 404 before any filter runs.
+        // A URL path is case-sensitive (RFC 3986 §6.2.2.1); routing literals are not.
         group.WithMetadata(ExactPathMetadata.Instance);
 
         group.AddEndpointFilter(async (context, next) =>
         {
             if (context.HttpContext.Request.IsHttps ||
-                (allowInsecureIssuer && LoopbackHelper.IsLoopbackAddress(context.HttpContext.Connection.RemoteIpAddress)))
+                (allowHttpLoopbackIssuer && LoopbackHelper.IsLoopbackAddress(context.HttpContext.Connection.RemoteIpAddress)))
             {
                 return await next(context);
             }
@@ -69,7 +66,7 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
                 statusCode: StatusCodes.Status421MisdirectedRequest,
                 title: "HTTPS required",
                 detail: "ZeeKayDa.Auth endpoints require HTTPS for non-loopback requests. " +
-                        "Configure TLS, or use AllowInsecureIssuer only for loopback development.");
+                        "Configure TLS, or use Development.AllowHttpLoopbackIssuer only for loopback development.");
         });
 
         group.AddEndpointFilter(async (context, next) =>
@@ -80,7 +77,7 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
             context.HttpContext.Response.Headers["Referrer-Policy"] = referrerPolicyValue;
             context.HttpContext.Response.Headers["Cross-Origin-Resource-Policy"] = corpValue;
 
-            if (allowInsecureIssuer)
+            if (allowHttpLoopbackIssuer)
                 context.HttpContext.Response.Headers["X-ZeeKayDa-Insecure-Issuer"] = "true";
 
             return await next(context);

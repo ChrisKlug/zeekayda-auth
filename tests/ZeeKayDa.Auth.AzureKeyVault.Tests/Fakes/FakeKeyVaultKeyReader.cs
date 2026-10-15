@@ -160,10 +160,14 @@ internal sealed class FakeKeyVaultKeyReader : IKeyVaultKeyReader
         }
     }
 
+    /// <summary>Runs inside each public-material fetch — after the versions were listed — to act mid-read.</summary>
+    public Action? DuringKeyMaterial { get; set; }
+
     public ValueTask<(AsymmetricAlgorithm PublicKey, SigningKeyType KeyType)> GetKeyMaterialAsync(
         string version, CancellationToken cancellationToken)
     {
         KeyMaterialCalls.Add(version);
+        DuringKeyMaterial?.Invoke();
 
         if (MaterialException is not null)
             throw MaterialException;

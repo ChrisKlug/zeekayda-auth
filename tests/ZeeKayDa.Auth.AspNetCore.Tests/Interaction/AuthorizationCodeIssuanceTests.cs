@@ -25,7 +25,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 /// <remarks>
 /// The test host maps a login page and a consent page written as a real host writes them, plus
 /// probes that report what the encrypted session and interaction cookies carry. The issued code
-/// is redeemed through the host's own <see cref="IAuthorizationCodeStore"/>, which is what the
+/// is redeemed through the host's own <see cref="AuthorizationCodeStore"/>, which is what the
 /// token endpoint will do with it.
 /// </remarks>
 public sealed class AuthorizationCodeIssuanceTests : IClassFixture<AuthorizationCodeIssuanceHostFixture>
@@ -76,7 +76,11 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
             builder.AddInMemoryClients(clients => clients
                 .Add(ConsentingRegistration())
                 .Add(TrustedRegistration())
-                .AddPublic(OtherClient, ["https://other.example.com/callback"], [], ["openid"]));
+                .AddPublic(OtherClient, client =>
+                {
+                    client.RedirectUris.UnionWith(["https://other.example.com/callback"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }));
 
             // Registered after AddInMemoryClients, so it wins resolution rather than tripping the
             // guard against a repository registered before it.
@@ -87,13 +91,13 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
         },
         mapEndpoints: MapHostPages);
 
-    internal static ClientRegistration ConsentingRegistration() =>
-        ClientRegistration.CreatePublic(ConsentingClient, [RegisteredRedirect], [], ["openid", "profile", "email"]);
+    internal static Client ConsentingRegistration() =>
+        Client.CreatePublic(ConsentingClient, [RegisteredRedirect], [], ["openid", "profile", "email"]);
 
     /// <summary>A first-party client the operator chose to exempt from consent.</summary>
-    internal static ClientRegistration TrustedRegistration()
+    internal static Client TrustedRegistration()
     {
-        var client = ClientRegistration.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid", "profile"]);
+        var client = Client.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid", "profile"]);
         return client with { RequireConsent = false };
     }
 
@@ -107,17 +111,15 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
     /// <summary>The host's pages: sign-in, the consent page, and two probes.</summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
+        endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var subject = form["sub"].FirstOrDefault() ?? "user-1";
 
-            await login.SignInAsync(
-                new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", subject)], "test")),
-                AuthenticationMethods.Password);
+            await login.SignInAsync(subject, AuthenticationMethods.Password);
         });
 
-        endpoints.MapPost(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
+        endpoints.MapPost(ConsentPath, async (HttpContext context, ConsentInteraction consent) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
 
@@ -228,7 +230,7 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
 
     private static async Task<AuthorizationCodeRedemptionResult> RedeemAsync(IServiceProvider services, string code, string clientId = ConsentingClient)
     {
-        var store = services.GetRequiredService<IAuthorizationCodeStore>();
+        var store = services.GetRequiredService<AuthorizationCodeStore>();
         return await store.TryRedeemAsync(code, clientId, familyId: StoreKeyGenerator.Generate(), Cancellation);
     }
 
@@ -582,6 +584,32 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
     }
 
     [Fact]
+    public async Task A_grant_that_leaves_out_openid_still_grants_it()
+    {
+        // Agreeing to anything is agreeing to be identified: openid is the request itself, so a
+        // page never has to pass it, and leaving it out is not a refusal.
+        var interactionId = await ReachConsentAsync();
+
+        var response = await GrantAsync(interactionId, "email");
+
+        var code = response.ShouldHaveIssuedCodeTo(RegisteredRedirect);
+        var redeemed = (await RedeemAsync(code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>().Subject;
+        redeemed.Entry.Scope.Should().Equal("openid", "email");
+    }
+
+    [Fact]
+    public async Task An_empty_grant_grants_openid_alone()
+    {
+        var interactionId = await ReachConsentAsync();
+
+        var response = await GrantAsync(interactionId);
+
+        var code = response.ShouldHaveIssuedCodeTo(RegisteredRedirect);
+        var redeemed = (await RedeemAsync(code)).Should().BeOfType<AuthorizationCodeRedemptionResult.Redeemed>().Subject;
+        redeemed.Entry.Scope.Should().Equal("openid");
+    }
+
+    [Fact]
     public async Task A_grant_narrower_than_the_request_issues_the_narrower_set()
     {
         var interactionId = await ReachConsentAsync();
@@ -812,7 +840,7 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
         // would otherwise mint a code after an earlier response's claim had already lapsed. The
         // store here moves the clock past expiry during the claim itself.
         var issuer = _fixture.Services.GetRequiredService<AuthorizationCodeIssuer>();
-        var stalling = new StallingCodeStore(_fixture.Services.GetRequiredService<IAuthorizationCodeStore>(), _time, TimeSpan.FromMinutes(11));
+        var stalling = new StallingBackingStore(_fixture.Services.GetRequiredService<IAuthorizationCodeBackingStore>(), _time, TimeSpan.FromMinutes(11));
         var context = new DefaultHttpContext { RequestServices = new OverridingServiceProvider(_fixture.Services, stalling) };
         var alive = UnauthenticatedContext() with
         {
@@ -834,7 +862,7 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
         // A response that reaches issuance with a request already past its lifetime is refused as
         // expired, without handing the store a claim it would reject for a past expiry.
         var issuer = _fixture.Services.GetRequiredService<AuthorizationCodeIssuer>();
-        var recording = new StallingCodeStore(_fixture.Services.GetRequiredService<IAuthorizationCodeStore>(), _time, TimeSpan.Zero);
+        var recording = new StallingBackingStore(_fixture.Services.GetRequiredService<IAuthorizationCodeBackingStore>(), _time, TimeSpan.Zero);
         var context = new DefaultHttpContext { RequestServices = new OverridingServiceProvider(_fixture.Services, recording) };
         var expired = UnauthenticatedContext() with
         {
@@ -891,89 +919,94 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
         private readonly InMemoryInteractionBackingStore _inner = new(time);
         private int _writes;
 
-        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             Interlocked.Increment(ref _writes) >= failFromWrite
                 ? throw new IOException("The cache is unreachable.")
                 : _inner.SetAsync(key, value, expiresAt, cancellationToken);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
             _inner.GetAsync(key, cancellationToken);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             failRemoval
                 ? throw new IOException("The cache is unreachable.")
                 : _inner.RemoveAsync(key, cancellationToken);
     }
 
     /// <summary>
-    /// A code store whose claim on the interaction takes long enough for the clock to move by
-    /// <paramref name="stall"/> — a slow cache round trip — and which records whether a code was
-    /// then stored.
+    /// A backing store under the real code store whose interaction claim takes long enough for the
+    /// clock to move by <paramref name="stall"/> — a slow cache round trip — and which records
+    /// whether a code was then stored.
     /// </summary>
-    private sealed class StallingCodeStore(IAuthorizationCodeStore inner, FakeTimeProvider time, TimeSpan stall) : IAuthorizationCodeStore
+    private sealed class StallingBackingStore(IAuthorizationCodeBackingStore inner, FakeTimeProvider time, TimeSpan stall)
+        : IAuthorizationCodeBackingStore
     {
         public bool Stored { get; private set; }
 
         public bool Claimed { get; private set; }
 
-        async ValueTask<bool> IAuthorizationCodeStore.TryClaimInteractionAsync(string interactionId, DateTimeOffset interactionExpiresAt, CancellationToken cancellationToken)
+        public async Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
         {
+            if (!key.ToString().StartsWith("zkd:code:i:", StringComparison.Ordinal))
+            {
+                Stored = true;
+                return await inner.TryInsertAsync(key, value, expiresAt, cancellationToken);
+            }
+
             Claimed = true;
-            var reserved = await inner.TryClaimInteractionAsync(interactionId, interactionExpiresAt, cancellationToken);
+            var reserved = await inner.TryInsertAsync(key, value, expiresAt, cancellationToken);
             time.Advance(stall);
             return reserved;
         }
 
-        public Task StoreAsync(string code, AuthorizationCodeEntry entry, CancellationToken cancellationToken)
-        {
-            Stored = true;
-            return inner.StoreAsync(code, entry, cancellationToken);
-        }
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            inner.GetAsync(key, cancellationToken);
 
-        public ValueTask<AuthorizationCodeRedemptionResult> TryRedeemAsync(string code, string clientId, string familyId, CancellationToken cancellationToken) =>
-            inner.TryRedeemAsync(code, clientId, familyId, cancellationToken);
-
-        void IAuthorizationCodeStore.SealAsFrameworkOwnedProtocol() { }
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+            inner.RemoveAsync(key, cancellationToken);
     }
 
-    /// <summary>The host's services, with one <see cref="IAuthorizationCodeStore"/> swapped in for a single request.</summary>
-    private sealed class OverridingServiceProvider(IServiceProvider inner, IAuthorizationCodeStore store) : IServiceProvider
+    /// <summary>The host's services, with the code store swapped for one over <paramref name="backing"/> for a single request.</summary>
+    private sealed class OverridingServiceProvider(IServiceProvider inner, IAuthorizationCodeBackingStore backing) : IServiceProvider
     {
+        private readonly AuthorizationCodeStore _store =
+            ActivatorUtilities.CreateInstance<AuthorizationCodeStore>(inner, backing);
+
         public object? GetService(Type serviceType) =>
-            serviceType == typeof(IAuthorizationCodeStore) ? store : inner.GetService(serviceType);
+            serviceType == typeof(AuthorizationCodeStore) ? _store : inner.GetService(serviceType);
     }
 
     /// <summary>A backing store on which every interaction claim has already been taken by someone else.</summary>
     private sealed class AlreadyClaimedBackingStore : IAuthorizationCodeBackingStore
     {
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
-            new(!key.ToString().StartsWith("zkd:code:i:", StringComparison.Ordinal));
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+            Task.FromResult<bool>(!key.ToString().StartsWith("zkd:code:i:", StringComparison.Ordinal));
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
-            new((ReadOnlyMemory<byte>?)null);
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            Task.FromResult<ReadOnlyMemory<byte>?>((ReadOnlyMemory<byte>?)null);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     /// <summary>A backing store whose every write fails, as an unreachable cache would.</summary>
     private sealed class FailingBackingStore : IAuthorizationCodeBackingStore
     {
-        public ValueTask<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             throw new IOException("The cache is unreachable.");
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
-            new((ReadOnlyMemory<byte>?)null);
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            Task.FromResult<ReadOnlyMemory<byte>?>((ReadOnlyMemory<byte>?)null);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     /// <summary>A repository holding one registration an operator can change mid-flow.</summary>
-    private sealed class MutableClientRepository(IClientRegistration initial) : IClientRepository
+    private sealed class MutableClientRepository(IClientWithCredentials initial) : IClientRepository
     {
-        public IClientRegistration? Current { get; set; } = initial;
+        public IClientWithCredentials? Current { get; set; } = initial;
 
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            new(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientWithCredentials?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
     }
 
     /// <summary>Captures every log entry the host writes, after the framework's redaction.</summary>

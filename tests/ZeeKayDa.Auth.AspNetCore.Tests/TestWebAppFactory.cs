@@ -13,8 +13,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.Claims;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Stores;
 using ZeeKayDa.Auth.Tokens;
 
@@ -24,17 +24,17 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests;
 /// Registers the signing key source every test host needs: the discovery document derives
 /// <c>id_token_signing_alg_values_supported</c> from the signing key ring, so a host with no signing
 /// key source fails startup. A test-local source rather than
-/// <c>AddInMemoryDevelopmentJwtSigningKeys()</c>, because these hosts run as "Production" and the
+/// <c>AddInMemoryDevelopmentSigning()</c>, because these hosts run as "Production" and the
 /// development keys refuse that environment by design.
 /// </summary>
 internal static class TestSigningKeyRegistration
 {
     public static ZeeKayDaAuthBuilder AddTestSigningKeys(this ZeeKayDaAuthBuilder builder)
     {
-        if (builder.Services.Any(d => d.ServiceType == typeof(ISigningKeyRing)))
+        if (builder.Services.Any(d => d.ServiceType == typeof(SigningKeyRing)))
             return builder;
 
-        builder.Services.AddZeeKayDaSigningKeySource<TestSigningKeySource>();
+        builder.AddSigningKeySource<TestSigningKeySource>();
         return builder;
     }
 }
@@ -58,8 +58,8 @@ internal static class TestClaimsProviderRegistration
 /// <summary>An <see cref="IClaimsProvider"/> that knows every subject and has nothing to say about any of them.</summary>
 internal sealed class NoClaimsProvider : IClaimsProvider
 {
-    public ValueTask<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
-        ValueTask.FromResult<ClaimsResolutionResult>(new ClaimsResolutionResult.Resolved { Claims = [] });
+    public Task<ClaimsResolutionResult> GetClaimsAsync(ClaimsProviderContext context, CancellationToken cancellationToken = default) =>
+        Task.FromResult<ClaimsResolutionResult>(new ClaimsResolutionResult.Resolved { Claims = [] });
 }
 
 /// <summary>
@@ -68,6 +68,8 @@ internal sealed class NoClaimsProvider : IClaimsProvider
 /// </summary>
 internal sealed class TestSigningKeySource : ISigningKeySource, IDisposable
 {
+    public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
     private static readonly SourceKeyId KeyId = new("test-signing-key");
 
     // Generating a 2048-bit key takes long enough that doing it per source would dominate the cost
@@ -81,22 +83,20 @@ internal sealed class TestSigningKeySource : ISigningKeySource, IDisposable
 
     private readonly RSA _rsa = RSA.Create(SharedKey.Value);
 
-    public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+    public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
     {
         var key = new SourceKey(
             KeyId,
-            SigningAlgorithm.RS256,
-            PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)),
-            ExpiresAt: null);
+            PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false)));
 
-        return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, key, next: null));
+        return Task.FromResult(new SourceKeyListing([key], []));
     }
 
-    public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+    public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
     {
         // A fresh private key instance per signer: the ring owns and disposes what it is handed.
         var privateKey = RSA.Create(_rsa.ExportParameters(includePrivateParameters: true));
-        return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, privateKey));
+        return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, privateKey));
     }
 
     public void Dispose() => _rsa.Dispose();
@@ -162,9 +162,6 @@ public sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactory>
                 // Default issuer used by most tests.
                 options.Issuer = "https://test.example.com";
 
-                // Advertise "none" so the public test client passes the subset validation.
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
-
                 // A login page, so the default host can hand an unauthenticated request off the
                 // way a real one does. Tests covering the unconfigured case clear it themselves.
                 options.AuthorizationEndpoint.Interaction.LoginPath = "/account/login";
@@ -173,7 +170,7 @@ public sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactory>
                 // the unconfigured case clear it themselves.
                 options.AuthorizationEndpoint.Interaction.ConsentPath = "/account/consent";
 
-                // Allow per-test overrides (e.g. path-bearing issuer, AllowInsecureIssuer, etc.)
+                // Allow per-test overrides (e.g. path-bearing issuer, AllowHttpLoopbackIssuer, etc.)
                 _configureOptions?.Invoke(options);
             });
 
@@ -186,12 +183,12 @@ public sealed class TestWebAppFactory : WebApplicationFactory<TestWebAppFactory>
             // it makes are visible before we decide whether to fall back to in-memory stores.
             _configureBuilder?.Invoke(authBuilder);
 
-            // Register in-memory stores so the TokenStorePresenceValidator passes at startup,
+            // Register in-memory stores so the TokenStorePresenceVerifier passes at startup,
             // but only when _configureBuilder has not already registered stores. This avoids
             // a ThrowIfAlreadyRegistered exception when the caller brings its own stores.
             // Integration test hosts run as "Production" by default; allow in-memory stores so
             // the startup guard does not block test startup.
-            if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IAuthorizationCodeStore)))
+            if (!authBuilder.Services.Any(d => d.ServiceType == typeof(IAuthorizationCodeBackingStore)))
                 authBuilder.AddInMemoryStores(allowOutsideDevelopment: true);
 
             authBuilder.AddTestSigningKeys();
@@ -243,15 +240,14 @@ internal sealed class TestWebAppFactoryWithRemoteIp : WebApplicationFactory<Test
             services.AddZeeKayDaAuth(options =>
             {
                 options.Issuer = "http://localhost:5000";
-                options.AllowInsecureIssuer = true;
-                // Advertise "none" so the public test client passes the subset validation.
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
+                options.Development.AllowHttpLoopbackIssuer = true;
                 _configureOptions?.Invoke(options);
             }).AddInMemoryClients(clients =>
-                clients.AddPublic("test-client",
-                    ["https://test.example.com/callback"],
-                    [],
-                    ["openid"]))
+                clients.AddPublic("test-client", client =>
+                {
+                    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
               .AddTestSigningKeys()
@@ -291,12 +287,12 @@ internal sealed class TestWebAppFactoryWithPing : WebApplicationFactory<TestWebA
             services.AddZeeKayDaAuth(options =>
             {
                 options.Issuer = "https://test.example.com";
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             }).AddInMemoryClients(clients =>
-                clients.AddPublic("test-client",
-                    ["https://test.example.com/callback"],
-                    [],
-                    ["openid"]))
+                clients.AddPublic("test-client", client =>
+                {
+                    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
               .AddTestSigningKeys()
@@ -350,12 +346,12 @@ internal sealed class TestWebAppFactoryWithFallbackAuthorizationPolicy : WebAppl
             var authBuilder = services.AddZeeKayDaAuth(options =>
             {
                 options.Issuer = "https://test.example.com";
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
             }).AddInMemoryClients(clients =>
-                clients.AddPublic("test-client",
-                    ["https://test.example.com/callback"],
-                    [],
-                    ["openid"]))
+                clients.AddPublic("test-client", client =>
+                {
+                    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
               .AddTestSigningKeys()
@@ -420,13 +416,13 @@ internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactor
             services.AddZeeKayDaAuth(options =>
             {
                 options.Issuer = "https://test.example.com";
-                options.TokenEndpoint.AuthMethodsSupported.Add(TokenEndpointAuthMethods.None);
                 _configureOptions?.Invoke(options);
             }).AddInMemoryClients(clients =>
-                clients.AddPublic("test-client",
-                    ["https://test.example.com/callback"],
-                    [],
-                    ["openid"]))
+                clients.AddPublic("test-client", client =>
+                {
+                    client.RedirectUris.UnionWith(["https://test.example.com/callback"]);
+                    client.AllowedScopes.UnionWith(["openid"]);
+                }))
               // Integration test hosts run as "Production" by default; allow in-memory stores.
               .AddInMemoryStores(allowOutsideDevelopment: true)
               .AddTestSigningKeys()
@@ -445,4 +441,40 @@ internal sealed class TestWebAppFactoryWithVaryMiddleware : WebApplicationFactor
             app.UseEndpoints(endpoints => endpoints.MapZeeKayDaAuth());
         });
     }
+}
+
+/// <summary>Whether <see cref="RevocableTestSigningKeySource"/>'s next read lists its key.</summary>
+internal sealed class SigningRevocation
+{
+    public bool Revoked { get; set; }
+
+    /// <summary>
+    /// Revokes the key and lets the ring read again, so the ring has stopped signing when this returns.
+    /// </summary>
+    public async Task RevokeAsync(EndpointHost host, FakeTimeProvider time)
+    {
+        await host.EnsureStartedAsync();
+        Revoked = true;
+        time.Advance(new SigningKeyOptions().RefreshInterval);
+        await host.Resolve<SigningKeyRing>().LastTransition;
+    }
+}
+
+/// <summary>
+/// A <see cref="TestSigningKeySource"/> whose key is revoked — no longer listed — once
+/// <see cref="SigningRevocation.Revoked"/> is set.
+/// </summary>
+internal sealed class RevocableTestSigningKeySource(SigningRevocation revocation) : ISigningKeySource, IDisposable
+{
+    private readonly TestSigningKeySource _inner = new();
+
+    public SigningAlgorithm Algorithm => _inner.Algorithm;
+
+    public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default) =>
+        revocation.Revoked ? Task.FromResult(new SourceKeyListing([], [])) : _inner.ReadAsync(cancellationToken);
+
+    public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default) =>
+        _inner.CreateSignerAsync(id, cancellationToken);
+
+    public void Dispose() => _inner.Dispose();
 }

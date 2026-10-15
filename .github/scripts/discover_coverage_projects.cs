@@ -27,7 +27,7 @@ static int Run(string[] args)
     // which ships and is tested independently of it) is never a coverage-regression candidate.
     var packages = ReadTestProjectPaths(solutionPath)
         .Select(DerivePackageName)
-        .Where(name => !IsSample(repoRoot, name))
+        .Where(name => !IsSampleOrTestHost(repoRoot, name))
         .Where(name => !IsOsRestricted(repoRoot, name))
         .OrderBy(static name => name, StringComparer.Ordinal)
         .ToArray();
@@ -59,7 +59,15 @@ static IReadOnlyList<string> ReadTestProjectPaths(string solutionPath)
         .Select(element => element.Attribute("Path")?.Value)
         .Where(path => !string.IsNullOrWhiteSpace(path))
         .Cast<string>()
-        .Where(static path => path.Replace('\\', '/').StartsWith("tests/", StringComparison.Ordinal))
+        .Select(static path => path.Replace('\\', '/'))
+        .Where(static path => path.StartsWith("tests/", StringComparison.Ordinal))
+        .ToArray();
+
+    // A host that only tests drive (tests/<Name>/, tested by tests/<Name>.Tests/) lives under tests/
+    // but is not a test project, so it is set aside rather than failing the naming convention.
+    var names = paths.Select(static path => Path.GetFileNameWithoutExtension(path)).ToHashSet(StringComparer.Ordinal);
+    paths = paths
+        .Where(path => !names.Contains(Path.GetFileNameWithoutExtension(path) + ".Tests"))
         .ToArray();
 
     if (paths.Length == 0)
@@ -85,18 +93,22 @@ static string DerivePackageName(string testProjectPath)
     return projectFileName[..^".Tests".Length];
 }
 
-// A test project paired with a sample under samples/ rather than a package under src/ tests code
-// that never ships, so it is not a coverage-regression candidate. Only an explicit samples/ match
-// excludes it: a test project paired with nothing still fails loudly in IsOsRestricted.
-static bool IsSample(string repoRoot, string packageName)
+// A test project paired with a sample under samples/, or with a test host under tests/, rather than
+// a package under src/ tests code that never ships, so it is not a coverage-regression candidate.
+// Only an explicit match excludes it: a test project paired with nothing still fails loudly in
+// IsOsRestricted.
+static bool IsSampleOrTestHost(string repoRoot, string packageName)
 {
     if (File.Exists(Path.Join(repoRoot, "src", packageName, $"{packageName}.csproj")))
         return false;
 
-    var samplesRoot = Path.Join(repoRoot, "samples");
-    return Directory.Exists(samplesRoot)
-        && Directory.EnumerateFiles(samplesRoot, $"{packageName}.csproj", SearchOption.AllDirectories).Any();
+    return File.Exists(Path.Join(repoRoot, "tests", packageName, $"{packageName}.csproj"))
+        || ContainsProject(Path.Join(repoRoot, "samples"), packageName);
 }
+
+static bool ContainsProject(string root, string packageName) =>
+    Directory.Exists(root)
+    && Directory.EnumerateFiles(root, $"{packageName}.csproj", SearchOption.AllDirectories).Any();
 
 static bool IsOsRestricted(string repoRoot, string packageName)
 {

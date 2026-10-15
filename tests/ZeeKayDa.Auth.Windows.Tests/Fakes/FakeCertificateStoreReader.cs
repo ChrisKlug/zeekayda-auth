@@ -14,10 +14,10 @@ internal sealed class FakeCertificateStoreReader : ICertificateStoreReader
 {
     private readonly Dictionary<string, X509Certificate2> _certificates = new(StringComparer.Ordinal);
 
-    /// <summary>Every thumbprint passed to <see cref="GetCertificate"/>, in call order.</summary>
+    /// <summary>Every thumbprint passed to <see cref="FindCertificate"/>, in call order.</summary>
     public List<string> Calls { get; } = [];
 
-    /// <summary>When set, <see cref="GetCertificate"/> throws this instead of returning a certificate.</summary>
+    /// <summary>When set, <see cref="FindCertificate"/> throws this instead of returning a certificate.</summary>
     public Exception? ExceptionToThrow { get; set; }
 
     public void AddCertificate(string thumbprint, X509Certificate2 certificate) =>
@@ -30,20 +30,15 @@ internal sealed class FakeCertificateStoreReader : ICertificateStoreReader
     public void RemoveCertificate(string thumbprint) =>
         _certificates.Remove(ThumbprintFormat.Normalize(thumbprint));
 
-    public X509Certificate2 GetCertificate(string normalizedThumbprint, StoreLocation storeLocation, StoreName storeName)
+    public X509Certificate2? FindCertificate(string normalizedThumbprint, StoreLocation storeLocation, StoreName storeName)
     {
         Calls.Add(normalizedThumbprint);
 
         if (ExceptionToThrow is not null)
             throw ExceptionToThrow;
 
-        if (!_certificates.TryGetValue(normalizedThumbprint, out var certificate))
-        {
-            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
-                "signing.windows_certificate_store.certificate_not_found",
-                $"Simulated missing certificate '{normalizedThumbprint}' in '{storeName}'/'{storeLocation}'."));
-        }
-
-        return TestCertificateFactory.Copy(certificate);
+        return _certificates.TryGetValue(normalizedThumbprint, out var certificate)
+            ? TestCertificateFactory.Copy(certificate)
+            : null;
     }
 }

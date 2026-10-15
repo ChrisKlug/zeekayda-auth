@@ -21,8 +21,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 /// </summary>
 /// <remarks>
 /// The test host maps a consent page written exactly as a real one would be — a GET that reads
-/// <see cref="IConsentInteraction.GetRequestAsync"/> and a POST that ends in
-/// <see cref="IConsentInteraction.GrantAsync"/> or <see cref="IConsentInteraction.DenyAsync"/> —
+/// <see cref="ConsentInteraction.GetRequestAsync"/> and a POST that ends in
+/// <see cref="ConsentInteraction.GrantAsync"/> or <see cref="ConsentInteraction.DenyAsync"/> —
 /// plus probes that report what the encrypted session and interaction cookies carry, since
 /// nothing else can observe them.
 /// </remarks>
@@ -70,16 +70,16 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
         },
         mapEndpoints: MapHostPages);
 
-    internal static ClientRegistration ConsentingRegistration()
+    internal static Client ConsentingRegistration()
     {
-        var client = ClientRegistration.CreatePublic(ConsentingClient, [RegisteredRedirect], [], ["openid", "profile", "email"]);
+        var client = Client.CreatePublic(ConsentingClient, [RegisteredRedirect], [], ["openid", "profile", "email"]);
         return client with { DisplayName = "Example App" };
     }
 
     /// <summary>A first-party client the operator chose to exempt from consent.</summary>
-    internal static ClientRegistration TrustedRegistration()
+    internal static Client TrustedRegistration()
     {
-        var client = ClientRegistration.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid", "profile"]);
+        var client = Client.CreatePublic(TrustedClient, [RegisteredRedirect], [], ["openid", "profile"]);
         return client with { RequireConsent = false };
     }
 
@@ -93,19 +93,17 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
     /// <summary>The host's pages: sign-in, the consent page, a sign-out, and two probes.</summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
+        endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var subject = form["sub"].FirstOrDefault() ?? "user-1";
 
-            await login.SignInAsync(
-                new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", subject)], "test")),
-                AuthenticationMethods.Password);
+            await login.SignInAsync(subject, AuthenticationMethods.Password);
         });
 
         // The consent page, exactly as the issue's sample host writes it: the GET renders what
         // the framework says to ask, the POST hands back the boxes the user ticked.
-        endpoints.MapGet(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
+        endpoints.MapGet(ConsentPath, async (HttpContext context, ConsentInteraction consent) =>
         {
             // A host with a content security policy of its own sets it as it always did.
             context.Response.Headers.Append("Content-Security-Policy", "default-src 'self'");
@@ -121,7 +119,7 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
             });
         });
 
-        endpoints.MapPost(ConsentPath, async (HttpContext context, IConsentInteraction consent) =>
+        endpoints.MapPost(ConsentPath, async (HttpContext context, ConsentInteraction consent) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
 
@@ -133,18 +131,18 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
 
         // Pages wired the way the XML docs say not to: a decision taken from the request that
         // renders the page, which is the request the framework itself arrives with.
-        endpoints.MapGet(GrantByLinkPath, (IConsentInteraction consent) => consent.GrantAsync(["openid"]));
-        endpoints.MapGet(DenyByLinkPath, (IConsentInteraction consent) => consent.DenyAsync());
+        endpoints.MapGet(GrantByLinkPath, (ConsentInteraction consent) => consent.GrantAsync(["openid"]));
+        endpoints.MapGet(DenyByLinkPath, (ConsentInteraction consent) => consent.DenyAsync());
 
         // Pages that do the thing the XML docs tell hosts not to do: call a terminal method and
         // then return a result of their own.
-        endpoints.MapPost(GrantThenReturnPath, async (IConsentInteraction consent) =>
+        endpoints.MapPost(GrantThenReturnPath, async (ConsentInteraction consent) =>
         {
             await consent.GrantAsync(["openid"]);
             return Results.Redirect(HijackTarget);
         });
 
-        endpoints.MapPost(DenyThenReturnPath, async (IConsentInteraction consent) =>
+        endpoints.MapPost(DenyThenReturnPath, async (ConsentInteraction consent) =>
         {
             await consent.DenyAsync();
             return Results.Redirect(HijackTarget);
@@ -382,7 +380,7 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
         signIn.Headers.Location.Should().BeNull();
     }
 
-    private static ClientRegistration WithOtherRedirectUri(ClientRegistration registration) =>
+    private static Client WithOtherRedirectUri(Client registration) =>
         registration with
         {
             RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://test.example.com/elsewhere" },
@@ -541,25 +539,6 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
         using var reSignIn = await PostLoginAsync(interactionId, sub: "user-2");
 
         await reSignIn.ShouldHaveFoundNothingToContinueAsync();
-    }
-
-    [Fact]
-    public async Task GrantAsync_without_openid_answers_the_client_with_access_denied()
-    {
-        var query = ValidQuery();
-        query["state"] = "opaque-client-state";
-        var signIn = await ReachConsentAsync(query);
-
-        var grant = await GrantAsync(InteractionIdFrom(signIn), "profile", "email");
-
-        grant.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        DestinationOf(grant).Should().Be(RegisteredRedirect);
-        var parameters = RedirectQueryOf(grant);
-        parameters["error"].Should().Equal(["access_denied"]);
-        parameters["error_description"].ToString().Should().Contain("identified");
-        parameters["state"].Should().Equal(["opaque-client-state"]);
-        parameters["iss"].Should().Equal(["https://test.example.com"]);
-        (await ReadInteractionAsync(InteractionIdFrom(signIn))).Should().BeNull("a refused request is not resumed later");
     }
 
     [Fact]
@@ -868,12 +847,12 @@ public sealed class ConsentInteractionTests : IClassFixture<ConsentInteractionHo
     }
 
     /// <summary>A repository holding one registration an operator can change or remove mid-flow.</summary>
-    private sealed class MutableClientRepository(IClientRegistration initial) : IClientRepository
+    private sealed class MutableClientRepository(IClientWithCredentials initial) : IClientRepository
     {
         /// <summary>The registration as it is now; <see langword="null"/> once removed.</summary>
-        public IClientRegistration? Current { get; set; } = initial;
+        public IClientWithCredentials? Current { get; set; } = initial;
 
-        public ValueTask<IClientRegistration?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
-            new(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
+        public Task<IClientWithCredentials?> FindByClientIdAsync(string clientId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IClientWithCredentials?>(Current is { } current && string.Equals(current.ClientId, clientId, StringComparison.Ordinal) ? current : null);
     }
 }

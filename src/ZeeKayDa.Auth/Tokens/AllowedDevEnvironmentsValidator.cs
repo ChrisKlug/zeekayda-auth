@@ -2,39 +2,43 @@ using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// Validates that <see cref="DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments"/>
-/// does not contain <c>"Production"</c> or null/empty entries.
-/// Registered only when <c>AddInMemoryDevelopmentJwtSigningKeys()</c> or
-/// <c>AddPersistedDevelopmentJwtSigningKeys()</c> is called.
-/// </summary>
-internal sealed class AllowedDevEnvironmentsValidator : IValidateOptions<DevelopmentSigningKeyOptions>
+/// <summary>Refuses an empty <see cref="DevelopmentSigningOptions.AllowedEnvironments"/>, a blank entry, or <c>Production</c>.</summary>
+internal sealed class AllowedDevEnvironmentsValidator : ZeeKayDaOptionsValidator<DevelopmentSigningOptions>
 {
     /// <inheritdoc/>
-    public ValidateOptionsResult Validate(string? name, DevelopmentSigningKeyOptions options)
+    protected override IEnumerable<ZeeKayDaConfigurationFailure> Validate(
+        string? name,
+        DevelopmentSigningOptions options)
     {
-        var list = options.AllowedDevelopmentJwtSigningKeysEnvironments;
-        var errors = new List<string>();
+        var list = options.AllowedEnvironments;
+
+        if (list.Count == 0)
+        {
+            yield return new(
+                "configuration.development_signing.allowed_environments.empty",
+                "DevelopmentSigningOptions.AllowedEnvironments must name at least one environment. " +
+                "An empty list refuses every environment, Development included.");
+        }
 
         foreach (var entry in list)
         {
             if (string.IsNullOrWhiteSpace(entry))
             {
-                errors.Add(
-                    "DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments " +
+                yield return new(
+                    "configuration.development_signing.allowed_environments.blank_entry",
+                    "DevelopmentSigningOptions.AllowedEnvironments " +
                     "must not contain null or empty entries.");
                 continue;
             }
 
             if (string.Equals(entry, "Production", StringComparison.OrdinalIgnoreCase))
             {
-                errors.Add(
-                    "DevelopmentSigningKeyOptions.AllowedDevelopmentJwtSigningKeysEnvironments " +
+                yield return new(
+                    "configuration.development_signing.allowed_environments.contains_production",
+                    "DevelopmentSigningOptions.AllowedEnvironments " +
                     "must not contain 'Production'. Development signing keys are never permitted in " +
                     "Production regardless of this list. Listing 'Production' here is a misconfiguration.");
             }
         }
-
-        return errors.Count > 0 ? ValidateOptionsResult.Fail(errors) : ValidateOptionsResult.Success;
     }
 }

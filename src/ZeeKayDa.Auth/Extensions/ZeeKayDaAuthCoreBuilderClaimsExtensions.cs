@@ -1,0 +1,35 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using ZeeKayDa.Auth;
+using ZeeKayDa.Auth.Claims;
+
+namespace Microsoft.Extensions.DependencyInjection;
+
+/// <summary>
+/// Extension methods for registering the claims provider with <see cref="ZeeKayDaAuthCoreBuilder"/>.
+/// </summary>
+public static class ZeeKayDaAuthCoreBuilderClaimsExtensions
+{
+    /// <summary>
+    /// Registers <typeparamref name="TProvider"/> as the host's <see cref="IClaimsProvider"/>,
+    /// the source of every subject claim a token carries.
+    /// </summary>
+    /// <typeparam name="TProvider">The provider implementation.</typeparam>
+    /// <param name="builder">The ZeeKayDa.Auth builder.</param>
+    /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
+    /// <remarks>
+    /// Scoped, so it may take a per-request database context. There is no default: without one,
+    /// startup fails. A later call replaces an earlier one.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
+    /// </exception>
+    public static ZeeKayDaAuthCoreBuilder AddClaimsProvider<TProvider>(this ZeeKayDaAuthCoreBuilder builder)
+        where TProvider : class, IClaimsProvider
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Services.Replace(ServiceDescriptor.Scoped<IClaimsProvider, TProvider>());
+
+        return builder;
+    }
+}

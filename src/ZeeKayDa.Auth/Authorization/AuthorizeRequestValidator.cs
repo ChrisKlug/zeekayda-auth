@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Clients;
@@ -7,25 +9,17 @@ using ZeeKayDa.Auth.Scopes;
 namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
-/// Validates authorization request parameters using the two-phase model: phase 1 authenticates
-/// the redirect target (<c>client_id</c> + <c>redirect_uri</c>) and its failures render locally;
-/// only afterwards may phase 2 failures redirect to the client (RFC 6749 §4.1.2.1).
+/// Validates authorization request parameters in two phases: failures before the redirect target
+/// is authenticated render locally, later ones redirect to the client (RFC 6749 §4.1.2.1).
 /// </summary>
 /// <remarks>
-/// <para>
-/// Input is the already-extracted parameter multi-map (query for GET, form body for POST) — this
-/// type has no HTTP knowledge. Descriptions in produced errors name the offending parameter and
-/// never echo its value. Phase-1 failures are deliberately indistinguishable between
-/// unknown-client and unregistered-redirect (client enumeration defence).
-/// </para>
-/// <para>
-/// Phase 2 is expressed as an ordered rule table rather than a straight-line chain of guards:
-/// each rule is a small named predicate returning a <see cref="Problem"/> or
-/// <see langword="null"/>, and the first problem wins. Order is significant — a rule may rely on
-/// values an earlier rule parsed into the <see cref="RequestContext"/>.
-/// </para>
+/// Error descriptions never echo a parameter's value, and an unknown client is indistinguishable
+/// from an unregistered redirect URI. Phase-2 rules run in order; a rule may read what an earlier one parsed.
 /// </remarks>
-internal sealed partial class AuthorizeRequestValidator
+internal sealed partial class AuthorizeRequestValidator(
+    ValidatedClientResolver clientResolver,
+    ValidatedScopeCatalog scopes,
+    SanitizingLogger<AuthorizeRequestValidator> logger)
 {
     private const string LocalErrorDescription =
         "The client_id or redirect_uri of this request is missing, unknown, or not registered.";
@@ -55,30 +49,12 @@ internal sealed partial class AuthorizeRequestValidator
         PromptValuesAreCoherent,
         PromptValuesArePermittedForTheClient,
         MaxAgeIsWellFormed,
+        LoginHintIsWellFormed,
     ];
 
-    private readonly ValidatedClientResolver _clientResolver;
-    private readonly ValidatedScopeCatalog _scopes;
-    private readonly ISanitizingLogger<AuthorizeRequestValidator> _logger;
+    private readonly ValidatedScopeCatalog _scopes = scopes;
 
-    public AuthorizeRequestValidator(
-        ValidatedClientResolver clientResolver,
-        ValidatedScopeCatalog scopes,
-        ISanitizingLogger<AuthorizeRequestValidator> logger)
-    {
-        ArgumentNullException.ThrowIfNull(clientResolver);
-        ArgumentNullException.ThrowIfNull(scopes);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _clientResolver = clientResolver;
-        _scopes = scopes;
-        _logger = logger;
-    }
-
-    /// <summary>
-    /// Validates the request parameters in <paramref name="parameters"/> — a multi-map so that
-    /// duplicated parameters remain observable (duplicates are <c>invalid_request</c>).
-    /// </summary>
+    /// <summary>Validates <paramref name="parameters"/>, a multi-map so that duplicates stay observable.</summary>
     public async ValueTask<AuthorizeRequestValidationResult> ValidateAsync(
         IReadOnlyDictionary<string, IReadOnlyList<string?>> parameters,
         CancellationToken cancellationToken)
@@ -89,57 +65,12 @@ internal sealed partial class AuthorizeRequestValidator
         if (target is null)
             return LocalError();
 
-        // The redirect target is now trusted, so from here failures are delivered to the client.
-        // The scope definitions are fetched once, here, because the rule table is synchronous:
-        // one repository call per request, shared by every scope rule.
-        //
-        Problem? problem = null;
-
-        // The try covers the catalog read alone. Widening it over the rule loop below would blame
-        // the repository for a scope contract exception any rule ever threw of its own.
-        IReadOnlyCollection<ScopeDefinition> scopes = [];
-        try
-        {
-            scopes = await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (ScopeContractException ex)
-        {
-            // The scope repository broke its contract after startup passed. Every scope rule needs
-            // an answer from it, so there is nothing left to validate against: the request is
-            // refused as the server's fault, which is whose it is. The client is told only
-            // server_error; the operator gets the rule that broke, by code.
-            // The codes and messages, not ex.Message: the composed message carries a count and
-            // a preamble the operator does not need. Safe to write to the log only because
-            // ScopeContractException is internal, so every failure here is this framework's own
-            // text; a ZeeKayDaConfigurationException the repository threw is deliberately not
-            // caught, and escapes to the generic server-error path with its message unread.
-            problem = new Problem(
-                "server_error",
-                "The authorization server is misconfigured.",
-                "The scope repository broke its contract: " +
-                string.Join("; ", ex.AggregatedFailures.Select(failure => $"[{failure.Code}] {failure.Message}")));
-        }
-
-        // Built from an empty set when the catalog refused the repository, in which case a problem
-        // is already in hand and no rule below reads it.
+        var (scopes, problem) = await LoadScopesAsync(cancellationToken).ConfigureAwait(false);
         var context = new RequestContext(parameters, target.Client, scopes);
+        problem ??= FirstProblem(context);
 
-        // An explicit loop over the rules, not LINQ: they have side effects (they parse values
-        // onto the context), so short-circuiting must not depend on deferred execution.
-        if (problem is null)
-        {
-            foreach (var rule in Phase2Rules)
-            {
-                problem = rule(context);
-                if (problem is not null)
-                    break;
-            }
-        }
-
-        // A server_error is the operator's bug, not the client's, and the client is told nothing
-        // specific; the operator is told exactly what to fix.
         if (problem?.OperatorDetail is { } detail)
-            _logger.LogError("Client {ClientId} could not be served an authorization request: {Detail}", target.Client.ClientId, detail);
+            logger.LogError("Client {ClientId} could not be served an authorization request: {Detail}", target.Client.ClientId, detail);
 
         TryGetSingle(parameters, "state", out var state);
 
@@ -157,12 +88,42 @@ internal sealed partial class AuthorizeRequestValidator
             };
     }
 
-    // ---- Phase 1: authenticate the redirect target. Failures render locally. ----
+    /// <summary>
+    /// Fetches the scope definitions once for the synchronous rule table, or the
+    /// <c>server_error</c> problem when the repository broke its contract.
+    /// </summary>
+    private async ValueTask<(IReadOnlyCollection<ScopeDefinition> Scopes, Problem? Problem)> LoadScopesAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return (await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false), null);
+        }
+        catch (ScopeContractException ex)
+        {
+            return ([], new Problem(
+                "server_error",
+                "The authorization server is misconfigured.",
+                "The scope repository broke its contract: " + ex.DescribeFailures()));
+        }
+    }
+
+    /// <summary>Runs <see cref="Phase2Rules"/> in order and returns the first problem.</summary>
+    private static Problem? FirstProblem(RequestContext context)
+    {
+        // A loop, not LINQ: rules parse values onto the context as they run.
+        foreach (var rule in Phase2Rules)
+        {
+            if (rule(context) is { } problem)
+                return problem;
+        }
+
+        return null;
+    }
 
     /// <summary>
-    /// Resolves and authenticates the client and its redirect target, or <see langword="null"/>
-    /// when either is missing, unknown, or not registered — a distinction the caller must not be
-    /// able to observe.
+    /// The client and its redirect target, or <see langword="null"/> when either is missing,
+    /// unknown or unregistered, without saying which.
     /// </summary>
     private async ValueTask<RedirectTarget?> AuthenticateRedirectTargetAsync(
         IReadOnlyDictionary<string, IReadOnlyList<string?>> parameters,
@@ -171,7 +132,7 @@ internal sealed partial class AuthorizeRequestValidator
         if (!TryGetSingle(parameters, "client_id", out var clientId) || string.IsNullOrEmpty(clientId))
             return null;
 
-        var client = await _clientResolver.FindByClientIdAsync(clientId, cancellationToken).ConfigureAwait(false);
+        var client = await clientResolver.FindClientAsync(clientId, cancellationToken).ConfigureAwait(false);
         if (client is null)
             return null;
 
@@ -187,9 +148,8 @@ internal sealed partial class AuthorizeRequestValidator
     }
 
     /// <summary>
-    /// Rejects the redirect-URI forms that the canonicalizing match would otherwise wave through:
-    /// a fragment, userinfo, an IPv6 zone id, or a control/whitespace character that could survive
-    /// into the <c>Location</c> header (response splitting).
+    /// Rejects what the canonicalizing match would wave through: a fragment, userinfo, an IPv6 zone
+    /// id, or a control or whitespace character that could split the <c>Location</c> header.
     /// </summary>
     private static bool IsRedirectUriShapeAcceptable(string redirectUri)
     {
@@ -202,17 +162,11 @@ internal sealed partial class AuthorizeRequestValidator
             && !ContainsControlOrWhitespace(redirectUri);
     }
 
-    // ---- Phase 2 rules, evaluated in the order declared in Phase2Rules. ----
-
-    private static Problem? NoDuplicatedParameters(RequestContext context)
-    {
-        // The offending parameter name is attacker-controlled and must never be echoed into
-        // error_description — it is redirected to a legitimate client and RFC 6749 §4.1.2.1
-        // restricts the value's character set.
-        return context.Parameters.Any(parameter => parameter.Value.Count > 1)
+    // The duplicated name is attacker-controlled, so it is not echoed into the redirect.
+    private static Problem? NoDuplicatedParameters(RequestContext context) =>
+        context.Parameters.Any(parameter => parameter.Value.Count > 1)
             ? InvalidRequest("A request parameter is duplicated.")
             : null;
-    }
 
     private static Problem? RequestObjectIsRefused(RequestContext context) =>
         context.Parameters.ContainsKey("request")
@@ -249,11 +203,7 @@ internal sealed partial class AuthorizeRequestValidator
             : null;
     }
 
-    /// <remarks>
-    /// Checked on the <em>effective</em> mode, which is always query in v1, whether or not the
-    /// parameter was sent — otherwise a client registered without query silently receives its
-    /// code in the query string by simply omitting <c>response_mode</c>.
-    /// </remarks>
+    // Checked whether or not response_mode was sent: the effective mode is always query.
     private static Problem? ClientMayUseTheQueryResponseMode(RequestContext context) =>
         context.Client.AllowedResponseModes.Contains(ResponseMode.Query)
             ? null
@@ -265,8 +215,7 @@ internal sealed partial class AuthorizeRequestValidator
         if (string.IsNullOrEmpty(scope))
             return new Problem(AuthorizeRequestErrors.InvalidScope, "The scope parameter is required.");
 
-        // Silent narrowing per RFC 6749 §3.3; the granted set is reported back via the token
-        // response's scope parameter rather than as an error.
+        // Silent narrowing (RFC 6749 §3.3): the token response reports the granted set.
         context.EffectiveScopes.AddRange(
             scope.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                 .Where(s => context.Client.AllowedScopes.Contains(s, StringComparer.Ordinal))
@@ -280,12 +229,7 @@ internal sealed partial class AuthorizeRequestValidator
             ? null
             : new Problem(AuthorizeRequestErrors.InvalidScope, "The openid scope is required.");
 
-    /// <remarks>
-    /// Every effective scope must have a definition: an undefined one has no audience to
-    /// correlate to and no claims to unlock. The in-memory client registration checks this at
-    /// startup; here it also covers a custom repository. The name is not echoed: it came from
-    /// the client's allowed scopes, but the description travels in a redirect.
-    /// </remarks>
+    // Covers a custom client repository, which skips the startup check that every scope is defined.
     private static Problem? EffectiveScopesAreDefined(RequestContext context)
     {
         if (!ScopeResolution.TryResolve(context.Scopes, context.EffectiveScopes, out var granted, out _))
@@ -295,23 +239,14 @@ internal sealed partial class AuthorizeRequestValidator
         return null;
     }
 
-    /// <remarks>
-    /// RFC 9068 §3: scopes whose default resource indicators differ are refused with
-    /// <c>invalid_scope</c>. Checked on the effective scope, before any interaction, so the user
-    /// never sees a page for a request that could not become a token; consent and refresh only
-    /// narrow the scope, so nothing later can introduce a second audience.
-    /// </remarks>
+    // RFC 9068 §3. Checked before any interaction, so the user never sees a page for a request
+    // that could not become a token; consent and refresh only narrow the scope.
     private static Problem? EffectiveScopesNameOneResource(RequestContext context) =>
         ScopeResolution.TryResolveAudience(context.GrantedDefinitions, out _)
             ? null
             : new Problem(AuthorizeRequestErrors.InvalidScope, "The scope parameter names scopes for more than one resource server.");
 
-    /// <remarks>
-    /// The registration's claim additions are checked against the whole scope set on every
-    /// request, since the registration validator's cached verdict cannot see the scope
-    /// repository. A collision is the operator's misconfiguration, answered as
-    /// <c>server_error</c> and logged with the detail.
-    /// </remarks>
+    // Checked per request: the registration validator's cached verdict cannot see the scope repository.
     private static Problem? ClientAdditionsNameNoScopeClaim(RequestContext context) =>
         ClientClaimAdditions.FindCollision(context.Client, context.Scopes) is { } collision
             ? new Problem(
@@ -320,11 +255,8 @@ internal sealed partial class AuthorizeRequestValidator
                 collision.Describe(context.Client.ClientId))
             : null;
 
-    /// <remarks>
-    /// A registration that does not require PKCE is honoured only on a confidential client,
-    /// whatever it says: a custom repository may skip registration validation, and a public
-    /// client's PKCE is the only thing binding the redemption to the party that started the flow.
-    /// </remarks>
+    // A public client may never omit PKCE, whatever its registration says: a custom repository may
+    // skip registration validation, and PKCE is all that binds its redemption to the flow's starter.
     private static Problem? CodeChallengeIsPresentUnlessTheClientMayOmitIt(RequestContext context)
     {
         // A challenge that is sent, empty included, is held to its shape by the next rule.
@@ -345,11 +277,8 @@ internal sealed partial class AuthorizeRequestValidator
             ? null
             : InvalidRequest("The code_challenge parameter is malformed.");
 
-    /// <remarks>
-    /// A request that omitted the challenge has no method to check, but a method sent without a
-    /// challenge is a client that meant to use PKCE and lost half of it, and is refused rather than
-    /// handed a code its verifier would burn.
-    /// </remarks>
+    // A method without a challenge is a client that lost half its PKCE; refused rather than
+    // handed a code its verifier would burn.
     private static Problem? CodeChallengeMethodIsS256(RequestContext context)
     {
         if (context.CodeChallenge is null)
@@ -369,11 +298,7 @@ internal sealed partial class AuthorizeRequestValidator
             : InvalidRequest("Only the S256 code challenge method is supported.");
     }
 
-    /// <remarks>
-    /// Unrecognised values are ignored per OIDC Core §3.1.2.1. Behavioural handling of the
-    /// recognised ones belongs to the interaction stage, not to validation; only syntax and the
-    /// none-exclusivity rule are enforced here.
-    /// </remarks>
+    // Unrecognised values are ignored (OIDC Core §3.1.2.1); the interaction stage acts on the rest.
     private static Problem? PromptValuesAreCoherent(RequestContext context)
     {
         var prompt = context.Single("prompt");
@@ -409,8 +334,7 @@ internal sealed partial class AuthorizeRequestValidator
         if (!long.TryParse(raw, out var seconds))
             return InvalidRequest("The max_age parameter is malformed.");
 
-        // Capped at int.MaxValue seconds (~68 years): larger than any real max_age, and well below
-        // the point where TimeSpan.FromSeconds would overflow and throw out of the endpoint.
+        // Capped well below where TimeSpan.FromSeconds would overflow and throw.
         if (seconds is < 0 or > int.MaxValue)
             return InvalidRequest("The max_age parameter is malformed.");
 
@@ -418,7 +342,18 @@ internal sealed partial class AuthorizeRequestValidator
         return null;
     }
 
-    // ---- Helpers ----
+    /// <summary>The most a <c>login_hint</c> may hold: generous for an email address or phone number.</summary>
+    internal const int MaxLoginHintLength = 256;
+
+    // No line breaks for a log line, no bidi override or invisible tag to make the pre-filled field
+    // misleading. Checked per rune so an astral character is not split into halves that each pass.
+    private static Problem? LoginHintIsWellFormed(RequestContext context) =>
+        context.Single("login_hint") switch
+        {
+            { Length: > MaxLoginHintLength } => InvalidRequest("The login_hint parameter is too long."),
+            { } hint when hint.EnumerateRunes().Any(IsRefusedInLoginHint) => InvalidRequest("The login_hint parameter is malformed."),
+            _ => null,
+        };
 
     private static ValidatedAuthorizeRequest Build(RequestContext context, string redirectUri, string? state) =>
         new()
@@ -431,14 +366,13 @@ internal sealed partial class AuthorizeRequestValidator
             Pkce = context.CodeChallenge is { } challenge ? new PkceChallenge(challenge, CodeChallengeMethod.S256) : null,
             Prompts = context.Prompts,
             MaxAge = context.MaxAge,
+            LoginHint = context.Single("login_hint") is { } hint && !string.IsNullOrWhiteSpace(hint) ? hint : null,
         };
 
     /// <summary>The request's <c>nonce</c>, or <see langword="null"/> when it carried none.</summary>
     /// <remarks>
-    /// Not a rule, because nothing about it can fail. The <c>nonce</c> is optional for the code
-    /// flow (OIDC Core §3.1.2.1), for every client: one registered without PKCE is not asked for it
-    /// either, because that registration is the operator's assurance that the client uses it (OAuth
-    /// 2.1 §7.5.1.1). One sent without a value is treated as omitted (RFC 6749 §3.1).
+    /// Optional for every client (OIDC Core §3.1.2.1): registering without PKCE is the operator's
+    /// assurance that the client uses it (OAuth 2.1 §7.5.1.1). Empty means omitted (RFC 6749 §3.1).
     /// </remarks>
     private static string? NonceOf(RequestContext context) =>
         context.Single("nonce") is { Length: > 0 } nonce ? nonce : null;
@@ -469,6 +403,18 @@ internal sealed partial class AuthorizeRequestValidator
         Description = LocalErrorDescription,
     };
 
+    private static bool IsRefusedInLoginHint(Rune rune) =>
+        Rune.GetUnicodeCategory(rune) switch
+        {
+            UnicodeCategory.Control or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator => true,
+            UnicodeCategory.Format => rune.Value is not (ZeroWidthNonJoiner or ZeroWidthJoiner),
+            _ => false,
+        };
+
+    // Internationalized email addresses in several scripts need these (RFC 5892 CONTEXTJ).
+    private const int ZeroWidthNonJoiner = 0x200C;
+    private const int ZeroWidthJoiner = 0x200D;
+
     private static bool ContainsControlOrWhitespace(string value) =>
         value.Any(c => char.IsControl(c) || char.IsWhiteSpace(c));
 
@@ -487,27 +433,21 @@ internal sealed partial class AuthorizeRequestValidator
         return false;
     }
 
-    /// <summary>
-    /// A phase-2 validation failure: the OAuth error code and its generic description, and for a
-    /// server-side fault, the detail the operator is told and the client is not.
-    /// </summary>
+    /// <summary>A phase-2 failure, with the detail only the operator is told for a server-side fault.</summary>
     private sealed record Problem(string Error, string Description, string? OperatorDetail = null);
 
     /// <summary>The authenticated client and the redirect URI that is safe to send it.</summary>
-    private sealed record RedirectTarget(IClientRegistration Client, string RedirectUri);
+    private sealed record RedirectTarget(IClient Client, string RedirectUri);
 
-    /// <summary>
-    /// The request under evaluation, plus the values rules parse out of it as they run. Rules
-    /// later in <see cref="Phase2Rules"/> may read what earlier ones stored here.
-    /// </summary>
+    /// <summary>The request under evaluation, plus the values rules parse out of it as they run.</summary>
     private sealed class RequestContext(
         IReadOnlyDictionary<string, IReadOnlyList<string?>> parameters,
-        IClientRegistration client,
+        IClient client,
         IReadOnlyCollection<ScopeDefinition> scopes)
     {
         public IReadOnlyDictionary<string, IReadOnlyList<string?>> Parameters => parameters;
 
-        public IClientRegistration Client => client;
+        public IClient Client => client;
 
         /// <summary>Every scope the repository defines, fetched once for this request.</summary>
         public IReadOnlyCollection<ScopeDefinition> Scopes => scopes;

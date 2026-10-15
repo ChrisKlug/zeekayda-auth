@@ -12,82 +12,41 @@ using ZeeKayDa.Auth.Logging;
 namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
-/// One routed endpoint per registered provider at <c>/connect/callback/{provider}</c> under the
-/// issuer path — the same route the framework pinned into the handler's <c>CallbackPath</c>, so
-/// the handler's own path check passes by construction. Marks the request with the provider the
-/// route names, then hands it to that provider's own handler, which completes the protocol, signs
-/// into <c>zkd.external</c> and redirects to <c>/connect/resume</c>.
+/// One endpoint per registered provider at <c>/connect/callback/{provider}</c>, the route pinned
+/// into the handler's <c>CallbackPath</c>; the handler completes the protocol and redirects to
+/// <c>/connect/resume</c>.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The endpoint owns the outcomes the handler does not. A handler declining its own callback is
-/// logged and answered with an empty 404, never fallen through to the next middleware. A failure
-/// is classified: only a refusal by the user at the provider, recorded on the request by the
-/// framework's own access-denied event, reaches the client as <c>access_denied</c> — and only
-/// when the refused challenge names the interaction this browser is carrying. Everything else
-/// renders the local error page and leaves the interaction untouched, so the user can try again
-/// and a stray or replayed callback can neither complete nor cancel a live request.
-/// </para>
-/// <para>
-/// Failures are logged by exception type, never by message: a remote failure's message embeds
-/// what the provider said.
-/// </para>
+/// A failure returns to the login page when the browser carries its interaction, reaches the
+/// client as <c>access_denied</c> for a refusal with no login page, and otherwise renders locally,
+/// leaving the interaction untouched. Failures are logged by type: a message embeds what the
+/// provider said.
 /// </remarks>
-internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
+internal sealed class ProviderCallbackEndpoint(
+    IOptions<AuthorizationServerOptions> options,
+    ProviderRegistry providers,
+    ProviderHandlerActivator activator,
+    AuthorizationFlow flow,
+    InteractionOutcomes outcomes,
+    SanitizingLogger<ProviderCallbackEndpoint> logger) : IZeeKayDaEndpoint
 {
-    private const string DeclinedAtProvider =
-        "The user declined to sign in at the external identity provider.";
-
     private const string DidNotComplete =
         "Sign-in at the external identity provider did not complete. Return to the application and try again.";
-
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly ProviderRegistry _providers;
-    private readonly ProviderHandlerActivator _activator;
-    private readonly AuthorizationFlow _flow;
-    private readonly InteractionOutcomes _outcomes;
-    private readonly ISanitizingLogger<ProviderCallbackEndpoint> _logger;
-
-    public ProviderCallbackEndpoint(
-        IOptions<AuthorizationServerOptions> options,
-        ProviderRegistry providers,
-        ProviderHandlerActivator activator,
-        AuthorizationFlow flow,
-        InteractionOutcomes outcomes,
-        ISanitizingLogger<ProviderCallbackEndpoint> logger)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(providers);
-        ArgumentNullException.ThrowIfNull(activator);
-        ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(outcomes);
-        ArgumentNullException.ThrowIfNull(logger);
-
-        _options = options;
-        _providers = providers;
-        _activator = activator;
-        _flow = flow;
-        _outcomes = outcomes;
-        _logger = logger;
-    }
 
     /// <inheritdoc/>
     public void Map(IEndpointRouteBuilder endpoints)
     {
-        var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
+        var issuerUri = EndpointRouteHelper.GetIssuerUri(options);
 
-        foreach (var registration in _providers.Registrations)
+        foreach (var registration in providers.Registrations)
         {
             var route = ProviderCallbackRoute.For(issuerUri, registration.Name);
 
-            // Typed as Delegate so the result-writing overload is chosen: a lambda taking only
-            // the context also converts to RequestDelegate, whose overload discards the returned
-            // result. AllowAnonymous so a host-wide authorization fallback policy cannot turn the
-            // return from the provider into a challenge of the host's own scheme.
+            // As Delegate: a context-only lambda also converts to RequestDelegate, whose overload discards the result.
             Delegate handler = (HttpContext context) => HandleAsync(context, registration);
             endpoints.MapMethods(route.Value!, [HttpMethods.Get, HttpMethods.Post], handler)
                 .RequireIssuerHost(issuerUri)
-                .AllowAnonymous();
+                .ExemptFromHostAuthorization();
         }
     }
 
@@ -95,21 +54,18 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
     {
         context.Response.Headers.CacheControl = "no-store";
 
-        // Set after routing and before the handler runs: the provider is what the route says,
-        // never what the request or the handler says.
-        var feature = new ProviderCallbackFeature(registration);
+        // The provider is what the route says, never what the request or the handler says.
+        var feature = new ProviderCallbackFeature(registration, ProviderChallengeCookie.Single(context));
         context.Features.Set(feature);
 
-        // Activation is inside the guarded path too: a handler's constructor or InitializeAsync
-        // is caller-supplied code, and a failure there is the provider not completing, not a
-        // server fault to surface unsanitized.
+        // Activation runs caller-supplied code too, so it is guarded with the rest.
         bool handled;
         try
         {
-            var handler = await _activator.ActivateAsync(context, registration).ConfigureAwait(false);
+            var handler = await activator.ActivateAsync(context, registration).ConfigureAwait(false);
             if (handler is not IAuthenticationRequestHandler requestHandler)
             {
-                _logger.LogError(
+                logger.LogError(
                     "The handler for provider {Provider} does not handle requests, so its callback cannot be completed.",
                     registration.Name);
                 return await DeclineAsync(context).ConfigureAwait(false);
@@ -122,20 +78,28 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
             return await FailAsync(context, feature, ex).ConfigureAwait(false);
         }
 
+        ForgetChallengeIfFailed(context, feature);
+
         if (handled)
             return Results.Empty;
 
-        _logger.LogError("The handler for provider {Provider} declined its own callback.", registration.Name);
+        logger.LogError("The handler for provider {Provider} declined its own callback.", registration.Name);
         return await DeclineAsync(context).ConfigureAwait(false);
     }
 
+    /// <summary>Removes the challenge cookie of a failure a host's own event answered, bypassing <see cref="FailAsync"/>.</summary>
+    private void ForgetChallengeIfFailed(HttpContext context, ProviderCallbackFeature feature)
+    {
+        if (context.Response.HasStarted)
+            return;
+
+        if (feature.FailedChallengeInteractionId is { } interactionId)
+            ProviderChallengeCookie.Clear(context, EndpointRouteHelper.GetIssuerUri(options), feature.Provider, interactionId);
+    }
+
     /// <summary>
-    /// A callback that did not complete leaves no ticket behind: a handler that signed in and
-    /// then failed, or declined, must not have produced something resume would promote. Only a
-    /// ticket this request wrote is discarded — a stray or replayed callback that fails must not
-    /// take a ticket an earlier, completed callback left the browser with. A handler that
-    /// committed its response before failing has delivered its ticket and its redirect; nothing
-    /// here can retract them, and resume still checks that ticket like any other.
+    /// Discards the external ticket this request wrote, if any, so resume cannot promote an
+    /// incomplete callback, but never one an earlier callback left the browser with.
     /// </summary>
     private static async Task DiscardTicketAsync(HttpContext context)
     {
@@ -149,10 +113,7 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
             await context.SignOutAsync(ZeeKayDaCookies.External).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The external ticket cookie, or one of its chunks (<c>zkd.externalC1</c>, …) — and not a
-    /// host cookie whose name merely begins the same way.
-    /// </summary>
+    /// <summary>The external ticket cookie or one of its chunks (<c>zkd.externalC1</c>, …).</summary>
     private static bool IsExternalTicketCookie(string setCookie)
     {
         var name = setCookie.AsSpan()[..Math.Max(0, setCookie.IndexOf('='))];
@@ -174,30 +135,53 @@ internal sealed class ProviderCallbackEndpoint : IZeeKayDaEndpoint
     private async Task<IResult> FailAsync(HttpContext context, ProviderCallbackFeature feature, Exception exception)
     {
         await DiscardTicketAsync(context).ConfigureAwait(false);
+        LogFailure(feature, exception);
+
+        if (await ReturnToLoginAsync(context, feature).ConfigureAwait(false) is { } returned)
+            return returned;
 
         if (!feature.Refused)
+            return outcomes.LocalError(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
+
+        // Decided on the refused challenge's own properties, never the challenge cookie.
+        var refused = await ReadBoundAsync(context, feature.RefusedInteractionId).ConfigureAwait(false);
+        if (refused is null)
+            return outcomes.LocalError(context, AuthorizeRequestErrors.AccessDenied, Denial.DeclinedAtProvider.Description);
+
+        return await outcomes.DeniedAtClientAfterClearingAsync(context, refused, Denial.DeclinedAtProvider).ConfigureAwait(false);
+    }
+
+    private void LogFailure(ProviderCallbackFeature feature, Exception exception)
+    {
+        if (feature.Refused)
         {
-            _logger.LogError(
-                "The handler for provider {Provider} failed its callback with {ExceptionType}.",
-                feature.Provider.Name,
-                exception.GetType().FullName);
-            return _outcomes.LocalError(context, AuthorizeRequestErrors.ServerError, DidNotComplete);
+            logger.LogInformation("The user declined to sign in at provider {Provider}.", feature.Provider.Name);
+            return;
         }
 
-        _logger.LogInformation("The user declined to sign in at provider {Provider}.", feature.Provider.Name);
-
-        // The refusal reaches the client only for the interaction this browser is carrying and
-        // the refused challenge was issued for. Without the binding cookie — a form_post callback
-        // is a cross-site POST the Lax cookie does not accompany — the refusal renders locally and
-        // the interaction, if any, survives.
-        var requestContext = feature.RefusedInteractionId is { } refusedInteractionId
-            ? await _flow.ReadAsync(context, refusedInteractionId).ConfigureAwait(false)
-            : null;
-
-        if (requestContext is null)
-            return _outcomes.LocalError(context, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider);
-
-        return await _outcomes.ClientErrorAsync(context, requestContext, AuthorizeRequestErrors.AccessDenied, DeclinedAtProvider)
-            .ConfigureAwait(false);
+        logger.LogError(
+            "The handler for provider {Provider} failed its callback with {ExceptionType}.",
+            feature.Provider.Name,
+            exception.GetType().FullName);
     }
+
+    /// <summary>
+    /// Back to the login page, or <see langword="null"/> without one or without the interaction's
+    /// binding cookie, which a cross-site form_post callback does not carry.
+    /// </summary>
+    private async Task<IResult?> ReturnToLoginAsync(HttpContext context, ProviderCallbackFeature feature)
+    {
+        if (!outcomes.ReturnsToLoginPage)
+            return null;
+
+        var returning = await ReadBoundAsync(context, feature.ReturnInteractionId).ConfigureAwait(false);
+        if (returning is null)
+            return null;
+
+        var outcome = feature.Refused ? ProviderReturnOutcome.Declined : ProviderReturnOutcome.Failed;
+        return await outcomes.ReturnToLoginAsync(context, returning, feature.Provider, outcome).ConfigureAwait(false);
+    }
+
+    private async ValueTask<AuthorizationRequestContext?> ReadBoundAsync(HttpContext context, string? interactionId) =>
+        interactionId is null ? null : await flow.ReadAsync(context, interactionId).ConfigureAwait(false);
 }

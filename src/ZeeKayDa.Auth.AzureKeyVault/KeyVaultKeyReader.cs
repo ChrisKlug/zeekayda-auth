@@ -7,16 +7,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AzureKeyVault;
 
-/// <summary>
-/// <see cref="IKeyVaultKeyReader"/> implementation backed by a real
-/// <see cref="Azure.Security.KeyVault.Keys.KeyClient"/>.
-/// </summary>
-/// <remarks>
-/// Every <see cref="Azure.RequestFailedException"/> and other transport fault raised by the
-/// underlying SDK is mapped here to a <see cref="ZeeKayDaConfigurationException"/> carrying a
-/// stable failure code and enough context (vault, key name, HTTP status, SDK error code) to be
-/// actionable, without ever including key material.
-/// </remarks>
+/// <summary>Reads key versions through the Key Vault SDK, mapping every fault to a configuration failure code.</summary>
 internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
 {
     private readonly KeyClient _keyClient;
@@ -25,7 +16,6 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
 
     public KeyVaultKeyReader(IOptions<AzureKeyVaultRemoteSigningOptions> options)
     {
-        ArgumentNullException.ThrowIfNull(options);
         var value = options.Value;
         var credential = value.Credential;
         ArgumentNullException.ThrowIfNull(credential);
@@ -35,10 +25,7 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
         _keyClient = new KeyClient(_vaultUri, credential);
     }
 
-    /// <summary>
-    /// Test seam: lets unit tests inject a faked <see cref="KeyClient"/>, making the SDK
-    /// fault-mapping paths reachable without a live vault.
-    /// </summary>
+    /// <summary>Test seam: a faked <see cref="KeyClient"/>.</summary>
     internal KeyVaultKeyReader(KeyClient keyClient, string keyName, Uri vaultUri)
     {
         _keyClient = keyClient;
@@ -53,15 +40,21 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
         var pageable = _keyClient.GetPropertiesOfKeyVersionsAsync(_keyName, cancellationToken);
         await using var enumerator = pageable.GetAsyncEnumerator(cancellationToken);
 
+        var listedAny = false;
         while (true)
         {
-            KeyProperties current;
+            KeyProperties? current;
             try
             {
                 if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
                     yield break;
 
                 current = enumerator.Current;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404 && !listedAny)
+            {
+                // A deleted key has no versions to list: deleting it revokes every key it held.
+                current = null;
             }
             catch (RequestFailedException ex)
             {
@@ -72,16 +65,17 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
                 throw MapUnexpectedFailure(ex);
             }
 
+            if (current is null)
+                yield break;
+
+            listedAny = true;
             yield return MapVersion(current, _keyName, _vaultUri);
         }
     }
 
     /// <summary>
-    /// Maps one SDK <see cref="KeyProperties"/> onto <see cref="KeyVaultKeyVersionInfo"/>, failing
-    /// closed on a listing entry missing its <c>Enabled</c> or <c>CreatedOn</c> attribute — the two
-    /// fields the entire version-selection derivation rests on. A default would be fail-open: an
-    /// absent <c>CreatedOn</c> read as ancient satisfies the pre-activation age gate immediately,
-    /// and an absent <c>Enabled</c> read as enabled bypasses the revocation lever.
+    /// Maps one listing entry, failing closed when <c>Enabled</c> or <c>CreatedOn</c> is missing: any
+    /// default for either would let a version sign early or survive being disabled.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// <paramref name="properties"/> carries no <c>Enabled</c> or no <c>CreatedOn</c> value.
@@ -108,43 +102,62 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
     {
         ArgumentException.ThrowIfNullOrEmpty(version);
 
+        JsonWebKey key;
         try
         {
             var response = await _keyClient.GetKeyAsync(_keyName, version, cancellationToken).ConfigureAwait(false);
-            return MapJsonWebKey(response.Value.Key);
+            key = response.Value.Key
+                ?? throw new InvalidOperationException("Key Vault returned the version without its key material.");
         }
         catch (RequestFailedException ex)
         {
             throw MapRequestFailedException(ex);
         }
-        catch (ZeeKayDaConfigurationException)
-        {
-            // Re-throw before re-classifying. MapJsonWebKey raises its own well-formed failure for an
-            // unsupported key type; without this arm the broad catch below flattens it into a generic
-            // startup_failure and sends the operator to investigate a vault that is working fine.
-            // The mapping stays inside the try so that a malformed JWK — where ToRSA or ToECDsa
-            // throws — is still mapped to a stable failure code rather than escaping as a raw
-            // CryptographicException.
-            throw;
-        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             throw MapUnexpectedFailure(ex);
         }
+
+        return MapJsonWebKey(key, version);
     }
 
-    private static (AsymmetricAlgorithm, SigningKeyType) MapJsonWebKey(JsonWebKey key)
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// <paramref name="key"/>'s type is unsupported, or its material cannot be imported — a problem
+    /// with this one version, never with the vault.
+    /// </exception>
+    private (AsymmetricAlgorithm, SigningKeyType) MapJsonWebKey(JsonWebKey key, string version)
     {
-        if (key.KeyType == KeyType.Rsa || key.KeyType == KeyType.RsaHsm)
-            return (key.ToRSA(includePrivateParameters: false), SigningKeyType.Rsa);
+        var keyType = SigningKeyTypeOf(key.KeyType)
+            ?? throw new KeyVaultVersionMaterialException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.unsupported_key_type",
+                    $"Key Vault key type '{key.KeyType}' is not supported. Only RSA, RSA-HSM, EC, and EC-HSM keys can be used for JWT signing."));
 
-        if (key.KeyType == KeyType.Ec || key.KeyType == KeyType.EcHsm)
-            return (key.ToECDsa(includePrivateParameters: false), SigningKeyType.Ec);
+        try
+        {
+            return keyType == SigningKeyType.Rsa
+                ? (key.ToRSA(includePrivateParameters: false), keyType)
+                : (key.ToECDsa(includePrivateParameters: false), keyType);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Never ex.Message: it can echo the material it failed to parse.
+            throw new KeyVaultVersionMaterialException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.azure_key_vault.invalid_key_material",
+                    $"Version '{version}' of Key Vault key '{_keyName}' in vault '{_vaultUri}' carries key " +
+                    $"material that could not be imported: {ex.GetType().FullName}. See the inner exception " +
+                    "for the root cause."),
+                ex);
+        }
+    }
 
-        throw new ZeeKayDaConfigurationException(
-            new ZeeKayDaConfigurationFailure(
-                "signing.azure_key_vault.unsupported_key_type",
-                $"Key Vault key type '{key.KeyType}' is not supported. Only RSA, RSA-HSM, EC, and EC-HSM keys can be used for JWT signing."));
+    private static SigningKeyType? SigningKeyTypeOf(KeyType keyType)
+    {
+        if (keyType == KeyType.Rsa || keyType == KeyType.RsaHsm)
+            return SigningKeyType.Rsa;
+
+        return keyType == KeyType.Ec || keyType == KeyType.EcHsm ? SigningKeyType.Ec : null;
     }
 
     private ZeeKayDaConfigurationException MapRequestFailedException(RequestFailedException ex) =>
@@ -163,11 +176,7 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
                     (ex.ErrorCode is null ? "" : $", ErrorCode: {ex.ErrorCode}") +
                     "). Verify the configured credential has 'Key Vault Crypto User' (or an access-policy grant " +
                     "of 'get' and 'sign' key permissions) on this vault.")),
-            // The exception TYPE is named, never ex.Message. RequestFailedException.Message carries
-            // the response content and headers, and ZeeKayDaConfigurationFailure.Message is a plain
-            // string on public API surface that SecretSanitizingLogger cannot redact. The status and
-            // ErrorCode above are the safe, operator-actionable parts; the root cause stays available
-            // as InnerException.
+            // Never ex.Message: it carries the response content and headers.
             _ => new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.startup_failure",
@@ -177,10 +186,7 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
                 ex),
         };
 
-    // The exception TYPE is named, never ex.Message. An arbitrary underlying provider exception may
-    // carry credential material, and ZeeKayDaConfigurationFailure.Message is a plain string on public
-    // API surface that SecretSanitizingLogger cannot redact. The root cause stays available to
-    // operators as InnerException.
+    // Never ex.Message: a provider exception may carry credential material.
     private ZeeKayDaConfigurationException MapUnexpectedFailure(Exception ex) =>
         new(
             new ZeeKayDaConfigurationFailure(

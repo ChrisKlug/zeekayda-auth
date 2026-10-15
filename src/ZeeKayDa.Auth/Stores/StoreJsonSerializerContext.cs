@@ -9,8 +9,6 @@ namespace ZeeKayDa.Auth.Stores;
     NumberHandling = JsonNumberHandling.AllowReadingFromString)]
 [JsonSerializable(typeof(AuthorizationCodeEntry))]
 [JsonSerializable(typeof(RefreshTokenEntry))]
-[JsonSerializable(typeof(AuthorizationCodeTombstoneEnvelope))]
-[JsonSerializable(typeof(RefreshTokenGrantRecord))]
-[JsonSerializable(typeof(RefreshTokenGrantIndexEnvelope))]
+[JsonSerializable(typeof(AuthorizationCodeTombstone))]
 [ExcludeFromCodeCoverage(Justification = "Source-generated JSON serialization infrastructure — not hand-written logic.")]
 internal sealed partial class StoreJsonSerializerContext : JsonSerializerContext { }

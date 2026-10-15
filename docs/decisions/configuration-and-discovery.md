@@ -1,8 +1,7 @@
 # Configuration and discovery
 
-The shape of `AuthorizationServerOptions`, how it is validated, and how it becomes the discovery
-document. Issuer and endpoint-URI rules are `endpoints.md`. The full options reference is
-`docs/reference/configuration.md`.
+The shape of `AuthorizationServerOptions`, its validation, and how it becomes the discovery document.
+Issuer and endpoint-URI rules: `endpoints.md`. Full options reference: `docs/reference/configuration.md`.
 
 ## Decisions in force
 
@@ -15,34 +14,36 @@ IntelliSense collapses and cross-endpoint invariants have nowhere to live.
 **The grouping rule is mechanical and spec-driven.** A property groups with any other whose
 discovery key shares a spec-defined prefix — an endpoint name (`token_endpoint_*`), an artifact name
 (`id_token_*`), a response shape (`response_*`). Groups named after an HTTP endpoint carry an
-`Endpoint` suffix; groups that do not (`IdToken`, `Response`) do not. No shared prefix means the
+`Endpoint` suffix; groups that do not (`Response`) do not. No shared prefix means the
 root. Endpoint affinity is a permitted secondary criterion only when the *spec text itself* names a
 property as a modifier of that endpoint — that is how RFC 7636's `code_challenge_*` parameters land
 on `AuthorizationEndpoint` with nothing to form a prefix group with. It is never a judgement call.
 `JwksEndpoint` exists holding only `Uri`, for the policy fields it will plausibly grow.
 
-**Framework-behavior groups are a second, explicit category.** `SecurityHeaders` and `Logging` govern
-the framework's own runtime behaviour and have no discovery-document counterpart at all. They are
-permitted outside the prefix rule provided the name is plain descriptive English and never carries an
-`Endpoint` suffix.
+**Framework-behavior groups are a second, explicit category.** `SecurityHeaders` and `Development`
+govern the framework's own runtime behaviour, have no discovery counterpart, and sit outside the
+prefix rule: plain English names, never an `Endpoint` suffix. Every bindable switch that weakens
+security lives in `Development`, one flag per effect, each reported by its own startup verifier, so a
+config file shows what must not reach production. "Not for production", not "local only": CI hosts use it.
 
 **The grouping rule places discovery-shaped configuration only.** A feature-registration hatch or
 safety gate that is inert unless some other opt-in was also registered is not metadata, and this rule
 does not license hoisting it onto the shared root. It co-locates with the feature that introduced it,
 usually as a parameter on the registration method rather than a bindable option.
 
-**Options carry data; the builder carries registrations.** `ZeeKayDaAuthBuilder` is the
+**Options carry data; the builder carries registrations.** The builders are the
 service-registration surface — stores, signing providers, hashers, authenticators — and options data
 never migrates onto it. Per-endpoint *behaviour* customisation goes through narrow, DI-resolved,
 single-purpose interfaces. Builder-extension configuration methods were rejected: they split
 configuration across two surfaces, do not bind from `IConfiguration`, break
 `IOptionsSnapshot`/`IPostConfigureOptions` composition, and are invisible to a single validator.
 
-**One root-rooted validator, not one per group.** Real rules are cross-group — `client_credentials`
-in `GrantTypesSupported` requires at least one non-`none` entry in `TokenEndpoint.AuthMethodsSupported`
-— so `IValidateOptions<AuthorizationServerOptions>` stays single and grows. It is a pure read-only
-check: CORS-origin canonicalisation runs earlier in an `IPostConfigureOptions<T>`, which also freezes
-the collection to read-only so nothing mutates it after validation.
+**One root-rooted validator, not one per group.** Real rules are cross-group — the code grant in
+`GrantTypesSupported` requires `S256` in `AuthorizationEndpoint.CodeChallengeMethodsSupported` — so
+`IValidateOptions<AuthorizationServerOptions>` stays single and grows. It is a pure read-only
+check. An `IPostConfigureOptions<T>` runs earlier and freezes every `ICollection<T>` (public setter)
+to a read-only copy in the host's order, null left null, never rewritten, and fixes the `Development`
+switches; a later replacement fails with `configuration.options_frozen`. The CORS allowlist is derived where used (`CorsAllowlist`).
 
 **One CORS allowlist, on the root, for every endpoint a browser script calls.** `CorsOrigins` governs
 discovery, JWKS and userinfo alike; none uses a cookie, so who may read one does not vary by endpoint.
@@ -64,18 +65,17 @@ valid at the OAuth address. A second, OAuth-only document was rejected: it doubl
 model and provider surface for no client that needs the smaller shape, and it can still be added
 later without breaking a host or a custom provider.
 
-**`IValidateOptions<T>` plus `ValidateOnStart()` is the primary validation mechanism.** A check leaves
-it only for one of three reasons: it needs async I/O, it needs a DI scope, or its whole purpose is a
-side effect such as emitting a warning. Those become `IStartupVerifier`s (see
+**`IValidateOptions<T>`, registered with `AddZeeKayDaOptions<T>()`, is the primary validation
+mechanism.** A check leaves it only for one of three reasons: it needs async I/O, it needs a DI
+scope, or its whole purpose is a side effect such as emitting a warning. Those become `IStartupVerifier`s (see
 `startup-verification.md`); everything decidable synchronously from options values stays here.
 
 **Closed protocol vocabularies are enums; genuinely open ones are ordinal strings.**
 `GrantType`, `ResponseType`, `ResponseMode`, `PromptValue`, `CodeChallengeMethod` and
 `SigningAlgorithm` are enums, because a new member needs framework code behind it anyway.
-`TokenEndpoint.AuthMethodsSupported` is `ICollection<string>` because `IClientAuthenticator` is a real
-extension point and a custom `tls_client_auth` must be expressible without a framework release —
-strings carry that vocabulary end to end, and the option is the operator's global allowlist and the
-only source discovery reads from.
+Token endpoint auth methods are ordinal strings because `IClientAuthenticator` is a real extension
+point and a custom `tls_client_auth` must be expressible without a framework release — strings carry
+that vocabulary end to end, from an authenticator's declaration to discovery.
 
 **`GrantType` has no `implicit` or `password` member, `CodeChallengeMethod` no `plain` and `ResponseMode`
 no `form_post` — not even `[Obsolete]` ones.** OAuth 2.1 removes the first two, RFC 9700 §2.1.1 prohibits
@@ -99,19 +99,20 @@ an internal, freely-refactorable options class is never coupled to a spec-mandat
 provider is public and replaceable — that is the escape hatch for a host that must advertise something
 the framework does not model.
 
-**The advertised signing algorithms are derived from the key set, never configured beside it.**
-`id_token_signing_alg_values_supported` is the distinct algorithms of the published key set — every
-configured slot, ascending by `SigningAlgorithm` value — read from the ring on each request.
-Deriving from the *published* set rather than the producible one is what keeps the document stable
-across a rotation: a `Previous` key's algorithm stays advertised for as long as that key is
-published and tokens signed under it are still live.
-`IdToken.AdvertisedSigningAlgorithms` narrows that set and can never widen it; a filter excluding the
-signing key's own algorithm fails startup rather than advertising nothing usable. The cross-check
-that asserted equality between a configured list and what the provider could produce is gone with the
-contract it read (#511, #515) — the disagreement is unrepresentable rather than detected. A host
-serving the protocol endpoints must therefore register a signing key source: with no key set there is
-nothing to derive from, and startup fails with `signing.key_ring.missing` rather than the first
-discovery request failing.
+**The advertised signing algorithm is the signing source's, never configured beside it.**
+`id_token_signing_alg_values_supported` is the one algorithm the signing source declares, read from the
+ring on each request; every published key signs under it, so a rotation never changes the document.
+There is no filter: with one algorithm there is nothing to narrow. A host serving the protocol endpoints
+must register a signing key source: with no key set there is nothing to derive from, and startup fails
+with `signing.key_ring.missing`.
+
+**The advertised token endpoint auth methods are derived from the authenticators.** Every method a
+registered `IClientAuthenticator` declares, plus `none`, which the framework performs itself — so a
+public client needs no server-wide opt-in, and is still held to PKCE `S256`.
+`TokenEndpoint.AdvertisedAuthMethods` only narrows: an entry nothing performs warns; nothing
+performable, or only `none` beside `client_credentials` (RFC 6749 §4.4), fails startup. Discovery,
+client registration and the token endpoint read one resolution. Never derived from the client store,
+which is replaceable.
 
 **A scope definition is three claim lists and an optional audience, and nothing else.** `ScopeDefinition`
 names what the scope unlocks in the ID token, at userinfo and in the access token, as OpenID Connect wire
@@ -123,28 +124,25 @@ the ID token's protocol claims, never configured.
 **What a custom `IScopeRepository` serves is validated wherever it is read.** `ValidatedScopeCatalog` is the
 sole path to a definition and the sole rule authority, so `InMemoryScopeRepository` validates nothing itself
 (`extension-surface.md`). It refuses under the codes `GetScopesAsync` documents, all at once;
-`ScopePresenceStartupValidator` surfaces them at startup, and a later breach fails that request as
+`ScopePresenceActivator` surfaces them at startup, and a later breach fails that request as
 `server_error`. An `Audience` is checked against RFC 3986 directly, not by whether `Uri` parses it, which
 rewrites a raw space while the original reaches `aud`.
 
-**Collection keys bind by replacement, not merge.** An operator who sets one entry of an
-`IConfiguration` collection key loses the rest of that key's defaults. The validator's
-empty-and-subset checks are what turn the resulting gap into a startup failure rather than a quietly
-narrowed server.
+**Collection keys bind by replacement, not merge.** Setting one entry drops that key's other
+defaults, and the validator fails startup on the gap. The .NET binder alone appends, so the
+`IConfiguration` overload empties each configured collection first (`Every_settable_collection_option_is_replaced_by_configuration_not_appended_to`).
 
 ## Tried, didn't work
 
 - **A CORS allowlist per endpoint.** Two shipped and were signed off, then collapsed into one root list
   when userinfo would have been the third; the knob had no security behind it.
-
-- **A closed `TokenEndpointAuthMethod` enum for the advertised auth-method set.** Shipped alongside
-  the per-client string set, then removed: with the enum as discovery's source, the document could
-  not advertise a custom method a host had added through `IClientAuthenticator`, so the two halves of
-  one vocabulary disagreed. Strings now carry it end to end.
-- **Statically configured advertised signing algorithms.** `IdToken.SigningAlgValuesSupported` was an
-  operator-declared list, on the reasoning that deriving from key state would make the document
-  flicker during rotation. It made the two sources of truth disagreeable instead, which is what the
-  deleted cross-check existed to catch; deriving from the published set — which a rotation grows
-  before it shrinks — has the stability the static list was chosen for.
+- **A closed `TokenEndpointAuthMethod` enum for the advertised auth-method set.** Removed: discovery
+  could not advertise a custom method a host added through `IClientAuthenticator`, so the two halves
+  of one vocabulary disagreed.
+- **Statically configured advertised signing algorithms.** Chosen so the document would not flicker
+  during rotation; it made two sources of truth that could disagree instead. The published set, which
+  a rotation grows before it shrinks, has the stability the static list was chosen for.
 - **A flat options class.** The shipped shape before grouping. Reversed pre-1.0, moving every
   consumer's property paths and `IConfiguration` keys in one break.
+- **A configured auth-method allowlist defaulting to `client_secret_basic`.** A host with a public client
+  had to say so twice: register it, then add `none` server-wide.

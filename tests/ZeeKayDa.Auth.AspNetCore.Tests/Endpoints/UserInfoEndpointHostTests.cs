@@ -120,7 +120,7 @@ public sealed class UserInfoEndpointHostTests(
         // authorize redirect and the login post, so it cannot move to the host-free harness.
         using var factory = new TestWebAppFactory(
             configureBuilder: builder => builder.AddInMemoryClients(clients => clients
-                .Add(ClientRegistration.CreatePublic(App, [Redirect], [], ["openid", "profile"]) with { RequireConsent = false })),
+                .Add(Client.CreatePublic(App, [Redirect], [], ["openid", "profile"]) with { RequireConsent = false })),
             mapEndpoints: MapLoginPage);
         using var client = factory.CreateClient(new() { BaseAddress = new Uri(Issuer), AllowAutoRedirect = false, HandleCookies = true });
 
@@ -174,10 +174,8 @@ public sealed class UserInfoEndpointHostTests(
     // ── Driving the flow ──────────────────────────────────────────────────────────────────────
 
     private static void MapLoginPage(IEndpointRouteBuilder endpoints) =>
-        endpoints.MapPost(LoginPath, async (HttpContext context, ILoginInteraction login) =>
-            await login.SignInAsync(
-                new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", Subject)], "test")),
-                AuthenticationMethods.Password));
+        endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
+            await login.SignInAsync(Subject, AuthenticationMethods.Password));
 
     private static async Task<JsonElement> ExchangeAsync(HttpClient client, string scope)
     {

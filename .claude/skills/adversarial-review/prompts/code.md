@@ -87,24 +87,20 @@ Severity:
 
 ```markdown
 **Adversarial review (code): ❌ findings**            ← or: ✅ no material findings
-Read: <N> files beyond the diff · Model: <the model you are>
+Read: <N> files beyond the diff · Looked at: <the areas you tried to break, comma-separated> · Model: <the model you are>
 
 | Sev | Conf | Where | Finding | Fix |
 |---|---|---|---|---|
-| High | 0.85 | `src/…/File.cs:123` | one sentence, the defect | one sentence, the change |
+| High | 0.85 | `src/…/File.cs:123` | two short plain sentences: what is wrong, and what it lets happen | one sentence, the change |
 
 ### Failure paths
-One short paragraph per High or Critical finding: the concrete sequence from input or state to the
-bad outcome. This section is never trimmed.
+High and Critical findings only, at most three lines each: the concrete sequence to the bad
+outcome. Omit the section if there are none.
 
 ### Inferences
-Anything in the table that rests on something you could not verify from the source. Omit the section
-if there is nothing.
-
-### Checked and found sound
-Up to five things you specifically tried to break and could not, one line each. This tells the
-maintainer where you looked.
+One line per finding that rests on something you could not verify. Omit the section if there is
+nothing.
 ```
 
-Stay near 400 words unless the findings genuinely need more. Report every finding that clears the
+Stay under 250 words. No section beyond the ones above. Report every finding that clears the
 bar; do not pre-filter to the ones you think will be fixed — that decision is the maintainer's.

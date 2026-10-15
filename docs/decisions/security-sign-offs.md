@@ -13,8 +13,9 @@ reasoned acceptance into an undocumented gap.
 **Rules for this file.** Append; do not rewrite. Corrections are appended as new entries, not edits
 to old ones — a reversal is itself the audit-relevant fact and is recorded as a reversal. Scope
 limits and explicit negatives ("this sign-off did not cover X") are as load-bearing as the approval
-and are never trimmed. Where a decision has since changed, the register file for that topic is
-authoritative for *current* behaviour; this file remains authoritative for *what was approved when*.
+and are never trimmed. One edit is allowed: when a cited test is renamed or replaced, the old name stays
+in the entry without backticks, followed by a bracketed note naming the issue and the successor test.
+Where a decision has since changed, the register file for that topic is authoritative for *current* behaviour; this file remains authoritative for *what was approved when*.
 
 **Rules for new entries** (in force from the vertical-slice rework; earlier entries predate them).
 An entry is written **last, once, against frozen code** — after review has concluded, never in a
@@ -409,7 +410,8 @@ commit `0ea8ab8` (issue #512) — one review round plus two fix-diff verificatio
    included — `ReadAsync_enforces_the_gate_even_when_the_key_set_is_already_memoized`,
    `ReadAsync_throws_in_Production_regardless_of_AllowedEnvironments`. Neither the gate nor
    `PersistToDirectory` is reachable from a public configure callback —
-   `AddInMemoryDevelopmentJwtSigningKeys_configure_parameter_type_has_no_PersistToDirectory`.
+   AddInMemoryDevelopmentJwtSigningKeys_configure_parameter_type_has_no_PersistToDirectory
+   [renamed by #825; see the 2026-09-30 entry below].
 2. **The port changed no policy.** ≥3072-bit RSA and the fail-closed file checks survive it —
    `ReadAsync_generates_a_key_of_at_least_3072_bits`, `Directory_with_too_permissive_mode_fails_closed`,
    `Key_file_with_too_permissive_permissions_fails_closed`, `Key_file_reached_through_a_symlink_fails_closed`.
@@ -420,7 +422,8 @@ commit `0ea8ab8` (issue #512) — one review round plus two fix-diff verificatio
    configuration behind — `A_rejected_second_registration_leaves_the_first_one_unconfigured_by_it`.
 
 **Residuals, accepted.** No host means no gate: a directly-constructed source with a null
-`EnvironmentName` is ungated — `ReadAsync_skips_the_gate_when_EnvironmentName_is_null`. `Dispose`
+`EnvironmentName` is ungated — ReadAsync_skips_the_gate_when_EnvironmentName_is_null [reversed by the 2026-09-30 entry for #825
+below: a null environment now refuses]. `Dispose`
 racing an in-flight read strands the RSA until finalization; `_readGate` is deliberately never
 disposed so that race can neither throw from `Release` nor hang a queued reader — no test.
 
@@ -960,27 +963,34 @@ construction-time resources they acquire. Neither the premise nor the residual n
 
 - **The same-type repeat is no longer legal anywhere.** Every second registration throws, whichever
   overload either call used and whether or not the type matches — proven by
-  `AddZeeKayDaSigningKeySource_called_twice_with_the_same_source_throws_InvalidOperationException`.
+  `AddSigningKeySource_called_twice_with_the_same_source_throws_InvalidOperationException`
+  [renamed by #824 from AddZeeKayDaSigningKeySource_called_twice_with_the_same_source_throws_InvalidOperationException].
 - **A composed same-type set no longer resolves.** `ValidateRegistrationSet` throws
   `signing.source_registration_mismatch` on more than one marker — proven by
-  `Resolving_ISigningKeyRing_throws_when_composed_from_two_libraries_that_registered_the_same_source`.
+  Resolving_ISigningKeyRing_throws_when_composed_from_two_libraries_that_registered_the_same_source
+  [reversed by #824: the resolve-time check against merged collections was removed and a second
+  registration is caught only on the same collection; not security-reviewed].
   The host now fails startup rather than silently initializing the last-wins ring.
 - **Nothing is constructed before that failure**, so there are no N−1 uninitialised sources to open —
-  proven by `Resolving_ISigningKeyRing_for_a_failing_composed_registration_never_constructs_or_invokes_any_source`.
-  The **residual is closed**, not merely narrowed.
+  proven by Resolving_ISigningKeyRing_for_a_failing_composed_registration_never_constructs_or_invokes_any_source
+  [deleted by #824 with that check].
+  The **residual is closed**, not merely narrowed [reopened by #824: merged collections resolve
+  last-wins again, and enumerating them constructs every source].
 
 **Two facts from that paragraph survive and are NOT deleted.** (a) Composition still produces N
 `ISigningKeyRing` descriptors — `TryAddSingleton` still deduplicates only within one collection —
 but every one of them now throws on resolve, so the count is inert rather than a working last-wins
-selection. (b) A manual `ISigningKeyRing` registered *after* `AddZeeKayDaSigningKeySource` has run is
+selection. [no longer true after #824, which removed the throw]. (b) A manual `ISigningKeyRing` registered *after* `AddZeeKayDaSigningKeySource` has run is
 still neither observed nor rejected, and still wins last-wins resolution — proven by
-`A_manual_ISigningKeyRing_registration_added_after_AddZeeKayDaSigningKeySource_wins_and_is_not_rejected`.
+A_manual_ISigningKeyRing_registration_added_after_AddSigningKeySource_wins_and_is_not_rejected
+[removed by #823: the ring is a sealed class with an internal constructor, so no host can register one by hand] [renamed by #824 from A_manual_ISigningKeyRing_registration_added_after_AddZeeKayDaSigningKeySource_wins_and_is_not_rejected].
 That residual stands unchanged, as does the `CHANGELOG.md`/`signing-keys.md` correction made for it.
 
 The enumerating path the original residual was written about is covered directly: three composed
 same-type collections still yield three `ISigningKeyRing` descriptors, and
 `GetServices<ISigningKeyRing>()` throws having constructed zero sources — proven by
-`Enumerating_ISigningKeyRing_across_composed_registrations_throws_and_constructs_no_source`.
+Enumerating_ISigningKeyRing_across_composed_registrations_throws_and_constructs_no_source
+[deleted by #824 with that check].
 
 ### 6.3 The #511 entry's advertised-vs-producible residual is closed by #515
 
@@ -994,12 +1004,15 @@ written.
 `id_token_signing_alg_values_supported` is derived from the published key set rather than declared
 beside it, and the operator's `IdToken.AdvertisedSigningAlgorithms` filter intersects that set rather
 than replacing it — so no configuration expresses an algorithm the server holds no key for. Closed —
-proven by `GetDocument_never_advertises_an_algorithm_the_filter_names_but_no_key_uses`.
+proven by GetDocument_never_advertises_an_algorithm_the_filter_names_but_no_key_uses. [Since #905 the
+filter is gone and a source declares one algorithm, which is all discovery advertises — now proven by
+`GetDocument_advertises_one_algorithm_however_many_keys_are_published`.]
 
 Note the changed distinction: the advertised set is what the server holds a **key** for, not what it
 can currently **produce**. `Previous` and `Next` keys are advertised deliberately, so an algorithm no
 longer signing is still advertised while tokens signed under it are live — proven by
-`GetDocument_advertises_every_published_slots_algorithm_not_only_the_signers`.
+GetDocument_advertises_every_published_slots_algorithm_not_only_the_signers. [Moot since #905: every
+published key shares the source's one algorithm.]
 
 One residual is opened, not closed: a filter may withhold an algorithm a published key still uses,
 breaking relying parties that pin acceptance to discovery. It is recorded at `Information` rather
@@ -1025,10 +1038,12 @@ on a real host that the source is never constructed, read, or asked for a signer
 Two controls this work nearly lost, both caught in review and fixed before merge, recorded because
 each was a control silently removed rather than a bug introduced. Dropping the ring activator from
 `AddZeeKayDaAuthCore` left a host-registered `ISigningKeyRing` never initialized or self-tested —
-closed, proven by `AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring`.
+closed, proven by AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring
+[removed by #823 with that registration: the ring's constructor is internal, so no host-registered ring exists to initialize].
 The gate-warning flush justified itself from the sanitizing-logger gate's registration position, so a
 gate inserted ahead of it would have logged through a logger proved shadowed — now tracked explicitly,
-proven by `StartAsync_discards_warnings_buffered_before_the_logger_gate_fails`.
+proven by StartAsync_discards_warnings_buffered_before_the_logger_gate_fails. [Retired with the gate
+phase in #771: the logger can no longer be shadowed — `SanitizingLogger_has_no_constructor_another_assembly_can_call_or_chain_to`.]
 
 Residual: "cheap" is a claim an implementation makes by choosing an interface. A third-party check
 doing I/O from `IStartupVerifier` defeats the phase for its own host. Not a security boundary — the
@@ -1043,8 +1058,10 @@ read-once StaticSigningKeyRing model.
 - Least privilege — private material is downloaded for the signing version only, only in
   `CreateSignerAsync`; every published version (signing one included) is read as public `Cer`.
   Closed — proven by `ReadAsync_never_downloads_private_material_for_any_version`,
-  `CreateSignerAsync_downloads_private_material_for_exactly_the_signing_version`, and
-  `CreateSignerAsync_rejects_a_published_only_id_without_downloading_anything`.
+  `CreateSignerAsync_downloads_private_material_for_exactly_the_version_asked_for`, and
+  `CreateSignerAsync_rejects_an_id_that_was_not_listed_without_downloading_anything`
+  [renamed by #823 from CreateSignerAsync_downloads_private_material_for_exactly_the_signing_version and
+  CreateSignerAsync_rejects_a_published_only_id_without_downloading_anything: any listed version may sign].
 - Secret-vs-Cer divergence — a downloaded key whose public half differs from the published one is
   refused and disposed, failing startup as `signing.azure_key_vault.secret_cer_mismatch`, absorbed
   verbatim by the ring so the divergence is named. Closed — proven by
@@ -1118,10 +1135,10 @@ or authorization endpoints, which carry no `AllowAnonymous` and still 401 under 
   `GetJwks_served_key_verifies_the_signature_of_a_token_this_server_issued`.
 - CORS emits the allowlist entry, never the request `Origin`, canonicalized to the punycode form a
   browser sends. Closed — proven by
-  `PostConfigure_canonicalizes_an_internationalized_host_to_its_punycode_form`.
+  `An_internationalized_host_matches_the_punycode_form_a_browser_sends` [moved by #799 from PostConfigure_canonicalizes_an_internationalized_host_to_its_punycode_form].
 - IPv6 CORS origins keep their brackets and an IDN-invalid host fails startup with a named error
   rather than an escaped exception. Closed — proven by
-  `PostConfigure_preserves_the_brackets_of_an_ipv6_origin` and
+  `A_configured_origin_matches_in_its_canonical_form` [moved by #799 from PostConfigure_preserves_the_brackets_of_an_ipv6_origin] and
   `Validate_fails_with_named_list_for_an_origin_whose_host_is_not_a_valid_idn`.
 - Residual: revocation latency is bounded only by `JwksEndpoint.CacheMaxAge`, unwarned however long
   it is set (#562).
@@ -1135,17 +1152,18 @@ the provider's environment gate and key handling are unchanged and were not re-r
   symlinked ancestor. Closed — proven by
   `ReadKeyFileAsync_rejects_a_key_file_that_grants_any_group_or_other_access`,
   `ReadKeyFileAsync_rejects_a_key_path_that_is_itself_a_symlink` and
-  `ReadKeyFileAsync_rejects_a_key_file_reached_through_a_non_root_owned_symlinked_ancestor`.
+  ReadKeyFileAsync_rejects_a_key_file_reached_through_a_non_root_owned_symlinked_ancestor [reversed by #826: a symlinked ancestor is now accepted for the development key, pinned by `ReadKeyFileAsync_accepts_a_key_file_reached_through_a_symlinked_ancestor`].
 - The ancestor walk stops at a root-owned entry, so an OS-managed symlink no longer false-positives
   while an attacker-plantable one still fails. Closed — proven by
-  `ReadKeyFileAsync_accepts_a_key_file_under_a_root_owned_symlinked_ancestor` and
-  `ReadKeyFileAsync_accepts_a_key_file_under_the_OS_temp_directory_on_Unix`.
+  ReadKeyFileAsync_accepts_a_key_file_under_a_root_owned_symlinked_ancestor [deleted by #826: the development key no longer walks ancestor directories] and
+  ReadKeyFileAsync_accepts_a_key_file_under_the_OS_temp_directory_on_Unix [deleted by #826: the development key no longer walks ancestor directories].
 - That trust anchor reads the link entry's own owner, so pointing a symlink at a root-owned target
   does not launder it. Closed — proven by
-  `ReadKeyFileAsync_rejects_a_non_root_owned_symlink_that_points_at_a_root_owned_directory`, added
+  ReadKeyFileAsync_rejects_a_non_root_owned_symlink_that_points_at_a_root_owned_directory [deleted by #826: the development key no longer walks ancestor directories], added
   because mutating `lstat` back to `stat` left the whole suite green.
 - Residual: the Windows ancestor walk's throwing branch is unexercised — the symlink tests skip
-  where creating a link needs elevation.
+  where creating a link needs elevation. [Moot since #826: the development key no longer walks
+  ancestor directories on any platform.]
 
 ## 2026-08-28 — the signing key directory chain walk (#586, commit `5a25ded`)
 
@@ -1154,21 +1172,21 @@ shared interop as `stat`/`lstat` is now historical, since `stat` was removed wit
 
 - Ownership is read with `lstat` and a symlinked component is refused outright, so the walk accepts
   only what the read path will also accept. Closed — proven by
-  `EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_to_a_root_owned_directory` and
-  `EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_the_current_user_owns`.
+  EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_to_a_root_owned_directory [deleted by #826: the development key no longer walks ancestor directories] and
+  EnsureDirectorySafe_rejects_an_ancestor_that_is_a_symlink_the_current_user_owns [deleted by #826: the development key no longer walks ancestor directories].
 - A component writable by group or other is refused, sticky exempt, and that rule is judged before
   the root-owned trust break — ownership never prevented rename. Closed — proven by
-  `JudgeComponent_rejects_a_writable_directory_even_when_root_owns_it`,
-  `JudgeComponent_exempts_a_sticky_writable_directory` and
-  `JudgeComponent_still_checks_ownership_of_a_sticky_writable_directory`.
+  JudgeComponent_rejects_a_writable_directory_even_when_root_owns_it [deleted by #826: the development key no longer walks ancestor directories],
+  JudgeComponent_exempts_a_sticky_writable_directory [deleted by #826: the development key no longer walks ancestor directories] and
+  JudgeComponent_still_checks_ownership_of_a_sticky_writable_directory [deleted by #826: the development key no longer walks ancestor directories].
 - The branches needing a second user or root to stage are asserted as a pure function rather than
-  reasoned about. Closed — proven by `JudgeComponent_rejects_a_directory_owned_by_another_non_root_user`
-  and `JudgeComponent_rejects_a_directory_whose_ownership_could_not_be_read`.
+  reasoned about. Closed — proven by JudgeComponent_rejects_a_directory_owned_by_another_non_root_user [deleted by #826: the development key no longer walks ancestor directories]
+  and JudgeComponent_rejects_a_directory_whose_ownership_could_not_be_read [deleted by #826: the development key no longer walks ancestor directories].
 - Every component the provider creates is owner-only, closing a self-inflicted start-once-then-never
   bug under umask 002. Closed — proven by `EnsureDirectorySafe_restricts_every_component_it_creates_to_the_owner`.
 - An entry that exists but is not a directory is refused rather than skipped — the walk's only
-  fail-open step. Closed — proven by `EnsureDirectorySafe_rejects_a_component_that_is_a_dangling_symlink`
-  and `EnsureDirectorySafe_rejects_a_leaf_that_exists_but_is_not_a_directory`.
+  fail-open step. Closed — proven by EnsureDirectorySafe_rejects_a_component_that_is_a_dangling_symlink [deleted by #826: the development key no longer walks ancestor directories]
+  and EnsureDirectorySafe_rejects_a_leaf_that_exists_but_is_not_a_directory [deleted by #826: the development key no longer walks ancestor directories].
 - Residual: an attacker-owned *intermediate* link in a multi-hop chain is not detected by the walk
   itself; the read path rejects it, and `FileMode.CreateNew` plus atomic 0600 bound this to redirect
   and denial of service, never disclosure.
@@ -1295,10 +1313,12 @@ ran alongside.
   `A_replayed_callback_neither_completes_nor_cancels_the_live_request`.
 - Only a refusal by the user at the provider reaches the client, and only for the interaction the
   browser carries; every other failure renders locally and leaves the interaction alive. Closed —
-  `A_refusal_by_the_user_at_the_provider_reaches_the_client_as_access_denied`,
+  `A_refusal_with_no_login_page_reaches_the_client_as_access_denied`,
   `A_refusal_without_the_interaction_cookie_renders_locally_and_reaches_no_client`,
-  `A_provider_outage_renders_locally_and_the_user_can_still_sign_in`,
-  `A_handler_that_throws_renders_locally_and_leaves_the_interaction_alive`.
+  `A_provider_failure_returns_the_user_to_the_login_page_reporting_it_failed`,
+  `A_handler_that_throws_renders_locally_and_leaves_the_interaction_alive`. [Since #889 a failure
+  for the interaction the browser carries returns to the login page that challenged, and a refusal
+  reaches the client only on the single-provider path; citations repointed at those successors.]
 - The session subject is derived from provider, issuer and upstream subject, and a subject without
   an issuer is refused. Closed — `Two_providers_returning_the_same_upstream_subject_get_different_session_subjects`,
   `A_subject_claim_without_an_issuer_is_refused_at_promotion`.
@@ -1335,7 +1355,8 @@ lenses, CodeScene) plus fix-diff verification of every High.
   grant. Closed — `GrantAsync_by_a_session_other_than_the_one_that_signed_in_is_refused`,
   `GrantAsync_after_the_user_signed_out_is_refused`, `A_second_sign_in_after_a_grant_finds_no_interaction_to_complete` (renamed under #87).
 - A grant only narrows the request, and one without `openid` is a denial. Closed —
-  `A_grant_naming_scopes_the_request_never_carried_issues_only_what_was_asked` (moved under #87), `GrantAsync_without_openid_answers_the_client_with_access_denied`.
+  `A_grant_naming_scopes_the_request_never_carried_issues_only_what_was_asked` (moved under #87), `A_grant_that_leaves_out_openid_still_grants_it`.
+  [Since #789 a grant always includes `openid`, so leaving it out is no longer a denial; citation repointed at that successor.]
 - The registration is read again at every step and must still list the request's redirect URI;
   otherwise the request ends where it stands. Closed — `Every_consent_operation_for_a_client_removed_after_the_handoff_is_refused`,
   `Every_consent_operation_for_a_client_that_dropped_the_redirect_uri_is_refused`,
@@ -1346,7 +1367,8 @@ lenses, CodeScene) plus fix-diff verification of every High.
 - The rendered consent page is unframeable and uncacheable, alongside the host's own policy.
   Closed — `GetRequestAsync_makes_the_rendered_page_unframeable_and_uncacheable`.
 - The opt-out defaults to requiring consent and is fingerprinted, so a flip revalidates. Closed —
-  `An_implementation_that_never_heard_of_consent_requires_it`, `Changing_any_covered_member_changes_the_fingerprint`.
+  `An_implementation_that_never_heard_of_consent_requires_it`, Changing_any_covered_member_changes_the_fingerprint
+  [deleted by #788, which removed the fingerprint and validates every lookup, so a flip is always seen].
 - Residual: the login page has no render-time call to stamp, so it is not made unframeable — no test.
 - Residual, accepted: `IConsentInteraction` is a public interface a host could replace; a
   replacement cannot reach the internal continuation, so it can complete nothing — no test.
@@ -1449,15 +1471,20 @@ Highs across two fix commits, then the maintainer's rulings verified by both age
 - The framework builds the promoted principal; a collected subject claim is refused before any read, and
   a replacement whose subject is the upstream one is refused, on the principal read and again on the one
   taken. Closed — `SignInAsync_with_collected_claims_refuses_a_subject_claim_before_anything_is_read`,
-  `SignInWithReplacedPrincipalAsync_refuses_the_parked_principal_passed_straight_back`,
-  `SignInWithReplacedPrincipalAsync_refuses_a_copy_of_the_upstream_subject`,
-  `SignInWithReplacedPrincipalAsync_holds_a_principal_parked_between_the_read_and_the_take_to_the_same_rule`.
+  `SignInWithReplacedAccountAsync_refuses_the_upstream_subject_passed_straight_back`
+  [renamed by #781 from SignInWithReplacedPrincipalAsync_refuses_the_parked_principal_passed_straight_back],
+  `SignInWithReplacedAccountAsync_refuses_an_additional_claim_naming_the_subject`
+  [renamed by #781 from SignInWithReplacedPrincipalAsync_refuses_a_copy_of_the_upstream_subject: the subject
+  is now an argument, and a subject claim beside it is refused],
+  `SignInWithReplacedAccountAsync_holds_a_principal_parked_between_the_read_and_the_take_to_the_same_rule`
+  [renamed by #781 from SignInWithReplacedPrincipalAsync_holds_a_principal_parked_between_the_read_and_the_take_to_the_same_rule].
 - The parked principal is taken once and what was taken is promoted; refusals are decided before the take;
   caller-owned input is snapshotted; terminal calls are POST-only before any read. Closed —
   `SignInAsync_reads_the_parked_principal_to_validate_it_then_takes_it_once`,
   `SignInAsync_promotes_the_principal_parked_at_the_time_of_the_post_not_the_one_the_page_read`,
   `SignInAsync_with_collected_claims_refuses_a_parked_subject_without_an_issuer`,
-  `SignInWithReplacedPrincipalAsync_promotes_the_principal_as_validated_not_as_later_changed`,
+  `SignInWithReplacedAccountAsync_holds_the_additional_claims_as_validated_not_as_later_changed`
+  [renamed by #781 from SignInWithReplacedPrincipalAsync_promotes_the_principal_as_validated_not_as_later_changed],
   `A_terminal_call_from_a_GET_is_refused_before_anything_is_read`.
 - A local sign-in at the login page discards a parked principal and records no provider. Closed —
   `A_local_sign_in_at_the_login_page_discards_a_parked_principal_and_records_no_provider`.
@@ -1512,7 +1539,8 @@ chose over factories on a nullable slot, verified by the architecture lens.
   the hash follows that key's algorithm. Closed —
   `An_ID_token_carries_at_hash_over_the_access_token_with_the_hash_the_key_implies`,
   `An_ID_token_signed_with_ES384_hashes_the_access_token_with_SHA_384`,
-  `An_ID_token_reads_the_key_only_inside_the_callback_and_resolves_it_once`,
+  `An_ID_token_resolves_the_key_once` [renamed by #823 from An_ID_token_reads_the_key_only_inside_the_callback_and_resolves_it_once;
+  the "only inside the callback" half needed a fake ring and is not observable against the real one],
   `The_ID_token_is_bound_to_the_access_token_by_at_hash`.
 - An unbound ID token is unrepresentable; a payload claiming `at_hash`, a non-ASCII access token or
   a companion of the wrong kind is refused before anything signs. Closed —
@@ -1524,7 +1552,8 @@ chose over factories on a nullable slot, verified by the architecture lens.
   so nothing is issued for a client the signing key cannot serve. Closed —
   `A_client_whose_allowed_algorithms_exclude_the_current_signing_key_fails_registration`,
   `A_client_pinned_to_an_algorithm_the_current_key_does_not_use_fails_startup`,
-  `A_key_the_client_no_longer_accepts_is_refused_before_any_token_is_issued`,
+  `A_signing_key_the_client_does_not_allow_is_not_accepted` [replaced by #823 A_key_the_client_no_longer_accepts_is_refused_before_any_token_is_issued,
+  which rotated a fake ring mid-request; the grant's check is now unit-tested until live rotation (#527) can reach it end to end],
   `A_client_whose_allowed_algorithms_exclude_the_signing_key_is_refused_before_the_signer_is_touched`,
   `The_algorithm_policy_does_not_apply_to_access_tokens`.
 - The context never prints the token it carries. Closed —
@@ -1572,25 +1601,25 @@ Critical. Five Lows fixed in the same PR, code-lens-verified; the rest recorded 
 
 - A family with no rows is revoked and its first row is dead on arrival, at consume and at
   introspection, across both stores. Closed —
-  `RevokeFamilyAsync_on_zero_row_family_inserts_a_sentinel_that_IsFamilyRevokedAsync_reports`,
+  `A_family_revoked_with_no_rows_reads_as_revoked` [renamed by #828 from RevokeFamilyAsync_on_zero_row_family_inserts_a_sentinel_that_IsFamilyRevokedAsync_reports],
   `TryConsumeAsync_returns_Revoked_for_grant_inserted_after_zero_row_family_was_revoked`,
   `Code_replay_triggers_family_revocation_spanning_both_stores`,
   `A_replayed_code_revokes_the_family_its_first_exchange_started`.
 - The sentinel outlives any row born within the skew tolerance of the revoke: family lifetime from
   revoke time plus the skew tolerance, saturating when unbounded. Closed —
-  `The_sentinel_row_expires_with_the_family_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime`,
-  `The_sentinel_row_never_expires_when_the_family_lifetime_is_unbounded`.
+  `The_family_is_remembered_for_its_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime` [renamed by #828 from The_sentinel_row_expires_with_the_family_lifetime_padded_by_the_skew_tolerance_not_the_code_lifetime],
+  `The_family_is_remembered_forever_when_the_family_lifetime_is_unbounded` [renamed by #828 from The_sentinel_row_never_expires_when_the_family_lifetime_is_unbounded].
 - One row per family under a deterministic key and a per-family reserved subject; never redeemable.
-  Closed — `RevokeFamilyAsync_called_twice_on_the_same_family_only_ever_inserts_the_sentinel_once`,
-  `Sentinels_of_two_families_carry_distinct_reserved_subjects`,
+  Closed — `RevokeFamilyAsync_never_writes_a_row_to_the_backing_store` [replaced by #828, which removed the sentinel, RevokeFamilyAsync_called_twice_on_the_same_family_only_ever_inserts_the_sentinel_once],
+  Sentinels_of_two_families_carry_distinct_reserved_subjects [deleted by #828 with the sentinel],
   `TryMarkConsumedAsync_returns_false_for_a_Revoked_grant_and_does_not_change_its_status`.
 - The sentinel is written before the bulk mark, the confirming read is fail-closed, and a fault still
   refuses the replay with nothing in the logs. Closed —
-  `A_bulk_revoke_fault_still_leaves_the_family_revoked_because_the_sentinel_is_written_first`,
-  `RevokeFamilyAsync_rethrows_when_the_sentinel_insert_fails_and_no_row_is_actually_persisted`,
-  `RevokeFamilyAsync_rethrows_when_the_sentinel_row_was_written_but_the_gate_does_not_read_the_family_as_revoked`,
-  `RevokeFamilyAsync_propagates_a_fault_from_the_gate_read_rather_than_treating_the_insert_as_benign`,
-  `RevokeFamilyAsync_propagates_a_fault_from_the_confirming_read_rather_than_treating_the_insert_as_benign`,
+  A_bulk_revoke_fault_still_leaves_the_family_revoked_because_the_sentinel_is_written_first [deleted by #828: the backing contract now requires the record to be written before, or with, the marking; no test],
+  RevokeFamilyAsync_rethrows_when_the_sentinel_insert_fails_and_no_row_is_actually_persisted [deleted by #828 with the sentinel],
+  RevokeFamilyAsync_rethrows_when_the_sentinel_row_was_written_but_the_gate_does_not_read_the_family_as_revoked [deleted by #828 with the sentinel],
+  RevokeFamilyAsync_propagates_a_fault_from_the_gate_read_rather_than_treating_the_insert_as_benign [deleted by #828 with the sentinel],
+  RevokeFamilyAsync_propagates_a_fault_from_the_confirming_read_rather_than_treating_the_insert_as_benign [deleted by #828 with the sentinel],
   `A_replay_whose_family_revocation_fails_is_still_refused_and_the_failure_is_logged`.
 - Residuals, accepted: a row born later than the skew tolerance on an evicting backend at the end of
   the family's absolute life outlives the sentinel; a confirming read that itself faults drops the
@@ -1615,7 +1644,9 @@ non-JWS prefix plus a fresh 32-byte nonce, not a fixed constant.
   `RunAsync_throws_self_test_failed_when_the_signer_returns_bytes_that_are_not_a_signature`,
   `RunAsync_throws_self_test_unavailable_naming_only_the_type_when_the_signer_throws`,
   `RunAsync_treats_a_cancellation_the_signer_raised_itself_as_self_test_unavailable`,
-  `RunAsync_treats_a_signers_cancellation_for_another_token_as_unavailable_even_while_the_caller_is_cancelling`.
+  RunAsync_treats_a_signers_cancellation_for_another_token_as_unavailable_even_while_the_caller_is_cancelling
+  [reversed by #823: a cancellation is the caller's whenever the caller's token is cancelled, proven by
+  `RunAsync_reports_a_signer_cancelled_through_a_linked_token_as_the_callers_cancellation`].
 - Exactly one signer is opened, nothing signs before it passed, the failure is sticky, and startup
   propagates it unmodified. Closed — `InitializeAsync_builds_the_key_set_and_opens_the_signer_exactly_once`,
   `SignAsync_throws_InvalidOperationException_before_initialization`,
@@ -1623,7 +1654,8 @@ non-JWS prefix plus a fresh 32-byte nonce, not a fixed constant.
   `VerifyAsync_propagates_a_failure_from_InitializeAsync_unmodified`.
 - Residual, accepted: pairing is proven at the handoff only, so a custom signer re-resolving its key
   per call drifts undetected; the shipped Key Vault signer pins the version —
-  `ReadAsync_reads_the_vault_exactly_once_and_ignores_versions_rotated_in_afterwards`.
+  `CreateSignerAsync_opens_a_signer_for_any_listed_version_pinned_to_that_version`
+  [repointed by #823 PR 2 from ReadAsync_reads_the_vault_exactly_once_and_ignores_versions_rotated_in_afterwards, removed with the source's read cache].
 
 ## 2026-09-15 — a confidential client may use the OIDC nonce instead of PKCE (#662)
 
@@ -1725,7 +1757,7 @@ Security and architect agents plus all three Copilot lenses; two Highs from the 
 `access_token` field read as absent, and duplicate `Authorization` headers) fixed in `a4e02a3` and `9bcf3c1`.
 
 - Only a token this server signed, addressed to this server, live, and carrying `openid` is answered.
-  Closed — `Validate_refuses_a_token_signed_by_a_key_this_server_does_not_publish`,
+  Closed — Validate_refuses_a_token_signed_by_a_key_this_server_does_not_publish [renamed by #899, every listed key now verifying: `Validate_refuses_a_token_signed_by_a_key_this_server_does_not_list`],
   `Validate_refuses_a_token_whose_audience_does_not_name_this_server`,
   `Validate_refuses_a_token_with_no_exp_rather_than_treating_it_as_eternal`,
   `A_token_without_the_openid_scope_is_insufficient_scope`,
@@ -1788,10 +1820,10 @@ Scoped to `DistributedCacheStoreStartupValidator`, `InsecureIssuerWarningService
 architecture lens and the security agent, one round, no High or Critical from any of them.
 
 - A `MemoryDistributedCache`-backed token store outside `Development` fails startup unless that
-  registration opted out. Closed — `The_per_process_cache_outside_Development_fails_startup_for_a_token_store`,
+  registration opted out. Closed — The_per_process_cache_outside_Development_fails_startup_for_a_token_store [deleted by #829 with the distributed-cache token stores],
   `The_per_process_cache_outside_Development_with_the_override_warns_at_Critical_on_every_start`.
 - The opt-out is per registration, not per implementation type, so one store opting out cannot
-  silently opt out the other. Closed — `The_two_store_registrations_each_keep_their_own_opt_out`.
+  silently opt out the other. Closed — The_two_store_registrations_each_keep_their_own_opt_out [deleted by #829 with the distributed-cache token stores].
 - `AllowInsecureIssuer` outside `Development` logs `Critical` and deliberately does not fail: it is
   itself the opt-out, and a non-loopback `http` issuer is already refused by options validation in
   every environment. Closed — `An_insecure_issuer_outside_Development_logs_at_Critical_on_every_start`,
@@ -1801,7 +1833,7 @@ architecture lens and the security agent, one round, no High or Critical from an
 - **Accepted residual (maintainer):** the cache check is a type test, so any other per-process
   `IDistributedCache` — a decorator over `MemoryDistributedCache`, a hand-rolled double — starts
   outside `Development` with only the non-atomic `Warning`. Proven by
-  `A_shared_cache_warns_that_the_stores_are_non_atomic_in_every_environment`.
+  A_shared_cache_warns_that_the_stores_are_non_atomic_in_every_environment [deleted by #829 with the distributed-cache token stores].
 
 ## 2026-09-21 — what a configuration failure's message may carry (#764, code frozen at `343bc3e`)
 
@@ -1846,3 +1878,537 @@ agent, one round plus fix-diff verification. No High or Critical survived review
   not have.
 - **Open (maintainer deferred):** nothing in CI enforces the "never `ex.Message` in a failure" rule
   — this entry's first bullet is five violations of a rule already in the register. Issue #766.
+
+## 2026-09-30 — the tombstone holds only the family id, and a revoked family is a record (#828, code frozen at `2b3bebf`)
+
+Replaces the 2026-09-14 revocation sentinel. Copilot code and security lenses and the security agent,
+one round plus fix-diff verification; no High or Critical survived review.
+
+- A replay after redemption resolves `AlreadyRedeemed{FamilyId}` from a plaintext tombstone that needs
+  no Data Protection key, and a corrupt one fails as a store error. Closed —
+  `TryRedeemAsync_returns_AlreadyRedeemed_from_a_tombstone_that_holds_only_the_family_id`,
+  `TryRedeemAsync_throws_ZeeKayDaStoreException_for_a_tombstone_without_a_family_id`.
+- A family revoked with no rows, or before a successor is stored, reads as revoked, and no non-grant
+  row is written. Closed — `A_family_revoked_with_no_rows_reads_as_revoked`,
+  `TryConsumeAsync_returns_Revoked_for_grant_inserted_after_zero_row_family_was_revoked`,
+  `RevokeFamilyAsync_never_writes_a_row_to_the_backing_store`.
+- The kit holds third-party stores to the record, its floor and fault propagation, and runs against
+  the in-memory store as `InMemoryRefreshTokenBackingStoreConformanceTests`. Closed — its tests
+  IsFamilyRevokedAsync_reports_revoked_for_a_family_revoked_before_it_had_any_grant,
+  A_repeat_RevokeFamilyAsync_with_an_earlier_rememberUntil_does_not_shorten_the_record and
+  RevokeFamilyAsync_propagates_a_transport_fault_instead_of_swallowing_it (declared in the TestKit,
+  outside `tests/`, so unquoted for the citation check).
+- **Accepted residual (maintainer):** nothing tests that a store keeps the record until
+  `rememberUntil`, or commits it before marking rows; both are contract text, as the kit has no clock
+  or mid-revoke fault seam.
+## 2026-09-30 — development signing fails closed on an unknown environment (#825, code frozen at `cf6a682`)
+
+Reverses §1.8's accepted residual. Copilot code and security lenses and the security agent, one
+round plus fix-diff verification; no High or Critical survived review.
+
+- A source with a null environment name used to be ungated. It now refuses with
+  `signing.dev_keys.unknown_environment`, in the source and in the startup verifier alike. Closed —
+  `ReadAsync_refuses_when_the_environment_is_unknown`,
+  `VerifyAsync_throws_with_unknown_environment_code_when_the_host_environment_name_is_null`.
+- §1.8's proof that the configure callback cannot reach `PersistToDirectory` was renamed with the
+  API; both registration methods now take one type whose only public member is `AllowedEnvironments`
+  — `The_configure_callback_can_set_only_AllowedEnvironments`.
+- The list is copied on assignment, cannot be edited through a cast, and must name at least one
+  environment — `AllowedEnvironments_is_a_copy_the_assigning_caller_cannot_change_afterwards`,
+  `AllowedEnvironments_cannot_be_changed_through_a_cast_to_a_mutable_type`,
+  `Validate_fails_for_an_empty_allowed_list`.
+
+## 2026-09-30 — the development key drops the ancestor walk, and core drops native interop (#826, code frozen at `13064ee`)
+
+Reverses the #541 and #586 entries' ancestor-walk proofs for the development key. Copilot code and
+security lenses and the security agent, one round plus fix-diff verification; no High or Critical.
+
+- What the development key keeps, on .NET's own APIs. Closed —
+  `WriteKeyFileAsync_creates_the_key_file_readable_only_by_the_owner_on_Unix`,
+  `EnsureDirectorySafe_restricts_every_component_it_creates_to_the_owner`,
+  `EnsureDirectorySafe_rejects_an_existing_directory_that_grants_any_group_or_other_access`,
+  `ReadKeyFileAsync_rejects_a_key_file_that_grants_any_group_or_other_access`,
+  `ReadKeyFileAsync_rejects_a_key_path_that_is_itself_a_symlink`.
+- The production file provider's ancestor checks are unchanged by the interop move. Closed —
+  `ReadPemAsync_still_throws_for_a_file_under_a_non_root_owned_symlinked_ancestor_on_Unix` [renamed from ReadPemTextAsync_… in #918],
+  `ReadPemAsync_still_throws_when_a_non_root_owned_symlink_points_at_a_root_owned_directory_on_Unix` [renamed from ReadPemTextAsync_… in #918].
+- **Accepted trade (maintainer):** ancestors are not checked for a development key, which only
+  protects it on a shared multi-user machine; the environment gate keeps it out of production.
+  Pinned by `ReadKeyFileAsync_accepts_a_key_file_reached_through_a_symlinked_ancestor`,
+  `EnsureDirectorySafe_accepts_a_directory_under_a_group_writable_ancestor`.
+- **Accepted residual:** the symlink check on read re-reads the path, so a link swapped in after
+  open can pass; the BCL has no O_NOFOLLOW. No test: the window needs a race the host cannot stage.
+
+## 2026-10-01 — #768 Core/AspNetCore split
+Every non-HTTP service and startup check registers from AddZeeKayDaAuthCore(configure);
+AddZeeKayDaAuth(configure) calls it and adds only the HTTP surface. Closed — proven by
+`A_core_only_host_validates_the_server_options_at_startup`,
+AddZeeKayDaAuthCore_registers_the_sanitizing_logger_gate_first_and_the_options_gate_second [retired with
+the gate phase in #771; options still validate first — `StartAsync_validates_options_before_constructing_any_verifier`],
+AddZeeKayDaAuthCore_registers_the_ring_activator_for_a_manually_registered_ring [removed by #823: no host-registered ring can exist].
+The startup runner and its gates have one registration site, AddZeeKayDaAuthCore(configure);
+ValidateWithZeeKayDa() registers none, and every ZeeKayDaAuthBuilder comes from Core (internal
+constructor), so no supported host has an empty gate collection — proven by
+`AddZeeKayDaOptions_leaves_startup_verification_to_AddZeeKayDaAuthCore`.
+Every host, Core-only included, gets the Discovery §3 RS256 warning — proven by
+`VerifyAsync_warns_when_the_advertised_set_omits_RS256`.
+Residual: a host that calls only AddZeeKayDaSigningKeys() without Core has those options
+unvalidated at start; unsupported by decision, and it cannot issue tokens. No test.
+
+## 2026-10-01 — a host hasher can be the default; failures pad per hasher (#791, code frozen at `9518e62`)
+
+Copilot code, text and security lenses, two security agents and the PR's Copilot review, plus fix-diff
+verification; no Critical.
+
+- A host's `isDefault: true` hasher creates new secrets and PBKDF2 keeps verifying its own; two
+  marked defaults fail closed. Closed — `A_host_hasher_marked_default_creates_new_secrets_while_PBKDF2_secrets_still_verify`,
+  `The_registry_refuses_two_marked_defaults_without_the_validator`
+  [renamed by #790 from Composite_refuses_two_marked_defaults_without_the_validator].
+- Every failure costs two slots of one verification per registered hasher, so a client still holding
+  an older hasher's secret is not timing-distinguishable from an unknown one. Closed —
+  `A_failed_authentication_under_two_hashers_runs_the_same_verifications_as_an_unknown_client`,
+  `Verify_of_a_credential_no_hasher_handles_spends_a_full_slot`.
+- Every hasher builds a decoy at startup on every host, its own client repository included; a
+  throwing `Create` fails with a coded failure naming only the exception type. Closed —
+  `A_hasher_whose_Create_throws_fails_startup_with_a_configuration_failure`,
+  `A_hasher_whose_Create_throws_fails_startup_on_a_host_with_its_own_client_repository`.
+- **Accepted cost (maintainer):** a host with several hashers pays every hasher on each failure;
+  rate limiting (RFC 9700 §2.1) bounds volume. No test.
+- **Accepted residual:** an imported PBKDF2 secret above the configured iteration count verifies
+  slower than the decoy; inherent to importing. No test.
+
+## 2026-10-01 — hosts sharing a persisted development key create it once (#853, code frozen at `6df985d`)
+
+Copilot code and security lenses, the security agent and the PR's Copilot and CodeQL review, plus
+fix-diff verification of each round; no Critical.
+
+- Exactly one host creates the key: the existence check and the publish run under an exclusive lock
+  file (`flock` on Unix), and every host then loads the key on disk. Closed —
+  `WriteKeyFileAsync_checks_for_an_existing_key_only_once_it_holds_the_lock`,
+  `WriteKeyFileAsync_racers_all_read_one_whole_key`, `A_host_that_loses_the_race_to_create_the_key_file_uses_the_winners_key`.
+- No host reads a partial key, and nothing lingers or is written through a link. Closed —
+  `WriteKeyFileAsync_publishes_the_key_only_once_it_is_fully_written`,
+  `WriteKeyFileAsync_leaves_neither_a_pending_file_nor_a_key_when_cancelled`,
+  `WriteKeyFileAsync_refuses_a_dangling_symlink_at_the_key_path_without_writing_through_it`,
+  `WriteKeyFileAsync_creates_the_lock_file_readable_only_by_the_owner_on_Unix`.
+- **Accepted residual (maintainer):** with file locking disabled (the DOTNET_SYSTEM_IO_DISABLEFILELOCKING variable
+  or a filesystem without locks) the race returns; the lock test above fails in that configuration.
+- **Accepted residual:** a crash between write and rename leaves an owner-only `.pending` file; a
+  directory at the `.lock` path fails only after the 30 s `lock_timeout`. No test.
+
+## 2026-10-01 — two-phase startup runner; the sanitizing logger cannot be substituted (#771, code frozen at `1786e6a`)
+Reverses the sanitizing-logger gate and the `IStartupCheck` rejection check recorded in earlier entries.
+- No registration can supply a logger that skips redaction: `SanitizingLogger<T>` has only an internal
+  constructor and nothing overridable. Closed — `SanitizingLogger_has_no_constructor_another_assembly_can_call_or_chain_to`,
+  `SanitizingLogger_members_cannot_be_overridden`, `AddZeeKayDaAuthCore_registers_SanitizingLogger_open_generic`.
+- ZEEKAYDA0002's exemption is that one type only. Closed — `Diagnostic_fires_inside_a_friend_assembly_type_named_SanitizingLogger`.
+- No exception message reaches a failure, from a check, a constructor or an options validator. Closed —
+  `StartAsync_wraps_an_unexpected_exception_naming_only_the_exception_type_never_its_message`,
+  `StartAsync_reports_a_check_constructor_that_throws_as_a_failure_naming_only_its_type`,
+  `StartAsync_reports_an_options_validator_that_throws_unexpectedly_naming_only_the_exception_type`.
+- Options validate first; no activator is built after a verifier failed; checks must be scoped. Closed —
+  `StartAsync_validates_options_before_constructing_any_verifier`, `StartAsync_does_not_construct_activators_when_a_verifier_failed`,
+  `A_verifier_registered_as_a_singleton_fails_startup_naming_its_type`.
+- **Accepted residuals (maintainer):** a friend assembly could subclass the logger (first-party, not a boundary);
+  a scoped factory returning a singleton check passes the lifetime check. No test.
+
+## 2026-10-02 — client secrets are self-describing PHC strings; hashers dispatch by algorithm id (#814, code frozen at `1805d3f`)
+Copilot code, security and architecture lenses, the security and architect agents, the PR's Copilot and CodeQL review,
+and fix-diff verification of each round; no Critical.
+- A stored secret reaches only the hasher that declared its id, matched ordinally against the index built at startup; two
+  hashers declaring one id fail startup. Closed — `Two_hashers_declaring_the_same_algorithm_id_fail_startup`,
+  `Algorithm_ids_match_case_sensitively`, `Create_refuses_an_id_the_hasher_declared_only_after_startup`.
+- A hasher that throws cannot crash or bypass authentication: at request time the verification fails, logged once by type;
+  at registration the client is refused. Closed — `A_hasher_that_throws_from_Verify_produces_invalid_client_not_a_500`,
+  A_Verify_that_throws_on_the_empty_secret_probe_is_a_named_failure_not_a_log_entry [deleted by #788, which removed the
+  empty-secret probe; a throwing Verify is covered at request time by the test above].
+- A bad secret refuses its client, a value its hasher refuses is never derived, and the two-secret cap counts what the
+  store yields. Closed — `One_bad_secret_refuses_the_client_even_when_its_other_secret_is_valid`,
+  `A_secret_its_hasher_refuses_is_never_verified`, `The_two_secret_cap_counts_what_the_list_yields_not_what_it_reports`.
+- No framework-authored failure or log quotes a stored value beyond a well-formed id. Closed —
+  `A_first_segment_that_cannot_be_an_algorithm_id_is_malformed_and_never_quoted`,
+  `ValidateStoredSecret_reports_a_malformed_value_without_quoting_it`, `ClientSecret_ToString_does_not_reveal_the_stored_value`.
+- Failure timing is unchanged: a secret no hasher declared, or one whose hasher throws, spends a full slot. Closed —
+  `Verify_of_a_credential_no_hasher_handles_spends_a_full_slot`,
+  `A_hasher_that_throws_still_has_its_decoy_verified_in_the_failed_slot`.
+- **Accepted residuals (maintainer):** `no_hasher` logs a valid-looking id, so plaintext pasted as `$abc$...` logs `abc`
+  (plaintext in the store is #806); a hasher's own `ValidateStoredSecret` messages are forwarded unchecked. No test.
+
+## 2026-10-02 — all client-authentication padding is inside `IClientSecrets.Verify`, which the framework owns (#790, code frozen at `0f8110b`)
+Copilot code, security and architecture lenses, the security and architect agents, and the PR's Copilot review; no Critical.
+- Every failed verification costs two failed slots, however many secrets the client holds, none included; a match returns
+  at once. Closed — `A_failure_costs_the_full_budget_however_many_secrets_the_client_holds`,
+  `A_refusal_with_nothing_to_verify_spends_the_full_budget`, `An_empty_secret_pads_the_full_budget_whatever_the_clients_secret_count`,
+  `A_match_on_the_first_secret_returns_without_trying_the_second_or_padding`.
+- A store cannot push a failure past the budget: more than two secrets is refused before any is verified, counted by what
+  the collection yields. Closed — `Verify_refuses_more_stored_secrets_than_the_budget_pads_for`,
+  `A_collection_understating_its_count_is_refused_before_any_secret_is_verified`, `The_timing_decoys_cannot_be_changed_after_startup`.
+- Every client-dependent refusal in the composite pads like an unknown client. Closed —
+  `AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_unknown_client`,
+  `AuthenticateAsync_returns_Authenticated_false_and_pads_timing_when_method_is_not_in_client_allowlist`,
+  `A_public_client_refused_because_the_server_disallows_none_is_padded_like_an_unknown_client`.
+- A host cannot replace verification or padding: framework code takes the concrete type, and a host `IClientSecrets`, keyed
+  or not, fails startup. Closed — A_host_registered_IClientSecrets_never_verifies_for_the_built_in_authenticator,
+  A_host_registered_IClientSecrets_fails_startup, A_keyed_host_IClientSecrets_fails_startup [deleted by #878:
+  the interface became the sealed `ClientSecrets` with an internal constructor, so a host cannot supply one —
+  `ClientSecrets_cannot_be_supplied_by_a_host`].
+- **Accepted residual (maintainer):** a stored PBKDF2 secret at an iteration count other than the configured one fails in
+  a different time from an unknown client, revealing that the client id exists (client ids are not secret in OAuth);
+  re-hashing on successful authentication is #868. No test.
+- A third-party authenticator's cheap refusal went unpadded; closed by #869, in the entry below.
+
+## 2026-10-02 — an authenticator's refusal that verified no secret is padded by the composite (#869, code frozen at `74d8919`)
+Copilot code and security lenses, the security agent, fix-diff verification of each round, and the PR's Copilot review; no Critical.
+- An authenticator's refusal that checked no secret (`NotValid()`, a null) costs what an unknown client costs. Closed —
+  `A_custom_authenticator_refusing_without_verifying_is_padded_like_an_unknown_client`,
+  `An_authenticator_returning_null_is_a_refusal_not_a_fault`.
+- A failed `IClientSecrets.Verify` is padded once, never twice, and only `Verify` can vouch for it. Closed —
+  `A_refusal_from_a_failed_verification_is_not_padded_again`, `Building_a_result_twice_from_one_failed_verification_does_not_pad_twice`,
+  `Only_Verify_can_create_a_SecretVerification_so_no_caller_can_claim_padding_it_did_not_spend`.
+- A failure or result kept and returned again is padded. Closed —
+  `A_failed_verification_kept_from_an_earlier_request_does_not_excuse_a_later_refusal_from_padding`,
+  `A_failed_result_returned_again_is_padded_like_any_other_refusal`, `Every_failed_verification_vouches_for_its_own_padding_once`.
+- **Accepted residuals (maintainer):** an authenticator that calls `Verify` then returns `NotValid()` pays twice; one that
+  shares a result across concurrent requests can let a request claim another's padding (contract stated on
+  `ClientAuthenticationResult.From`); a throw from `AuthenticateAsync` is an unpadded 500 (#870). No test.
+
+## 2026-10-03 — no empty-secret probe or verdict cache; every client lookup is snapshotted and validated (#788, code frozen at `1535365`)
+Copilot code and security lenses, the security agent, fix-diff verification of each round, and CodeScene on the PR; no Critical.
+- An empty presented secret matches no credential, whatever its hasher accepts, so validation no longer probes hashers.
+  Closed — `An_empty_presented_secret_never_matches_even_a_hasher_that_accepts_everything`.
+- Every lookup validates what it serves; no stale verdict survives a store's edit. Closed —
+  `An_unchanged_registration_is_validated_on_every_lookup`, `A_registration_mutated_in_place_is_revalidated`.
+- Per-lookup validation derives nothing, so an unauthenticated request cannot buy a PBKDF2. Closed —
+  `AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_corrupt_public_client_with_credentials`.
+- A malformed `client_id` never reaches the repository; a store outage is a 500, never `invalid_client`. Closed —
+  `A_malformed_client_id_never_reaches_the_repository`, `A_client_store_outage_is_a_server_error_not_invalid_client`.
+- Neither the critical failure log nor an advisory warning repeats per request for a known `client_id`. Closed —
+  `A_registration_that_cannot_be_read_logs_critical_once_however_many_lookups`,
+  `A_valid_registration_s_advisory_warning_is_written_once_not_per_lookup`.
+- **Accepted residual (maintainer):** a host `IClientRegistrationValidator` that logs on every call now logs per request;
+  the host's own code, out of scope. No test.
+
+## 2026-10-05 — `none` advertised by default; token endpoint auth methods derived from the authenticators (#778, code frozen at `1f1d05d`)
+Copilot code, security and architecture lenses, the security and architect agents, fix-diff verification of each round, and the PR's Copilot, CodeQL and CodeScene review; no Critical.
+- `none` is honoured only for a validator-served public client, and a confidential client cannot list it. Closed —
+  `AuthenticateAsync_returns_Authenticated_false_and_pads_timing_for_confidential_client_on_none_fallback`,
+  `A_confidential_client_listing_none_fails_as_none_on_confidential_although_none_is_advertised`.
+- A filter withholding `none` refuses public clients. Closed — `A_public_client_refused_because_the_server_disallows_none_is_padded_like_an_unknown_client`,
+  `Build_failure_for_a_public_client_on_a_server_whose_filter_withholds_none_names_the_filter`.
+- `client_credentials` with only `none` advertised fails startup (RFC 6749 §4.4). Closed —
+  `Verify_fails_when_client_credentials_is_served_and_the_filter_leaves_only_none`,
+  `Verify_fails_when_client_credentials_is_served_and_no_authenticator_is_registered`.
+- A host without the HTTP layer is held to the same advertised-set checks. Closed —
+  `AddZeeKayDaAuthCore_registers_the_check_so_a_core_only_host_is_held_to_it`.
+- Discovery, client registration and the token endpoint read one resolution, fixed at startup. Closed —
+  `Methods_cannot_be_cast_back_to_a_mutable_collection`, `An_authenticator_adding_a_method_after_registration_cannot_authenticate_with_it`.
+- A malformed declaration or a miscased filter entry fails startup rather than silently withholding a method. Closed —
+  `Verify_fails_when_authenticator_declares_a_blank_or_control_character_method`,
+  `Verify_fails_when_the_filter_names_a_performable_method_in_different_casing`.
+
+## 2026-10-05 — a failed provider round trip returns to the login page; the challenge cookie (#889, code frozen at `68d3987`)
+Copilot code, security and architecture lenses, the security and architect agents, fix-diff verification of each round
+(the last one after merge), and the PR's Copilot, CodeQL and CodeScene review; no Critical.
+- A refusal or failure for an interaction the browser carries returns to the login page, interaction alive, client told
+  nothing. Closed — `A_refusal_at_the_provider_returns_the_user_to_the_login_page_reporting_it_declined`,
+  `A_provider_failure_returns_the_user_to_the_login_page_reporting_it_failed`.
+- Only a refusal's own properties end a request at the client, and only with no login page and the binding present. Closed —
+  `A_refusal_with_no_login_page_reaches_the_client_as_access_denied`, `A_refusal_without_the_interaction_cookie_renders_locally_and_reaches_no_client`.
+- The `zkd.challenge.<id>` cookie acts only with the interaction's binding, never guesses between tabs, and its prefix is
+  reserved. Closed — `A_failure_carrying_only_the_challenge_cookie_renders_locally_and_records_nothing`,
+  `A_thrown_failure_with_two_challenges_outstanding_renders_locally_rather_than_guess_the_tab`,
+  `A_host_scheme_taking_a_name_under_the_challenge_prefix_is_reported`.
+- The login page's read is unframeable and uncacheable. Closed — `GetRequestAsync_makes_the_rendered_page_unframeable_and_uncacheable`.
+- **Accepted residuals (maintainer):** a forged callback in a browser mid-challenge can change only the login page's message
+  (`A_forged_callback_in_a_browser_mid_challenge_changes_only_the_login_page_message`); a post-configurer replacing the
+  `OnRemoteFailure` wrapper costs only precision; the read-then-write in `ReturnToLoginAsync` has a fail-closed race. No test for the last two.
+
+## 2026-10-05 — `zkd_error` sub-codes on `access_denied`; a grant always keeps `openid` (#789, code frozen at `2d8da3b`)
+Design-time security check of the code set, then Copilot code and security lenses, the security agent, fix-diff verification
+of each round, and the PR's Copilot, CodeQL and CodeScene review; no Critical.
+- Each code reaches only an opted-in client, and the description names the stage for every client. Closed —
+  `A_cancel_at_the_login_page_carries_login_cancelled_only_for_a_client_that_opted_in`,
+  `A_decline_at_the_consent_page_carries_consent_declined_only_for_a_client_that_opted_in`,
+  `A_refusal_at_the_only_provider_carries_provider_declined_only_for_a_client_that_opted_in`,
+  `A_host_refusing_the_external_account_carries_account_refused_only_for_a_client_that_opted_in`,
+  `A_host_page_refusing_the_external_account_carries_account_refused_only_for_a_client_that_opted_in`,
+  `The_description_names_the_stage_for_every_client_whether_or_not_it_opted_in`.
+- The token endpoint sends none. Closed — `The_token_endpoint_sends_no_zkd_error_to_a_client_that_opted_in`.
+- A denial for a client that no longer answers ends locally; nothing reaches a dropped redirect URI. Closed —
+  `A_cancel_after_the_client_dropped_the_redirect_uri_ends_the_request_locally`,
+  `A_refusal_at_the_only_provider_after_the_client_dropped_the_redirect_uri_ends_the_request_locally`.
+- A grant keeps `openid` and still only narrows the request. Closed — `A_grant_that_leaves_out_openid_still_grants_it`,
+  `An_empty_grant_grants_openid_alone`, `A_grant_naming_scopes_the_request_never_carried_issues_only_what_was_asked`.
+- **Accepted (maintainer):** the stage is visible to every client in `error_description`; the flag buys a stable value, not the
+  information. No test needed beyond the description test above.
+
+## 2026-10-06 — the login page reads the client's `login_hint` (#782, code frozen at `6857d21`)
+Copilot code and security lenses, the security agent, its verification of the first fix round, and the PR's Copilot,
+CodeQL and CodeScene review; no Critical. The last fix round (`6857d21`) was read by the main session only.
+- A hint over 256 characters, or with a control, format or line-separator character, is refused before anything is stored.
+  Closed — `Phase2_login_hint_longer_than_the_limit_is_invalid_request`,
+  `Phase2_login_hint_with_a_control_or_format_character_is_invalid_request`.
+- Ordinary spaces and the zero-width joiners survive; a whitespace-only hint is absent. Closed —
+  `A_login_hint_with_ordinary_spaces_is_kept`, `A_login_hint_with_a_zero_width_joiner_is_kept`,
+  `An_absent_empty_or_whitespace_login_hint_is_carried_as_none`.
+- The hint reaches only the login page, verbatim. Closed — `GetRequestAsync_reports_the_login_hint_the_client_sent`,
+  `A_login_hint_at_the_limit_is_carried_verbatim`.
+- `login_hint` is redacted as personal data. Closed — `SensitiveKeys_contains_expected_keys`.
+- **Residual:** the page must encode the hint; the framework cannot know the output context. Documented on
+  `LoginRequest.LoginHint`; no test.
+
+## 2026-10-06 — signing-key sources only list keys; core picks the signer and the published set from dates (#823 PR 1, code frozen at `6db3887`)
+Copilot code, security (xhigh) and architecture lenses, the security and architect agents and their verification of `9148a31`, the
+code lens on `6db3887`, and the PR's Copilot and CodeScene review; no Critical; both High findings are fixed. `3f27287` was read by the main session only.
+- A weak, off-curve or algorithm-mismatched key fails the build, and a failed build opens no signer. Closed — `Build_throws_when_the_RSA_modulus_is_below_2048_bits`,
+  `Build_throws_signing_invalid_public_key_for_an_off_curve_EC_point`, `Build_throws_when_the_EC_algorithm_does_not_match_the_key_curve`,
+  `InitializeAsync_propagates_a_builder_validation_failure_from_ReadAsync`.
+- A signer signing under another algorithm than its key fails startup. Closed — `InitializeAsync_throws_self_test_failed_when_the_signer_signs_under_another_algorithm`.
+- A key already expired at startup never signs, but stays published for the retention. Closed — `Expiry_a_key_that_just_expired_never_signs_but_stays_published_for_the_retention`.
+- The signing key's unexpired predecessor stays published however late the restart that switched keys. Closed —
+  Rotation_restart_weeks_after_the_lead_time_still_keeps_the_predecessor_published [removed by #823 PR 3, where the ring follows the clock and the predecessor stays published for the retention after its successor takes over: `At_keeps_the_predecessor_published_for_the_retention_after_the_successor_takes_over`].
+- Retention defaults to the longer token lifetime plus clock skew; no combination overflows. Closed — `PostConfigure_defaults_RetainRetiredKeysFor_to_the_longer_token_lifetime_plus_the_clock_skew_tolerance`,
+  `PostConfigure_saturates_the_default_RetainRetiredKeysFor_for_an_unbounded_token_lifetime`, `Build_does_not_overflow_when_lead_time_plus_retention_exceeds_TimeSpan_MaxValue`,
+  `PostConfigure_with_negative_lifetimes_and_skew_beyond_TimeSpan_MinValue_leaves_the_failures_to_validation`.
+- Key Vault refuses a listed version whose URI is not version-pinned. Closed — `ReadAsync_throws_when_a_listed_versions_identifier_uri_is_not_version_pinned`.
+- **Accepted residuals (maintainer):** a key signs up to five minutes before its `NotBefore` (Future_a_key_valid_up_to_five_minutes_from_now_signs_to_tolerate_clock_skew [removed by #823 PR 3, where `NotBefore` is no validity gate: `Build_signs_with_a_sole_key_whose_NotBefore_is_in_the_future`]);
+  a key expiring while the process runs signs until restart, with no test pinning that; the health check reports it Unhealthy
+  (CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source [renamed by #527, the ring now re-reading: `CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_reading_the_source_itself`]);
+  file and Windows sources sign only with Current until PR 2 (CreateSignerAsync_throws_when_called_for_the_Next_slot [removed by #823 PR 2, which lets every listed file sign: `CreateSignerAsync_opens_a_signer_for_any_listed_file`]); per-client lifetimes are invisible at startup,
+  so the operator raises the retention, with no test for the default ignoring them (`PostConfigure_keeps_an_explicit_RetainRetiredKeysFor` proves the lever); a hint whose key is retired is refused, #899
+  (Validate_refuses_a_hint_signed_by_a_key_the_server_does_not_publish [reversed by #899, where every listed key verifies a hint: `Validate_accepts_a_hint_signed_by_a_listed_key_no_longer_published`]).
+
+## 2026-10-07 — file and store signing sources take a list; Key Vault `MaxVersions`; certificate helpers (#823 PR 2, code frozen at `449015e`)
+Copilot code, security (xhigh) and architecture lenses, the security and architect agents, fix-diff verification by the code lens
+(`2950d42`), the security lens and the security agent (`6cedee8`), and the PR's Copilot, CodeQL and CodeScene review; no Critical.
+`35ad65f`, `031e59e` and `449015e` were read by the main session only.
+- Every listed entry is checked at startup for a key's presence and protection, without importing it: a PEM key file's
+  permissions, a complete unencrypted key block, a PFX key bag, a Windows key. Only the chosen key is opened and self-tested;
+  a staged key that is present but unusable still fails at the restart that chooses it. Closed — `ReadAsync_rejects_a_separate_key_file_broader_than_0600_on_Unix_even_for_a_file_that_does_not_sign`,
+  `ReadAsync_rejects_a_combined_file_whose_key_block_is_truncated`, `ReadAsync_rejects_a_bundle_that_carries_no_private_key`,
+  `ReadAsync_rejects_a_listed_certificate_with_no_private_key_without_extracting_one`.
+- Listing imports no private key. Closed — `ReadAsync_lists_a_bundle_whose_key_bag_cannot_be_decrypted_because_it_never_imports_the_key`,
+  ReadAsync_never_parses_a_separate_key_file_for_any_listed_file [renamed by #917 to `ReadAsync_reads_only_the_label_of_a_separate_key_file`].
+- Both certificate helpers reject an undefined algorithm and a key that does not suit it. Closed — `FromCertificate_rejects_an_undefined_algorithm`
+  (both), `FromCertificate_rejects_an_EC_certificate_for_an_RSA_algorithm`, FromCertificate_rejects_a_key_that_does_not_suit_the_algorithm_naming_the_id.
+  [Since #905 `SourceKey.FromCertificate` takes no algorithm; the builder checks every key against the source's —
+  `Build_throws_when_an_EC_algorithm_is_declared_over_an_RSA_public_key`, `Build_throws_when_the_EC_algorithm_does_not_match_the_key_curve`.]
+- Removing the cached Key Vault pairing check leaves a divergence failing startup. Closed — `Startup_fails_closed_when_the_secret_and_the_Cer_diverge_because_the_self_test_catches_it`.
+- `MaxVersions` fetches only the newest N, cuts identically on every replica, and is never below 3. Closed —
+  `ReadAsync_with_MaxVersions_fetches_public_material_only_for_the_listed_versions`, `Validate_rejects_a_MaxVersions_below_three`,
+  `ReadAsync_with_MaxVersions_breaks_a_tie_on_NotBefore_by_the_ordinally_greater_version_whatever_the_listing_order`.
+- **Accepted residual (maintainer):** a `MaxVersions` set too low drops older versions, whose tokens then fail verification —
+  `ReadAsync_with_MaxVersions_lists_only_the_N_newest_enabled_versions`.
+- **Unverified scope limits (maintainer), no test possible:** a CA-issued certificate listed more than the lead time after issuance
+  signs unpublished at the next restart, until live rotation (#527) — no local state records when a file was deployed; the wrapping
+  of a private-key accessor that throws in `private_key_not_found` — no in-process certificate can be made to throw there.
+
+## 2026-10-08 — a signing source declares one algorithm; the advertised-algorithm filter is removed (#905, code frozen at `08515b9`)
+Copilot code, security and architecture lenses, the security and architect agents, code-lens verification of the one High (a
+duplicated configuration reference, fixed in `6b7cb58`), and the PR's CodeQL and CodeScene review; no Critical. `16508a5` and
+`08515b9` were read by the main session only.
+- Every key's material is checked against the source's `Algorithm`; `SourceKey` carries none, and a key set cannot mix
+  algorithms. Closed — `Build_throws_when_an_EC_algorithm_is_declared_over_an_RSA_public_key`, `Build_throws_when_the_EC_algorithm_does_not_match_the_key_curve`,
+  `Build_throws_when_the_declared_algorithm_is_not_a_defined_SigningAlgorithm_member`, `Constructor_rejects_a_published_key_under_another_algorithm`,
+  `Full_DI_wiring_fails_startup_naming_a_PFX_bundle_whose_key_does_not_suit_the_algorithm`.
+- Discovery advertises exactly that algorithm. Closed — `GetDocument_advertises_one_algorithm_however_many_keys_are_published`.
+- A client's `AllowedSigningAlgorithms` rejects undefined values always, and once the ring has read its source must contain its
+  algorithm; other entries only warn. Closed — `Validate_fails_with_undefined_code_before_the_key_ring_has_read_its_source`,
+  `Host_startup_throws_when_a_client_excludes_the_algorithm_the_server_signs_with`,
+  `Validate_warns_once_about_an_AllowedSigningAlgorithms_entry_the_server_never_signs_with`. Before that read, inclusion is unchecked and
+  warned — `Validate_warns_when_the_key_ring_exists_but_has_not_read_its_source`; the issuer then refuses such a client at signing —
+  `A_client_whose_allowed_algorithms_exclude_the_signing_key_is_refused_before_the_signer_is_touched`.
+- **Accepted residual (maintainer):** non-RS256 only warns, against Discovery §3 — `VerifyAsync_warns_when_the_advertised_set_omits_RS256`.
+- **Deferred to #823:** the ring reads `ISigningKeySource.Algorithm` per build, moot while it builds once.
+
+## 2026-10-08 — the signing key ring follows the clock; a bad key is dropped, not fatal (#823, code frozen at `990991c`)
+Copilot code (four passes, each fix verified), security and architecture lenses, the security and architect agents, and the PR's
+CodeQL and CodeScene review; no Critical left open. Four test-only CodeQL dispose alerts are advisory and left as is.
+- A successor signs only after its signer opens and passes a fresh self-test at takeover. Closed — `Handover_opens_the_successor_s_signer_only_when_it_takes_over`,
+  `Handover_signs_with_the_successor_once_its_lead_time_ends_and_the_signature_verifies`.
+- A successor that fails, or does not open within a minute — blocking, ignoring cancellation or throwing from its callback — is set
+  aside, the old key signs on, and the cause is logged. Closed — `Handover_failure_keeps_the_previous_key_signing_logs_an_Error_and_names_the_failed_successor`,
+  `Handover_never_retries_any_failed_successor_when_signing_falls_back_to_it`, `Handover_whose_source_blocks_synchronously_is_still_set_aside_at_the_deadline`,
+  `Handover_past_the_deadline_is_set_aside_even_when_the_source_s_cancellation_callback_throws`, `Handover_failure_logs_the_root_cause_as_the_Error_entry_s_exception`.
+- No change instant is skipped. Closed — `Initialization_catches_up_when_a_change_passes_while_the_startup_signer_opens`,
+  `A_change_crossed_after_a_transition_commits_but_before_it_re_arms_still_fires`.
+- Every signer whose open finishes is disposed once, including one that finishes after shutdown or the deadline. Closed — Handover_keeps_the_superseded_signer_open_until_the_ring_is_disposed_then_disposes_each_once [replaced by #919, a
+  superseded signer now closes at the first read a refresh interval after the takeover: `Handover_disposes_the_superseded_signer_at_the_first_read_a_refresh_interval_after_the_takeover`],
+  `A_signer_that_opens_after_shutdown_abandoned_its_handover_is_disposed`, `A_signer_that_opens_after_the_handover_deadline_is_disposed_exactly_once`,
+  `Initialization_owns_the_startup_signer_before_logging_so_a_throwing_logger_does_not_leak_it`.
+- A bad key never publishes or signs; a bad key due now, or an ambiguous list, fails startup; health names codes, never source ids. Closed —
+  `A_dropped_staged_key_is_warned_about_and_never_published_or_signed_with`, `Initialization_fails_when_the_key_due_to_sign_now_was_dropped`,
+  Build_fails_on_a_duplicate_kid_even_when_one_entry_has_unusable_dates [removed by #914, entries over one key pair now merge after per-entry
+  validation: `Build_drops_an_entry_with_unusable_dates_and_builds_the_other_entry_over_its_key_pair_alone`],
+  `Evaluate_is_Degraded_while_a_listed_key_is_dropped_without_naming_its_source_id`.
+- A key signing on after healthy replicas dropped it is Unhealthy. Closed — `Evaluate_is_Unhealthy_when_the_key_signing_on_after_a_failed_handover_has_left_every_other_replica_s_key_set`.
+- **Accepted residuals (maintainer):** a provider's own per-key failure still fails `ReadAsync` (#908) — `ReadAsync_rejects_a_separate_key_file_broader_than_0600_on_Unix_even_for_a_file_that_does_not_sign`;
+  revocation is remove and restart until polling (#527), the source being read once — CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_re_reading_the_source [renamed by #527: `CheckHealthAsync_reports_Unhealthy_once_past_expiry_without_reading_the_source_itself`].
+- **Unverified scope limits (maintainer), no test:** a source returning one signer instance for two keys is excluded by the contract,
+  not checked; a signer whose own self-test never completes is set aside at the deadline but never disposed — the ring never receives it.
+
+## 2026-10-08 — the signing key ring re-reads its source; removing a key at its source revokes it (#527, code frozen at `1522ca0`)
+Copilot code (five passes, each fix verified), security and architecture lenses, the security and architect agents (each verified
+its fix diff), and the PR's CodeQL, CodeScene and Copilot review; no High or Critical left open. `49d7ad8` and `1522ca0` were read by the main session only.
+- A failed or hung read keeps the last list, and no second read starts behind it. Closed — `A_failed_read_keeps_the_last_list_logs_an_Error_and_makes_the_health_check_Degraded`,
+  `A_read_that_does_not_complete_within_a_minute_counts_as_failed_and_keeps_the_last_list`, `A_read_still_running_after_its_deadline_is_not_started_again_at_the_next_read`.
+- No keys, an ambiguous list, or a bad key due now stops signing and publishes nothing; a good read resumes. Closed — `A_read_listing_no_keys_stops_signing_publishes_nothing_and_makes_the_health_check_Unhealthy`,
+  `A_read_listing_duplicate_source_ids_stops_signing`, [superseded by #916: a bad key due now is skipped and the previous key signs on, Degraded — `A_dropped_key_due_to_sign_is_skipped_and_the_predecessor_signs_on_Degraded`], `Signing_resumes_when_a_later_read_lists_usable_keys_again`,
+  `The_token_endpoint_answers_server_error_while_signing_has_stopped`, `GetJwks_serves_an_empty_key_set_that_must_not_be_cached_while_signing_has_stopped`.
+- An unlisted signing key stops signing and is unpublished at that read; health is Unhealthy until a handover completes. Closed — `A_signing_key_no_longer_listed_stops_signing_and_is_unpublished_before_its_successor_s_signer_opens`,
+  `The_health_check_is_Unhealthy_while_signing_resumes_until_the_handover_completes`, `A_read_publishes_its_keys_at_once_while_the_handover_it_starts_is_still_opening`.
+- Removing a key at its source revokes it. Closed — `Ring_stops_signing_at_the_next_read_after_the_only_listed_file_is_deleted`, `ReadAsync_no_longer_lists_a_PEM_whose_separate_key_file_was_deleted`,
+  `ReadAsync_no_longer_lists_a_certificate_removed_from_the_store_so_removing_it_revokes_the_key`, `GetKeyVersionsAsync_lists_nothing_when_the_key_was_deleted`,
+  `ReadAsync_lists_nothing_when_every_version_is_disabled_so_the_ring_treats_it_as_a_full_revocation`. Closes the #823 residual "revocation is remove and restart".
+- A failed successor never takes over once its predecessor is superseded; the algorithm is pinned at startup. Closed — `A_set_aside_key_fixed_only_after_the_key_it_replaces_is_superseded_never_takes_over`,
+  `A_failed_key_too_late_to_take_over_stays_set_aside_after_a_read_that_omitted_it`, `A_failed_key_whose_cutoff_passes_while_the_source_is_read_stays_set_aside`,
+  `The_ring_keeps_signing_under_the_algorithm_it_read_at_startup_when_the_source_s_changes`.
+- **Accepted residuals (maintainer):** a sign call outrunning one refresh interval may meet a disposed signer — `The_signer_of_a_key_no_longer_listed_is_disposed_at_the_second_read_without_it_not_the_first`;
+  a source that never returns pins the last list until restart, and an unmounted key directory reads as deleted (no test); an abandoned Key Vault read
+  cancelled after its pre-commit check can still commit its newer version list, refusing a just-disabled version one read early (no test — the check
+  itself, for cancellation before it, is proven by `ReadAsync_abandoned_by_the_ring_does_not_replace_the_versions_a_signer_may_open`).
+
+## 2026-10-09 — entries over one key pair build into one key (#914, code frozen at `d712c4d`)
+Copilot code (two passes, fix verified) and security lenses, the security agent (verified its fix diff), and the PR's CodeQL, CodeScene
+and Copilot review; no High or Critical left open. The last two fix commits, from the diff read and Copilot's PR review, were read by the main session only.
+- Entries sharing a thumbprint publish one JWK, merged only after per-entry validation; duplicate source ids still stop signing. Closed —
+  `Build_merges_two_entries_over_one_key_pair_into_one_key_spanning_both_windows`, `Build_drops_an_entry_with_unusable_dates_and_builds_the_other_entry_over_its_key_pair_alone`,
+  `A_read_listing_duplicate_source_ids_stops_signing`. Supersedes "an ambiguous list fails startup" (#823) for one key pair under two ids.
+- The merged key signs through the entry expiring last, via its own self-tested signer; the earlier signer is released a read later. Closed —
+  `Build_opens_the_merged_key_through_the_entry_that_expires_last`, `A_renewal_reusing_the_signing_key_pair_signs_through_a_signer_opened_for_the_renewal`,
+  `The_earlier_entry_s_signer_is_disposed_at_the_read_after_the_renewal_takes_over`, `Rotation_a_renewed_certificate_reusing_the_key_pair_keeps_signing`.
+- A renewal whose signer fails leaves the earlier signer signing and is retried next read; health is Degraded and names no source id. Closed —
+  `A_renewal_whose_signer_fails_leaves_the_earlier_signer_signing_and_is_tried_again_at_the_next_read`,
+  `The_health_check_is_Degraded_while_a_renewal_over_the_signing_key_pair_is_still_opening`.
+- An entry the source removes stops signing even while a renewal lists its key pair. Closed —
+  `A_signing_entry_replaced_by_a_renewal_of_its_key_pair_stops_signing_and_does_not_sign_on_when_the_renewal_fails`.
+- **Accepted residuals (maintainer):** while a renewal keeps failing, the earlier signer signs past its own entry's expiry, and health is
+  Unhealthy then — `The_health_check_is_Unhealthy_once_the_earlier_entry_expires_while_its_renewal_keeps_failing`; during a renewal
+  handover health reads the dates of the entry still signing (no test).
+
+## 2026-10-09 — a presented token verifies against every listed key; one type writes and reads the compact JWS (#899, code frozen at `7f1cb3b`)
+Copilot code (two passes, High fixes verified) and security (xhigh) lenses, the security agent, the PR's CodeQL, CodeScene and Copilot review, and the
+text lens on this entry; no High or Critical open. `93433af`, `a93c5a2` and `7f1cb3b` were read by the main session only.
+- Every listed key verifies a hint or an access token, published or not; a key stops verifying at the first successful read without it, and nothing
+  verifies once a read lists no keys. Closed — `Validate_accepts_a_hint_signed_by_a_listed_key_no_longer_published`, `Validate_accepts_a_live_token_signed_by_a_listed_key_no_longer_published`,
+  `Validate_refuses_a_hint_signed_by_a_key_the_source_no_longer_lists`, `Verify_returns_null_once_a_read_lists_no_keys`. Reverses the #823 residual "a hint whose key is retired is refused".
+- A key kept only to verify never reaches the JWKS. Closed — `GetJwks_never_serves_a_key_kept_for_hint_verification_only`.
+- The header is exactly `alg`, `typ` and `kid`, as the issuer writes it, with the verifying key's own `alg`. Closed — `Validate_refuses_a_correctly_signed_hint_whose_header_carries_a_member_the_issuer_does_not_write`,
+  `Validate_refuses_a_correctly_signed_hint_whose_header_repeats_a_member`, `Validate_refuses_a_correctly_signed_hint_whose_alg_is_not_the_keys_own`, `Validate_accepts_an_id_token_issued_by_JwtTokenIssuer`.
+- A lone surrogate escaped in the header, or in a required single-string claim, refuses the token rather than throwing. Closed — `Validate_refuses_without_throwing_a_hint_whose_header_escapes_a_lone_surrogate`,
+  `Validate_refuses_without_throwing_a_token_whose_header_escapes_a_lone_surrogate`, `Validate_refuses_without_throwing_a_correctly_signed_hint_whose_claim_escapes_a_lone_surrogate`, `Validate_refuses_without_throwing_a_signed_token_whose_claim_escapes_a_lone_surrogate`.
+- **Accepted residuals:** (maintainer) a stolen old ID token stays a usable hint while its key is listed, not two days, so at a client with `SkipLogoutConfirmation`
+  it signs its user out unconfirmed that long — `Validate_accepts_a_hint_signed_by_a_listed_key_no_longer_published`, `A_valid_hint_from_a_client_that_skips_the_question_signs_out_at_once`; #922 narrows it.
+  (Settled in `signing-keys.md`) a removed key keeps verifying while source reads fail, as it keeps signing — `Verify_keeps_verifying_a_removed_key_while_reads_fail`.
+
+## 2026-10-10 — a key due to sign that cannot is skipped; only startup refuses (#916, code frozen at `6e16d45`)
+Copilot code (three passes, High fixes verified) and security (xhigh, fix diff verified) lenses, the security agent (fix diff verified), and the PR's
+CodeQL, CodeScene and Copilot review; no High or Critical open. Written after the merge, against the merge commit, whose code is the reviewed branch.
+`807cb36` was read by the main session only.
+- A dropped key due to sign is skipped: the previous key signs on, Error, Degraded naming the code. Closed — `A_dropped_key_due_to_sign_is_skipped_and_the_predecessor_signs_on_Degraded`,
+  `A_bad_staged_key_is_skipped_once_it_comes_due_and_the_current_key_signs_on`. Reverses #527 "a bad key due now stops signing"; startup still refuses it — `Initialization_fails_when_the_key_due_to_sign_now_was_dropped`.
+- A key that could not sign when due, repaired only after its predecessor is superseded, never takes over: across failed reads, a due window between reads, and every
+  entry listing its key pair. Closed — `A_dropped_key_fixed_only_after_its_predecessor_is_superseded_never_takes_over`, `A_dropped_key_whose_cutoff_passes_while_reads_fail_never_takes_over`,
+  `A_dropped_key_whose_whole_due_window_passes_between_reads_never_takes_over`, `A_failed_key_repaired_too_late_alongside_a_renewal_of_its_key_pair_never_takes_over`,
+  `A_failed_key_listed_twice_repaired_too_late_under_only_one_of_its_entries_never_takes_over`; repaired in time it does — `A_dropped_key_fixed_in_time_takes_over`.
+- The key pair signing, or signing until its entry was unlisted, is never held aside. Closed — `A_dropped_renewal_of_the_signing_key_pair_repaired_later_keeps_signing`,
+  `A_dropped_renewal_repaired_by_the_read_that_unlists_the_entry_it_renews_takes_over`.
+- Startup with every key expired signs with the last to expire, Error, Unhealthy. Closed — `Startup_with_every_key_expired_signs_on_and_is_Unhealthy`,
+  `Full_DI_wiring_starts_and_signs_on_when_the_only_PEM_certificate_has_expired`. Reverses the `signing.signing_key_expired` startup refusal. No relying party
+  sees the expiry: a JWK has no date member (RFC 7517 §4), and the JWKS carries none, nor `x5c` — `Write_emits_no_private_key_member_for_a_set_built_from_rsa_and_ec_private_keys`.
+- **Accepted residuals:** (maintainer) the too-late memory is per process — `A_restarted_replica_adopts_a_key_repaired_too_late`. (maintainer) a fresh key reusing a once-dropped
+  source id with a back-dated `NotBefore` stays set aside as too late, like a repair — `A_dropped_key_fixed_only_after_its_predecessor_is_superseded_never_takes_over`. (maintainer) startup refuses a dropped key due now while a running ring signs on — `Initialization_fails_when_the_key_due_to_sign_now_was_dropped`.
+
+## 2026-10-11 — a signer not signing is disposed a refresh interval after it is seen to stop (#919, code frozen at `5336525`)
+Copilot code (High fixes verified on the fix diff), security (xhigh) and text lenses, the security agent, and the PR's CodeQL, CodeScene and Copilot
+review; no High or Critical open. `5e050da`, `25060cc`, `15a2d67`, `de98d78` and `5336525` were read by the main session only.
+- A cached signer not signing is disposed at the first read a full `RefreshInterval` after it is seen to stop — at the handover that supersedes it,
+  else at the end of the first read finding it idle — not at shutdown. Closed — `Handover_disposes_the_superseded_signer_at_the_first_read_a_refresh_interval_after_the_takeover`,
+  `The_signer_of_a_key_no_longer_listed_is_disposed_at_the_second_read_without_it_not_the_first`, `A_failed_handover_that_stops_signing_still_gives_the_old_signer_one_read_s_grace`.
+  Reverses the #823 rule that a superseded signer stays open while its key is listed.
+- The grace is never less than one full interval, however the handover and the read line up. Closed — `A_handover_that_finishes_just_before_a_read_still_gives_the_old_signer_a_full_refresh_interval`,
+  `A_signer_that_signs_again_between_reads_gets_a_full_refresh_interval_once_it_stops_again`, `A_sign_call_started_before_a_takeover_completes_with_the_old_signer`.
+- A read whose transition throws still releases idle signers. Closed — `A_read_whose_transition_throws_still_releases_idle_signers`.
+- A key signing again after its signer closed gets a freshly opened, self-tested one; within the grace the cached signer is kept. Closed —
+  `A_superseded_key_that_signs_again_is_reopened_and_self_tested`, `A_superseded_key_still_listed_is_not_reopened_until_it_signs_again`, `The_signer_of_a_key_that_signs_again_before_its_grace_ends_is_kept`.
+- **Accepted residual (unchanged):** a sign call outrunning the grace meets a disposed signer — `A_sign_call_outrunning_a_full_refresh_interval_after_the_takeover_meets_a_disposed_signer`.
+  **Not covered:** the cached Key Vault source's download count across a takeover is proven only at the ring, against the in-memory source; #929 adds it.
+
+## 2026-10-13 — a broken source entry is reported per entry and cannot hold up a revocation (#908, code frozen at `da0e506`)
+Copilot code (High fixes verified on two fix diffs), security (xhigh; High fixed by maintainer ruling, fix diff verified) and architecture lenses, the security
+and architect agents, and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `da0e506` was read by the main session and the PR bots only.
+- A broken entry is dropped, never published nor due to sign, and the rest of the read is adopted, a deletion included. Closed — `A_revocation_is_not_blocked_by_a_broken_entry_in_the_same_read`,
+  `A_read_reporting_a_per_entry_failure_drops_that_key_and_adopts_the_rest`, `A_reported_failure_is_never_the_key_due_to_sign_and_never_shortens_coverage`.
+- A read with no usable entry stops signing rather than keeping a deleted key. Closed — `A_read_listing_only_failures_stops_signing_and_unpublishes_the_deleted_key`.
+- A file's own failure is reported against that file — permissions, key bag, unreadable public key, password source — and a cancellation still fails the read. Closed — `ReadAsync_reports_a_too_permissive_key_file_as_a_per_entry_failure_and_lists_the_rest`,
+  `ReadAsync_reports_a_bundle_without_a_key_bag_as_a_per_entry_failure_and_lists_the_rest`, `ReadAsync_reports_a_certificate_whose_public_key_cannot_be_read_as_a_per_entry_failure_and_lists_the_rest`,
+  `ReadAsync_reports_a_bundle_whose_password_source_fails_as_a_per_entry_failure_and_lists_the_rest`, `ReadAsync_lets_a_cancellation_from_one_bundle_fail_the_whole_read`;
+  Windows — `ReadAsync_reports_a_certificate_without_a_private_key_as_a_per_entry_failure_and_lists_the_rest`.
+- A vault or store failure still fails the whole read; a reported version never opens a signer. Closed — `ReadAsync_still_throws_for_a_vault_failure_on_one_version_rather_than_reporting_it`,
+  `ReadAsync_recovers_on_retry_after_a_failed_read` (Windows store),
+  `GetKeyMaterialAsync_never_reports_a_vault_failure_as_a_failure_of_the_versions_material`, `CreateSignerAsync_rejects_a_version_the_read_reported_as_a_failure`.
+- A reported failure names an exception type, never its message, a host password source's included. Closed — `ReadAsync_never_reports_a_configuration_failure_thrown_by_the_password_source_in_its_own_words`,
+  `FromCertificate_reports_an_unreadable_public_key_as_invalid_public_key_naming_the_exception_type_not_its_message`.
+- **Accepted residuals:** (maintainer) every file failing at once stops signing — `A_read_listing_only_failures_stops_signing_and_unpublishes_the_deleted_key`.
+  (Agreed scope) startup refuses a dropped key only when it is due to sign; a reported failure has no dates, so beside a usable key it is never due and never
+  refuses startup — `A_reported_failure_is_never_the_key_due_to_sign_and_never_shortens_coverage`. A listing of only failures still fails startup —
+  `Build_throws_the_reported_failures_rather_than_no_keys_when_the_source_lists_only_failures`.
+  **Not covered:** a lock or I/O error on one file is reported by the same catch as the password-source case, but no test drives one; Unix file locks are advisory.
+  #823's residual "a provider's own per-key failure still fails `ReadAsync`" is closed: its cited test now proves a per-entry report.
+
+## 2026-10-14 — encrypted PEM private keys with a per-file password (#917, code frozen at `1949883`)
+Copilot code lens (Highs fixed, two fix diffs verified), security lens (xhigh; Mediums fixed, fix diff verified), the security agent (sign-off; fix diff verified),
+and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `72166dc`, `dcf54be`, `c52031b`, `4d696b4` and `1949883` were read by the main session and the PR bots only.
+- Listing judges a PEM key by label, header and encryption parameters, never importing a plain key; with a password, no other key copy may sit in either file. Closed —
+  `ReadAsync_reads_only_the_label_of_a_separate_key_file`, `ReadAsync_rejects_a_plain_key_file_when_a_password_is_configured`, `ReadAsync_rejects_an_encrypted_key_file_without_a_password_at_listing`,
+  `ReadAsync_rejects_a_plain_key_after_an_encrypted_one_in_the_certificate_file`, `ReadAsync_rejects_a_weakly_encrypted_key_copy_in_the_certificate_file`, `ReadAsync_rejects_a_second_encrypted_key_in_the_key_file`.
+- Only PBES2 + PBKDF2 at 2048+ iterations + AES-CBC is accepted, judged before the password is fetched; legacy OpenSSL keys are refused anywhere. Closed —
+  `ReadAsync_rejects_a_key_encrypted_with_a_PBES1_scheme`, `ReadAsync_rejects_a_key_encrypted_with_fewer_than_2048_PBKDF2_iterations`,
+  `ReadAsync_rejects_a_key_encrypted_with_a_cipher_other_than_AES_CBC`, `ReadAsync_refuses_a_legacy_encrypted_key_beside_a_valid_pkcs8_one`.
+- Reverses the #823 rule that listing imports no private key: an encrypted key is decrypted, paired and disposed once per version of its files; a failure is retried. Closed —
+  `ReadAsync_rejects_a_wrong_password_at_listing`, `ReadAsync_fetches_the_password_only_when_the_key_file_changes`, `ReadAsync_pairs_the_key_again_when_only_the_certificate_file_changes`, `ReadAsync_retries_a_rejected_password_on_the_next_read`,
+  `ReadAsync_rejects_an_encrypted_key_that_does_not_belong_to_its_certificate`; signing re-checks the files — `CreateSignerAsync_refuses_a_plain_key_added_after_listing`.
+- The password never appears in a failure; a null, empty or throwing source is `password_unavailable`, but a cancellation still fails the whole read,
+  as #908 recorded (`ReadAsync_lets_a_cancellation_from_one_bundle_fail_the_whole_read`, through the shared `SigningFilePassword`). Closed — `CreateSignerAsync_rejects_a_wrong_password_under_its_own_code_without_leaking_it`,
+  `ReadAsync_reports_a_password_source_that_returns_an_empty_string_as_password_unavailable`, `ReadAsync_reports_a_password_source_that_throws_as_password_unavailable_without_its_message`.
+- **Accepted residuals (maintainer):** plain keys are not paired at listing — `ReadAsync_reads_only_the_label_of_a_separate_key_file`. A password rotated at its source without a file change
+  is unseen until a new signer is created; a signer already open keeps signing — `A_password_rotated_without_a_file_change_is_seen_only_by_the_next_signer`.
+  **Not covered:** key text sits in managed strings (the PEM-string hygiene chore); the password is defense in depth against offline exposure, not against the process identity.
+
+## 2026-10-14 — a PKCS#12 private key reaches memory, never a platform key store (#434, code frozen at `975de49`)
+Copilot code lens (Highs fixed, fix diff verified), security lens (xhigh), the security agent (sign-off), and the PR's CodeQL, CodeScene and Copilot review; no
+High or Critical open. `ac69445`, `29c14bd`, `a3481a5` and `975de49` were read by the main session and the PR bots only.
+- PFX signing imports the key bag into an in-memory `RSA`/`ECDsa`; no certificate carrying a private key is built, so Windows writes no key container. Closed —
+  `CreateSignerAsync_never_constructs_a_certificate_carrying_a_private_key` (Windows, with a negative control proving the snapshot sees a certificate-backed load).
+  Every `X509CertificateLoader.LoadPkcs12*` overload is a build error (RS0030) in the FileSystem and Azure Key Vault packages, so `EphemeralKeySet` cannot return either.
+- The signer imports the key bag paired with the certificate the listing published, by the listing's own selection, and refuses a key not of its certificate's type, RSA or EC. Closed —
+  `CreateSignerAsync_imports_the_key_bag_paired_to_the_certificate_the_read_reported`, `CreateSignerAsync_opens_the_same_certificate_the_read_reported_for_a_chain_bundle`,
+  `CreateSignerAsync_throws_invalid_pfx_when_the_paired_key_is_not_the_certificates_key_type`, `CreateSignerAsync_throws_invalid_pfx_when_the_paired_key_bag_is_neither_RSA_nor_EC`,
+  `CreateSignerAsync_throws_invalid_pfx_when_an_EC_key_is_paired_with_a_certificate_that_is_neither_RSA_nor_EC`.
+- A wrong password or a stripped key fails signing as `invalid_pfx`, naming no parser text. Closed — `CreateSignerAsync_throws_invalid_pfx_for_a_wrong_password_rather_than_leaking_the_raw_crypto_error`,
+  `CreateSignerAsync_throws_invalid_pfx_when_a_bundle_that_has_since_lost_its_key_is_asked_to_sign`, `CreateSignerAsync_names_the_parser_exception_type_rather_than_copying_its_message`.
+- The Key Vault cached reader imports RSA and EC, plain and shrouded, through the same helper with its failure codes unchanged; its tests are unmodified. Closed —
+  `ExtractPrivateKey_parses_a_real_keyvault_exported_rsa_certificate_secret`, `ExtractPrivateKey_parses_a_real_keyvault_exported_ec_certificate_secret`,
+  `ExtractPrivateKey_imports_an_rsa_key_from_a_plain_unencrypted_key_bag`, `ExtractPrivateKey_imports_an_ec_key_from_a_plain_unencrypted_key_bag`,
+  `ExtractPrivateKey_rejects_a_shrouded_key_bag_that_is_neither_rsa_nor_ec`, `ExtractPrivateKey_throws_actionable_exception_when_certificate_has_no_private_key`,
+  `GetPrivateKeyMaterialAsync_disposes_both_handles_when_neither_rsa_nor_ec_can_import_the_key`.
+  **Not covered:** an import the platform refuses for a real RSA/EC key (FIPS policy) reports as "neither RSA nor EC" with no inner cause.
+
+## 2026-10-14 — signing review follow-ups: certificate-only PEM files, wiped PEM buffers, root-first chains (#918, code frozen at `f1c4709`)
+Copilot code lens (Highs fixed, fix diff verified), security lens (High fixed, fix diff verified), the security agent (sign-off; two fix diffs verified, the last at `639ac35`),
+and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `46e9ad7`, `48f4c2e` and the merge `f1c4709` were read by the main session and the PR bots only.
+- A certificate-only file may be world-readable, but not replaceable through its mode bits, broad-principal ACL entries or ownership: Unix refuses group/other write and any owner but root or the effective uid (`fstat` on the open handle);
+  Windows refuses broad-principal write, delete, ACL change or take-ownership, and any owner but the process identity, SYSTEM or Administrators. Closed —
+  `ReadAsync_accepts_a_world_readable_certificate_only_file_beside_an_owner_only_key_file`, `ReadAsync_rejects_a_certificate_only_file_writable_by_group_or_other_on_Unix`,
+  `IsTrustedOwner_trusts_root_and_the_process_user_only`, `GetOwnerUid_of_a_file_the_test_created_is_the_effective_uid`,
+  `ReadAsync_rejects_a_certificate_only_file_a_broad_principal_may_write_or_take_over_on_Windows`, `IsTrustedOwner_on_Windows_trusts_the_process_identity_SYSTEM_and_Administrators_only`.
+- A certificate-only file carries no private key marker at all, and under a password no unencrypted key boundary may sit beside the encrypted key. Closed —
+  `ReadAsync_rejects_a_private_key_in_a_certificate_only_file_without_a_password`, `ReadAsync_rejects_a_certificate_only_file_carrying_a_private_key_without_its_footer`,
+  `ReadAsync_rejects_an_encrypted_key_beside_a_plaintext_copy_that_lost_its_footer`.
+- PEM text lives in a pooled buffer wiped before it is returned, never in a string, on listing and signing. Closed — `Decode_wipes_the_input_bytes`,
+  `Dispose_wipes_the_buffer_before_returning_it_to_the_pool`, `Dispose_twice_returns_the_buffer_once`.
+- A chain whose first certificate is marked as a CA is refused; a lone CA-marked certificate is accepted. Closed — `ReadAsync_rejects_a_chain_file_whose_first_certificate_is_a_ca`,
+  `ReadAsync_accepts_a_lone_self_signed_certificate_marked_as_a_ca`, `CreateSignerAsync_reports_a_chain_reordered_root_first_after_listing_as_certificate_is_a_ca`.
+- **Accepted residuals (maintainer):** no test drives the Unix owner reject path through the real `fstat` (needs `chown` as root) — `IsTrustedOwner_trusts_root_and_the_process_user_only` proves the policy.
+  A version 1 root placed first is not caught at listing; it fails at the handover's pairing. **Not covered:** the macOS x86_64 `$INODE64` binding runs on no CI leg.
+  A write grant to a named Windows account, or a POSIX ACL entry, is not inspected — the same model the key-file check has always used, so this sign-off does not claim the file is writable by its owner alone.

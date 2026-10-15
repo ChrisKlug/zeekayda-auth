@@ -1,141 +1,207 @@
-using System.Collections.Immutable;
-
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// Builds a <see cref="SigningKeySet"/> from a <see cref="SourceKeySet"/>: the single choke point
-/// where a weak, mismatched, or ambiguously identified signing key is rejected.
-/// </summary>
-/// <remarks>
-/// <para>
-/// A pure, total function: no clock, no policy object, no I/O. It runs entirely over public data,
-/// before any private key material exists, and always derives every <c>kid</c> from the key's own
-/// public material via <see cref="JwkThumbprint"/> — a caller cannot supply one.
-/// </para>
-/// <para>
-/// Every rejection throws <see cref="ZeeKayDaConfigurationException"/>; this method never returns
-/// a partial <see cref="SigningKeySet"/>.
-/// </para>
-/// </remarks>
-public static class SigningKeySetBuilder
+/// <summary>Turns what a source lists into a <see cref="SigningKeyTimeline"/>, dropping unusable keys and refusing an ambiguous list.</summary>
+internal static partial class SigningKeySetBuilder
 {
     /// <summary>
-    /// Builds a <see cref="SigningKeySet"/> from <paramref name="keys"/>, validating every key
-    /// before any is included.
+    /// The order that decides which key is newer: a later <see cref="SigningKey.NotBefore"/>, then on
+    /// equal dates the ordinally greater source id.
     /// </summary>
-    /// <param name="keys">The keys reported by a signing key source.</param>
-    /// <returns>The validated, immutable key set.</returns>
-    /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="keys"/> is <see langword="null"/>.
-    /// </exception>
-    /// <exception cref="ZeeKayDaConfigurationException">
-    /// Thrown with failure code <c>signing.empty_key_id</c> when a key's source id is empty or
-    /// whitespace; <c>signing.duplicate_key_id</c> when two keys share a source id;
-    /// <c>signing.undefined_algorithm</c> when a key declares an undefined
-    /// <see cref="SigningAlgorithm"/> value; <c>signing.key_algorithm_mismatch</c> or
-    /// <c>signing.ec_curve_algorithm_mismatch</c> when a key's declared algorithm does not match its
-    /// key type or EC curve; <c>signing.rsa_key_too_small</c> or <c>signing.ec_unsupported_curve</c>
-    /// when a key fails minimum key-strength requirements; <c>signing.invalid_public_key</c> when a
-    /// key's public material is not structurally valid; or <c>signing.duplicate_kid</c> when two
-    /// keys derive the same <c>kid</c>.
-    /// </exception>
-    public static SigningKeySet Build(SourceKeySet keys)
+    internal static readonly IComparer<SigningKey> OldestFirst = Comparer<SigningKey>.Create((x, y) =>
     {
-        ArgumentNullException.ThrowIfNull(keys);
+        var byDate = x.NotBefore.CompareTo(y.NotBefore);
+        return byDate != 0 ? byDate : string.CompareOrdinal(x.SourceId.Value, y.SourceId.Value);
+    });
+
+    /// <summary>Validates <paramref name="listing"/> against <paramref name="algorithm"/> and builds its timeline.</summary>
+    /// <exception cref="ZeeKayDaConfigurationException">
+    /// Thrown with failure code <c>signing.undefined_algorithm</c> when <paramref name="algorithm"/> is
+    /// not a defined <see cref="SigningAlgorithm"/> member; <c>signing.no_keys</c> when <paramref name="listing"/>
+    /// holds neither keys nor failures; <c>signing.null_key</c> or <c>signing.null_failure</c> when it
+    /// contains a <see langword="null"/>;
+    /// <c>signing.empty_key_id</c> or <c>signing.duplicate_key_id</c> for a missing or repeated source id,
+    /// among keys and failures alike;
+    /// <c>signing.undated_key</c> when one of two or more keys has no <see cref="SourceKey.NotBefore"/>;
+    /// or, when no key is usable, every dropped key's and every reported failure's failure.
+    /// </exception>
+    internal static SigningKeyTimeline Build(
+        SourceKeyListing listing, SigningAlgorithm algorithm, SigningKeyOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(listing);
+        ArgumentNullException.ThrowIfNull(options);
+        var keys = listing.Keys;
+        ValidateSource(listing, algorithm);
 
         var seenSourceIds = new HashSet<string>(StringComparer.Ordinal);
-        var seenKids = new HashSet<string>(StringComparer.Ordinal);
-        var published = ImmutableArray.CreateBuilder<SigningKey>(keys.Keys.Count);
-        SigningKey? signingKey = null;
+        var usable = new List<SigningKey>(keys.Count);
+        var dropped = new List<DroppedKey>();
 
-        foreach (var sourceKey in keys.Keys)
+        foreach (var sourceKey in keys)
         {
-            var builtKey = BuildAndValidate(sourceKey, seenSourceIds, seenKids);
-            published.Add(builtKey);
+            ValidateListing(sourceKey, keys.Count, seenSourceIds);
 
-            if (ReferenceEquals(sourceKey, keys.SigningKey))
-                signingKey = builtKey;
+            if (TryBuildKey(sourceKey, algorithm, dropped) is { } key)
+                usable.Add(key);
         }
 
-        // Cannot be null: keys.SigningKey is always one of the SourceKey instances in keys.Keys
-        // (SourceKeySet's own constructors guarantee this), so the ReferenceEquals check above
-        // matches exactly once.
-        var advertisedAlgorithms = published
-            .Select(k => k.Algorithm)
-            .Distinct()
-            .OrderBy(a => a)
-            .ToImmutableArray();
+        foreach (var failure in listing.Failures)
+        {
+            ValidateFailure(failure, seenSourceIds);
+            dropped.Add(new DroppedKey(failure.Id, failure.Failure, Dates: null));
+        }
 
-        return new SigningKeySet(signingKey!, published.ToImmutable(), advertisedAlgorithms);
+        if (usable.Count == 0)
+            throw new ZeeKayDaConfigurationException([.. dropped.Select(drop => drop.Failure)]);
+
+        var keyPairs = usable.GroupBy(key => key.Kid, StringComparer.Ordinal).Select(entries => Merge([.. entries])).ToList();
+        return new SigningKeyTimeline(
+            [.. keyPairs.Select(keyPair => keyPair.Key).Order(OldestFirst)],
+            [.. dropped],
+            [.. keyPairs.Where(keyPair => keyPair.SourceIds.Length > 1)],
+            algorithm,
+            options);
     }
 
-    private static SigningKey BuildAndValidate(
-        SourceKey sourceKey, HashSet<string> seenSourceIds, HashSet<string> seenKids)
+    private static void ValidateSource(SourceKeyListing listing, SigningAlgorithm algorithm)
     {
-        var keyLabel = sourceKey.Id.Value;
-
-        if (string.IsNullOrWhiteSpace(keyLabel))
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.empty_key_id",
-                    "A signing key source id is empty or whitespace. Every SourceKey.Id must be a " +
-                    "non-empty, non-whitespace identifier."));
-        }
-
-        if (!seenSourceIds.Add(keyLabel))
-        {
-            throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.duplicate_key_id",
-                    $"The signing key source reported duplicate source id '{keyLabel}'. " +
-                    "Each SourceKey.Id must be unique among the keys reported by ReadAsync."));
-        }
-
-        if (!Enum.IsDefined(sourceKey.Algorithm))
+        if (!Enum.IsDefined(algorithm))
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.undefined_algorithm",
-                    $"Key '{keyLabel}' declares algorithm value {(int)sourceKey.Algorithm}, which is " +
-                    $"not a defined {nameof(SigningAlgorithm)} member."));
+                    $"The signing key source declares algorithm value {(int)algorithm}, which is not a " +
+                    $"defined {nameof(SigningAlgorithm)} member."));
         }
 
-        // Every check below runs keyed on the operator's own source id — never on the derived kid,
-        // which the operator has never typed and would not recognise in a configuration error.
-        // Strength runs first: it is a property of the key alone (is this curve supported at all,
-        // is this modulus big enough), so a globally-unsupported curve is reported as that rather
-        // than as an algorithm/curve pairing mismatch — a property of the combination, checked next.
-        SigningAlgorithms.ValidateKeyStrength(sourceKey.Algorithm, sourceKey.PublicKey, keyLabel);
-        SigningAlgorithms.ValidateKeyAlgorithmCompatibility(sourceKey.Algorithm, sourceKey.PublicKey, keyLabel);
-
-        // Imports the public material into the BCL's own cryptographic provider, rejecting
-        // structural garbage (an off-curve EC point, a non-canonical RSA key) the checks above
-        // cannot catch, and returns a canonical copy fully decoupled from whatever PublicKeyParameters
-        // instance the source itself still holds a reference to.
-        var canonicalPublicKey = SigningAlgorithms.ImportAndCanonicalize(sourceKey.PublicKey, keyLabel);
-        var kid = DeriveKid(canonicalPublicKey);
-
-        if (!seenKids.Add(kid))
+        if (listing.Keys.Count == 0 && listing.Failures.Count == 0)
         {
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
-                    "signing.duplicate_kid",
-                    $"The signing key source reported duplicate kid '{kid}', derived from the public " +
-                    $"key of source id '{keyLabel}'. Each key must have a unique, stable " +
-                    "kid — check for two distinct source ids sharing the same public key."));
+                    "signing.no_keys",
+                    "The signing key source listed no keys. ReadAsync must list at least one key."));
         }
-
-        return new SigningKey(
-            sourceKey.Id, kid, sourceKey.Algorithm, canonicalPublicKey, sourceKey.ExpiresAt, sourceKey.NotBefore);
     }
 
     /// <summary>
-    /// Derives the <c>kid</c> via <see cref="JwkThumbprint"/>. <paramref name="publicKey"/> has
-    /// already passed <see cref="SigningAlgorithms.ImportAndCanonicalize"/> by the time this runs, so
-    /// its curve is always one <see cref="JwkThumbprint"/> accepts — the unsupported-curve branch is
-    /// unreachable here, not a possible outcome this method needs to translate.
+    /// The problems that make the list itself ambiguous: a key that cannot be told apart from another,
+    /// or an undated key, which has no place in the ordering and so can only stand alone.
     /// </summary>
+    private static void ValidateListing(SourceKey? key, int keyCount, HashSet<string> seenSourceIds)
+    {
+        if (key is null)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.null_key",
+                    "The signing key source listed a null key. Every element ReadAsync returns must be non-null."));
+        }
+
+        var keyLabel = key.Id.Value;
+        ValidateSourceId(keyLabel, seenSourceIds);
+
+        if (key.NotBefore == DateTimeOffset.MinValue && keyCount > 1)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.undated_key",
+                    $"Key '{keyLabel}' has no NotBefore date, but the source lists {keyCount} keys. " +
+                    "When a source lists more than one key, every key must be dated so the newest can be found."));
+        }
+    }
+
+    private static void ValidateFailure(SourceKeyFailure? failure, HashSet<string> seenSourceIds)
+    {
+        if (failure?.Failure is null)
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.null_failure",
+                    "The signing key source reported a null failure. Every SourceKeyFailure ReadAsync " +
+                    "returns, and its Failure, must be non-null."));
+        }
+
+        ValidateSourceId(failure.Id.Value, seenSourceIds);
+    }
+
+    private static void ValidateSourceId(string? sourceId, HashSet<string> seenSourceIds)
+    {
+        if (string.IsNullOrWhiteSpace(sourceId))
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.empty_key_id",
+                    "A signing key source id is empty or whitespace. Every SourceKey.Id and " +
+                    "SourceKeyFailure.Id must be a non-empty, non-whitespace identifier."));
+        }
+
+        if (!seenSourceIds.Add(sourceId))
+        {
+            throw new ZeeKayDaConfigurationException(
+                new ZeeKayDaConfigurationFailure(
+                    "signing.duplicate_key_id",
+                    $"The signing key source reported duplicate source id '{sourceId}'. Each source id " +
+                    "must be unique among the keys and failures reported by ReadAsync."));
+        }
+    }
+
+    /// <summary>
+    /// Builds <paramref name="sourceKey"/>, or adds it to <paramref name="dropped"/> with the first
+    /// problem in its material or dates and returns <see langword="null"/>.
+    /// </summary>
+    private static SigningKey? TryBuildKey(SourceKey sourceKey, SigningAlgorithm algorithm, List<DroppedKey> dropped)
+    {
+        try
+        {
+            // Strength first: an unsupported curve is reported as that, not as a curve/algorithm mismatch.
+            ValidateKeyStrength(sourceKey);
+            ValidateKeyAlgorithmCompatibility(sourceKey, algorithm);
+
+            var canonicalPublicKey = ImportAndCanonicalize(sourceKey);
+            ValidateValidityWindow(sourceKey);
+            return new SigningKey(
+                sourceKey.Id, DeriveKid(canonicalPublicKey), algorithm, canonicalPublicKey, sourceKey.NotBefore, sourceKey.ExpiresAt);
+        }
+        catch (ZeeKayDaConfigurationException ex)
+        {
+            dropped.Add(new DroppedKey(sourceKey.Id, ex.AggregatedFailures[0], (sourceKey.NotBefore, sourceKey.ExpiresAt)));
+            return null;
+        }
+    }
+
+    private static void ValidateValidityWindow(SourceKey key)
+    {
+        if (key.NotBefore < key.ExpiresAt)
+            return;
+
+        throw new ZeeKayDaConfigurationException(
+            new ZeeKayDaConfigurationFailure(
+                "signing.invalid_validity_window",
+                $"Key '{key.Id.Value}' expires at {key.ExpiresAt:O}, which is not after its NotBefore {key.NotBefore:O}."));
+    }
+
+    /// <summary>
+    /// The entries listing one key pair as one key, opening through the entry that expires last: that
+    /// certificate is the one still valid at the end.
+    /// </summary>
+    private static MergedKey Merge(IReadOnlyList<SigningKey> entries)
+    {
+        var lastToExpire = entries
+            .OrderBy(entry => entry.ExpiresAt)
+            .ThenBy(entry => entry.SourceId.Value, StringComparer.Ordinal)
+            .Last();
+
+        var key = new SigningKey(
+            lastToExpire.SourceId,
+            lastToExpire.Kid,
+            lastToExpire.Algorithm,
+            lastToExpire.PublicKey,
+            entries.Min(entry => entry.NotBefore),
+            lastToExpire.ExpiresAt);
+
+        return new MergedKey(key, [.. entries.Select(entry => entry.SourceId).OrderBy(id => id.Value, StringComparer.Ordinal)]);
+    }
+
+    /// <summary>Safe for any key past <see cref="ImportAndCanonicalize"/>, whose curve <see cref="JwkThumbprint"/> accepts.</summary>
     private static string DeriveKid(PublicKeyParameters publicKey) =>
         publicKey.KeyType == SigningKeyType.Rsa
             ? JwkThumbprint.Compute(publicKey.RsaPublicParameters!.Value)

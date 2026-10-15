@@ -42,8 +42,8 @@ created secrets — existing secrets continue to verify correctly at their origi
 > the timing of real verifications against old credentials. For this reason, iteration count
 > increases should be paired with a credential rotation step.
 
-The accepted range is **600,000 to 2,000,000**; a value outside it fails startup with an
-`OptionsValidationException`. The minimum matches the OWASP recommendation for PBKDF2-HMAC-SHA256
+The accepted range is **600,000 to 2,000,000**; a value outside it fails startup with a
+`ZeeKayDaConfigurationException` carrying the code `configuration.pbkdf2.iterations_out_of_range`. The minimum matches the OWASP recommendation for PBKDF2-HMAC-SHA256
 as of 2025. At the maximum a single verification takes roughly one second on typical server
 hardware, making the token endpoint impractical under any real load.
 
@@ -70,19 +70,19 @@ The interface all hasher implementations must satisfy.
 ```csharp
 public interface IClientSecretHasher
 {
-    bool CanHandle(IClientSecret secret);
-    bool Verify(IClientSecret stored, ReadOnlySpan<char> presented);
-    IClientSecret Create(ReadOnlySpan<char> plaintext);      // primary — memory-safe
-    IClientSecret Create(string plaintext);                    // convenience — delegates to span overload
+    IReadOnlySet<string> AlgorithmIds { get; }
+    bool Verify(ReadOnlySpan<char> presented, ClientSecret stored);
+    ClientSecret Create(ReadOnlySpan<char> plaintext);
+    IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored) => [];
 }
 ```
 
 | Member | Behaviour |
 |---|---|
-| `CanHandle` | Returns `true` when this hasher can verify or create credentials of the given type. |
-| `Verify` | Returns `false` on mismatch or internal error. Never throws. |
-| `Create(ReadOnlySpan<char>)` | Primary overload. Creates a new hashed credential from a span. Throws `ArgumentException` for empty or whitespace-only input. Spans cannot be null. |
-| `Create(string)` | Convenience overload. Delegates to the span overload after a null check. Throws `ArgumentNullException` for null input; throws `ArgumentException` for empty or whitespace-only input. |
+| `AlgorithmIds` | The PHC algorithm ids this hasher owns, for example `pbkdf2-sha256`. Each is 1–32 characters from `[a-z0-9-]`; two hashers declaring one id fail startup. |
+| `Verify` | Verifies a presented secret against a stored one whose id this hasher declared. Returns `false` on mismatch or on a value it cannot read; a throw counts as a failed verification. Compare in fixed time. |
+| `Create` | Hashes a new secret. The framework has already refused empty and whitespace-only input, and refuses a result whose id this hasher did not declare. |
+| `ValidateStoredSecret` | Optional. What is wrong with a stored secret this hasher owns — an unreadable value, a work factor below its floor. Runs wherever a client registration is validated. |
 
 ### `ClientSecretHasher<TSecret>` abstract base class
 
@@ -94,29 +94,37 @@ fallback string allocation.
 
 ---
 
-## `IClientSecretFactory`
+## `ClientSecrets`
 
 *Added in Unreleased.*
 
-`IClientSecretFactory` is the injectable seam for hashing new client secrets at runtime. It
+`ClientSecrets` is the framework's service for hashing new client secrets at runtime. It is a
+sealed class with an internal constructor: inject it, never implement or replace it. It
 delegates to the configured default `IClientSecretHasher` — whichever hasher was marked as
 default via `AddClientSecretHasher<T>(isDefault: true)` — so you never need to hard-code an
 algorithm in your repository or admin layer.
 
 ```csharp
-public interface IClientSecretFactory
+public sealed class ClientSecrets
 {
-    IClientSecret Create(string plaintext);
+    public ClientSecret Create(string plaintext);
+    public ClientSecret Create(ReadOnlySpan<char> plaintext);
+    public SecretVerification Verify(ReadOnlySpan<char> presented, IReadOnlyCollection<ClientSecret> stored);
 }
 ```
 
-`IClientSecretFactory` is registered automatically by `AddZeeKayDaAuth` as a singleton via
-`TryAddSingleton`. You do not need to call `AddClientSecretHasher` before injecting it —
+`Verify` is what a custom `IClientAuthenticator` calls with `context.Client.Secrets`: it pads every
+failure to one fixed cost, so the response time reveals neither whether the client exists nor how
+many secrets it holds. Return its outcome with `ClientAuthenticationResult.From(...)`; refuse a
+malformed request with `ClientAuthenticationResult.NotValid()`, which the token endpoint pads to the
+same cost.
+
+`ClientSecrets` is registered automatically by `AddZeeKayDaAuth` as a singleton. You do not need to call `AddClientSecretHasher` before injecting it —
 registration order does not matter as long as both calls occur before the host is built.
 
-### Who should use this interface
+### Who should use this service
 
-`IClientSecretFactory` is for custom `IClientRepository` implementations that need to hash
+`ClientSecrets` is for custom `IClientRepository` implementations that need to hash
 secrets at write time — for example:
 
 - An admin API endpoint that issues new client credentials
@@ -124,35 +132,36 @@ secrets at write time — for example:
 - Future support for [RFC 7591 Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591)
 
 If your clients are registered at startup using the `AddInMemoryClients` builder, you do not
-need this interface. The builder handles hashing automatically when you call `AddConfidential`:
+need this service. The builder hashes a plaintext `Secret` automatically when the host starts:
 
 ```csharp
 auth.AddInMemoryClients(clients =>
 {
-    clients.AddConfidential(
-        clientId:               "my-api-client",
-        clientSecret:           "s3cr3t",
-        redirectUris:           ["https://myapp.example.com/callback"],
-        postLogoutRedirectUris: ["https://myapp.example.com/signed-out"],
-        allowedScopes:          ["openid", "profile", "my-api"]);
+    clients.AddConfidential("my-api-client", client =>
+    {
+        client.Secret = configuration["ClientSecrets:MyApiClient"];
+        client.RedirectUris.Add("https://myapp.example.com/callback");
+        client.PostLogoutRedirectUris.Add("https://myapp.example.com/signed-out");
+        client.AllowedScopes.UnionWith(["openid", "profile", "my-api"]);
+    });
 });
 ```
 
-### Injecting `IClientSecretFactory`
+### Injecting `ClientSecrets`
 
-Inject the interface through the constructor of your custom `IClientRepository`:
+Inject the service through the constructor of your custom `IClientRepository`:
 
 ```csharp
 public sealed class MyClientRepository : IClientRepository
 {
-    private readonly IClientSecretFactory _secretFactory;
+    private readonly ClientSecrets _secrets;
 
-    public MyClientRepository(IClientSecretFactory secretFactory)
-        => _secretFactory = secretFactory;
+    public MyClientRepository(ClientSecrets secrets)
+        => _secrets = secrets;
 
     public async Task RegisterClientAsync(string clientId, string plaintextSecret)
     {
-        IClientSecret credential = _secretFactory.Create(plaintextSecret);
+        ClientSecret credential = _secrets.Create(plaintextSecret);
         // persist credential to your store...
     }
 }
@@ -170,14 +179,14 @@ public sealed class MyClientRepository : IClientRepository
 
 ### Lifetime
 
-`IClientSecretFactory` is registered with `TryAddSingleton`. The `CompositeClientSecretHasher`
-that backs it is also a singleton. Injecting `IClientSecretFactory` into a singleton
+`ClientSecrets` is registered with `TryAddSingleton`. The registry
+of hashers behind it is also a singleton. Injecting `ClientSecrets` into a singleton
 `IClientRepository` is safe — no captive-dependency issue arises.
 
 ### See also
 
 - [Implement a custom client repository](../how-to/implement-custom-extension-points.md#5-implement-a-custom-client-repository) — full example with `IClientRegistrationValidator`
-- [`IClientSecretHasher`](#iclientsecrethashert) — the per-algorithm interface that `IClientSecretFactory` delegates to
+- [`IClientSecretHasher`](#iclientsecrethashert) — the per-algorithm interface that `ClientSecrets` delegates to
 
 ---
 
@@ -213,7 +222,7 @@ char[] presented = /* read from network buffer */;
 bool valid;
 try
 {
-    valid = hasher.Verify(storedSecret, presented.AsSpan());
+    valid = hasher.Verify(presented.AsSpan(), storedSecret);
 }
 finally
 {
@@ -241,20 +250,19 @@ public static ZeeKayDaAuthBuilder AddClientSecretHasher<THasher>(
 | Parameter | Type | Description |
 |---|---|---|
 | `builder` | `ZeeKayDaAuthBuilder` | The builder returned by `AddZeeKayDaAuth`. |
-| `isDefault` | `bool` | When `true`, this hasher creates new secrets and generates the timing-pad dummy credential at startup. See below. |
+| `isDefault` | `bool` | When `true`, this hasher creates new secrets instead of PBKDF2. See below. |
 
 **Return value:** The same `builder` for method chaining.
 
 ### `isDefault` rules
 
-| Registered hashers | `isDefault` requirement |
-|---|---|
-| Exactly 1 | Auto-default — the flag is ignored |
-| 2 or more | Exactly one must have `isDefault: true`; zero or multiple defaults cause a startup failure |
+PBKDF2 is always registered. At most one hasher may have `isDefault: true`:
 
-Startup validation is enforced by `IValidateOptions<ClientSecretHasherRegistrationOptions>` via
-`ValidateOnStart()`. A misconfigured hasher registration prevents the host from starting and is
-visible in the startup output.
+| Hashers marked `isDefault: true` | Default hasher |
+|---|---|
+| None | PBKDF2 |
+| One | That hasher; PBKDF2 stays registered and keeps verifying existing PBKDF2 secrets |
+| Two or more | None — startup fails with `ZeeKayDaConfigurationException` `configuration.hashers.multiple_defaults` |
 
 ---
 

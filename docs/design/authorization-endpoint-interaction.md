@@ -67,7 +67,7 @@ instance that appeared into a throwaway `AuthenticationOptions`. Every route int
 `builder.AddScheme`, `AddRemoteScheme`, `AddPolicyScheme`, and a raw `IAuthenticationHandler`
 added by writing `AuthenticationOptions.AddScheme` directly — ends as that one descriptor, so the
 replay sees them identically (verified against ASP.NET Core 10.0 with one of each). What the replay
-found is the provider set: `ILoginInteraction.Providers`, and the only names `ChallengeAsync`
+found is the provider set: `LoginRequest.Providers`, and the only names `ChallengeAsync`
 will accept.
 
 Then the descriptors are **removed** from the collection. The host's `AuthenticationOptions` never
@@ -140,7 +140,7 @@ which fails closed at request time rather than at startup — accepted.
   neither complete nor cancel a live authorization request. `server_error` is never sent from
   here: a client that does not hear back is in the same position as one whose user closed the
   tab. A handler outside the base class has no refusal channel, so its failures render locally.
-- *Challenge.* `ILoginInteraction.ChallengeAsync` activates the handler and calls its
+- *Challenge.* `LoginInteraction.ChallengeAsync` activates the handler and calls its
   `ChallengeAsync` with a `RedirectUri` of `/connect/resume?zkd_i=<id>` under the issuer path,
   derived through the same route helper as the callback, so a path-based issuer completes.
 
@@ -204,14 +204,14 @@ anything else on NuGet for free.
 
 ```
 /connect/authorize          validates (two phases below), stores the context, writes zkd.interaction.<id>; no session →
-  → LoginPath?zkd_i=<id>    (local)   host page ends with ILoginInteraction.SignInAsync — terminal
+  → LoginPath?zkd_i=<id>    (local)   host page ends with LoginInteraction.SignInAsync — terminal
   → ChallengeAsync("facebook") (external)  ZeeKayDa activates the Facebook handler and sets its RedirectUri
       → facebook.com → /connect/callback/facebook   ZeeKayDa endpoint hands the request to the
                                                     Facebook handler: OAuth mechanics, signs into
                                                     zkd.external
         → /connect/resume   ZeeKayDa endpoint: reads zkd.external, fires OnProviderSignIn,
                             promotes to zkd.session, then the consent check below
-  → ConsentPath?zkd_i=<id>  (client requires consent)  host page ends with IConsentInteraction
+  → ConsentPath?zkd_i=<id>  (client requires consent)  host page ends with ConsentInteraction
                             .GrantAsync or .DenyAsync — terminal → code → client
 ```
 
@@ -245,35 +245,33 @@ sign-in is an in-process form post that shares none of that lifecycle, so it is 
 `InteractionOptions.SupportsLocalSignIn`, default `true` — not a list entry. Modelling it as a
 provider would mean a fake scheme or a null object, and the abstraction leaks immediately.
 
-**One page, not two.** The login page is also the provider-selection page: `ILoginInteraction`
-exposes `LocalLoginEnabled` and the configured `Providers`, and the host renders a credential form,
+**One page, not two.** The login page is also the provider-selection page: its `LoginRequest`
+carries `LocalLoginEnabled` and the configured `Providers`, and the host renders a credential form,
 a row of provider buttons, or both. No second path option, no second interaction service.
 
-**`LoginPath` presence is the dispatch override — the framework never skips a page the host
-built.** An authorization request that needs authentication dispatches:
+**Whether a page is needed decides dispatch; `LoginPath` (default `/login`) is only its address.**
+An authorization request that needs authentication dispatches:
 
-1. `LoginPath` set → redirect there, always.
-2. `LoginPath` unset, local off, exactly one provider → challenge that provider directly. The
+1. Local off, no providers → startup **error**.
+2. Local off, exactly one provider → challenge that provider directly, whatever `LoginPath` is. The
    user never sees a ZeeKayDa-controlled page, so cancellation happens at the provider and
    arrives at the callback endpoint as a failure, answered as `access_denied` at the client's
    registered redirect URI (the callback failure path under Host registration; #606 interplay).
-3. `LoginPath` unset but the page is needed — local on, or two or more providers → `server_error`
-   at the client's redirect, and a startup warning said so first.
-4. Local off, no providers → startup **error**.
+3. Otherwise `LoginPath` → redirect there.
+4. `LoginPath` set to `null` when the page is needed → `server_error` at the client's redirect,
+   and a startup warning said so first.
 
-A host that wants a branding or terms landing page with a single provider sets `LoginPath`; one
-that wants the straight-to-provider redirect leaves it unset. Intent is stated by building the
-page, which cannot be done by accident. Note the consequence: adding a second provider to a
-`LoginPath`-less, local-off host moves it from rule 2 to rule 3 — the framework cannot choose
-between two providers, and the startup warning says so.
+A single-provider host that wants a landing page turns local sign-in on, which makes the page
+needed. Adding a second provider to a local-off host moves it from rule 2 to rule 3: the framework
+cannot choose between two providers.
 
 **Startup checks are gated on `GrantTypesSupported` — there is no separate machine-to-machine
 flag.** `GrantTypesSupported` already declares what the server does. When it lacks
 `AuthorizationCode`, the interactive machinery is declared unused and none of these checks fire —
 that is the clean startup for a `client_credentials`-only host — and `/connect/authorize` is neither
 served nor advertised in discovery, so the endpoint and the metadata agree (#629). When it contains
-`AuthorizationCode`: rule 4 is a startup error (the message offers all three exits — add a
-provider, enable local sign-in, or remove `authorization_code`); rule 3 is a startup warning;
+`AuthorizationCode`: rule 1 is a startup error (the message offers all three exits — add a
+provider, enable local sign-in, or remove `authorization_code`); rule 4 is a startup warning;
 everything else is silent. The conditions are exact, so the warning cries wolf for nobody and has
 no built-in expiry date.
 
@@ -381,7 +379,7 @@ v1, on the same reasoning as the interaction context: without the cookie there i
 the user is, so there is nothing left to store.
 
 **`SsoSessionId` is ZeeKayDa-minted, random and stable for the life of the session.** 128 bits from
-`StoreKeyGenerator`, created at promotion inside `ILoginInteraction.SignInAsync` and carried as a
+`StoreKeyGenerator`, created at promotion inside `LoginInteraction.SignInAsync` and carried as a
 claim in `zkd.session`. The host neither supplies nor sees it. It is **not** the cookie value — that
 is regenerated on every sign-in promotion for fixation resistance, while the id is stable from
 sign-in to sign-out. Re-authentication (`prompt=login`, `max_age`) refreshes `auth_time` and keeps
@@ -435,28 +433,31 @@ One service per page the host builds; the service *is* the protocol knowledge, p
 methods write the redirect response and must be the caller's last action.
 
 ```csharp
-public interface ILoginInteraction   // singleton over IHttpContextAccessor, as are all the page services
+public sealed class LoginInteraction   // singleton over IHttpContextAccessor, as are all the page services
 {
-    // Pure configuration — what the page should render. Frozen at startup.
-    bool LocalLoginEnabled { get; }                       // InteractionOptions.SupportsLocalSignIn
-    IReadOnlyList<ProviderDescriptor> Providers { get; }  // Id + DisplayName, from WithProviders
+    // What the page renders: the client (ClientId + optional DisplayName), LocalLoginEnabled,
+    // the configured Providers, ProviderReturn — the provider the user just came back from
+    // without signing in, Declined or Failed, null on an ordinary arrival — and LoginHint, the
+    // client's login_hint verbatim (at most 256 characters; a hint, never an identity). zkd_i-bound on
+    // SignInAsync's exact terms; stamps the page unframeable and uncacheable, as consent's does.
+    // TryGetRequestAsync answers null instead of throwing when there is nothing to sign in for.
+    Task<LoginRequest> GetRequestAsync(CancellationToken cancellationToken = default);
+    Task<LoginRequest?> TryGetRequestAsync(CancellationToken cancellationToken = default);
 
-    // UNBUILT. The client asking to be signed in to — ClientId plus the registration's optional
-    // DisplayName, as the consent page already gets. Reads the interaction context, so it is
-    // zkd_i-bound on SignInAsync's exact terms; a page that dropped the query string fails on its
-    // first GET.
-    Task<ClientInformation> GetClientInformationAsync();
-
-    // Promotes principal to SSO session, continues the flow (consent → code → redirect).
+    // The framework builds the session principal from subject plus additionalClaims (a sub or
+    // NameIdentifier claim is refused; zkd:* is stripped) and promotes it to the SSO session,
+    // continues the flow (consent → code → redirect). The claims are held on the session only —
+    // tokens and userinfo get theirs from IClaimsProvider. [] omits amr.
     // Auto-consumes a principal parked for the interaction. Terminal. Throws ZeeKayDaInteractionException
     // when the request carries no zkd_i, when there is no interaction context, or when the two
     // name different interactions (see #593 for the future [Authorize]-driven mode).
-    Task SignInAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
+    Task SignInAsync(string subject, string authenticationMethod, params Claim[] additionalClaims);
+    Task SignInAsync(string subject, IEnumerable<string> authenticationMethods, params Claim[] additionalClaims);
 
     // The Cancel button. Ends the request with error=access_denied at the registered redirect
     // URI, establishing no session and leaving an existing one alone. Terminal, zkd_i-bound on
     // SignInAsync's exact terms. Carries a fixed framework error_description naming a cancellation
-    // at sign-in; a client needing to branch gets the opt-in zkd_error sub-code, not the prose.
+    // at sign-in, and zkd_error=login_cancelled for a client registered with EnableZkdErrorCodes.
     Task DenyAsync();
 
     // Starts the external round trip for one configured provider. Terminal, zkd_i-bound on
@@ -466,7 +467,7 @@ public interface ILoginInteraction   // singleton over IHttpContextAccessor, as 
     Task ChallengeAsync(string provider);
 }
 
-public interface IProviderSignInInteraction       // built (#603); the page RedirectToAsync sent the user to
+public sealed class ProviderSignInInteraction       // built (#603); the page RedirectToAsync sent the user to
 {
     // Null when nothing is parked for the interaction — absent, expired, misbound, or from a
     // provider no longer registered — recoverable.
@@ -474,14 +475,16 @@ public interface IProviderSignInInteraction       // built (#603); the page Redi
 
     // Terminal. The framework builds the session principal as auto-promotion would — the derived
     // subject, the provider's claims — plus these additions. A sub or NameIdentifier claim is
-    // refused; zkd:* is stripped. No amr. zkd_i-bound on SignInAsync's terms.
+    // refused; zkd:* is stripped; held on the session only, as at login. No amr. zkd_i-bound on
+    // SignInAsync's terms.
     Task SignInAsync(params Claim[] additionalClaims);
 
-    // Terminal. The host's own principal in place of the parked one — a linked local account —
-    // exactly as ILoginInteraction.SignInAsync takes it, except that a subject equal to the
+    // Terminal. A local account in place of the parked principal — account linking — taking
+    // exactly what LoginInteraction.SignInAsync takes, except that a subject equal to the
     // upstream one the provider returned is refused: the session subject is never the upstream
     // subject verbatim.
-    Task SignInWithReplacedPrincipalAsync(ClaimsPrincipal principal, params string[] authenticationMethods);
+    Task SignInWithReplacedAccountAsync(string subject, string authenticationMethod, params Claim[] additionalClaims);
+    Task SignInWithReplacedAccountAsync(string subject, IEnumerable<string> authenticationMethods, params Claim[] additionalClaims);
 
     // Terminal. error=access_denied naming the provider stage — ProviderSignInContext.DenyAsync's
     // exact description — discarding the interaction and the parked principal.
@@ -490,9 +493,9 @@ public interface IProviderSignInInteraction       // built (#603); the page Redi
 
 // Every refusal is decided on a read of the parked principal before it is taken, so a refused
 // page still has it; the take happens once, and what was taken is what is promoted. The login
-// page's ILoginInteraction.SignInAsync discards a parked principal and records no provider.
+// page's LoginInteraction.SignInAsync discards a parked principal and records no provider.
 
-public interface IConsentInteraction                     // built (#86); every method is zkd_i-bound on
+public sealed class ConsentInteraction                     // built (#86); every method is zkd_i-bound on
 {                                                        // SignInAsync's terms AND refuses when the session
     Task<ConsentRequest> GetRequestAsync(CancellationToken cancellationToken = default);
     Task GrantAsync(IEnumerable<string> scopes);         // terminal; re-intersects, no openid == deny
@@ -526,7 +529,7 @@ public sealed class ProviderSignInContext                // what OnProviderSignI
     public Task RedirectToAsync(PathString path);
 
     // Terminal. error=access_denied at the client's registered redirect URI with a fixed framework
-    // error_description naming the provider stage — ILoginInteraction.DenyAsync's exact terms.
+    // error_description naming the provider stage — LoginInteraction.DenyAsync's exact terms.
     public Task DenyAsync();
 }
 
@@ -568,20 +571,19 @@ re-registering the same name keeps every subject, which is what an operator rota
 an endpoint wants, and what an operator moving the name to a *different* upstream must not do —
 that is a new provider and needs a new name. A host
 that maps external identities onto its own users does so on the page `RedirectToAsync` leads to,
-through that page's own service: `IProviderSignInInteraction.SignInAsync(params Claim[])` has the
+through that page's own service: `ProviderSignInInteraction.SignInAsync(params Claim[])` has the
 framework build the promoted principal — the derived subject, the provider's claims, plus what the
 page collected — and refuses a subject claim, so the page cannot put the raw upstream `sub` into
-the session; `SignInWithReplacedPrincipalAsync` is for linking to a local account, where the host's
-own principal, subject included, replaces the parked one — and is refused when that subject is the
-upstream one. Both consume the parked principal. One service per host page: the login page's
-`ILoginInteraction` does not read the parked principal.
+the session; `SignInWithReplacedAccountAsync` is for linking to a local account, whose subject
+replaces the parked principal — and is refused when that subject is the upstream one. Both consume the parked principal. One service per host page: the login page's
+`LoginInteraction` does not read the parked principal.
 `OnSigningIn` — **unbuilt** — will fire for every sign-in just before promotion, no interrupt,
 and shapes the *session* principal only: token claims never come from the session, they are
 resolved through `claims-resolution.md`'s provider on every issuance, and for the same reason the
-claims `IProviderSignInInteraction.SignInAsync` adds live in the session, not in any token; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
+claims `ProviderSignInInteraction.SignInAsync` adds live in the session, not in any token; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
 `acr`, `amr`, `zkd:*`) are stripped regardless. Until it exists, a host that wants the session to
 hold something other than what the provider returned redirects to a page of its own and finishes
-there through `IProviderSignInInteraction`; a change to the principal `OnProviderSignIn` receives
+there through `ProviderSignInInteraction`; a change to the principal `OnProviderSignIn` receives
 is not promoted, since the framework promotes its own copy.
 
 ## Request validation (#83)
@@ -604,8 +606,8 @@ served by an error-interaction service, never in the query string.
 always).** `response_type=code`; `response_mode` absent/`query`; `code_challenge` required,
 `S256` only; `request`/`request_uri` → `..._not_supported`; duplicate parameters →
 `invalid_request`; unknown parameters ignored; `prompt`/`max_age` parsed now, behavior in #85/#86.
-`error_description` stays generic (names the parameter, never echoes a value); the detailed channel
-is the opt-in `zkd_error` sub-code per the register.
+`error_description` stays generic (names the parameter, never echoes a value). The opt-in `zkd_error`
+sub-code is for refusals only (`access_denied`); validation errors carry none.
 
 **Scopes: silent narrow.** Effective scope starts as `requested ∩ client.AllowedScopes`
 (RFC 6749 §3.3 sanctions partial ignoring; the granted `scope` is reported in the token response).
@@ -650,9 +652,9 @@ added later without breaking anyone, since loosening validation is non-breaking.
 - **Local sign-in as a provider list entry.** Requires a fake scheme or a null-object provider for
   an in-process form post that shares nothing with the redirect-out-and-back lifecycle; the
   abstraction leaks immediately. It is a flag (#607).
-- **A dedicated option to suppress the single-provider auto-redirect.** `LoginPath` presence
-  already states the intent; a flag would add a second way to say it and a contradiction to
-  resolve (#607).
+- **A dedicated option to suppress the single-provider auto-redirect.** Local sign-in
+  already states whether a page is needed; a flag would add a second way to say it and a
+  contradiction to resolve (#607).
 - **A separate machine-to-machine capability flag.** `GrantTypesSupported` already declares it,
   and a second flag could contradict the first (#607).
 - **A per-user home-realm-discovery callback.** An unauthenticated user-enumeration oracle on the

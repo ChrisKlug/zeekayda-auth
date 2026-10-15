@@ -2,13 +2,13 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
 /// The details of an error that could not be sent back to the client, as surfaced to the host's
-/// error page via <see cref="IErrorInteraction"/>.
+/// error page via <see cref="ErrorInteraction"/>.
 /// </summary>
 public sealed record AuthorizationErrorDetails
 {
     /// <summary>
-    /// What kind of error this is. A page that wants its own wording for an interaction the user
-    /// can no longer continue checks for <see cref="AuthorizationErrorKind.NothingToContinue"/>.
+    /// What kind of error this is, for a page with its own wording for
+    /// <see cref="AuthorizationErrorKind.NothingToContinue"/>.
     /// </summary>
     public required AuthorizationErrorKind Kind { get; init; }
 

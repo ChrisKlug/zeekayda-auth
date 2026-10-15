@@ -8,40 +8,23 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// Carries phase-1 authorization error details from the authorize endpoint to the host's error
-/// page: an encrypted, short-lived cookie holds the details, the redirect carries only an opaque
-/// identifier, and <see cref="ErrorInteraction"/> re-joins the two server-side. Error text never
-/// enters a URL, where it would leak into proxy logs and browser history.
+/// Carries phase-1 error details to the host's error page in an encrypted, short-lived cookie,
+/// the redirect carrying only an opaque identifier: error text never enters a URL.
 /// </summary>
-internal sealed class AuthorizeErrorTransport
+internal sealed class AuthorizeErrorTransport(
+    IDataProtectionProvider dataProtectionProvider,
+    IOptions<AuthorizationServerOptions> serverOptions,
+    TimeProvider timeProvider)
 {
     internal const string CookieName = "zkd.error";
     internal const string QueryParameterName = "error_id";
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:AuthorizeErrorTransport";
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(2);
 
-    private readonly IDataProtector _protector;
-    private readonly TimeProvider _timeProvider;
-    private readonly string? _errorPath;
+    private readonly IDataProtector _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
+    private readonly string? _errorPath = serverOptions.Value.AuthorizationEndpoint.Interaction.ErrorPath;
 
-    public AuthorizeErrorTransport(
-        IDataProtectionProvider dataProtectionProvider,
-        IOptions<AuthorizationServerOptions> serverOptions,
-        TimeProvider timeProvider)
-    {
-        ArgumentNullException.ThrowIfNull(dataProtectionProvider);
-        ArgumentNullException.ThrowIfNull(serverOptions);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-
-        _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
-        _timeProvider = timeProvider;
-        _errorPath = serverOptions.Value.AuthorizationEndpoint.Interaction.ErrorPath;
-    }
-
-    /// <summary>
-    /// Attaches the transport cookie for the given error to the response and returns the opaque
-    /// identifier to carry on the redirect.
-    /// </summary>
+    /// <summary>Attaches the transport cookie and returns the opaque identifier for the redirect.</summary>
     public string CreateAndAttach(HttpContext context, AuthorizationErrorKind kind, string error, string description)
     {
         var id = StoreKeyGenerator.Generate();
@@ -55,7 +38,7 @@ internal sealed class AuthorizeErrorTransport
             writer.WriteString("kind", kind.ToString());
             writer.WriteString("error", error);
             writer.WriteString("description", description);
-            writer.WriteString("expiresAt", _timeProvider.GetUtcNow() + Lifetime);
+            writer.WriteString("expiresAt", timeProvider.GetUtcNow() + Lifetime);
             writer.WriteEndObject();
         }
 
@@ -64,10 +47,7 @@ internal sealed class AuthorizeErrorTransport
         context.Response.Cookies.Append(CookieName, Convert.ToBase64String(protectedValue), new CookieOptions
         {
             HttpOnly = true,
-            // Unconditionally Secure: the route group already refuses non-HTTPS except loopback,
-            // and a TLS-terminating proxy without UseForwardedHeaders must not silently downgrade
-            // the cookie. Loopback development over plain HTTP loses the cookie, which is the
-            // visible failure mode we prefer to an invisible hardening loss.
+            // Even behind a TLS-terminating proxy; plain-HTTP loopback visibly loses the cookie.
             Secure = true,
             SameSite = SameSiteMode.Lax,
             MaxAge = Lifetime,
@@ -78,10 +58,7 @@ internal sealed class AuthorizeErrorTransport
         return id;
     }
 
-    /// <summary>
-    /// Reads the two halves the transport needs — the cookie and the id from the redirect — or
-    /// returns <see langword="false"/> when either is absent.
-    /// </summary>
+    /// <summary>Reads the cookie and the redirect's identifier; <see langword="false"/> when either is absent.</summary>
     private static bool TryGetTransportInputs(HttpContext context, out string cookieValue, out string requestedId)
     {
         requestedId = string.Empty;
@@ -104,11 +81,7 @@ internal sealed class AuthorizeErrorTransport
         return true;
     }
 
-    /// <summary>
-    /// Reads and verifies the transport cookie against the request's error identifier. Returns
-    /// <see langword="null"/> when absent, expired, undecipherable, or mismatched — never throws
-    /// for a malformed inbound value.
-    /// </summary>
+    /// <summary>The verified error details; anything unreadable or mismatched is <see langword="null"/>.</summary>
     public AuthorizationErrorDetails? TryRead(HttpContext context)
     {
         if (!TryGetTransportInputs(context, out var cookieValue, out var requestedId))
@@ -136,7 +109,7 @@ internal sealed class AuthorizeErrorTransport
             return null;
         }
 
-        if (_timeProvider.GetUtcNow() >= expiresAt ||
+        if (timeProvider.GetUtcNow() >= expiresAt ||
             !CryptographicOperations.FixedTimeEquals(
                 System.Text.Encoding.UTF8.GetBytes(id),
                 System.Text.Encoding.UTF8.GetBytes(requestedId)))
@@ -147,10 +120,7 @@ internal sealed class AuthorizeErrorTransport
         return new AuthorizationErrorDetails { Kind = kind, Error = error, Description = description };
     }
 
-    /// <summary>
-    /// The kind the cookie names. A cookie written before kinds existed names none and was a
-    /// rejected request; a name that is not a defined kind makes the cookie unreadable.
-    /// </summary>
+    /// <summary>The kind the cookie names, a rejected request when it names none.</summary>
     private static AuthorizationErrorKind ReadKind(JsonElement root)
     {
         if (!root.TryGetProperty("kind", out var element))

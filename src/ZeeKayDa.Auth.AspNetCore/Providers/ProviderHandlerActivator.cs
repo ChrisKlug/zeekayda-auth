@@ -5,10 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
-/// Activates a provider's handler for one request: what the authentication middleware's handler
-/// provider does for the host's schemes, done here because provider schemes are not in the host's
-/// map. Resolved from the request's services, falling back to constructor injection, then
-/// initialised for the scheme and the request.
+/// Activates a provider's handler for one request, as the authentication middleware does for host
+/// schemes, since provider schemes are not in the host's map.
 /// </summary>
 internal sealed class ProviderHandlerActivator
 {

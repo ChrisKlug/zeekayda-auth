@@ -29,19 +29,10 @@ internal sealed class FakeCertificateKeyExtractor : ICertificateKeyExtractor
         _privateKeyOverridesByThumbprint[thumbprint] = (privateKey, keyType);
 
     /// <summary>
-    /// Every thumbprint <see cref="ExtractPrivateKey"/> has been called for, in call order. A slot
-    /// that is only ever published must never appear here.
+    /// Every thumbprint <see cref="ExtractPrivateKey"/> has been called for, in call order. A
+    /// certificate that is only ever listed, never asked to sign, must never appear here.
     /// </summary>
     public List<string> PrivateKeyExtractions { get; } = [];
-
-    /// <summary>Every thumbprint <see cref="ExtractPublicKey"/> has been called for, in call order.</summary>
-    public List<string> PublicKeyExtractions { get; } = [];
-
-    public (AsymmetricAlgorithm PublicKey, SigningKeyType KeyType) ExtractPublicKey(X509Certificate2 certificate, string thumbprint)
-    {
-        PublicKeyExtractions.Add(thumbprint);
-        return WindowsCertificateKeyExtractor.ExtractPublicKey(certificate, thumbprint);
-    }
 
     public (AsymmetricAlgorithm PrivateKey, SigningKeyType KeyType) ExtractPrivateKey(X509Certificate2 certificate, string thumbprint)
     {

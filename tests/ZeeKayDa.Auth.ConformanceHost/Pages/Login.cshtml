@@ -1,0 +1,26 @@
+@page "/login"
+@model LoginModel
+@{
+    ViewData["Title"] = "Sign in";
+}
+<h1>Sign in</h1>
+
+@if (Model.Failed)
+{
+    <p class="error">The username or password is incorrect.</p>
+}
+
+@* No action attribute: the form posts back to this URL, which keeps the zkd_i parameter the
+   framework added. That is the one thing the page must preserve. *@
+<form method="post">
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" asp-for="Username" />
+
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" />
+
+    <button id="login-submit" class="login-submit" type="submit" name="action" value="login">Sign in</button>
+    <button id="login-cancel" type="submit" name="action" value="cancel">Cancel</button>
+</form>
+
+<p><a href="/register@(Request.QueryString)">Create an account</a></p>

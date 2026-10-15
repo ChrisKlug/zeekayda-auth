@@ -313,7 +313,7 @@ public sealed class EndSessionEndpointTests
         //
         // The original scenario configures a host logout page; this asks the same question of the
         // framework's own confirmation page instead, since both end in the identical
-        // ILogoutInteraction.SignOutAsync session check this test is about.
+        // LogoutInteraction.SignOutAsync session check this test is about.
         using var host = NewHost();
         var jar = await SignInAsync(host);
         var asked = await EndSessionAsync(host, jar, new());
@@ -404,12 +404,21 @@ public sealed class EndSessionEndpointTests
             builder.Services.AddSingleton(time);
 
         builder.AddInMemoryClients(clients => clients
-            .AddPublic(App, [Redirect], [AppSignedOut], ["openid"], client =>
+            .AddPublic(App, client =>
             {
+                client.RedirectUris.Add(Redirect);
+                client.PostLogoutRedirectUris.Add(AppSignedOut);
+                client.AllowedScopes.Add("openid");
                 client.RequireConsent = false;
                 client.DisplayName = AppName;
             })
-            .AddPublic(OtherApp, [Redirect], [OtherSignedOut], ["openid"], client => client.RequireConsent = false));
+            .AddPublic(OtherApp, client =>
+            {
+                client.RedirectUris.Add(Redirect);
+                client.PostLogoutRedirectUris.Add(OtherSignedOut);
+                client.AllowedScopes.Add("openid");
+                client.RequireConsent = false;
+            }));
     });
 
     /// <summary>A container whose interaction store is <paramref name="store"/>, for the store-failure tests.</summary>
@@ -507,17 +516,17 @@ public sealed class EndSessionEndpointTests
     {
         private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
 
-        public ValueTask SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
+        public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken) =>
             refuseWrites && IsLogout(key)
                 ? throw new InvalidOperationException("The store is unavailable.")
                 : _inner.SetAsync(key, value, expiresAt, cancellationToken);
 
-        public ValueTask<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
             refuseReads && IsLogout(key)
                 ? throw new InvalidOperationException("The store is unavailable.")
                 : _inner.GetAsync(key, cancellationToken);
 
-        public ValueTask RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
             _inner.RemoveAsync(key, cancellationToken);
 
         private static bool IsLogout(StoreKey key) => key.ToString().StartsWith("zkd:interaction:l:", StringComparison.Ordinal);

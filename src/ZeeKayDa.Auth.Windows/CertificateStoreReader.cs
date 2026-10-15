@@ -5,19 +5,12 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace ZeeKayDa.Auth.Windows;
 
-/// <summary>
-/// Reads certificates from a real Windows Certificate Store via <see cref="X509Store"/>.
-/// </summary>
-/// <remarks>
-/// This is the one genuinely Windows-only piece of I/O in this provider, so it is exercised only
-/// by Windows-only integration tests; the rest of the provider is tested against
-/// <c>ICertificateStoreReader</c> fakes on any OS.
-/// </remarks>
+/// <summary>Reads certificates from a real Windows Certificate Store via <see cref="X509Store"/>.</summary>
 [ExcludeFromCodeCoverage(Justification = "Requires a real Windows Certificate Store; exercised by Windows-only integration tests. Unit tests fake ICertificateStoreReader instead.")]
 internal sealed class CertificateStoreReader : ICertificateStoreReader
 {
     /// <inheritdoc/>
-    public X509Certificate2 GetCertificate(string normalizedThumbprint, StoreLocation storeLocation, StoreName storeName)
+    public X509Certificate2? FindCertificate(string normalizedThumbprint, StoreLocation storeLocation, StoreName storeName)
     {
         using var store = new X509Store(storeName, storeLocation);
 
@@ -27,10 +20,7 @@ internal sealed class CertificateStoreReader : ICertificateStoreReader
         }
         catch (Exception ex) when (ex is CryptographicException or UnauthorizedAccessException or SecurityException)
         {
-            // The exception TYPE is named, never ex.Message. A failure message is a plain
-            // public-API string that neither by-key redaction nor RedactedExceptionWrapper can
-            // reach, so an underlying message is never promoted into one. The root cause travels
-            // as the inner exception instead.
+            // Never ex.Message: a failure message is not redacted, so the cause travels as the inner exception.
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.windows_certificate_store.store_inaccessible",
@@ -41,25 +31,11 @@ internal sealed class CertificateStoreReader : ICertificateStoreReader
                 ex);
         }
 
-        // validOnly:false — chain-trust/revocation validity is not a signing-key eligibility
-        // concept here; that is decided by ZeeKayDa.Auth.Tokens.SigningKeyRotation instead.
+        // validOnly:false: chain trust is not what makes a signing key eligible; the ring decides from its dates.
         var matches = store.Certificates.Find(X509FindType.FindByThumbprint, normalizedThumbprint, validOnly: false);
         if (matches.Count == 0)
-        {
-            foreach (var match in matches)
-            {
-                using var _ = match;
-            }
+            return null;
 
-            throw new ZeeKayDaConfigurationException(new ZeeKayDaConfigurationFailure(
-                "signing.windows_certificate_store.certificate_not_found",
-                $"No certificate with thumbprint '{normalizedThumbprint}' was found in the '{storeName}' " +
-                $"store at '{storeLocation}'. Verify the thumbprint and that the certificate has been " +
-                "installed into this exact store/location combination."));
-        }
-
-        // Return a standalone copy: every certificate in 'matches' is disposed after this copy
-        // has been made, which preserves the handle the caller needs.
         var result = new X509Certificate2(matches[0]);
         foreach (var match in matches)
         {

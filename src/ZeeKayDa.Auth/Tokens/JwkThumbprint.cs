@@ -10,15 +10,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <c>kid</c>.
 /// </summary>
 /// <remarks>
-/// This is a public, standalone utility — not tied to any specific
-/// <see cref="ISigningKeySource"/> implementation — so that any source author, first-party or
-/// third-party, can derive a safe <c>kid</c> without hand-rolling the RFC 7638 canonicalisation
-/// themselves. A <c>kid</c> is always public (every issued token header, and the public JWKS), so
-/// deriving it from a raw external identifier (a file path, a cloud resource URI, a database row
-/// id, …) risks leaking that identifier to anyone who inspects a token or the JWKS. A thumbprint of
-/// the public key material itself carries no such information while remaining stable for the life
-/// of that key and interoperable with external JWK tooling (jose-jwt, python-jose, online JWK
-/// inspectors all compute the same value).
+/// A <c>kid</c> is public, in every token header and the JWKS, so deriving it from a file path, resource
+/// URI or row id leaks that identifier. A thumbprint of the public key leaks nothing, stays stable for the
+/// key's life, and matches what other JWK tooling computes.
 /// </remarks>
 public static class JwkThumbprint
 {
@@ -39,11 +33,8 @@ public static class JwkThumbprint
     /// </param>
     /// <returns>The base64url-encoded SHA-256 thumbprint.</returns>
     /// <remarks>
-    /// The canonical minimal RSA JWK member set, in the lexicographic order RFC 7638 requires, is
-    /// <c>{"e":"&lt;b64url(e)&gt;","kty":"RSA","n":"&lt;b64url(n)&gt;"}</c>. <c>e</c> and <c>n</c> are
-    /// encoded from their minimal big-endian representation (leading zero bytes stripped) per
-    /// RFC 7518 §6.3.1.1, so a modulus left-padded to a fixed byte length still yields the same
-    /// <c>kid</c> conformant JWK tooling would derive from it.
+    /// Hashes <c>{"e":…,"kty":"RSA","n":…}</c> with <c>e</c> and <c>n</c> in their minimal big-endian form
+    /// (RFC 7518 §6.3.1.1), so a left-padded modulus yields the same <c>kid</c> other tooling derives.
     /// </remarks>
     public static string Compute(RSAParameters rsaPublicParameters)
     {
@@ -70,8 +61,7 @@ public static class JwkThumbprint
     /// Thrown when the curve is not one of NIST P-256, P-384, or P-521.
     /// </exception>
     /// <remarks>
-    /// The canonical minimal EC JWK member set, in the lexicographic order RFC 7638 requires, is
-    /// <c>{"crv":"&lt;name&gt;","kty":"EC","x":"&lt;b64url(x)&gt;","y":"&lt;b64url(y)&gt;"}</c>.
+    /// Hashes <c>{"crv":…,"kty":"EC","x":…,"y":…}</c>.
     /// </remarks>
     public static string Compute(ECParameters ecPublicParameters)
     {
@@ -89,10 +79,7 @@ public static class JwkThumbprint
     }
 
     /// <summary>
-    /// Maps <paramref name="curve"/> to its RFC 7518 §6.2.1.1 JWK <c>crv</c> member name
-    /// (<c>"P-256"</c>, <c>"P-384"</c>, or <c>"P-521"</c>) — the same table
-    /// <see cref="Compute(ECParameters)"/> uses internally, so a JWK Set producer and the
-    /// thumbprint can never disagree on a curve's name.
+    /// Maps <paramref name="curve"/> to its JWK <c>crv</c> name, from the same table the thumbprint uses.
     /// </summary>
     /// <param name="curve">The EC curve. Must be one of NIST P-256, P-384, or P-521.</param>
     /// <returns>The JWK <c>crv</c> name.</returns>
@@ -115,11 +102,7 @@ public static class JwkThumbprint
         return crv;
     }
 
-    /// <summary>
-    /// Writes the canonical minimal JWK JSON via <paramref name="writeMembers"/> (which must write
-    /// members in lexicographic order) and returns the base64url-encoded SHA-256 hash of the
-    /// resulting UTF-8 bytes.
-    /// </summary>
+    /// <summary>Hashes the canonical JWK that <paramref name="writeMembers"/> writes, members in lexicographic order.</summary>
     private static string ComputeThumbprint(Action<Utf8JsonWriter> writeMembers)
     {
         var buffer = new ArrayBufferWriter<byte>();
@@ -135,11 +118,8 @@ public static class JwkThumbprint
     }
 
     /// <summary>
-    /// Strips leading zero bytes from a big-endian unsigned integer, per RFC 7518 §6.3.1.1's minimal
-    /// encoding requirement for <c>n</c> and <c>e</c>. A single zero byte is preserved for a
-    /// genuinely zero-valued input. Internal so a JWK Set producer encodes these members with the
-    /// exact rule the thumbprint hashed, keeping a served key's parameters and its <c>kid</c>
-    /// structurally incapable of using different encodings.
+    /// Strips leading zero bytes (RFC 7518 §6.3.1.1), keeping one for zero. Shared with the JWK Set writer, so a
+    /// served key and its <c>kid</c> cannot use different encodings.
     /// </summary>
     internal static byte[] TrimLeadingZeros(byte[] value)
     {

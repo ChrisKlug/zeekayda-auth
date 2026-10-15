@@ -43,7 +43,7 @@ public class ErrorInteractionTests
     {
         var interaction = new ErrorInteraction(new StaticAccessor(null), Transport());
 
-        var act = () => interaction.GetErrorAsync(TestContext.Current.CancellationToken).AsTask();
+        var act = () => interaction.GetErrorAsync(TestContext.Current.CancellationToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }

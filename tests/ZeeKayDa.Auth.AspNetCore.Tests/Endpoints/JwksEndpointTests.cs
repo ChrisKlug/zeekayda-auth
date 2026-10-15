@@ -4,10 +4,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Endpoints;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
-using ZeeKayDa.Auth.Extensions;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Endpoints;
@@ -45,48 +45,58 @@ public sealed class JwksEndpointTests
     /// an EC key in <c>Next</c>.
     /// </summary>
     private static EndpointHost CreateMultiSlotHost(bool includePrevious, bool includeNext)
-        => new(configureBuilder: builder => builder.Services.AddZeeKayDaSigningKeySource(
-            _ => new MultiSlotSigningKeySource(includePrevious, includeNext)));
+        => new(configureBuilder: builder =>
+        {
+            builder.Services.AddSingleton(new MultiSlotLayout(includePrevious, includeNext));
+            builder.AddSigningKeySource<MultiSlotSigningKeySource>();
+        });
 
-    private sealed class MultiSlotSigningKeySource(bool includePrevious, bool includeNext)
+    private sealed record MultiSlotLayout(bool IncludePrevious, bool IncludeNext);
+
+    /// <summary>
+    /// Just past the default one-day lead time, so the key signs, and well inside the lead time plus
+    /// the default retention (the ten-minute access token lifetime), so the key before it stays published.
+    /// </summary>
+    private static DateTimeOffset SigningNotBefore() => DateTimeOffset.UtcNow.AddDays(-1).AddMinutes(-1);
+
+    private sealed class MultiSlotSigningKeySource(MultiSlotLayout layout)
         : ISigningKeySource, IDisposable
     {
         private readonly RSA _previous = RSA.Create(2048);
         private readonly RSA _current = RSA.Create(2048);
-        private readonly ECDsa _next = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        private readonly RSA _next = RSA.Create(2048);
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
         {
-            var previous = includePrevious
+            var previous = layout.IncludePrevious
                 ? new SourceKey(
                     new SourceKeyId("previous-key"),
-                    SigningAlgorithm.RS256,
                     PublicKeyParameters.FromRsa(_previous.ExportParameters(includePrivateParameters: false)),
-                    ExpiresAt: null)
+                    DateTimeOffset.UtcNow.AddDays(-10))
                 : null;
             var current = new SourceKey(
                 new SourceKeyId("current-key"),
-                SigningAlgorithm.RS256,
                 PublicKeyParameters.FromRsa(_current.ExportParameters(includePrivateParameters: false)),
-                ExpiresAt: null);
-            var next = includeNext
+                SigningNotBefore());
+            var next = layout.IncludeNext
                 ? new SourceKey(
                     new SourceKeyId("next-key"),
-                    SigningAlgorithm.ES256,
-                    PublicKeyParameters.FromEc(_next.ExportParameters(includePrivateParameters: false)),
-                    ExpiresAt: null)
+                    PublicKeyParameters.FromRsa(_next.ExportParameters(includePrivateParameters: false)),
+                    DateTimeOffset.UtcNow.AddHours(-1))
                 : null;
 
-            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous, current, next));
+            return Task.FromResult(new SourceKeyListing([.. new[] { previous, current, next }.OfType<SourceKey>()], []));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
-            id.Value.Should().Be("current-key", because: "only the Current slot's key ever signs");
+            id.Value.Should().Be("current-key", because: "the newest key past the lead time signs");
 
             // A fresh private key instance: the ring owns and disposes what it is handed.
             var privateKey = RSA.Create(_current.ExportParameters(includePrivateParameters: true));
-            return new ValueTask<ISigner>(new LocalSigner(SigningAlgorithm.RS256, privateKey));
+            return Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, privateKey));
         }
 
         public void Dispose()
@@ -97,7 +107,30 @@ public sealed class JwksEndpointTests
         }
     }
 
-    private sealed class TestClient : IClientMetadata
+    private static readonly RSA RetiredKey = RSA.Create(2048);
+    private static readonly RSA SupersedingKey = RSA.Create(2048);
+
+    /// <summary>
+    /// Lists a retired key and the key that superseded it five days ago: well past the default
+    /// one-day lead time plus two-day retention, so the retired key is listed but no longer published.
+    /// </summary>
+    private sealed class RetiredKeySource : ISigningKeySource
+    {
+        public SigningAlgorithm Algorithm => SigningAlgorithm.RS256;
+
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new SourceKeyListing(
+            [
+                new SourceKey(new SourceKeyId("retired-key"), PublicKeyParameters.FromRsa(RetiredKey.ExportParameters(false)), DateTimeOffset.UtcNow.AddDays(-30)),
+                new SourceKey(new SourceKeyId("current-key"), PublicKeyParameters.FromRsa(SupersedingKey.ExportParameters(false)), DateTimeOffset.UtcNow.AddDays(-5)),
+            ], []));
+
+        // A fresh private key instance: the ring owns and disposes what it is handed.
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+            => Task.FromResult<ISigner>(new LocalSigner(SigningAlgorithm.RS256, RSA.Create(SupersedingKey.ExportParameters(true))));
+    }
+
+    private sealed class TestClient : IClient
     {
         public string ClientId => "test-client";
         public bool IsPublic => true;
@@ -154,7 +187,7 @@ public sealed class JwksEndpointTests
 
         var doc = await GetDocumentAsync(host);
 
-        var ring = host.Resolve<ISigningKeyRing>();
+        var ring = host.Resolve<SigningKeyRing>();
         doc.GetProperty("keys").EnumerateArray()
             .Select(jwk => jwk.GetProperty("kid").GetString())
             .Should().Equal(ring.Current.Published.Select(key => key.Kid));
@@ -211,8 +244,8 @@ public sealed class JwksEndpointTests
             .Select(jwk => jwk.GetProperty("kid").GetString())
             .ToList();
 
-        var ring = host.Resolve<ISigningKeyRing>();
-        var currentKid = ring.Current.SigningKey.Kid;
+        var ring = host.Resolve<SigningKeyRing>();
+        var currentKid = ring.Current.SigningKey!.Kid;
         var tokenKid = await IssueIdTokenAndReadHeaderKid(host.Services);
 
         publishedKids.Should().HaveCount(3).And.Contain(currentKid);
@@ -231,6 +264,44 @@ public sealed class JwksEndpointTests
         var headerBytes = Base64Url.DecodeFromChars(headerSegment);
         using var header = JsonDocument.Parse(headerBytes);
         return header.RootElement.GetProperty("kid").GetString();
+    }
+
+    [Fact]
+    public async Task GetJwks_never_serves_a_key_kept_for_hint_verification_only()
+    {
+        using var host = new EndpointHost(configureBuilder: builder => builder.AddSigningKeySource<RetiredKeySource>());
+
+        var doc = await GetDocumentAsync(host);
+
+        var ring = host.Resolve<SigningKeyRing>();
+        var retiredKid = ring.TimelineOrNull!.Keys.Single(key => key.SourceId.Value == "retired-key").Kid;
+        var signingInput = "signed by the retired key"u8.ToArray();
+        var signature = RetiredKey.SignData(signingInput, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        ring.Verify(retiredKid, signingInput, signature).Should().NotBeNull("the ring keeps the retired key to verify with");
+        doc.GetProperty("keys").EnumerateArray().Select(jwk => jwk.GetProperty("kid").GetString())
+            .Should().ContainSingle().Which.Should().NotBe(retiredKid);
+    }
+
+    // ── Signing stopped ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetJwks_serves_an_empty_key_set_that_must_not_be_cached_while_signing_has_stopped()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var revocation = new SigningRevocation();
+        using var host = new EndpointHost(configureBuilder: builder =>
+        {
+            builder.Services.AddSingleton<TimeProvider>(time);
+            builder.Services.AddSingleton(revocation);
+            builder.AddSigningKeySource<RevocableTestSigningKeySource>();
+        });
+        await revocation.RevokeAsync(host, time);
+
+        using var response = await GetAsync(host);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        JsonDocument.Parse(body).RootElement.GetProperty("keys").GetArrayLength().Should().Be(0);
+        response.Headers.CacheControl!.ToString().Should().Be("no-store");
     }
 
     // ── Cache-Control ────────────────────────────────────────────────────────────────────────────
@@ -314,8 +385,10 @@ public sealed class JwksEndpointTests
         SigningAlgorithm algorithm)
     {
         using var host = new EndpointHost(configureBuilder: builder =>
-            builder.Services.AddZeeKayDaSigningKeySource(
-                _ => new SingleAlgorithmSigningKeySource(algorithm)));
+        {
+            builder.Services.AddSingleton(new SingleAlgorithm(algorithm));
+            builder.AddSigningKeySource<SingleAlgorithmSigningKeySource>();
+        });
         await host.EnsureStartedAsync();
 
         var issuer = host.Services.GetRequiredKeyedService<ITokenIssuer>(TokenKind.IdToken);
@@ -375,14 +448,19 @@ public sealed class JwksEndpointTests
         return ecdsa.VerifyData(signingInput, signature, hash);
     }
 
+    private sealed record SingleAlgorithm(SigningAlgorithm Value);
+
     private sealed class SingleAlgorithmSigningKeySource : ISigningKeySource, IDisposable
     {
         private readonly SigningAlgorithm _algorithm;
         private readonly RSA? _rsa;
         private readonly ECDsa? _ecdsa;
 
-        public SingleAlgorithmSigningKeySource(SigningAlgorithm algorithm)
+        public SigningAlgorithm Algorithm => _algorithm;
+
+        public SingleAlgorithmSigningKeySource(SingleAlgorithm choice)
         {
+            var algorithm = choice.Value;
             _algorithm = algorithm;
             if (algorithm == SigningAlgorithm.RS256)
                 _rsa = RSA.Create(2048);
@@ -395,24 +473,24 @@ public sealed class JwksEndpointTests
                 });
         }
 
-        public ValueTask<SourceKeySet> ReadAsync(CancellationToken cancellationToken = default)
+        public Task<SourceKeyListing> ReadAsync(CancellationToken cancellationToken = default)
         {
             var publicKey = _rsa is not null
                 ? PublicKeyParameters.FromRsa(_rsa.ExportParameters(includePrivateParameters: false))
                 : PublicKeyParameters.FromEc(_ecdsa!.ExportParameters(includePrivateParameters: false));
             var current = new SourceKey(
-                new SourceKeyId("current-key"), _algorithm, publicKey, ExpiresAt: null);
+                new SourceKeyId("current-key"), publicKey);
 
-            return new ValueTask<SourceKeySet>(SourceKeySet.Create(previous: null, current, next: null));
+            return Task.FromResult(new SourceKeyListing([current], []));
         }
 
-        public ValueTask<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
+        public Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
         {
             // A fresh private key instance: the ring owns and disposes what it is handed.
             AsymmetricAlgorithm privateKey = _rsa is not null
                 ? RSA.Create(_rsa.ExportParameters(includePrivateParameters: true))
                 : ECDsa.Create(_ecdsa!.ExportParameters(includePrivateParameters: true));
-            return new ValueTask<ISigner>(new LocalSigner(_algorithm, privateKey));
+            return Task.FromResult<ISigner>(new LocalSigner(_algorithm, privateKey));
         }
 
         public void Dispose()

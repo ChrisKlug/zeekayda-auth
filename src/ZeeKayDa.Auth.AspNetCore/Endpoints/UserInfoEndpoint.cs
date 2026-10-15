@@ -15,72 +15,45 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// answers a live access token of this server's with the subject's claims.
 /// </summary>
 /// <remarks>
-/// <para>
-/// A protected resource, validated as RFC 9068 §4 obliges any resource server to validate one of
-/// these tokens, rather than by trusting the issuer of a token it happens to be able to verify.
-/// Nothing is read from a store: the token names the subject, the client and the granted scopes,
-/// and the claims come from the host's <see cref="IClaimsProvider"/>, asked fresh.
-/// </para>
-/// <para>
-/// Asking fresh is what bounds staleness. A token stays usable until it expires however the grant
-/// behind it ended, so a subject the provider no longer serves is refused here at the next call
-/// rather than at the end of the token's life.
-/// </para>
+/// Validates the token as RFC 9068 §4 requires of any resource server, and asks the host's
+/// <see cref="IClaimsProvider"/> fresh, so a subject it no longer serves is refused at the next call
+/// rather than when the token expires.
 /// </remarks>
-internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
+internal sealed class UserInfoEndpoint(IOptions<AuthorizationServerOptions> options, CorsAllowlist allowedOrigins) : IZeeKayDaEndpoint
 {
     private const string DefaultPath = "connect/userinfo";
     private const string BearerScheme = "Bearer";
     private const string AccessTokenFormField = "access_token";
     private const string FormUrlEncoded = "application/x-www-form-urlencoded";
 
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly HashSet<string> _allowedOrigins;
-
-    public UserInfoEndpoint(IOptions<AuthorizationServerOptions> options)
-    {
-        ArgumentNullException.ThrowIfNull(options);
-
-        _options = options;
-        // Config values are already validated and canonicalized to lowercase by startup validation.
-        _allowedOrigins = new HashSet<string>(options.Value.CorsOrigins, StringComparer.OrdinalIgnoreCase);
-    }
-
     /// <inheritdoc/>
-    /// <remarks>
-    /// Served on the same condition as the authorization endpoint, and published on the same
-    /// condition too, so the metadata and the route never disagree: only that flow issues an
-    /// access token for an end user, and userinfo has nothing to answer without one.
-    /// </remarks>
+    /// <remarks>Served and published only with the authorization code grant, the only flow with an end user.</remarks>
     public void Map(IEndpointRouteBuilder endpoints)
     {
-        if (!_options.Value.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
+        if (!options.Value.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
             return;
 
-        var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
+        var issuerUri = EndpointRouteHelper.GetIssuerUri(options);
         var endpointUri = EndpointRouteHelper.GetPublishedEndpointUri(
-            issuerUri, _options.Value.UserInfoEndpoint.Uri, DefaultPath);
+            issuerUri, options.Value.UserInfoEndpoint.Uri, DefaultPath);
 
-        // AllowAnonymous so a host-wide authorization fallback policy cannot challenge with the
-        // host's own scheme: the bearer token is this endpoint's authentication, not the host's.
         Delegate handler = HandleAsync;
         endpoints.MapMethods(endpointUri.AbsolutePath, [HttpMethods.Get, HttpMethods.Post], handler)
             .RequireIssuerHost(endpointUri)
-            .AllowAnonymous();
+            .ExemptFromHostAuthorization();
 
-        // A browser sends the token in an Authorization header, which is not a CORS-safelisted
-        // request header, so it preflights first and never reaches the handler above.
+        // The Authorization header is not CORS-safelisted, so a browser preflights first.
         Delegate preflight = HandlePreflight;
         endpoints.MapMethods(endpointUri.AbsolutePath, [HttpMethods.Options], preflight)
             .RequireIssuerHost(endpointUri)
-            .AllowAnonymous();
+            .ExemptFromHostAuthorization();
     }
 
     internal IResult HandlePreflight(HttpContext context)
     {
         CorsHeaders.ApplyPreflight(
             context,
-            _allowedOrigins,
+            allowedOrigins,
             methods: "GET, POST, OPTIONS",
             headers: "Authorization, Content-Type");
 
@@ -93,7 +66,7 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
         ValidatedClientResolver clients,
         GrantClaimsResolver claims)
     {
-        CorsHeaders.ApplyOrigin(context, _allowedOrigins);
+        CorsHeaders.ApplyOrigin(context, allowedOrigins);
 
         var authorization = await AuthorizeAsync(context, tokens, clients).ConfigureAwait(false);
         if (authorization is not Authorization.Caller caller)
@@ -128,15 +101,12 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
         if (tokens.Validate(presented.AccessToken) is not { } token)
             return new Authorization.Refused(UserInfoResponses.InvalidToken);
 
-        // OpenID Connect Core §5.3.1: userinfo answers a token issued under the openid scope.
-        // Distinct from an invalid token, because the client can act on this one by asking for
-        // the scope, and RFC 6750 §3.1 gives it its own code.
+        // OIDC Core §5.3.1; its own code (RFC 6750 §3.1), since the client can fix it by asking for the scope.
         if (!token.Scopes.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
             return new Authorization.Refused(UserInfoResponses.InsufficientScope);
 
-        // The client the token was issued to decides its own claim additions. A registration that
-        // is gone, or no longer validates, means the grant behind the token is gone with it.
-        var client = await clients.FindByClientIdAsync(token.ClientId, context.RequestAborted).ConfigureAwait(false);
+        // A registration gone or no longer valid takes the grant behind the token with it.
+        var client = await clients.FindClientAsync(token.ClientId, context.RequestAborted).ConfigureAwait(false);
 
         return client is null
             ? new Authorization.Refused(UserInfoResponses.InvalidToken)
@@ -167,11 +137,8 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
     /// is not read — it is deprecated there and puts a live credential in logs and referrers.
     /// </summary>
     /// <remarks>
-    /// Whether a transport was <em>used</em> is decided separately from whether it carried one
-    /// well-formed token, because §3.1 answers the two differently: using both transports, or
-    /// using one malformed, is <c>invalid_request</c>, while using neither is the bare challenge.
-    /// Collapsing them would let a repeated <c>access_token</c> field read as no field at all, and
-    /// so escape the check that a request may present its token exactly once.
+    /// "Used" is kept apart from "well-formed" because RFC 6750 §3.1 answers them differently; merged, a
+    /// repeated <c>access_token</c> field would read as none and escape the present-once check.
     /// </remarks>
     private static async ValueTask<PresentedToken> ReadAccessTokenAsync(HttpContext context)
     {
@@ -276,7 +243,7 @@ internal sealed class UserInfoEndpoint : IZeeKayDaEndpoint
         }
 
         /// <summary>The token the request proved, and the client registration it names.</summary>
-        public sealed record Caller(ValidatedAccessToken Token, IClientRegistration Client) : Authorization;
+        public sealed record Caller(ValidatedAccessToken Token, IClient Client) : Authorization;
 
         /// <summary>The refusal to answer with, already chosen.</summary>
         public sealed record Refused(Func<HttpContext, IResult> Response) : Authorization;

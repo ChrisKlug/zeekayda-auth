@@ -19,7 +19,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// Both serve the same document. RFC 8414 §7.1.2 registers the OpenID Connect Discovery fields as
 /// OAuth metadata, so the OpenID Connect superset is valid at the OAuth address too.
 /// </remarks>
-internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
+internal sealed class DiscoveryEndpoint(IOptions<AuthorizationServerOptions> options, CorsAllowlist allowedOrigins) : IZeeKayDaEndpoint
 {
     // Appended to the issuer path to form the discovery document URL per OIDC Discovery §4.1.
     private const string WellKnownSuffix = "/.well-known/openid-configuration";
@@ -27,32 +27,13 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
     // Inserted before the issuer path to form the metadata URL per RFC 8414 §3.1.
     private const string OAuthWellKnownName = "oauth-authorization-server";
 
-    private readonly IOptions<AuthorizationServerOptions> _options;
-    private readonly HashSet<string> _allowedOrigins;
-
-    public DiscoveryEndpoint(IOptions<AuthorizationServerOptions> options)
-    {
-        _options = options;
-        // Config values are already validated and canonicalized to lowercase by startup validation.
-        _allowedOrigins = new HashSet<string>(
-            options.Value.CorsOrigins,
-            StringComparer.OrdinalIgnoreCase);
-    }
-
     /// <inheritdoc/>
     public void Map(IEndpointRouteBuilder endpoints)
     {
-        // Derive the registration path from the issuer's path component so that a path-bearing
-        // issuer (e.g. https://auth.example.com/tenant1) registers at
-        // /tenant1/.well-known/openid-configuration rather than at the root, as required by
-        // OIDC Discovery 1.0 §4.1 and RFC 9207 §4.
-        var issuerUri = EndpointRouteHelper.GetIssuerUri(_options);
+        var issuerUri = EndpointRouteHelper.GetIssuerUri(options);
 
-        // AllowAnonymous so a host-wide authorization fallback policy cannot turn discovery into a
-        // 401 — the document must stay publicly readable per OIDC Discovery 1.0 and RFC 8414 §3.
-        // The RFC 8414 document is also served at the appended form, so a proxy forwarding only
-        // the issuer's path prefix reaches it exactly as it reaches the OpenID Connect one. On a
-        // root issuer the two forms coincide, hence Distinct.
+        // RFC 8414 is also served at the appended form, for a proxy forwarding only the issuer's
+        // path prefix. On a root issuer the forms coincide.
         string[] routes =
         [
             EndpointRouteHelper.GetIssuerPathPrefixedRoute(issuerUri, WellKnownSuffix),
@@ -62,71 +43,60 @@ internal sealed class DiscoveryEndpoint : IZeeKayDaEndpoint
 
         foreach (var routePath in routes.Distinct(StringComparer.Ordinal))
         {
-            endpoints.MapGet(routePath, Handle).RequireIssuerHost(issuerUri).AllowAnonymous();
+            endpoints.MapGet(routePath, Handle).RequireIssuerHost(issuerUri).ExemptFromHostAuthorization();
         }
     }
 
-    /// <remarks>
-    /// <para>
-    /// <strong>A broken scope repository answers 500 with no body.</strong> This is the only
-    /// anonymous endpoint the framework serves, and <c>ValidatedScopeCatalog</c> reports a
-    /// contract breach by naming the scope and the audience string it refused. Letting that
-    /// exception escape hands those to whatever the host's error handling does with it — on
-    /// <c>WebApplication.CreateBuilder</c> in Development, the developer exception page renders
-    /// the message to an unauthenticated caller. Every other endpoint already answers a
-    /// misconfiguration with a generic error and keeps the detail in the operator's log; this one
-    /// now does the same.
-    /// </para>
-    /// <para>
-    /// The cache and CORS headers are applied only once a document exists, so an error is never
-    /// served with the cache lifetime a valid document carries.
-    /// </para>
-    /// </remarks>
     internal async ValueTask<IResult> Handle(
         IDiscoveryDocumentProvider provider,
-        ISanitizingLogger<DiscoveryEndpoint> logger,
+        SanitizingLogger<DiscoveryEndpoint> logger,
         HttpContext context)
     {
-        OpenIdConfigurationDocument document;
+        if (await TryBuildDocumentAsync(provider, logger, context).ConfigureAwait(false) is not { } document)
+            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+
+        // Only once a document exists, so an error never carries a valid document's cache lifetime.
+        PublicMetadataHeaders.Apply(
+            context, options.Value.DiscoveryDocument.CacheMaxAge, allowedOrigins);
+
+        return Results.Json(document, ZeeKayDaJsonSerializerContext.Default.OpenIdConfigurationDocument);
+    }
+
+    /// <summary>
+    /// The document, or <see langword="null"/> with the failure logged. A failure never escapes: this
+    /// endpoint is anonymous, and a Development exception page would render it to the caller.
+    /// </summary>
+    private static async ValueTask<OpenIdConfigurationDocument?> TryBuildDocumentAsync(
+        IDiscoveryDocumentProvider provider,
+        SanitizingLogger<DiscoveryEndpoint> logger,
+        HttpContext context)
+    {
+        OpenIdConfigurationDocument? document;
         try
         {
             document = await provider.GetDocumentAsync(context.RequestAborted).ConfigureAwait(false);
         }
         catch (ScopeContractException ex)
         {
-            // The codes and messages, not ex.Message. Safe to log only because
-            // ScopeContractException is internal, so every failure is this framework's own text;
-            // one the repository threw is not caught and never reaches a log line by message.
             logger.LogError(
                 "The discovery document could not be built: {Detail}",
-                "The scope repository broke its contract: " +
-                string.Join("; ", ex.AggregatedFailures.Select(failure => $"[{failure.Code}] {failure.Message}")));
+                "The scope repository broke its contract: " + ex.DescribeFailures());
 
-            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+            return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !context.RequestAborted.IsCancellationRequested)
         {
-            // Anything the repository or a host-replaced IDiscoveryDocumentProvider threw. The
-            // type is named and the message is never read, the same rule ValidatedClientResolver
-            // applies to a caller-supplied registration that throws: a database failure's text
-            // routinely carries a connection string, and the sanitizing logger redacts by key
-            // name, so a message interpolated into a log entry passes through whole.
-            //
-            // Catching it here rather than letting the host's error handling have it is the point.
-            // This is the only anonymous endpoint the framework serves, and on
-            // WebApplication.CreateBuilder in Development that handling is a page that renders the
-            // exception to whoever asked. The operator still learns which type threw; the
-            // unauthenticated caller learns nothing.
+            // The type only: a provider's message can carry a connection string, which redaction by key name misses.
             logger.LogError(
                 "The discovery document could not be built: the provider threw {ExceptionType}.",
                 ex.GetType().FullName);
 
-            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+            return null;
         }
 
-        PublicMetadataHeaders.Apply(
-            context, _options.Value.DiscoveryDocument.CacheMaxAge, _allowedOrigins);
+        if (document is null)
+            logger.LogError("The discovery document could not be built: the provider returned null.");
 
-        return Results.Json(document, ZeeKayDaJsonSerializerContext.Default.OpenIdConfigurationDocument);
+        return document;
     }
 }
