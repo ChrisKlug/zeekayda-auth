@@ -11,9 +11,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <see cref="ZeeKayDaAuthCoreBuilder"/>.
 /// </summary>
 /// <remarks>
-/// Unlike the Windows Certificate Store provider, neither method here is gated to a specific
-/// operating system — PEM/PFX loading is portable BCL functionality with no platform interop.
-/// This is the recommended provider for macOS, containers, headless CI, and Linux generally.
+/// Runs on every operating system; the recommended provider for macOS, Linux and containers.
 /// </remarks>
 public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
 {
@@ -145,9 +143,7 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
-        // Registered first so a second signing key source is rejected before this method applies any
-        // of its own configuration — a caller that catches the rejection must not be left with this
-        // call's options callbacks applied to the surviving registration.
+        // First, so a rejected second source leaves none of this call's options applied.
         builder.AddSigningKeySource<PemFileSigningKeySource>();
 
         builder.Services.AddZeeKayDaOptions<PemFileSigningOptions>()
@@ -259,9 +255,7 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
-        // Registered first so a second signing key source is rejected before this method applies any
-        // of its own configuration — a caller that catches the rejection must not be left with this
-        // call's options callbacks applied to the surviving registration.
+        // First, so a rejected second source leaves none of this call's options applied.
         builder.AddSigningKeySource<PfxFileSigningKeySource>();
 
         builder.Services.AddZeeKayDaOptions<PfxFileSigningOptions>()

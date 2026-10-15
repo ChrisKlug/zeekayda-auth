@@ -9,17 +9,9 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// Opens and validates an operator-supplied signing key file (PEM or PFX) before its contents are
-/// handed to the caller for parsing.
+/// Opens and validates an operator-supplied signing key file, read-only. Permissions are checked on
+/// the open handle; the symlink checks inspect the path, since the BCL has no <c>O_NOFOLLOW</c>.
 /// </summary>
-/// <remarks>
-/// This provider reads files it did not create, supplied by the operator, so unlike the Windows
-/// Certificate Store or local-development providers it validates rather than trusts them:
-/// read-only, never writing, creating a directory, or narrowing an ACL. Each path is opened
-/// <strong>exactly once</strong> per read call, and the permission check runs against that open
-/// handle rather than the path string. The symlink checks cannot: they inspect the path as given,
-/// because the BCL has no <c>O_NOFOLLOW</c>, so a swap between the open and those checks stays possible.
-/// </remarks>
 internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader> logger)
 {
     // Broader than 0600 (owner read/write only) is a hard failure for a file carrying a private key.
@@ -44,11 +36,7 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
     public async ValueTask<PemText> ReadPemAsync(string path, SigningFileContent content, CancellationToken cancellationToken) =>
         PemText.Decode(await ReadBytesAsync(path, content, cancellationToken).ConfigureAwait(false));
 
-    /// <summary>
-    /// Opens, validates, and reads <paramref name="path"/> as raw bytes, for use with
-    /// <see cref="System.Security.Cryptography.X509Certificates.X509CertificateLoader"/>'s
-    /// <c>LoadPkcs12</c>.
-    /// </summary>
+    /// <summary>Opens, validates, and reads <paramref name="path"/> as a PKCS#12 bundle's raw bytes.</summary>
     /// <param name="path">The operator-supplied path to the PFX/PKCS#12 file.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <exception cref="ZeeKayDaConfigurationException">
@@ -179,10 +167,7 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
     [SupportedOSPlatform("windows")]
     private static void ValidateNoSymlinkedAncestorWindows(string originalPath, string resolvedPath)
     {
-        // A symlinked ancestor directory is just as dangerous as a symlinked leaf: an attacker with
-        // write access to a parent directory could redirect it elsewhere. Every ancestor is checked
-        // unconditionally — Windows has no OS-owned-symlink convention to carve out (see the Unix
-        // check below).
+        // Every ancestor: unlike Unix, Windows ships no OS-owned symlinked directories to trust.
         var directory = Path.GetDirectoryName(resolvedPath);
         while (!string.IsNullOrEmpty(directory))
         {
@@ -194,14 +179,8 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
     }
 
     /// <summary>
-    /// Walks <paramref name="resolvedPath"/>'s ancestor directories, rejecting the first
-    /// non-root-owned symlinked one — a root-owned ancestor is trusted regardless of whether it is
-    /// itself a symlink, since an attacker without root cannot plant or replace a root-owned
-    /// directory entry (macOS ships <c>/tmp</c>, <c>/var</c>, and <c>/etc</c> as symlinks to
-    /// <c>/private/...</c>, and this provider is the recommended one for macOS, so a blanket
-    /// "any symlinked ancestor is unsafe" rule — the Windows walk above — would make it unusable
-    /// there). The walk stops at the first root-owned entry, since everything above it is equally
-    /// OS-managed.
+    /// Rejects a symlinked ancestor up to the first root-owned one, which only root can replace;
+    /// macOS ships <c>/tmp</c>, <c>/var</c> and <c>/etc</c> as symlinks.
     /// </summary>
     [UnsupportedOSPlatform("windows")]
     private static void ValidateNoUntrustedSymlinkedAncestorUnix(string originalPath, string resolvedPath)
@@ -220,16 +199,9 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
     }
 
     /// <summary>
-    /// Whether <paramref name="directoryPath"/>'s own directory entry — not the target it
-    /// resolves to, if it is itself a symlink — is owned by root (uid 0).
+    /// Whether the directory entry itself is root-owned. <c>lstat</c>, never <c>stat</c>: an attacker's
+    /// symlink pointed at a root-owned target would otherwise read as root-owned.
     /// </summary>
-    /// <remarks>
-    /// Uses <see cref="PosixInterop.GetLinkOwnerUid"/> (<c>lstat</c>), never a <c>stat</c>-based
-    /// owner lookup: <c>stat()</c> follows a symlink and reports the target's owner, which an
-    /// attacker controls by choosing where their symlink points — e.g. pointing at root-owned
-    /// <c>/tmp</c> would wrongly read as root-owned and short-circuit this check. <c>lstat()</c>
-    /// reports the link entry's own owner.
-    /// </remarks>
     [UnsupportedOSPlatform("windows")]
     private static bool IsRootOwnedDirectoryEntry(string directoryPath) =>
         PosixInterop.GetLinkOwnerUid(directoryPath) == 0;
@@ -254,8 +226,7 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
     [UnsupportedOSPlatform("windows")]
     private static void ValidateModeUnix(FileStream stream, string path, SigningFileContent content)
     {
-        // Checked on the already-open handle (via SafeFileHandle) rather than the path string, so
-        // this cannot be TOCTOU-raced between the open above and this check.
+        // On the open handle, so a swap after the open cannot race the check.
         var mode = File.GetUnixFileMode(stream.SafeFileHandle);
 
         if (content == SigningFileContent.CertificateOnly)
@@ -309,8 +280,7 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
     [SupportedOSPlatform("windows")]
     private static void ValidateAclWindows(FileStream stream, string path, SigningFileContent content)
     {
-        // GetAccessControl(FileStream) reads the DACL from the already-open handle, closing the
-        // same TOCTOU window the Unix mode check closes via SafeFileHandle.
+        // On the open handle, so a swap after the open cannot race the check.
         var security = stream.GetAccessControl();
         var rules = security.GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier));
 
@@ -394,17 +364,13 @@ internal sealed class FileSigningKeyReader(SanitizingLogger<FileSigningKeyReader
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException or ArgumentException)
         {
-            // Best-effort: a failure to determine the volume type or parent-directory permissions
-            // must never abort loading a key that otherwise passed the hard-fail checks above.
             logger.LogDebug(ex, "ZeeKayDa.Auth: could not evaluate the environment safety heuristics for signing key file '{Path}'.", path);
         }
     }
 
     private void WarnIfNetworkVolume(string path)
     {
-        // DriveInfo's DriveType reliably distinguishes network shares only on Windows. On Unix,
-        // every mount (including NFS) commonly reports as Fixed/Unknown via this API, so the check
-        // is skipped there rather than emitting a misleading warning either way.
+        // Windows only: on Unix DriveType reports NFS mounts as Fixed or Unknown.
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return;
 

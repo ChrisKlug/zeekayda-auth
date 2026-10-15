@@ -3,12 +3,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AzureKeyVault;
 
-/// <summary>
-/// Validates <see cref="AzureKeyVaultCachedSigningOptions"/> at startup.
-/// </summary>
-/// <remarks>
-/// Registered via <c>AddAzureKeyVaultCachedSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
-/// </remarks>
+/// <summary>Validates <see cref="AzureKeyVaultCachedSigningOptions"/> at startup.</summary>
 internal sealed class AzureKeyVaultCachedSigningOptionsValidator : ZeeKayDaOptionsValidator<AzureKeyVaultCachedSigningOptions>
 {
     /// <inheritdoc/>

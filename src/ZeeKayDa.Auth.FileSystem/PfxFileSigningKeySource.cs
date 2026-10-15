@@ -8,31 +8,10 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// An <see cref="ISigningKeySource"/> that lists the PFX/PKCS#12 bundles in
-/// <see cref="PfxFileSigningOptions.Files"/> and signs locally, in process, with whichever of them
-/// the framework chooses.
+/// Lists the configured PFX/PKCS#12 bundles and signs in process with the one the ring chooses.
+/// Listing decrypts no key bag; signing imports the paired key bag into an in-memory key, never an
+/// OS-backed certificate.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Listing never imports a private key into a key object.</b> <see cref="ReadAsync"/> walks each
-/// bundle with <see cref="Pkcs12Info"/>: the password authenticates the file and decrypts the
-/// authenticated safe, the certificate bag is read, and no key bag is decrypted or imported. One
-/// residue is inherent to the format: an <i>unshrouded</i> key bag is plaintext PKCS#8 inside the
-/// safe, so decrypting the safe puts those bytes in managed memory. They are never read and never
-/// imported.
-/// </para>
-/// <para>
-/// <b>Signing never builds an OS-backed certificate.</b> <see cref="CreateSignerAsync"/> runs the
-/// same selection the listing ran and imports the key bag paired with the listed certificate
-/// straight into an in-memory key, so the private key is never written to a platform key store.
-/// </para>
-/// <para>
-/// Whether a key suits the configured algorithm is not checked here:
-/// <see cref="SigningKeySetBuilder"/> validates every reported key, keyed on the source id — which
-/// here is the configured file path, so its failures still name the offending bundle. The signer
-/// checks only that the imported key is of the same type, RSA or EC, as its paired certificate.
-/// </para>
-/// </remarks>
 internal sealed class PfxFileSigningKeySource(
     IOptions<PfxFileSigningOptions> options,
     FileSigningKeyReader reader) : ISigningKeySource
@@ -83,10 +62,7 @@ internal sealed class PfxFileSigningKeySource(
         return new LocalSigner(options.Algorithm, privateKey);
     }
 
-    /// <summary>
-    /// Imports the key bag of <paramref name="pair"/> — the one call in this type that materialises a
-    /// private key — and rejects a key whose type is not the certificate's.
-    /// </summary>
+    /// <summary>Imports the pair's key bag, rejecting a key whose type is not the certificate's.</summary>
     private static AsymmetricAlgorithm ImportPairedKey(SigningPair pair, string path, string password)
     {
         // Read before the import, so nothing that can throw stands between the import and its owner.
@@ -115,11 +91,7 @@ internal sealed class PfxFileSigningKeySource(
             "never verify what it signs. Re-export the bundle from the keypair it is meant to hold");
     }
 
-    /// <summary>
-    /// Reads the signing certificate out of the PKCS#12 bundle <paramref name="file"/> without
-    /// decrypting its key bag, so listing imports no private key into a key object. Returns
-    /// <see langword="null"/> when the file does not exist.
-    /// </summary>
+    /// <summary>The signing certificate, read without decrypting a key bag; <see langword="null"/> when the file does not exist.</summary>
     private async ValueTask<X509Certificate2?> LoadPublicCertificateAsync(
         PfxFile file, CancellationToken cancellationToken)
     {
@@ -132,9 +104,8 @@ internal sealed class PfxFileSigningKeySource(
     }
 
     /// <summary>
-    /// Authenticates the PKCS#12 bundle <paramref name="bytes"/>, selects its signing certificate and
-    /// the key bag paired with it, and hands the pair to <paramref name="use"/>. Listing and signing
-    /// both go through here, so they cannot disagree about which key a bundle signs with.
+    /// Authenticates the bundle and hands its signing pair to <paramref name="use"/>. Listing and
+    /// signing both go through here, so they cannot disagree about which key a bundle signs with.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The file is not a valid PKCS#12 bundle, is not MAC-protected, fails its integrity check
@@ -145,8 +116,7 @@ internal sealed class PfxFileSigningKeySource(
     {
         try
         {
-            // skipCopy: the returned Pkcs12Info reads directly out of `bytes`, which the caller
-            // allocated for this one call and never mutates.
+            // skipCopy: `bytes` is this call's own buffer and is never mutated.
             var info = Pkcs12Info.Decode(bytes, out _, skipCopy: true);
 
             VerifyIntegrity(info, path, password);
@@ -155,10 +125,7 @@ internal sealed class PfxFileSigningKeySource(
         }
         catch (Exception ex) when (ex is CryptographicException or AsnContentException or InvalidOperationException)
         {
-            // The exception TYPE is named, never ex.Message: the parser's text is raised over a
-            // bundle read under a configured password, and a failure message is a plain public-API
-            // string that neither by-key redaction nor RedactedExceptionWrapper can reach. The root
-            // cause travels as the inner exception instead.
+            // Never ex.Message: a failure message is not redacted, so the cause travels as the inner exception.
             throw InvalidPfx(
                 path,
                 $"could not be loaded: {ex.GetType().FullName} was thrown. See the inner exception " +
@@ -174,16 +141,9 @@ internal sealed class PfxFileSigningKeySource(
     private readonly record struct SigningPair(Pkcs12CertBag Certificate, Pkcs12SafeBag Key);
 
     /// <summary>
-    /// Rejects a bundle whose MAC does not verify under the configured password, and one carrying no
-    /// password MAC at all.
+    /// Rejects a bundle with no password MAC, or one that does not verify. Without it, a certificate in
+    /// an unencrypted safe is read under any password, so a substituted file would be published.
     /// </summary>
-    /// <remarks>
-    /// Without this, the password is not a control at all on this path: a bundle whose certificate
-    /// sits in an unencrypted safe is never asked for one, so any password — and any substituted
-    /// file — would be accepted. The ring's self-test covers only the key that signs, so every other
-    /// listed bundle's public key would simply appear in the JWKS as a valid verification key. This
-    /// is the check that makes the password the defense-in-depth the registration documents it as.
-    /// </remarks>
     private static void VerifyIntegrity(Pkcs12Info info, string path, string password)
     {
         if (info.IntegrityMode != Pkcs12IntegrityMode.Password)
@@ -204,17 +164,9 @@ internal sealed class PfxFileSigningKeySource(
     }
 
     /// <summary>
-    /// Returns the signing certificate and the key bag paired with it, decrypting each safe but never
-    /// a key bag.
+    /// The signing certificate and its key bag, paired on <c>localKeyId</c>: a bundle carries chain
+    /// certificates in no guaranteed order, so the first certificate is not necessarily the signing one.
     /// </summary>
-    /// <remarks>
-    /// A bundle routinely carries chain certificates alongside the signing certificate, in no
-    /// guaranteed order — PKCS#12 imposes none — so "the first certificate" is not the signing one.
-    /// PKCS#12 pairs a certificate with its key through a shared <c>localKeyId</c> attribute, which
-    /// is what is matched on here. Publishing a chain certificate's public key instead would put a
-    /// key nothing can sign with into the JWKS, under a <c>kid</c> derived from it, while the tokens
-    /// the real key signed carry a <c>kid</c> that is no longer published at all.
-    /// </remarks>
     private static SigningPair SelectSigningPair(Pkcs12Info info, string path, string password)
     {
         var (certBags, keyBags) = ReadBags(info, path, password);
@@ -226,8 +178,7 @@ internal sealed class PfxFileSigningKeySource(
                 "a certificate and its private key");
         }
 
-        // Checked here, where it costs nothing, rather than when the bundle is first chosen to sign —
-        // possibly long after it was deployed.
+        // Here, not when first chosen to sign, which may be long after deployment.
         if (keyBags.Count == 0)
         {
             throw InvalidPfx(path,
@@ -235,7 +186,6 @@ internal sealed class PfxFileSigningKeySource(
                 "be chosen to sign");
         }
 
-        // The normal case for any bundle carrying a chain: pair on localKeyId.
         if (keyBags.Any(keyBag => LocalKeyIdOf(keyBag) is not null))
             return PairOnLocalKeyId(certBags, keyBags, path);
 
@@ -278,9 +228,7 @@ internal sealed class PfxFileSigningKeySource(
             case Pkcs12ConfidentialityMode.None:
                 break;
 
-            // Decrypts the safe, not the key bag. A password-protected safe must be opened to reach
-            // the certificate at all; the shrouded key bag inside it stays encrypted until the signer
-            // imports it.
+            // Decrypts the safe, not the shrouded key bag inside it.
             case Pkcs12ConfidentialityMode.Password:
                 safe.Decrypt(password);
                 break;
@@ -313,8 +261,7 @@ internal sealed class PfxFileSigningKeySource(
                 "ambiguous. Export a bundle carrying a single signing certificate and its key");
         }
 
-        // A private key whose certificate is not in the bundle. A lone certificate and a lone key are
-        // still unambiguous; anything else is a bundle that cannot say what it signs with.
+        // The key's certificate is not in the bundle: only a lone certificate and key are unambiguous.
         if (certBags.Count == 1 && keyBags.Count == 1)
             return new SigningPair(certBags[0], keyBags[0]);
 
@@ -338,11 +285,7 @@ internal sealed class PfxFileSigningKeySource(
         return null;
     }
 
-    /// <summary>
-    /// Builds the shared <c>invalid_pfx</c> failure. <paramref name="cause"/> is supplied only by
-    /// the call site that catches a parser exception, and carries it as the inner exception
-    /// because the failure message names its type rather than repeating its text.
-    /// </summary>
+    /// <summary>Builds the shared <c>invalid_pfx</c> failure.</summary>
     private static ZeeKayDaConfigurationException InvalidPfx(
         string path, string problem, Exception? cause = null)
     {

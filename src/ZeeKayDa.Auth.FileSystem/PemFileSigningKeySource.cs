@@ -8,30 +8,10 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// An <see cref="ISigningKeySource"/> that lists the PEM certificates in
-/// <see cref="PemFileSigningOptions.Files"/> and signs locally, in process, with whichever of them
-/// the framework chooses.
+/// Lists the configured PEM certificates and signs in process with the one the ring chooses. A plain
+/// key is imported only by <see cref="CreateSignerAsync"/>; an encrypted key is also decrypted once per
+/// version of the files at listing, so a wrong password fails before the key is chosen to sign.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <see cref="ReadAsync"/> parses each file's certificate and checks that the file can sign: the key
-/// file's permissions, and its key blocks through <see cref="PemKeyBlocks"/>.
-/// A plain key is never parsed or imported at listing; only <see cref="CreateSignerAsync"/> imports one,
-/// for the key it is asked for.
-/// </para>
-/// <para>
-/// An encrypted key is decrypted and paired with its certificate at listing, then disposed, because a
-/// wrong password should fail before the restart that chooses the key. That happens once per version of
-/// the files: the source remembers the hash of the certificate and key text that last decrypted, and
-/// skips the decrypt and the password fetch while it is unchanged. A failure is not remembered, so a
-/// password fixed at its source is picked up on the next read.
-/// </para>
-/// <para>
-/// This source performs no algorithm/key-type check of its own.
-/// <see cref="SigningKeySetBuilder"/> validates every reported key, keyed on the source id — which
-/// here is the configured file path, so its failures still name the offending file.
-/// </para>
-/// </remarks>
 internal sealed class PemFileSigningKeySource(
     IOptions<PemFileSigningOptions> options,
     FileSigningKeyReader reader) : ISigningKeySource
@@ -58,7 +38,6 @@ internal sealed class PemFileSigningKeySource(
             var id = new SourceKeyId(file.Path);
             try
             {
-                // A deleted certificate or key file is no longer listed: deleting it revokes the key.
                 if (await ListAsync(file, id, cancellationToken).ConfigureAwait(false) is { } key)
                     keys.Add(key);
             }
@@ -84,9 +63,8 @@ internal sealed class PemFileSigningKeySource(
     }
 
     /// <summary>
-    /// Parses the certificate of <paramref name="file"/> and checks that the file can sign: any listed
-    /// file may be chosen to sign, so one that cannot fails now rather than at the restart that chooses
-    /// it. Returns <see langword="null"/> when the certificate or a separate key file does not exist.
+    /// Parses the certificate and checks the file can sign, since any listed file may be chosen to.
+    /// <see langword="null"/> when the certificate or a separate key file does not exist, which unlists the key.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The certificate is not valid PEM or its key type is unsupported; a key file is symlinked or too
@@ -95,7 +73,6 @@ internal sealed class PemFileSigningKeySource(
     /// </exception>
     private async ValueTask<SourceKey?> ListAsync(PemSigningFile file, SourceKeyId id, CancellationToken cancellationToken)
     {
-        // A missing file reads as null when listing, which unlists the key.
         using var texts = await ReadPemTextsAsync(
             file, (path, content) => reader.TryReadPemAsync(path, content, cancellationToken)).ConfigureAwait(false);
         if (texts is null)
@@ -184,10 +161,7 @@ internal sealed class PemFileSigningKeySource(
         }
         catch (Exception ex) when (ex is CryptographicException or ArgumentException or FormatException)
         {
-            // The exception TYPE is named, never ex.Message. A PEM parse error is raised over the
-            // file's own content, and a failure message is a plain public-API string that neither
-            // by-key redaction nor RedactedExceptionWrapper can reach. The root cause travels as
-            // the inner exception instead.
+            // Never ex.Message: a failure message is not redacted, so the cause travels as the inner exception.
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.file_signing.invalid_pem",
@@ -236,10 +210,7 @@ internal sealed class PemFileSigningKeySource(
         return count;
     }
 
-    /// <summary>
-    /// Parses the certificate and private key of <paramref name="file"/>, fetching the password when one
-    /// is configured. Used only by <see cref="CreateSignerAsync"/>.
-    /// </summary>
+    /// <summary>Parses the certificate and private key, fetching the password when one is configured.</summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The file(s) do not contain a valid PEM-encoded certificate and private key, or the password does
     /// not decrypt the key.
@@ -247,10 +218,7 @@ internal sealed class PemFileSigningKeySource(
     private async ValueTask<X509Certificate2> LoadSigningCertificateAsync(
         PemSigningFile file, CancellationToken cancellationToken)
     {
-        // Reads through FileSigningKeyReader and calls X509Certificate2.CreateFromPem rather than
-        // X509Certificate2.CreateFromPemFile, which performs its own unvalidated file I/O and would
-        // bypass FileSigningKeyReader's permission/symlink validation.
-        // A missing file throws when signing.
+        // Never CreateFromPemFile: its own file I/O would skip the reader's permission and symlink checks.
         using var texts = await ReadPemTextsAsync(
                 file, async (path, content) => await reader.ReadPemAsync(path, content, cancellationToken).ConfigureAwait(false))
             .ConfigureAwait(false)
@@ -275,10 +243,7 @@ internal sealed class PemFileSigningKeySource(
         }
         catch (Exception ex) when (ex is CryptographicException or ArgumentException or FormatException)
         {
-            // The exception TYPE is named, never ex.Message — and most sharply here, where the
-            // text being parsed is private key material. A failure message is a plain public-API
-            // string that neither by-key redaction nor RedactedExceptionWrapper can reach. The root
-            // cause travels as the inner exception instead.
+            // Never ex.Message: here the text being parsed is private key material.
             throw InvalidKeyPair(file, ex);
         }
     }

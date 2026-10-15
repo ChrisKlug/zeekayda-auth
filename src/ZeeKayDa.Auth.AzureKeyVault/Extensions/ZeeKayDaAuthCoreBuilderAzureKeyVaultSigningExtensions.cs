@@ -66,9 +66,7 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(credential);
 
-        // Registered first so a second signing key source is rejected before this method applies any
-        // of its own configuration — a caller that catches the rejection must not be left with this
-        // call's options callbacks applied to the surviving registration.
+        // First, so a rejected second source leaves none of this call's options applied.
         builder.AddSigningKeySource<AzureKeyVaultRemoteSigningKeySource>();
 
         builder.Services.AddZeeKayDaOptions<AzureKeyVaultRemoteSigningOptions>()
@@ -156,9 +154,7 @@ public static class ZeeKayDaAuthCoreBuilderAzureKeyVaultSigningExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(credential);
 
-        // Registered first so a second signing key source is rejected before this method applies any
-        // of its own configuration — a caller that catches the rejection must not be left with this
-        // call's options callbacks applied to the surviving registration.
+        // First, so a rejected second source leaves none of this call's options applied.
         builder.AddSigningKeySource<AzureKeyVaultCachedSigningKeySource>();
 
         builder.Services.AddZeeKayDaOptions<AzureKeyVaultCachedSigningOptions>()

@@ -1,23 +1,12 @@
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// The shared path rule for a file-based signing configuration: every path it names must resolve, and
-/// no two may resolve to the same file.
+/// The PEM and PFX validators' shared path rule: every path must resolve, and no two may resolve to the
+/// same file, which would list one key twice under two source ids.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Shared by the PEM and PFX options validators, which need the identical rule: two entries sharing a
-/// file would list one key twice under two source ids.
-/// </para>
-/// <para>
-/// Each non-empty path is normalized via <see cref="Path.GetFullPath(string)"/> before comparison, so
-/// differences like <c>tls.pfx</c> vs <c>./tls.pfx</c> are still caught. That call is pure string
-/// canonicalization only for a rooted path; for a relative one it reads the current directory, which
-/// is why I/O failures are caught and reported rather than thrown. Symlink resolution and
-/// case-insensitive-filesystem comparison are deliberately out of scope: if two paths are equivalent
-/// but not caught here, the result is a load failure or one key listed twice, which
-/// <c>SigningKeySetBuilder</c> builds into one key, not key confusion.
-/// </para>
+/// Paths are compared after <see cref="Path.GetFullPath(string)"/>. Symlinks and case-insensitive
+/// filesystems are not resolved; a duplicate missed that way lists one key twice, which the ring builds into one key.
 /// </remarks>
 internal static class SigningFilePaths
 {
@@ -58,12 +47,7 @@ internal static class SigningFilePaths
             }
             catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException or IOException)
             {
-                // An embedded NUL, a path over the platform limit, or — for a relative path, which
-                // resolves against the current directory — an I/O failure reading that directory. All
-                // are configuration errors like any other and belong in the aggregated result, not
-                // thrown out of a validator where they would escape without a code.
-                // DirectoryNotFoundException derives from IOException, so a deleted working
-                // directory is covered.
+                // A relative path reads the current directory, so this includes I/O failures; a validator reports, never throws.
                 hasUnresolvable = true;
                 continue;
             }

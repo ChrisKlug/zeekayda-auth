@@ -3,12 +3,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem;
 
-/// <summary>
-/// Validates <see cref="PemFileSigningOptions"/> at startup.
-/// </summary>
-/// <remarks>
-/// Registered via <c>AddPemFileSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
-/// </remarks>
+/// <summary>Validates <see cref="PemFileSigningOptions"/> at startup.</summary>
 internal sealed class PemFileSigningOptionsValidator : ZeeKayDaOptionsValidator<PemFileSigningOptions>
 {
     /// <inheritdoc/>
@@ -48,8 +43,7 @@ internal sealed class PemFileSigningOptionsValidator : ZeeKayDaOptionsValidator<
         }
     }
 
-    // A null Path means a caller suppressed the record's non-nullable annotation; it is reported like
-    // any other unusable path rather than left to fail confusingly further in.
+    // A null Path is a suppressed nullable annotation, reported like any other unusable path.
     private static IEnumerable<ZeeKayDaConfigurationFailure> FileFailures(int index, PemSigningFile? file)
     {
         if (file is null)

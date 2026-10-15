@@ -36,9 +36,7 @@ internal sealed class PemText : IDisposable
     /// <summary>Decodes <paramref name="bytes"/> as UTF-8 and wipes them.</summary>
     public static PemText Decode(byte[] bytes) => Decode(bytes, ArrayPool<char>.Shared);
 
-    /// <summary>
-    /// <see cref="Decode(byte[])"/> renting from <paramref name="pool"/>, so a test can observe what is returned.
-    /// </summary>
+    /// <summary><see cref="Decode(byte[])"/> renting from <paramref name="pool"/>.</summary>
     internal static PemText Decode(byte[] bytes, ArrayPool<char> pool)
     {
         char[]? buffer = null;

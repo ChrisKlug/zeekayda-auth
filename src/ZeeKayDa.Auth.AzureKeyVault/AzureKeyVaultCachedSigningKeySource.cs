@@ -1,55 +1,22 @@
-using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AzureKeyVault;
 
 /// <summary>
-/// An <see cref="ISigningKeySource"/> that serves the versions of one Azure Key Vault certificate,
-/// downloading the signing version's private key once and signing locally, in process, without a
-/// Key Vault round trip per token. Unlike the remote-signing source, an attacker who achieves
-/// process memory read gets a permanent copy of the signing key — see
-/// <c>AddAzureKeyVaultCachedSigning</c>'s remarks for the full security tradeoff.
+/// Lists the enabled versions of one Key Vault certificate from their public <c>Cer</c>, and downloads
+/// a private key only in <see cref="CreateSignerAsync"/>, for the version chosen to sign, to sign in process.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Every enabled version is listed, or the newest
-/// <see cref="AzureKeyVaultCachedSigningOptions.MaxVersions"/> of them, dated as
-/// <see cref="KeyVaultVersions"/> describes; the framework decides which one signs. Disabling a
-/// version excludes it entirely.
-/// </para>
-/// <para>
-/// <b>Private material is downloaded for exactly one version: the signing one, and only in
-/// <see cref="CreateSignerAsync"/>.</b> <see cref="ReadAsync"/> reads every published version —
-/// the signing version included — as public-only <c>Cer</c> material via
-/// <see cref="IKeyVaultCertificateReader.GetPublicKeyMaterialAsync"/>, which never needs the
-/// <c>secrets/get</c> permission. A published-only version's private key is never fetched and is
-/// never present in this process.
-/// </para>
-/// <para>
-/// The downloaded private key and the published <c>Cer</c> come from separate Key Vault reads that
-/// could in principle diverge. The ring's startup self-test verifies the signature against the
-/// published public key, so a divergence fails startup there.
-/// </para>
-/// <para>
-/// A failed or empty vault read always throws; only a version whose own key material is unusable is
-/// reported in <see cref="SourceKeyListing.Failures"/>. This source performs no
-/// algorithm/key-type check of its own: <see cref="SigningKeySetBuilder"/> validates every reported
-/// key, keyed on the source id (the Key Vault version string).
-/// </para>
-/// </remarks>
 internal sealed class AzureKeyVaultCachedSigningKeySource(
     IOptions<AzureKeyVaultCachedSigningOptions> options,
     IKeyVaultCertificateReader certificateReader) : ISigningKeySource
 {
     private readonly IOptions<AzureKeyVaultCachedSigningOptions> _options = options;
 
-    // Every version the latest read listed, so a private key is downloaded only for a version that
-    // was listed. volatile: CreateSignerAsync may run on another thread.
+    // volatile: CreateSignerAsync may run on another thread.
     private volatile IReadOnlySet<string>? _listedVersions;
 
-    // The public material of every version fetched so far that the vault still holds, enabled or not.
-    // A version's material never changes, so a refresh fetches only the versions it has not seen before.
+    // A version's material never changes, so a refresh fetches only versions it has not seen.
     private volatile IReadOnlyDictionary<string, PublicKeyParameters> _publicKeys =
         new Dictionary<string, PublicKeyParameters>(StringComparer.Ordinal);
 
@@ -75,23 +42,16 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
         // A read the ring abandoned at its deadline must not replace the list of a later read.
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Committed only after nothing can throw any more, so a failed read can never leave a
-        // signer openable for a version that was never listed.
+        // Committed last, so a failed read never makes an unlisted version openable.
         _listedVersions = listing.Keys.Select(key => key.Id.Value).ToHashSet(StringComparer.Ordinal);
         _publicKeys = KeyVaultVersions.RememberPublicKeys(_publicKeys, listing, allVersions);
         return listing;
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The single place private material enters this process: downloads the version's private key
-    /// via the certificate's linked secret and hands it to a <see cref="LocalSigner"/> that owns and
-    /// disposes it.
-    /// </remarks>
     public async Task<ISigner> CreateSignerAsync(SourceKeyId id, CancellationToken cancellationToken = default)
     {
-        // An id this source never listed, or one arriving before any successful read, is a defect in
-        // the caller rather than a request this source should honour by downloading a private key.
+        // Before any successful read, or for an unlisted id, no private key is downloaded.
         if (_listedVersions is not { } listed || !listed.Contains(id.Value))
         {
             throw new InvalidOperationException(
@@ -105,11 +65,7 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
         return new LocalSigner(_options.Value.Algorithm, privateKey);
     }
 
-    /// <summary>
-    /// Maps <paramref name="version"/> to a <see cref="SourceKey"/>, fetching its public material from
-    /// the vault unless an earlier read already did. Only the public <c>Cer</c> is ever read here —
-    /// never the linked secret — so no private material exists in the process during a read.
-    /// </summary>
+    /// <summary>Maps a version to its key, fetching its public <c>Cer</c> unless an earlier read did.</summary>
     private async ValueTask<SourceKey> ToSourceKeyAsync(
         KeyVaultCertificateVersionInfo version, CancellationToken cancellationToken) =>
         new(
@@ -126,17 +82,6 @@ internal sealed class AzureKeyVaultCachedSigningKeySource(
             .GetPublicKeyMaterialAsync(version, cancellationToken).ConfigureAwait(false);
 
         using var publicKey = rawPublicKey;
-        return ToPublicKeyParameters(publicKey, keyType);
+        return KeyVaultVersions.ToPublicKeyParameters(publicKey, keyType);
     }
-
-    /// <summary>
-    /// Exports <paramref name="publicKey"/>'s public parameters. The cast is safe:
-    /// <see cref="IKeyVaultCertificateReader.GetPublicKeyMaterialAsync"/> only ever returns an
-    /// <see cref="RSA"/> paired with <see cref="SigningKeyType.Rsa"/> or an <see cref="ECDsa"/>
-    /// paired with <see cref="SigningKeyType.Ec"/>.
-    /// </summary>
-    private static PublicKeyParameters ToPublicKeyParameters(AsymmetricAlgorithm publicKey, SigningKeyType keyType) =>
-        keyType == SigningKeyType.Rsa
-            ? PublicKeyParameters.FromRsa(((RSA)publicKey).ExportParameters(false))
-            : PublicKeyParameters.FromEc(((ECDsa)publicKey).ExportParameters(false));
 }
