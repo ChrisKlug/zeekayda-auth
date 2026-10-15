@@ -11,24 +11,9 @@ namespace ZeeKayDa.Auth.Windows;
 /// and <see cref="WindowsCertificateStoreSigningOptions.StoreName"/> apply to every listed certificate alike.
 /// </para>
 /// <para>
-/// One lookup mode ships today, <see cref="ByThumbprint"/>, returning a
-/// <see cref="ThumbprintCertificateLookup"/>. Each mode is its own derived type, and each factory
-/// here is declared to return this base type, so adding a mode later adds a type and a factory
-/// without changing the shape of anything already published. Lookup by subject name is deliberately
-/// absent: a subject name can match several certificates, so deciding which of them signs is a
-/// security question in its own right rather than a detail of this type.
-/// </para>
-/// <para>
-/// The hierarchy is closed — the constructor is <see langword="private protected"/>, so only this
-/// assembly can derive. Consumers construct lookups through the factories and never implement their
-/// own.
-/// </para>
-/// <para>
-/// A hand-written class rather than a <see langword="record"/>: a record hierarchy would publish a
-/// synthesized <c>&lt;Clone&gt;$</c>, <c>PrintMembers</c> and <c>EqualityContract</c> on every type
-/// here, and its <c>with</c> expression would become a way to build a lookup that never passed
-/// through <see cref="ByThumbprint"/> the moment any derived type gained an <c>init</c> member.
-/// Equality is the only synthesized member this type actually wants, so it is written out instead.
+/// Create one with a factory such as <see cref="ByThumbprint"/>; the hierarchy is closed to other
+/// assemblies. There is no lookup by subject name, because a subject name can match several
+/// certificates.
 /// </para>
 /// </remarks>
 public abstract class CertificateLookup : IEquatable<CertificateLookup>
@@ -37,17 +22,7 @@ public abstract class CertificateLookup : IEquatable<CertificateLookup>
     {
     }
 
-    /// <summary>
-    /// Gets the normalized, uppercase-hex thumbprint of the certificate this lookup finds. Never
-    /// empty.
-    /// </summary>
-    /// <remarks>
-    /// <see langword="internal"/> on purpose: <b>how</b> a lookup resolves to a store entry is not
-    /// part of the public contract. Every mode that exists today resolves to a thumbprint without
-    /// touching the store, but a future mode that has to query the store to resolve — subject name,
-    /// say — cannot be expressed by a plain string property. Keeping this member internal means
-    /// reshaping it then is not a breaking change.
-    /// </remarks>
+    /// <summary>The normalized, uppercase-hex thumbprint this lookup finds; never empty.</summary>
     internal abstract string NormalizedThumbprint { get; }
 
     /// <summary>
@@ -62,9 +37,7 @@ public abstract class CertificateLookup : IEquatable<CertificateLookup>
     /// <returns>A <see cref="ThumbprintCertificateLookup"/> for the normalized thumbprint.</returns>
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="thumbprint"/> is null, empty, whitespace, or contains no hex
-    /// digits at all — none of which can name a certificate. Rejecting them here, rather than at
-    /// startup validation, means the exception names the offending call rather than the options
-    /// object it ended up on, and makes a non-empty thumbprint true by construction.
+    /// digits at all — none of which can name a certificate.
     /// </exception>
     public static CertificateLookup ByThumbprint(string thumbprint)
     {
@@ -88,47 +61,19 @@ public abstract class CertificateLookup : IEquatable<CertificateLookup>
     /// </summary>
     /// <param name="other">The lookup to compare with.</param>
     /// <returns><see langword="true"/> when both name the same certificate the same way.</returns>
-    /// <remarks>
-    /// Not virtual. The null check and the exact-type check live here, once, so symmetry across two
-    /// different lookup modes is structurally true rather than a rule each future mode has to
-    /// remember — a mode that compared with <c>is</c> instead would make <c>a.Equals(b)</c> and
-    /// <c>b.Equals(a)</c> disagree whenever one mode's type derived from the other's. A mode supplies
-    /// only <see cref="EqualsCore"/>, which runs after both checks have passed.
-    /// </remarks>
     public bool Equals(CertificateLookup? other) =>
         other is not null && other.GetType() == GetType() && EqualsCore(other);
 
-    /// <summary>
-    /// Compares this lookup with <paramref name="other"/>, which is guaranteed to be non-null and of
-    /// exactly this lookup's own type.
-    /// </summary>
-    /// <param name="other">The lookup to compare with. Safe to cast to the implementing type.</param>
-    /// <returns><see langword="true"/> when both name the same certificate.</returns>
-    /// <remarks>
-    /// <see langword="private protected"/>, so only a lookup mode declared in this assembly can
-    /// supply one — the same closure the constructor gives, extended to equality.
-    /// </remarks>
+    /// <summary>Compares with <paramref name="other"/>, already checked non-null and of exactly this type.</summary>
     private protected abstract bool EqualsCore(CertificateLookup other);
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Combines the lookup mode with the mode's own component, so two modes that happen to wrap the
-    /// same string do not collide. Sealed for the same reason <see cref="Equals(CertificateLookup)"/>
-    /// is: a mode supplies only <see cref="GetHashCodeCore"/>, which means a mode cannot override
-    /// hashing without also overriding equality, or the reverse. The pairing is structural.
-    /// </remarks>
     public sealed override int GetHashCode() => HashCode.Combine(GetType(), GetHashCodeCore());
 
-    /// <summary>Returns a hash code for this lookup's own component.</summary>
-    /// <returns>A hash code consistent with <see cref="EqualsCore"/>.</returns>
+    /// <summary>A hash code consistent with <see cref="EqualsCore"/>.</summary>
     private protected abstract int GetHashCodeCore();
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// The exact-type check is applied directly to <paramref name="obj"/> rather than downcasting
-    /// first: a cast to the base would succeed for any mode, so testing the runtime type here is what
-    /// makes the comparison correct for every one of them.
-    /// </remarks>
     public sealed override bool Equals(object? obj) =>
         obj is not null && obj.GetType() == GetType() && EqualsCore((CertificateLookup)obj);
 

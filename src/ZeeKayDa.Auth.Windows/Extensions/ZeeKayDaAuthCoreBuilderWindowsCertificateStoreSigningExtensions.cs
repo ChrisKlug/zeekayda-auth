@@ -25,10 +25,6 @@ public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
     /// <see cref="PlatformNotSupportedException"/>.
     /// </para>
     /// <para>
-    /// The store is read exactly once, at startup. Adding, removing, or replacing a configured
-    /// certificate has no effect until the host restarts.
-    /// </para>
-    /// <para>
     /// To rotate, use the
     /// <see cref="AddWindowsCertificateStoreSigning{TBuilder}(TBuilder,SigningAlgorithm,StoreLocation,StoreName,Action{WindowsCertificateStoreSigningOptions})"/>
     /// overload and list both certificates.
@@ -59,8 +55,7 @@ public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
         StoreName storeName)
         where TBuilder : ZeeKayDaAuthCoreBuilder
     {
-        // Platform gate first, before any argument validation: no argument combination makes this
-        // method valid on a non-Windows OS, so this check must win over ArgumentNullException.
+        // Before argument validation: no argument makes this valid off Windows.
         ThrowIfNotWindows();
 
         ArgumentNullException.ThrowIfNull(builder);
@@ -74,7 +69,7 @@ public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
     /// Registers the certificates listed in <see cref="WindowsCertificateStoreSigningOptions.Certificates"/>
     /// from a Windows Certificate Store as the JWT signing keys. They are read at startup; the
     /// framework decides from their validity windows which one signs, locally, in process, and which
-    /// are published.
+    /// are published. The store is read again every <see cref="SigningKeyOptions.RefreshInterval"/>.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -88,7 +83,8 @@ public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
     /// <paramref name="storeLocation"/>/<paramref name="storeName"/> given here.
     /// </para>
     /// <para>
-    /// Rotation: add the successor and restart. It is published at once and signs once it has been
+    /// Rotation: list the successor, which takes a restart, since the list is read once. A listed
+    /// certificate installed into the store later is published at the next read. It signs once it has been
     /// published for the lead time; the certificate it replaces can be removed once it is no longer
     /// published. See <see cref="WindowsCertificateStoreSigningOptions.Certificates"/> for how a
     /// certificate's dates count.
@@ -124,9 +120,7 @@ public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(configure);
 
-        // Registered first so a second signing key source is rejected before this method applies any
-        // of its own configuration — a caller that catches the rejection must not be left with this
-        // call's options callbacks applied to the surviving registration.
+        // First, so a rejected second source leaves none of this call's options applied.
         builder.AddSigningKeySource<WindowsCertificateStoreSigningKeySource>();
 
         builder.Services.AddZeeKayDaOptions<WindowsCertificateStoreSigningOptions>()
