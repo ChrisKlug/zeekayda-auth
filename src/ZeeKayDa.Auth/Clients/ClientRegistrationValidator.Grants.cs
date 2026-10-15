@@ -3,11 +3,8 @@ using ZeeKayDa.Auth.Authorization;
 
 namespace ZeeKayDa.Auth.Clients;
 
-// What the client may do: its grants, response types and modes, scopes, and prompt values.
-//
-// A client is allowed only what the server serves. A value outside the server's set starts fine and
-// then silently does nothing, and an empty set refuses every request without saying why; both are
-// misconfigurations the operator should see at startup, not diagnose from a refusal.
+// What the client may do. Only what the server serves: anything else would silently do nothing, and an
+// empty set refuses every request without saying why.
 internal sealed partial class ClientRegistrationValidator
 {
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateGrants(IClientWithCredentials client) =>

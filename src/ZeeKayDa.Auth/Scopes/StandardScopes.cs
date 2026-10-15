@@ -5,15 +5,10 @@ namespace ZeeKayDa.Auth.Scopes;
 /// scopes of OpenID Connect Core §5.4, which unlock their claims at the userinfo endpoint.
 /// </summary>
 /// <remarks>
-/// §5.4 returns the <c>profile</c>, <c>email</c>, <c>phone</c> and <c>address</c> claims from the
-/// userinfo endpoint when an access token is issued, which in the code flow it always is, so none
-/// of those four scopes puts a claim in the ID token by default; <c>openid</c> is the exception and
-/// keeps <c>sub</c>, which the framework writes to every token from the grant regardless. A host
-/// that wants one of the four scopes' claims in the ID token as well adds them to that scope's
-/// <see cref="ScopeDefinition.IdTokenClaims"/>:
-/// <c>StandardScopes.Email with { IdTokenClaims = StandardScopes.Email.UserInfoClaims }</c>.
-/// A relying party using Microsoft's OpenID Connect handler reads them with
-/// <c>options.GetClaimsFromUserInfoEndpoint = true</c>.
+/// The four §5.4 scopes put no claim in the ID token by default: §5.4 returns them from userinfo when an
+/// access token is issued, as in the code flow it always is. To add them:
+/// <c>StandardScopes.Email with { IdTokenClaims = StandardScopes.Email.UserInfoClaims }</c>. Microsoft's OpenID
+/// Connect handler reads userinfo with <c>options.GetClaimsFromUserInfoEndpoint = true</c>.
 /// </remarks>
 public static class StandardScopes
 {

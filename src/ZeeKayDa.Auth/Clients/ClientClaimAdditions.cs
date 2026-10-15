@@ -3,18 +3,12 @@ using ZeeKayDa.Auth.Scopes;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// The guard on a client's <c>Additional…Claims</c>: an addition may not name a claim that any
-/// registered scope unlocks in any destination. The consent page lists scopes, so an addition is
-/// operator policy the user never sees; the guard keeps every consent-bearing claim behind the
-/// scope the user can decline.
+/// Refuses a client addition naming a claim any scope unlocks in any destination, so every consent-bearing
+/// claim stays behind a scope the user can decline.
 /// </summary>
 /// <remarks>
-/// Checked across every destination on purpose. A per-destination check would let an access-token
-/// addition of <c>email</c> through, since no scope lists <c>email</c> for
-/// the access token, and an API would then read a claim the user never consented to. Compared
-/// ignoring case, because a consuming <c>ClaimsPrincipal</c> does: an addition of <c>Email</c>
-/// would otherwise deliver what a client's <c>FindFirst("email")</c> reads. Runs where claims are
-/// selected rather than in the registration validator, which cannot see the scope repository.
+/// Across every destination, since no scope lists <c>email</c> for the access token, and ignoring case, as a
+/// <c>ClaimsPrincipal</c> does. Runs at selection: the registration validator cannot see the scopes.
 /// </remarks>
 internal static class ClientClaimAdditions
 {
@@ -24,7 +18,6 @@ internal static class ClientClaimAdditions
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(scopes);
 
-        // The common client adds nothing, and building the map is the whole cost of the check.
         if (HasNoAdditions(client))
             return null;
 
@@ -42,14 +35,7 @@ internal static class ClientClaimAdditions
 
     private static bool IsEmpty(IReadOnlyCollection<string>? additions) => additions is null or { Count: 0 };
 
-    /// <summary>
-    /// Every claim any scope unlocks anywhere, each mapped to the first scope that unlocks it.
-    /// </summary>
-    /// <remarks>
-    /// No null guard on the lists: every definition reaching here came through
-    /// <c>ValidatedScopeCatalog</c>, which refuses a repository serving a null list or a blank
-    /// claim name.
-    /// </remarks>
+    /// <summary>Every claim any scope unlocks, mapped to the first scope unlocking it; the catalog has refused null lists already.</summary>
     private static Dictionary<string, string> UnlockedByAnyScope(IEnumerable<ScopeDefinition> scopes)
     {
         var unlocked = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

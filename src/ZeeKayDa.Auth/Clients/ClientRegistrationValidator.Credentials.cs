@@ -113,9 +113,8 @@ internal sealed partial class ClientRegistrationValidator
         return advertisedAuthMethods.Contains(method) ? null : AuthMethodNotAdvertised(client, method);
     }
 
-    // Outside the derived set, 'none' on a public client can only mean the filter withholds it, so
-    // its failure names the filter. A confidential client listing 'none' is fixed by removing it
-    // (none_on_confidential), never by advertising it, so it gets no hint.
+    // 'none' on a public client can only be withheld by the filter, so that failure names it; on a
+    // confidential client the fix is removing it, reported as none_on_confidential.
     private ZeeKayDaConfigurationFailure AuthMethodNotAdvertised(IClientWithCredentials client, string method)
     {
         var publicClientRefusedByFilter = client.IsPublic && string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal);
@@ -149,10 +148,8 @@ internal sealed partial class ClientRegistrationValidator
     }
 
     /// <summary>
-    /// One bad secret refuses the whole client, even when its other secret is fine: skipping it
-    /// would hide a broken rotation until the good secret is retired. No message the framework
-    /// writes contains a stored value, beyond the well-formed algorithm id
-    /// <c>client.credentials.no_hasher</c> names.
+    /// One bad secret refuses the whole client, so a broken rotation cannot hide until the good secret is
+    /// retired. No message carries a stored value beyond a well-formed algorithm id.
     /// </summary>
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateSecrets(IClientWithCredentials client)
     {

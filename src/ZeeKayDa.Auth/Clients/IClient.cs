@@ -9,34 +9,22 @@ namespace ZeeKayDa.Auth.Clients;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This is the view handed to code that must decide <em>what</em> to issue a client without ever
-/// needing to authenticate it — <c>ITokenIssuer</c> above all. Client authentication takes
-/// <see cref="IClientWithCredentials"/>, which adds <see cref="IClientWithCredentials.Secrets"/>;
-/// everything else takes this. A downcast still reaches the credentials, so this is a guardrail
-/// rather than a boundary: its value is that the default path does not carry secrets, so code that
-/// touches them has to visibly reach for them.
+/// The view handed to code that decides <em>what</em> to issue a client, <c>ITokenIssuer</c> above all;
+/// client authentication takes <see cref="IClientWithCredentials"/>. A downcast still reaches the
+/// credentials, so this is a guardrail: code touching secrets has to visibly reach for them.
 /// </para>
 /// <para>
-/// <strong>String set comparison invariant.</strong> The values in <see cref="RedirectUris"/>,
+/// <strong>String set comparison invariant.</strong> <see cref="RedirectUris"/>,
 /// <see cref="PostLogoutRedirectUris"/>, <see cref="AllowedScopes"/> and
-/// <see cref="AllowedTokenEndpointAuthMethods"/> are compared with
-/// <see cref="System.StringComparer.Ordinal"/>, never with the comparer the set was built with, and
-/// counted by what the set enumerates, never by its <c>Count</c>. The framework guarantees both for
-/// every registration it hands out — to its own endpoints, and to a host's token issuer through
-/// <c>TokenIssuanceContext.Client</c>: each is a copy whose four sets were rebuilt with
-/// <see cref="System.StringComparer.Ordinal"/> from what the store's sets enumerated, whatever
-/// comparer the store used. Framework code compares explicitly anyway, so a code path that one day
-/// reaches a registration without the copy stays safe.
+/// <see cref="AllowedTokenEndpointAuthMethods"/> are compared with <see cref="System.StringComparer.Ordinal"/>,
+/// never the set's own comparer, and counted by enumerating, never by <c>Count</c>. Every registration
+/// the framework hands out is a copy with those sets rebuilt that way.
 /// </para>
 /// <para>
-/// Code that reads a registration straight from an <see cref="IClientRepository"/> gets no such
-/// guarantee, because a custom repository may build a set with a case-insensitive comparer or one
-/// whose <c>Count</c> differs from what it enumerates. Such code — an
-/// <see cref="IClientRegistrationValidator"/>, which a custom repository may call on its own entity at
-/// write time, the repository's own code, or host code that resolves the repository itself — MUST
-/// compare with explicit <see cref="System.StringComparer.Ordinal"/> and count by enumerating. This is a security
-/// contract, not a suggestion: a case-insensitive redirect URI or authentication method allowlist
-/// accepts values that were never registered.
+/// Code reading a registration straight from an <see cref="IClientRepository"/>, an
+/// <see cref="IClientRegistrationValidator"/> included, gets no such copy and MUST compare ordinally and
+/// count by enumerating. This is a security contract: a case-insensitive redirect URI or auth method
+/// allowlist accepts values that were never registered.
 /// </para>
 /// </remarks>
 public interface IClient
@@ -49,13 +37,11 @@ public interface IClient
     /// endpoint).
     /// </summary>
     /// <remarks>
-    /// Defaults to <see langword="false"/>, and stays declared, never computed from the
-    /// credentials: a public client that forgets to say so has no secret and fails validation
-    /// loudly. Three-way consistency rule: a client is public if and only if it has no entries in
+    /// Declared, never computed from the credentials, so a public client that forgets to say so fails
+    /// validation loudly. A client is public if and only if it has no
     /// <see cref="IClientWithCredentials.Secrets"/>, and if and only if
-    /// <see cref="AllowedTokenEndpointAuthMethods"/> is exactly <c>{ "none" }</c>. Enforced by
-    /// <see cref="IClientRegistrationValidator"/> on every registration the framework serves.
-    /// See <see href="https://www.rfc-editor.org/rfc/rfc6749#section-2.1">RFC 6749 §2.1</see>.
+    /// <see cref="AllowedTokenEndpointAuthMethods"/> is exactly <c>{ "none" }</c>
+    /// (<see href="https://www.rfc-editor.org/rfc/rfc6749#section-2.1">RFC 6749 §2.1</see>).
     /// </remarks>
     bool IsPublic => ClientDefaults.IsPublic;
 
@@ -63,10 +49,8 @@ public interface IClient
     /// Permitted redirect URIs for the authorization code flow.
     /// </summary>
     /// <remarks>
-    /// Matched with <see cref="System.StringComparer.Ordinal"/>, as
-    /// <see cref="IClient"/>'s string-set comparison invariant describes. Exact string
-    /// matching is required by
-    /// <see href="https://www.rfc-editor.org/rfc/rfc9700#section-2.1">RFC 9700 §2.1</see>.
+    /// Matched exactly and ordinally
+    /// (<see href="https://www.rfc-editor.org/rfc/rfc9700#section-2.1">RFC 9700 §2.1</see>).
     /// </remarks>
     IReadOnlySet<string> RedirectUris => ClientDefaults.RedirectUris;
 
@@ -109,9 +93,7 @@ public interface IClient
     /// Token endpoint authentication methods this client is permitted to use.
     /// </summary>
     /// <remarks>
-    /// See <see cref="IClient"/>'s string-set comparison invariant. The value
-    /// <c>"none"</c> (see <see cref="TokenEndpointAuthMethods.None"/>) is only valid for public
-    /// clients (<see cref="IsPublic"/> == <see langword="true"/>).
+    /// <c>"none"</c> (<see cref="TokenEndpointAuthMethods.None"/>) is valid only for a public client.
     /// </remarks>
     IReadOnlySet<string> AllowedTokenEndpointAuthMethods => ClientDefaults.AllowedTokenEndpointAuthMethods(IsPublic);
 
@@ -120,9 +102,7 @@ public interface IClient
     /// An empty set means all defined <see cref="PromptValue"/> values are permitted.
     /// </summary>
     /// <remarks>
-    /// The default interface implementation returns an empty set (all prompt values permitted),
-    /// which is forward-compatible when new <see cref="PromptValue"/> members are added.
-    /// An explicit full-set default would be a forward-compatibility trap.
+    /// Empty by default, so a <see cref="PromptValue"/> added later is permitted too.
     /// </remarks>
     IReadOnlySet<PromptValue> AllowedPromptValues => ClientDefaults.AllowedPromptValues;
 
@@ -133,10 +113,9 @@ public interface IClient
     /// <c>account_refused</c>.
     /// </summary>
     /// <remarks>
-    /// The standard <c>error</c> is unchanged, and a client that does not know the parameter
-    /// ignores it (RFC 6749 §4.1.2). A code tells the client only what the user did or already
-    /// knows; none says whether an account exists, which credential was wrong, or which provider
-    /// was used. The token endpoint never sends one.
+    /// The standard <c>error</c> is unchanged, and a client that does not know the parameter ignores it
+    /// (RFC 6749 §4.1.2). A code says only what the user did or already knows, never whether an account
+    /// exists, which credential was wrong, or which provider was used. The token endpoint never sends one.
     /// </remarks>
     bool EnableZkdErrorCodes => ClientDefaults.EnableZkdErrorCodes;
 
@@ -148,11 +127,9 @@ public interface IClient
     string? DisplayName => ClientDefaults.DisplayName;
 
     /// <summary>
-    /// The client's <c>initiate_login_uri</c> (OpenID Connect Core §4): where the framework sends
-    /// the browser, with <c>iss</c>, to have the client start a new sign-in when a login or consent
-    /// page is submitted for an interaction that no longer exists — it expired, was already
-    /// completed, or was answered twice. <see langword="null"/> (the default) sends the user to the
-    /// host's error page instead.
+    /// The client's <c>initiate_login_uri</c> (OpenID Connect Core §4): where the browser is sent, with
+    /// <c>iss</c>, to start a new sign-in when a page is submitted for an interaction that no longer exists.
+    /// <see langword="null"/> (the default) sends the user to the host's error page instead.
     /// </summary>
     /// <remarks>
     /// An absolute <c>https</c> URI with no fragment or userinfo; startup fails otherwise. The
@@ -166,13 +143,9 @@ public interface IClient
     /// issued to this client. Defaults to <see langword="true"/>.
     /// </summary>
     /// <remarks>
-    /// Consent is what lets a user notice an authorization request they never started: a
-    /// malicious or compromised client can navigate a victim to a valid request of its own and
-    /// collect the code the victim's sign-in produces, and the consent page is the only thing
-    /// between that sign-in and the code. Setting this to <see langword="false"/> removes that
-    /// protection for this client, which is a deliberate choice for an operator's own
-    /// first-party applications and nothing else. It is a default interface member because
-    /// requiring consent is what a registration means unless it says otherwise.
+    /// Consent lets a user notice a request they never started: a malicious client can send a victim to a
+    /// valid request of its own and collect the code their sign-in produces. <see langword="false"/> removes
+    /// that protection, so set it only for an operator's own first-party applications.
     /// </remarks>
     bool RequireConsent => ClientDefaults.RequireConsent;
 
@@ -181,13 +154,9 @@ public interface IClient
     /// first. Defaults to <see langword="false"/>.
     /// </summary>
     /// <remarks>
-    /// Even when <see langword="true"/>, the question is skipped only for a request carrying a
-    /// valid <c>id_token_hint</c> issued to this client for the user signed in to the browser; any
-    /// other sign-out is confirmed. An ID token is not a secret — it passes through the browser
-    /// and the client's own logs — so skipping the question lets anyone holding one of the user's
-    /// ID tokens for this client sign them out. Set it only for an operator's own first-party
-    /// applications. It is a default interface member because asking is what a registration
-    /// means unless it says otherwise.
+    /// Even then, only a request with a valid <c>id_token_hint</c> issued to this client for the signed-in
+    /// user skips the question. An ID token is not a secret, so anyone holding one can sign the user out:
+    /// set it only for an operator's own first-party applications.
     /// </remarks>
     bool SkipLogoutConfirmation => ClientDefaults.SkipLogoutConfirmation;
 
@@ -197,15 +166,10 @@ public interface IClient
     /// <see langword="false"/>.
     /// </summary>
     /// <remarks>
-    /// A confidential client may skip PKCE when the operator has reasonable assurance that it
-    /// implements the OpenID Connect <c>nonce</c> check properly (OAuth 2.1 §7.5.1.1, RFC 9700
-    /// §2.1.1). Setting this to <see langword="false"/> is that assurance, and the server does not
-    /// check it per request: a client registered this way that sends neither a challenge nor a
-    /// <c>nonce</c> is issued a code with nothing protecting it from code injection (RFC 9700 §4.5).
-    /// PKCE stays recommended even then, and a challenge the client does send is enforced as for
-    /// any other client. On a public client, <see langword="false"/> fails startup and is ignored
-    /// by the authorize endpoint. It is a default interface member because requiring PKCE is what a
-    /// registration means unless it says otherwise.
+    /// <see langword="false"/> is the operator's assurance that the client checks <c>nonce</c> properly
+    /// (OAuth 2.1 §7.5.1.1, RFC 9700 §2.1.1), and is not checked per request: a code issued with neither a
+    /// challenge nor a <c>nonce</c> has nothing protecting it from injection (RFC 9700 §4.5). A challenge the
+    /// client does send is still enforced. On a public client it fails startup.
     /// </remarks>
     bool RequirePkce => ClientDefaults.RequirePkce;
 
@@ -214,11 +178,8 @@ public interface IClient
     /// whatever the server signs with.
     /// </summary>
     /// <remarks>
-    /// The server signs with one algorithm, the signing source's, which the discovery document
-    /// publishes as <c>id_token_signing_alg_values_supported</c>. When non-null, this set MUST be
-    /// non-empty, MUST contain only defined values, and MUST contain that algorithm; the framework's
-    /// validator enforces this on every registration it serves. Any other entry has no effect and is
-    /// warned about once.
+    /// When non-null, MUST be non-empty, defined values only, and contain the one algorithm the server signs
+    /// with; the validator enforces this. Any other entry has no effect and is warned about once.
     /// </remarks>
     IReadOnlySet<SigningAlgorithm>? AllowedSigningAlgorithms => ClientDefaults.AllowedSigningAlgorithms;
 
@@ -247,15 +208,10 @@ public interface IClient
     /// scopes unlock. Empty by default.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// A selector, not a source: a type named here still has to come back from the host's
-    /// <c>IClaimsProvider</c> to appear anywhere. Additions only widen; removal is
-    /// <see cref="AllowedScopes"/>. An addition may not name a claim that any registered scope
-    /// unlocks in any destination, so a consent-bearing claim such as <c>email</c> can only
-    /// arrive through its scope; the framework checks that on every grant it selects claims for,
-    /// and a colliding registration is answered <c>server_error</c>. Compared with
-    /// <see cref="System.StringComparer.Ordinal"/>, whatever the collection's own comparer.
-    /// </para>
+    /// A selector, not a source: the type still has to come back from the host's <c>IClaimsProvider</c>.
+    /// Additions only widen. One may not name a claim any registered scope unlocks, so a consent-bearing claim
+    /// such as <c>email</c> arrives only through its scope; a colliding registration is answered
+    /// <c>server_error</c>. Compared ordinally, whatever the collection's own comparer.
     /// </remarks>
     IReadOnlySet<string> AdditionalIdTokenClaims => ClientDefaults.AdditionalClaims;
 

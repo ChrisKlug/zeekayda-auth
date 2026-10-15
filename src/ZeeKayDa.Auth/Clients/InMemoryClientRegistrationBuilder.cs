@@ -6,8 +6,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// Registers clients with the in-memory client repository.
 /// </summary>
 /// <remarks>
-/// Obtained via <c>builder.AddInMemoryClients(clients => { ... })</c>. Multiple
-/// <c>AddInMemoryClients</c> calls are additive — registrations accumulate rather than replace.
+/// Obtained via <c>builder.AddInMemoryClients(clients => { ... })</c>; repeated calls accumulate.
 /// </remarks>
 public sealed class InMemoryClientRegistrationBuilder
 {
@@ -21,14 +20,10 @@ public sealed class InMemoryClientRegistrationBuilder
     /// held to PKCE.
     /// </summary>
     /// <param name="clientId">The client's <c>client_id</c>.</param>
-    /// <param name="configure">
-    /// Sets the client's redirect URIs, scopes and other settings. It is called once, before this
-    /// method returns.
-    /// </param>
+    /// <param name="configure">Sets the client's settings; called once, before this method returns.</param>
     /// <returns>This builder, so calls can be chained.</returns>
     /// <remarks>
-    /// The server advertises <c>none</c> by default; a <c>TokenEndpoint.AdvertisedAuthMethods</c>
-    /// filter that withholds it makes startup reject the registration.
+    /// A <c>TokenEndpoint.AdvertisedAuthMethods</c> filter withholding <c>none</c> fails startup.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="clientId"/> or <paramref name="configure"/> is <see langword="null"/>.
@@ -48,16 +43,12 @@ public sealed class InMemoryClientRegistrationBuilder
     /// Registers a confidential client, authenticated at the token endpoint with its secret.
     /// </summary>
     /// <param name="clientId">The client's <c>client_id</c>.</param>
-    /// <param name="configure">
-    /// Sets the client's secret, redirect URIs, scopes and other settings. It is called once, before
-    /// this method returns.
-    /// </param>
+    /// <param name="configure">Sets the client's secret and settings; called once, before this method returns.</param>
     /// <returns>This builder, so calls can be chained.</returns>
     /// <remarks>
     /// Exactly one of <see cref="ConfidentialClientOptions.Secret"/> and
-    /// <see cref="ConfidentialClientOptions.SecretHash"/> must be set. A plaintext secret is hashed by
-    /// the host's default <see cref="IClientSecretHasher"/> when the host starts, and the plaintext is
-    /// released after that.
+    /// <see cref="ConfidentialClientOptions.SecretHash"/> must be set; a plaintext secret is hashed at
+    /// startup and then released.
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="clientId"/> or <paramref name="configure"/> is <see langword="null"/>.

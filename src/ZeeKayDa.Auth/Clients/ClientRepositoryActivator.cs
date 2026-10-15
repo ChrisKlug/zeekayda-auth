@@ -7,17 +7,9 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Forces the registered <see cref="IClientRepository"/> to be resolved during host startup, and
-/// checks the in-memory registrations against the scope repository.
+/// Resolves the client repository at startup, so the in-memory store's validation and hashing run before
+/// any request, and checks in-memory registrations against the scopes.
 /// </summary>
-/// <remarks>
-/// <see cref="InMemoryClientRepository"/> performs duplicate detection, per-client validation, and
-/// secret hashing when it is built; since it's a singleton, nothing else forces that before the
-/// first request needing it. Nothing here catches exceptions thrown while resolving
-/// <see cref="IClientRepository"/>; when none is registered at all, the
-/// <c>ClientRepositoryPresenceVerifier</c> failure aborts startup before this activator runs,
-/// otherwise the exception propagates to the runner.
-/// </remarks>
 internal sealed class ClientRepositoryActivator(
     IServiceProvider services,
     ValidatedScopeCatalog scopeCatalog,
@@ -30,19 +22,14 @@ internal sealed class ClientRepositoryActivator(
     /// <inheritdoc/>
     public async Task VerifyAsync(StartupVerificationContext context, CancellationToken cancellationToken)
     {
-        // Client registrations are validated against the algorithms the server advertises, which do
-        // not exist until the signing key ring has read its source. Asking for that here, rather
-        // than assuming this runs after the ring's own activator, is what keeps the check correct
-        // whatever order the activator phase happens to run in. EnsureInitializedAsync is
-        // idempotent, so whichever activator asks first does the work and the other observes it.
+        // Registrations are validated against the ring's algorithm, so ask for it rather than rely on
+        // activator order; EnsureInitializedAsync is idempotent.
         if (ring is not null)
             await ring.EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
 
-        // Resolved only now, not injected: building it validates every registration against
-        // those algorithms. Any exception flows out to the runner and aborts startup.
+        // Resolved only now: building it validates every registration against that algorithm.
         var repository = services.GetRequiredService<IClientRepository>();
 
-        // Warn if a custom IClientRepository has shadowed AddInMemoryClients' registration.
         if (inMemoryOptions is not null && repository is not InMemoryClientRepository)
         {
             context.AddWarning(
@@ -59,25 +46,10 @@ internal sealed class ClientRepositoryActivator(
     }
 
     /// <summary>
-    /// The rules the authorization endpoint applies per request, applied once at startup to the
-    /// registrations the framework holds itself: every allowed scope is defined, and no claim
-    /// addition names a claim a scope unlocks. A custom repository is covered per request only.
+    /// The authorize endpoint's per-request scope rules, applied once to the in-memory registrations. A broken
+    /// scope repository is reported here too, since this read may differ from another activator's, and the
+    /// client rules are then skipped rather than bury it.
     /// </summary>
-    /// <remarks>
-    /// When the scope repository breaks its contract, the breach is reported here and the client
-    /// rules are skipped. Reporting rather than returning silently is deliberate: each activator
-    /// reads the repository itself, so one that answers this read differently from
-    /// <c>ScopePresenceActivator</c>'s — a remote or mutable store — would otherwise let
-    /// startup succeed on a configuration this activator saw was broken. Checks here are
-    /// order-independent and never rely on another having run. Both reporting the same breach
-    /// costs nothing: the runner collapses failures sharing a <c>(Code, Message)</c>, which is
-    /// where that rule lives.
-    /// <para>
-    /// The client rules themselves are skipped because both ask what the scopes are, and a broken
-    /// repository has no answer worth holding a client to — every client would be reported for
-    /// allowing an undefined scope, burying the failure that actually matters.
-    /// </para>
-    /// </remarks>
     private async ValueTask CheckAgainstScopesAsync(
         StartupVerificationContext context,
         InMemoryClientRepository repository,

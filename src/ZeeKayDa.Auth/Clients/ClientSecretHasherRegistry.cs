@@ -4,15 +4,9 @@ using ZeeKayDa.Auth.Configuration;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// The registered <see cref="IClientSecretHasher"/> implementations, checked and indexed by algorithm
-/// id once, at startup: which hasher owns a stored secret, which one creates new secrets, and the
-/// decoy each one verifies against when a failed authentication is padded.
+/// The registered hashers, checked and indexed by algorithm id at startup: which owns a stored secret,
+/// which creates new ones, and each one's timing decoy, built here.
 /// </summary>
-/// <remarks>
-/// Every hasher's decoy is built in the constructor; see <see cref="IClientSecretHasher.CreateTimingDecoy"/>
-/// for what that costs. Also holds the per-secret checks a client registration runs, since they
-/// dispatch to the same hashers and never pad.
-/// </remarks>
 internal sealed class ClientSecretHasherRegistry
 {
     private readonly IReadOnlyDictionary<string, IClientSecretHasher> _hashersById;
@@ -34,9 +28,8 @@ internal sealed class ClientSecretHasherRegistry
     public IReadOnlyList<(IClientSecretHasher Hasher, ClientSecret Decoy)> TimingDecoys { get; }
 
     /// <summary>
-    /// The algorithm id of a stored value: the text between its first two <c>$</c>, or
-    /// <see langword="null"/> when the value does not start with <c>$&lt;id&gt;$</c> or that text could
-    /// not be an id. Only an id this returns is ever written to a log.
+    /// The text between a stored value's first two <c>$</c> when it is a valid id, else <see langword="null"/>;
+    /// only an id this returns is ever logged.
     /// </summary>
     public static string? AlgorithmIdOf(string? value)
     {
@@ -52,12 +45,9 @@ internal sealed class ClientSecretHasherRegistry
         AlgorithmIdOf(stored?.Value) is { } id ? _hashersById.GetValueOrDefault(id) : null;
 
     /// <summary>
-    /// Whether <paramref name="hasher"/> is the one that owns <paramref name="secret"/>'s algorithm id.
+    /// Whether <paramref name="hasher"/> owns <paramref name="secret"/>'s id, by the ids indexed at startup,
+    /// never the hasher's live set.
     /// </summary>
-    /// <remarks>
-    /// Checked against the ids indexed at startup, never the hasher's live AlgorithmIds: a set that
-    /// changed since would let through a secret dispatch can never route back to this hasher.
-    /// </remarks>
     public bool IsHasherFor(IClientSecretHasher hasher, ClientSecret? secret) =>
         ReferenceEquals(HasherFor(secret), hasher);
 
@@ -65,9 +55,8 @@ internal sealed class ClientSecretHasherRegistry
     public bool CanVerify(ClientSecret stored) => HasherFor(stored) is not null;
 
     /// <summary>
-    /// The owning hasher's failures for a stored secret, each prefixed with the client id. A hasher
-    /// that throws is reported by exception type. A secret no hasher declared yields nothing here:
-    /// the validator reports <c>client.credentials.no_hasher</c> for it.
+    /// The owning hasher's failures for a stored secret, prefixed with the client id; a throw is reported by
+    /// type, and an unowned secret is the validator's to report.
     /// </summary>
     public IReadOnlyList<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored, string clientId)
     {
@@ -182,7 +171,6 @@ internal sealed class ClientSecretHasherRegistry
         if (IsHasherFor(hasher, decoy))
             return decoy!;
 
-        // Error codes below are stable API — do not rename without a semver-major bump.
         throw new ZeeKayDaConfigurationException(
             new ZeeKayDaConfigurationFailure(
                 "configuration.hashers.timing_decoy_unhandled",
@@ -197,7 +185,6 @@ internal sealed class ClientSecretHasherRegistry
         IReadOnlyList<IClientSecretHasher> hashers,
         ClientSecretHasherRegistrationOptions options)
     {
-        // Error codes below are stable API — do not rename without a semver-major bump.
         if (hashers.Count == 0)
             throw new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(

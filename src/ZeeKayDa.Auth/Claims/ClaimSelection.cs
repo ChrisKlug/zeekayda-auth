@@ -2,24 +2,10 @@ using System.Text.Json;
 
 namespace ZeeKayDa.Auth.Claims;
 
-/// <summary>
-/// Which of a provider's claims land in which destination. Configuration, not an extension
-/// point: the variable part of the subsystem is where claims come from, and that has its seam.
-/// </summary>
+/// <summary>Which of a provider's claims land in which destination, all from one pool in one call.</summary>
 /// <remarks>
-/// <para>
-/// Reserved protocol names are dropped from the pool first, so a provider cannot re-assert a
-/// subject, an audience or an authentication event, and so is every record no destination
-/// wants, since a provider is told that returning more than asked is harmless. Repeated records
-/// for one wanted name then merge into one JSON array in the order returned, when every value
-/// is a string or every value is a number; any other repeat, or a repeat of a single-valued
-/// standard claim, is a provider bug and aborts issuance. Each destination then receives every
-/// merged claim its plan wants; a wanted claim the provider did not return is simply absent.
-/// </para>
-/// <para>
-/// Both tokens of one issuance are selected from one pool by one call, so they cannot disagree
-/// about a claim.
-/// </para>
+/// Reserved and unwanted names are dropped first. Repeats of a wanted name merge into one JSON array when all
+/// strings or all numbers; any other repeat, or a single-valued standard claim repeated, aborts issuance.
 /// </remarks>
 internal static class ClaimSelection
 {
@@ -37,11 +23,8 @@ internal static class ClaimSelection
     }
 
     /// <summary>
-    /// One value per wanted claim name, in first-seen order, with reserved and unwanted names
-    /// gone before anything is validated, so only what can reach a token can fail issuance.
-    /// Records are grouped ignoring case, under the first casing seen: a consuming
-    /// <c>ClaimsPrincipal</c> reads <c>email_verified</c> and <c>Email_Verified</c> as one claim,
-    /// so two such records are one repeat, and for a single-valued claim a bug.
+    /// One value per wanted name, in first-seen order. Grouped ignoring case, since a <c>ClaimsPrincipal</c>
+    /// reads <c>email_verified</c> and <c>Email_Verified</c> as one claim.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// The pool holds a default record, or a wanted claim repeated in a way that cannot be merged.

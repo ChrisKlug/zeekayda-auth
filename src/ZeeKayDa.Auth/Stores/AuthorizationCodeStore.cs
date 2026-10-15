@@ -9,22 +9,12 @@ using static ZeeKayDa.Auth.Stores.StoreGuard;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// The framework's authorization-code store: the protocol over an <see cref="IAuthorizationCodeBackingStore"/>.
+/// The authorization-code protocol over an <see cref="IAuthorizationCodeBackingStore"/>: hashed keys,
+/// encryption, single-use redemption, fail-closed I/O, expiry and outcomes.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Owns everything protocol-critical: handle hashing into <see cref="StoreKey"/>, Data
-/// Protection encryption, the check-and-consume state machine and its atomicity, fail-closed
-/// I/O (<see cref="Guarded{T}"/>), logical expiry / clock skew, and outcome selection. Persists
-/// opaque bytes through an injected <see cref="IAuthorizationCodeBackingStore"/>, which has no
-/// knowledge of any of the above.
-/// </para>
-/// <para>
-/// Key layout: entries are keyed <c>zkd:code:e:{hex(sha256(handle))}</c>,
-/// tombstones <c>zkd:code:t:{hex(sha256(handle))}</c>, and the one-outcome-per-interaction claim
-/// <c>zkd:code:i:{hex(sha256(interactionId))}</c>. Raw handles and identifiers are never
-/// persisted as keys or embedded in stored values.
-/// </para>
+/// Keys are <c>zkd:code:e:</c> entries, <c>zkd:code:t:</c> tombstones and <c>zkd:code:i:</c> interaction
+/// claims, each over a SHA-256 hash; no raw handle or id is ever persisted.
 /// </remarks>
 internal sealed class AuthorizationCodeStore(
     IAuthorizationCodeBackingStore backingStore,
@@ -34,8 +24,7 @@ internal sealed class AuthorizationCodeStore(
 {
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:AuthorizationCodeStore";
 
-    // The claim carries no information — its presence is the fact — so a single byte is stored
-    // rather than an empty value some backends refuse.
+    // Presence is the fact; one byte, since some backends refuse an empty value.
     private static readonly ReadOnlyMemory<byte> ReservationMarker = new byte[] { 1 };
 
     private readonly IDataProtector _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
@@ -115,9 +104,7 @@ internal sealed class AuthorizationCodeStore(
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException or ArgumentException)
         {
-            // The entry is unusable — there is nothing to hand back — so the redeem path returns
-            // NotFound. Distinct from the tombstone catch site below. ArgumentException covers a
-            // value the entry's own types refuse to construct, such as an incomplete PKCE binding.
+            // Unusable, so NotFound. ArgumentException: a value the entry's types refuse, such as half a PKCE binding.
             return new AuthorizationCodeRedemptionResult.NotFound();
         }
 

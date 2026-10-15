@@ -7,21 +7,16 @@ namespace ZeeKayDa.Auth.Stores;
 /// An opaque, already-hashed persistence key for a backing store.
 /// </summary>
 /// <remarks>
-/// Constructed ONLY by the framework, as <c>zkd:{store}:{kind}:{hex(sha256(value))}</c>. A backing-store
-/// implementation receives <see cref="StoreKey"/> values and can persist them, use them as
-/// dictionary/row keys, and compare them — but can never recover the raw handle, and so can
-/// never persist a redeemable secret even by accident.
+/// Built only by the framework, as <c>zkd:{store}:{kind}:{hex(sha256(value))}</c>, so a backing store can
+/// key and compare by it but never recover, or accidentally persist, a redeemable handle.
 /// </remarks>
 public readonly struct StoreKey : IEquatable<StoreKey>
 {
     private readonly string _value;
 
-    // Framework-only constructor — a backing store cannot fabricate a StoreKey from a raw
-    // handle, making "hash the handle" structurally unrepresentable to get wrong.
     internal StoreKey(string value) => _value = value;
 
-    // The one key format every store uses, so a key in a shared backend says which store and
-    // which kind of record it belongs to.
+    // One format, so a key in a shared backend says which store and record kind it belongs to.
     internal static StoreKey Hash(string store, string kind, string value) =>
         new($"zkd:{store}:{kind}:{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)))}");
 

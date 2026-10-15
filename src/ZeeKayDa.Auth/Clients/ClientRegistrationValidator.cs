@@ -6,15 +6,10 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Default implementation of <see cref="IClientRegistrationValidator"/> that enforces all
-/// client registration rules.
+/// The default <see cref="IClientRegistrationValidator"/>; its rules are grouped by topic in sibling files,
+/// run in the order <see cref="Validate"/> lists.
 /// </summary>
-/// <remarks>
-/// Registered as a singleton by <c>AddZeeKayDaAuth()</c>. The rules are grouped by what they are
-/// about, one sibling file per group, and run in the order <see cref="Validate"/> lists them.
-/// </remarks>
-// keyRing is null when no ring is registered, and deliberately has no default: omitting it would
-// silently weaken the check that a client's AllowedSigningAlgorithms are ones the ring signs with.
+// keyRing has no default, so omitting it cannot silently skip the signing-algorithm check.
 internal sealed partial class ClientRegistrationValidator(
     IOptions<AuthorizationServerOptions> options,
     AdvertisedAuthMethods advertisedAuthMethods,
@@ -22,9 +17,7 @@ internal sealed partial class ClientRegistrationValidator(
     SanitizingLogger<ClientRegistrationValidator> logger,
     SigningKeyRing? keyRing) : IClientRegistrationValidator
 {
-    // The resolver validates on every lookup, so an advisory written each time would let anyone
-    // who knows a client_id repeat it per request. Keyed by what the store returned, never by
-    // request input; cleared at the cap, which costs one repeat per advisory.
+    // Validation runs on every lookup, so advisories are written once, keyed by what the store returned.
     private const int MaxWarnedAdvisories = 16_384;
 
     private readonly ConcurrentDictionary<(string ClientId, string Advisory, string? Detail), byte> _warned = new();
