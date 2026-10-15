@@ -1005,7 +1005,7 @@ public sealed class SigningKeyRingTests
             SigningAlgorithm.ES256);
         var logger = new SanitizingLogger<SigningKeyRing>(
             new ThrowingLogger(), Microsoft.Extensions.Options.Options.Create(new AuthorizationServerOptions()));
-        var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch), TestSigningKeys.Options, logger);
+        using var ring = new SigningKeyRing(source, new FakeTimeProvider(Epoch), TestSigningKeys.Options, logger);
 
         var act = () => ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         await act.Should().ThrowAsync<InvalidOperationException>();
@@ -1144,7 +1144,7 @@ public sealed class SigningKeyRingTests
             },
             () => { },
             SigningAlgorithm.ES256);
-        var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
         await requested.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
@@ -1439,7 +1439,7 @@ public sealed class SigningKeyRingTests
             },
             () => disposed.Add("source"),
             SigningAlgorithm.ES256);
-        var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
+        using var ring = new SigningKeyRing(source, clock, TestSigningKeys.Options, new CapturingSanitizingLogger<SigningKeyRing>());
         await ring.EnsureInitializedAsync(TestContext.Current.CancellationToken);
         clock.SetUtcNow(Epoch + TestSigningKeys.Options.LeadTime);
 
@@ -1473,7 +1473,7 @@ public sealed class SigningKeyRingTests
         var clock = new FakeTimeProvider(Epoch);
         var disposed = new List<string>();
         var opened = 0;
-        var ring = TestSigningKeys.Ring(
+        using var ring = TestSigningKeys.Ring(
             [TestSigningKeys.Pair("current", notBefore: Epoch.AddDays(-90)), TestSigningKeys.Pair("successor", notBefore: Epoch)],
             clock,
             decorateSigner: signer =>

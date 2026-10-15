@@ -477,7 +477,7 @@ public sealed class SanitizingLoggerTests
             new("client_secret", "topsecret"),
         };
 
-        sut.Log(LogLevel.Information, default, state, null, (s, ex) => s.ToString()!);
+        sut.Log(LogLevel.Information, default, state, null, (_, _) => "unused: the sanitizer formats redacted state itself");
 
         inner.Entries.Should().HaveCount(1);
         inner.Entries[0].FormattedMessage.Should().Be("{OriginalFormat}: 42, safe_key: safe_value, client_secret: [REDACTED]");
