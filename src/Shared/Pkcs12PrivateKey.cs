@@ -7,11 +7,6 @@ namespace ZeeKayDa.Auth;
 /// Imports a PKCS#12 key bag into an in-memory <see cref="RSA"/> or <see cref="ECDsa"/>, never
 /// through an OS-backed certificate, so the private key is not written to a key store on disk.
 /// </summary>
-/// <remarks>
-/// Compiled into both the PFX file and the Azure Key Vault cached signing providers as a linked
-/// file, so each holds its own internal copy of one implementation without core exposing it.
-/// Which key bag to import is the caller's choice.
-/// </remarks>
 internal static class Pkcs12PrivateKey
 {
     /// <summary>
@@ -51,13 +46,11 @@ internal static class Pkcs12PrivateKey
         }
         catch (CryptographicException)
         {
-            // Not a key of this type.
             key.Dispose();
             return null;
         }
         catch
         {
-            // This handle must never leak regardless of what gets thrown.
             key.Dispose();
             throw;
         }

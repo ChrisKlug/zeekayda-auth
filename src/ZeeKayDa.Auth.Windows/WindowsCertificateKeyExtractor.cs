@@ -5,13 +5,9 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Windows;
 
 /// <summary>
-/// Extracts a private key handle from an already-obtained <see cref="X509Certificate2"/>.
+/// Extracts a private key handle through <c>GetRSAPrivateKey()</c>/<c>GetECDsaPrivateKey()</c>,
+/// whose handles outlive the certificate.
 /// </summary>
-/// <remarks>
-/// Uses only <c>GetRSAPrivateKey()</c> / <c>GetECDsaPrivateKey()</c> — never <c>.PrivateKey</c> or <c>ExportParameters(true)</c>. These
-/// accessors return handles that remain valid after the parent <see cref="X509Certificate2"/> is
-/// disposed, which is what lets the caller dispose the certificate once handles are extracted.
-/// </remarks>
 internal static class WindowsCertificateKeyExtractor
 {
     /// <summary>Extracts a private key handle and its key type from a certificate.</summary>
@@ -37,14 +33,11 @@ internal static class WindowsCertificateKeyExtractor
             throw InaccessiblePrivateKey(thumbprint, ex);
         }
 
-        // HasPrivateKey was true but neither accessor returned a handle: the process identity likely
-        // lacks access to it — a distinct root cause from "no private key at all".
+        // HasPrivateKey was true, so no handle means the process likely lacks access to the key.
         throw InaccessiblePrivateKey(thumbprint, cause: null);
     }
 
-    /// <summary>
-    /// The failure for a listed certificate with no private key installed beside it in the store.
-    /// </summary>
+    /// <summary>The failure for a listed certificate with no private key installed beside it.</summary>
     public static ZeeKayDaConfigurationException NoPrivateKey(string thumbprint) =>
         new(new ZeeKayDaConfigurationFailure(
             "signing.windows_certificate_store.private_key_not_found",

@@ -33,11 +33,7 @@ public sealed class ILoggerDirectUseAnalyzer : DiagnosticAnalyzer
     /// <inheritdoc/>
     public override void Initialize(AnalysisContext context)
     {
-        // This is a security control enforcing the log-never list, not a style
-        // preference, so the usual "don't nag about generated code" convention does not apply:
-        // classifying a file as generated (by filename, header, [GeneratedCode], or
-        // generated_code = true) would otherwise silently suppress the rule with no rule ID
-        // in the diff.
+        // A security control, not a style rule: marking a file as generated must not switch it off.
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.Analyze | GeneratedCodeAnalysisFlags.ReportDiagnostics);
         context.EnableConcurrentExecution();
 
@@ -68,11 +64,7 @@ public sealed class ILoggerDirectUseAnalyzer : DiagnosticAnalyzer
             context.ReportDiagnostic(Diagnostic.Create(Rule, field.Declaration.Type.GetLocation()));
     }
 
-    /// <summary>
-    /// Returns true when the containing type itself implements <c>ILogger&lt;T&gt;</c> — i.e. it
-    /// IS a logger wrapper (like <c>SanitizingLogger&lt;T&gt;</c>) and therefore legitimately
-    /// accepts a raw <c>ILogger&lt;T&gt;</c> as its inner target.
-    /// </summary>
+    /// <summary>A logger wrapper such as <c>SanitizingLogger&lt;T&gt;</c> legitimately takes a raw <c>ILogger&lt;T&gt;</c> to wrap.</summary>
     private static bool IsInLoggerImplementation(SyntaxNodeAnalysisContext context, SyntaxNode node)
     {
         var typeDecl = node.Ancestors().OfType<BaseTypeDeclarationSyntax>().FirstOrDefault();
