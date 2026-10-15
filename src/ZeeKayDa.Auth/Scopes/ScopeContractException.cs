@@ -32,4 +32,8 @@ internal sealed class ScopeContractException : ZeeKayDaConfigurationException
         : base(failures)
     {
     }
+
+    /// <summary>Every failure's code and message, safe to log because each is the framework's own text.</summary>
+    public string DescribeFailures() =>
+        string.Join("; ", AggregatedFailures.Select(failure => $"[{failure.Code}] {failure.Message}"));
 }

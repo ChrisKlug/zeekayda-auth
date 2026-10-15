@@ -49,10 +49,7 @@ internal sealed class EndSessionEndpoint(
     private readonly SsoSession _session = session;
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Served on the same condition as the authorization endpoint: only the authorization code
-    /// flow signs anyone in, so a host without it has no session to end.
-    /// </remarks>
+    /// <remarks>Served only with the authorization code grant, the only flow that signs anyone in.</remarks>
     public void Map(IEndpointRouteBuilder endpoints)
     {
         if (!options.Value.GrantTypesSupported.Contains(GrantType.AuthorizationCode))
@@ -60,12 +57,10 @@ internal sealed class EndSessionEndpoint(
 
         var endpointUri = PublishedUri();
 
-        // AllowAnonymous so a host-wide authorization fallback policy cannot challenge a sign-out
-        // with the host's scheme: the SSO session is not the host's scheme.
         Delegate handler = HandleAsync;
         endpoints.MapMethods(endpointUri.AbsolutePath, [HttpMethods.Get, HttpMethods.Post], handler)
             .RequireIssuerHost(endpointUri)
-            .AllowAnonymous();
+            .ExemptFromHostAuthorization();
 
         if (options.Value.EndSessionEndpoint.LogoutPath is not null)
             return;
@@ -73,7 +68,7 @@ internal sealed class EndSessionEndpoint(
         Delegate confirm = ConfirmAsync;
         endpoints.MapMethods(ConfirmPath(endpointUri), [HttpMethods.Get, HttpMethods.Post], confirm)
             .RequireIssuerHost(endpointUri)
-            .AllowAnonymous();
+            .ExemptFromHostAuthorization();
     }
 
     internal async Task<IResult> HandleAsync(HttpContext context, IdTokenHintValidator hints, ValidatedClientResolver clients)

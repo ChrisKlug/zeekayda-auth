@@ -47,4 +47,11 @@ internal static class EndpointRouteHelper
 
     public static RouteHandlerBuilder RequireIssuerHost(this RouteHandlerBuilder builder, Uri endpointUri)
         => builder.RequireHost(endpointUri.Authority);
+
+    /// <summary>
+    /// Keeps the host's authorization policies off a framework endpoint, which authenticates its caller
+    /// itself if at all: a host fallback policy would otherwise challenge with the host's own scheme.
+    /// </summary>
+    public static RouteHandlerBuilder ExemptFromHostAuthorization(this RouteHandlerBuilder builder)
+        => builder.AllowAnonymous();
 }

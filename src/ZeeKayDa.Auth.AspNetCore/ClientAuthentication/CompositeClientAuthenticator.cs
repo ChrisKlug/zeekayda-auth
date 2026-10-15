@@ -9,13 +9,9 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.AspNetCore.ClientAuthentication;
 
 /// <summary>
-/// Coordinates all registered <see cref="IClientAuthenticator"/> implementations for token
-/// endpoint client authentication, implementing the documented dispatch rules.
+/// Dispatches token endpoint client authentication to the registered authenticators. Registered as
+/// itself, not as an <see cref="IClientAuthenticator"/>, so it never dispatches to itself.
 /// </summary>
-/// <remarks>
-/// Registered as the concrete type — not as <see cref="IClientAuthenticator"/> — so it is
-/// excluded from the injected authenticator enumerable and cannot be dispatched recursively.
-/// </remarks>
 internal sealed class CompositeClientAuthenticator(
     RegisteredAuthenticators authenticators,
     ValidatedClientResolver clientResolver,
@@ -38,32 +34,15 @@ internal sealed class CompositeClientAuthenticator(
         ArgumentNullException.ThrowIfNull(clientId);
         ArgumentNullException.ThrowIfNull(httpContext);
 
-        // HttpRequest.Form is synchronous and throws on non-form content types, both of which are
-        // attacker-controllable, so read it asynchronously up front.
-        var form = httpContext.Request.HasFormContentType
-            ? await httpContext.Request.ReadFormAsync(cancellationToken)
-            : FormCollection.Empty;
+        var form = await ReadFormIfPresentAsync(httpContext.Request, cancellationToken);
 
-        // RFC 7235 §4.2: a request MUST NOT carry more than one Authorization header field.
-        // Reject before CanHandle so no authenticator ever sees an ambiguous header set.
+        // RFC 7235 §4.2: no authenticator may see more than one Authorization header.
         if (httpContext.Request.Headers.Authorization.Count > 1)
             return AuthenticatedClient.Refused;
 
-        // CanHandle is a shape check; built without the client so the repository isn't consulted
-        // for requests rejected early. Authenticators MUST NOT access context.Client here.
-        var canHandleContext = new TokenRequestContext
-        {
-            HttpContext = httpContext,
-            ClientId = clientId,
-            Form = form,
-        };
+        var answers = AskEveryAuthenticator(new TokenRequestContext { HttpContext = httpContext, ClientId = clientId, Form = form });
 
-        var answers = authenticators.All
-            .Select(registered => (Registered: registered, Match: TryCanHandle(registered.Authenticator, canHandleContext)))
-            .ToList();
-
-        // An authenticator that recognised its credential but cannot accept it ends the request: it
-        // must never fall through to the none method, which would ignore the credential.
+        // A credential recognised but not accepted must never fall through to the none method.
         if (answers.Any(answer => answer.Match.IsRefused))
             return RefuseAfterPadding();
 
@@ -72,35 +51,24 @@ internal sealed class CompositeClientAuthenticator(
             .Select(answer => (answer.Registered, Method: answer.Match.Method!))
             .ToList();
 
-        // Multiple mechanisms → invalid_client (RFC 6749 §2.3).
+        // RFC 6749 §2.3; refused before the repository is read.
         if (matches.Count > 1)
             return AuthenticatedClient.Refused;
 
-        // Repository lookup deferred past the early-reject check above so ambiguous or
-        // conflicting requests never incur unnecessary I/O.
         var client = await clientResolver.FindClientWithCredentialsAsync(clientId, cancellationToken);
-
-        // No mechanism → none fallback.
         if (matches.Count == 0)
             return AuthenticateNone(client);
 
-        // Exactly one mechanism.
         var (matched, matchedMethod) = matches[0];
 
-        // Returned method must be one the authenticator declared (defends against a buggy
-        // CanHandle that returns an undeclared method, bypassing the startup checks).
-        if (!matched.Performs(matchedMethod))
+        // A buggy CanHandle may answer a method its authenticator never declared, which startup never checked.
+        if (!matched.Performs(matchedMethod) || !IsMethodAllowedByServer(matchedMethod))
             return AuthenticatedClient.Refused;
 
-        // Method must be in the server's global allowlist.
-        if (!IsMethodAllowedByServer(matchedMethod))
-            return AuthenticatedClient.Refused;
-
-        // Unknown client, or one that does not allow this method (ordinal): indistinguishable.
+        // An unknown client and one that does not allow this method are indistinguishable.
         if (client is null || !client.AllowedTokenEndpointAuthMethods.ContainsOrdinal(matchedMethod))
             return RefuseAfterPadding();
 
-        // Delegate to the authenticator. Client is guaranteed non-null here.
         var context = new ClientAuthenticationContext
         {
             HttpContext = httpContext,
@@ -111,6 +79,20 @@ internal sealed class CompositeClientAuthenticator(
         };
         return Conclude(await TryAuthenticateAsync(matched.Authenticator, context, cancellationToken), client);
     }
+
+    /// <summary>
+    /// The form, read asynchronously: <see cref="HttpRequest.Form"/> is synchronous and throws on a
+    /// content type the caller chooses.
+    /// </summary>
+    private static async Task<IFormCollection> ReadFormIfPresentAsync(HttpRequest request, CancellationToken cancellationToken) =>
+        request.HasFormContentType
+            ? await request.ReadFormAsync(cancellationToken)
+            : FormCollection.Empty;
+
+    private List<(RegisteredAuthenticator Registered, ClientAuthenticatorMatch Match)> AskEveryAuthenticator(TokenRequestContext context) =>
+        authenticators.All
+            .Select(registered => (Registered: registered, Match: TryCanHandle(registered.Authenticator, context)))
+            .ToList();
 
     /// <summary>
     /// The authenticator's result, with a throw logged and treated as a refusal that checked no secret,
@@ -171,13 +153,11 @@ internal sealed class CompositeClientAuthenticator(
 
     private AuthenticatedClient AuthenticateNone(IClientWithCredentials? client)
     {
-        // A public client has no credentials and allows exactly { "none" }: the resolver serves only
-        // registrations that passed the validator, which enforces that three-way rule.
+        // IsPublic is enough: validation guarantees a public client has no credentials and allows only "none".
         if (!IsMethodAllowedByServer(TokenEndpointAuthMethods.None) || client is not { IsPublic: true })
             return RefuseAfterPadding();
 
-        // Success intentionally skips padding: it's already visible in the HTTP response, and
-        // client_id is not a secret in OAuth.
+        // No padding: success is visible in the response anyway, and client_id is not a secret.
         return AuthenticatedClient.Accepted(client);
     }
 

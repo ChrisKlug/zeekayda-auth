@@ -51,21 +51,17 @@ internal sealed class ResumeEndpoint(
     /// <inheritdoc/>
     public void Map(IEndpointRouteBuilder endpoints)
     {
-        // Nothing redirects here unless a provider was challenged, so a host without providers
-        // serves no such route.
+        // Only a challenged provider redirects here.
         if (providers.Count == 0)
             return;
 
         var issuerUri = EndpointRouteHelper.GetIssuerUri(options);
 
-        // Typed as Delegate so the result-writing overload is chosen: a method taking only the
-        // context also converts to RequestDelegate, whose overload discards the returned result.
-        // AllowAnonymous so a host-wide authorization fallback policy cannot turn the return from
-        // the provider into a challenge of the host's own scheme.
+        // As Delegate: a context-only method also converts to RequestDelegate, whose overload discards the result.
         Delegate handler = HandleAsync;
         endpoints.MapGet(RouteFor(issuerUri), handler)
             .RequireIssuerHost(issuerUri)
-            .AllowAnonymous();
+            .ExemptFromHostAuthorization();
     }
 
     internal async Task<IResult> HandleAsync(HttpContext context)
@@ -78,9 +74,7 @@ internal sealed class ResumeEndpoint(
         var (registration, requestContext, principal) = resolved;
         ProviderChallengeCookie.Clear(context, EndpointRouteHelper.GetIssuerUri(options), registration, requestContext.Id);
 
-        // The host's callback gets a copy — of the identities, since ClaimsPrincipal.Clone shares
-        // them. What is parked or promoted is the framework's own principal, so a reference the
-        // host kept cannot change the session after the fact.
+        // The host gets a snapshot, so a reference it keeps cannot change the session afterwards.
         var signIn = new ProviderSignInContext(
             ReservedClaims.Snapshot(principal),
             registration.Descriptor,
@@ -104,21 +98,24 @@ internal sealed class ResumeEndpoint(
         }
         catch (Exception ex) when (ex is not OperationCanceledException && !context.Response.HasStarted)
         {
-            // The host's handler and the handler's principal are caller-supplied; a failure in
-            // either renders locally like a callback failure does, and leaves the interaction
-            // alive. A failure after a terminal call has committed the response cannot be
-            // rendered over and propagates.
+            // Renders locally and leaves the interaction alive; once a terminal call wrote the response, it propagates.
             return Fail(context, registration, ex);
         }
 
-        // A principal parked for this interaction by an earlier return is superseded by this one.
-        // The framework states nothing about how the user proved who they are at the provider —
-        // it was told nothing — so no amr is reported for an auto-promoted external sign-in.
+        await SignInPromotedAsync(context, requestContext, registration, promoted).ConfigureAwait(false);
+        return Results.Empty;
+    }
+
+    /// <summary>
+    /// Signs in the promoted principal, superseding one parked by an earlier return. No <c>amr</c>:
+    /// the provider told the framework nothing about how the user proved who they are.
+    /// </summary>
+    private async Task SignInPromotedAsync(
+        HttpContext context, AuthorizationRequestContext requestContext, ProviderRegistration registration, ClaimsPrincipal promoted)
+    {
         await flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
         await outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], registration.Name))
             .ConfigureAwait(false);
-
-        return Results.Empty;
     }
 
     /// <summary>
@@ -187,9 +184,7 @@ internal sealed class ResumeEndpoint(
 
     private IResult Fail(HttpContext context, ProviderRegistration registration, Exception exception)
     {
-        // The framework's own exceptions carry framework text — which claim was missing, or
-        // which store operation failed — and go through the sanitizing logger whole; anything
-        // else is logged by type, since a host's or a provider's message may carry anything.
+        // The framework's own exceptions carry its own text and are logged whole; anything else by type only.
         switch (exception)
         {
             case ZeeKayDaInteractionException interaction:
@@ -200,8 +195,7 @@ internal sealed class ResumeEndpoint(
                 break;
 
             case ZeeKayDaStoreException store:
-                // The park write inside the host's RedirectToAsync: an outage, not a handler
-                // failure, and the operator should see it as one.
+                // The park write inside the host's RedirectToAsync: an outage, not a handler failure.
                 logger.LogError(
                     store,
                     "Signing in through provider {Provider} failed because the interaction store could not be written.",

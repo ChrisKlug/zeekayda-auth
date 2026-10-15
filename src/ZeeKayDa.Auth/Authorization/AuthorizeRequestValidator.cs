@@ -94,20 +94,11 @@ internal sealed partial class AuthorizeRequestValidator(
         }
         catch (ScopeContractException ex)
         {
-            // The scope repository broke its contract after startup passed. Every scope rule needs
-            // an answer from it, so there is nothing left to validate against: the request is
-            // refused as the server's fault, which is whose it is. The client is told only
-            // server_error; the operator gets the rule that broke, by code.
-            // The codes and messages, not ex.Message: the composed message carries a count and
-            // a preamble the operator does not need. Safe to write to the log only because
-            // ScopeContractException is internal, so every failure here is this framework's own
-            // text; a ZeeKayDaConfigurationException the repository threw is deliberately not
-            // caught, and escapes to the generic server-error path with its message unread.
+            // Nothing left to validate against: the client gets server_error, the operator the broken rule.
             problem = new Problem(
                 "server_error",
                 "The authorization server is misconfigured.",
-                "The scope repository broke its contract: " +
-                string.Join("; ", ex.AggregatedFailures.Select(failure => $"[{failure.Code}] {failure.Message}")));
+                "The scope repository broke its contract: " + ex.DescribeFailures());
         }
 
         // Built from an empty set when the catalog refused the repository, in which case a problem

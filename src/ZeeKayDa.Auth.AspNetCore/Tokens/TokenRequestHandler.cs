@@ -34,18 +34,14 @@ internal sealed class TokenRequestHandler(
         if (!TokenRequest.TryParse(form, out var request, out var error))
             return TokenResponses.Error(error);
 
-        // The server's own grant list is the first gate, before any client is named: a host that
-        // no longer serves the code grant must not redeem a code that outlived the change.
+        // Before any client is named: a code that outlived dropping the grant must not redeem.
         if (!ServesCodeGrant())
             return TokenResponses.Error(new TokenError(TokenRequestErrors.UnsupportedGrantType, "The authorization_code grant type is not supported by this server."));
 
-        // The client is whoever the request names: the form's client_id, or the Basic header's
-        // username when the form carries none. The authenticator refuses the two disagreeing.
         if (IdentifyClient(request, context.Request.Headers) is not { } clientId)
             return TokenResponses.InvalidClient(context);
 
-        // The registration the credential was checked against is the one every later decision
-        // reads; a second lookup could return one nobody authenticated.
+        // Every later decision reads the registration the credential was checked against, never a second lookup.
         var authentication = await authenticator.AuthenticateAsync(clientId, context, context.RequestAborted).ConfigureAwait(false);
         if (authentication.Client is not { } client)
             return TokenResponses.InvalidClient(context);

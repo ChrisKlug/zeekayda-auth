@@ -55,14 +55,11 @@ internal sealed class ProviderCallbackEndpoint(
         {
             var route = ProviderCallbackRoute.For(issuerUri, registration.Name);
 
-            // Typed as Delegate so the result-writing overload is chosen: a lambda taking only
-            // the context also converts to RequestDelegate, whose overload discards the returned
-            // result. AllowAnonymous so a host-wide authorization fallback policy cannot turn the
-            // return from the provider into a challenge of the host's own scheme.
+            // As Delegate: a context-only lambda also converts to RequestDelegate, whose overload discards the result.
             Delegate handler = (HttpContext context) => HandleAsync(context, registration);
             endpoints.MapMethods(route.Value!, [HttpMethods.Get, HttpMethods.Post], handler)
                 .RequireIssuerHost(issuerUri)
-                .AllowAnonymous();
+                .ExemptFromHostAuthorization();
         }
     }
 

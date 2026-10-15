@@ -32,15 +32,14 @@ internal static class CorsHeaders
             return;
         }
 
-        // Vary: Origin so caches never serve a wildcard-cached response to an
-        // allowlisted-origin request or vice-versa.
+        // So a cache never serves one origin's response to another.
         context.Response.Headers.Append("Vary", "Origin");
 
         var requestOrigin = context.Request.Headers.Origin.ToString();
         if (!string.IsNullOrEmpty(requestOrigin) &&
             allowedOrigins.TryMatch(requestOrigin, out var allowedOrigin))
         {
-            // Emit the matching allowlist entry, NEVER the raw incoming header value.
+            // The allowlist entry, never the incoming header value.
             context.Response.Headers.AccessControlAllowOrigin = allowedOrigin;
         }
     }

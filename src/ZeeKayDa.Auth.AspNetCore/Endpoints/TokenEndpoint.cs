@@ -30,8 +30,6 @@ internal sealed class TokenEndpoint(IOptions<AuthorizationServerOptions> options
                 endpointUri.AbsolutePath,
                 (TokenRequestHandler handler, HttpContext context) => handler.HandleAsync(context))
             .RequireIssuerHost(endpointUri)
-            // AllowAnonymous so a host-wide authorization fallback policy cannot turn the token
-            // endpoint into a host-scheme challenge: OAuth client authentication is its own.
-            .AllowAnonymous();
+            .ExemptFromHostAuthorization();
     }
 }
