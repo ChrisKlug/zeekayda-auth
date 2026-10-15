@@ -4,16 +4,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// A token an <see cref="ITokenIssuer"/> has issued.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <see cref="Value"/> is the token exactly as it is handed to the client — a compact JWS
-/// serialization for a JWT issuer, an opaque handle for a reference-token issuer.
-/// <see cref="Kind"/> is the kind that was requested, echoed back by the issuer.
-/// </para>
-/// <para>
-/// Deliberately not carrying <c>ExpiresAt</c> or <c>token_type</c>: expiry is a claim the caller
-/// already put in the payload, so returning it here would create a second place for the same fact
-/// to be wrong, and <c>token_type</c> is a token-endpoint response concern, not an issuance one.
-/// </para>
+/// <see cref="Value"/> is the token as handed to the client: a compact JWS, or an opaque handle. It carries
+/// no expiry, which is already a claim in the payload, and no <c>token_type</c>, which is the token
+/// endpoint's concern.
 /// </remarks>
 public sealed record IssuedToken
 {
@@ -60,9 +53,8 @@ public sealed record IssuedToken
         Kind = this.Kind;
     }
 
-    // The synthesized PrintMembers would print Value — a live bearer token — and the sanitizing
-    // logger redacts by placeholder name, so a logged IssuedToken would reach the sink verbatim.
-    // Print the kind and length only; the token itself never appears in ToString().
+    // Never the token: the sanitizing logger redacts by placeholder name, so a logged IssuedToken
+    // would otherwise reach the sink verbatim.
     private bool PrintMembers(System.Text.StringBuilder builder)
     {
         builder.Append($"{nameof(Value)} = <{_value.Length} chars>, {nameof(Kind)} = {Kind}");

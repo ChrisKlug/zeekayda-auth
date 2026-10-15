@@ -4,17 +4,12 @@ using System.Security.Cryptography.X509Certificates;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// The shipped <see cref="ISigner"/> implementation over a local, in-process RSA or ECDsa private
-/// key. Local providers (development, File/PEM, PFX, Windows Certificate Store) construct this in
-/// <see cref="ISigningKeySource.CreateSignerAsync"/> and never implement
-/// <see cref="ISigner"/> themselves; only genuinely remote providers (Azure Key Vault remote
-/// signing, a KMS, an HSM) implement <see cref="ISigner"/> directly, since the private key never
-/// becomes local for those.
+/// The shipped <see cref="ISigner"/> over a local RSA or ECDsa private key. Local sources construct it in
+/// <see cref="ISigningKeySource.CreateSignerAsync"/>; only remote signers, a vault or an HSM, implement
+/// <see cref="ISigner"/> themselves.
 /// </summary>
 /// <remarks>
-/// Unlike a remote <see cref="ISigner"/>, this instance owns the private key it wraps outright —
-/// nothing else references it — so <see cref="Dispose"/> unconditionally disposing it satisfies
-/// <see cref="ISigner"/>'s "release only your own per-activation handle" contract exactly.
+/// Owns the key it wraps outright, so <see cref="Dispose"/> disposing it releases only its own handle.
 /// </remarks>
 public sealed class LocalSigner : ISigner
 {
@@ -64,8 +59,7 @@ public sealed class LocalSigner : ISigner
         if (!Enum.IsDefined(algorithm))
             throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, $"Not a defined {nameof(SigningAlgorithm)} member.");
 
-        // Rejects a key type or curve that does not suit the algorithm, by the same rule the key set
-        // applies, before any private key is opened.
+        // The key set's own rule, before any private key is opened.
         SigningKeySetBuilder.ValidateKeyAlgorithmCompatibility(
             SourceKey.FromCertificate(certificate, new SourceKeyId(certificate.Thumbprint)), algorithm);
 
