@@ -13,89 +13,81 @@ log line, or the process when it isn't needed.
 
 ## The pieces
 
-**`ISigningKeySource`** is what a provider implements, and it has two methods. `ReadAsync` reports
-public keys only. `CreateSignerAsync` lends an `ISigner` for one key, and is the only place a
-private key is touched. A source never names a key publicly: it gives its own id (a file path, a
-vault version), and the framework derives the `kid` from the public key (RFC 7638 thumbprint), so a
-vault URL or file path cannot leak into a token or the JWKS.
+**`ISigningKeySource`** is what a provider implements. It declares one `Algorithm`, which every key
+it lists signs under. `ReadAsync` lists public keys only, each with its dates, plus a failure for
+each entry it could not list, so one broken entry cannot block a revocation. `CreateSignerAsync`
+lends an `ISigner` for one key, and is the only place a private key is touched. A source never names
+a key publicly: it gives its own id (a file path, a vault version), and the framework derives the
+`kid` from the public key (RFC 7638 thumbprint), so a vault URL or file path cannot leak into a token
+or the JWKS. A provider registers with `builder.AddSigningKeySource<T>()`, one source per app.
 
 **`ISigner`** signs bytes. Local providers (development, PEM, PFX, Windows) return the built-in
-`LocalSigner`; only a remote signer (Key Vault remote signing) implements it. The ring owns the
-signer and disposes it at shutdown.
+`LocalSigner`; only a remote signer (Key Vault remote signing) implements it.
 
-**`SigningKeySetBuilder`** runs every reported key through one validation: RSA of at least 2048
-bits, NIST curves only, the algorithm fitting the key, .NET's own import rejecting malformed
-material, no duplicate ids or `kid`s. Errors name the operator's own id, never the derived `kid`.
-Providers never repeat these checks.
+**`SigningKeySetBuilder`** validates every listed key the same way: RSA of at least 2048 bits, NIST
+curves only, the key fitting the source's algorithm, .NET's own import rejecting malformed material,
+valid dates. A key that fails is dropped with a warning, and one key pair listed twice counts as one
+key. Providers never repeat these checks.
 
-**`StaticSigningKeyRing`** reads the source once at startup, builds the key set, opens the signer
-and **self-tests** it: it signs 32 fresh random bytes and verifies the signature with the public key
-that will be published, under that key's algorithm. A signer whose private key doesn't pair with
-the published key, or that signs under a different algorithm, fails the host at startup. Token code
-asks the ring to sign through a callback that is told which key will sign, so the header's `kid`
-and `alg` always name the key that actually signed.
+**`SigningKeyRing`** reads the source at startup and again every `RefreshInterval` (default five
+minutes), and decides from the keys' dates alone which key signs and which are published:
+
+- every unexpired key is published;
+- the newest key published for at least the lead time signs (default one day, never shorter than
+  `CacheMaxAge` plus `RefreshInterval`), so relying parties already have it;
+- if no key has been published that long, the oldest valid one signs, with a Warning. That one rule
+  covers a first deployment, a normal rotation and an emergency, with no special cases;
+- an old key stays published for `RetainRetiredKeysFor` after its successor takes over or it
+  expires: two days, or the longest token lifetime plus clock skew if that is longer.
+
+Each signer is **self-tested** before it signs: it signs a fixed non-JWS prefix plus a fresh nonce,
+verified with the public key that will be published. At startup a bad signer fails the host. Later,
+a key due to sign that cannot is skipped and the previous key signs on, Degraded. A failed read keeps
+the last list; an empty list stops signing; a key removed at its source stops signing within one
+refresh. The ring owns the source and every signer it opens, and closes a signer a refresh interval
+after it stops signing. Token code asks the ring to sign through a callback told which key will sign,
+so the header's `kid` and `alg` always name the key that actually signed. `Verify` checks a
+signature against every listed key.
 
 **The JWKS endpoint** publishes every published key as a JWK, anonymously, with `Cache-Control`
-from `JwksEndpointOptions.CacheMaxAge`. Discovery's advertised algorithms come from the same set.
+from `JwksEndpointOptions.CacheMaxAge`, or `no-store` when there is no key. Discovery advertises the
+source's one algorithm.
 
-**Providers:** the development key (core; gated to `Development` by default, `Production` always
-refused, any other environment opt-in in code and logged Critical), PEM and PFX files
-(`ZeeKayDa.Auth.FileSystem`), the Windows certificate store (`ZeeKayDa.Auth.Windows`), and Azure Key
-Vault with remote or cached signing (`ZeeKayDa.Auth.AzureKeyVault`). The PFX source parses the
-bundle itself so listing a bundle never decrypts its key; the cached Key Vault source downloads a
-private key only for the one version that signs.
+**The health check** reports whether the ring can sign now and whether some key can still sign at
+the end of a threshold, and reports failed reads and dropped or skipped keys as Degraded.
+
+**Providers:** the development key (core; gated to `Development` by default through
+`AllowedEnvironments`, `Production` always refused, an unknown environment refused, any other
+opt-in and logged Critical), PEM and PFX files (`ZeeKayDa.Auth.FileSystem`; a PEM key may be
+password-encrypted), the Windows certificate store (`ZeeKayDa.Auth.Windows`), and Azure Key Vault
+with remote or cached signing (`ZeeKayDa.Auth.AzureKeyVault`). File and store providers take a plain
+list; any listed key may sign. The PFX source parses the bundle itself so listing never decrypts its
+key; the cached Key Vault source downloads a private key only for a version that signs.
+
+**Provider tests** drive a real ring on a fake clock through the TestKit's `SigningKeyRingHarness`,
+ours and third parties' alike; the ring's constructor stays internal.
 
 ## What it costs
 
-- Each provider decides for itself which key signs: the file providers through `Previous`/`Current`/
-  `Next` slots the operator rotates by hand, Key Vault through its own selector. A provider author
-  has to understand key rotation.
-- Rotation is restart-based: keys are read once at startup.
+- A source changing its algorithm is a new source and a restart.
+- Rotation is only as fast as `RefreshInterval` plus the lead time, by design.
 
-## Where it is going
+## What the walkthrough changed
 
-The maintainer walked this part at code level. Each issue is in M1 before the security audit
-(#537), and updates this file when it lands.
-
-**The framework owns the timing (#823).** A source only lists its keys, each with one date every
-replica agrees on (a certificate's `NotBefore`, a Key Vault version's creation date). Core then:
-
-- publishes every unexpired key;
-- signs with the newest key that has been published for the lead time (default 1 day, never shorter
-  than `CacheMaxAge`);
-- if no key has, signs with the oldest valid one and logs a Warning. That one rule covers a first
-  deployment, a normal rotation and an emergency (remove a compromised key, restart) with no
-  special cases;
-- keeps an old key published until its successor took over plus the longest token lifetime.
-
-Core hands the source a `supersededBefore` date, so Key Vault can skip fetching versions that can
-no longer matter; ignoring it is only slower. The Key Vault selector moves into core, the file
-providers take a plain list of files, and a certificate becomes a `SourceKey` or a `LocalSigner`
-through public helpers. `ISigner.Algorithm` and Key Vault's own pairing check go, because the
-self-test already proves both. The health check reports whether a successor is ready in time and
-when a restart would rotate. Live rotation stays #527.
-
-**Registration (#824).** A provider registers through `builder.AddSigningKeySource<T>()` on the
-builder, with one "already registered" check; the factory overload and two exotic re-checks go.
-
-**Development keys (#825, #826).** The environment gate fails closed when the environment is
-unknown; one options type with `AllowedEnvironments`; names that match the other providers
-(`AddInMemoryDevelopmentSigning()`). Key storage uses .NET's built-in permission APIs only; the
-native ancestor-ownership walk is dropped for development keys and its interop moves to the
-FileSystem provider, which protects production keys with it.
-
-**Provider tests.** The builder and the ring become internal; our own provider test projects reach
-them through `InternalsVisibleTo`. A TestKit helper for third-party provider authors waits until
-after M1.
+The maintainer walked this part at code level. What it decided has landed in M1: the framework owns
+the timing and sources only list keys (#823), registration on the builder (#824), the development
+signing API and its fail-closed gate (#825, #826). The review that followed made rotation live
+(#527) and added per-entry failures, one algorithm per source, skip-forward, signer disposal and the
+TestKit harness (#905, #908, #916, #919, #929).
 
 ## What was rejected
 
-- **A setting to pin the signing key for emergencies.** Removing the compromised key and restarting
-  does it, and the fallback rule signs with the replacement at once.
+- **A setting to pin the signing key for emergencies.** Removing the compromised key does it within
+  one refresh interval, and the fallback rule signs with the replacement at once.
 - **A lead time of 0 as the emergency lever,** and a "first version" exemption: both are special
   cases the fallback rule makes unnecessary.
-- **A fixed age cut-off for loading old versions.** It would drop a key that has signed for longer
-  than the cut-off; the cut-off core derives cannot.
+- **A fixed age cut-off for loading old Key Vault versions.** It would drop a key that has signed for
+  longer than the cut-off. A count (`MaxVersions`, minimum 3) is used instead.
 - **Keeping the full ancestor-ownership walk for development keys.** Neither Duende IdentityServer
   nor OpenIddict checks development-key permissions at all, or gates on environment; we keep the
   gate and the file checks, and drop the part only a shared multi-user machine needs.

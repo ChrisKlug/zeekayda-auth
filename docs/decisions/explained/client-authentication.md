@@ -7,8 +7,8 @@ is explained separately; principles that apply beyond this part are in `principl
 ## What it is for
 
 A confidential client proves who it is at the token endpoint. A failure never says why (RFC 6749
-§5.2: a bare `invalid_client`), and never takes a different time depending on why, so response time
-reveals neither which client ids exist nor whether a client is mid-rotation.
+§5.2: a bare `invalid_client`), and every refusal that touches a client takes the same time, so
+response time reveals neither which client ids exist nor whether a client is mid-rotation.
 
 ## The flow
 
@@ -16,69 +16,56 @@ reveals neither which client ids exist nor whether a client is mid-rotation.
 
 1. Cheap shape checks first: the form is read once, and more than one `Authorization` header is
    refused.
-2. Every `IClientAuthenticator` is asked `CanHandle`. More than one match is refused, since RFC 6749
-   §2.3 allows one method per request.
+2. Every `IClientAuthenticator` is asked `CanHandle`, which answers not mine, mine for one method,
+   or refused. A refusal is refused, never treated as `none`, and so is more than one match, since
+   RFC 6749 §2.3 allows one method per request. A `CanHandle` that throws counts as not mine.
 3. Only then is the client looked up, through the resolver from client registration.
-4. No match means the `none` path, for public clients only.
-5. The method must be one the authenticator declares, the server allows and the client allows.
-6. The one matching authenticator verifies the credential.
+4. No match means the `none` path, for public clients only, with one refusal exit.
+5. The method must be one the authenticator declares, the server advertises and the client allows.
+6. The one matching authenticator verifies the credential for the method it matched. A throw counts
+   as a padded refusal.
 
 **`ClientSecretAuthenticator`** is the built-in authenticator for `client_secret_basic` and
-`client_secret_post`. It parses the credential and tries each stored secret; a client may hold two
-during a rotation.
+`client_secret_post`. It reads the presented secret and passes it, with the client's stored secrets,
+to `ClientSecrets.Verify`; a client may hold two during a rotation.
 
-**`AuthenticatorCoverageValidator`** fails startup when a method the server advertises in discovery
-has no authenticator, two authenticators claim one method, or one claims `none`.
+**What the server advertises** is what its authenticators declare, plus `none`, narrowed by
+`TokenEndpoint.AdvertisedAuthMethods`. Startup fails when two authenticators declare one method, one
+declares `none`, a method name is malformed, or the filter leaves nothing to advertise.
 
 ## Secrets and hashers
 
-**A stored secret is a hash**, never plaintext. `IClientSecretHasher` creates and verifies one
-algorithm's hashes. PBKDF2-SHA256 at 600,000 iterations or more is built in and always registered;
-a host may add others. **`CompositeClientSecretHasher`** dispatches each stored secret to its
-hasher, creates new secrets with the default one, and holds the timing padding.
+**A stored secret is a hash**, never plaintext: one self-describing string in PHC form
+(`$pbkdf2-sha256$i=600000$<salt>$<hash>`), so a store package and a hasher package by different
+authors compose. `IClientSecretHasher` creates and verifies hashes for the algorithm ids it declares,
+and `PhcString` formats and parses. PBKDF2-SHA256 at 600,000 to 2,000,000 iterations is built in and
+always registered. A host may add others and make one the default for new secrets; PBKDF2 stays
+registered to verify existing ones.
 
-**Timing padding:** every failure costs the same as verifying two secrets with the default hasher.
-It pads against a decoy that costs exactly what a real secret costs to verify.
+**`ClientSecrets`** creates new secrets with the default hasher and verifies a presented secret
+against the stored ones, each sent to the hasher that declared its algorithm id. The registry behind
+it indexes the hashers at startup, and fails startup on a duplicate or missing id or two defaults.
+
+**Timing padding:** every failure costs two verifications by every registered hasher, each against
+a decoy of its own that costs exactly what a real secret does. A failed `Verify` returns one-time
+proof that it already padded, so an authenticator never counts.
 
 ## What it costs
 
-- Every refusal path must remember to pad, and nothing in the structure enforces it yet.
-- A hasher's safety rules (never throw, fixed-time compare) are documented, and enforced only for a
-  hasher that uses the base class.
+- Inside the composite, each refusal exit still calls the padding by hand.
+- Of a hasher's safety rules, only the fixed-time compare is left to the hasher; the framework
+  enforces the rest for every hasher (a throw is a mismatch, blank input never reaches `Create`, an
+  undeclared id is refused).
 
-## Where it is going
+## What the walkthrough changed
 
-The maintainer walked this part at code level. Each issue is in M1 before the security audit
-(#537) unless marked, and updates this file when it lands.
+The maintainer walked this part at code level. What it decided has landed in M1: the three-state
+`CanHandle` with the method carried to `AuthenticateAsync` (#813), padding owned by `ClientSecrets`
+(#790), one refusal exit on the `none` path (#793), PHC-string secrets and the one hasher contract
+(#814), a host default hasher (#791), and a validated PBKDF2 iteration count (#792).
 
-**Authenticators**
-
-- `CanHandle` returns a match with three states: not mine, mine with this method, or refused.
-  "Basic and post at once" is refused, never treated as `none`. The chosen method travels to
-  `AuthenticateAsync`, so the shape is decided once; the context drops `Headers`, and keeps
-  `HttpContext` because mTLS needs the client certificate (#813).
-- All padding lives in one public `VerifyAny` on the secret service, so a third-party authenticator
-  gets the same timing guarantee and no caller counts. The service is renamed from
-  `IClientSecretFactory` once it also verifies (#790). The `none` path drops the checks the resolver
-  already guarantees and gets one refusal exit (#793).
-
-**Secrets and hashers**
-
-- A stored secret becomes one immutable, self-describing string in PHC form
-  (`$pbkdf2-sha256$i=600000$<salt>$<hash>`), because a store package and a hasher package by
-  different authors must compose. A hasher declares the algorithm ids it owns; a public `PhcString`
-  helper formats and parses; samples show common hashing libraries and one that works in bytes.
-  The per-algorithm types, `Snapshot` and `not_copied` go (#814).
-- `IClientSecretHasher` is the one contract and its base class goes; the composite enforces its rules
-  (dispatch by id, a failed verify for an exception, no whitespace secret).
-  `GetRegistrationFailures` becomes `ValidateStoredSecret`, and the framework adds the client id to
-  its messages (#814).
-- Exactly one hasher creates new secrets. A host replaces PBKDF2 as the creator, which stays
-  registered to verify existing secrets (#791).
-- A host's PBKDF2 iteration count is currently dropped silently; it becomes a plain, validated option
-  that refuses values outside 600,000–2,000,000 instead of clamping (#792).
-- A pasted hash and a log entry for plaintext secrets (#806), and a `dotnet` tool creating hashes
-  with the host's hasher (#807), stay in the First project milestone.
+Still open, in the First project milestone: a log entry when a plaintext secret is used (#806), and
+a `dotnet` tool creating hashes with the host's hasher (#807).
 
 ## What was rejected
 
