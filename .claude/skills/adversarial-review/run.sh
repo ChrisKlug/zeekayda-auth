@@ -3,7 +3,7 @@
 # Read-only by construction: write, shell and patch tools are denied, and the
 # working tree is compared before and after so any change aborts the run loudly.
 #
-# Usage: run.sh <code|security|architecture|text> [--base <ref>] [--model <id>] [--effort <level>] [--settled <text>]... [focus text...]
+# Usage: run.sh <code|security|architecture|text> [--base <ref>] [--paths <pathspec>]... [--model <id>] [--effort <level>] [--settled <text>]... [focus text...]
 set -euo pipefail
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,11 +15,13 @@ base="origin/main"
 model=""
 effort=""
 settled=()
+paths=()
 focus=()
 while [ $# -gt 0 ]; do
   case "$1" in
     code|security|architecture|text) lens="$1" ;;
     --base)   base="$2";   shift ;;
+    --paths)  paths+=("$2"); shift ;;
     --model)  model="$2";  shift ;;
     --effort) effort="$2"; shift ;;
     --settled) settled+=("$2"); shift ;;
@@ -29,7 +31,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$lens" ]; then
-  echo "usage: run.sh <code|security|architecture|text> [--base <ref>] [--model <id>] [--effort <level>] [--settled <text>]... [focus text...]" >&2
+  echo "usage: run.sh <code|security|architecture|text> [--base <ref>] [--paths <pathspec>]... [--model <id>] [--effort <level>] [--settled <text>]... [focus text...]" >&2
   exit 2
 fi
 
@@ -57,6 +59,18 @@ if [ -z "$commits" ]; then
   echo "nothing to review: HEAD has no commits beyond $base" >&2
   exit 4
 fi
+# --paths limits the diff in the brief (and the commit list) to those pathspecs, so the text lens
+# can read the prose of a change that also has code in it. The ${arr[@]+...} form keeps an empty
+# array safe under set -u on bash 3.2.
+diff_args=()
+if [ "${#paths[@]}" -gt 0 ]; then
+  diff_args=(-- "${paths[@]}")
+  if [ -z "$(git diff --name-only "$range" "${diff_args[@]}")" ]; then
+    echo "nothing to review: no changes under ${paths[*]} in $range" >&2
+    exit 4
+  fi
+  commits="$(git log --oneline "$range" "${diff_args[@]}")"
+fi
 branch="$(git branch --show-current || echo HEAD)"
 focus_text="${focus[*]:-No extra focus.}"
 
@@ -73,6 +87,9 @@ brief="$work_dir/brief.md"
   echo "- Branch: $branch"
   echo "- Base: $base (merge-base $merge_base)"
   echo "- Commit range: $range"
+  if [ "${#paths[@]}" -gt 0 ]; then
+    echo "- Paths under review: ${paths[*]} — the diff below is limited to these. Files outside them are context to read, never something to report on."
+  fi
   echo "- Focus: $focus_text"
   echo
   if [ "${#settled[@]}" -gt 0 ]; then
@@ -97,7 +114,7 @@ brief="$work_dir/brief.md"
   echo "## Diff stat"
   echo
   echo '```'
-  git diff --stat "$range"
+  git diff --stat "$range" ${diff_args[@]+"${diff_args[@]}"}
   echo '```'
   echo
   echo "## Diff"
@@ -105,7 +122,7 @@ brief="$work_dir/brief.md"
   echo 'Line numbers in findings refer to the post-change file, not to diff hunks.'
   echo
   echo '```diff'
-  git diff --no-color --no-ext-diff "$range"
+  git diff --no-color --no-ext-diff "$range" ${diff_args[@]+"${diff_args[@]}"}
   echo '```'
 } > "$brief"
 brief_win="$(cygpath -w "$brief" 2>/dev/null || echo "$brief")"

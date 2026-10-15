@@ -115,8 +115,12 @@ review. On a change with no code in it at all — docs, register wording, agent 
 instructions, CI or config text — run
 `/adversarial-review text` instead: it is the one independent reader of that change, it checks the
 text against the code and the other rules in force, and it opens with a plain-words account the
-maintainer can compare to what they asked for. Same High/Critical gate. Every change gets exactly
-one lens; the Claude reviewers are added only for the surfaces in the table below.
+maintainer can compare to what they asked for. Same High/Critical gate. A change with both code and
+prose worth reading on its own — a feature beside its register entry, a walkthrough beside a fix,
+not a one-line comment touch — gets both lenses: `code` on the whole range, then `text` on the
+prose alone (`/adversarial-review text --paths docs/ --paths '*.md'`), because the code lens reads
+prose as context and never as the thing under review. The Claude reviewers are added only for the
+surfaces in the table below.
 
 Then scope the reviewer(s) by surface. Each Claude agent runs alongside its Copilot lens, in
 parallel, launched in one message; neither sees the other's findings:

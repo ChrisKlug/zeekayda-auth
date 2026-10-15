@@ -1,7 +1,7 @@
 ---
 name: adversarial-review
 description: Run a read-only adversarial review of the current branch through the GitHub Copilot CLI, with one of four lenses — code (correctness; runs first, on every change that touches code), text (truth and consistency; the whole review of a change with no code in it), security, or architecture. Use at Stage 3 of work-on-issue, or whenever an independent non-Claude reviewer is wanted on a committed branch.
-argument-hint: <code|security|architecture|text> [--base <ref>] [--model <id>] [--effort <level>] [--settled <text>]... [focus text...]
+argument-hint: <code|security|architecture|text> [--base <ref>] [--paths <pathspec>]... [--model <id>] [--effort <level>] [--settled <text>]... [focus text...]
 allowed-tools:
   - Bash(bash .claude/skills/adversarial-review/run.sh *)
   - Bash(git *)
@@ -24,6 +24,7 @@ bash .claude/skills/adversarial-review/run.sh code
 bash .claude/skills/adversarial-review/run.sh security --effort xhigh "trust-boundary change: the zkd_i binding"
 bash .claude/skills/adversarial-review/run.sh architecture --base origin/main
 bash .claude/skills/adversarial-review/run.sh code --base <round-1 sha>   # verify a fix diff only
+bash .claude/skills/adversarial-review/run.sh text --paths docs/ --paths '*.md'   # the prose of a change that also has code
 bash .claude/skills/adversarial-review/run.sh security \
   --settled "<accepted residual, one sentence>; proven by <TestName>" \
   --settled "Agreed shape: <the signatures from the issue's ### Agreed shape comment>"
@@ -37,6 +38,10 @@ bash .claude/skills/adversarial-review/run.sh security \
   change for the maintainer.
 - **`--base`** defaults to `origin/main`. The review covers `merge-base..HEAD`. To verify a fix
   diff, pass the SHA the fix was built on.
+- **`--paths <pathspec>`**, repeatable, limits the diff in the brief to those paths — `docs/`,
+  `'*.md'` — so the text lens can read the prose of a change that also has code in it. The lens
+  still reads the whole repository; it reports only on what is under review. The script refuses a
+  path set that matches nothing in the range.
 - **Focus text** is anything after the flags. Use it to name the thing you most want attacked. One
   sentence.
 - **`--settled <text>`**, repeatable, is what the maintainer has already decided for this change:
@@ -93,7 +98,8 @@ See `work-on-issue`, Stage 3. In short:
    only**: fix those as their own commit, re-run the lens with `--base <round-1 sha>` to verify the
    fix diff, then proceed. Its Medium/Low findings go straight to the Stage 4 list — no fix cycle,
    no re-run. On a mechanical or test-only change this lens is the entire review; on a change with
-   no code in it, the **text lens** is, under the same gate. Under 150 changed lines it is also the
+   no code in it, the **text lens** is, under the same gate; a change with both gets both, the
+   text lens on the prose alone through `--paths`. Under 150 changed lines it is also the
    only Copilot pass the change gets; at 150 or more, the PR-side Copilot review is requested at
    Stage 4 as well (`work-on-issue`).
 2. **Security and architecture lenses** run alongside their Claude counterparts, in parallel, only
