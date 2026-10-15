@@ -11,10 +11,8 @@ internal static class TokenLifetimes
         clientOverride ?? serverDefault;
 
     /// <summary>
-    /// <paramref name="now"/> plus <paramref name="lifetime"/>, saturating at
-    /// <see cref="DateTimeOffset.MaxValue"/>. Every lifetime that reaches here passed startup
-    /// validation, so no configured value may fail at issuance — including the
-    /// <see cref="TimeSpan.MaxValue"/> sentinel, whose naive addition overflows.
+    /// <paramref name="now"/> plus <paramref name="lifetime"/>, saturating at <see cref="DateTimeOffset.MaxValue"/>,
+    /// so no value startup accepted, <see cref="TimeSpan.MaxValue"/> included, fails at issuance.
     /// </summary>
     public static DateTimeOffset ExpiresAt(DateTimeOffset now, TimeSpan lifetime)
     {
@@ -31,11 +29,7 @@ internal static class TokenLifetimes
         }
     }
 
-    /// <summary>
-    /// Two durations added together, saturating at <see cref="TimeSpan.MaxValue"/> and
-    /// <see cref="TimeSpan.MinValue"/> rather than throwing, so even an invalid negative setting
-    /// reaches its own validation rule.
-    /// </summary>
+    /// <summary>The sum, saturating rather than throwing, so even an invalid negative setting reaches its own rule.</summary>
     public static TimeSpan Sum(TimeSpan first, TimeSpan second)
     {
         if (second > TimeSpan.Zero && first > TimeSpan.MaxValue - second)

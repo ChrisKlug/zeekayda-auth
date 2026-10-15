@@ -9,16 +9,9 @@ namespace ZeeKayDa.Auth.Clients;
 /// <c>$&lt;id&gt;[$v=&lt;version&gt;][$&lt;name&gt;=&lt;value&gt;(,&lt;name&gt;=&lt;value&gt;)*]$&lt;salt&gt;$&lt;hash&gt;</c>.
 /// </summary>
 /// <remarks>
-/// <para>
-/// See <see href="https://github.com/P-H-C/phc-string-format/blob/master/phc-sf-spec.md">the PHC
-/// string format</see>. Salt and hash are standard base64 without <c>=</c> padding. This type
-/// requires both, where the format allows either to be absent.
-/// </para>
-/// <para>
-/// Optional for an <see cref="IClientSecretHasher"/> author. A library that already produces PHC
-/// strings needs none of it; one that works in bytes builds its <see cref="ClientSecret.Value"/>
-/// with <see cref="ToString"/>. The framework itself reads only the algorithm id.
-/// </para>
+/// See <see href="https://github.com/P-H-C/phc-string-format/blob/master/phc-sf-spec.md">the PHC string
+/// format</see>. Salt and hash are unpadded standard base64, and both are required here. Optional for a
+/// hasher author: the framework itself reads only the algorithm id.
 /// </remarks>
 public sealed class PhcString
 {
@@ -169,8 +162,7 @@ public sealed class PhcString
         field => ToUnpaddedBase64(FromUnpaddedBase64(field)) == field,
     ];
 
-    // $<id>[$v=<version>][$<parameters>]$<salt>$<hash>; the first part is the empty text before the
-    // leading '$'. A first optional field starting "v=" is the version, whatever follows it.
+    // The first part is the empty text before the leading '$'; an optional field starting "v=" is the version.
     private static Fields? FieldsOf(string? value)
     {
         if (value?.Split('$') is not ["", var id, .. var optional, var salt, var hash] || optional.Length > 2)

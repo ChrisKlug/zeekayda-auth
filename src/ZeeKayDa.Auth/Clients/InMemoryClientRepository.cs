@@ -7,14 +7,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Clients;
 
-/// <summary>
-/// An in-memory <see cref="IClientRepository"/> populated at startup from configured
-/// <see cref="InMemoryClientRegistrationOptions"/>.
-/// </summary>
-/// <remarks>
-/// Suitable for development, testing, and simple deployments. For production scenarios with
-/// many clients or dynamic registration, implement a custom <see cref="IClientRepository"/>.
-/// </remarks>
+/// <summary>An in-memory <see cref="IClientRepository"/>, populated at startup from <see cref="InMemoryClientRegistrationOptions"/>.</summary>
 internal sealed class InMemoryClientRepository : IClientRepository
 {
     private readonly IReadOnlyDictionary<string, IClientWithCredentials> _clients;
@@ -29,10 +22,8 @@ internal sealed class InMemoryClientRepository : IClientRepository
         services.GetRequiredService<FrameworkThenHostValidator>());
 
     /// <summary>
-    /// Hashes the pending secrets, then checks every registration for a duplicate
-    /// <c>client_id</c> and against <paramref name="validator"/>. On success the pending plaintext
-    /// secrets are released; on failure they are kept, so building again fails the same way rather
-    /// than succeeding without those clients.
+    /// Hashes the pending secrets, then checks every registration. Plaintext is released only on success, so
+    /// building again fails the same way rather than succeed without those clients.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// Any registration is invalid. Every failure across all of them is aggregated, so operators
@@ -56,10 +47,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
         return new InMemoryClientRepository(clients.ToDictionary(client => client.ClientId, StringComparer.Ordinal));
     }
 
-    /// <summary>
-    /// The pending specs as confidential registrations with their credentials set, and a failure for
-    /// each spec without exactly one usable secret, which is skipped so the rest are still checked.
-    /// </summary>
+    /// <summary>The pending specs with their secrets set, and a failure for each without exactly one usable secret.</summary>
     private static (List<IClientWithCredentials> Clients, List<ZeeKayDaConfigurationFailure> Failures) HashPending(
         IEnumerable<PendingConfidentialClientSpec> pending,
         ClientSecrets secrets)
@@ -121,9 +109,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
         string clientId,
         CancellationToken cancellationToken = default)
     {
-        // Dictionary<string, T>.TryGetValue throws ArgumentNullException on a null key, but the
-        // IClientRepository contract requires returning null for an unknown or malformed
-        // client_id — never throwing.
+        // The contract answers null, never throws, for a malformed client_id.
         if (clientId is null)
             return Task.FromResult<IClientWithCredentials?>(null);
 

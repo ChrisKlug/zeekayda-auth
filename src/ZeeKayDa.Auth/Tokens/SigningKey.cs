@@ -4,9 +4,8 @@ namespace ZeeKayDa.Auth.Tokens;
 /// One key's identity and public material, as the framework sees it — never private key material.
 /// </summary>
 /// <remarks>
-/// Only the framework constructs one, so nothing outside it can produce a <see cref="SigningKey"/>
-/// whose <see cref="Kid"/> disagrees with <see cref="PublicKey"/>: the framework always derives
-/// <see cref="Kid"/> via <see cref="JwkThumbprint"/>.
+/// Only the framework constructs one, deriving <see cref="Kid"/> from <see cref="PublicKey"/>, so the two
+/// can never disagree.
 /// </remarks>
 public sealed class SigningKey
 {

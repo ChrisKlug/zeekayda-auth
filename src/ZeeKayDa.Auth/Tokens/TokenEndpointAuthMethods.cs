@@ -5,19 +5,9 @@ namespace ZeeKayDa.Auth.Tokens;
 /// framework.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <c>IClient.AllowedTokenEndpointAuthMethods</c> is
-/// <c>IReadOnlySet&lt;string&gt;</c> rather than an enum because token endpoint authentication is
-/// an open extension point: custom <c>IClientAuthenticator</c> implementations can introduce new
-/// methods (such as <c>tls_client_auth</c>) without any framework change. Extension authors should
-/// define their own string constants alongside their <c>IClientAuthenticator</c> implementation
-/// instead of adding values here.
-/// </para>
-/// <para>
-/// All membership checks against <c>IClient.AllowedTokenEndpointAuthMethods</c>
-/// MUST use <see cref="System.StringComparer.Ordinal"/> semantics — do not rely on the set's own
-/// comparer.
-/// </para>
+/// Strings, not an enum, because a custom <c>IClientAuthenticator</c> can add a method, defining its own
+/// constant beside it. Compare <c>IClient.AllowedTokenEndpointAuthMethods</c> members with
+/// <see cref="System.StringComparer.Ordinal"/>, never the set's own comparer.
 /// </remarks>
 public static class TokenEndpointAuthMethods
 {
@@ -33,8 +23,7 @@ public static class TokenEndpointAuthMethods
 
     /// <summary>No client authentication — public clients only (<c>none</c>).</summary>
     /// <remarks>
-    /// <c>none</c> is reserved to the composite client authenticator fallback and MUST NOT be
-    /// declared or returned by any custom <c>IClientAuthenticator</c> implementation.
+    /// Reserved to the framework's fallback; a custom <c>IClientAuthenticator</c> must never declare or return it.
     /// </remarks>
     public const string None = "none";
 }

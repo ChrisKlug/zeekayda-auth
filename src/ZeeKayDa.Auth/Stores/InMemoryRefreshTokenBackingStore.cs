@@ -2,41 +2,11 @@ using System.Collections.Concurrent;
 
 namespace ZeeKayDa.Auth.Stores;
 
-/// <summary>
-/// Default <see cref="IRefreshTokenBackingStore"/> implementation backed by an in-process
-/// <see cref="ConcurrentDictionary{TKey,TValue}"/>.
-/// </summary>
+/// <summary>The default in-process <see cref="IRefreshTokenBackingStore"/>, storing grants exactly as received.</summary>
 /// <remarks>
-/// <para>
-/// This is a thin storage adapter: it has no knowledge of hashing, encryption,
-/// expiry, or outcome selection — that protocol all lives in the sealed <c>RefreshTokenStore</c>
-/// coordinator. This class stores and queries <see cref="RefreshTokenGrant"/> rows exactly as
-/// received.
-/// </para>
-/// <para>
-/// <strong>Single-instance is a deployment invariant, not a recommendation.</strong>
-/// Running multiple instances of this host with the in-memory default silently disables
-/// single-use enforcement and refresh token reuse detection (RFC 9700 §4.14.2): grants inserted
-/// by instance A are invisible to instance B. Multi-instance deployments MUST replace this
-/// store with one backed by a shared, atomic, queryable backend.
-/// </para>
-/// <para>
-/// <strong>Atomicity.</strong> <see cref="TryMarkConsumedAsync"/> uses
-/// <see cref="ConcurrentDictionary{TKey,TValue}.TryUpdate(TKey,TValue,TValue)"/> as its
-/// compare-and-set primitive, satisfying the interface's one hard invariant without a lock.
-/// </para>
-/// <para>
-/// <strong>Revocation scans.</strong> <see cref="RevokeFamilyAsync"/> and
-/// <see cref="RevokeBySubjectAsync"/> enumerate the whole dictionary under <see cref="_revokeLock"/>,
-/// held for the duration of the scan, and <see cref="InsertAsync"/> takes the same lock's read side
-/// before adding a row. This closes a mid-revoke-insert race: without it, a grant
-/// inserted concurrently with a revoke scan could be missed by the enumeration and left
-/// <c>Active</c> in an already-"revoked" family, silently breaking the completeness guarantee
-/// (RFC 9700 §4.13) the interface promises. This is correct (complete by construction — every
-/// entry present at the end of a revoke call has been visited) and acceptable for an in-process,
-/// dev/test-sized store; a relational or Cosmos backend expresses the same completeness guarantee
-/// as an indexed <c>UPDATE ... WHERE</c> instead.
-/// </para>
+/// <strong>Single instance only:</strong> on several instances, grants on one are invisible to another, which
+/// silently disables single use and reuse detection (RFC 9700 §4.14.2). Revoke scans hold a write lock that
+/// inserts take the read side of, so a grant inserted mid-revoke cannot be missed (RFC 9700 §4.13).
 /// </remarks>
 internal sealed class InMemoryRefreshTokenBackingStore : IRefreshTokenBackingStore
 {
@@ -121,8 +91,6 @@ internal sealed class InMemoryRefreshTokenBackingStore : IRefreshTokenBackingSto
 
     private void RevokeWhere(Func<RefreshTokenGrant, bool> predicate)
     {
-        // Excludes concurrent InsertAsync for the duration of the scan (see class remarks) so a
-        // grant inserted mid-revoke cannot be missed by the enumeration below.
         _revokeLock.EnterWriteLock();
         try
         {
@@ -133,11 +101,7 @@ internal sealed class InMemoryRefreshTokenBackingStore : IRefreshTokenBackingSto
 
                 var revoked = current with { Status = RefreshGrantStatus.Revoked };
 
-                // A concurrent update losing this CAS means someone else already mutated the row
-                // (e.g. a concurrent consume); the loop's completeness bar (every matching row ends
-                // up Revoked) is preserved because Consumed/Revoked are both terminal — either
-                // outcome already satisfies "no longer Active", which is all that matters for
-                // family/subject revocation.
+                // Losing the CAS means a concurrent consume made the row terminal: no longer Active either way.
                 _grants.TryUpdate(key, revoked, current);
             }
         }

@@ -2,12 +2,7 @@ using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// Validates that <see cref="DevelopmentSigningOptions.AllowedEnvironments"/>
-/// does not contain <c>"Production"</c> or null/empty entries.
-/// Registered only when <c>AddInMemoryDevelopmentSigning()</c> or
-/// <c>AddPersistedDevelopmentSigning()</c> is called.
-/// </summary>
+/// <summary>Refuses an empty <see cref="DevelopmentSigningOptions.AllowedEnvironments"/>, a blank entry, or <c>Production</c>.</summary>
 internal sealed class AllowedDevEnvironmentsValidator : ZeeKayDaOptionsValidator<DevelopmentSigningOptions>
 {
     /// <inheritdoc/>

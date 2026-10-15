@@ -5,10 +5,8 @@ namespace ZeeKayDa.Auth.Claims;
 /// not receive tokens. The hierarchy is closed, so a consumer handles exactly these two cases.
 /// </summary>
 /// <remarks>
-/// "No claims apply to this grant" is <see cref="Resolved"/> with an empty list, and it is a
-/// legitimate answer. <see cref="SubjectInvalid"/> is a distinct type rather than a
-/// <see langword="null"/> or empty list, so a provider cannot abort issuance by returning the
-/// wrong shape of "nothing" by mistake.
+/// "No claims" is <see cref="Resolved"/> with an empty list. <see cref="SubjectInvalid"/> is its own type, so
+/// returning the wrong shape of "nothing" cannot abort issuance by mistake.
 /// </remarks>
 public abstract class ClaimsResolutionResult
 {

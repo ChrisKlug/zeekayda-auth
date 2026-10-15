@@ -31,9 +31,8 @@ public sealed class ConfidentialClientOptions : ClientOptions
     /// when the host starts.
     /// </summary>
     /// <remarks>
-    /// A convenience for development and bootstrapping. The plaintext is held until startup and then
-    /// released, but any configuration source it came from keeps its own copy for the life of the
-    /// process. Prefer <see cref="SecretHash"/>, so the plaintext is never in the host at all.
+    /// For development and bootstrapping: the plaintext is released after startup, but its configuration
+    /// source keeps a copy. Prefer <see cref="SecretHash"/>.
     /// </remarks>
     public string? Secret { get; set; }
 

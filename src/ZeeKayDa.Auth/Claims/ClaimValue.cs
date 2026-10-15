@@ -12,24 +12,17 @@ namespace ZeeKayDa.Auth.Claims;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The implicit conversions cover every type a standard OpenID Connect claim can be, so a
-/// provider writes <c>new ClaimRecord("email_verified", true)</c> and the token carries a JSON
-/// boolean. None of them throws: a value that has no JSON form, a <see langword="null"/> string,
-/// <see cref="double.NaN"/> or an infinity, becomes a value that
+/// The implicit conversions cover every standard claim type, so <c>new ClaimRecord("email_verified", true)</c>
+/// carries a JSON boolean. None throws: a value with no JSON form becomes one
 /// <see cref="ClaimRecord(string, ClaimValue)"/> refuses by claim name.
 /// </para>
 /// <para>
-/// A custom shape reaches a token only through <see cref="From{T}(T, JsonSerializerOptions?)"/>,
-/// which serialises it on the spot with snake_case names by default, OpenID Connect's own
-/// convention. There is no conversion from <see cref="object"/>, so a domain entity cannot be
-/// handed over by accident. A host that emits its own type often declares an implicit conversion
-/// on that type which calls <c>From</c>.
+/// A custom shape goes through <see cref="From{T}(T, JsonSerializerOptions?)"/>, snake_case by default; there
+/// is no conversion from <see cref="object"/>, so a domain entity cannot slip in by accident.
 /// </para>
 /// <para>
-/// The value serialises through <see cref="JsonSerializer"/> as the JSON it holds, so a custom
-/// <c>ITokenIssuer</c> that serialises a <c>TokenPayload</c> writes it correctly without knowing
-/// this type; one that stores claims some other way reads <see cref="Kind"/> and writes the JSON
-/// with <see cref="WriteTo"/>. The default value holds nothing and cannot be written.
+/// <see cref="JsonSerializer"/> writes it as the JSON it holds; another serializer reads <see cref="Kind"/> and
+/// uses <see cref="WriteTo"/>. The default value holds nothing and cannot be written.
 /// </para>
 /// </remarks>
 [JsonConverter(typeof(ClaimValueJsonConverter))]

@@ -6,18 +6,12 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// Records at startup that an in-memory store is active, whose contents are lost on process
-/// restart and invisible to other instances — tokens, single-use enforcement and reuse detection
-/// for the token stores, in-flight authorization requests for the interaction store.
+/// Reports at startup that an in-memory store is active, losing its contents on restart and invisible to
+/// other instances; <see cref="EnvironmentGate"/> decides whether that is allowed.
 /// </summary>
 /// <remarks>
-/// One instance is registered per in-memory store registration call, each capturing its own
-/// <c>storeName</c> and <c>allowOutsideDevelopment</c> value, so the gate is enforced
-/// independently per store. Which of the three the host gets is <see cref="EnvironmentGate"/>'s
-/// decision, not this type's; what lives here is the wording an operator needs to fix an in-memory
-/// store specifically. The registrations share this
-/// implementation type but are added via plain <c>AddScoped&lt;IStartupVerifier&gt;</c> rather
-/// than <c>TryAddEnumerable</c>, which would otherwise deduplicate them away.
+/// One instance per in-memory store, added with plain <c>AddScoped</c> since <c>TryAddEnumerable</c> would
+/// deduplicate them.
 /// </remarks>
 internal sealed class InMemoryStoreVerifier(
     IHostEnvironment environment,
@@ -48,12 +42,6 @@ internal sealed class InMemoryStoreVerifier(
         "intentional (e.g. an integration test host). Do not use in-memory stores in production.";
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// Every <see cref="InMemoryStoreVerifier"/> instance shares the category
-    /// <see cref="InMemoryStoreVerifier"/> — this instance <see cref="Name"/> (e.g.
-    /// <c>InMemoryStore(authorization code store)</c>) is what still lets an operator or log query
-    /// tell the registrations apart.
-    /// </remarks>
     public string Name => $"InMemoryStore({storeName})";
 
     /// <inheritdoc/>
@@ -74,10 +62,7 @@ internal sealed class InMemoryStoreVerifier(
                 break;
 
             default:
-                // Names its own store: one instance is registered per in-memory store, all report
-                // in the same phase, and the runner collapses failures that are identical in code
-                // and message — so a message naming no store would report one of several broken
-                // registrations and send the operator round the restart cycle for the others.
+                // Names its store: the runner collapses identical failures, which would hide all but one.
                 context.AddFailure(
                     "stores.inmemory.non_development",
                     $"The in-memory {storeName} is active outside a Development environment. " +

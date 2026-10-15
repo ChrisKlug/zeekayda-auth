@@ -13,22 +13,17 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The JOSE header is built <em>inside</em> the ring's signing callback, from the
-/// <see cref="SigningKey"/> the ring resolved for that call. The key is resolved exactly once per
-/// token, and the header's <c>kid</c> and <c>alg</c> are read from the same resolved key that
-/// produces the signature — a header that disagrees with its signature is unrepresentable rather
-/// than merely detected.
+/// The JOSE header is built inside the ring's signing callback from the key it resolved, once per token,
+/// so its <c>kid</c> and <c>alg</c> cannot disagree with the signature.
 /// </para>
 /// <para>
-/// An ID token is bound to the access token issued with it: <c>at_hash</c> is computed inside the
-/// same callback, with the hash function the resolved key's algorithm implies (OpenID Connect Core
-/// §3.1.3.6), and the client's <see cref="Clients.IClient.AllowedSigningAlgorithms"/> is
-/// checked there against that key before the signer is touched. Those two are everything this
-/// issuer adds to a payload; every other claim is written verbatim.
+/// For an ID token the same callback computes <c>at_hash</c> with the hash the key's algorithm implies
+/// (OpenID Connect Core §3.1.3.6) and checks the client's
+/// <see cref="Clients.IClient.AllowedSigningAlgorithms"/> before the signer is touched. Those are all this
+/// issuer adds; every other claim is written verbatim.
 /// </para>
 /// <para>
-/// The <c>typ</c> header follows the profile for the kind being issued: <c>at+jwt</c> for access
-/// tokens (RFC 9068 §2.1), <c>JWT</c> for ID tokens.
+/// The <c>typ</c> header is <c>at+jwt</c> for access tokens (RFC 9068 §2.1) and <c>JWT</c> for ID tokens.
 /// </para>
 /// </remarks>
 public sealed class JwtTokenIssuer : ITokenIssuer
@@ -89,9 +84,8 @@ public sealed class JwtTokenIssuer : ITokenIssuer
     }
 
     /// <summary>
-    /// The payload must not already claim to carry the hash, since the value written here is the
-    /// only one that can agree with the key that signs; and the access token it hashes must be
-    /// the ASCII octets a relying party will hash too.
+    /// The access token to bind, refused when the payload already carries <c>at_hash</c> or the token is not the
+    /// ASCII octets a relying party hashes (OpenID Connect Core §3.1.3.6).
     /// </summary>
     private static string RequireAccessToken(IdTokenIssuanceContext context, TokenPayload payload)
     {
@@ -104,9 +98,6 @@ public sealed class JwtTokenIssuer : ITokenIssuer
                 "that signs, and a payload value could not agree with that key.");
         }
 
-        // The hash is over the token's ASCII octets (OpenID Connect Core §3.1.3.6). A value that
-        // is not ASCII has no octets a relying party could reproduce, so it is refused rather than
-        // hashed with substitutions.
         if (!Ascii.IsValid(accessToken.Value))
         {
             throw new InvalidOperationException(
@@ -117,9 +108,6 @@ public sealed class JwtTokenIssuer : ITokenIssuer
         return accessToken.Value;
     }
 
-    // Runs inside the ring's signing callback: the header is built from the key the ring resolved
-    // for this exact call, so kid/alg and the signature can never come from different keys — and
-    // for an ID token, so can neither at_hash nor the client's algorithm policy.
     private static ReadOnlyMemory<byte> BuildSigningInput(SigningKey key, SigningState state)
     {
         var accessToken = state.AccessTokenToBind;
@@ -130,11 +118,7 @@ public sealed class JwtTokenIssuer : ITokenIssuer
         return CompactJws.BuildSigningInput(key, state.Typ, payload);
     }
 
-    /// <summary>
-    /// A client that restricted its ID-token algorithms is refused a token outside them, here,
-    /// before the signer is touched; the client would have rejected it anyway, and a fault at this
-    /// end beats a silent one at theirs.
-    /// </summary>
+    /// <summary>Refuses an ID token outside the client's algorithms here, rather than leave the client to reject it.</summary>
     private static void RequireAlgorithmAllowed(TokenIssuanceContext context, SigningKey key)
     {
         if (context.Client.AllowedSigningAlgorithms is { } allowed && !allowed.Contains(key.Algorithm))
@@ -146,9 +130,7 @@ public sealed class JwtTokenIssuer : ITokenIssuer
         }
     }
 
-    // Claim names and values are serialized verbatim — selection and naming happened before
-    // TokenPayload was constructed, and a naming policy here would silently rewrite them. One
-    // path for both kinds: the ID token's at_hash is the only addition, written last.
+    // Verbatim: a naming policy here would silently rewrite claim names chosen upstream.
     private static ReadOnlySpan<byte> Payload(TokenPayload payload, string? accessTokenHash)
     {
         var buffer = new ArrayBufferWriter<byte>();
@@ -170,11 +152,7 @@ public sealed class JwtTokenIssuer : ITokenIssuer
         return buffer.WrittenSpan;
     }
 
-    /// <summary>
-    /// OpenID Connect Core §3.1.3.6: the left half of the hash of the access token's ASCII wire
-    /// value, base64url-encoded, using the hash algorithm of the ID token's <c>alg</c> — the one
-    /// mapping the signer itself uses, with no fallback.
-    /// </summary>
+    /// <summary>The left half of the access token's hash under the key's algorithm, base64url (OpenID Connect Core §3.1.3.6).</summary>
     private static string AccessTokenHash(SigningAlgorithm algorithm, string accessToken)
     {
         var digest = CryptographicOperations.HashData(SigningAlgorithms.HashAlgorithm(algorithm), Encoding.ASCII.GetBytes(accessToken));

@@ -5,15 +5,9 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Startup check that the token endpoint auth methods the server advertises (<see cref="AdvertisedAuthMethods"/>)
-/// are what the operator's filter meant and can serve the configured grants.
+/// Checks at startup that the advertised token endpoint auth methods are what the filter meant and can
+/// serve the configured grants. An activator because resolving them builds the host's authenticators.
 /// </summary>
-/// <remarks>
-/// An activator rather than a verifier, by the mechanical rule: resolving the advertised methods builds
-/// every registered client authenticator, and those are the host's own. Resolved in
-/// <see cref="VerifyAsync"/>, not injected, so a construction failure is reported against a check.
-/// Registered by the core, so a host without the HTTP layer is held to the same rules.
-/// </remarks>
 internal sealed class AdvertisedAuthMethodsActivator(
     IOptions<AuthorizationServerOptions> options,
     IServiceProvider services) : IStartupActivator

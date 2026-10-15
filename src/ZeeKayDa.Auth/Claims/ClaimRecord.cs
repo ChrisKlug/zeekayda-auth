@@ -5,15 +5,12 @@ namespace ZeeKayDa.Auth.Claims;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="Type"/> is the OpenID Connect wire name, <c>email</c> or <c>given_name</c>, never a
-/// <c>ClaimTypes</c> URI. A provider returns one record per value: three <c>role</c> records
-/// become <c>"role": ["admin", "editor", "viewer"]</c> on the wire, in that order.
+/// <see cref="Type"/> is the OpenID Connect wire name, never a <c>ClaimTypes</c> URI. One record per value:
+/// three <c>role</c> records become <c>"role": ["admin", "editor", "viewer"]</c>, in that order.
 /// </para>
 /// <para>
-/// The constructor is the one place a claim is validated. It refuses a blank type and a value a
-/// token could not carry, naming the claim type and never the value. A record that exists is a
-/// record that can be written; nothing downstream checks again. The default value of this struct
-/// is the exception: its members throw, and a result containing one is treated as a provider bug.
+/// The constructor is the one place a claim is validated, so a record that exists can be written. The
+/// default struct is the exception: its members throw, and a result holding one is a provider bug.
 /// </para>
 /// </remarks>
 public readonly record struct ClaimRecord
