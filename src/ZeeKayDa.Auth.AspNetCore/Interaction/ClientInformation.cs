@@ -1,8 +1,7 @@
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The client an interaction is being completed for — an authorization request or a sign-out —
-/// as a host page sees it.
+/// The client an interaction is being completed for, as a host page sees it.
 /// </summary>
 public sealed class ClientInformation
 {
@@ -18,9 +17,7 @@ public sealed class ClientInformation
     public string ClientId { get; }
 
     /// <summary>
-    /// The registration's display name, for showing the user which application is asking, or
-    /// <see langword="null"/> when the registration carries none — show <see cref="ClientId"/>
-    /// then.
+    /// The registration's display name, or <see langword="null"/>; show <see cref="ClientId"/> then.
     /// </summary>
     public string? DisplayName { get; }
 }

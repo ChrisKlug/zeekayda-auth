@@ -4,9 +4,8 @@ using ZeeKayDa.Auth.AspNetCore.Endpoints;
 namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
-/// The route a provider's handler is called back on: <c>/connect/callback/{provider}</c> under the
-/// issuer path, derived exactly as every other endpoint's route is, so that what the framework
-/// writes into a handler's <c>CallbackPath</c> is the same path it later maps an endpoint on.
+/// A provider's callback route, <c>/connect/callback/{provider}</c> under the issuer path, shared
+/// by the pinned <c>CallbackPath</c> and the mapped endpoint.
 /// </summary>
 internal static class ProviderCallbackRoute
 {

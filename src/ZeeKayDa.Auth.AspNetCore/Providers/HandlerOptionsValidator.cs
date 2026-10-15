@@ -6,17 +6,9 @@ using ZeeKayDa.Auth.AspNetCore.Interaction;
 namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
-/// Asserts what <see cref="HandlerOptionsPin{TOptions}"/> pinned. Validation runs after every
-/// post-configurer, so this sees the final values and fails any registered provider's options
-/// whose forwarding — or, on a remote one, callback path, sign-in scheme, access-denied path,
-/// access-denied event or events type — differ from the pins, naming the scheme and the member.
+/// Asserts, on the final values after every post-configurer, what
+/// <see cref="HandlerOptionsPin{TOptions}"/> pinned, naming the provider and the member.
 /// </summary>
-/// <remarks>
-/// Without this, a <c>PostConfigure</c> for the same scheme registered later by the host or a
-/// library would win silently, and the provider would sign into the wrong cookie or call back to
-/// a path nothing serves. The failure surfaces at startup because
-/// <see cref="HandlerOptionsActivator"/> resolves each provider's options once.
-/// </remarks>
 internal sealed class HandlerOptionsValidator<TOptions>(
     ProviderRegistry registry,
     IOptions<AuthorizationServerOptions> options,
@@ -24,16 +16,9 @@ internal sealed class HandlerOptionsValidator<TOptions>(
     where TOptions : AuthenticationSchemeOptions
 {
     /// <summary>
-    /// Every failure this validator produces starts with this, to orient a human reading
-    /// <see cref="OptionsValidationException.Failures"/> directly.
+    /// Starts every failure, for a human reader. Not a provenance check: any validator could write
+    /// it, so the framework's findings come from <see cref="PinnedOptionDriftRecorder"/>.
     /// </summary>
-    /// <remarks>
-    /// <strong>It is not a provenance check and nothing may treat it as one.</strong> That list is
-    /// flat and every validator registered for the options type contributes to it, so any of them
-    /// can return a string beginning with these characters. The startup activator recovers the
-    /// framework's own findings from <see cref="PinnedOptionDriftRecorder"/>, which only the
-    /// framework writes to; it does not read this prefix, and neither does any test.
-    /// </remarks>
     public const string FailurePrefix = "Pinned by ZeeKayDa.Auth: ";
 
     private readonly IOptions<AuthorizationServerOptions> _options = options;
@@ -54,9 +39,7 @@ internal sealed class HandlerOptionsValidator<TOptions>(
         if (options is RemoteAuthenticationOptions remote)
             drifts.AddRange(RemoteDrifts(name, remote));
 
-        // Recorded on every validating run, including the passing one: an empty record overwrites
-        // a previous failure's findings, so the activator can never read a drift that has since
-        // been fixed.
+        // On a passing run too, so a fixed drift is never read back.
         recorder.Record(name, typeof(TOptions), drifts);
 
         return drifts.Count == 0
@@ -77,9 +60,7 @@ internal sealed class HandlerOptionsValidator<TOptions>(
         if (remote.AccessDeniedPath.HasValue)
             yield return Cleared(nameof(remote.AccessDeniedPath));
 
-        // Either would put the refusal outcome outside the framework's control: events resolved
-        // from the container replace the pinned event object wholesale, and a host access-denied
-        // event could handle or skip the refusal before the framework records it.
+        // An events type replaces the pinned events wholesale; a host access-denied event pre-empts the framework's.
         if (remote.EventsType is not null)
             yield return Cleared(nameof(remote.EventsType));
 
@@ -102,8 +83,6 @@ internal sealed class HandlerOptionsValidator<TOptions>(
 
     private static PinnedOptionDrift Cleared(string member) => new(member, Expected: null);
 
-    // The string form handed to Microsoft.Extensions.Options, built from the same drift the
-    // recorder carries, so the two descriptions can never drift apart themselves.
     private static string Describe(string name, PinnedOptionDrift drift) =>
         $"{FailurePrefix}the options for provider '{name}' were changed after the framework pinned " +
         $"them: {drift.Describe()} The framework owns this member; remove the configuration that " +

@@ -5,28 +5,22 @@ using ZeeKayDa.Auth.Clients;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The host logout page's confirmation of a sign-out. One of the per-page interaction services:
-/// the host owns the page, this service owns the protocol.
+/// The host logout page's confirmation of a sign-out, at <c>EndSessionEndpoint.LogoutPath</c>. The
+/// host owns the page; this service owns the protocol.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Used by the page at <c>EndSessionEndpoint.LogoutPath</c>. The framework redirects there when
-/// the user must be asked before being signed out, carrying a <c>zkd_i</c> query parameter the
-/// page must preserve across its own form post, on the same terms as the login page.
-/// </para>
-/// <para>
-/// There is nothing to call when the user declines. A sign-out has no error response to the
-/// client, so a "stay signed in" button can go wherever the host likes, and the unanswered
-/// sign-out expires on its own.
+/// The page must preserve the <c>zkd_i</c> query parameter it was reached with across its own form
+/// post. There is nothing to call when the user declines: a sign-out has no error response to the
+/// client, so a "stay signed in" button can go anywhere, and the unanswered sign-out expires.
 /// </para>
 /// <para>
 /// <strong>Nothing to continue is answered, not thrown.</strong> When <see cref="SignOutAsync"/>
-/// finds no sign-out left to complete — the request carries no <c>zkd_i</c>; the sign-out expired,
-/// was already completed or was started in another browser; or the browser no longer holds the
-/// session it was started for — the framework answers the request itself: with the signed-out page
-/// when the browser holds no session, and with the error page, with
-/// <see cref="AuthorizationErrorKind.NothingToContinue"/>, when it is still signed in. Nobody is
-/// signed out by such a request. The call is terminal either way.
+/// finds no sign-out left to complete — no <c>zkd_i</c>; the sign-out expired, was completed or
+/// belongs to another browser; or the browser no longer holds the session it was started for — the
+/// framework answers with the signed-out page when the browser holds no session, and with the error
+/// page, with <see cref="AuthorizationErrorKind.NothingToContinue"/>, when it is still signed in.
+/// Nobody is signed out by such a request.
 /// </para>
 /// </remarks>
 public sealed class LogoutInteraction
@@ -55,10 +49,9 @@ public sealed class LogoutInteraction
     /// Returns the sign-out the page is asked to confirm, for the page to render.
     /// </summary>
     /// <remarks>
-    /// The response this is read from is stamped <c>frame-ancestors 'none'</c>,
-    /// <c>X-Frame-Options: DENY</c> and <c>no-store</c>, so the page taking a one-click decision
-    /// cannot be framed or cached. A page that renders without calling this — a fixed "Sign out?"
-    /// page that only posts — gets none of those headers and must set its own.
+    /// The response is stamped <c>frame-ancestors 'none'</c>, <c>X-Frame-Options: DENY</c> and
+    /// <c>no-store</c> before the read, since the page takes a one-click decision. A page that renders
+    /// without calling this — a fixed "Sign out?" page that only posts — must set its own.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <exception cref="ZeeKayDaInteractionException">
@@ -81,15 +74,10 @@ public sealed class LogoutInteraction
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // The page takes a one-click decision, so it renders framed by nobody and cached by nothing
-        // — stamped before the read, so a page rendering its own "nothing to confirm" is covered too.
         RenderedPage.Protect(context.Response);
         var request = await ResolveAddressedAsync(context, cancellationToken).ConfigureAwait(false);
 
-        // Checked here and not only at SignOutAsync: the request names the user it was started for,
-        // and a confirmation left open across a fresh sign-in would hand the new user the previous
-        // one's subject. Refusing the render is also honest — the sign-out it asks about can no
-        // longer complete.
+        // At render too: the request carries the subject, which must not reach a user signed in since.
         await RequireAskedSessionAsync(context, request, cancellationToken).ConfigureAwait(false);
 
         if (request.ClientId is null)
@@ -104,10 +92,9 @@ public sealed class LogoutInteraction
     /// none — for a page that renders its own "nothing to confirm" message.
     /// </summary>
     /// <remarks>
-    /// Exactly <see cref="GetRequestAsync"/>, including the headers it stamps, except that each case
-    /// <see cref="GetRequestAsync"/> reports with <see cref="ZeeKayDaInteractionException"/> returns
-    /// <see langword="null"/> instead. A request with no <c>zkd_i</c> is logged as a warning, since
-    /// a form that drops it looks like this on every submission.
+    /// Exactly <see cref="GetRequestAsync"/>, headers included, except that each case it reports with
+    /// <see cref="ZeeKayDaInteractionException"/> returns <see langword="null"/>. A request with no
+    /// <c>zkd_i</c> is logged as a warning.
     /// </remarks>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <exception cref="ZeeKayDaStoreException">The interaction store could not be read.</exception>
@@ -135,25 +122,16 @@ public sealed class LogoutInteraction
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last
-    /// thing the page does. A Razor Pages handler or controller action can simply end after it:
-    /// the framework skips MVC's result, including one the handler returns. Anywhere else,
-    /// returning a result of your own after calling it throws, because the response has already
-    /// started.
+    /// <strong>Terminal.</strong> This writes and commits the response, so it must be the last thing
+    /// the page does. A Razor Pages handler or controller action can simply end after it: the
+    /// framework skips MVC's result. Anywhere else, returning a result of your own afterwards throws,
+    /// because the response has started. Only a <c>POST</c> is accepted, checked before anything is
+    /// read: wired to the <c>GET</c> that renders the page, it would sign the user out on arrival.
     /// </para>
     /// <para>
-    /// The SSO session ends, and so does every authorization request this browser still has in
-    /// flight. The redirect URI is checked again against the client's registration as it stands
-    /// now, so one the operator removed while the page was open is not used.
-    /// </para>
-    /// <para>
-    /// Only a <c>POST</c> — the form's submission — is accepted, and that is checked before
-    /// anything is read. A sign-out wired to the <c>GET</c> that renders the page would sign the
-    /// user out the moment they arrived, which is exactly what the confirmation exists to prevent.
-    /// </para>
-    /// <para>
-    /// With nothing left to complete, this answers the request itself rather than throwing — see the
-    /// class remarks.
+    /// The SSO session ends, and so does every authorization request this browser has in flight. The
+    /// redirect URI is checked against the client's registration as it stands now, so one the
+    /// operator removed while the page was open is not used.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
@@ -174,8 +152,6 @@ public sealed class LogoutInteraction
         var request = await ResolveAddressedAsync(context, context.RequestAborted).ConfigureAwait(false);
         await RequireAskedSessionAsync(context, request, context.RequestAborted).ConfigureAwait(false);
 
-        // Checked against the registration as it stands now rather than remembered from when the
-        // sign-out arrived: an operator who removes a redirect URI means nobody to be sent there.
         var client = request.ClientId is null
             ? null
             : await FindClientAsync(context, request.ClientId, context.RequestAborted).ConfigureAwait(false);
@@ -207,8 +183,7 @@ public sealed class LogoutInteraction
         if (request is not null)
             return request;
 
-        // Nothing is left for this binding to address, so its secret is retired rather than left
-        // live for the rest of the cookie's life, taking a per-browser slot from a live tab.
+        // Retires the binding's secret, which would otherwise hold a per-browser slot until it expires.
         await _requests.DeleteAsync(context, interactionId, cancellationToken).ConfigureAwait(false);
 
         throw new NothingToContinueException(
@@ -219,11 +194,8 @@ public sealed class LogoutInteraction
     }
 
     /// <summary>
-    /// Refuses unless the browser still holds the session the sign-out was started for. A
-    /// confirmation left open across a sign-out or a fresh sign-in would otherwise end a session
-    /// nobody was asked about, and the answer to a question about a session that has since ended
-    /// is not an instruction about its replacement. Reading the sign-out is gated on it too, so
-    /// the subject it carries is only ever shown to the browser it was stored for.
+    /// Refuses, and discards the sign-out, unless the browser still holds the session it was started
+    /// for: an answer about a session since ended is not an instruction about its replacement.
     /// </summary>
     private async ValueTask RequireAskedSessionAsync(
         HttpContext context,
@@ -234,7 +206,6 @@ public sealed class LogoutInteraction
         if (session is not null && string.Equals(session.SessionId, request.SsoSessionId, StringComparison.Ordinal))
             return;
 
-        // One answer either way: a sign-out that cannot be completed is not left for a later try.
         await _requests.DeleteAsync(context, request.Id, cancellationToken).ConfigureAwait(false);
 
         throw new NothingToContinueException(
@@ -244,9 +215,8 @@ public sealed class LogoutInteraction
     }
 
     /// <summary>
-    /// The client's validated registration, resolved from the request's services for the reason
-    /// <c>AuthorizationFlow.ResolveClientAsync</c> gives; <see langword="null"/> when it is no
-    /// longer registered.
+    /// The client's registration as it stands now, or <see langword="null"/> when it is no longer
+    /// registered; from request services for the reason <c>AuthorizationFlow.ResolveClientAsync</c> gives.
     /// </summary>
     private static ValueTask<IClient?> FindClientAsync(HttpContext context, string clientId, CancellationToken cancellationToken) =>
         context.RequestServices.GetRequiredService<ValidatedClientResolver>().FindClientAsync(clientId, cancellationToken);

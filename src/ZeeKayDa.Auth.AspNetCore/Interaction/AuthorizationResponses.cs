@@ -7,25 +7,12 @@ using ZeeKayDa.Auth.Authorization;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The three ways an authorization request is answered: locally, when nothing may be sent to the
-/// client; at the client's registered redirect URI with an error; or at that URI with an
-/// authorization code.
+/// The ways an authorization request is answered: locally, or at a redirect URI from validated
+/// state with an error or a code, always carrying <c>iss</c> (RFC 9207, RFC 9700 §4.4).
 /// </summary>
 /// <remarks>
-/// <para>
-/// A local answer is for an error that must not be redirected — either because the redirect
-/// target was never authenticated (a phase-1 failure), or because building the redirect is itself
-/// the thing that failed: a redirect to the host's configured <c>Interaction.ErrorPath</c>
-/// carrying only an opaque identifier, or a minimal framework-written 400 when no error page is
-/// configured. Details never travel in the query string, where they would reach proxy logs and
-/// browser history.
-/// </para>
-/// <para>
-/// An answer at the client always goes to a redirect URI that came from validated state — a
-/// matched registration, or the decrypted interaction context — and never from request input.
-/// That is what keeps this from being an unauthenticated redirect primitive. Every such answer
-/// carries <c>iss</c>, unconditionally, as mix-up attack mitigation (RFC 9207, RFC 9700 §4.4).
-/// </para>
+/// A local error goes to <c>Interaction.ErrorPath</c> with only an opaque identifier, since a query
+/// string reaches logs and history, or is a minimal 400 when no page is configured.
 /// </remarks>
 internal sealed class AuthorizationResponses(
     IOptions<AuthorizationServerOptions> options,
@@ -48,9 +35,7 @@ internal sealed class AuthorizationResponses(
                 errorPath, AuthorizeErrorTransport.QueryParameterName, id));
         }
 
-        // Unbranded fallback for hosts that have not configured an error page. The values are
-        // the framework's own constants — no request value is ever echoed — but they are
-        // HTML-encoded anyway so a future description can never become an injection vector.
+        // The framework's own text, encoded anyway so a future description cannot inject.
         var (heading, advice) = kind == AuthorizationErrorKind.NothingToContinue
             ? ("There is nothing to continue.", "Return to the application and start again.")
             : ("This sign-in request is invalid.", "Contact the application you arrived from; the request it sent cannot be completed.");
@@ -67,10 +52,7 @@ internal sealed class AuthorizationResponses(
         return RenderedPage.Html(StatusCodes.Status400BadRequest, html);
     }
 
-    /// <summary>
-    /// The redirect carrying <paramref name="error"/> and <paramref name="description"/> to
-    /// <paramref name="redirectUri"/>, echoing <paramref name="state"/> when the client sent one.
-    /// </summary>
+    /// <summary>The redirect carrying <paramref name="error"/> to <paramref name="redirectUri"/>.</summary>
     public IResult ErrorAtClient(string redirectUri, string error, string description, string? state)
     {
         ArgumentException.ThrowIfNullOrEmpty(redirectUri);
@@ -84,11 +66,7 @@ internal sealed class AuthorizationResponses(
         });
     }
 
-    /// <summary>
-    /// The <c>access_denied</c> redirect for <paramref name="denial"/> to
-    /// <paramref name="redirectUri"/>, carrying its <c>zkd_error</c> sub-code when
-    /// <paramref name="withSubCode"/> — the client registered with <c>EnableZkdErrorCodes</c>.
-    /// </summary>
+    /// <summary>The <c>access_denied</c> redirect for <paramref name="denial"/>, with its <c>zkd_error</c> when <paramref name="withSubCode"/>.</summary>
     public IResult DeniedAtClient(string redirectUri, Denial denial, bool withSubCode, string? state)
     {
         ArgumentException.ThrowIfNullOrEmpty(redirectUri);
@@ -106,10 +84,7 @@ internal sealed class AuthorizationResponses(
         return AtClient(redirectUri, state, query);
     }
 
-    /// <summary>
-    /// The successful authorization response: the redirect carrying <paramref name="code"/> to
-    /// <paramref name="redirectUri"/>, echoing <paramref name="state"/> when the client sent one.
-    /// </summary>
+    /// <summary>The successful authorization response, carrying <paramref name="code"/>.</summary>
     public IResult CodeAtClient(string redirectUri, string code, string? state)
     {
         ArgumentException.ThrowIfNullOrEmpty(redirectUri);

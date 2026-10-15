@@ -1,10 +1,8 @@
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// A page was submitted, or read, for an interaction this browser no longer has. Thrown inside the
-/// framework and answered by <see cref="NothingToContinue"/> wherever a terminal call catches it;
-/// a read that cannot answer it lets it reach the host as the
-/// <see cref="ZeeKayDaInteractionException"/> it is.
+/// A page was submitted, or read, for an interaction this browser no longer has; a terminal call
+/// answers it, a read lets it reach the host.
 /// </summary>
 internal sealed class NothingToContinueException(NothingToContinueReason reason, string message)
     : ZeeKayDaInteractionException(message)
@@ -17,8 +15,7 @@ internal sealed class NothingToContinueException(NothingToContinueReason reason,
 internal enum NothingToContinueReason
 {
     /// <summary>
-    /// The request carries no <c>zkd_i</c> at all. A bookmarked page does this, but so does a host
-    /// page whose form drops the parameter — the one reason that points at a bug.
+    /// The request carries no <c>zkd_i</c>: a bookmark, or a host form that drops it.
     /// </summary>
     NoInteractionId,
 

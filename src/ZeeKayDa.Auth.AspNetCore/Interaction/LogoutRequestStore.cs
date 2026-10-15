@@ -10,10 +10,7 @@ using static ZeeKayDa.Auth.Stores.StoreGuard;
 
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
-/// <summary>
-/// A sign-out waiting for the user to confirm it: the client that asked, and where to send the
-/// user afterwards. Every value was validated before it was written.
-/// </summary>
+/// <summary>A sign-out waiting for the user to confirm it, every value validated before it was written.</summary>
 internal sealed record LogoutRequestContext
 {
     public required string Id { get; init; }
@@ -27,33 +24,19 @@ internal sealed record LogoutRequestContext
     /// <summary>The SSO session the sign-out was started for — the only one it may end.</summary>
     public required string SsoSessionId { get; init; }
 
-    /// <summary>
-    /// The subject of that session, stamped when the user was asked rather than read again when
-    /// the page renders. The sign-out can only complete while the browser still holds that same
-    /// session, so a stale value is never one anybody is signed out on.
-    /// </summary>
+    /// <summary>The subject of that session, as of when the user was asked.</summary>
     public required string Subject { get; init; }
 
     public required DateTimeOffset ExpiresAt { get; init; }
 }
 
-/// <summary>
-/// A sign-out about to be put to the user: who asked, where they go afterwards, and the session
-/// that would end.
-/// </summary>
+/// <summary>A sign-out about to be put to the user.</summary>
 internal sealed record PendingSignOut(string? ClientId, PostLogoutRedirect? Redirect, string SsoSessionId, string Subject);
 
 /// <summary>
-/// Keeps a <see cref="LogoutRequestContext"/> between the end-session endpoint and the page that
-/// confirms it, on the same terms as an authorization request: an encrypted entry in the
-/// interaction store, addressed by the interaction identifier and the secret in that interaction's
-/// binding cookie.
+/// Keeps a <see cref="LogoutRequestContext"/> for the confirming page, on the same terms as
+/// <see cref="AuthorizationRequestContextStore"/>; a cross-site post lacks the Lax binding cookie.
 /// </summary>
-/// <remarks>
-/// The binding cookie is what makes a confirmation this browser's own. It is <c>SameSite=Lax</c>,
-/// so a cross-site form post does not carry it, and a sign-out confirmed from anywhere but the
-/// page the framework sent the user to finds nothing to confirm.
-/// </remarks>
 internal sealed class LogoutRequestStore(
     IInteractionBackingStore store,
     InteractionBindingCookie binding,
@@ -64,17 +47,13 @@ internal sealed class LogoutRequestStore(
     /// <summary>How long the user has to confirm. Not sliding.</summary>
     internal static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(10);
 
-    // Bumped whenever the payload's shape changes. A sign-out in flight across a deploy decodes
-    // as nothing and the user starts again, which is the right way for a confirmation to fail.
+    // Bump on any payload change: a sign-out in flight across the deploy then decodes as nothing.
     private const byte Version = 3;
     private static readonly string DataProtectionPurpose = "ZeeKayDa.Auth:LogoutRequestContext";
 
     private readonly IDataProtector _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
 
-    /// <summary>
-    /// Stores a sign-out for the user to confirm and binds it to this browser with a new binding
-    /// cookie.
-    /// </summary>
+    /// <summary>Stores a sign-out for the user to confirm, under a new binding cookie.</summary>
     /// <exception cref="ZeeKayDaStoreException">The backing store could not complete the write.</exception>
     public async ValueTask<LogoutRequestContext> CreateAsync(
         HttpContext context,
@@ -95,8 +74,7 @@ internal sealed class LogoutRequestStore(
             ExpiresAt = timeProvider.GetUtcNow() + Lifetime,
         };
 
-        // The entry first, the cookie second: a write the store refused leaves the browser with
-        // no binding to a nothing.
+        // Entry before cookie: a refused write must leave no binding.
         var secret = InteractionBindingCookie.NewSecret();
         var protectedValue = ProtectorFor(request.Id, secret).Protect(Encode(request));
 
@@ -108,11 +86,7 @@ internal sealed class LogoutRequestStore(
         return request;
     }
 
-    /// <summary>
-    /// Reads the sign-out for <paramref name="interactionId"/>. Returns <see langword="null"/> when
-    /// this browser holds no binding for it, when there is no entry, when the entry has expired or
-    /// cannot be read — never throws for a value it cannot make sense of.
-    /// </summary>
+    /// <summary>The sign-out bound to <paramref name="interactionId"/>; anything unreadable is <see langword="null"/>.</summary>
     /// <exception cref="ZeeKayDaStoreException">The backing store could not complete the read.</exception>
     public async ValueTask<LogoutRequestContext?> ReadAsync(HttpContext context, string interactionId, CancellationToken cancellationToken)
     {
@@ -139,9 +113,7 @@ internal sealed class LogoutRequestStore(
             return null;
         }
 
-        // The purpose already refuses bytes sealed for another interaction or secret; the
-        // identifier and the expiry inside the payload are checked as well, since neither the
-        // store's TTL nor the cookie's MaxAge is enforced by anything this framework controls.
+        // Neither the sealing purpose nor the store's TTL is trusted alone.
         return request is not null
             && InteractionHandoff.IdentifiersMatch(request.Id, interactionId)
             && timeProvider.GetUtcNow() < request.ExpiresAt
@@ -149,11 +121,7 @@ internal sealed class LogoutRequestStore(
             : null;
     }
 
-    /// <summary>
-    /// Discards the sign-out: the binding cookie, and the entry when this browser can address it.
-    /// Best-effort, like discarding an authorization request: a store that refuses the removal is
-    /// logged rather than thrown, and the entry is left to its lifetime.
-    /// </summary>
+    /// <summary>Retires the binding cookie, then removes the entry best-effort.</summary>
     public async ValueTask DeleteAsync(HttpContext context, string interactionId, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);

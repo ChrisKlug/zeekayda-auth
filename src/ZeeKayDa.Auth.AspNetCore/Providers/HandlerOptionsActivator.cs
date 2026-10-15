@@ -5,24 +5,12 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
-/// Resolves each registered provider's options once at startup, so that a provider whose options
-/// fail validation — its own rules, or the framework's pins asserted by
-/// <see cref="HandlerOptionsValidator{TOptions}"/> — fails the application before its first
-/// sign-in rather than during it.
+/// Resolves every provider's options at startup, so invalid ones — including drift from
+/// <see cref="HandlerOptionsValidator{TOptions}"/>'s pins — fail before the first sign-in.
 /// </summary>
 /// <remarks>
-/// <para>
-/// An activator rather than a verifier, by the mechanical rule: resolving the options runs the
-/// provider's and the host's own configuration code. The options type is read off the handler's
-/// base chain, once, here; nothing on the request path uses reflection. A handler that does not
-/// derive from <see cref="AuthenticationHandler{TOptions}"/> has no options object to pin, so
-/// there is nothing to assert for it.
-/// </para>
-/// <para>
-/// Every provider is checked even when an earlier one failed, and a failure surfaces only the
-/// framework's own validation text: a provider's or a host's validator may put anything in a
-/// message, so those travel as the root cause behind the failure, never inside it.
-/// </para>
+/// An activator, since resolving options runs provider and host code. Failures quote only the
+/// framework's own text; other validators' messages travel as the inner exception.
 /// </remarks>
 internal sealed class HandlerOptionsActivator(
     ProviderRegistry registry,
@@ -54,27 +42,19 @@ internal sealed class HandlerOptionsActivator(
             }
         }
 
-        // Thrown rather than added, so the root causes reach the operator alongside the codes:
-        // the runner absorbs the failures verbatim and keeps the inner exception.
+        // Thrown rather than added, so the root causes travel as the inner exception.
         if (failures.Count > 0)
             throw new ZeeKayDaConfigurationException(failures, causes.Count == 1 ? causes[0] : new AggregateException(causes));
 
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Resolves one provider's named options, returning <see langword="null"/> when they are
-    /// valid and otherwise the failures to report with the exception behind them.
-    /// </summary>
+    /// <summary>Resolves one provider's options: <see langword="null"/> when valid, else the failures and their cause.</summary>
     private (IReadOnlyList<ZeeKayDaConfigurationFailure> Failures, Exception Cause)? Resolve(
         Type optionsType,
         string name)
     {
-        // Cleared first, so what the recorder holds afterwards describes this attempt. A resolution
-        // that throws before the framework's validator runs — a post-configurer that throws, or
-        // another validator that fails first — then reports no pin assertions, rather than an
-        // earlier attempt's. A concurrent resolution of the same name and options type can still
-        // interleave; PinnedOptionDriftRecorder records why that is accepted.
+        // So a resolution that throws before the framework's validator runs reports no stale drift.
         recorder.Clear(name, optionsType);
 
         try
@@ -88,8 +68,7 @@ internal sealed class HandlerOptionsActivator(
         }
         catch (ZeeKayDaConfigurationException ex)
         {
-            // A well-formed failure from a provider's or a host's own configuration code keeps
-            // its stable codes; re-classifying it would flatten what an operator alerts on.
+            // Keeps its own stable codes, which an operator may alert on.
             return (ex.AggregatedFailures, ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -106,18 +85,9 @@ internal sealed class HandlerOptionsActivator(
     }
 
     /// <summary>
-    /// Names the provider and repeats only the framework's own pin assertions; whatever else the
-    /// provider's or the host's validators said is counted, and travels as the root cause.
+    /// Quotes only the drifts <see cref="PinnedOptionDriftRecorder"/> holds, never text recognised in
+    /// <see cref="OptionsValidationException.Failures"/>, which any validator writes; others are counted.
     /// </summary>
-    /// <remarks>
-    /// The assertions come from <see cref="PinnedOptionDriftRecorder"/>, which only the framework's
-    /// own validator writes to — never from recognising the framework's wording inside
-    /// <see cref="OptionsValidationException.Failures"/>. That list is flat and every validator
-    /// registered for the options type contributes to it, so a marker inside a string proves
-    /// nothing about who wrote it: a provider using the same opening characters would have its text
-    /// quoted here as though the framework had written it. Only the *count* is taken from the
-    /// exception, and a count carries no text.
-    /// </remarks>
     private string Describe(string name, Type optionsType, OptionsValidationException ex)
     {
         var pinned = recorder.DriftsFor(name, optionsType);

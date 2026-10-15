@@ -3,12 +3,10 @@ using ZeeKayDa.Auth.Clients;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// Where a sign-out sends the user back to: a post-logout redirect URI the client registered, and
-/// the client's <c>state</c> to echo there.
+/// Where a sign-out sends the user back to, and the client's <c>state</c> to echo there.
 /// </summary>
 /// <remarks>
-/// There is no public constructor, so an instance cannot exist for a URI no registration vouches
-/// for: <see cref="For"/> is the only way to make one, and it is the match.
+/// <see cref="For"/>, the registration match, is the only way to make one.
 /// </remarks>
 internal sealed class PostLogoutRedirect
 {
@@ -25,9 +23,8 @@ internal sealed class PostLogoutRedirect
     public string? State { get; }
 
     /// <summary>
-    /// The redirect for <paramref name="postLogoutRedirectUri"/>, or <see langword="null"/> when
-    /// there is no client to vouch for it, none was asked for, or the one asked for is not among
-    /// the client's registered URIs by exact ordinal comparison.
+    /// The redirect for <paramref name="postLogoutRedirectUri"/> when the client registered it
+    /// exactly (ordinal), else <see langword="null"/>.
     /// </summary>
     public static PostLogoutRedirect? For(IClient? client, string? postLogoutRedirectUri, string? state) =>
         client is not null

@@ -21,38 +21,17 @@ internal static class PendingTicketItems
     public const string Provider = "zkd:provider";
 }
 
-/// <summary>
-/// A parked external principal, as read back from the interaction store.
-/// </summary>
+/// <summary>A parked external principal, as read back from the interaction store.</summary>
 internal sealed record PendingTicket(ClaimsPrincipal Principal, string Provider);
 
 /// <summary>
-/// A principal an external provider authenticated, parked while the host's page collects more:
-/// a second entry in the interaction store, keyed like the context by the interaction identifier
-/// and the secret in its binding cookie, and consumed by the sign-in that completes that
-/// interaction.
+/// A principal an external provider authenticated, parked while the host's page collects more,
+/// keyed and sealed like the interaction context under the interaction's binding.
 /// </summary>
 /// <remarks>
-/// <para>
-/// One entry per interaction, so a second tab on the host's collect-more page parks its own
-/// principal and reads back its own. The entry shares the interaction's binding: only the
-/// browser that started the request can park, read or consume it, and it is unreachable the
-/// moment the binding cookie goes.
-/// </para>
-/// <para>
-/// The principal is stored as the provider returned it — every identity, with its authentication
-/// type and its name and role claim types — minus the framework's reserved claims, in the ticket
-/// format the cookie handler would have used, protected on the host's key ring under a purpose
-/// derived from the interaction and its secret, so that a writer to the store cannot move it
-/// under a secret of their own. The binding and the provider live in the ticket's properties, as
-/// they do for the external ticket, so neither is a claim the host could see or a provider could
-/// have written.
-/// </para>
-/// <para>
-/// Consuming is a read followed by a remove, not an atomic take. The parked principal is not
-/// what makes an interaction complete once: the authorization code store's claim on the
-/// interaction is, and a principal read twice by the same browser signs the same person in.
-/// </para>
+/// The interaction and provider ride in ticket properties, which no provider could have written.
+/// Consuming is not an atomic take: the code store's completion claim is what makes an interaction
+/// complete once.
 /// </remarks>
 internal sealed class PendingPrincipalStore(
     IInteractionBackingStore store,
@@ -61,21 +40,14 @@ internal sealed class PendingPrincipalStore(
     TimeProvider timeProvider,
     SanitizingLogger<PendingPrincipalStore> logger)
 {
-    /// <summary>
-    /// How long a host page has to finish with a parked principal. Not sliding, and never past
-    /// the interaction's own expiry: a principal parked late in an interaction's life goes with it.
-    /// </summary>
+    /// <summary>How long a host page has to finish with a parked principal; never past the interaction's expiry.</summary>
     internal static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(15);
 
     private const string DataProtectionPurpose = "ZeeKayDa.Auth:PendingPrincipal";
 
     private readonly IDataProtector _protector = dataProtectionProvider.CreateProtector(DataProtectionPurpose);
 
-    /// <summary>
-    /// Parks <paramref name="ticket"/> — the principal and the provider that returned it — for
-    /// <paramref name="requestContext"/>'s interaction, replacing any principal already parked for
-    /// it, under the binding this request carries.
-    /// </summary>
+    /// <summary>Parks <paramref name="ticket"/> for the interaction, replacing any already parked.</summary>
     /// <exception cref="InvalidOperationException">
     /// The request carries no binding for the interaction. The resume endpoint reads the context
     /// before anything is parked, so the binding is present; a park without one would be an
@@ -113,20 +85,14 @@ internal sealed class PendingPrincipalStore(
             "park the external principal").ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The parked principal bound to <paramref name="interactionId"/>, or <see langword="null"/>
-    /// when this browser holds no binding for it, there is none, it has expired, it is protected
-    /// under a key this application cannot read, or it names another interaction — never throws
-    /// for a value it cannot make sense of.
-    /// </summary>
+    /// <summary>The parked principal bound to <paramref name="interactionId"/>; anything unreadable is <see langword="null"/>.</summary>
     /// <exception cref="ZeeKayDaStoreException">The backing store could not complete the read.</exception>
     public async ValueTask<PendingTicket?> ReadAsync(HttpContext context, string interactionId, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrEmpty(interactionId);
 
-        // Before the binding check, which answers without the store: a caller that has stopped
-        // waiting gets the cancellation it asked for, not an absence it might act on.
+        // A caller that stopped waiting gets the cancellation, not an absence it might act on.
         cancellationToken.ThrowIfCancellationRequested();
 
         if (binding.Read(context, interactionId) is not { } secret)
@@ -136,11 +102,8 @@ internal sealed class PendingPrincipalStore(
     }
 
     /// <summary>
-    /// Reads the parked principal bound to <paramref name="interactionId"/> and removes the
-    /// entry: whichever sign-in completes the interaction takes the principal with it. The
-    /// removal is best-effort — a store that refuses it is logged rather than thrown, since the
-    /// sign-in or denial in progress should not be replaced by a failure to tidy up, and the
-    /// entry is left to its lifetime.
+    /// Reads and removes the parked principal; the removal is best-effort, so a failure to tidy up
+    /// never replaces the sign-in or denial in progress.
     /// </summary>
     /// <exception cref="ZeeKayDaStoreException">The backing store could not complete the read.</exception>
     public async ValueTask<PendingTicket?> ConsumeAsync(HttpContext context, string interactionId, CancellationToken cancellationToken)
@@ -193,13 +156,7 @@ internal sealed class PendingPrincipalStore(
         return TryDeserialize(payload, out var ticket) ? Bound(ticket, interactionId) : null;
     }
 
-    /// <summary>
-    /// The ticket in <paramref name="payload"/>, or <see langword="false"/> when the bytes are
-    /// not one: a version the serializer does not know, or a stream that ends or misreads
-    /// partway. The bytes were authenticated before they got here, so this guards against the
-    /// framework's own writes going wrong, not against an attacker — but a value the store
-    /// cannot make sense of reads as absent, never as an exception, whatever put it there.
-    /// </summary>
+    /// <summary>The ticket in <paramref name="payload"/>; bytes that are not one read as absent, never as an exception.</summary>
     private static bool TryDeserialize(byte[] payload, [NotNullWhen(true)] out AuthenticationTicket? ticket)
     {
         try
@@ -217,12 +174,8 @@ internal sealed class PendingPrincipalStore(
     private IDataProtector ProtectorFor(string interactionId, string secret) => InteractionStoreKeys.ProtectorFor(_protector, interactionId, secret);
 
     /// <summary>
-    /// The ticket as a parked principal, or <see langword="null"/> when it is bound to another
-    /// interaction, names no provider, or has expired. The purpose already refuses bytes sealed
-    /// for another interaction; the identifier inside the ticket is checked as well, so that a
-    /// ticket which unprotects is never trusted on the strength of the purpose alone. The expiry
-    /// inside is authoritative, since the store's TTL is not checked by anything this framework
-    /// controls.
+    /// The ticket as a parked principal, if it names this interaction, a provider and an unexpired
+    /// lifetime: neither the sealing purpose nor the store's TTL is trusted alone.
     /// </summary>
     private PendingTicket? Bound(AuthenticationTicket ticket, string interactionId)
     {

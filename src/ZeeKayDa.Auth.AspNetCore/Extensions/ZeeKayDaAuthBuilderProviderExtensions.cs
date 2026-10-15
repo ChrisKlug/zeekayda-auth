@@ -23,34 +23,23 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="configure">Registers the providers on the supplied <see cref="AuthenticationBuilder"/>.</param>
     /// <param name="options">
-    /// How the host takes part in a provider sign-in — <see cref="ProviderOptions.OnProviderSignIn"/>
-    /// — or <see langword="null"/> to let the framework promote every provider's principal as it is.
-    /// One <see cref="ProviderOptions"/> serves every provider: a later call's delegate runs after
-    /// an earlier one's, so a member set by both takes the later value, as options do everywhere.
+    /// How the host takes part in a provider sign-in, or <see langword="null"/> to promote every
+    /// provider's principal as it is. One <see cref="ProviderOptions"/> serves every call and provider.
     /// </param>
     /// <returns>The <paramref name="builder"/>, for chaining.</returns>
     /// <remarks>
     /// <para>
-    /// The host names the providers it wants and nothing else. Callback paths, sign-in schemes and
-    /// the correlation back to the authorization request are the framework's: it pins each remote
-    /// handler's <c>CallbackPath</c>, <c>SignInScheme</c> and access-denied event, clears every
-    /// provider's forwarding, refuses a later change to any of them at startup, and drives the
-    /// round trip itself — the login page starts it with <c>LoginInteraction.ChallengeAsync</c>,
-    /// the framework serves each provider's callback, and the user returns through
-    /// <c>/connect/resume</c> to be signed in.
+    /// The host names the providers and nothing else. The framework pins each handler's callback
+    /// path, sign-in scheme and refusal handling, refuses a later change to them at startup, and
+    /// drives the round trip: the login page starts it with <c>LoginInteraction.ChallengeAsync</c>.
     /// </para>
     /// <para>
-    /// The schemes registered here are the framework's, not the host's. They do not appear in the
-    /// host's <see cref="AuthenticationOptions"/>, cannot be challenged by name from host code, and
-    /// are never dispatched by the authentication middleware. The login page sees them as
-    /// <c>LoginRequest.Providers</c>, each scheme's name serving as the provider identifier
-    /// and its display name as the label.
+    /// The schemes are the framework's: absent from the host's <see cref="AuthenticationOptions"/>,
+    /// never challengeable by name. The login page sees them as <c>LoginRequest.Providers</c>.
     /// </para>
     /// <para>
-    /// May be called more than once. Provider names must be unique ignoring case across calls, and
-    /// each must be 1 to 64 ASCII letters, digits, <c>-</c>, <c>_</c> or <c>.</c>, since the name
-    /// becomes a segment of the provider's callback route. A call that fails leaves the service
-    /// collection exactly as it was.
+    /// May be called more than once. Names must be unique ignoring case, and 1 to 64 ASCII letters,
+    /// digits, <c>-</c>, <c>_</c> or <c>.</c>. A failing call leaves the service collection unchanged.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
@@ -90,18 +79,13 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
             throw;
         }
 
-        // Registered once, when the first window closes, and never moved: it then follows every
-        // provider's own post-configuration, and anything registered after it that changes a
-        // pinned member fails startup rather than being silently overridden.
+        // Once, after the first window: it follows the providers' own post-configuration.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton(typeof(IPostConfigureOptions<>), typeof(HandlerOptionsPin<>)));
 
-        // Open generic, constrained to AuthenticationSchemeOptions: the container skips it for
-        // every other options type, and it skips itself for every name that is not a provider.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton(typeof(IValidateOptions<>), typeof(HandlerOptionsValidator<>)));
 
-        // Carries the validator's findings to HandlerOptionsActivator with their provenance intact.
         services.TryAddSingleton<PinnedOptionDriftRecorder>();
 
         services.TryAddEnumerable(

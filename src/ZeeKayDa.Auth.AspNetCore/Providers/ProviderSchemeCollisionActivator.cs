@@ -9,25 +9,11 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
-/// Fails startup when a registered provider's name also exists in the host's final scheme map —
-/// registered before or after <c>WithProviders</c>, by the host or a library — or when a host
-/// remote scheme's callback path is a provider's callback route.
+/// Fails startup when a provider's name is also in the host's final scheme map, or a host remote
+/// scheme's callback path is a provider's route: the middleware would serve that callback itself.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Provider schemes are invisible to the host by construction: not enumerable, not challengeable
-/// by name, never dispatched by the authentication middleware. A host scheme with the same name
-/// would reintroduce exactly that — the middleware would serve its callback and the host could
-/// challenge it — and a host remote scheme with the same callback path would have the middleware
-/// claim the provider's callback before the framework's endpoint saw it. Both are refused rather
-/// than tolerated.
-/// </para>
-/// <para>
-/// This reads the resolved <see cref="IAuthenticationSchemeProvider"/> and the host schemes'
-/// options, not the registration window, so it sees the map as the application will run it. An
-/// activator rather than a verifier, by the mechanical rule: building that map and resolving
-/// those options runs the host's own configuration code.
-/// </para>
+/// An activator: building the resolved map and the host schemes' options runs host code.
 /// </remarks>
 internal sealed class ProviderSchemeCollisionActivator(
     ProviderRegistry registry,
@@ -68,8 +54,7 @@ internal sealed class ProviderSchemeCollisionActivator(
                 "serve its callback. Remove the host's registration, or rename one of the two.");
         }
 
-        // A scheme that collides by name is pinned to the provider's route as well; reporting it
-        // twice would say nothing new.
+        // A name collision is already reported; its callback path would say nothing new.
         var providerNames = registry.Registrations
             .Select(registration => registration.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -96,10 +81,7 @@ internal sealed class ProviderSchemeCollisionActivator(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // The host's own scheme failing its own configuration — an options validation
-            // failure, or the argument exception a remote handler's Validate throws — is the
-            // host's failure to hear about, on the host's own path. There is no callback path to
-            // compare, and nothing to report here.
+            // The host's scheme failing its own configuration surfaces on the host's own path.
             return;
         }
 

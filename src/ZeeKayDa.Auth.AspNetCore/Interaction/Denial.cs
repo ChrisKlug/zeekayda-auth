@@ -6,17 +6,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// client registered with <c>EnableZkdErrorCodes</c> also receives.
 /// </summary>
 /// <remarks>
-/// <para>
-/// A closed set of framework constants. Nothing a host writes reaches either field: host text on
-/// this channel reaches the client, browser history and proxy logs, so it would be a disclosure
-/// primitive.
-/// </para>
-/// <para>
-/// Each code tells the client only what the user did or already knows: that they cancelled, declined,
-/// or were turned away after signing in elsewhere. None says whether an account exists or which
-/// credential was wrong, and none names a provider. The description carries the same stage for
-/// every client; the flag buys a stable value to branch on, not a secret.
-/// </para>
+/// A closed set of framework constants, since this channel reaches browser history and proxy logs.
+/// Each tells the client only what the user did; none says whether an account exists.
 /// </remarks>
 internal sealed class Denial
 {
@@ -31,10 +22,7 @@ internal sealed class Denial
     public static readonly Denial DeclinedAtConsent = new(
         "The user declined the request at the consent page.", "consent_declined");
 
-    /// <summary>
-    /// The user cancelled or refused at the external provider, when there is no login page to
-    /// return to — with one, the user goes back there and the client is told nothing.
-    /// </summary>
+    /// <summary>The user cancelled or refused at the external provider, with no login page to return to.</summary>
     public static readonly Denial DeclinedAtProvider = new(
         "The user declined to sign in at the external identity provider.", "provider_declined");
 

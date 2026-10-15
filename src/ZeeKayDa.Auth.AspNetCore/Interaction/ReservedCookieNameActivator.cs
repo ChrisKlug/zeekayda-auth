@@ -8,21 +8,9 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// Fails startup when a host's own cookie authentication scheme uses one of the cookie names
-/// ZeeKayDa.Auth reserves.
+/// Fails startup when a host cookie scheme uses a reserved cookie name; at runtime it would look
+/// like an intermittently lost session. An activator, since reading options runs host callbacks.
 /// </summary>
-/// <remarks>
-/// <para>
-/// Two schemes writing one cookie name means each overwrites the other's ticket, and the framework
-/// would read host-written claims where it expects only its own — including the session identifier
-/// every later binding is keyed on. Startup is the only place to catch it: at runtime it looks
-/// like an intermittently lost session.
-/// </para>
-/// <para>
-/// An activator rather than a verifier, by the mechanical rule: reading a scheme's options runs
-/// the host's own configuration callback for that scheme.
-/// </para>
-/// </remarks>
 internal sealed class ReservedCookieNameActivator(
     IAuthenticationSchemeProvider? schemeProvider = null,
     IOptionsMonitor<CookieAuthenticationOptions>? cookieOptions = null) : IStartupActivator
@@ -44,8 +32,7 @@ internal sealed class ReservedCookieNameActivator(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Every cookie handler resolves CookieAuthenticationOptions; a scheme backed by any
-            // other handler resolves the default instance, whose cookie name is null.
+            // A non-cookie scheme resolves the default instance, whose cookie name is null.
             var name = cookieOptions.Get(scheme.Name).Cookie.Name;
             if (name is not null && IsReserved(name))
             {
@@ -58,19 +45,10 @@ internal sealed class ReservedCookieNameActivator(
         }
     }
 
-    /// <summary>
-    /// Only the schemes the framework actually registers are skipped — deliberately not every
-    /// reserved name. <c>zkd.interaction</c> is a reserved cookie name with no scheme behind it,
-    /// so a host scheme carrying that name is a real collision and must still be reported.
-    /// </summary>
     private static bool IsFrameworkScheme(string schemeName) =>
         ZeeKayDaCookies.SchemeNames.Contains(schemeName, StringComparer.Ordinal);
 
-    /// <summary>
-    /// A reserved name exactly, or anything under a per-interaction prefix: the binding and
-    /// challenge cookies are named <c>zkd.interaction.&lt;id&gt;</c> and <c>zkd.challenge.&lt;id&gt;</c>,
-    /// and a host cookie in either space would be read as one of them.
-    /// </summary>
+    /// <summary>A reserved name, or anything under the per-interaction binding and challenge prefixes.</summary>
     private static bool IsReserved(string name) =>
         ZeeKayDaCookies.ReservedNames.Contains(name, StringComparer.Ordinal)
         || name.StartsWith(InteractionBindingCookie.NamePrefix, StringComparison.Ordinal)

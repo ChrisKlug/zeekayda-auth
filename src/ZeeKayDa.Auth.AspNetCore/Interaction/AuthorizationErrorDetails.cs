@@ -7,8 +7,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 public sealed record AuthorizationErrorDetails
 {
     /// <summary>
-    /// What kind of error this is. A page that wants its own wording for an interaction the user
-    /// can no longer continue checks for <see cref="AuthorizationErrorKind.NothingToContinue"/>.
+    /// What kind of error this is, for a page with its own wording for
+    /// <see cref="AuthorizationErrorKind.NothingToContinue"/>.
     /// </summary>
     public required AuthorizationErrorKind Kind { get; init; }
 

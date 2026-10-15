@@ -7,26 +7,13 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 public sealed class ProviderOptions
 {
     /// <summary>
-    /// Gets or sets the handler that runs when a provider has authenticated the user and the
-    /// framework is about to establish the SSO session. <see langword="null"/> (the default)
-    /// promotes the provider's principal as it is.
+    /// Gets or sets the handler that runs when a provider has authenticated the user, before the
+    /// SSO session is established. <see langword="null"/> (the default) promotes the principal as it is.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// The handler may end the request in one of two ways, each terminal:
-    /// <see cref="ProviderSignInContext.RedirectToAsync"/> parks the principal and sends the user
-    /// to a host page — to link the external identity to a local account, or to collect what the
-    /// provider did not supply — and <see cref="ProviderSignInContext.DenyAsync"/> refuses the
-    /// sign-in. A handler that calls neither lets the framework promote the principal; a host
-    /// with nothing to collect writes no handler at all.
-    /// </para>
-    /// <para>
-    /// The page a redirect leads to reads the parked principal with
-    /// <see cref="ProviderSignInInteraction.GetPendingPrincipalAsync"/> and finishes through
-    /// <see cref="ProviderSignInInteraction"/>: with the claims it collected, which the
-    /// framework adds to the provider's claims under the derived subject, or with a linked local
-    /// account's own principal.
-    /// </para>
+    /// The handler may end the request with <see cref="ProviderSignInContext.RedirectToAsync"/>,
+    /// sending the user to a host page that finishes through <see cref="ProviderSignInInteraction"/>,
+    /// or with <see cref="ProviderSignInContext.DenyAsync"/>. Calling neither promotes the principal.
     /// </remarks>
     public Func<ProviderSignInContext, Task>? OnProviderSignIn { get; set; }
 }

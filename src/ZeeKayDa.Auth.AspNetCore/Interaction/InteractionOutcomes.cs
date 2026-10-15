@@ -12,26 +12,12 @@ using ZeeKayDa.Auth.Logging;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The ways an interaction step ends, shared by every endpoint and page service that ends one:
-/// a local error page, an error at the client's registered redirect URI, a denial, a completed
-/// sign-in, a challenge to an external provider, a return to the login page from one, and a
-/// parked principal sent on to a host page.
+/// The ways an interaction step ends, shared by every endpoint and page service that ends one.
+/// Destinations come from validated state, never from request input.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The terminal outcomes write <em>and commit</em> the response. Executing a redirect result sets
-/// the status and <c>Location</c> without flushing, leaving <see cref="HttpResponse.HasStarted"/>
-/// false, so a host page that returns a result of its own after calling a terminal method would
-/// silently replace both — which for a deny is the open redirect the interaction identifier
-/// exists to prevent, written in host code where nothing validates it. Starting the response
-/// commits the headers and turns that mistake into an exception the first time the page runs.
-/// Under MVC, <see cref="TerminalInteractionResultFilter"/> goes one further and skips whatever
-/// result follows, so a Razor Pages handler can end with a plain <c>await</c>.
-/// </para>
-/// <para>
-/// Every outcome that leaves the interaction takes the destination from validated state — the
-/// decrypted context, a registered provider — never from request input.
-/// </para>
+/// Terminal outcomes also <em>commit</em> the response: an uncommitted redirect could be silently
+/// replaced by a result the host page returns next, which for a deny is an open redirect.
 /// </remarks>
 internal sealed class InteractionOutcomes(
     AuthorizationFlow flow,
@@ -52,17 +38,11 @@ internal sealed class InteractionOutcomes(
     public IResult LocalError(HttpContext context, string error, string description) =>
         responses.Local(context, error, description);
 
-    /// <summary>
-    /// An error at a redirect URI authenticated in phase 1, for a request whose interaction
-    /// context was never written or is cleared by the caller.
-    /// </summary>
+    /// <summary>An error at a redirect URI authenticated in phase 1, with no stored interaction to discard.</summary>
     public IResult ClientError(string redirectUri, string error, string description, string? state) =>
         responses.ErrorAtClient(redirectUri, error, description, state);
 
-    /// <summary>
-    /// An error at the client's registered redirect URI, read out of the stored context. The
-    /// interaction is discarded first: a request that ends in an error is not resumed later.
-    /// </summary>
+    /// <summary>An error at the stored context's redirect URI, discarding the interaction first.</summary>
     public async Task<IResult> ClientErrorAsync(HttpContext context, AuthorizationRequestContext requestContext, string error, string description)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -73,9 +53,8 @@ internal sealed class InteractionOutcomes(
     }
 
     /// <summary>
-    /// Terminal. Ends the request with <c>access_denied</c> at the client's registered redirect
-    /// URI, discarding the interaction and any principal parked for it. No session is promoted
-    /// and none is read.
+    /// Terminal. Ends the request with <c>access_denied</c>, discarding the interaction and any
+    /// principal parked for it.
     /// </summary>
     /// <exception cref="NothingToContinueException">
     /// Another response — a grant, a sign-in that issued, or an earlier denial — completed the
@@ -88,14 +67,9 @@ internal sealed class InteractionOutcomes(
 
         context.Response.Headers.CacheControl = "no-store";
 
-        // A denial competes for the interaction's one terminal outcome exactly as issuance does:
-        // a grant and a deny that both resolved the request alive must not end as a code and an
-        // access_denied both delivered to the client.
         await flow.ClaimCompletionAsync(context, requestContext).ConfigureAwait(false);
 
-        // Discarded before the response is written, so a denied request cannot be resumed by a
-        // later sign-in picking the context back up — nor by a parked principal bound to it. The
-        // principal goes first, while the binding that addresses it is still in hand.
+        // The principal first, while the binding that addresses it is still in hand.
         await DiscardPendingAsync(context, requestContext.Id).ConfigureAwait(false);
         await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
 
@@ -103,11 +77,7 @@ internal sealed class InteractionOutcomes(
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// An <c>access_denied</c> refusal at the client's registered redirect URI, outside an
-    /// interaction step — a refusal at the external provider — discarding the interaction first,
-    /// as <see cref="ClientErrorAsync"/> does.
-    /// </summary>
+    /// <summary>A refusal at the external provider, answered as <see cref="ClientErrorAsync"/> answers an error.</summary>
     public async Task<IResult> DeniedAtClientAfterClearingAsync(HttpContext context, AuthorizationRequestContext requestContext, Denial denial)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -118,10 +88,8 @@ internal sealed class InteractionOutcomes(
     }
 
     /// <summary>
-    /// The refusal's redirect, with its <c>zkd_error</c> when the client opted in. The registration is
-    /// read again here, as at every step: one that vanished, stopped validating or dropped the
-    /// request's redirect URI since the request was accepted ends it locally, and nothing is sent
-    /// to that URI.
+    /// The refusal's redirect, with its <c>zkd_error</c> when the client opted in; local when the
+    /// client's registration no longer vouches for the redirect URI.
     /// </summary>
     private async Task<IResult> DeniedAtClientAsync(HttpContext context, AuthorizationRequestContext requestContext, Denial denial)
     {
@@ -133,11 +101,8 @@ internal sealed class InteractionOutcomes(
     }
 
     /// <summary>
-    /// Removes a principal parked for a denied interaction, best-effort. A denial has no use for
-    /// the principal, and the claim on the interaction is already taken by the time this runs: a
-    /// store that cannot read the entry must not turn a decided denial into a failed response
-    /// that the client never sees and a retry cannot repeat. The binding goes next, after which
-    /// the entry is unreachable and left to its lifetime.
+    /// Best-effort: the claim is already taken, so a store fault here must not turn a decided denial
+    /// into a failed response a retry cannot repeat. The entry becomes unreachable with the binding.
     /// </summary>
     private async Task DiscardPendingAsync(HttpContext context, string interactionId)
     {
@@ -152,23 +117,16 @@ internal sealed class InteractionOutcomes(
     }
 
     /// <summary>
-    /// Terminal. Promotes the principal in <paramref name="signIn"/> to the SSO session, records
-    /// the authentication on the interaction context, and continues the flow. Nothing parked for
-    /// the interaction is touched: the caller has already taken or discarded it, and says which
-    /// provider, if any, to record.
+    /// Terminal. Promotes <paramref name="signIn"/> to the SSO session, records it on the
+    /// interaction, and continues the flow; the caller has already dealt with anything parked.
     /// </summary>
-    /// <remarks>
-    /// The session and the authenticated context are written before the flow continues, so the
-    /// consent page reads a request that already knows who answered it.
-    /// </remarks>
     public async Task CompleteSignInAsync(HttpContext context, AuthorizationRequestContext requestContext, SignIn signIn)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
         ArgumentNullException.ThrowIfNull(signIn);
 
-        // A sign-in for a client that skips consent ends with the code in this response, and a
-        // cached sign-in response is a stolen one.
+        // A client that skips consent gets its code in this response.
         context.Response.Headers.CacheControl = "no-store";
 
         var state = await flow.PromoteAsync(context, signIn.Principal, signIn.AuthenticationMethods).ConfigureAwait(false);
@@ -181,8 +139,7 @@ internal sealed class InteractionOutcomes(
             Amr = state.Amr,
             ProviderScheme = signIn.ProviderScheme,
 
-            // A decision recorded by whoever signed in earlier on this interaction is theirs, not
-            // this sign-in's: the consent page asks again.
+            // Decided by whoever signed in earlier on this interaction, not by this user.
             GrantedScopes = null,
             ConsentedAt = null,
             ProviderAttempt = null,
@@ -196,9 +153,7 @@ internal sealed class InteractionOutcomes(
         }
         catch (ZeeKayDaStoreException ex)
         {
-            // The session is established either way — what cannot continue is this authorization
-            // request. The client learns the server failed; the operator learns which store
-            // operation did, through the sanitizing logger.
+            // The session stands; only this authorization request fails.
             logger.LogError(ex, "Storing the authenticated authorization request for client {ClientId} failed.", requestContext.ClientId);
 
             result = await ClientErrorAsync(context, requestContext, AuthorizeRequestErrors.ServerError, CouldNotStoreRequest).ConfigureAwait(false);
@@ -208,18 +163,12 @@ internal sealed class InteractionOutcomes(
     }
 
     /// <summary>
-    /// The step after authentication, for a request just signed in or one an existing session
-    /// answered for: to the host's consent page when the client requires consent, or straight on
-    /// to code issuance when it does not. Not terminal — the caller writes the result.
+    /// The step after authentication: the consent page when the client requires consent or the
+    /// request says <c>prompt=consent</c>, else code issuance. Not terminal.
     /// </summary>
     /// <remarks>
-    /// No remembered grant exists yet, so a client that requires consent is asked every time,
-    /// and <c>prompt=none</c> — a promise to show the user nothing — is answered
-    /// <c>consent_required</c> for it. A client that opted out is still asked when its request
-    /// says <c>prompt=consent</c>: the server should prompt when asked to, and must answer
-    /// <c>consent_required</c> when it cannot. The client is resolved here, at the point of use,
-    /// so a registration that vanished, stopped validating or dropped the request's redirect URI
-    /// since the request was accepted ends the request rather than being remembered as it was.
+    /// No grant is remembered, so a client that requires consent is asked every time, and
+    /// <c>prompt=none</c> is answered <c>consent_required</c> for it (OIDC Core §3.1.2.6).
     /// </remarks>
     public async Task<IResult> ContinueAsync(HttpContext context, AuthorizationRequestContext requestContext)
     {
@@ -229,8 +178,6 @@ internal sealed class InteractionOutcomes(
         var client = await flow.ResolveClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false);
         if (client is null)
         {
-            // The redirect URI was authenticated against a registration that no longer answers,
-            // so nothing is sent there.
             await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
             return responses.Local(context, AuthorizeRequestErrors.InvalidRequest, AuthorizationCodeIssuer.ClientNoLongerAnswers);
         }
@@ -252,8 +199,7 @@ internal sealed class InteractionOutcomes(
         {
             if (!client.RequireConsent)
             {
-                // The client asked for a page this host deliberately does not have for its
-                // opt-out clients: a refusal the client can act on, not a configuration gap.
+                // Not a configuration gap: the host has no consent page because its clients opt out.
                 return await ClientErrorAsync(
                     context,
                     requestContext,
@@ -261,8 +207,6 @@ internal sealed class InteractionOutcomes(
                     "The request specified prompt=consent but the authorization server has no consent page.").ConfigureAwait(false);
             }
 
-            // A configuration gap, reported where a developer is looking — the client's error
-            // page and the server log — since the redirect target is authenticated by now.
             logger.LogError(
                 "Client {ClientId} requires consent but AuthorizationEndpoint.Interaction.ConsentPath is not " +
                 "configured. Configure the consent page, or set RequireConsent to false on the registration.",
@@ -279,11 +223,8 @@ internal sealed class InteractionOutcomes(
     }
 
     /// <summary>
-    /// Terminal. Records the user's consent on the interaction context and issues the code to
-    /// <paramref name="client"/>, the registration the consent service resolved for this
-    /// request. The decision is never persisted: it is taken, the code issued and the
-    /// interaction discarded in the one response, so there is no recorded grant for a later
-    /// request to pick up.
+    /// Terminal. Issues the code with the user's consent recorded on it; the decision itself is
+    /// never persisted for a later request.
     /// </summary>
     public async Task CompleteConsentAsync(
         HttpContext context,
@@ -305,12 +246,8 @@ internal sealed class InteractionOutcomes(
     }
 
     /// <summary>
-    /// Terminal. Starts the external round trip for one provider: activates its handler and
-    /// challenges it with properties the framework wrote — the return address
-    /// <c>/connect/resume</c> carrying the interaction identifier, and the identifier and the
-    /// provider stamped into the properties, so the ticket the provider hands back names the
-    /// interaction and provider it was issued for whatever the handler did with the state it was
-    /// given.
+    /// Terminal. Challenges one provider, returning to <c>/connect/resume</c>, with the interaction
+    /// and provider stamped into properties the returned ticket carries whatever the handler does.
     /// </summary>
     public async Task ChallengeAsync(HttpContext context, AuthorizationRequestContext requestContext, ProviderRegistration registration)
     {
@@ -320,7 +257,6 @@ internal sealed class InteractionOutcomes(
 
         context.Response.Headers.CacheControl = "no-store";
 
-        // What the last trip to a provider ended in is no longer news once the user sets out again.
         if (requestContext.ProviderAttempt is not null)
             await flow.UpdateAsync(context, requestContext with { ProviderAttempt = null }).ConfigureAwait(false);
 
@@ -341,9 +277,8 @@ internal sealed class InteractionOutcomes(
     }
 
     /// <summary>
-    /// Whether a provider challenge is issued from the login page and returns there when it does
-    /// not sign the user in — <see langword="false"/> when the authorization endpoint challenges the
-    /// one provider itself. Configuration, frozen at startup.
+    /// Whether a provider that does not sign the user in returns them to the login page; false
+    /// when the authorization endpoint challenges the single provider itself.
     /// </summary>
     public bool ReturnsToLoginPage => LoginPage is not null;
 
@@ -351,15 +286,9 @@ internal sealed class InteractionOutcomes(
         LoginDispatch.LoginPageFor(options.Value.AuthorizationEndpoint.Interaction, providers.Count);
 
     /// <summary>
-    /// Sends the user back to the login page after a trip to <paramref name="registration"/> that
-    /// did not sign them in, recording how it ended on the interaction for the page to read. The
-    /// interaction stays alive and the client is told nothing. Not terminal — the caller writes
-    /// the result.
+    /// Back to the login page after a provider trip that did not sign the user in, recording the
+    /// outcome best-effort for the page to show. Not terminal; the client is told nothing.
     /// </summary>
-    /// <remarks>
-    /// A store that cannot record the outcome still sends the user back: the page then shows an
-    /// ordinary sign-in, which is a lost message, not a lost sign-in.
-    /// </remarks>
     /// <exception cref="InvalidOperationException">There is no login page: <see cref="ReturnsToLoginPage"/> is false.</exception>
     public async Task<IResult> ReturnToLoginAsync(
         HttpContext context,
@@ -388,10 +317,7 @@ internal sealed class InteractionOutcomes(
         return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
     }
 
-    /// <summary>
-    /// Terminal. Parks <paramref name="principal"/> for the interaction and sends the user to
-    /// <paramref name="path"/> — validated by the caller — carrying the interaction identifier.
-    /// </summary>
+    /// <summary>Terminal. Parks <paramref name="principal"/> and sends the user to the caller-validated <paramref name="path"/>.</summary>
     public async Task ParkAsync(
         HttpContext context,
         AuthorizationRequestContext requestContext,
@@ -417,10 +343,7 @@ internal sealed class InteractionOutcomes(
         await CommitAsync(context).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Starts the response and records that a terminal outcome did, which is what lets MVC skip
-    /// the result a host handler would otherwise execute next.
-    /// </summary>
+    /// <summary>Starts the response and marks it committed, so MVC skips the host handler's own result.</summary>
     private static async Task CommitAsync(HttpContext context)
     {
         await context.Response.StartAsync().ConfigureAwait(false);
@@ -428,9 +351,5 @@ internal sealed class InteractionOutcomes(
     }
 }
 
-/// <summary>
-/// What a completed sign-in promotes: the principal the session holds, how the user proved who
-/// they are, and the external provider that authenticated them, <see langword="null"/> for a
-/// local sign-in.
-/// </summary>
+/// <summary>What a completed sign-in promotes; <c>ProviderScheme</c> is <see langword="null"/> for a local sign-in.</summary>
 internal sealed record SignIn(ClaimsPrincipal Principal, IReadOnlyList<string> AuthenticationMethods, string? ProviderScheme);
