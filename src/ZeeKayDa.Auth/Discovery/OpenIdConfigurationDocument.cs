@@ -9,7 +9,7 @@ namespace ZeeKayDa.Auth.Discovery;
 /// The OpenID Connect Discovery 1.0 §3 provider metadata document, kept apart from
 /// <see cref="AuthorizationServerOptions"/> so configuration and wire format evolve independently.
 /// </summary>
-public sealed record OpenIdConfigurationDocument
+internal sealed record OpenIdConfigurationDocument
 {
     /// <summary>Gets the issuer identifier of the authorization server.</summary>
     [JsonPropertyName("issuer")]

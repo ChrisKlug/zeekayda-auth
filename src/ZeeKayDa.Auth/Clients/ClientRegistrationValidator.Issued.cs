@@ -4,7 +4,7 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Clients;
 
 // What the client is issued: signing algorithms, token lifetimes and claim additions.
-internal sealed partial class ClientRegistrationValidator
+public sealed partial class ClientRegistrationValidator
 {
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateIssued(IClientWithCredentials client) =>
         ValidateAllowedSigningAlgorithms(client)
@@ -43,7 +43,7 @@ internal sealed partial class ClientRegistrationValidator
             yield break;
 
         // A custom repository may validate before the ring is initialized; that is "cannot check yet".
-        if (keyRing?.CurrentOrNull is not { } keySet)
+        if (_keyRing?.CurrentOrNull is not { } keySet)
         {
             WarnSigningUnchecked(client);
             yield break;
@@ -64,9 +64,9 @@ internal sealed partial class ClientRegistrationValidator
     /// <summary>Nothing to check against yet; the issuer enforces the set at signing, so only the early message is lost.</summary>
     private void WarnSigningUnchecked(IClientWithCredentials client)
     {
-        if (keyRing is not null && FirstTime(client.ClientId, "signing-unchecked"))
+        if (_keyRing is not null && FirstTime(client.ClientId, "signing-unchecked"))
         {
-            logger.LogWarning(
+            _logger.LogWarning(
                 "Client '{ClientId}' declares AllowedSigningAlgorithms, but the signing key ring " +
                 "has not yet read its source, so the set could not be checked against the " +
                 "algorithm the server signs with. This happens when an IClientRepository is " +
@@ -85,7 +85,7 @@ internal sealed partial class ClientRegistrationValidator
         foreach (var algorithm in algorithms.Where(algorithm =>
             algorithm != signingAlgorithm && FirstTime(client.ClientId, "algorithm-never-signed", algorithm.ToString())))
         {
-            logger.LogWarning(
+            _logger.LogWarning(
                 "Client '{ClientId}' has AllowedSigningAlgorithms entry '{Algorithm}', which the server never " +
                 "signs with: it signs only with {SigningAlgorithm}. The entry has no effect.",
                 client.ClientId,
@@ -115,10 +115,10 @@ internal sealed partial class ClientRegistrationValidator
             yield break;
         }
 
-        if (value > options.Value.TokenEndpoint.AbsoluteFamilyLifetime
+        if (value > _options.Value.TokenEndpoint.AbsoluteFamilyLifetime
             && FirstTime(client.ClientId, "lifetime-past-family", propertyName))
         {
-            logger.LogWarning(
+            _logger.LogWarning(
                 "Client '{ClientId}' has {PropertyName} set past TokenEndpoint.AbsoluteFamilyLifetime, " +
                 "so a token issued to it would outlive the grant family that produced it.",
                 client.ClientId,

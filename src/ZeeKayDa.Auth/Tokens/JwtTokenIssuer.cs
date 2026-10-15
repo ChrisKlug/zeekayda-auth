@@ -26,7 +26,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// The <c>typ</c> header is <c>at+jwt</c> for access tokens (RFC 9068 §2.1) and <c>JWT</c> for ID tokens.
 /// </para>
 /// </remarks>
-public sealed class JwtTokenIssuer : ITokenIssuer
+internal sealed class JwtTokenIssuer : ITokenIssuer
 {
     private const string AccessTokenType = "at+jwt";
     private const string IdTokenType = "JWT";

@@ -19,7 +19,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
     internal static readonly Func<IServiceProvider, IClientRepository> Factory = services => Build(
         services.GetRequiredService<InMemoryClientRegistrationOptions>(),
         services.GetRequiredService<ClientSecrets>(),
-        services.GetRequiredService<FrameworkThenHostValidator>());
+        services.GetRequiredService<ClientRegistrationValidator>());
 
     /// <summary>
     /// Hashes the pending secrets, then checks every registration. Plaintext is released only on success, so
@@ -32,7 +32,7 @@ internal sealed class InMemoryClientRepository : IClientRepository
     internal static InMemoryClientRepository Build(
         InMemoryClientRegistrationOptions registrations,
         ClientSecrets secrets,
-        FrameworkThenHostValidator validator)
+        ClientRegistrationValidator validator)
     {
         var (clients, failures) = HashPending(registrations.Pending, secrets);
         clients.AddRange(registrations.PreBuilt);

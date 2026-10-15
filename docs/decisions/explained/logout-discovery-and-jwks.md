@@ -40,7 +40,8 @@ authorization endpoint is omitted. `authorization_response_iss_parameter_support
 since RFC 9207 reads an omitted value as false and a client might skip the `iss` check.
 
 Clients cache it for `CacheMaxAge`; a failed build is a 500 without a cache header, so an error is
-never cached. `IDiscoveryDocumentProvider` is public.
+never cached. The provider is internal, so the document cannot be replaced with one advertising what
+the server does not do.
 
 ## JWKS
 

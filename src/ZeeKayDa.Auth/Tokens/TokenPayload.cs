@@ -22,7 +22,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// serializer reads <see cref="Claims.ClaimValue.Kind"/> and writes with <see cref="Claims.ClaimValue.WriteTo"/>.
 /// </para>
 /// </remarks>
-public sealed record TokenPayload
+internal sealed record TokenPayload
 {
     private readonly IReadOnlyDictionary<string, object?> _claims;
 

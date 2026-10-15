@@ -14,7 +14,7 @@ public class ValidatedClientResolverTests
     public async Task Valid_registration_is_served()
     {
         var client = NewClient();
-        var resolver = Resolver(client, new PassingValidator());
+        var resolver = Resolver(client, Framework().Validate);
 
         var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
@@ -29,7 +29,7 @@ public class ValidatedClientResolverTests
     public async Task A_registration_edited_after_it_was_validated_does_not_change_what_was_served()
     {
         var redirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/callback" };
-        var resolver = Resolver(NewClient() with { RedirectUris = redirectUris }, new PassingValidator());
+        var resolver = Resolver(NewClient() with { RedirectUris = redirectUris }, Framework().Validate);
 
         var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
         redirectUris.Add("https://attacker.example.com/callback");
@@ -44,7 +44,7 @@ public class ValidatedClientResolverTests
     public async Task A_registration_that_cannot_be_read_is_served_as_unknown_client()
     {
         var resolver = new ValidatedClientResolver(
-            new ThrowingRepository(), new PassingValidator(), NullLogger());
+            new ThrowingRepository(), Framework().Validate, NullLogger());
 
         var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
@@ -57,7 +57,7 @@ public class ValidatedClientResolverTests
     public async Task A_registration_that_cannot_be_read_logs_critical_naming_the_client_id()
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var resolver = new ValidatedClientResolver(new ThrowingRepository(), new PassingValidator(), logger);
+        var resolver = new ValidatedClientResolver(new ThrowingRepository(), Framework().Validate, logger);
 
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
@@ -70,7 +70,7 @@ public class ValidatedClientResolverTests
     public async Task A_registration_that_cannot_be_read_logs_critical_once_however_many_lookups()
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var resolver = new ValidatedClientResolver(new ThrowingRepository(), new PassingValidator(), logger);
+        var resolver = new ValidatedClientResolver(new ThrowingRepository(), Framework().Validate, logger);
 
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
@@ -84,7 +84,7 @@ public class ValidatedClientResolverTests
     public async Task An_unreadable_registration_reached_under_many_client_ids_logs_critical_once()
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var resolver = new ValidatedClientResolver(new ThrowingRepository(), new PassingValidator(), logger);
+        var resolver = new ValidatedClientResolver(new ThrowingRepository(), Framework().Validate, logger);
 
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
         await resolver.FindClientWithCredentialsAsync("CLIENT-1", TestContext.Current.CancellationToken);
@@ -101,8 +101,8 @@ public class ValidatedClientResolverTests
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
-            new RevisingRepository(),
-            new RejectingValidator(),
+            new RevisingRepository(_ => InvalidClient()),
+            Framework().Validate,
             logger);
 
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
@@ -116,9 +116,10 @@ public class ValidatedClientResolverTests
     public async Task A_registration_that_fails_a_second_different_way_is_logged_again()
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
+        var lookups = 0;
         var resolver = new ValidatedClientResolver(
-            new RevisingRepository(),
-            new DifferentRuleEachTimeValidator(),
+            new RevisingRepository(_ => NewClient()),
+            _ => [new ZeeKayDaConfigurationFailure($"rule_{++lookups}", "Broken.")],
             logger);
 
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
@@ -130,87 +131,9 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
-    public async Task A_failure_reworded_on_every_validation_logs_critical_once()
-    {
-        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var resolver = new ValidatedClientResolver(
-            new RevisingRepository(),
-            new RewordingValidator(),
-            logger);
-
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        // Suppression keys on the rule code, never the message. A host validator free to put a
-        // timestamp or an attempt counter in its message would otherwise mint a key and a Critical
-        // entry per revalidation, and eventually clear the whole suppression set.
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
-    }
-
-    [Fact]
-    public async Task The_same_rules_reported_in_a_different_order_log_critical_once()
-    {
-        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var resolver = new ValidatedClientResolver(
-            new RevisingRepository(),
-            new ReorderingValidator(),
-            logger);
-
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        // Aggregated failures arrive in whatever order the validator reports them; the same set of
-        // broken rules is the same failure however it is ordered.
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
-    }
-
-    [Fact]
-    public async Task Two_clients_whose_ids_and_rule_codes_run_together_are_both_logged()
-    {
-        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-
-        // "ab" + "c_rule" and "a" + "bc_rule" concatenate to the same string, so a key built by
-        // joining the two parts would collide and silence the second client's Critical entry.
-        var resolver = new ValidatedClientResolver(
-            new MultiClientRepository(
-                ConfidentialClient("ab"),
-                ConfidentialClient("a")),
-            new CodePerClientValidator(new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["ab"] = "c_rule",
-                ["a"] = "bc_rule",
-            }),
-            logger);
-
-        await resolver.FindClientWithCredentialsAsync("ab", TestContext.Current.CancellationToken);
-        await resolver.FindClientWithCredentialsAsync("a", TestContext.Current.CancellationToken);
-
-        logger.Entries.Should().HaveCount(2).And.OnlyContain(e => e.Level == LogLevel.Critical);
-    }
-
-    [Fact]
-    public async Task Two_rule_code_sets_that_join_identically_are_both_logged()
-    {
-        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var resolver = new ValidatedClientResolver(
-            new RevisingRepository(),
-            new JoiningCodeSetsValidator(),
-            logger);
-
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        // A rule code is a host-supplied string with no syntax restriction, so the set of codes
-        // cannot be identified by joining them: ["a; b", "c"] and ["a", "b; c"] join to the same
-        // text. The second registration is broken a different way and the operator must hear so.
-        logger.Entries.Should().HaveCount(2).And.OnlyContain(e => e.Level == LogLevel.Critical);
-    }
-
-    [Fact]
     public async Task Unknown_client_returns_null()
     {
-        var resolver = Resolver(NewClient(), new PassingValidator());
+        var resolver = Resolver(NewClient(), Framework().Validate);
 
         var result = await resolver.FindClientWithCredentialsAsync("no-such-client", TestContext.Current.CancellationToken);
 
@@ -220,7 +143,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task FindClientAsync_returns_the_validated_client()
     {
-        var resolver = Resolver(NewClient(), new PassingValidator());
+        var resolver = Resolver(NewClient(), Framework().Validate);
 
         var result = await resolver.FindClientAsync("client-1", TestContext.Current.CancellationToken);
 
@@ -230,7 +153,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task FindClientAsync_serves_an_invalid_registration_as_unknown()
     {
-        var resolver = Resolver(NewClient(), new RejectingValidator());
+        var resolver = Resolver(InvalidClient(), Framework().Validate);
 
         var result = await resolver.FindClientAsync("client-1", TestContext.Current.CancellationToken);
 
@@ -240,7 +163,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task Invalid_registration_is_served_as_unknown_client()
     {
-        var resolver = Resolver(NewClient(), new RejectingValidator());
+        var resolver = Resolver(InvalidClient(), Framework().Validate);
 
         var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
@@ -249,68 +172,11 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
-    public async Task A_host_validator_returning_a_null_list_is_served_as_unknown_and_named_as_malformed()
-    {
-        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(NewClient()), FrameworkThen(new MalformedResultValidator(null)), logger);
-
-        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        result.Should().BeNull("a malformed validator result must fail closed, like a throwing validator");
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
-            .Which.Message.Should().Contain("MalformedResultValidator").And.NotContain(nameof(NullReferenceException));
-    }
-
-    [Fact]
-    public async Task A_host_validator_returning_a_null_failure_is_served_as_unknown_and_named_as_malformed()
-    {
-        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(NewClient()), FrameworkThen(new MalformedResultValidator([null])), logger);
-
-        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        result.Should().BeNull("a malformed validator result must fail closed, like a throwing validator");
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
-            .Which.Message.Should().Contain("MalformedResultValidator").And.NotContain(nameof(NullReferenceException));
-    }
-
-    [Fact]
-    public async Task A_host_validators_result_is_judged_and_reported_from_one_snapshot()
-    {
-        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(NewClient()), FrameworkThen(new ChangingResultValidator()), logger);
-
-        var result = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        // The first enumeration yields "Broken." and every later one a null: reporting "Broken."
-        // proves the list was read once, and the null a second read would have hit never was.
-        result.Should().BeNull();
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
-            .Which.Message.Should().Contain("Broken.").And.NotContain(nameof(NullReferenceException));
-    }
-
-    [Fact]
-    public async Task A_host_validator_returning_a_malformed_result_logs_critical_once_however_many_lookups()
-    {
-        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
-        var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(NewClient()), FrameworkThen(new MalformedResultValidator(null)), logger);
-
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-
-        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical);
-    }
-
-    [Fact]
     public async Task Invalid_registration_logs_critical_for_the_operator()
     {
         var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
         var resolver = new ValidatedClientResolver(
-            new SingleClientRepository(NewClient()), new RejectingValidator(), logger);
+            new SingleClientRepository(InvalidClient()), Framework().Validate, logger);
 
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
@@ -320,34 +186,34 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task A_registration_mutated_in_place_is_revalidated()
     {
-        var validator = new CountingValidator();
         var mutable = new MutableRepository(NewClient());
-        var resolver = new ValidatedClientResolver(mutable, validator, NullLogger());
+        var resolver = new ValidatedClientResolver(mutable, Framework().Validate, NullLogger());
 
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
-        mutable.Current = NewClient() with
-        {
-            RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/added" },
-        };
-        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+        (await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken)).Should().NotBeNull();
+        mutable.Current = InvalidClient();
+        var edited = await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
         // A store that edits a cached registration must not keep the old verdict: a stale "valid"
         // would bless a URI validation rejects.
-        validator.Calls.Should().Be(2);
+        edited.Should().BeNull();
     }
 
     [Fact]
     public async Task An_unchanged_registration_is_validated_on_every_lookup()
     {
-        var validator = new CountingValidator();
-        var resolver = Resolver(NewClient(), validator);
+        var calls = 0;
+        var resolver = Resolver(NewClient(), client =>
+        {
+            calls++;
+            return [];
+        });
 
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
         await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
-        // No verdict cache: a validator that reads state outside the registration — the signing
-        // key ring, the server's options — is consulted on the request it applies to.
-        validator.Calls.Should().Be(2);
+        // No verdict cache: the rules read state outside the registration — the signing key ring,
+        // the server's options — so they are consulted on the request they apply to.
+        calls.Should().Be(2);
     }
 
     [Theory]
@@ -357,7 +223,7 @@ public class ValidatedClientResolverTests
     public async Task A_malformed_client_id_never_reaches_the_repository(string clientId)
     {
         var repository = new CountingRepository();
-        var resolver = new ValidatedClientResolver(repository, new PassingValidator(), NullLogger());
+        var resolver = new ValidatedClientResolver(repository, Framework().Validate, NullLogger());
 
         var result = await resolver.FindClientWithCredentialsAsync(clientId, TestContext.Current.CancellationToken);
 
@@ -369,7 +235,7 @@ public class ValidatedClientResolverTests
     public async Task A_client_id_over_the_length_limit_never_reaches_the_repository()
     {
         var repository = new CountingRepository();
-        var resolver = new ValidatedClientResolver(repository, new PassingValidator(), NullLogger());
+        var resolver = new ValidatedClientResolver(repository, Framework().Validate, NullLogger());
 
         await resolver.FindClientWithCredentialsAsync(new string('a', 201), TestContext.Current.CancellationToken);
 
@@ -379,7 +245,7 @@ public class ValidatedClientResolverTests
     [Fact]
     public async Task A_repository_that_throws_propagates_rather_than_answering_unknown()
     {
-        var resolver = new ValidatedClientResolver(new FailingRepository(), new PassingValidator(), NullLogger());
+        var resolver = new ValidatedClientResolver(new FailingRepository(), Framework().Validate, NullLogger());
 
         var act = async () => await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
 
@@ -397,17 +263,9 @@ public class ValidatedClientResolverTests
             postLogoutRedirectUris: [],
             allowedScopes: ["openid"]);
 
-    private static Client ConfidentialClient(string clientId = "client-1") =>
-        Client.CreateConfidential(
-            clientId,
-            new ClientSecret("$fake$x"),
-            redirectUris: ["https://app.example.com/callback"],
-            postLogoutRedirectUris: [],
-            allowedScopes: ["openid"]);
-
     private static ValidatedClientResolver Resolver(
-        IClientWithCredentials client, IClientRegistrationValidator validator) =>
-        new(new SingleClientRepository(client), validator, NullLogger());
+        IClientWithCredentials client, Func<IClientWithCredentials, IReadOnlyList<ZeeKayDaConfigurationFailure>> validate) =>
+        new(new SingleClientRepository(client), validate, NullLogger());
 
     private static SanitizingLogger<ValidatedClientResolver> NullLogger() => NullSanitizingLogger<ValidatedClientResolver>.Instance;
 
@@ -488,139 +346,37 @@ public class ValidatedClientResolverTests
     }
 
     /// <summary>
-    /// Hands out a registration whose content differs on every lookup.
+    /// Hands out a registration whose content differs on every lookup: <paramref name="revise"/>'s
+    /// client for the lookup's number, starting at 1, renamed for it.
     /// </summary>
-    private sealed class RevisingRepository : IClientRepository
+    private sealed class RevisingRepository(Func<int, Client> revise) : IClientRepository
     {
         private int _revision;
 
         public Task<IClientWithCredentials?> FindByClientIdAsync(
-            string clientId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IClientWithCredentials?>(
-                ConfidentialClient() with { DisplayName = $"revision {Interlocked.Increment(ref _revision)}" });
-    }
-
-    private sealed class PassingValidator : IClientRegistrationValidator
-    {
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => [];
-    }
-
-    private sealed class RejectingValidator : IClientRegistrationValidator
-    {
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
-            [new ZeeKayDaConfigurationFailure("test_rule", "Deliberately rejected by the test.")];
-    }
-
-    /// <summary>Rejects every registration, for the rule this test named for its <c>client_id</c>.</summary>
-    private sealed class CodePerClientValidator(IReadOnlyDictionary<string, string> codesByClientId)
-        : IClientRegistrationValidator
-    {
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
-            [new ZeeKayDaConfigurationFailure(codesByClientId[client.ClientId], "Deliberately rejected by the test.")];
-    }
-
-    /// <summary>Rejects every registration, breaking a different rule each time.</summary>
-    private sealed class DifferentRuleEachTimeValidator : IClientRegistrationValidator
-    {
-        private int _calls;
-
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
+            string clientId, CancellationToken cancellationToken = default)
         {
-            var call = ++_calls;
-            return [new ZeeKayDaConfigurationFailure($"test_rule_{call}", $"Rejected by the test, rule {call}.")];
+            var revision = Interlocked.Increment(ref _revision);
+            return Task.FromResult<IClientWithCredentials?>(revise(revision) with { DisplayName = $"revision {revision}" });
         }
     }
 
-    /// <summary>
-    /// Rejects every registration for the same rule, worded differently each time — a host
-    /// validator whose message carries a timestamp or an attempt counter.
-    /// </summary>
-    private sealed class RewordingValidator : IClientRegistrationValidator
-    {
-        private int _calls;
+    /// <summary>A registration the framework's rules refuse: its redirect URI carries a fragment.</summary>
+    private static Client InvalidClient() =>
+        NewClient() with { RedirectUris = new HashSet<string>(StringComparer.Ordinal) { "https://app.example.com/callback#fragment" } };
 
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) =>
-            [new ZeeKayDaConfigurationFailure("test_rule", $"Rejected by the test, attempt {++_calls}.")];
-    }
-
-    /// <summary>
-    /// Rejects every registration for two rules whose codes carry the delimiter a naive key would
-    /// join on, reporting a different set of them each time.
-    /// </summary>
-    private sealed class JoiningCodeSetsValidator : IClientRegistrationValidator
-    {
-        private bool _second;
-
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
-        {
-            _second = !_second;
-
-            return _second
-                ?
-                [
-                    new ZeeKayDaConfigurationFailure("a; b", "Rules a and b were broken."),
-                    new ZeeKayDaConfigurationFailure("c", "Rule c was broken."),
-                ]
-                :
-                [
-                    new ZeeKayDaConfigurationFailure("a", "Rule a was broken."),
-                    new ZeeKayDaConfigurationFailure("b; c", "Rules b and c were broken."),
-                ];
-        }
-    }
-
-    /// <summary>Rejects every registration, reporting two rules in a different order each time.</summary>
-    private sealed class ReorderingValidator : IClientRegistrationValidator
-    {
-        private bool _flipped;
-
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
-        {
-            var first = new ZeeKayDaConfigurationFailure("test_rule_a", "Rule A was broken.");
-            var second = new ZeeKayDaConfigurationFailure("test_rule_b", "Rule B was broken.");
-            _flipped = !_flipped;
-
-            return _flipped ? [first, second] : [second, first];
-        }
-    }
-
-    /// <summary>A host validator whose list yields a failure the first time and a null after that.</summary>
-    private sealed class ChangingResultValidator : IClientRegistrationValidator
-    {
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => new ChangingList();
-
-        private sealed class ChangingList : IReadOnlyList<ZeeKayDaConfigurationFailure>
-        {
-            private int _enumerations;
-
-            public int Count => 1;
-
-            public ZeeKayDaConfigurationFailure this[int index] => this.First();
-
-            public IEnumerator<ZeeKayDaConfigurationFailure> GetEnumerator()
-            {
-                yield return _enumerations++ == 0 ? new ZeeKayDaConfigurationFailure("host.rule", "Broken.") : null!;
-            }
-
-            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
-        }
-    }
-
-    /// <summary>The production wiring: the framework's rules, then <paramref name="host"/>'s.</summary>
-    private static FrameworkThenHostValidator FrameworkThen(IClientRegistrationValidator host)
+    private static ClientRegistrationValidator Framework()
     {
         var serverOptions = new AuthorizationServerOptions { Issuer = "https://test.example.com" };
         var registry = new ClientSecretHasherRegistry(
             [new FakeHasher()], Microsoft.Extensions.Options.Options.Create(new ClientSecretHasherRegistrationOptions()));
 
-        return new FrameworkThenHostValidator(
-            new ClientRegistrationValidator(
-                Microsoft.Extensions.Options.Options.Create(serverOptions),
-                TestAuthMethods.Advertised(serverOptions),
-                registry,
-                NullSanitizingLogger<ClientRegistrationValidator>.Instance,
-                keyRing: null),
-            host);
+        return new ClientRegistrationValidator(
+            Microsoft.Extensions.Options.Options.Create(serverOptions),
+            TestAuthMethods.Advertised(serverOptions),
+            registry,
+            NullSanitizingLogger<ClientRegistrationValidator>.Instance,
+            keyRing: null);
     }
 
     private sealed class FakeHasher : IClientSecretHasher
@@ -630,24 +386,6 @@ public class ValidatedClientResolverTests
         public bool Verify(ReadOnlySpan<char> presented, ClientSecret stored) => false;
 
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => new("$fake$x");
-    }
-
-    /// <summary>A host validator breaking its contract: a null list, or a null entry in one.</summary>
-    private sealed class MalformedResultValidator(IReadOnlyList<ZeeKayDaConfigurationFailure?>? result)
-        : IClientRegistrationValidator
-    {
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => result!;
-    }
-
-    private sealed class CountingValidator : IClientRegistrationValidator
-    {
-        public int Calls { get; private set; }
-
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client)
-        {
-            Calls++;
-            return [];
-        }
     }
 
 }

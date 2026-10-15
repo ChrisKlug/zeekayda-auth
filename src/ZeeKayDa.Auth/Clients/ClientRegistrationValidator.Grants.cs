@@ -5,7 +5,7 @@ namespace ZeeKayDa.Auth.Clients;
 
 // What the client may do. Only what the server serves: anything else would silently do nothing, and an
 // empty set refuses every request without saying why.
-internal sealed partial class ClientRegistrationValidator
+public sealed partial class ClientRegistrationValidator
 {
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateGrants(IClientWithCredentials client) =>
         ValidateGrantTypes(client)
@@ -17,7 +17,7 @@ internal sealed partial class ClientRegistrationValidator
     {
         var grantTypes = new FlowSet<GrantType>(
             nameof(IClient.AllowedGrantTypes), client.AllowedGrantTypes,
-            nameof(AuthorizationServerOptions.GrantTypesSupported), options.Value.GrantTypesSupported,
+            nameof(AuthorizationServerOptions.GrantTypesSupported), _options.Value.GrantTypesSupported,
             "client.grant_types");
 
         var (failures, count) = ValidateFlowEntries(client, grantTypes);
@@ -48,7 +48,7 @@ internal sealed partial class ClientRegistrationValidator
 
         if (refreshWithoutIssuer && FirstTime(client.ClientId, "refresh-without-issuer"))
         {
-            logger.LogWarning(
+            _logger.LogWarning(
                 "Client '{ClientId}' allows the refresh_token grant but not authorization_code, the only grant " +
                 "that issues a refresh token, so it can use only refresh tokens issued before.",
                 client.ClientId);
@@ -57,7 +57,7 @@ internal sealed partial class ClientRegistrationValidator
 
     private IEnumerable<ZeeKayDaConfigurationFailure> ValidateResponseFlows(IClientWithCredentials client)
     {
-        var server = options.Value;
+        var server = _options.Value;
         var responseTypes = new FlowSet<ResponseType>(
             nameof(IClient.AllowedResponseTypes), client.AllowedResponseTypes,
             "Response.TypesSupported", server.Response.TypesSupported,

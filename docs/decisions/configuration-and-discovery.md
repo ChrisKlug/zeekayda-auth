@@ -93,11 +93,11 @@ have been exposed to the interception attack PKCE prevents. Startup now fails wh
 be served with the enforcement path unadvertised. `null` remains the omit state, valid only on a
 host without the grant; an empty collection is a validation error.
 
-**Configuration is never serialised to the wire.** `IDiscoveryDocumentProvider` maps
+**Configuration is never serialised to the wire.** The internal `IDiscoveryDocumentProvider` maps
 `AuthorizationServerOptions` onto `OpenIdConfigurationDocument`, the OIDC Discovery 1.0 wire model, so
-an internal, freely-refactorable options class is never coupled to a spec-mandated contract. The
-provider is public and replaceable — that is the escape hatch for a host that must advertise something
-the framework does not model.
+an internal, freely-refactorable options class is never coupled to a spec-mandated contract. It is not
+replaceable, so the document cannot advertise what the server does not do; extra metadata, if ever
+needed, comes through an additive seam that cannot override computed fields.
 
 **The advertised signing algorithm is the signing source's, never configured beside it.**
 `id_token_signing_alg_values_supported` is the one algorithm the signing source declares, read from the

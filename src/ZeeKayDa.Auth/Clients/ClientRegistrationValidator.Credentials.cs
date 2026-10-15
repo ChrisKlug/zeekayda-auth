@@ -4,7 +4,7 @@ namespace ZeeKayDa.Auth.Clients;
 
 // Whether the client is public or confidential, how it authenticates at the token endpoint, and
 // the secrets it authenticates with.
-internal sealed partial class ClientRegistrationValidator
+public sealed partial class ClientRegistrationValidator
 {
     /// <summary>
     /// The rules for one secret, in order; the first that finds anything reports it and the rest do
@@ -110,7 +110,7 @@ internal sealed partial class ClientRegistrationValidator
                 $"Client '{client.ClientId}' has a duplicate entry in AllowedTokenEndpointAuthMethods: '{method}'.");
         }
 
-        return advertisedAuthMethods.Contains(method) ? null : AuthMethodNotAdvertised(client, method);
+        return _advertisedAuthMethods.Contains(method) ? null : AuthMethodNotAdvertised(client, method);
     }
 
     // 'none' on a public client can only be withheld by the filter, so that failure names it; on a
@@ -128,7 +128,7 @@ internal sealed partial class ClientRegistrationValidator
         return new ZeeKayDaConfigurationFailure(
             "client.token_endpoint_auth_methods.not_subset",
             $"Client '{client.ClientId}' has AllowedTokenEndpointAuthMethods entry '{method}' that the " +
-            $"server does not advertise: [{string.Join(", ", advertisedAuthMethods.Methods)}]." + fix);
+            $"server does not advertise: [{string.Join(", ", _advertisedAuthMethods.Methods)}]." + fix);
     }
 
     /// <summary>
@@ -159,7 +159,7 @@ internal sealed partial class ClientRegistrationValidator
         foreach (var secret in client.Secrets)
         {
             count++;
-            var check = new SecretCheck(client.ClientId, secret, registry);
+            var check = new SecretCheck(client.ClientId, secret, _registry);
             foreach (var failure in SecretRules.Select(rule => rule(check)).FirstOrDefault(found => found.Count > 0) ?? [])
                 yield return failure;
         }

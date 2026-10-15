@@ -157,15 +157,10 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
             sp.GetRequiredService<ClientSecretHasherRegistry>(),
             sp.GetRequiredService<SanitizingLogger<ClientRegistrationValidator>>(),
             sp.GetService<SigningKeyRing>()));
-        services.TryAddSingleton<IClientRegistrationValidator>(sp => sp.GetRequiredService<ClientRegistrationValidator>());
-
-        services.TryAddSingleton(sp => new FrameworkThenHostValidator(
-            sp.GetRequiredService<ClientRegistrationValidator>(),
-            sp.GetRequiredService<IClientRegistrationValidator>()));
 
         services.TryAddSingleton(sp => new ValidatedClientResolver(
             sp.GetRequiredService<IClientRepository>(),
-            sp.GetRequiredService<FrameworkThenHostValidator>(),
+            sp.GetRequiredService<ClientRegistrationValidator>().Validate,
             sp.GetRequiredService<SanitizingLogger<ValidatedClientResolver>>()));
 
         services.TryAddEnumerable(

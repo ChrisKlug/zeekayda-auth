@@ -185,7 +185,7 @@ of hashers behind it is also a singleton. Injecting `ClientSecrets` into a singl
 
 ### See also
 
-- [Implement a custom client repository](../how-to/implement-custom-extension-points.md#5-implement-a-custom-client-repository) — full example with `IClientRegistrationValidator`
+- [Implement a custom client repository](../how-to/implement-custom-extension-points.md#4-implement-a-custom-client-repository) — full example with `ClientRegistrationValidator`
 - [`IClientSecretHasher`](#iclientsecrethashert) — the per-algorithm interface that `ClientSecrets` delegates to
 
 ---

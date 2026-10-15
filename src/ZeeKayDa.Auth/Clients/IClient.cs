@@ -9,9 +9,9 @@ namespace ZeeKayDa.Auth.Clients;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The view handed to code that decides <em>what</em> to issue a client, <c>ITokenIssuer</c> above all;
-/// client authentication takes <see cref="IClientWithCredentials"/>. A downcast still reaches the
-/// credentials, so this is a guardrail: code touching secrets has to visibly reach for them.
+/// The view handed to code that decides <em>what</em> to issue a client; client authentication takes
+/// <see cref="IClientWithCredentials"/>. A downcast still reaches the credentials, so this is a
+/// guardrail: code touching secrets has to visibly reach for them.
 /// </para>
 /// <para>
 /// <strong>String set comparison invariant.</strong> <see cref="RedirectUris"/>,
@@ -21,9 +21,8 @@ namespace ZeeKayDa.Auth.Clients;
 /// the framework hands out is a copy with those sets rebuilt that way.
 /// </para>
 /// <para>
-/// Code reading a registration straight from an <see cref="IClientRepository"/>, an
-/// <see cref="IClientRegistrationValidator"/> included, gets no such copy and MUST compare ordinally and
-/// count by enumerating. This is a security contract: a case-insensitive redirect URI or auth method
+/// Code reading a registration straight from an <see cref="IClientRepository"/> gets no such copy and
+/// MUST compare ordinally and count by enumerating. This is a security contract: a case-insensitive redirect URI or auth method
 /// allowlist accepts values that were never registered.
 /// </para>
 /// </remarks>

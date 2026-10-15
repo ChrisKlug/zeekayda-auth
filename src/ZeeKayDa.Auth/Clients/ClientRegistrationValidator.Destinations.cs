@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 namespace ZeeKayDa.Auth.Clients;
 
 // Where the framework may send a browser for the client: redirect, post-logout and initiate-login URIs.
-internal sealed partial class ClientRegistrationValidator
+public sealed partial class ClientRegistrationValidator
 {
     private const int MaxUrisPerSet = 32;
 
@@ -32,7 +32,7 @@ internal sealed partial class ClientRegistrationValidator
             var isValidHttpLocalhost = uriFailures.Count == 0 && RedirectUriRules.IsHttpLocalhost(uriString);
             if (isValidHttpLocalhost && FirstTime(clientId, "localhost-" + propertyName, uriString))
             {
-                logger.LogWarning(
+                _logger.LogWarning(
                     "Client '{ClientId}' uses 'localhost' in {PropertyName}: '{Uri}'. " +
                     "RFC 8252 §8.3 recommends using the IP literal '127.0.0.1' instead of 'localhost' " +
                     "to avoid DNS rebinding and cross-platform compatibility issues.",

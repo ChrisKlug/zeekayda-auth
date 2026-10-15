@@ -9,7 +9,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <remarks>
 /// The hierarchy is closed: the constructor is reachable only from this assembly.
 /// </remarks>
-public abstract class TokenIssuanceContext
+internal abstract class TokenIssuanceContext
 {
     private protected TokenIssuanceContext(IClient client)
     {
@@ -31,7 +31,7 @@ public abstract class TokenIssuanceContext
 }
 
 /// <summary>The issuance of an access token to a client.</summary>
-public sealed class AccessTokenIssuanceContext : TokenIssuanceContext
+internal sealed class AccessTokenIssuanceContext : TokenIssuanceContext
 {
     /// <summary>Initializes a context for issuing an access token to <paramref name="client"/>.</summary>
     /// <param name="client">The client the token is issued for.</param>
@@ -48,7 +48,7 @@ public sealed class AccessTokenIssuanceContext : TokenIssuanceContext
 /// The issuance of an ID token, bound through <c>at_hash</c> to the access token issued in the same
 /// response (OpenID Connect Core §3.1.3.6); an ID token is never issued unbound.
 /// </summary>
-public sealed class IdTokenIssuanceContext : TokenIssuanceContext
+internal sealed class IdTokenIssuanceContext : TokenIssuanceContext
 {
     /// <summary>
     /// Initializes a context for issuing an ID token to <paramref name="client"/>, bound to

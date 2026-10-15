@@ -7,7 +7,7 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <remarks>
 /// No refresh token: it is an opaque store handle minted by the grant machinery, never signed.
 /// </remarks>
-public enum TokenKind
+internal enum TokenKind
 {
     /// <summary>An OAuth 2.0 access token (RFC 6749 §1.4; RFC 9068 when issued as a JWT).</summary>
     AccessToken,

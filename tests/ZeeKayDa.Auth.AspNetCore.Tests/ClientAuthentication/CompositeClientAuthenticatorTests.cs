@@ -52,17 +52,13 @@ public sealed class CompositeClientAuthenticatorTests
         public ClientSecret Create(ReadOnlySpan<char> plaintext) => FakeSecret();
     }
 
-    private sealed class PassingRegistrationValidator : IClientRegistrationValidator
-    {
-        // Deliberately accepts everything: these tests exercise the composite's dispatch
-        // rules with minimal fake registrations, not registration validation, which has its
-        // own suites (ClientRegistrationValidatorTests, ValidatedClientResolverTests).
-        public IReadOnlyList<ZeeKayDaConfigurationFailure> Validate(IClientWithCredentials client) => [];
-    }
+    // Accepts everything: these tests exercise the composite's dispatch rules with minimal fake
+    // registrations, not registration validation, which has its own suites.
+    private static IReadOnlyList<ZeeKayDaConfigurationFailure> AcceptEveryRegistration(IClientWithCredentials client) => [];
 
     private static ValidatedClientResolver Resolver(IClientWithCredentials? client) => new(
         new FakeClientRepository(client),
-        new PassingRegistrationValidator(),
+        AcceptEveryRegistration,
         NullSanitizingLogger<ValidatedClientResolver>.Instance);
 
     private sealed class FakeClientRepository : IClientRepository
@@ -302,7 +298,7 @@ public sealed class CompositeClientAuthenticatorTests
                 advertised,
                 registry,
                 NullSanitizingLogger<ClientRegistrationValidator>.Instance,
-                keyRing: null),
+                keyRing: null).Validate,
             resolverLogger);
         var composite = new CompositeClientAuthenticator(
             new RegisteredAuthenticators([new ClientSecretAuthenticator(secrets)]),
@@ -788,7 +784,7 @@ public sealed class CompositeClientAuthenticatorTests
         var repository = new FakeClientRepository(CreatePublicClient());
         var composite = new CompositeClientAuthenticator(
             new RegisteredAuthenticators([new FixedMatchAuthenticator("custom_method", ClientAuthenticatorMatch.Refused)]),
-            new ValidatedClientResolver(repository, new PassingRegistrationValidator(), NullSanitizingLogger<ValidatedClientResolver>.Instance),
+            new ValidatedClientResolver(repository, AcceptEveryRegistration, NullSanitizingLogger<ValidatedClientResolver>.Instance),
             Advertising("custom_method", TokenEndpointAuthMethods.None),
             new ClientSecrets(Registry([new FakeHasher()]), NullSanitizingLogger<ClientSecrets>.Instance),
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
@@ -813,7 +809,7 @@ public sealed class CompositeClientAuthenticatorTests
         var repository = new FakeClientRepository(CreatePublicClient());
         var composite = new CompositeClientAuthenticator(
             new RegisteredAuthenticators([new ClientSecretAuthenticator(secrets)]),
-            new ValidatedClientResolver(repository, new PassingRegistrationValidator(), NullSanitizingLogger<ValidatedClientResolver>.Instance),
+            new ValidatedClientResolver(repository, AcceptEveryRegistration, NullSanitizingLogger<ValidatedClientResolver>.Instance),
             Advertising(TokenEndpointAuthMethods.ClientSecretBasic, TokenEndpointAuthMethods.None),
             secrets,
             NullSanitizingLogger<CompositeClientAuthenticator>.Instance);

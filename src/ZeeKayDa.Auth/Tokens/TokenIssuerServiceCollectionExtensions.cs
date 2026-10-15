@@ -9,8 +9,7 @@ namespace ZeeKayDa.Auth.Tokens;
 internal static class TokenIssuerServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers <see cref="JwtTokenIssuer"/> for every <see cref="TokenKind"/> as a keyed service, keeping a
-    /// host's own earlier registration.
+    /// Registers <see cref="JwtTokenIssuer"/> for every <see cref="TokenKind"/> as a keyed service.
     /// </summary>
     internal static IServiceCollection AddDefaultTokenIssuers(this IServiceCollection services)
     {

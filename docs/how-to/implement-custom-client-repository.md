@@ -60,17 +60,17 @@ logged for the operator.
 **Validating on write is still worth it.** A bad registration found at read time surfaces on a live
 request, as an error the operator sees in the log, rather than when the row was written. The
 validator enforces all redirect URI rules, the `IsPublic` consistency check, credential integrity
-checks, and auth-method subset constraints. Inject `IClientRegistrationValidator` from DI and call
+checks, and auth-method subset constraints. Inject `ClientRegistrationValidator` from DI and call
 it where you write:
 
 ```csharp
 public sealed class MyDatabaseClientRepository : IClientRepository
 {
-    private readonly IClientRegistrationValidator _validator;
+    private readonly ClientRegistrationValidator _validator;
     private readonly MyDbContext _db;
 
     public MyDatabaseClientRepository(
-        IClientRegistrationValidator validator,
+        ClientRegistrationValidator validator,
         MyDbContext db)
     {
         _validator = validator;
@@ -117,8 +117,8 @@ public sealed class MyDatabaseClientRepository : IClientRepository
 The framework never hands your entity to its endpoints or to a token issuer. It copies each
 registration it looks up and rebuilds the `IReadOnlySet<string>` members — `RedirectUris`,
 `PostLogoutRedirectUris`, `AllowedScopes`, `AllowedTokenEndpointAuthMethods` — with
-`StringComparer.Ordinal`, whatever comparer your sets were built with. A registration the framework
-hands you, such as `TokenIssuanceContext.Client`, therefore compares ordinally.
+`StringComparer.Ordinal`, whatever comparer your sets were built with, so every registration the
+framework hands on compares ordinally.
 
 Code that reads your entity directly gets no such guarantee. Wherever your repository, or any other
 code that resolves `IClientRepository` itself, checks membership in one of those sets, use

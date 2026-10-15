@@ -286,7 +286,6 @@ Common validation failures:
 | `client.client_id.duplicate` | Two clients with the same `ClientId` |
 | `client.credentials.no_secret` | A confidential client sets neither `Secret` nor `SecretHash` |
 | `client.credentials.secret_and_secret_hash` | A confidential client sets both `Secret` and `SecretHash` |
-| `client.validator.malformed_result` | A host `IClientRegistrationValidator` returned null, or a list with a null entry |
 
 ## See also
 

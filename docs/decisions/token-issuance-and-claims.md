@@ -7,9 +7,8 @@ the wire, its audience, its lifetime and its signature are `token-contents.md`.
 **The token endpoint issues the authorization code grant with subject claims, and userinfo answers
 an access token with them.** Protocol claims come from the grant, subject claims from the host's
 `IClaimsProvider`, selected per destination; the endpoint hands a finalized `TokenPayload` to
-`ITokenIssuer`, keyed per `TokenKind` and filled by `JwtTokenIssuer`. That seam is shape-agnostic for
-*issuing* only — userinfo reads a compact JWS, so a replaced access-token issuer is refused there,
-which the opaque-token work closes. The refresh grant is unbuilt; its entries are inherited.
+the internal `ITokenIssuer`, keyed per `TokenKind` and filled by `JwtTokenIssuer`. It stays internal
+until reference tokens are designed with introspection, since userinfo reads a compact JWS. The refresh grant is unbuilt; its entries are inherited.
 
 ## Decisions in force
 

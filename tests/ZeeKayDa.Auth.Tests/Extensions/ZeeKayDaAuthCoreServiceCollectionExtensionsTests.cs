@@ -143,10 +143,11 @@ public sealed class ZeeKayDaAuthCoreServiceCollectionExtensionsTests
     }
 
     [Theory]
-    [InlineData(TokenKind.AccessToken)]
-    [InlineData(TokenKind.IdToken)]
-    public void AddZeeKayDaAuthCore_registers_JwtTokenIssuer_for_each_TokenKind(TokenKind kind)
+    [InlineData(nameof(TokenKind.AccessToken))]
+    [InlineData(nameof(TokenKind.IdToken))]
+    public void AddZeeKayDaAuthCore_registers_JwtTokenIssuer_for_each_TokenKind(string kindName)
     {
+        var kind = Enum.Parse<TokenKind>(kindName);
         var services = ServicesWithLogging();
         services.AddSingleton<SigningKeyRing>(TestSigningKeys.Uninitialized(SigningAlgorithm.RS256));
 

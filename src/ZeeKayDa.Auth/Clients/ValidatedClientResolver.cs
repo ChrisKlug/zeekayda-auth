@@ -6,7 +6,7 @@ namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
 /// The framework's only path from a <c>client_id</c> to a registration: copies what the repository
-/// returns and serves the copy only when <see cref="IClientRegistrationValidator"/> accepts it.
+/// returns and serves the copy only when <see cref="ClientRegistrationValidator"/> accepts it.
 /// </summary>
 /// <remarks>
 /// A malformed id never reaches the repository. A failing registration is served as unknown, fail-closed
@@ -15,7 +15,7 @@ namespace ZeeKayDa.Auth.Clients;
 /// </remarks>
 internal sealed class ValidatedClientResolver(
     IClientRepository repository,
-    IClientRegistrationValidator validator,
+    Func<IClientWithCredentials, IReadOnlyList<ZeeKayDaConfigurationFailure>> validate,
     SanitizingLogger<ValidatedClientResolver> logger)
 {
     // Keyed by what the store resolves, never request input; cleared wholesale at the cap.
@@ -102,26 +102,11 @@ internal sealed class ValidatedClientResolver(
 
     private Failure? Validate(IClientWithCredentials client)
     {
-        // Reading the result too: enumerating a host's list may throw.
-        try
-        {
-            return Describe(validator.Validate(client));
-        }
-        catch (Exception ex)
-        {
-            // Fail closed. The type's FullName, never ex.Message, which a host validator may fill with anything.
-            return new Failure(
-                $"The registration validator threw {ex.GetType().FullName}.",
-                new FailureIdentity("threw", [ex.GetType().FullName ?? ex.GetType().Name]));
-        }
-    }
-
-    private static Failure? Describe(IReadOnlyList<ZeeKayDaConfigurationFailure> failures)
-    {
+        var failures = validate(client);
         if (failures.Count == 0)
             return null;
 
-        // Codes, sorted: stable across calls even when the validator rewords or reorders its messages.
+        // Codes, sorted: a message may carry the registration's own values, which change between edits.
         return new Failure(
             string.Join("; ", failures.Select(f => f.Message)),
             new FailureIdentity("rules", [.. failures.Select(f => f.Code).Order(StringComparer.Ordinal)]));

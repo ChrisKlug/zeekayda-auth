@@ -200,10 +200,11 @@ public sealed class JwtTokenIssuerTests
     }
 
     [Theory]
-    [InlineData(TokenKind.AccessToken, "at+jwt")]
-    [InlineData(TokenKind.IdToken, "JWT")]
-    public async Task IssueAsync_sets_the_typ_header_for_the_kind_being_issued(TokenKind kind, string expectedTyp)
+    [InlineData(nameof(TokenKind.AccessToken), "at+jwt")]
+    [InlineData(nameof(TokenKind.IdToken), "JWT")]
+    public async Task IssueAsync_sets_the_typ_header_for_the_kind_being_issued(string kindName, string expectedTyp)
     {
+        var kind = Enum.Parse<TokenKind>(kindName);
         using var rsa = RSA.Create(2048);
         var (issuer, _) = await CreateIssuerAsync(rsa);
 

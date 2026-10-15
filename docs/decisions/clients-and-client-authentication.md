@@ -117,8 +117,7 @@ Validation never probes a hasher: `ClientSecrets.Verify` refuses an empty secret
 still attached to a change tracker, so validating what it handed back validated nothing durable — one
 set of redirect URIs approved, another matched against. `ValidatedClientResolver` copies every member
 into a `ClientRegistrationSnapshot` before reading it twice, then validates and returns the copy on
-every lookup, uncached. Collections are rebuilt *and* wrapped against a downcast, because
-`TokenIssuanceContext.Client` hands the registration to the host's own `ITokenIssuer`. An uncopied member is not a compile error, so
+every lookup, uncached. Collections are rebuilt *and* wrapped against a downcast. An uncopied member is not a compile error, so
 `Snapshot_covers_every_IClientRegistration_member` and
 `A_snapshot_carries_every_value_of_the_registration_it_copied` enforce it.
 
@@ -133,7 +132,8 @@ any opt-in sub-code never tell them apart or name the `client_id`. Presented sec
 floor, the two-secret cap, the `IsPublic` rule and the rules holding a client to what the server
 serves are enforced by `ValidatedClientResolver`, the only path from a `client_id` to a registration:
 it runs the full validator on what the repository returned and serves a failing one as an unknown
-client. A repository never validates its own output, but may call the validator on write.
+client. A repository never validates its own output, but may inject `ClientRegistrationValidator`
+(public sealed, internal constructor) and call it on write. A host cannot add rules of its own.
 
 **Client-facing types split on whether they need a request.** Registrations, credentials, hashers,
 the repository and the validator are core; the authenticator seam is in the ASP.NET Core package.

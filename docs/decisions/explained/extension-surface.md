@@ -51,17 +51,18 @@ since claims belong to the user and what each client sees is the framework's sel
 
 ## What the walkthrough changed
 
-The maintainer walked this part at code level, seam by seam. Decided, to be filed at triage:
+The maintainer walked this part at code level, seam by seam. Decided:
 
-- **Every seam is registered through the builder**, including the repositories and startup checks.
+- **Every seam is registered through the builder**, including the repositories and startup checks
+  (#958, First project).
 - **`IClientRegistrationValidator` stops being implementable.** It meant two things: "validate this
   client" (what a repository resolves) and "add my rules" (what a host registers, which then
-  replaced the first). It becomes a framework class a repository may call before saving; host rules
-  are dropped, since a host can check its clients where it defines them.
-- **`ITokenIssuer` becomes internal.** Userinfo accepts only JWTs this server signed, there is no
+  replaced the first). It became a framework class a repository may call before saving; host rules
+  were dropped, since a host can check its clients where it defines them (#957).
+- **`ITokenIssuer` became internal (#957).** Userinfo accepts only JWTs this server signed, there is no
   introspection, and the ID token must be a JWT anyway, so no replacement could work. Reference
   tokens are designed with the refresh token work (#539).
-- **`IDiscoveryDocumentProvider` becomes internal.** A replacement could advertise what the server
+- **`IDiscoveryDocumentProvider` became internal (#957).** A replacement could advertise what the server
   does not do. Extra metadata fields, if needed, come through an additive seam that cannot override
   the computed ones.
 
