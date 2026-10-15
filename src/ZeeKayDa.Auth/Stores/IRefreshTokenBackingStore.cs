@@ -16,8 +16,8 @@ public interface IRefreshTokenBackingStore
     Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken);
 
     /// <summary>
-    /// The grant for <paramref name="handleHash"/>, or <see langword="null"/> only when confirmed absent. A
-    /// backend fault MUST propagate, never become <see langword="null"/>, which would read as "no such token"
+    /// The grant for <paramref name="handleHash"/>, or <see langword="null"/> only when confirmed absent. Read-only:
+    /// it MUST NOT change or remove the grant. A backend fault MUST propagate, never become <see langword="null"/>, which would read as "no such token"
     /// and defeat reuse detection.
     /// </summary>
     /// <param name="handleHash">The already-hashed token handle.</param>
@@ -68,12 +68,12 @@ public interface IRefreshTokenBackingStore
 
     /// <summary>
     /// Whether <see cref="RevokeFamilyAsync"/> recorded <paramref name="familyId"/> and the record is still
-    /// kept; checked before a grant's own status, so a successor inserted after a revoke is caught.
+    /// kept; checked before an active grant is honoured, so a successor inserted after a revoke is caught.
     /// </summary>
     /// <param name="familyId">The family identifier to check.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <remarks>
-    /// MUST be a strongly consistent read, and MUST throw on a fault rather than return
+    /// Read-only. MUST be a strongly consistent read, and MUST throw on a fault rather than return
     /// <see langword="false"/>: either failure reads as "not revoked" and fails open.
     /// SQL: <c>SELECT EXISTS(SELECT 1 FROM revoked_families WHERE family_id=@f)</c>.
     /// </remarks>

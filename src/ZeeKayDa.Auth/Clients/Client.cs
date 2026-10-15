@@ -132,8 +132,9 @@ public sealed record Client : IClientWithCredentials
     /// <param name="postLogoutRedirectUris">Permitted post-logout redirect URIs.</param>
     /// <param name="allowedScopes">Scopes this client is permitted to request.</param>
     /// <remarks>
-    /// Sets <see cref="AllowedTokenEndpointAuthMethods"/> to <c>{ "none" }</c>; every other property keeps its
-    /// default. A <c>TokenEndpoint.AdvertisedAuthMethods</c> filter withholding <c>none</c> refuses the client.
+    /// Sets <see cref="IsPublic"/> to <see langword="true"/> and <see cref="AllowedTokenEndpointAuthMethods"/> to
+    /// <c>{ "none" }</c>; unspecified properties keep their defaults. A <c>TokenEndpoint.AdvertisedAuthMethods</c>
+    /// filter withholding <c>none</c> refuses the client.
     /// </remarks>
     public static Client CreatePublic(
         string clientId,
