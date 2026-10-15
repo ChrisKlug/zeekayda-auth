@@ -1290,6 +1290,72 @@ public sealed class CompositeClientAuthenticatorTests
             .Which.OriginalExceptionType.Should().Be(typeof(InvalidOperationException).FullName);
     }
 
+    // ── Security: throwing AuthenticateAsync is a padded refusal ──────────────────────────────────
+
+    [Fact]
+    public async Task A_custom_authenticator_throwing_from_AuthenticateAsync_is_a_refusal_padded_like_an_unknown_client()
+    {
+        // A third-party authenticator failing on a client-dependent condition must not answer with a 500.
+        var knownClient = CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method);
+
+        var known = await HasherCallsToRefuse(knownClient, _ => _ => throw new InvalidOperationException("boom"));
+        var unknown = await HasherCallsToRefuse(client: null, _ => _ => ClientAuthenticationResult.NotValid());
+
+        known.Should().Be(unknown, "a throw checked no secret, so it is padded like any refusal");
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_logs_error_when_an_authenticator_returns_a_faulted_task()
+    {
+        var knownClient = CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method);
+        var secrets = new ClientSecrets(Registry([new FakeHasher(false)]), NullSanitizingLogger<ClientSecrets>.Instance);
+        var logger = new CapturingSanitizingLogger<CompositeClientAuthenticator>();
+        var composite = new CompositeClientAuthenticator(
+            new RegisteredAuthenticators([new FaultingAuthenticator(new InvalidOperationException("boom"))]),
+            Resolver(knownClient),
+            Advertising(CustomAuthenticator.Method),
+            secrets,
+            logger);
+
+        var result = await composite.AuthenticateAsync("client-1", new DefaultHttpContext(), TestContext.Current.CancellationToken);
+
+        result.Authenticated.Should().BeFalse();
+        logger.Entries.Should().ContainSingle().Which.Level.Should().Be(LogLevel.Error);
+        logger.Entries[0].Exception.Should().BeOfType<RedactedExceptionWrapper>()
+            .Which.OriginalExceptionType.Should().Be(typeof(InvalidOperationException).FullName);
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_lets_a_cancellation_of_the_request_propagate_from_an_authenticator()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var knownClient = CreateConfidentialClient(secret: FakeSecret(), allowedMethod: CustomAuthenticator.Method);
+        var secrets = new ClientSecrets(Registry([new FakeHasher(false)]), NullSanitizingLogger<ClientSecrets>.Instance);
+        var composite = new CompositeClientAuthenticator(
+            new RegisteredAuthenticators([new FaultingAuthenticator(new OperationCanceledException(cancellation.Token))]),
+            Resolver(knownClient),
+            Advertising(CustomAuthenticator.Method),
+            secrets,
+            NullSanitizingLogger<CompositeClientAuthenticator>.Instance);
+
+        var act = () => composite.AuthenticateAsync("client-1", new DefaultHttpContext(), cancellation.Token).AsTask();
+
+        await act.Should().ThrowAsync<OperationCanceledException>("an aborted request is not a refusal");
+    }
+
+    /// <summary>An authenticator for <see cref="CustomAuthenticator.Method"/> whose result is a task faulted with <paramref name="error"/>.</summary>
+    private sealed class FaultingAuthenticator(Exception error) : IClientAuthenticator
+    {
+        public IReadOnlySet<string> AuthenticationMethods { get; } =
+            new HashSet<string>(StringComparer.Ordinal) { CustomAuthenticator.Method };
+
+        public ClientAuthenticatorMatch CanHandle(TokenRequestContext context) => ClientAuthenticatorMatch.For(CustomAuthenticator.Method);
+
+        public Task<ClientAuthenticationResult> AuthenticateAsync(ClientAuthenticationContext context, CancellationToken ct) =>
+            Task.FromException<ClientAuthenticationResult>(error);
+    }
+
     // ── Security: CanHandle returns undeclared method → rejected ──────────────────────────────────
 
     [Fact]
