@@ -90,10 +90,10 @@ authentication time, the PKCE challenge, the nonce — and never a value minted 
 per-code identifier in the session's place would look like a session binding and be none. The
 scopes written into the code are those present in all of the request's effective scopes, the
 allowed scopes of the registration as it is at issuance, and the user's grant when consent was
-asked; a registration that no longer allows `openid` ends the request as one that dropped its
-redirect URI does. Issuance asserts its preconditions rather than re-establishing them: a context
-without a session, or one for a consent-requiring client without a decision, is a caller error
-and throws, because every path that reaches issuance bound the session and recorded the decision
+asked; a registration that no longer allows `openid` is answered `invalid_scope` at the client,
+whose redirect URI is still registered. Issuance asserts its preconditions rather than
+re-establishing them: a context without a session, or one for a consent-requiring client without
+a decision, is a caller error and throws, because every path that reaches issuance bound the session and recorded the decision
 first, and re-reading the session cookie there would see the cookie the sign-in request arrived
 with rather than the one its response is writing. A store failure answers the client
 `server_error` with nothing issued, and discards the interaction like every other failure.

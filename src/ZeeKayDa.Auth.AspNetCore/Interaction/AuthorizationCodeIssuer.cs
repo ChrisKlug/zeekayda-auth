@@ -31,6 +31,8 @@ internal sealed class AuthorizationCodeIssuer(
 
     private const string CouldNotIssue = "The authorization server could not issue an authorization code.";
 
+    private const string OpenIdNoLongerAllowed = "The client is no longer allowed the openid scope.";
+
     /// <summary>
     /// Issues the code to <paramref name="client"/> as resolved in this request, discarding the
     /// interaction whichever way it ends. Not terminal.
@@ -62,7 +64,7 @@ internal sealed class AuthorizationCodeIssuer(
         if (!scopes.Contains(StandardScopes.OpenId.Name, StringComparer.Ordinal))
         {
             await flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-            return responses.Local(context, AuthorizeRequestErrors.InvalidRequest, ClientNoLongerAnswers);
+            return responses.ErrorAtClient(requestContext.RedirectUri, AuthorizeRequestErrors.InvalidScope, OpenIdNoLongerAllowed, requestContext.State);
         }
 
         // Not from the constructor: this singleton is built at mapping, before startup verification.
