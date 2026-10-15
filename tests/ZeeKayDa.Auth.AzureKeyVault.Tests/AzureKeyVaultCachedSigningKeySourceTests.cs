@@ -104,7 +104,6 @@ public sealed class AzureKeyVaultCachedSigningKeySourceTests
     public async Task CreateSignerAsync_downloads_private_material_for_exactly_the_version_asked_for()
     {
         var ct = TestContext.Current.CancellationToken;
-        var now = T0 + TimeSpan.FromDays(30);
         var reader = new FakeKeyVaultCertificateReader();
         reader.AddRsaVersion("v1", createdOn: T0);
         reader.AddRsaVersion("v2", createdOn: T0 + TimeSpan.FromDays(1));
