@@ -83,7 +83,8 @@ public static class ZeeKayDaAuthCoreBuilderWindowsCertificateStoreSigningExtensi
     /// <paramref name="storeLocation"/>/<paramref name="storeName"/> given here.
     /// </para>
     /// <para>
-    /// Rotation: add the successor. It is published at the next read and signs once it has been
+    /// Rotation: list the successor, which takes a restart, since the list is read once. A listed
+    /// certificate installed into the store later is published at the next read. It signs once it has been
     /// published for the lead time; the certificate it replaces can be removed once it is no longer
     /// published. See <see cref="WindowsCertificateStoreSigningOptions.Certificates"/> for how a
     /// certificate's dates count.

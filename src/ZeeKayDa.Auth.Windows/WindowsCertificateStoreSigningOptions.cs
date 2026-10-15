@@ -9,8 +9,9 @@ namespace ZeeKayDa.Auth.Windows;
 /// </summary>
 /// <remarks>
 /// The framework decides from each certificate's validity window which one signs and which are
-/// published, so rotating means adding the successor, then removing the old certificate once it is
-/// no longer published.
+/// published, so rotating means listing the successor, then removing the old certificate once it is
+/// no longer published. The list is read once, at startup; the store is read again every
+/// <see cref="SigningKeyOptions.RefreshInterval"/>.
 /// </remarks>
 public sealed class WindowsCertificateStoreSigningOptions
 {
