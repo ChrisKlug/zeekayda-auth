@@ -199,6 +199,25 @@ public class ValidatedClientResolverTests
     }
 
     [Fact]
+    public async Task Two_rule_code_sets_that_join_identically_are_both_logged()
+    {
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
+        var lookups = 0;
+        var resolver = new ValidatedClientResolver(
+            new RevisingRepository(_ => NewClient()),
+            _ => ++lookups == 1
+                ? [new ZeeKayDaConfigurationFailure("a;b", "Broken.")]
+                : [new ZeeKayDaConfigurationFailure("a", "Broken."), new ZeeKayDaConfigurationFailure("b", "Broken.")],
+            logger);
+
+        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+        await resolver.FindClientWithCredentialsAsync("client-1", TestContext.Current.CancellationToken);
+
+        // Codes are compared one by one, never joined, so these are two failures, not one.
+        logger.Entries.Should().HaveCount(2).And.OnlyContain(e => e.Level == LogLevel.Critical);
+    }
+
+    [Fact]
     public async Task An_unchanged_registration_is_validated_on_every_lookup()
     {
         var calls = 0;

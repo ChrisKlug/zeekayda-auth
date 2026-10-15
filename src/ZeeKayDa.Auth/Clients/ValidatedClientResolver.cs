@@ -118,7 +118,7 @@ internal sealed class ValidatedClientResolver(
 
     /// <summary>
     /// What a failure is: rule codes or a thrown type, under a <paramref name="Kind"/>. Compared part by part,
-    /// never joined, since host codes may contain any separator.
+    /// never joined, so no two code sets can collide on a separator.
     /// </summary>
     private sealed record FailureIdentity(string Kind, IReadOnlyList<string> Parts)
     {

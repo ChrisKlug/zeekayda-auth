@@ -66,7 +66,7 @@ sealed class with an internal constructor, never an interface: a host injects it
 its own. So are the five interaction services, which complete every protocol step for a page
 (`An_interaction_service_cannot_be_supplied_by_a_host`), and `ClientSecrets`, which verifies and pads
 (`ClientSecrets_cannot_be_supplied_by_a_host`), and `ClientRegistrationValidator`, which a custom
-repository may call before saving. Unsealing one is additive. The token issuer and the discovery
+repository may call before saving (`ClientRegistrationValidator_cannot_be_supplied_by_a_host`). Unsealing one is additive. The token issuer and the discovery
 document provider are internal: no replacement could work today (userinfo accepts only this server's
 JWTs; a replacement document could advertise what the server does not do). Adding to this list is a
 minor version; changing anything on it is a major one. The

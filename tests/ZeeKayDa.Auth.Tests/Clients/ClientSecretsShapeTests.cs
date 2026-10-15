@@ -30,6 +30,28 @@ public sealed class ClientSecretsShapeTests
     }
 
     [Fact]
+    public void ClientRegistrationValidator_cannot_be_supplied_by_a_host()
+    {
+        typeof(ClientRegistrationValidator).IsSealed.Should().BeTrue("a host must not derive its own");
+        typeof(ClientRegistrationValidator).GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+            .Should().BeEmpty("a host must not construct its own");
+    }
+
+    [Fact]
+    public void A_host_registration_of_ClientRegistrationValidator_made_before_AddZeeKayDaAuthCore_does_not_displace_the_frameworks()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton<ClientRegistrationValidator>();
+        services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com");
+        using var provider = services.BuildServiceProvider();
+        var invalid = Client.CreatePublic("spa", ["https://app.example.com/cb#fragment"], [], ["openid"]);
+
+        provider.GetRequiredService<ClientRegistrationValidator>().Validate(invalid)
+            .Should().Contain(f => f.Code == "client.redirect_uri.fragment", "the framework's instance resolves and validates");
+    }
+
+    [Fact]
     public void Calling_AddZeeKayDaAuthCore_twice_registers_ClientSecrets_once()
     {
         var services = new ServiceCollection();
