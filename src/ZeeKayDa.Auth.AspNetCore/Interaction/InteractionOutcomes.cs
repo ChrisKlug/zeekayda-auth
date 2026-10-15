@@ -182,8 +182,8 @@ internal sealed class InteractionOutcomes(
             return responses.Local(context, AuthorizeRequestErrors.InvalidRequest, AuthorizationCodeIssuer.ClientNoLongerAnswers);
         }
 
-        var asked = requestContext.Prompts.Contains(PromptValue.Consent);
-        if (!client.RequireConsent && !asked)
+        var consentPromptRequested = requestContext.Prompts.Contains(PromptValue.Consent);
+        if (!client.RequireConsent && !consentPromptRequested)
             return await issuer.IssueAsync(context, requestContext, client).ConfigureAwait(false);
 
         if (requestContext.Prompts.Contains(PromptValue.None))

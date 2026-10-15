@@ -1387,7 +1387,9 @@ fix-diff verification of one High, found by a test the round asked for.
   `A_code_expires_as_configured`, `A_code_presented_by_another_client_is_not_redeemed`.
 - Scopes re-intersected against the live registration; one without `openid` ends locally. Closed —
   `The_scopes_are_narrowed_by_the_registration_as_it_is_when_the_code_is_issued`,
-  `A_registration_that_no_longer_allows_openid_ends_the_request_locally`.
+  `A_registration_that_no_longer_allows_openid_answers_the_client_with_invalid_scope`.
+  [The redirect URI is still registered, so the refusal now goes to the client as `invalid_scope`;
+  citation repointed at the renamed test.]
 - The decision is never persisted, so a replayed consent `POST` issues nothing — the #86 residual,
   closed; A_re_sign_in_on_the_same_interaction_discards_an_earlier_grant and
   GrantAsync_drops_scopes_the_request_never_asked_for superseded (their citations below now name the successors). Closed —

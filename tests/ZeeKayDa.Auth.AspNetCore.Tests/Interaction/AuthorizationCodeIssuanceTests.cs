@@ -641,11 +641,10 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
     }
 
     [Fact]
-    public async Task A_registration_that_no_longer_allows_openid_ends_the_request_locally()
+    public async Task A_registration_that_no_longer_allows_openid_answers_the_client_with_invalid_scope()
     {
-        // The same situation as a registration that dropped its redirect URI: the request was
-        // accepted against a registration that no longer vouches for it, so it ends where it
-        // stands, and nothing is issued.
+        // The redirect URI is still registered, so the error can go to the client, as the
+        // validator's own missing-openid refusal does.
         var repository = new MutableClientRepository(ConsentingRegistration());
         using var factory = NewFactory(repository);
         using var client = NewClient(factory);
@@ -654,11 +653,32 @@ public sealed class AuthorizationCodeIssuanceTests : IClassFixture<Authorization
         repository.Current = ConsentingRegistration() with { AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "profile", "email" } };
         var response = await GrantAsync(client, interactionId, "openid", "profile", "email");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Headers.Location.Should().BeNull();
-        (await response.Content.ReadAsStringAsync(Cancellation)).Should().Contain("invalid_request");
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        DestinationOf(response).Should().Be(RegisteredRedirect);
+        var parameters = RedirectQueryOf(response);
+        parameters["error"].Should().Equal(["invalid_scope"]);
+        parameters.Should().NotContainKey("code");
         using var replay = await GrantAsync(client, interactionId, "openid");
         await replay.ShouldHaveFoundNothingToContinueAsync("the interaction was discarded");
+    }
+
+    [Fact]
+    public async Task A_registration_that_no_longer_allows_openid_tells_the_client_nothing_once_another_response_claimed_the_interaction()
+    {
+        // The deterministic form of the race: another response claimed the interaction and may still
+        // deliver its code, so this one must not also answer the client with invalid_scope.
+        var repository = new MutableClientRepository(ConsentingRegistration());
+        using var factory = NewFactory(repository, configureStores: builder => builder
+            .AddAuthorizationCodeStore<AlreadyClaimedBackingStore>()
+            .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true)
+            .AddInMemoryInteractionStore(allowOutsideDevelopment: true));
+        using var client = NewClient(factory);
+        var interactionId = await ReachConsentAsync(client);
+
+        repository.Current = ConsentingRegistration() with { AllowedScopes = new HashSet<string>(StringComparer.Ordinal) { "profile", "email" } };
+        using var grant = await GrantAsync(client, interactionId, "openid", "profile", "email");
+
+        await grant.ShouldHaveFoundNothingToContinueAsync();
     }
 
     // ── What the store does with it ───────────────────────────────────────────────────────────

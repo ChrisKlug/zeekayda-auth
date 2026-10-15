@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.Buffers.Text;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 
 namespace ZeeKayDa.Auth.Tokens;
@@ -39,8 +38,8 @@ public static class JwkThumbprint
     /// </remarks>
     public static string Compute(RSAParameters rsaPublicParameters)
     {
-        var e = Base64UrlEncode(TrimLeadingZeros(rsaPublicParameters.Exponent!));
-        var n = Base64UrlEncode(TrimLeadingZeros(rsaPublicParameters.Modulus!));
+        var e = Base64Url.EncodeToString(TrimLeadingZeros(rsaPublicParameters.Exponent!));
+        var n = Base64Url.EncodeToString(TrimLeadingZeros(rsaPublicParameters.Modulus!));
 
         return ComputeThumbprint(writer =>
         {
@@ -67,8 +66,8 @@ public static class JwkThumbprint
     public static string Compute(ECParameters ecPublicParameters)
     {
         var crv = ResolveJwkCurveName(ecPublicParameters.Curve);
-        var x = Base64UrlEncode(ecPublicParameters.Q.X!);
-        var y = Base64UrlEncode(ecPublicParameters.Q.Y!);
+        var x = Base64Url.EncodeToString(ecPublicParameters.Q.X!);
+        var y = Base64Url.EncodeToString(ecPublicParameters.Q.Y!);
 
         return ComputeThumbprint(writer =>
         {
@@ -115,7 +114,7 @@ public static class JwkThumbprint
         }
 
         var hash = SHA256.HashData(buffer.WrittenSpan);
-        return Base64UrlEncode(hash);
+        return Base64Url.EncodeToString(hash);
     }
 
     /// <summary>
@@ -129,12 +128,5 @@ public static class JwkThumbprint
             firstNonZero++;
 
         return firstNonZero == 0 ? value : value[firstNonZero..];
-    }
-
-    internal static string Base64UrlEncode(byte[] input)
-    {
-        var encoded = new byte[Base64Url.GetEncodedLength(input.Length)];
-        Base64Url.EncodeToUtf8(input, encoded);
-        return Encoding.ASCII.GetString(encoded);
     }
 }

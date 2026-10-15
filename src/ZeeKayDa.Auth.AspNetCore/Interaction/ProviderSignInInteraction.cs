@@ -232,6 +232,12 @@ public sealed class ProviderSignInInteraction
     /// carried into the session. The upstream subject is refused as <paramref name="subject"/>: an
     /// external sign-in's session subject is never the upstream one verbatim. The arguments are
     /// copied when the call is made, so what was validated is what is signed in.
+    /// <para>
+    /// <strong>Linking on the provider's <c>email</c> is an account-takeover risk</strong> unless the
+    /// provider asserts <c>email_verified</c> and you trust its verification; a missing claim means
+    /// unverified. Prefer the provider name and upstream subject, and treat an email match as a
+    /// prompt to prove ownership of the local account.
+    /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// The parked principal's provider is no longer registered, or <paramref name="subject"/> is

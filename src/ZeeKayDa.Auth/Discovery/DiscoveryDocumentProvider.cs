@@ -70,6 +70,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
             TokenEndpointAuthMethodsSupported = _authMethods.Methods,
             IdTokenSigningAlgValuesSupported = [_keyRing.Current.Algorithm],
             CodeChallengeMethodsSupported = interactive.CodeChallengeMethodsSupported,
+            AuthorizationResponseIssParameterSupported = interactive.AuthorizationResponseIssParameterSupported,
         };
     }
 
@@ -95,6 +96,8 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
         public IReadOnlyCollection<CodeChallengeMethod>? CodeChallengeMethodsSupported { get; init; }
 
         public IReadOnlyCollection<string>? ClaimsSupported { get; init; }
+
+        public bool? AuthorizationResponseIssParameterSupported { get; init; }
 
         /// <summary>
         /// The ID token protocol claims plus what the discoverable scopes unlock in an ID token or
@@ -129,6 +132,7 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
                         ? [.. methods]
                         : null,
                     ClaimsSupported = ClaimsSupportedFrom(scopes),
+                    AuthorizationResponseIssParameterSupported = true,
                 }
                 : None;
     }

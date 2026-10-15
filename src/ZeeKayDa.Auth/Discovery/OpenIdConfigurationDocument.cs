@@ -91,6 +91,14 @@ public sealed record OpenIdConfigurationDocument
     [JsonPropertyName("id_token_signing_alg_values_supported")]
     public required IReadOnlyCollection<SigningAlgorithm> IdTokenSigningAlgValuesSupported { get; init; }
 
+    /// <summary>
+    /// Whether the authorization response carries <c>iss</c> (RFC 9207 §3); absent when <see langword="null"/>.
+    /// </summary>
+    /// <remarks>Published, since a client assumes <see langword="false"/> when it is omitted and may skip the check.</remarks>
+    [JsonPropertyName("authorization_response_iss_parameter_supported")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AuthorizationResponseIssParameterSupported { get; init; }
+
     /// <summary>Gets the supported PKCE code challenge methods; absent when <see langword="null"/>.</summary>
     [JsonPropertyName("code_challenge_methods_supported")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
