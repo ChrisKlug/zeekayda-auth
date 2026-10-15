@@ -15,19 +15,15 @@ public static class ZeeKayDaAuthCoreBuilderClientExtensions
     /// </summary>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
-    /// <param name="configure">
-    /// A callback that receives an <see cref="InMemoryClientRegistrationBuilder"/> to register
-    /// clients.
-    /// </param>
+    /// <param name="configure">A callback that registers clients on an <see cref="InMemoryClientRegistrationBuilder"/>.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> or <paramref name="configure"/> is
     /// <see langword="null"/>.
     /// </exception>
     /// <remarks>
-    /// Multiple calls are additive — client registrations accumulate. The repository is validated
-    /// and constructed (including secret hashing) at host startup, so misconfiguration (duplicate
-    /// client_id, invalid client, hashing failure) fails fast rather than at the first request.
+    /// Repeated calls accumulate clients. The repository is built and validated at startup, so a
+    /// misconfigured client fails startup rather than the first request.
     /// </remarks>
     public static TBuilder AddInMemoryClients<TBuilder>(
         this TBuilder builder,
@@ -51,27 +47,24 @@ public static class ZeeKayDaAuthCoreBuilderClientExtensions
                 "the custom repository directly rather than using AddInMemoryClients.");
         }
 
-        // Multiple AddInMemoryClients calls share the same options instance so registrations
-        // accumulate.
-        var optionsDescriptor = builder.Services
-            .FirstOrDefault(sd => sd.ServiceType == typeof(InMemoryClientRegistrationOptions));
-
-        InMemoryClientRegistrationOptions opts;
-        if (optionsDescriptor is not null)
-        {
-            opts = (InMemoryClientRegistrationOptions)optionsDescriptor.ImplementationInstance!;
-        }
-        else
-        {
-            opts = new InMemoryClientRegistrationOptions();
-            builder.Services.AddSingleton(opts);
-        }
-
-        var registration = new InMemoryClientRegistrationBuilder(opts);
+        var registration = new InMemoryClientRegistrationBuilder(SharedRegistrationOptions(builder.Services));
         configure(registration);
 
         builder.Services.TryAddSingleton(InMemoryClientRepository.Factory);
 
         return builder;
+    }
+
+    private static InMemoryClientRegistrationOptions SharedRegistrationOptions(IServiceCollection services)
+    {
+        if (services.FirstOrDefault(sd => sd.ServiceType == typeof(InMemoryClientRegistrationOptions))
+                ?.ImplementationInstance is InMemoryClientRegistrationOptions existing)
+        {
+            return existing;
+        }
+
+        var created = new InMemoryClientRegistrationOptions();
+        services.AddSingleton(created);
+        return created;
     }
 }

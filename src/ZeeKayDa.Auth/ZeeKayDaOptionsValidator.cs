@@ -4,15 +4,12 @@ namespace ZeeKayDa.Auth;
 
 /// <summary>
 /// A base for an options validator whose failures carry stable codes: the derived class returns
-/// every failure it finds, and this class throws them together as one
-/// <see cref="ZeeKayDaConfigurationException"/>.
+/// every failure, and this class throws them as one <see cref="ZeeKayDaConfigurationException"/>.
 /// </summary>
 /// <typeparam name="TOptions">The options type validated.</typeparam>
 /// <remarks>
-/// Register the options with <c>AddZeeKayDaOptions</c> or <c>ValidateWithZeeKayDa</c>, and these
-/// failures are reported with every other registered options type's, in one exception. A
-/// validator that returns <see cref="ValidateOptionsResult.Fail(string)"/> instead is reported
-/// without codes, as <c>configuration.options_invalid</c>.
+/// Register the options with <c>AddZeeKayDaOptions</c> or <c>ValidateWithZeeKayDa</c> so the failures
+/// are reported with every other options type's.
 /// </remarks>
 public abstract class ZeeKayDaOptionsValidator<TOptions> : IValidateOptions<TOptions>
     where TOptions : class
@@ -29,9 +26,7 @@ public abstract class ZeeKayDaOptionsValidator<TOptions> : IValidateOptions<TOpt
 
         var returned = Validate(name, options)?.ToArray();
 
-        // A subclass breaking its contract is reported like any other configuration failure, never
-        // as a bare NullReferenceException from the startup runner, and alongside the real failures
-        // it did return, so the operator sees those in the same pass.
+        // A null result is reported as a failure alongside the real ones, not as a NullReferenceException.
         ZeeKayDaConfigurationFailure[] failures = returned is null || returned.Any(failure => failure is null)
             ? [.. (returned ?? []).OfType<ZeeKayDaConfigurationFailure>(), MalformedResult()]
             : returned;

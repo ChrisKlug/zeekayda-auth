@@ -13,25 +13,16 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class ZeeKayDaAuthCoreBuilderSigningExtensions
 {
     /// <summary>
-    /// Registers a development-only signing key provider that generates an ephemeral RSA key
-    /// (≥ 3072 bits) in memory on each startup. The key is never written to disk; tokens issued
-    /// in one process lifetime will not validate after a restart.
+    /// Registers a development-only signing key provider with an ephemeral in-memory RSA key, so
+    /// tokens do not validate after a restart; <see cref="AddPersistedDevelopmentSigning"/> keeps the key.
     /// </summary>
     /// <remarks>
-    /// This method is for <strong>local development and testing only</strong>. Startup fails
-    /// with <see cref="ZeeKayDaConfigurationException"/> if the host environment is not in
-    /// <see cref="DevelopmentSigningOptions.AllowedEnvironments"/>
-    /// (defaults to <c>["Development"]</c>, settable via <paramref name="configure"/>). A warning
-    /// is always emitted at startup. To persist the key across restarts, use
-    /// <see cref="AddPersistedDevelopmentSigning"/> instead.
+    /// Startup warns, and fails with <see cref="ZeeKayDaConfigurationException"/> outside
+    /// <see cref="DevelopmentSigningOptions.AllowedEnvironments"/> (default <c>["Development"]</c>).
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
-    /// <param name="configure">
-    /// An optional callback to further configure <see cref="DevelopmentSigningOptions"/> (for
-    /// example, widening <see cref="DevelopmentSigningOptions.AllowedEnvironments"/>
-    /// for an intentional non-Development test host).
-    /// </param>
+    /// <param name="configure">An optional callback to configure <see cref="DevelopmentSigningOptions"/>.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
@@ -56,30 +47,20 @@ public static class ZeeKayDaAuthCoreBuilderSigningExtensions
     }
 
     /// <summary>
-    /// Registers a development-only signing key provider that persists an RSA key (≥ 3072 bits)
-    /// to a local file so that tokens survive application restarts.
+    /// Registers a development-only signing key provider that persists an RSA key to a local file,
+    /// so tokens survive restarts.
     /// </summary>
     /// <remarks>
-    /// This method is for <strong>local development and testing only</strong>. Startup fails
-    /// with <see cref="ZeeKayDaConfigurationException"/> if the host environment is not in
-    /// <see cref="DevelopmentSigningOptions.AllowedEnvironments"/>
-    /// (defaults to <c>["Development"]</c>, settable via <paramref name="configure"/>). A warning
-    /// is always emitted at startup. Persisted key files are created with restrictive permissions
-    /// (<c>0600</c> on Unix, owner-only ACL on Windows); a key file with broader permissions is
-    /// treated as compromised and causes a hard failure at startup. For an ephemeral key with no
-    /// persistence, call <see cref="AddInMemoryDevelopmentSigning"/> instead.
+    /// Startup warns, and fails with <see cref="ZeeKayDaConfigurationException"/> outside
+    /// <see cref="DevelopmentSigningOptions.AllowedEnvironments"/> (default <c>["Development"]</c>).
+    /// The key file is owner-only; one with broader permissions is treated as compromised and fails startup.
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="persistTo">
-    /// The directory in which to store the key file. Pass <see langword="null"/> to use
-    /// <c>{ContentRootPath}/.zeekayda/signing-keys/</c>.
+    /// The key file's directory, or <see langword="null"/> for <c>{ContentRootPath}/.zeekayda/signing-keys/</c>.
     /// </param>
-    /// <param name="configure">
-    /// An optional callback to further configure <see cref="DevelopmentSigningOptions"/> (for
-    /// example, widening <see cref="DevelopmentSigningOptions.AllowedEnvironments"/>
-    /// for an intentional non-Development test host).
-    /// </param>
+    /// <param name="configure">An optional callback to configure <see cref="DevelopmentSigningOptions"/>.</param>
     /// <returns>The <paramref name="builder"/> so calls can be chained.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="builder"/> is <see langword="null"/>.
@@ -109,16 +90,13 @@ public static class ZeeKayDaAuthCoreBuilderSigningExtensions
         string? persistToDirectory,
         bool persist)
     {
-        // Registered first so a second signing key source is rejected before this method applies
-        // any of its own configuration — a caller that catches the rejection must not be left with
-        // this call's options callbacks applied to the surviving registration.
+        // First, so a rejected second source leaves none of this call's configuration behind.
         builder.AddSigningKeySource<DevelopmentSigningKeySource>();
         builder.Services.TryAddSingleton<IDevelopmentSigningKeyFileSystem, LocalSigningKeyFileSystem>();
 
         builder.Services.AddZeeKayDaOptions<DevelopmentSigningOptions>();
 
-        // Both are internal, so no caller-supplied configure callback can spoof the environment
-        // or give the in-memory registration a directory.
+        // Internal, so no caller callback can spoof the environment or give the in-memory key a directory.
         builder.Services.AddOptions<DevelopmentSigningOptions>().Configure<IHostEnvironment>((options, env) =>
         {
             options.EnvironmentName = env.EnvironmentName;

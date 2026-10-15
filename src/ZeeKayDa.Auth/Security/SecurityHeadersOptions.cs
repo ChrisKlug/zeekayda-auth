@@ -1,9 +1,6 @@
 namespace ZeeKayDa.Auth.Security;
 
-/// <summary>
-/// Configuration options for defensive security headers applied to all ZeeKayDa.Auth protocol
-/// endpoint responses.
-/// </summary>
+/// <summary>The defensive security headers applied to every ZeeKayDa.Auth protocol endpoint response.</summary>
 public sealed class SecurityHeadersOptions
 {
     /// <summary>
@@ -23,15 +20,8 @@ public sealed class SecurityHeadersOptions
     /// Defaults to <see cref="CrossOriginResourcePolicy.SameOrigin"/>.
     /// </summary>
     /// <remarks>
-    /// <c>same-origin</c> is the safe default for most endpoints and should not be changed
-    /// without a clear reason.
-    /// <para>
-    /// The JWKS endpoint and the OIDC discovery document endpoint are routinely fetched
-    /// cross-origin from browsers by SPA token validation libraries such as
-    /// <c>jose</c> and <c>oidc-client-ts</c>. Deployments that serve browser clients should set
-    /// this to <see cref="CrossOriginResourcePolicy.CrossOrigin"/>, or override the header on
-    /// those specific endpoints when per-endpoint header configuration is supported.
-    /// </para>
+    /// Browser libraries such as <c>oidc-client-ts</c> fetch discovery and JWKS cross-origin, so a
+    /// deployment serving browser clients sets <see cref="CrossOriginResourcePolicy.CrossOrigin"/>.
     /// </remarks>
     public CrossOriginResourcePolicy CrossOriginResourcePolicy { get; set; } = CrossOriginResourcePolicy.SameOrigin;
 }

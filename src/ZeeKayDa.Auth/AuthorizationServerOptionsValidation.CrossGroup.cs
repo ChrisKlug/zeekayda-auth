@@ -8,9 +8,7 @@ internal static partial class AuthorizationServerOptionsValidation
 {
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateLifetimeRelationships(AuthorizationServerOptions options)
     {
-        // The authorization code tombstone is kept for the refresh token lifetime, so it must cover
-        // the code's whole validity window — otherwise a delayed code replay could escape the
-        // RFC 9700 §2.1.1 family-revocation mandate.
+        // The code tombstone lives for the refresh token lifetime; a shorter one lets a late replay escape revocation.
         if (RefreshTokensExpireBeforeCodes(options))
         {
             yield return new(
@@ -20,8 +18,6 @@ internal static partial class AuthorizationServerOptionsValidation
                 "retention covers the authorization code validity window.");
         }
 
-        // A tolerance this large extends the acceptance window past the code's intended expiry,
-        // undermining the short-lived code guarantee of RFC 9700 §2.1.1.
         if (ClockSkewReachesHalfTheCodeLifetime(options))
         {
             var halfCodeLifetime = options.AuthorizationEndpoint.AuthorizationCodeLifetime / 2;
@@ -33,28 +29,21 @@ internal static partial class AuthorizationServerOptionsValidation
         }
     }
 
-    /// <summary>
-    /// Both lifetimes positive, and the refresh token's shorter than the code's. A non-positive
-    /// lifetime is reported by its own group, so it is not also reported here.
-    /// </summary>
+    /// <summary>Both lifetimes positive, so a non-positive one is reported only by its own group.</summary>
     private static bool RefreshTokensExpireBeforeCodes(AuthorizationServerOptions options) =>
         options.TokenEndpoint.RefreshTokenLifetime > TimeSpan.Zero
         && options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero
         && options.TokenEndpoint.RefreshTokenLifetime < options.AuthorizationEndpoint.AuthorizationCodeLifetime;
 
-    /// <summary>
-    /// A non-negative tolerance of at least half a positive code lifetime. A negative tolerance or a
-    /// non-positive lifetime is reported by its own rule, so it is not also reported here.
-    /// </summary>
+    /// <summary>Both values in range, so an out-of-range one is reported only by its own rule.</summary>
     private static bool ClockSkewReachesHalfTheCodeLifetime(AuthorizationServerOptions options) =>
         options.ClockSkewTolerance >= TimeSpan.Zero
         && options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero
         && options.ClockSkewTolerance >= options.AuthorizationEndpoint.AuthorizationCodeLifetime / 2;
 
     /// <summary>
-    /// A new key is published up to one refresh interval after it is listed, and a relying party may
-    /// then serve the key set from its cache for up to the JWKS cache lifetime, so a lead time shorter
-    /// than both together may leave the key unknown to it when it starts signing.
+    /// A new key reaches a relying party up to one refresh interval plus one JWKS cache lifetime after
+    /// listing, so the lead time must cover both.
     /// </summary>
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateSigningKeyLeadTime(AuthorizationServerOptions options)
     {
@@ -74,11 +63,7 @@ internal static partial class AuthorizationServerOptionsValidation
         }
     }
 
-    /// <summary>
-    /// PKCE with S256 is what makes the authorization code grant safe to serve (RFC 9700 §2.1.1),
-    /// and the token endpoint enforces exactly that method; serving the grant without advertising
-    /// it would tell clients the control is absent while relying on it.
-    /// </summary>
+    /// <summary>The token endpoint enforces S256, so serving the code grant without advertising it misleads clients.</summary>
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidatePkceMatchesTheCodeGrant(AuthorizationServerOptions options)
     {
         var servesCodeGrantWithoutS256 = options.GrantTypesSupported is { } grants

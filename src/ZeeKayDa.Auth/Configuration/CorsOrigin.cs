@@ -1,16 +1,9 @@
 namespace ZeeKayDa.Auth.Configuration;
 
-/// <summary>
-/// One entry of <see cref="AuthorizationServerOptions.CorsOrigins"/>, checked against the rules a
-/// CORS allowlist origin must satisfy. Construction runs every rule once; the properties expose
-/// the outcome.
-/// </summary>
+/// <summary>One <see cref="AuthorizationServerOptions.CorsOrigins"/> entry, checked once on construction.</summary>
 internal sealed class CorsOrigin
 {
-    // The rules in evaluation order; the first that finds a problem wins, so at most one problem
-    // is reported per entry. Scheme rules exist only for the error message — an entry is
-    // canonicalizable on the structural rules alone, which is what lets canonicalization stay
-    // ignorant of AllowHttpLoopbackCorsOrigins while validation enforces it.
+    // Canonicalization needs only these, so it can ignore AllowHttpLoopbackCorsOrigins.
     private static readonly Func<CorsOrigin, string?>[] StructuralRules =
     [
         origin => origin.HasNullOrigin(),
@@ -49,9 +42,7 @@ internal sealed class CorsOrigin
         Canonical = structuralProblem is null ? BuildCanonicalForm() : null;
     }
 
-    /// <summary>
-    /// The canonical form of an entry startup validation has already accepted.
-    /// </summary>
+    /// <summary>The canonical form of an entry startup validation has already accepted.</summary>
     /// <exception cref="InvalidOperationException">
     /// <paramref name="origin"/> has no canonical form, which only an unvalidated entry can lack.
     /// </exception>
@@ -105,15 +96,12 @@ internal sealed class CorsOrigin
             ? $"CORS origin '{Shown}' must not contain a fragment component."
             : null;
 
-    // An origin is scheme + host + port only; path must be empty or just "/".
     private string? HasPathComponent()
         => _uri!.AbsolutePath.Length > 1
             ? $"CORS origin '{Shown}' must not contain a path component. Use 'scheme://host[:port]' only."
             : null;
 
-    // A host that is not a valid IDN cannot be canonicalized to the punycode form a browser's
-    // Origin header carries, so the entry could never match a request. (IPv6 literals are exempt:
-    // IdnHost does not apply to them.)
+    // An invalid IDN has no punycode form, so it could never match a browser's Origin header.
     private string? HasInvalidIdnHost()
     {
         if (_uri!.HostNameType == UriHostNameType.IPv6)
@@ -142,16 +130,14 @@ internal sealed class CorsOrigin
             "permit HTTP loopback CORS origins for local development and testing only.";
     }
 
-    // Only reached when HasForbiddenScheme passed, so an HTTP scheme here implies
-    // AllowHttpLoopbackCorsOrigins is set — what remains to check is the loopback restriction.
+    // Runs after HasForbiddenScheme, so HTTP here means AllowHttpLoopbackCorsOrigins is set.
     private string? HasHttpNonLoopbackHost()
         => IsHttp && !LoopbackHelper.IsLoopbackHost(_uri!.Host)
             ? $"CORS origin '{Shown}' uses HTTP for a non-loopback host. " +
                 "Development.AllowHttpLoopbackCorsOrigins only permits HTTP loopback CORS origins for local development and testing."
             : null;
 
-    // IdnHost, not Host: browsers serialize the Origin header with the punycode (A-label) form of
-    // an internationalized host. IPv6 literals keep Host, whose brackets IdnHost strips.
+    // Browsers send the punycode host; IPv6 literals keep Host, whose brackets IdnHost strips.
     private string BuildCanonicalForm()
     {
         var host = _uri!.HostNameType == UriHostNameType.IPv6 ? _uri.Host : _uri.IdnHost;
@@ -159,25 +145,19 @@ internal sealed class CorsOrigin
         return $"{_uri.Scheme}://{host}{port}".ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Gets the first problem that makes this entry unusable as a CORS allowlist origin, or
-    /// <see langword="null"/> for a valid one.
-    /// </summary>
+    /// <summary>Gets the first problem with this entry, or <see langword="null"/> for a valid one.</summary>
     public string? ErrorMessage { get; }
 
     /// <summary>Gets a value indicating whether <see cref="ErrorMessage"/> found a problem.</summary>
     public bool HasProblem => ErrorMessage is not null;
 
     /// <summary>
-    /// Gets the canonical <c>scheme://host[:port]</c> form a browser's <c>Origin</c> header will
-    /// carry — lowercased, punycode (A-label) for an internationalized host, brackets preserved
-    /// for an IPv6 literal, port only when non-default — or <see langword="null"/> when the entry
-    /// is not structurally valid and should be left as-is for validation to name.
+    /// Gets the lowercased <c>scheme://host[:port]</c> a browser's <c>Origin</c> header carries, or
+    /// <see langword="null"/> for a structurally invalid entry.
     /// </summary>
     public string? Canonical { get; }
 
-    // Only read by rules that run once the entry parsed; the ones before them never repeat the value,
-    // which could be anything, a CR/LF pair included.
+    // Only for rules after parsing: the raw value may hold a CR/LF pair.
     private string Shown => ConfiguredUri.Display(_origin!, _uri!);
 
     private bool IsHttps

@@ -6,33 +6,9 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.Configuration;
 
 /// <summary>
-/// Verifies at application startup that <see cref="IScopeRepository"/> and
-/// <see cref="IClientRepository"/> are registered as singletons, because the framework types that
-/// wrap them — <c>ValidatedScopeCatalog</c> and <c>ValidatedClientResolver</c> — are singletons
-/// and hold the instance they were given.
+/// Fails startup when <see cref="IScopeRepository"/> or <see cref="IClientRepository"/> is not a
+/// singleton: their singleton wrappers would capture it, and ASP.NET Core catches that only in Development.
 /// </summary>
-/// <remarks>
-/// <para>
-/// <strong>A captive dependency, caught at startup instead of in production.</strong> A repository
-/// registered as scoped or transient is resolved once, when the wrapper is first constructed, and
-/// that one instance is then used for the lifetime of the process. For the shape the framework's
-/// own documentation invites — a repository running a database query — that means an
-/// <c>EF Core</c> <c>DbContext</c>, or the connection under it, held open forever and shared by
-/// every concurrent request, which is neither thread-safe nor what the host asked for.
-/// </para>
-/// <para>
-/// ASP.NET Core's own scope validation catches this only in Development, where
-/// <c>WebApplicationBuilder</c> turns it on by default. In Production it is silent, so the
-/// deployment that surfaces the bug is the one nobody is watching. Failing startup makes the two
-/// environments agree.
-/// </para>
-/// <para>
-/// The <see cref="IServiceCollection"/> is read rather than the built provider, because a
-/// provider can report that a service exists but not the lifetime it was registered under. The
-/// scanner captures the collection at registration, so this sees every registration a host added
-/// — including ones added after <c>AddZeeKayDaAuth</c>.
-/// </para>
-/// </remarks>
 internal sealed class WrappedRepositoryLifetimeVerifier(ServiceLifetimeScanner scanner) : IStartupVerifier
 {
     /// <inheritdoc/>
@@ -49,8 +25,6 @@ internal sealed class WrappedRepositoryLifetimeVerifier(ServiceLifetimeScanner s
 
     private void Check<TRepository>(StartupVerificationContext context, string code, string wrapper)
     {
-        // A repository registered several times resolves to the last registration, so that is the
-        // one whose lifetime decides what the wrapper captures.
         if (scanner.EffectiveLifetimeOf(typeof(TRepository)) is not { } lifetime
             || lifetime == ServiceLifetime.Singleton)
         {

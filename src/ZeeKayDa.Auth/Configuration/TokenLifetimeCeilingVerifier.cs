@@ -3,11 +3,7 @@ using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Configuration;
 
-/// <summary>
-/// Emits a startup warning when a server-wide access-token or ID-token lifetime is longer than
-/// <c>TokenEndpoint.AbsoluteFamilyLifetime</c>: such a token outlives the grant family that
-/// produced it, which is rarely what an operator meant.
-/// </summary>
+/// <summary>Warns when an access or ID token lifetime outlives <c>TokenEndpoint.AbsoluteFamilyLifetime</c>.</summary>
 internal sealed class TokenLifetimeCeilingVerifier(
     IOptions<AuthorizationServerOptions> options) : IStartupVerifier
 {

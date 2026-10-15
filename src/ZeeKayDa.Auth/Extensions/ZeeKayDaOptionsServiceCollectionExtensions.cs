@@ -5,29 +5,16 @@ using ZeeKayDa.Auth.Configuration;
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
-/// Registers options that ZeeKayDa.Auth validates together, so that the operator sees every
-/// failure across them in one <see cref="ZeeKayDaConfigurationException"/>.
+/// Registers options that ZeeKayDa.Auth validates together, so the operator sees every failure in
+/// one <see cref="ZeeKayDaConfigurationException"/>. An extension package uses this instead of <c>ValidateOnStart()</c>.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The framework registers all of its own options this way, and a package that extends it (a
-/// signing-key source, for example) should do the same instead of calling <c>ValidateOnStart()</c>.
-/// The options are validated when <c>MapZeeKayDaAuth()</c> runs, and again when the host starts for
-/// a host that never maps the endpoints, by the startup gate <c>AddZeeKayDaAuthCore(configure)</c> registers.
-/// </para>
-/// <para>
-/// For its failures to carry codes, a validator derives from
-/// <see cref="ZeeKayDaOptionsValidator{TOptions}"/>. Any other <see cref="IValidateOptions{TOptions}"/>
-/// still takes part, reported as one <c>configuration.options_invalid</c> failure naming the options
-/// type, with its messages in the inner exception.
-/// </para>
+/// A validator deriving from <see cref="ZeeKayDaOptionsValidator{TOptions}"/> reports coded failures;
+/// any other <see cref="IValidateOptions{TOptions}"/> is reported as one <c>configuration.options_invalid</c>.
 /// </remarks>
 public static class ZeeKayDaOptionsServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers <typeparamref name="TOptions"/> and validates it with every other options type
-    /// registered through ZeeKayDa.Auth.
-    /// </summary>
+    /// <summary>Registers <typeparamref name="TOptions"/> for validation with the other ZeeKayDa.Auth options.</summary>
     /// <typeparam name="TOptions">The options type.</typeparam>
     /// <param name="services">The service collection.</param>
     /// <returns>The options builder, for further configuration.</returns>
@@ -36,10 +23,7 @@ public static class ZeeKayDaOptionsServiceCollectionExtensions
         where TOptions : class =>
         services.AddOptions<TOptions>().ValidateWithZeeKayDa();
 
-    /// <summary>
-    /// Validates the options this builder configures with every other options type registered
-    /// through ZeeKayDa.Auth, in place of <c>ValidateOnStart()</c>.
-    /// </summary>
+    /// <summary>Validates these options with the other ZeeKayDa.Auth options, in place of <c>ValidateOnStart()</c>.</summary>
     /// <typeparam name="TOptions">The options type.</typeparam>
     /// <param name="builder">The options builder.</param>
     /// <returns>The same builder.</returns>

@@ -31,9 +31,8 @@ internal sealed class OptionsFailures
     }
 
     /// <summary>
-    /// The validation failure an exception carries, or <see langword="null"/> for any other
-    /// exception: the exception itself, or the one a reflection call wrapped, as when the
-    /// configuration binder sets a frozen collection.
+    /// The validation exception <paramref name="ex"/> is or wraps by reflection, as when the binder
+    /// sets a frozen collection; otherwise <see langword="null"/>.
     /// </summary>
     public static Exception? ValidationFailure(Exception ex)
     {
@@ -55,10 +54,7 @@ internal sealed class OptionsFailures
             _rootCauses.Add(coded.InnerException);
     }
 
-    /// <summary>
-    /// Throws one <see cref="ZeeKayDaConfigurationException"/> holding every recorded failure, or
-    /// returns when there are none.
-    /// </summary>
+    /// <summary>Throws one exception holding every recorded failure, if there are any.</summary>
     public void ThrowIfAny()
     {
         if (_failures.Count == 0)
@@ -68,9 +64,8 @@ internal sealed class OptionsFailures
     }
 
     /// <summary>
-    /// A validator that reports through <see cref="ValidateOptionsResult.Fail(string)"/> has no
-    /// codes to give. Its text is not quoted: a failure message is public text the framework cannot
-    /// vouch for, so it travels only in the inner exception.
+    /// Records an uncoded failure; the validator's own text, which the framework cannot vouch for,
+    /// travels only in the inner exception.
     /// </summary>
     private void RecordUncoded(OptionsValidationException ex)
     {

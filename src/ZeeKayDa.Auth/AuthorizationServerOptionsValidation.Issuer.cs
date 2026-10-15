@@ -5,10 +5,7 @@ namespace ZeeKayDa.Auth;
 // The issuer, against RFC 8414 §2 and OIDC Discovery 1.0 §4.
 internal static partial class AuthorizationServerOptionsValidation
 {
-    /// <summary>
-    /// The issuer must be a non-empty absolute URI before anything else is asked of it; either
-    /// failure is reported alone, since every later rule reads the parsed URI.
-    /// </summary>
+    /// <summary>The issuer as an absolute URI, or the one failure reported when it is not.</summary>
     private static ZeeKayDaConfigurationFailure? ParseIssuer(AuthorizationServerOptions options, out Uri issuerUri)
     {
         issuerUri = null!;
@@ -43,7 +40,7 @@ internal static partial class AuthorizationServerOptionsValidation
 
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateIssuerComponents(string issuer, string shown, Uri uri)
     {
-        // RFC 8414 §2 and OIDC Discovery 1.0 §4.1 prohibit query strings in the issuer.
+        // RFC 8414 §2 and OIDC Discovery 1.0 §4.1 prohibit a query and a fragment.
         if (uri.Query.Length > 0)
         {
             yield return new(
@@ -51,7 +48,6 @@ internal static partial class AuthorizationServerOptionsValidation
                 $"AuthorizationServerOptions.Issuer '{shown}' must not contain a query component ('?').");
         }
 
-        // RFC 8414 §2 and OIDC Discovery 1.0 §4.1 prohibit fragment components in the issuer.
         if (uri.Fragment.Length > 0)
         {
             yield return new(
@@ -66,11 +62,7 @@ internal static partial class AuthorizationServerOptionsValidation
                 $"AuthorizationServerOptions.Issuer '{shown}' must not contain user information.");
         }
 
-        // OIDC Discovery 1.0 §4.3 and RFC 8414 §3.3 require the published issuer to be
-        // byte-identical to the URL used to derive the discovery address. A trailing slash
-        // creates an asymmetry because the route is registered without the slash but the
-        // document preserves it verbatim — on the root issuer too, where RFC 8414 §3.1 strips
-        // the terminating '/' before building the metadata URL.
+        // The route drops a trailing slash the document keeps, breaking the identity Discovery §4.3 requires.
         if (issuer.EndsWith('/'))
         {
             yield return new(
@@ -81,12 +73,10 @@ internal static partial class AuthorizationServerOptionsValidation
                 "OIDC Discovery 1.0 §4.3 requires the published issuer to be identical to the URL " +
                 "used to derive the discovery address.");
         }
-
     }
 
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateIssuerScheme(AuthorizationServerOptions options, string shown, Uri uri)
     {
-        // The OIDC specification requires the issuer to be an HTTPS URI in production.
         if (!ServerUriRules.IsSchemePermitted(uri, options.Development.AllowHttpLoopbackIssuer))
         {
             yield return new(
@@ -103,7 +93,6 @@ internal static partial class AuthorizationServerOptionsValidation
                 $"AuthorizationServerOptions.Issuer '{shown}' uses HTTP for a non-loopback host. " +
                 "Development.AllowHttpLoopbackIssuer only permits HTTP loopback issuers for local development and testing.");
         }
-
     }
 
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateIssuerCanonicalForm(string issuer, string shown, Uri uri)

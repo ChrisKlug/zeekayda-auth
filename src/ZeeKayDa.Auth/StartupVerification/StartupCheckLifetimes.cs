@@ -3,21 +3,12 @@ using Microsoft.Extensions.DependencyInjection;
 namespace ZeeKayDa.Auth.StartupVerification;
 
 /// <summary>
-/// Fails startup when an <see cref="IStartupVerifier"/> or <see cref="IStartupActivator"/> is
-/// registered with any lifetime but scoped.
+/// Fails startup on a startup check not registered as scoped, before any check is resolved; such a
+/// check would capture scoped dependencies outside the phase's scope.
 /// </summary>
-/// <remarks>
-/// The runner resolves each phase's checks from one scope. A singleton or transient check is built
-/// from the root provider instead, so a scoped dependency it injects outlives the phase — silently in
-/// Production, where scope validation is off. This runs before any check is resolved: with scope
-/// validation on, resolving such a check throws, and the operator would see that instead of this.
-/// </remarks>
 internal static class StartupCheckLifetimes
 {
-    /// <summary>
-    /// Throws one <see cref="ZeeKayDaConfigurationException"/> naming every non-scoped check, or
-    /// returns when they are all scoped.
-    /// </summary>
+    /// <summary>Throws one exception naming every non-scoped check, if there are any.</summary>
     public static void ThrowIfAnyNotScoped(ServiceLifetimeScanner scanner)
     {
         ZeeKayDaConfigurationFailure[] failures =

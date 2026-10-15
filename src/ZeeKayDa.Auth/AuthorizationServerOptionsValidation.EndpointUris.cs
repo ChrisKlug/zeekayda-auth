@@ -2,24 +2,18 @@ using ZeeKayDa.Auth.Configuration;
 
 namespace ZeeKayDa.Auth;
 
-// The endpoint URI overrides, each against the issuer. RFC 8414 §2 requires all metadata URLs to use
-// HTTPS; RFC 6749 §3.1 and §3.2 permit a query on the authorization and token endpoints and forbid a
-// fragment. The JWKS, end-session and userinfo routes match on the path alone, so a query on any of
-// them could never be honoured.
+// The endpoint URI overrides (RFC 8414 §2, RFC 6749 §3.1 and §3.2). The JWKS, end-session and
+// userinfo routes match on the path alone, so a query on them could never be honoured.
 internal static partial class AuthorizationServerOptionsValidation
 {
-    /// <summary>
-    /// One endpoint override, the code prefix its failures carry, and whether a query component is
-    /// prohibited on it.
-    /// </summary>
+    /// <summary>One endpoint override, its failure code prefix, and whether it refuses a query.</summary>
     private readonly record struct EndpointOverride(string PropertyName, string CodePrefix, string? Value, bool RejectQuery);
 
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateEndpointUris(AuthorizationServerOptions options, Uri issuerUri)
     {
         EndpointOverride[] endpoints =
         [
-            // Full option paths, not nameof(...Uri): that is just "Uri" for every one of them, and
-            // the operator could not tell which endpoint the message is about.
+            // Full option paths: nameof would give "Uri" for every one.
             new("AuthorizationEndpoint.Uri", "configuration.authorization_endpoint.uri", options.AuthorizationEndpoint.Uri, RejectQuery: false),
             new("TokenEndpoint.Uri", "configuration.token_endpoint.uri", options.TokenEndpoint.Uri, RejectQuery: false),
             new("JwksEndpoint.Uri", "configuration.jwks_endpoint.uri", options.JwksEndpoint.Uri, RejectQuery: true),
@@ -83,7 +77,6 @@ internal static partial class AuthorizationServerOptionsValidation
                 $"{codePrefix}.query",
                 $"AuthorizationServerOptions.{propertyName} '{value}' must not contain a query component ('?').");
 
-        // Every endpoint override rejects a fragment.
         if (uri.Fragment.Length > 0)
             return new(
                 $"{codePrefix}.fragment",

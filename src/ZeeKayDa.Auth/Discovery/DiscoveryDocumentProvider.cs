@@ -8,29 +8,15 @@ using ZeeKayDa.Auth.Tokens;
 namespace ZeeKayDa.Auth.Discovery;
 
 /// <summary>
-/// Default implementation of <see cref="IDiscoveryDocumentProvider"/> that maps
-/// <see cref="AuthorizationServerOptions"/> and <see cref="Scopes.IScopeRepository"/> to an
-/// <see cref="OpenIdConfigurationDocument"/>.
+/// Builds the <see cref="OpenIdConfigurationDocument"/> from the options, the scope repository,
+/// the signing key ring and the registered client authenticators.
 /// </summary>
 /// <remarks>
-/// Endpoint URIs for <c>authorization_endpoint</c>, <c>token_endpoint</c>, <c>jwks_uri</c>,
-/// <c>end_session_endpoint</c> and <c>userinfo_endpoint</c> are derived from <see cref="AuthorizationServerOptions.Issuer"/> using
-/// <see cref="Uri"/> combination semantics — never string concatenation — so that path-bearing
-/// issuers (e.g. <c>https://auth.example.com/tenant1</c>) are handled correctly. Any individual
-/// URI can be overridden by setting the corresponding property on the respective option group
-/// (<see cref="AuthorizationEndpointOptions.Uri"/>, <see cref="TokenEndpointOptions.Uri"/>, <see cref="JwksEndpointOptions.Uri"/>,
-/// <see cref="EndSessionEndpointOptions.Uri"/>, <see cref="Claims.UserInfoEndpointOptions.Uri"/>).
-/// Scope names published in <c>scopes_supported</c> are sourced from the configured
-/// <see cref="Scopes.IScopeRepository"/>. <c>id_token_signing_alg_values_supported</c> is derived
-/// from the <see cref="SigningKeyRing"/>'s current key set on every read — never from operator
-/// configuration alone — so the server cannot advertise an algorithm it has no key for. A host with
-/// no signing key source registered fails startup (<c>signing.key_ring.missing</c>) rather than
-/// reaching this type. <c>token_endpoint_auth_methods_supported</c> is likewise derived, from the
-/// registered client authenticators (<see cref="AdvertisedAuthMethods"/>).
+/// Endpoint URIs default to paths under the issuer, combined as URIs so a path-bearing issuer
+/// works. Signing algorithms come from the key ring on every read, so none is advertised without a key.
 /// </remarks>
 internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
 {
-    // Connect path segments used to derive default endpoint URIs from the issuer.
     private const string ConnectAuthorize = "connect/authorize";
     private const string ConnectToken = "connect/token";
     private const string ConnectJwks = "connect/jwks";
@@ -59,7 +45,6 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
     {
         var options = _options.Value;
 
-        // The issuer is validated at startup; by the time this method is called it is safe to use.
         var issuerUri = new Uri(options.Issuer!);
 
         var scopes = await _scopes.GetScopesAsync(cancellationToken).ConfigureAwait(false);
@@ -89,14 +74,8 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
     }
 
     /// <summary>
-    /// The metadata a host publishes only while it serves a grant that uses the authorization
-    /// endpoint; every field is <see langword="null"/> otherwise. RFC 8414 §2 lets the endpoint be
-    /// omitted on that condition, and OpenID Connect Discovery §4.2 omits a zero-element claim
-    /// rather than publishing an empty array: metadata naming an endpoint that answers 404, or a
-    /// response type nothing serves, is worse than metadata without.
-    /// <c>claims_supported</c> rides the same gate: an ID token is born from the authorization
-    /// code grant, and a host without it answers no UserInfo request either, so it can supply
-    /// none of those claims.
+    /// The metadata published only while the authorization code grant is served, <see langword="null"/>
+    /// otherwise (RFC 8414 §2, Discovery §4.2): naming an endpoint that answers 404 is worse than omitting it.
     /// </summary>
     private sealed record InteractiveMetadata
     {
@@ -118,22 +97,11 @@ internal sealed class DiscoveryDocumentProvider : IDiscoveryDocumentProvider
         public IReadOnlyCollection<string>? ClaimsSupported { get; init; }
 
         /// <summary>
-        /// The claims the server may supply: what the discoverable scopes unlock in an ID token or
-        /// at the UserInfo endpoint, plus the protocol claims an ID token carries.
+        /// The ID token protocol claims plus what the discoverable scopes unlock in an ID token or
+        /// at UserInfo; access token claims are for the resource server, not Discovery §3.
         /// </summary>
         /// <remarks>
-        /// <see cref="ScopeDefinition.AccessTokenClaims"/> are excluded, because Discovery §3 is
-        /// about the ID token and the UserInfo endpoint and an access token is for the resource
-        /// server. A scope hidden from discovery hides its claims too, the same filter
-        /// <c>scopes_supported</c> uses. Names are de-duplicated case-insensitively, because
-        /// <see cref="Claims.ClaimSelection"/> groups them that way: two scopes spelling a claim
-        /// <c>email</c> and <c>Email</c> unlock one claim, so the document must not name two.
-        /// </remarks>
-        /// <remarks>
-        /// No null or blank guard on the claim lists: the scopes reaching here came through
-        /// <see cref="ValidatedScopeCatalog"/>, which refuses a repository serving a null list or
-        /// an unnamed claim rather than letting either reach a member Discovery §3 defines as an
-        /// array of strings.
+        /// De-duplicated case-insensitively, as <see cref="Claims.ClaimSelection"/> groups them.
         /// </remarks>
         private static IReadOnlyCollection<string> ClaimsSupportedFrom(IReadOnlyCollection<ScopeDefinition> scopes) =>
             [.. IdTokenProtocolClaims.Names

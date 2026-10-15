@@ -23,9 +23,8 @@ internal static partial class PkceVerifier
     }
 
     /// <summary>
-    /// Whether the challenge derived from <paramref name="codeVerifier"/> by the binding's method
-    /// equals the binding's challenge. The comparison is fixed-time, and a method this verifier
-    /// has no derivation for fails rather than passes.
+    /// Whether <paramref name="codeVerifier"/> derives the binding's challenge, compared in fixed
+    /// time; a method with no derivation here fails.
     /// </summary>
     public static bool Verify(string codeVerifier, PkceChallenge pkce)
     {

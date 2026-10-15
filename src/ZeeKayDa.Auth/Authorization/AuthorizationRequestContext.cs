@@ -1,22 +1,12 @@
 namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
-/// The state an authorization request needs to survive the redirects between
-/// <c>/connect/authorize</c> and the response to the client. Written once when the request
-/// validates, then accumulated as the flow advances through authentication and consent.
+/// The state an authorization request carries across the redirects from <c>/connect/authorize</c>
+/// to the client's response, accumulated through authentication and consent.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This carries protocol state and a subject <em>reference</em> — never claims, and never a
-/// <see cref="System.Security.Claims.ClaimsPrincipal"/>. That rule is what keeps the encoded
-/// payload bounded: the authenticated user lives in the session and pending cookies, which are
-/// chunked separately. Claims grow without limit; this must not.
-/// </para>
-/// <para>
-/// There is no store behind this. The context is an opaque, encrypted cookie payload — it
-/// authenticates nothing on its own, and replay protection belongs to the single-use
-/// authorization code.
-/// </para>
+/// Holds a subject reference, never claims, so the payload stays bounded; the user lives in the
+/// session cookies. It authenticates nothing: replay protection is the single-use code's.
 /// </remarks>
 internal sealed record AuthorizationRequestContext
 {
@@ -53,22 +43,13 @@ internal sealed record AuthorizationRequestContext
     /// <summary>The hard expiry. Not sliding — an interaction gets one window, not a renewable one.</summary>
     public required DateTimeOffset ExpiresAt { get; init; }
 
-    /// <summary>
-    /// The SSO session that authenticated the user, or <see langword="null"/> before authentication.
-    /// Populated at sign-in promotion and carried through to the authorization code.
-    /// </summary>
+    /// <summary>The SSO session that authenticated the user, or <see langword="null"/> before authentication.</summary>
     public string? SsoSessionId { get; init; }
 
-    /// <summary>
-    /// The authenticated subject identifier, or <see langword="null"/> before authentication. A
-    /// reference only — no claims about the subject belong here.
-    /// </summary>
+    /// <summary>The authenticated subject identifier, or <see langword="null"/> before authentication.</summary>
     public string? Subject { get; init; }
 
-    /// <summary>
-    /// The client's <c>login_hint</c>, verbatim, for the login page to pre-fill, or
-    /// <see langword="null"/>. Unverified client input: never an identity.
-    /// </summary>
+    /// <summary>The client's unverified <c>login_hint</c> for the login page to pre-fill, or <see langword="null"/>.</summary>
     public string? LoginHint { get; init; }
 
     /// <summary>When the user authenticated, for <c>max_age</c> and the <c>auth_time</c> claim.</summary>
@@ -83,24 +64,15 @@ internal sealed record AuthorizationRequestContext
     /// <summary>The Authentication Methods References, when they were determined.</summary>
     public IReadOnlyList<string>? Amr { get; init; }
 
-    /// <summary>
-    /// The scopes the user consented to, or <see langword="null"/> before a consent decision.
-    /// Re-intersected against the client's allowed scopes when the code is issued.
-    /// </summary>
+    /// <summary>The scopes the user consented to, or <see langword="null"/> before a consent decision.</summary>
     public IReadOnlyList<string>? GrantedScopes { get; init; }
 
     /// <summary>When the consent decision was recorded.</summary>
     public DateTimeOffset? ConsentedAt { get; init; }
 
-    /// <summary>
-    /// The external provider the user last came back from without signing in, for the login page
-    /// to say so, or <see langword="null"/> when there is none to report.
-    /// </summary>
+    /// <summary>The external provider the user last came back from without signing in, or <see langword="null"/>.</summary>
     public ProviderAttempt? ProviderAttempt { get; init; }
 }
 
-/// <summary>
-/// A round trip to an external provider that did not sign the user in: the provider's registered
-/// name, and whether the user declined there rather than the provider failing.
-/// </summary>
+/// <summary>An external provider round trip that did not sign the user in, and whether the user declined.</summary>
 internal sealed record ProviderAttempt(string Provider, bool Declined);

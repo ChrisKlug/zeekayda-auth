@@ -2,10 +2,7 @@ using Microsoft.Extensions.Options;
 
 namespace ZeeKayDa.Auth.Configuration;
 
-/// <summary>
-/// Validates <see cref="ClientSecretHasherRegistrationOptions"/> at startup to catch
-/// hasher misconfiguration before the host accepts requests.
-/// </summary>
+/// <summary>Validates <see cref="ClientSecretHasherRegistrationOptions"/> at startup.</summary>
 internal sealed class ClientSecretHasherOptionsValidator
     : ZeeKayDaOptionsValidator<ClientSecretHasherRegistrationOptions>
 {

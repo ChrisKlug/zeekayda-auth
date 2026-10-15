@@ -3,11 +3,7 @@ using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Configuration;
 
-/// <summary>
-/// Emits a startup warning when <c>AuthorizationServerOptions.TokenEndpoint.AbsoluteFamilyLifetime</c>
-/// is set to the <see cref="TimeSpan.MaxValue"/> escape-hatch sentinel, so that an unbounded
-/// refresh-token-family lifetime is never a silent configuration accident.
-/// </summary>
+/// <summary>Warns when <c>TokenEndpoint.AbsoluteFamilyLifetime</c> is the unbounded <see cref="TimeSpan.MaxValue"/>.</summary>
 internal sealed class AbsoluteFamilyLifetimeUnboundedVerifier(
     IOptions<AuthorizationServerOptions> options) : IStartupVerifier
 {

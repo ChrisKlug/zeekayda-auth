@@ -1,15 +1,9 @@
 namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
-/// End-session endpoint configuration options: where a relying party sends the user to sign out
-/// (OpenID Connect RP-Initiated Logout 1.0), and the host pages that sign-out hands off to.
+/// End-session endpoint options (OpenID Connect RP-Initiated Logout 1.0) and the host pages sign-out
+/// hands off to. Served only with <see cref="GrantType.AuthorizationCode"/>, the one flow that signs a user in.
 /// </summary>
-/// <remarks>
-/// The endpoint is served, and advertised as <c>end_session_endpoint</c>, only on a host whose
-/// <see cref="AuthorizationServerOptions.GrantTypesSupported"/> contains
-/// <see cref="GrantType.AuthorizationCode"/>: that flow is the only one that signs a user in, so
-/// without it there is no session to end.
-/// </remarks>
 public sealed class EndSessionEndpointOptions
 {
     /// <summary>
@@ -19,35 +13,23 @@ public sealed class EndSessionEndpointOptions
     public string? Uri { get; set; }
 
     /// <summary>
-    /// Gets or sets the host-relative path of the host's logout page, where the user confirms a
-    /// sign-out. The framework redirects a sign-out that must be confirmed here, and the page
-    /// completes it by calling <c>LogoutInteraction.SignOutAsync</c>. When
-    /// <see langword="null"/> (the default), the framework renders a minimal unbranded
-    /// confirmation page itself.
+    /// Gets or sets the path of the host's logout page, where the user confirms a sign-out by
+    /// calling <c>LogoutInteraction.SignOutAsync</c>. When <see langword="null"/> (the default),
+    /// the framework renders a minimal page.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Must be an absolute path within the host application (starting with <c>/</c>), without
-    /// scheme, authority, query, or fragment.
-    /// </para>
-    /// <para>
-    /// The redirect carries one query parameter, <c>zkd_i</c>, identifying the sign-out being
-    /// confirmed, and the page must preserve it across its own form post on the same terms as
-    /// the login page: a <c>&lt;form method="post"&gt;</c> with no <c>action</c> does so by
-    /// default.
-    /// </para>
+    /// Must be an absolute path within the host application, without scheme, authority, query or
+    /// fragment. The redirect carries <c>zkd_i</c> on the same terms as <see cref="InteractionOptions.LoginPath"/>.
     /// </remarks>
     public string? LogoutPath { get; set; }
 
     /// <summary>
-    /// Gets or sets the host-relative path of the page the user lands on once signed out, when
-    /// there is no client to send them back to. When <see langword="null"/> (the default), the
-    /// framework renders a minimal unbranded page itself.
+    /// Gets or sets the path of the page a signed-out user lands on when there is no client to
+    /// return to. When <see langword="null"/> (the default), the framework renders a minimal page.
     /// </summary>
     /// <remarks>
-    /// Must be an absolute path within the host application (starting with <c>/</c>), without
-    /// scheme, authority, query, or fragment. The redirect carries nothing, so the page can be
-    /// static; it needs no interaction service.
+    /// Must be an absolute path within the host application, without scheme, authority, query or
+    /// fragment. The redirect carries nothing, so the page can be static.
     /// </remarks>
     public string? SignedOutPath { get; set; }
 }

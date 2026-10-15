@@ -2,10 +2,7 @@ using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Configuration;
 
-/// <summary>
-/// One options instance registered through <c>AddZeeKayDaOptions</c> or <c>ValidateWithZeeKayDa</c>,
-/// validated with every other such instance so that the operator sees all of their failures at once.
-/// </summary>
+/// <summary>Options registered through <c>AddZeeKayDaOptions</c>, validated together with all the others.</summary>
 internal interface IValidatedOptions
 {
     /// <summary>Runs every validator registered for the options, recording what each reports.</summary>
