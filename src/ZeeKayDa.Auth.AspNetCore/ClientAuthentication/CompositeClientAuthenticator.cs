@@ -109,7 +109,27 @@ internal sealed class CompositeClientAuthenticator(
             Form = form,
             Method = matchedMethod,
         };
-        return Conclude(await matched.Authenticator.AuthenticateAsync(context, cancellationToken), client);
+        return Conclude(await TryAuthenticateAsync(matched.Authenticator, context, cancellationToken), client);
+    }
+
+    /// <summary>
+    /// The authenticator's result, with a throw logged and treated as a refusal that checked no secret,
+    /// so it is padded like any other. A cancellation of the request still propagates.
+    /// </summary>
+    private async Task<ClientAuthenticationResult?> TryAuthenticateAsync(
+        IClientAuthenticator authenticator, ClientAuthenticationContext context, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await authenticator.AuthenticateAsync(context, cancellationToken);
+        }
+        catch (Exception ex) when (!(ex is OperationCanceledException && cancellationToken.IsCancellationRequested))
+        {
+            logger.LogError(ex,
+                "Authenticator {AuthenticatorType} threw from AuthenticateAsync; treating as a refusal.",
+                authenticator.GetType().FullName);
+            return null;
+        }
     }
 
     /// <summary>
