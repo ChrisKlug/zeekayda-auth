@@ -7,8 +7,8 @@ parties. Principles that apply beyond this part are in `principles.md`.
 ## What it is for
 
 Every ID token and access token is a JWS signed with a private key. Relying parties verify it with
-the public key they fetch from our JWKS endpoint. So two things must always hold: the key that signs
-is one relying parties already have, and the private key never leaks, not into a token header, a
+the public key they fetch from our JWKS endpoint. So two things must hold: the key that signs should
+be one relying parties already have, and the private key never leaks, not into a token header, a
 log line, or the process when it isn't needed.
 
 ## The pieces
@@ -16,7 +16,8 @@ log line, or the process when it isn't needed.
 **`ISigningKeySource`** is what a provider implements. It declares one `Algorithm`, which every key
 it lists signs under. `ReadAsync` lists public keys only, each with its dates, plus a failure for
 each entry it could not list, so one broken entry cannot block a revocation. `CreateSignerAsync`
-lends an `ISigner` for one key, and is the only place a private key is touched. A source never names
+lends an `ISigner` for one key, and is where a private key is put to use. Listing touches one only to
+check it: a password-protected PEM key is decrypted and paired once per file version. A source never names
 a key publicly: it gives its own id (a file path, a vault version), and the framework derives the
 `kid` from the public key (RFC 7638 thumbprint), so a vault URL or file path cannot leak into a token
 or the JWKS. A provider registers with `builder.AddSigningKeySource<T>()`, one source per app.
@@ -33,9 +34,11 @@ key. Providers never repeat these checks.
 minutes), and decides from the keys' dates alone which key signs and which are published:
 
 - every unexpired key is published;
-- the newest key published for at least the lead time signs (default one day, never shorter than
-  `CacheMaxAge` plus `RefreshInterval`), so relying parties already have it;
-- if no key has been published that long, the oldest valid one signs, with a Warning. That one rule
+- the newest key at least the lead time past its `NotBefore` signs (default one day, never shorter
+  than `CacheMaxAge` plus `RefreshInterval`). A key added when it becomes valid has then been
+  published that long, so relying parties already have it; a certificate listed long after its
+  `NotBefore` (its CA issuance date) signs at the next read;
+- if no key is that old, the oldest valid one signs, with a Warning. That one rule
   covers a first deployment, a normal rotation and an emergency, with no special cases;
 - an old key stays published for `RetainRetiredKeysFor` after its successor takes over or it
   expires: two days, or the longest token lifetime plus clock skew if that is longer.
@@ -70,7 +73,8 @@ ours and third parties' alike; the ring's constructor stays internal.
 ## What it costs
 
 - A source changing its algorithm is a new source and a restart.
-- Rotation is only as fast as `RefreshInterval` plus the lead time, by design.
+- A key added at its `NotBefore` waits `RefreshInterval` plus the lead time before signing, by
+  design. One whose `NotBefore` is already past the lead time skips that wait.
 
 ## What the walkthrough changed
 

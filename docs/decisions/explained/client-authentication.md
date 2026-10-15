@@ -7,8 +7,10 @@ is explained separately; principles that apply beyond this part are in `principl
 ## What it is for
 
 A confidential client proves who it is at the token endpoint. A failure never says why (RFC 6749
-§5.2: a bare `invalid_client`), and every refusal that touches a client takes the same time, so
-response time reveals neither which client ids exist nor whether a client is mid-rotation.
+§5.2: a bare `invalid_client`), and every refusal that touches a client does the same number of
+hash verifications, so response time reveals neither which client ids exist nor whether a client is
+mid-rotation. One accepted exception: a secret stored at a PBKDF2 iteration count other than the
+configured one takes a different time, which reveals that the client exists (re-hashing is #868).
 
 ## The flow
 
@@ -46,8 +48,9 @@ registered to verify existing ones.
 against the stored ones, each sent to the hasher that declared its algorithm id. The registry behind
 it indexes the hashers at startup, and fails startup on a duplicate or missing id or two defaults.
 
-**Timing padding:** every failure costs two verifications by every registered hasher, each against
-a decoy of its own that costs exactly what a real secret does. A failed `Verify` returns one-time
+**Timing padding:** every failure fills two verification slots for every registered hasher. Real
+verifications fill what they can and decoys the rest, each decoy costing what a secret at the
+configured parameters does. A failed `Verify` returns one-time
 proof that it already padded, so an authenticator never counts.
 
 ## What it costs

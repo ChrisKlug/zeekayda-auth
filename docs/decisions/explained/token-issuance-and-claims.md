@@ -27,8 +27,10 @@ refresh token store exists, and a production host supplies one as it does a code
    request wins.
 3. A replayed code revokes the refresh token family the first redemption started (RFC 6749 §10.5);
    the family id is minted before redeeming so the tombstone carries it.
-4. The redirect URI, the PKCE verifier and the client's allowed signing algorithm are checked against
-   the stored entry. Every failure is the same `invalid_grant` to the caller; the log says which.
+4. The redirect URI and the PKCE verifier are checked against the stored entry; a mismatch is the
+   same `invalid_grant` to the caller, and the log says which. A verifier sent for a code issued
+   without a challenge is `invalid_request` (OAuth 2.1 §3.2.4). A client that does not accept the
+   current signing key's algorithm is `server_error`, with nothing issued.
 5. The host's claims provider is asked again, so a user disabled since sign-in gets nothing.
 6. The access token is issued, then the ID token. A failure anywhere is `server_error`, with nothing
    half-issued.

@@ -21,8 +21,9 @@ it one group at a time.
 
 **The pipeline.** The host's configuration runs, then `AuthorizationServerOptionsPostConfigurer`
 fills in the one default that depends on other settings and freezes the options: every collection
-becomes read-only and the `Development` switches are fixed, so nothing can change a value startup
-approved. Replacing a collection afterwards throws. Each group validates itself in its own
+becomes read-only and the `Development` switches are fixed, so neither can change after startup
+approved it. Replacing a collection afterwards throws. Scalar settings, such as `Issuer` or a
+lifetime, stay writable. Each group validates itself in its own
 `*OptionsValidation.cs` file, and the root adds the rules that span groups. Every failure carries a
 stable code.
 

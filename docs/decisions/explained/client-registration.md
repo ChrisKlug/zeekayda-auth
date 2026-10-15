@@ -30,7 +30,8 @@ implements `ClientId`, `Secrets` and what it stores.
 **`ClientRegistrationValidator`** holds the rules: exact redirect-URI matching; public ⇔ no secret ⇔
 the only auth method is `none` (`IsPublic` is declared, never derived); PKCE opt-out only where safe;
 at most two secrets; auth methods the server actually advertises; a client may narrow the server's
-settings, never widen them. It returns its failures, each with a stable code. A host may add its own
+allowlists (grant types, auth methods, signing algorithms), never widen them. Token lifetimes are
+different: a client's override replaces the server default and has no upper bound. It returns its failures, each with a stable code. A host may add its own
 `IClientRegistrationValidator`, which runs after the framework's rules and can add rules but never
 remove them.
 
