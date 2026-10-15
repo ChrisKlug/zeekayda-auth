@@ -70,15 +70,16 @@ Defaults per lens; both overridable per run. Choose per task — the main sessio
 
 | Lens | Model | Effort | Why |
 |---|---|---|---|
-| `code` | `gpt-6.1-sol` | `high` | correctness and test adequacy; replaces `gpt-5.6-terra` until a Terra 6+ is cheaper — measured on one diff at ~8% more for a deeper read |
+| `code` | `gpt-6.1-sol` | `medium` | correctness and test adequacy on every change; `high` only when a security or architecture lens runs on the same change. The model replaces `gpt-5.6-terra` until a Terra 6+ is cheaper — measured on one diff at ~8% more for a deeper read |
 | `security` | `gpt-6.1-sol` | `high` | reasoning-heavy; `xhigh` for trust-boundary changes |
 | `architecture` | `gpt-6.1-sol` | `high` | reasoning-heavy |
 | `text` | `gpt-6.1-sol` | `medium` | reads prose against the repository; no code to trace |
 
-Raise to `xhigh` when the change touches a trust boundary (anything that would earn a
-`security-sign-offs.md` entry). Drop to `medium` for a small mechanical diff where the lens is
-running only because every change gets the code lens. Effort levels are `none`, `minimal`, `low`,
-`medium`, `high`, `xhigh`, `max`.
+Effort is the largest cost lever per run — far more than the model choice — so the code lens runs
+at `medium` by default and goes to `high` only on a change that also gets a security or
+architecture lens. Raise the security lens to `xhigh` when the change touches a trust boundary
+(anything that would earn a `security-sign-offs.md` entry). Effort levels are `none`, `minimal`,
+`low`, `medium`, `high`, `xhigh`, `max`.
 
 Model IDs known to work on this account as of 2026-10-06: `gpt-6.1-sol`, `gpt-5.6-sol`, `gpt-5.6-terra`,
 `gpt-5.5`, `gpt-5.4`, `gpt-5.3-codex`. Not available: Gemini, Claude, and the `-spark` variants.
@@ -92,7 +93,9 @@ See `work-on-issue`, Stage 3. In short:
    only**: fix those as their own commit, re-run the lens with `--base <round-1 sha>` to verify the
    fix diff, then proceed. Its Medium/Low findings go straight to the Stage 4 list — no fix cycle,
    no re-run. On a mechanical or test-only change this lens is the entire review; on a change with
-   no code in it, the **text lens** is, under the same gate.
+   no code in it, the **text lens** is, under the same gate. Under 150 changed lines it is also the
+   only Copilot pass the change gets; at 150 or more, the PR-side Copilot review is requested at
+   Stage 4 as well (`work-on-issue`).
 2. **Security and architecture lenses** run alongside their Claude counterparts, in parallel, only
    when the change has that surface. Same severity gate, same one-round rule.
 

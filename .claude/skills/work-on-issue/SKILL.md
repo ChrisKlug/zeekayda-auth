@@ -105,12 +105,14 @@ blocked-by graphs, no design prose. Off-scope fixes are not made, however easy t
 ## Stage 3 — One review round
 
 **Copilot code lens first, as a gate.** Run `/adversarial-review code` on the committed branch
-before any other reviewer. It is the cheap, independent, non-Claude pass that catches what should
-never reach an expensive review. It gates on **High/Critical only**: fix those as their own commit,
-re-run the lens against that fix diff (`--base <round-1 sha>`), and only then start the reviewers
-below. Its Medium/Low findings go straight into the Stage 4 list — no fix cycle, no re-run. On a
-change with no security or architecture surface, this lens is the whole review. On a change with no
-code in it at all — docs, register wording, agent or skill instructions, CI or config text — run
+before any other reviewer, at its default `medium` effort — `--effort high` only when a security or
+architecture lens runs on the same change. It is the cheap, independent, non-Claude pass that
+catches what should never reach an expensive review. It gates on **High/Critical only**: fix those
+as their own commit, re-run the lens against that fix diff (`--base <round-1 sha>`), and only then
+start the reviewers below. Its Medium/Low findings go straight into the Stage 4 list — no fix
+cycle, no re-run. On a change with no security or architecture surface, this lens is the whole
+review. On a change with no code in it at all — docs, register wording, agent or skill
+instructions, CI or config text — run
 `/adversarial-review text` instead: it is the one independent reader of that change, it checks the
 text against the code and the other rules in force, and it opens with a plain-words account the
 maintainer can compare to what they asked for. Same High/Critical gate. Every change gets exactly
@@ -214,8 +216,20 @@ Anything they want fixed, you fix inline, **as a commit of its own on top of the
 read** — never folded into the commit that prompted the question. The reviewer sees the fix diff if
 it touches their findings.
 
-On approval: push, `gh pr create` (the permission prompt is this gate — never work around it), then
-post **one** `gh pr comment` as the durable record of every review round — not a paste of each
+On approval: push, `gh pr create` (the permission prompt is this gate — never work around it).
+Then, if the diff is **150 lines or more** (`git diff --shortstat origin/main...HEAD`, insertions
+plus deletions), request the PR-side Copilot review:
+
+```bash
+gh api --method POST repos/{owner}/{repo}/pulls/<n>/requested_reviewers -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
+```
+
+It is requested per PR, never automatically. Under 150 lines it finds nothing seven times in ten,
+and the local code lens is the only Copilot pass. At 150 or more it is the one reviewer that reads
+the final assembled diff after every fix commit, and it keeps finding what the lenses missed; its
+findings are rows in the record below like any other reviewer's.
+
+Then post **one** `gh pr comment` as the durable record of every review round — not a paste of each
 verdict. One table, one row per finding, from every reviewer and round:
 
 | Reviewer · round | Sev | Finding | Outcome |
@@ -230,9 +244,10 @@ re-review happens only if commits landed after the reviewer last looked at the b
 
 ## Stage 5 — Merge ⛔
 
-On the maintainer's approval, and once the PR's bots (CodeQL, CodeScene, Copilot) have run and any
-fix they caused is pushed: a change with a trust-boundary decision gets its security sign-off entry
-now, as the **last commit on the feature branch**, naming that branch head as the frozen code. Run
+On the maintainer's approval, and once the PR's bots (CodeQL, CodeScene, and the Copilot review
+where it was requested) have run and any fix they caused is pushed: a change with a trust-boundary
+decision gets its security sign-off entry now, as the **last commit on the feature branch**, naming
+that branch head as the frozen code. Run
 the citation check and `/adversarial-review text` on that commit, push, then `gh pr merge` (which
 prompts) and `/post-merge-checks`. Anything that lands after the entry means rewriting the entry
 before merge. One PR per change: the sign-off is not a separate docs PR after the merge.
