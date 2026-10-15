@@ -2,7 +2,7 @@
 
 Explains `token-stores.md`: where authorization codes, refresh tokens and in-flight interactions
 are kept, and how the framework keeps them single-use and safe at rest while a third party decides
-where the bytes live. Principles that apply beyond this part are in `principles.md`.
+where the token bytes live. Principles that apply beyond this part are in `principles.md`.
 
 ## What it is for
 
@@ -18,9 +18,14 @@ Each store is two layers.
 - **The framework's store** (`AuthorizationCodeStore`, `RefreshTokenStore`, and three small
   interaction stores in AspNetCore) owns the protocol: single use, replay and reuse detection,
   hashing the handle before it becomes a key, encryption at rest, expiry with clock-skew grace.
-- **The backing store** (`IAuthorizationCodeBackingStore`, `IRefreshTokenGrantStore`,
-  `IInteractionBackingStore`) only keeps bytes. It receives keys as `StoreKey`, whose constructor
-  only the framework can call, so it never sees a raw handle; values arrive already encrypted.
+  These are internal classes; AspNetCore reaches them through `InternalsVisibleTo`.
+- **The backing store** (`IAuthorizationCodeBackingStore`, `IRefreshTokenBackingStore`) only keeps
+  bytes, and is what a third party implements. It receives keys as `StoreKey`, whose constructor only
+  the framework can call, so it never sees a raw handle. Every key has one format,
+  `zkd:{store}:{kind}:{hex(sha256)}`. Payloads arrive encrypted; the only cleartext is what must be
+  queried: the code tombstone's family id and the refresh grant's columns.
+- **The interaction backing store** (`IInteractionBackingStore`) is still internal. A host picks the
+  in-memory one or one over its `IDistributedCache`.
 
 **Codes.** The backing store is a key-value primitive with one hard requirement: `TryInsertAsync`
 is an atomic insert-if-absent. Redemption writes a tombstone through it; the one request that wins
@@ -29,16 +34,18 @@ family id, so the token endpoint can revoke everything the code produced. A clie
 not consume the code, so a thief cannot burn it for its owner.
 
 **Refresh tokens.** The backing store is a small row store: find by handle, mark consumed only if
-still active (the one atomic step), revoke a family. Only the fields it must query on are in the
-clear; everything else is encrypted by the framework. Decryption happens only after the atomic step
-is won.
+still active (the one atomic step), and record a family as revoked until a given date. The store
+checks that record before honouring an active grant, so a token issued after the revoke is still
+refused. Only the fields it must query on are in the clear; everything else is encrypted by the
+framework. Consuming a token decrypts it only after the atomic step is won.
 
 **Interactions** hold the state parked between redirects during a login: the original request, a
-principal an external provider returned, a pending sign-out. They need nothing atomic.
+principal an external provider returned, a pending sign-out. They need nothing atomic: the one race,
+two responses finishing the same interaction, is settled by the code store's atomic insert.
 
-**Registration.** Nothing is registered by default and a missing store fails startup. Development is
-one line, `builder.AddInMemoryStores()`, which refuses to start outside `Development` unless the
-call opts in. The TestKit ships conformance fixtures a store author runs against their backend.
+**Registration.** No backing store is registered by default, and a missing one fails startup.
+Development is one line, `builder.AddInMemoryStores()`, which refuses to start outside `Development`
+unless the call opts in. The TestKit ships conformance fixtures a store author runs against their backend.
 
 ## What it costs
 
@@ -49,20 +56,10 @@ call opts in. The TestKit ships conformance fixtures a store author runs against
 
 ## Where it is going
 
-The maintainer walked this part at code level. The first three issues are in M1 before the security
-audit (#537); the last two are in the First project milestone.
+The maintainer walked this part at code level. What it found about naming, the tombstone, family
+revocation and the distributed-cache token stores has landed (#827, #828, #829). Two issues remain,
+in the First project milestone.
 
-- **The framework's stores become internal classes (#827).** Their public interfaces and the hidden
-  member that stopped anyone implementing them go; `InternalsVisibleTo` already lets AspNetCore use
-  them. Every third-party contract ends in `BackingStore` (`IRefreshTokenGrantStore` →
-  `IRefreshTokenBackingStore`), and all three stores use one key format,
-  `zkd:{store}:{kind}:{hex(sha256)}`.
-- **Two records get simpler (#828).** The code tombstone holds only the family id; its encrypted
-  empty payload proved nothing. Revoking a family becomes an explicit record in the backing contract
-  instead of a fake grant row planted in the third party's table.
-- **The distributed-cache token stores are deleted (#829).** Without an atomic operation they cannot
-  keep a code single-use on a shared cache; they were a production trap. The distributed-cache
-  interaction store stays.
 - **The interaction store becomes pluggable (#830),** with a public backing contract, a conformance
   fixture, and an optional keyed cache so ZeeKayDa's data need not share the host's cache. The
   Cosmos store (#805) is its first user.
