@@ -6,34 +6,16 @@ using Microsoft.Win32.SafeHandles;
 namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
-/// Provides interop access to <c>lstat()</c>, <c>fstat()</c> and <c>geteuid()</c> for ownership validation on Unix platforms.
+/// <c>lstat()</c>, <c>fstat()</c> and <c>geteuid()</c> for Unix ownership checks. No <c>stat()</c>: it
+/// follows a symlink to an owner the attacker chooses. One stat struct per kernel ABI, bound up to <c>st_uid</c>.
 /// </summary>
-/// <remarks>
-/// <para>
-/// There is deliberately no <c>stat()</c>-based counterpart. <c>stat()</c> follows a symlink and
-/// reports the owner of whatever it points at, which an attacker chooses by choosing where their
-/// link points — so every ownership decision in this assembly reads the link entry's own owner, or
-/// the owner of a file already open.
-/// </para>
-/// Separate native stat-buffer structs are declared for macOS/BSD and Linux 64-bit because the kernel ABI
-/// differs between platforms; only the fields up to <c>st_uid</c> are bound, with the rest covered
-/// by blittable padding.
-/// </remarks>
 [ExcludeFromCodeCoverage(Justification = "Each architecture-specific lstat and fstat branch is reachable only on the one architecture whose ABI it binds, so no single runner can cover them all. FileSigningKeyReaderTests exercises whichever branch the runner's architecture selects.")]
 internal static partial class PosixInterop
 {
     /// <summary>
-    /// Returns the UID of the owner of the directory entry at <paramref name="path"/> itself — if
-    /// that entry is a symlink, the symlink object's own owner, <strong>not</strong> the owner of
-    /// whatever it points at — or <see langword="null"/> if <c>lstat()</c> fails.
+    /// The owner UID of the directory entry itself — a symlink's own owner, not its target's — or
+    /// <see langword="null"/> if <c>lstat()</c> fails.
     /// </summary>
-    /// <remarks>
-    /// Deliberately <c>lstat()</c> and never <c>stat()</c>, which follows a symlink to report the
-    /// *target's* owner. An unprivileged attacker can create a symlink that points at a root-owned
-    /// directory, and <c>stat()</c> on that link would wrongly report root ownership rather than the
-    /// attacker's own ownership of the link they created. <c>lstat()</c> reports the link entry's own
-    /// owner regardless of what it points at.
-    /// </remarks>
     [UnsupportedOSPlatform("windows")]
     internal static uint? GetLinkOwnerUid(string path)
     {
@@ -54,11 +36,7 @@ internal static partial class PosixInterop
         return null;
     }
 
-    /// <summary>
-    /// Returns the UID of the owner of the file open on <paramref name="handle"/>, or
-    /// <see langword="null"/> if <c>fstat()</c> fails. Read from the handle, so it describes the file
-    /// that was opened, whatever the path now names.
-    /// </summary>
+    /// <summary>The owner UID of the open file, whatever the path now names, or <see langword="null"/> if <c>fstat()</c> fails.</summary>
     [UnsupportedOSPlatform("windows")]
     internal static uint? GetOwnerUid(SafeFileHandle handle)
     {

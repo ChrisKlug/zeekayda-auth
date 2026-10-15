@@ -3,12 +3,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem;
 
-/// <summary>
-/// Validates <see cref="PfxFileSigningOptions"/> at startup.
-/// </summary>
-/// <remarks>
-/// Registered via <c>AddPfxFileSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
-/// </remarks>
+/// <summary>Validates <see cref="PfxFileSigningOptions"/> at startup.</summary>
 internal sealed class PfxFileSigningOptionsValidator : ZeeKayDaOptionsValidator<PfxFileSigningOptions>
 {
     /// <inheritdoc/>

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AzureKeyVault;
@@ -106,4 +107,10 @@ internal static class KeyVaultVersions
     /// </summary>
     public static DateTimeOffset NotBefore(IKeyVaultVersionInfo version) =>
         version.NotBefore is { } notBefore && notBefore > version.CreatedOn ? notBefore : version.CreatedOn;
+
+    /// <summary>Exports a reader's public key, which is an <see cref="RSA"/> for <see cref="SigningKeyType.Rsa"/>, else an <see cref="ECDsa"/>.</summary>
+    public static PublicKeyParameters ToPublicKeyParameters(AsymmetricAlgorithm publicKey, SigningKeyType keyType) =>
+        keyType == SigningKeyType.Rsa
+            ? PublicKeyParameters.FromRsa(((RSA)publicKey).ExportParameters(false))
+            : PublicKeyParameters.FromEc(((ECDsa)publicKey).ExportParameters(false));
 }

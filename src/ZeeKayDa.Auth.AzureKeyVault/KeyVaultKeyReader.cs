@@ -7,16 +7,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AzureKeyVault;
 
-/// <summary>
-/// <see cref="IKeyVaultKeyReader"/> implementation backed by a real
-/// <see cref="Azure.Security.KeyVault.Keys.KeyClient"/>.
-/// </summary>
-/// <remarks>
-/// Every <see cref="Azure.RequestFailedException"/> and other transport fault raised by the
-/// underlying SDK is mapped here to a <see cref="ZeeKayDaConfigurationException"/> carrying a
-/// stable failure code and enough context (vault, key name, HTTP status, SDK error code) to be
-/// actionable, without ever including key material.
-/// </remarks>
+/// <summary>Reads key versions through the Key Vault SDK, mapping every fault to a configuration failure code.</summary>
 internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
 {
     private readonly KeyClient _keyClient;
@@ -34,10 +25,7 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
         _keyClient = new KeyClient(_vaultUri, credential);
     }
 
-    /// <summary>
-    /// Test seam: lets unit tests inject a faked <see cref="KeyClient"/>, making the SDK
-    /// fault-mapping paths reachable without a live vault.
-    /// </summary>
+    /// <summary>Test seam: a faked <see cref="KeyClient"/>.</summary>
     internal KeyVaultKeyReader(KeyClient keyClient, string keyName, Uri vaultUri)
     {
         _keyClient = keyClient;
@@ -86,11 +74,8 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
     }
 
     /// <summary>
-    /// Maps one SDK <see cref="KeyProperties"/> onto <see cref="KeyVaultKeyVersionInfo"/>, failing
-    /// closed on a listing entry missing its <c>Enabled</c> or <c>CreatedOn</c> attribute — the two
-    /// fields the entire version-selection derivation rests on. A default would be fail-open: an
-    /// absent <c>CreatedOn</c> read as ancient satisfies the pre-activation age gate immediately,
-    /// and an absent <c>Enabled</c> read as enabled bypasses the revocation lever.
+    /// Maps one listing entry, failing closed when <c>Enabled</c> or <c>CreatedOn</c> is missing: any
+    /// default for either would let a version sign early or survive being disabled.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// <paramref name="properties"/> carries no <c>Enabled</c> or no <c>CreatedOn</c> value.
@@ -156,7 +141,7 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // The exception TYPE is named, never ex.Message: it can echo the material it failed to parse.
+            // Never ex.Message: it can echo the material it failed to parse.
             throw new KeyVaultVersionMaterialException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.invalid_key_material",
@@ -191,11 +176,7 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
                     (ex.ErrorCode is null ? "" : $", ErrorCode: {ex.ErrorCode}") +
                     "). Verify the configured credential has 'Key Vault Crypto User' (or an access-policy grant " +
                     "of 'get' and 'sign' key permissions) on this vault.")),
-            // The exception TYPE is named, never ex.Message. RequestFailedException.Message carries
-            // the response content and headers, and ZeeKayDaConfigurationFailure.Message is a plain
-            // string on public API surface that SanitizingLogger cannot redact. The status and
-            // ErrorCode above are the safe, operator-actionable parts; the root cause stays available
-            // as InnerException.
+            // Never ex.Message: it carries the response content and headers.
             _ => new ZeeKayDaConfigurationException(
                 new ZeeKayDaConfigurationFailure(
                     "signing.azure_key_vault.startup_failure",
@@ -205,10 +186,7 @@ internal sealed class KeyVaultKeyReader : IKeyVaultKeyReader
                 ex),
         };
 
-    // The exception TYPE is named, never ex.Message. An arbitrary underlying provider exception may
-    // carry credential material, and ZeeKayDaConfigurationFailure.Message is a plain string on public
-    // API surface that SanitizingLogger cannot redact. The root cause stays available to
-    // operators as InnerException.
+    // Never ex.Message: a provider exception may carry credential material.
     private ZeeKayDaConfigurationException MapUnexpectedFailure(Exception ex) =>
         new(
             new ZeeKayDaConfigurationFailure(

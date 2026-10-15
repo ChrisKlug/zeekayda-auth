@@ -3,12 +3,7 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.AzureKeyVault;
 
-/// <summary>
-/// Validates <see cref="AzureKeyVaultRemoteSigningOptions"/> at startup.
-/// </summary>
-/// <remarks>
-/// Registered via <c>AddAzureKeyVaultRemoteSigning()</c>, whose options are registered with <c>AddZeeKayDaOptions</c>.
-/// </remarks>
+/// <summary>Validates <see cref="AzureKeyVaultRemoteSigningOptions"/> at startup.</summary>
 internal sealed class AzureKeyVaultRemoteSigningOptionsValidator : ZeeKayDaOptionsValidator<AzureKeyVaultRemoteSigningOptions>
 {
     /// <inheritdoc/>
