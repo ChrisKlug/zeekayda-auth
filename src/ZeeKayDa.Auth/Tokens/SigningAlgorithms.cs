@@ -6,16 +6,11 @@ using System.Security.Cryptography;
 
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// Algorithm-specific logic for JWT signing: wire names, hash functions, and the sign and verify
-/// dispatch for all supported <see cref="SigningAlgorithm"/> values.
-/// </summary>
+/// <summary>Wire names, hash functions, and sign and verify dispatch for every <see cref="SigningAlgorithm"/>.</summary>
 internal static class SigningAlgorithms
 {
-    // The authoritative RFC 7518 identifier is the [JsonStringEnumMemberName] on each member —
-    // the same name STJ serialises into the discovery document and JWKS. Deriving the JWS header
-    // value from the attribute rather than ToString() keeps the two structurally incapable of
-    // diverging, even for a future member whose C# name cannot be the wire id verbatim (EdDSA).
+    // From each member's [JsonStringEnumMemberName], the name discovery and the JWKS serialize, so the
+    // JWS header can never diverge from them.
     private static readonly FrozenDictionary<SigningAlgorithm, string> WireNames =
         Enum.GetValues<SigningAlgorithm>().ToFrozenDictionary(
             algorithm => algorithm,
@@ -23,10 +18,7 @@ internal static class SigningAlgorithms
                 .GetCustomAttribute<System.Text.Json.Serialization.JsonStringEnumMemberNameAttribute>()?.Name
                 ?? algorithm.ToString());
 
-    /// <summary>
-    /// The RFC 7518 identifier for <paramref name="algorithm"/>, exactly as it appears on the wire
-    /// in a JWS <c>alg</c> header, the discovery document, and the JWKS.
-    /// </summary>
+    /// <summary>The RFC 7518 identifier for <paramref name="algorithm"/>, as the <c>alg</c> header, discovery and the JWKS carry it.</summary>
     internal static string WireName(SigningAlgorithm algorithm) => WireNames[algorithm];
 
     /// <summary>The hash function an algorithm signs over — also the one its ID tokens hash <c>at_hash</c> with.</summary>
@@ -38,16 +30,7 @@ internal static class SigningAlgorithms
         _ => ThrowUnsupportedAlgorithm<HashAlgorithmName>(algorithm),
     };
 
-    /// <summary>
-    /// Verifies <paramref name="signature"/> over <paramref name="signingInput"/> against
-    /// <paramref name="publicKey"/> directly, using <paramref name="algorithm"/>. Used by
-    /// <see cref="SigningSelfTest"/>.
-    /// </summary>
-    /// <param name="algorithm">The algorithm the signature was produced under.</param>
-    /// <param name="publicKey">The public key to verify against.</param>
-    /// <param name="signingInput">The exact bytes that were signed.</param>
-    /// <param name="signature">The signature bytes to verify.</param>
-    /// <returns><see langword="true"/> when the signature verifies; otherwise <see langword="false"/>.</returns>
+    /// <summary>Whether <paramref name="signature"/> over <paramref name="signingInput"/> verifies against <paramref name="publicKey"/>.</summary>
     internal static bool Verify(
         SigningAlgorithm algorithm, PublicKeyParameters publicKey, ReadOnlySpan<byte> signingInput, ReadOnlySpan<byte> signature)
     {
@@ -63,15 +46,7 @@ internal static class SigningAlgorithms
         return VerifyEc(algorithm, ec, signingInput, signature);
     }
 
-    /// <summary>
-    /// Produces the raw signature bytes for <paramref name="signingInput"/> using
-    /// <paramref name="algorithm"/> and <paramref name="privateKey"/>. Used by
-    /// <see cref="LocalSigner"/>.
-    /// </summary>
-    /// <param name="algorithm">The signing algorithm.</param>
-    /// <param name="signingInput">The bytes to sign (base64url(header) + '.' + base64url(payload)).</param>
-    /// <param name="privateKey">The private key to use for signing.</param>
-    /// <returns>The raw signature bytes in the format required by the algorithm.</returns>
+    /// <summary>The raw signature over <paramref name="signingInput"/>, in the format <paramref name="algorithm"/> requires.</summary>
     [ExcludeFromCodeCoverage(Justification = "Unreachable default arm — all SigningAlgorithm members are handled above.")]
     internal static ReadOnlyMemory<byte> Sign(
         SigningAlgorithm algorithm,
@@ -117,14 +92,10 @@ internal static class SigningAlgorithms
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static byte[] SignEc(ECDsa ec, HashAlgorithmName hash, byte[] input)
-        // RFC 7518 §3.4 requires the IEEE P1363 format (raw R||S concatenation).
-        // Rfc3279DerSequence (DER) is the wrong format and will fail on all standards-compliant RPs.
+        // RFC 7518 §3.4 requires IEEE P1363 (raw R||S), not DER.
         => ec.SignData(input, hash, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
 
-    /// <summary>
-    /// Unreachable defensive guard for switch statements that are exhaustive over
-    /// <see cref="SigningAlgorithm"/>. Throws <see cref="NotSupportedException"/>.
-    /// </summary>
+    /// <summary>The unreachable default arm of a switch over every <see cref="SigningAlgorithm"/>.</summary>
     [ExcludeFromCodeCoverage(Justification = "Unreachable defensive guard — all enum members are handled in callers.")]
     [DoesNotReturn]
     private static T ThrowUnsupportedAlgorithm<T>(SigningAlgorithm algorithm)

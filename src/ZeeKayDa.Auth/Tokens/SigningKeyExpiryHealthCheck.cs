@@ -9,17 +9,12 @@ namespace ZeeKayDa.Auth.Tokens;
 /// <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> from now.
 /// </summary>
 /// <remarks>
-/// <see cref="HealthStatus.Unhealthy"/> when signing has stopped, when the key signing now has
-/// expired, or when it is published only because it signs — after a failed or unfinished handover,
-/// once every replica whose handover succeeded has dropped it. Otherwise
-/// <see cref="HealthStatus.Degraded"/>, naming every reason that applies, when the last read of the
-/// source failed; when a listed key was dropped as unusable, and again when that key is due to sign
-/// now; when a successor could not sign when due (its signer failed to open or self-test, or it was
-/// dropped) and was set aside; when the key due to sign now is
-/// not the key signing, because a handover is still running; or when the key set in force at the
-/// end of <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/> has no unexpired key to
-/// sign with. Otherwise <see cref="HealthStatus.Healthy"/>. The look-ahead asks the ring's own
-/// rules, so a staged successor that will take over in time keeps the check Healthy. Every
+/// <see cref="HealthStatus.Unhealthy"/> when signing has stopped, the signing key has expired, or it is
+/// published only because it signs, once replicas whose handover succeeded have dropped it.
+/// <see cref="HealthStatus.Degraded"/>, naming every reason, when the last read failed, a listed key was
+/// dropped or is due though dropped, a successor was set aside, a handover is still running, or no key
+/// will be able to sign at the end of <see cref="SigningKeyExpiryHealthCheckOptions.DegradedThreshold"/>.
+/// The look-ahead asks the ring's own rules, so a staged successor keeps the check Healthy. Every
 /// published key appears in the result data.
 /// </remarks>
 public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
@@ -31,12 +26,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
     /// <summary>
     /// Initialises a <see cref="SigningKeyExpiryHealthCheck"/>.
     /// </summary>
-    /// <param name="ring">
-    /// The signing key ring to report on, or <see langword="null"/> when no
-    /// <see cref="SigningKeyRing"/> is registered — this health check can be registered
-    /// independently of a ring, and must not itself fail host startup or resolution when one is
-    /// absent.
-    /// </param>
+    /// <param name="ring">The ring to report on, or <see langword="null"/> when none is registered, which reports Unhealthy rather than failing resolution.</param>
     /// <param name="timeProvider">Used to evaluate remaining lifetime at probe time.</param>
     /// <param name="options">The degraded threshold to evaluate against.</param>
     /// <exception cref="ArgumentNullException">
@@ -88,9 +78,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
         });
     }
 
-    /// <summary>
-    /// A ring serving the list before a failed read is at best Degraded, whatever that list's own health.
-    /// </summary>
+    /// <summary>A ring serving the list before a failed read is at best Degraded.</summary>
     private static HealthCheckResult WithReadFailure(HealthCheckResult result, string? readFailure)
     {
         if (readFailure is null || result.Status == HealthStatus.Unhealthy)
@@ -101,15 +89,11 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
         return HealthCheckResult.Degraded(description, exception: null, result.Data);
     }
 
-    /// <summary>
-    /// The pure evaluation logic: no ring, no clock dependency beyond the values passed in.
-    /// </summary>
+    /// <summary>Judges <paramref name="set"/> against <paramref name="timeline"/> at <paramref name="now"/>.</summary>
     /// <param name="timeline">The listed keys, the keys set aside, and the rules that choose among them.</param>
     /// <param name="set">The key set the ring is serving now.</param>
     /// <param name="now">The current time.</param>
-    /// <param name="degradedThreshold">
-    /// How far ahead a key must still be able to sign for <see cref="HealthStatus.Healthy"/>.
-    /// </param>
+    /// <param name="degradedThreshold">How far ahead a key must still be able to sign for <see cref="HealthStatus.Healthy"/>.</param>
     /// <exception cref="ArgumentException">Thrown when <paramref name="set"/> has no signing key.</exception>
     internal static HealthCheckResult Evaluate(
         SigningKeyTimeline timeline, SigningKeySet set, DateTimeOffset now, TimeSpan degradedThreshold)
@@ -142,10 +126,7 @@ public sealed class SigningKeyExpiryHealthCheck : IHealthCheck
             : HealthCheckResult.Healthy($"Signing key '{signingKey.Kid}' expires at {signingKey.ExpiresAt:O}.", data);
     }
 
-    /// <summary>
-    /// What the operator can do for a key signing on past its retention: wait for a handover still
-    /// running, or list a fresh key when the one due failed and is now too late to take over.
-    /// </summary>
+    /// <summary>What the operator can do for a key signing on past its retention.</summary>
     private static string StrandedRemedy(SigningKeyTimeline timeline, DateTimeOffset now) =>
         timeline.SetAside.Count > 0
             ? "The key that should have taken over failed and can no longer do so; list a fresh key."

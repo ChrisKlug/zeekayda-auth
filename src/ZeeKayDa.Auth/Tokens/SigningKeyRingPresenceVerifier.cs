@@ -4,30 +4,10 @@ using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tokens;
 
-/// <summary>
-/// Verifies at application startup that a signing key source — and therefore an
-/// <see cref="SigningKeyRing"/> — has been registered.
-/// </summary>
+/// <summary>Fails startup when no signing key source is registered, rather than on the first discovery request.</summary>
 /// <remarks>
-/// An authorization server cannot issue an ID token without one, and cannot publish
-/// <c>id_token_signing_alg_values_supported</c>, which OpenID Connect Discovery 1.0 §3 requires:
-/// the advertised algorithms are derived from the ring's key set. Failing here is what keeps that
-/// dependency from surfacing as a dependency-injection error on the first discovery request.
-/// <para>
-/// Asks <see cref="IServiceProviderIsService"/> rather than resolving the ring, because resolving it
-/// constructs the caller's signing key source — real work, and this is a verifier, running in the
-/// phase that exists so a host with no signing source learns about it before any work is done. The
-/// ring's own activator runs in the <em>next</em> phase, so nothing has initialized the ring by the
-/// time this runs.
-/// </para>
-/// <para>
-/// A container that does not provide <see cref="IServiceProviderIsService"/> — a third party
-/// replacing the default provider — falls back to resolving, so the check reports rather than
-/// skipping itself; those hosts pay the construction here. On that path a ring factory that throws
-/// answers "registered, and broken", which is not what this check asks about: the ring's activator
-/// reports that failure in the next phase, and Microsoft.Extensions.DependencyInjection does not
-/// cache a failed factory invocation, so re-throwing it here would report it twice.
-/// </para>
+/// Asks <see cref="IServiceProviderIsService"/> rather than resolving the ring, which would construct the
+/// source in a phase meant to run before any work; a container without it falls back to resolving.
 /// </remarks>
 internal sealed class SigningKeyRingPresenceVerifier(IServiceProvider services) : IStartupVerifier
 {
@@ -53,18 +33,9 @@ internal sealed class SigningKeyRingPresenceVerifier(IServiceProvider services) 
     }
 
     /// <summary>
-    /// Whether a <see cref="SigningKeyRing"/> is registered — which is not the same question as
-    /// whether one can be built.
+    /// Whether a ring is registered, not whether one can be built: a factory throwing a configuration
+    /// failure counts as registered, since the ring's activator reports that failure itself.
     /// </summary>
-    /// <remarks>
-    /// A ring factory that throws answers "yes, and it is broken": the registration exists, and
-    /// <c>SigningKeyRingActivator</c> has already run and recorded that failure. Letting the
-    /// exception escape here would report the same configuration failure a second time, because
-    /// <c>Microsoft.Extensions.DependencyInjection</c> does not cache a failed factory invocation.
-    /// Only a <see cref="ZeeKayDaConfigurationException"/> is treated this way — that is the
-    /// framework's own "this composition is wrong" signal, already aggregated by the runner. Any
-    /// other exception is a genuine surprise and still aborts startup here.
-    /// </remarks>
     private bool IsSigningKeyRingRegistered()
     {
         if (services.GetService<IServiceProviderIsService>() is { } isService)
@@ -76,8 +47,6 @@ internal sealed class SigningKeyRingPresenceVerifier(IServiceProvider services) 
         }
         catch (ZeeKayDaConfigurationException)
         {
-            // The registration exists and is broken, which is a different answer from "absent" —
-            // the ring's own activator, in the next phase, reports that failure.
             return true;
         }
     }

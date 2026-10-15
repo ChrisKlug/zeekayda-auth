@@ -7,32 +7,19 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Claims are keyed by claim name exactly as they must appear in the token. The issuer performs
-/// no selection, renaming, or enrichment — claim selection is the caller's job, done before this
-/// type is constructed.
+/// Claims are keyed by name exactly as they appear in the token; the issuer selects, renames and adds
+/// nothing. They are claims rather than bytes so an opaque issuer can store them without deserializing.
 /// </para>
 /// <para>
-/// Deliberately claims rather than serialized bytes: a JWT issuer serializes them to JSON, but an
-/// opaque issuer wants claims to hand to a store, and a payload that arrived pre-serialized would
-/// force it to deserialize what the caller just serialized. This is what keeps
-/// <see cref="ITokenIssuer"/> implementable with no reference to any JWS-specific type.
-/// </para>
-/// <para>
-/// The constructor snapshots the claims into an immutable copy — the same copy-before-sign
-/// discipline the signing ring applies to its input. What was validated is what gets signed:
-/// mutating the source dictionary after construction changes nothing, and a source whose
-/// enumerator yields a claim name twice is rejected outright rather than serialized as a
-/// duplicate JSON member, whose handling RFC 7519 leaves undefined.
+/// The constructor snapshots the claims, so later mutation changes nothing, and refuses a name yielded
+/// twice, since RFC 7519 leaves duplicate members undefined.
 /// </para>
 /// <para>
 /// <strong>Claim values are serialized by their runtime type, whole object graph included.</strong>
-/// Use JSON primitives (<see langword="string"/>, numbers, <see langword="bool"/>), arrays of
-/// them, or purpose-built claim shapes. Never pass a domain object: every property on it — and on
-/// everything it references — lands base64url-encoded inside a token readable by whoever holds it.
-/// The subject claims the framework selects arrive as <see cref="Claims.ClaimValue"/>, which
-/// serializes as the JSON it holds, so a custom issuer that serializes the payload through
-/// <c>System.Text.Json</c> writes them correctly without knowing the type; one that does not
-/// reads <see cref="Claims.ClaimValue.Kind"/> and writes with <see cref="Claims.ClaimValue.WriteTo"/>.
+/// Use JSON primitives, arrays of them, or purpose-built claim shapes, never a domain object: every
+/// property it reaches lands in a token readable by whoever holds it. Framework-selected claims arrive as
+/// <see cref="Claims.ClaimValue"/>, which <c>System.Text.Json</c> writes as the JSON it holds; another
+/// serializer reads <see cref="Claims.ClaimValue.Kind"/> and writes with <see cref="Claims.ClaimValue.WriteTo"/>.
 /// </para>
 /// </remarks>
 public sealed record TokenPayload

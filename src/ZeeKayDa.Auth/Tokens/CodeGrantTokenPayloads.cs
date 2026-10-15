@@ -5,17 +5,9 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// The claims of the tokens an authorization code becomes. Every protocol claim comes from the
-/// grant — the redeemed entry, the issuer, the client — never from the request that redeemed it;
-/// the subject claims come from one resolution, already selected per destination; and both
-/// tokens share one issuance instant, so their <c>iat</c> agree and each <c>exp</c> is
-/// structurally at or after it.
+/// The claims of the tokens an authorization code becomes: protocol claims from the grant, never the
+/// request, subject claims from one resolution, and one issuance instant for both.
 /// </summary>
-/// <remarks>
-/// Protocol claims are written first and subject claims are added to them, never the other way
-/// round: selection has already dropped every reserved name from the subject claims, so a
-/// collision here is a bug and surfaces as one rather than as a provider overriding <c>sub</c>.
-/// </remarks>
 internal sealed class CodeGrantTokenPayloads
 {
     private readonly string _issuer;
@@ -133,8 +125,8 @@ internal sealed class CodeGrantTokenPayloads
     }
 
     /// <summary>
-    /// Added, never assigned: a subject claim sharing a protocol claim's name would mean
-    /// selection failed to strip it, and that must fail issuance rather than overwrite the grant.
+    /// Added, never assigned: a subject claim with a protocol claim's name means selection failed, and fails
+    /// issuance rather than overwrite the grant.
     /// </summary>
     private static void AddSubjectClaims(Dictionary<string, object?> claims, IReadOnlyDictionary<string, ClaimValue> subject)
     {

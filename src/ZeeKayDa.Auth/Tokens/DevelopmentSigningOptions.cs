@@ -16,16 +16,12 @@ public sealed class DevelopmentSigningOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Outside these environments startup fails with a <see cref="ZeeKayDaConfigurationException"/>,
-    /// so a development key is never silently deployed. <c>Production</c> can never be listed: it
-    /// is rejected both by <see cref="AllowedDevEnvironmentsValidator"/> and by
-    /// <see cref="DevelopmentSigningKeyGate"/>. A host running in a listed environment other than
-    /// <c>Development</c> logs a <see cref="Microsoft.Extensions.Logging.LogLevel.Critical"/> entry
-    /// on every start.
+    /// Outside these environments startup fails, so a development key is never silently deployed.
+    /// <c>Production</c> can never be listed, and a listed environment other than <c>Development</c> logs a
+    /// <see cref="Microsoft.Extensions.Logging.LogLevel.Critical"/> entry on every start.
     /// </para>
     /// <para>
-    /// Set it in code, never from <c>appsettings.json</c> or any file that may be committed: a
-    /// configuration file could otherwise widen the list in production.
+    /// Set it in code, never from a configuration file that could widen the list in production.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">Thrown when set to <see langword="null"/>.</exception>
@@ -40,9 +36,7 @@ public sealed class DevelopmentSigningOptions
     // spoof the value the gate reads.
     internal string? EnvironmentName { get; set; }
 
-    // The directory the persisted key lives in; null for the in-memory registration. Set only from
-    // AddPersistedDevelopmentSigning's parameter, so there is one way in. It is developer-supplied
-    // startup configuration, so an absolute path is accepted; confidentiality is enforced by
-    // IDevelopmentSigningKeyFileSystem whatever the path.
+    // The persisted key's directory, null for in-memory; set only from AddPersistedDevelopmentSigning.
+    // Any path is accepted: confidentiality is enforced by IDevelopmentSigningKeyFileSystem.
     internal string? PersistToDirectory { get; set; }
 }
