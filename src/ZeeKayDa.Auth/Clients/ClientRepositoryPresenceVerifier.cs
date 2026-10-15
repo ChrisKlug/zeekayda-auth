@@ -4,16 +4,9 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// Verifies at application startup that an <see cref="IClientRepository"/> has been registered in
-/// the dependency injection container.
+/// Fails startup when no <see cref="IClientRepository"/> is registered, asking
+/// <see cref="IServiceProviderIsService"/> rather than building it where the container offers that.
 /// </summary>
-/// <remarks>
-/// Asks <see cref="IServiceProviderIsService"/> rather than resolving the repository, because
-/// resolving it constructs the caller's repository. A container that does not provide
-/// <see cref="IServiceProviderIsService"/> (a third party replacing the default provider) falls back
-/// to resolving, as <c>SigningKeyRingPresenceVerifier</c> does, so the check reports rather than
-/// skipping itself.
-/// </remarks>
 internal sealed class ClientRepositoryPresenceVerifier(IServiceProvider services) : IStartupVerifier
 {
     /// <inheritdoc/>
@@ -42,8 +35,7 @@ internal sealed class ClientRepositoryPresenceVerifier(IServiceProvider services
         }
         catch (ZeeKayDaConfigurationException)
         {
-            // Registered and broken, a different answer from "absent": ClientRepositoryActivator
-            // reports that failure in the next phase.
+            // Registered and broken: ClientRepositoryActivator reports that.
             return true;
         }
     }

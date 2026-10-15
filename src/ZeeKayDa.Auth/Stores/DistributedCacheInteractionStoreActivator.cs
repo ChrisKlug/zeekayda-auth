@@ -9,18 +9,9 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// Verifies at startup that the distributed-cache interaction store has an
-/// <see cref="IDistributedCache"/> to run on, and that outside Development it is not the
-/// per-process <see cref="MemoryDistributedCache"/>.
+/// Checks at startup that the distributed-cache interaction store has a cache, and that outside Development
+/// it is not the per-process <see cref="MemoryDistributedCache"/>, which shares nothing between instances.
 /// </summary>
-/// <remarks>
-/// Despite its name, <see cref="MemoryDistributedCache"/> is shared with nothing. Behind a load
-/// balancer an authorization request started on one instance cannot be completed by another, and
-/// the failure looks like an intermittent bug in the host's login page. Startup is the only place
-/// to catch it; the host opts out for an intentional non-Development test host, and is reminded
-/// on every start. In Development, where the per-process cache is the expected choice, it is
-/// logged at <see cref="LogLevel.Information"/>, as the in-memory interaction store is.
-/// </remarks>
 internal sealed class DistributedCacheInteractionStoreActivator(
     IHostEnvironment environment,
     bool allowMemoryCacheOutsideDevelopment,

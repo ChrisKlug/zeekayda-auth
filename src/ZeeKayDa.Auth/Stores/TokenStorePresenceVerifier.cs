@@ -5,16 +5,9 @@ using ZeeKayDa.Auth.Stores;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// Verifies at application startup that every store the framework needs has been registered in
-/// the dependency injection container: <see cref="IAuthorizationCodeBackingStore"/>,
-/// <see cref="IRefreshTokenBackingStore"/>, and the interaction store behind the authorize flow.
+/// Fails startup when the code, refresh token or interaction store is missing; skipped for a container
+/// without <see cref="IServiceProviderIsService"/>.
 /// </summary>
-/// <remarks>
-/// Uses <see cref="IServiceProviderIsService"/> to inspect the DI container without resolving the
-/// services themselves. If <see cref="IServiceProviderIsService"/> is absent (e.g. a third-party
-/// DI container replacing the default provider), the check is skipped rather than failing with a
-/// confusing resolution error.
-/// </remarks>
 internal sealed class TokenStorePresenceVerifier(IServiceProviderIsService? isService = null) : IStartupVerifier
 {
     /// <inheritdoc/>

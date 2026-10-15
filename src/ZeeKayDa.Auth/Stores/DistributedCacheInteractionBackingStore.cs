@@ -3,15 +3,9 @@ using Microsoft.Extensions.Caching.Distributed;
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// <see cref="IInteractionBackingStore"/> over the host's <see cref="IDistributedCache"/>. Set,
-/// get and remove are exactly what a distributed cache provides, so a shared cache such as Redis
-/// is a complete answer for a multi-instance host, with nothing bespoke on top.
+/// <see cref="IInteractionBackingStore"/> over the host's <see cref="IDistributedCache"/>; a shared cache such
+/// as Redis is a complete answer for a multi-instance host.
 /// </summary>
-/// <remarks>
-/// The one backend that is not adequate is the per-process <c>MemoryDistributedCache</c>, which
-/// despite its name is shared with nothing: an authorization request started on one instance
-/// cannot be completed by another. Startup verification refuses it outside Development.
-/// </remarks>
 internal sealed class DistributedCacheInteractionBackingStore(
     IDistributedCache cache,
     TimeProvider timeProvider) : IInteractionBackingStore

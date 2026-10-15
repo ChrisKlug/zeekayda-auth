@@ -1,12 +1,8 @@
 namespace ZeeKayDa.Auth.Clients;
 
 /// <summary>
-/// What the framework validates every registration with — at startup in
-/// <see cref="InMemoryClientRepository.Build"/> and per request in <see cref="ValidatedClientResolver"/>:
-/// the framework's rules always, then a host's own <see cref="IClientRegistrationValidator"/> if it
-/// registered one. A host can add rules, never remove the framework's; the <c>none</c>
-/// client-authentication path relies on the framework's public ⇔ no credentials ⇔ <c>{ "none" }</c>
-/// rule.
+/// The framework's rules, then a host's own validator if registered: a host can add rules, never remove the
+/// ones the <c>none</c> authentication path relies on.
 /// </summary>
 internal sealed class FrameworkThenHostValidator(
     ClientRegistrationValidator framework,
@@ -17,20 +13,14 @@ internal sealed class FrameworkThenHostValidator(
             ? framework.Validate(client)
             : [.. framework.Validate(client), .. Checked(host, client)];
 
-    /// <summary>
-    /// <paramref name="host"/>'s failures, or a single <c>client.validator.malformed_result</c> when
-    /// it breaks its contract with a null list or a null entry, which would otherwise surface as a
-    /// bare <see cref="NullReferenceException"/> far from its cause.
-    /// </summary>
+    /// <summary>The host's failures, plus one <c>client.validator.malformed_result</c> for a null list or entry.</summary>
     private static IReadOnlyList<ZeeKayDaConfigurationFailure> Checked(
         IClientRegistrationValidator host,
         IClientWithCredentials client)
     {
-        // Copied once, so the list that is checked is the list that is returned: a host's own list
-        // may yield something different each time it is enumerated.
+        // Copied once: a host's list may yield something different on each enumeration.
         var found = host.Validate(client)?.ToArray();
 
-        // The real failures it did return are kept, so the operator sees them in the same pass.
         return found is null || found.Any(failure => failure is null)
             ?
             [

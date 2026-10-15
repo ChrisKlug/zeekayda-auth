@@ -9,16 +9,8 @@ namespace ZeeKayDa.Auth.Clients;
 /// <c>InMemoryClientRepository</c> and unit tests.
 /// </summary>
 /// <remarks>
-/// <para>
-/// This is a pure value object — no validation is performed in the constructor so that tests can
-/// construct invalid instances to exercise the validator independently. All validation is
-/// delegated to <c>IClientRegistrationValidator</c>.
-/// </para>
-/// <para>
-/// Use the factory methods <see cref="CreateConfidential"/> and <see cref="CreatePublic"/> to
-/// create correctly pre-configured instances; use object initialiser syntax for advanced or
-/// test scenarios.
-/// </para>
+/// A plain value object: the constructor validates nothing, so a test can build an invalid instance for
+/// the validator. <see cref="CreateConfidential"/> and <see cref="CreatePublic"/> build the usual shapes.
 /// </remarks>
 public sealed record Client : IClientWithCredentials
 {
@@ -109,9 +101,7 @@ public sealed record Client : IClientWithCredentials
     /// <param name="postLogoutRedirectUris">Permitted post-logout redirect URIs.</param>
     /// <param name="allowedScopes">Scopes this client is permitted to request.</param>
     /// <remarks>
-    /// Sets <see cref="IsPublic"/> to <see langword="false"/> and populates
-    /// <see cref="Secrets"/> with the supplied secret. All other properties use their
-    /// default values and can be overridden using <c>with</c> expressions.
+    /// Every other property keeps its default; override it with a <c>with</c> expression.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="secret"/> is <see langword="null"/>.</exception>
     public static Client CreateConfidential(
@@ -142,17 +132,9 @@ public sealed record Client : IClientWithCredentials
     /// <param name="postLogoutRedirectUris">Permitted post-logout redirect URIs.</param>
     /// <param name="allowedScopes">Scopes this client is permitted to request.</param>
     /// <remarks>
-    /// <para>
-    /// Sets <see cref="IsPublic"/> to <see langword="true"/>, <see cref="Secrets"/> to an
-    /// empty list, and <see cref="AllowedTokenEndpointAuthMethods"/> to <c>{ "none" }</c>.
-    /// All other properties use their default values and can be overridden using <c>with</c>
-    /// expressions.
-    /// </para>
-    /// <para>
-    /// The server advertises <see cref="TokenEndpointAuthMethods.None"/> by default; a
-    /// <c>TokenEndpoint.AdvertisedAuthMethods</c> filter that withholds it refuses the client — at
-    /// startup in the in-memory store, at the token endpoint from any other store.
-    /// </para>
+    /// Sets <see cref="IsPublic"/> to <see langword="true"/> and <see cref="AllowedTokenEndpointAuthMethods"/> to
+    /// <c>{ "none" }</c>; unspecified properties keep their defaults. A <c>TokenEndpoint.AdvertisedAuthMethods</c>
+    /// filter withholding <c>none</c> refuses the client.
     /// </remarks>
     public static Client CreatePublic(
         string clientId,

@@ -5,9 +5,8 @@ namespace ZeeKayDa.Auth.Clients;
 /// proof that a failure already spent its timing padding.
 /// </summary>
 /// <remarks>
-/// Only <see cref="ClientSecrets.Verify"/> creates one, and each failure is a new instance that
-/// vouches for its padding once, so a failure kept from an earlier request cannot excuse a later
-/// refusal from padding. A class rather than a struct: <c>default</c> would forge a padded failure.
+/// Each failure vouches for its padding once, so one kept from an earlier request cannot excuse a later
+/// refusal; a class, since a <c>default</c> struct would forge a padded failure.
 /// </remarks>
 public sealed class SecretVerification
 {

@@ -7,22 +7,17 @@ namespace ZeeKayDa.Auth.Clients;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The framework reads the algorithm id from a <see cref="ClientSecret.Value"/> — the text between
-/// its first two <c>$</c> — and calls the hasher whose <see cref="AlgorithmIds"/> contains it. The
-/// hasher receives the whole string and parses the rest itself; <see cref="PhcString"/> helps
-/// where the format is PHC.
+/// The framework reads the algorithm id between a <see cref="ClientSecret.Value"/>'s first two <c>$</c>
+/// and calls the hasher declaring it, with the whole string; <see cref="PhcString"/> helps parse the rest.
 /// </para>
 /// <para>
-/// The framework enforces the rules around every call: a <see cref="Verify"/> that throws counts as
-/// a failed verification, empty and whitespace-only plaintext never reaches <see cref="Create"/>,
-/// and a <see cref="Create"/> result whose id this hasher did not declare is refused. What remains
-/// the implementation's job: compare in fixed time (e.g.
-/// <see cref="CryptographicOperations.FixedTimeEquals"/>), never log the presented secret, and be
-/// safe for concurrent use.
+/// The framework counts a throwing <see cref="Verify"/> as a failure, never passes <see cref="Create"/>
+/// blank input, and refuses a created id this hasher did not declare. The implementation compares in
+/// fixed time (<see cref="CryptographicOperations.FixedTimeEquals"/>), never logs the presented secret, and
+/// is safe for concurrent use.
 /// </para>
 /// <para>
-/// Register with <c>AddClientSecretHasher&lt;T&gt;()</c>. Two registered hashers declaring the same
-/// id fail startup.
+/// Register with <c>AddClientSecretHasher&lt;T&gt;()</c>; two hashers declaring one id fail startup.
 /// </para>
 /// </remarks>
 public interface IClientSecretHasher
@@ -43,8 +38,7 @@ public interface IClientSecretHasher
     /// Hashes a plaintext secret. The framework has already refused empty and whitespace-only input.
     /// </summary>
     /// <remarks>
-    /// A span, so a caller holding the plaintext in a <c>char[]</c> can zero it afterwards. Callers
-    /// go through <see cref="ClientSecrets"/>, never through a hasher directly.
+    /// A span, so a caller can zero its <c>char[]</c> afterwards. Callers go through <see cref="ClientSecrets"/>.
     /// </remarks>
     ClientSecret Create(ReadOnlySpan<char> plaintext);
 
@@ -53,24 +47,18 @@ public interface IClientSecretHasher
     /// it cannot parse, or a work factor below its floor. Empty when the secret is acceptable.
     /// </summary>
     /// <remarks>
-    /// Runs on every client lookup, unauthenticated requests included, so it parses and never
-    /// derives: a hash computed here is CPU any caller can spend. The framework puts the client id
-    /// in front of each message. Every message reaches the operator's log verbatim, so it describes the
-    /// problem and never contains any part of the stored value, or a caught exception's message.
+    /// Runs on every client lookup, unauthenticated ones included, so it parses and never derives. Messages
+    /// reach the operator's log verbatim, so they never contain the stored value or an exception's message.
     /// </remarks>
     IEnumerable<ZeeKayDaConfigurationFailure> ValidateStoredSecret(ClientSecret stored) => [];
 
     /// <summary>
-    /// Creates the stored secret that failure-path timing padding verifies against: one that costs
-    /// this hasher exactly as much to verify as a real secret, and that no value a caller can know
-    /// will verify.
+    /// The stored secret failure-path padding verifies against: as costly to verify as a real one, and
+    /// matching no value a caller can know.
     /// </summary>
     /// <remarks>
-    /// Internal on purpose. A third-party hasher inherits this default, which pays one real
-    /// <see cref="Create"/> of a random value, once, at startup. It cannot supply a cheaper decoy of
-    /// its own: one that verified faster than a real secret would reopen the timing oracle the
-    /// padding exists to close, and nothing would report it. A built-in hasher overrides this where
-    /// it can build the decoy without the derivation.
+    /// Internal, so a third-party hasher cannot supply a cheaper decoy that would reopen the timing oracle; it
+    /// pays one real <see cref="Create"/> at startup instead.
     /// </remarks>
     internal ClientSecret CreateTimingDecoy() =>
         Create(Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)));

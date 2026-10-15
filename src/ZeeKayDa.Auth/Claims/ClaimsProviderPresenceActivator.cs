@@ -5,17 +5,12 @@ using ZeeKayDa.Auth.StartupVerification;
 namespace ZeeKayDa.Auth.Claims;
 
 /// <summary>
-/// Verifies at application startup that an <see cref="IClaimsProvider"/> is registered. There is
-/// no default: an optional provider with an empty fallback would let a deployment silently issue
-/// tokens carrying <c>sub</c> and nothing else.
+/// Fails startup when no <see cref="IClaimsProvider"/> is registered; an empty default would silently issue
+/// tokens carrying only <c>sub</c>.
 /// </summary>
 /// <remarks>
-/// Asks <see cref="IServiceProviderIsService"/> where the container offers it, so the provider,
-/// which is scoped and may need a request to construct, is not resolved. A container that does
-/// not offer it is asked to resolve the provider from the startup scope instead: the check is
-/// what makes the seam mandatory, so it cannot be the one thing a third-party container is
-/// allowed to skip. An activator rather than a verifier because that fallback constructs a
-/// caller-supplied service.
+/// Asks <see cref="IServiceProviderIsService"/> so the scoped provider is not built; a container without it
+/// resolves the provider instead, which is why this is an activator.
 /// </remarks>
 internal sealed class ClaimsProviderPresenceActivator(IServiceProvider services) : IStartupActivator
 {

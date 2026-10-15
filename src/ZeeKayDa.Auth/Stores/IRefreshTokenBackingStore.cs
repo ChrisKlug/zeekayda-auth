@@ -1,64 +1,47 @@
 namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
-/// The persistence extension point for refresh-token grants. Implement this to store grants in SQL,
-/// Cosmos, etc. It owns NO protocol: no hashing (keys arrive pre-hashed as <see cref="StoreKey"/>),
-/// no encryption (payloads arrive as ciphertext), no single-use state machine beyond the ONE atomic
-/// invariant on <see cref="TryMarkConsumedAsync"/>, no expiry logic, no outcome selection. It stores
-/// rows and runs equality queries over their non-secret columns. Native exceptions may propagate
-/// freely; the coordinator's Guarded wrapper maps them to <see cref="ZeeKayDaStoreException"/>.
+/// The persistence extension point for refresh-token grants, for SQL, Cosmos and the like. It owns no
+/// protocol: keys arrive hashed as <see cref="StoreKey"/>, payloads arrive encrypted, and its one
+/// invariant is that <see cref="TryMarkConsumedAsync"/> is atomic. Native exceptions may propagate; the
+/// framework maps them to <see cref="ZeeKayDaStoreException"/>.
 /// </summary>
-/// <remarks>
-/// The interface is deliberately limited to exactly these six methods — there is no bulk
-/// remove/cleanup method and no bulk-read-by-family/subject.
-/// </remarks>
 public interface IRefreshTokenBackingStore
 {
     /// <summary>
-    /// Insert a new grant. The handle is 256-bit random, so a primary-key collision is a
-    /// genuine duplicate/bug — let the unique-constraint violation propagate (the coordinator wraps it).
+    /// Inserts a new grant. The handle is 256-bit random, so let a primary-key violation propagate: it is a bug.
     /// </summary>
     /// <param name="grant">The grant to insert.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     Task InsertAsync(RefreshTokenGrant grant, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Return the grant for <paramref name="handleHash"/>, or <see langword="null"/> ONLY if
-    /// confirmed absent. Read-only. Fail-closed: on ANY transport/backend fault you MUST let the
-    /// exception propagate — you MUST NOT catch it and return <see langword="null"/> (a fault
-    /// masked as null is read as "no such token" and silently defeats reuse detection). Same
-    /// fail-closed contract as the equivalent read path on <see cref="IAuthorizationCodeBackingStore"/>.
+    /// The grant for <paramref name="handleHash"/>, or <see langword="null"/> only when confirmed absent. Read-only:
+    /// it MUST NOT change or remove the grant. A backend fault MUST propagate, never become <see langword="null"/>, which would read as "no such token"
+    /// and defeat reuse detection.
     /// </summary>
     /// <param name="handleHash">The already-hashed token handle.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     Task<RefreshTokenGrant?> FindByHandleAsync(StoreKey handleHash, CancellationToken cancellationToken);
 
     /// <summary>
-    /// THE atomic invariant. Transition the grant at <paramref name="handleHash"/> from
-    /// <see cref="RefreshGrantStatus.Active"/> to <see cref="RefreshGrantStatus.Consumed"/> as a
-    /// SINGLE atomic operation, and return whether THIS call performed the transition:
-    /// <see langword="true"/> iff the row was <see cref="RefreshGrantStatus.Active"/> and is now
-    /// <see cref="RefreshGrantStatus.Consumed"/> because of this call; <see langword="false"/> if
-    /// the row was not <see cref="RefreshGrantStatus.Active"/> (already consumed or revoked) or is
-    /// absent.
+    /// Atomically moves the grant from <see cref="RefreshGrantStatus.Active"/> to
+    /// <see cref="RefreshGrantStatus.Consumed"/>, returning whether this call did so; <see langword="false"/>
+    /// when it was not active or is absent.
     /// </summary>
     /// <param name="handleHash">The already-hashed token handle.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <remarks>
-    /// SQL: <c>UPDATE ... SET status=Consumed WHERE handle=@h AND status=Active</c>; return
-    /// <c>rowsAffected==1</c>. Cosmos: conditional replace with <c>IfMatch=etag</c>. Redis: a Lua
-    /// script / <c>WATCH-MULTI-EXEC</c> on the key. If this is NOT atomic, single-use enforcement
-    /// is lost (two consumers both transition it).
+    /// SQL: <c>UPDATE ... SET status=Consumed WHERE handle=@h AND status=Active</c>, true when one row
+    /// changed. Cosmos: conditional replace with <c>IfMatch=etag</c>. Redis: a Lua script. Without atomicity
+    /// two consumers both succeed, and single use is lost.
     /// </remarks>
     Task<bool> TryMarkConsumedAsync(StoreKey handleHash, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Record that the family <paramref name="familyId"/> is revoked, then set
-    /// <see cref="RefreshGrantStatus.Revoked"/> for EVERY grant in it that already exists at the
-    /// moment this call evaluates its predicate. Idempotent. Correctness bar is COMPLETENESS over
-    /// EXISTING rows — every grant already in the family, including one inserted concurrently with
-    /// (but not strictly after) this call, MUST end up revoked (RFC 9700 §4.13). Mark, do not
-    /// delete: a still-live token in the family must remain findable and read as revoked.
+    /// Records <paramref name="familyId"/> as revoked, then marks every grant already in it
+    /// <see cref="RefreshGrantStatus.Revoked"/>, including one inserted concurrently (RFC 9700 §4.13).
+    /// Idempotent. Mark, never delete: a live token must still be found and read as revoked.
     /// </summary>
     /// <param name="familyId">The family identifier to revoke.</param>
     /// <param name="rememberUntil">
@@ -68,41 +51,30 @@ public interface IRefreshTokenBackingStore
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <remarks>
-    /// The record is not a grant: never write it as a row that <see cref="FindByHandleAsync"/> or a
-    /// subject query can return. Commit it before marking any row, not in the same transaction: a
-    /// fault while marking then still leaves the family revoked, where a rolled-back transaction
-    /// would take the record with it. The family may have no rows yet — an authorization
-    /// code replayed before its first refresh token is stored revokes an empty family.
+    /// The record is not a grant row. Commit it before marking rows, not in one transaction, so a fault while
+    /// marking still leaves the family revoked. The family may have no rows yet, when a code is replayed
+    /// before its first refresh token is stored.
     /// </remarks>
     Task RevokeFamilyAsync(string familyId, DateTimeOffset rememberUntil, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Set <see cref="RefreshGrantStatus.Revoked"/> for EVERY grant whose <see cref="RefreshTokenGrant.Subject"/>
-    /// equals <paramref name="subject"/> AND that already exists at the moment this call evaluates
-    /// its predicate. Same completeness bar as <see cref="RevokeFamilyAsync"/>. Present so a FUTURE
-    /// subject-level logout-all is possible; the endpoint is deferred and no coordinator method calls
-    /// this yet. The subject arrives as cleartext (it is a plain equality predicate, not
-    /// a keyed lookup) — this control must never fail to match, which is why the subject is not
-    /// peppered/keyed.
+    /// Marks every grant already existing for <paramref name="subject"/> revoked, as
+    /// <see cref="RevokeFamilyAsync"/> does. Nothing calls it yet. The subject arrives in cleartext, not keyed,
+    /// so this control can never fail to match.
     /// </summary>
     /// <param name="subject">The subject identifier to revoke all grants for.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     Task RevokeBySubjectAsync(string subject, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Return <see langword="true"/> iff <see cref="RevokeFamilyAsync"/> has recorded
-    /// <paramref name="familyId"/> as revoked and the record is still kept. Read-only, no side
-    /// effects. The coordinator calls this before honouring a grant's own
-    /// <see cref="RefreshGrantStatus.Active"/> status, so a successor inserted after
-    /// <see cref="RevokeFamilyAsync"/> is caught at consume time.
+    /// Whether <see cref="RevokeFamilyAsync"/> recorded <paramref name="familyId"/> and the record is still
+    /// kept; checked before an active grant is honoured, so a successor inserted after a revoke is caught.
     /// </summary>
     /// <param name="familyId">The family identifier to check.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <remarks>
-    /// MUST be a strongly-consistent / primary read — a stale-replica read that misses a
-    /// just-committed revoke fails open. MUST throw on fault; you MUST NOT catch-and-return
-    /// <see langword="false"/> (a fault masked as <see langword="false"/> reads as "not revoked" and
-    /// defeats the gate). Same fail-closed tier as <see cref="FindByHandleAsync"/>.
+    /// Read-only. MUST be a strongly consistent read, and MUST throw on a fault rather than return
+    /// <see langword="false"/>: either failure reads as "not revoked" and fails open.
     /// SQL: <c>SELECT EXISTS(SELECT 1 FROM revoked_families WHERE family_id=@f)</c>.
     /// </remarks>
     Task<bool> IsFamilyRevokedAsync(string familyId, CancellationToken cancellationToken);

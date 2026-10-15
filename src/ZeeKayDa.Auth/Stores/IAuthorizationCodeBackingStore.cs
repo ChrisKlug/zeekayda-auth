@@ -5,12 +5,9 @@ namespace ZeeKayDa.Auth.Stores;
 /// Implement this to put records in Redis, SQL, Cosmos, etc.
 /// </summary>
 /// <remarks>
-/// This interface has NO knowledge of OAuth, tombstones, encryption, or expiry semantics — it
-/// stores opaque, already-encrypted bytes under already-hashed keys. The correctness of the
-/// redemption protocol does not depend on this implementation beyond the ONE atomicity
-/// invariant on <see cref="TryInsertAsync"/>. Implementations MAY throw their native exceptions
-/// freely; the framework's <c>AuthorizationCodeStore</c> coordinator wraps them as
-/// <see cref="ZeeKayDaStoreException"/>.
+/// Knows nothing of OAuth, tombstones, encryption or expiry: it stores encrypted bytes under hashed keys,
+/// and its one invariant is that <see cref="TryInsertAsync"/> is atomic. Native exceptions may propagate;
+/// the framework wraps them as <see cref="ZeeKayDaStoreException"/>.
 /// </remarks>
 public interface IAuthorizationCodeBackingStore
 {
@@ -21,24 +18,18 @@ public interface IAuthorizationCodeBackingStore
     /// <param name="key">The already-hashed store key.</param>
     /// <param name="value">The opaque bytes to store.</param>
     /// <param name="expiresAt">
-    /// The point at which a backend with native TTL support MAY evict this value. The
-    /// coordinator enforces expiry logically and does not rely on this eviction, so ignoring
-    /// this value is correct, just less tidy.
+    /// When a backend with native TTL MAY evict the value; expiry is enforced elsewhere, so ignoring it is correct.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns><see langword="true"/> if inserted; <see langword="false"/> if already present.</returns>
     /// <remarks>
     /// <para>
-    /// "No value exists" means physically absent, not "no <em>live</em> value" — logical expiry
-    /// is the coordinator's concern, not this primitive's. Handles are 256-bit random, so a key
-    /// is never legitimately reused and a physically-present value always means a genuine
-    /// collision.
+    /// "No value" means physically absent, not "no live value". Handles are 256-bit random, so a present value
+    /// is a genuine collision.
     /// </para>
     /// <para>
-    /// This is the ONE hard invariant: the insert-if-absent test and the write MUST be a single
-    /// atomic operation (Redis <c>SET NX</c>, a unique-constraint <c>INSERT</c>, a conditional
-    /// Cosmos create). A non-atomic <c>if (!Exists(key)) Insert(key)</c> has a TOCTOU window and
-    /// loses single-use enforcement — never use a read-then-write.
+    /// The ONE hard invariant: the test and the write MUST be one atomic operation (Redis <c>SET NX</c>, a
+    /// unique-constraint <c>INSERT</c>, a conditional Cosmos create). A read-then-write loses single use.
     /// </para>
     /// </remarks>
     Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken);
@@ -51,13 +42,9 @@ public interface IAuthorizationCodeBackingStore
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The stored bytes, or <see langword="null"/> if confirmed absent.</returns>
     /// <remarks>
-    /// <strong>Fail-closed contract:</strong> return <see langword="null"/> ONLY for a
-    /// confirmed-absent key. On ANY transport/backend failure (timeout, connection drop,
-    /// deserialization error, auth failure) the implementation MUST let the exception propagate
-    /// — it MUST NOT catch it and return <see langword="null"/>. A swallowed fault that returns
-    /// <see langword="null"/> is read by the coordinator as "no tombstone ⇒ code not yet
-    /// redeemed," silently re-opening a replay window. Throwing on fault is a contractual
-    /// obligation, not a nicety.
+    /// <strong>Fail-closed:</strong> return <see langword="null"/> ONLY for a confirmed-absent key, and let every
+    /// backend fault propagate. A fault returned as <see langword="null"/> reads as "not yet redeemed" and
+    /// reopens a replay window.
     /// </remarks>
     Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken);
 

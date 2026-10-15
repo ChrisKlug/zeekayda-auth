@@ -16,9 +16,7 @@ internal sealed class InMemoryInteractionBackingStore(TimeProvider timeProvider)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Abandoned requests — a closed tab, a user who never came back — would otherwise
-        // accumulate for the life of the process. Sweeping on every write keeps the dictionary to
-        // the live set at a cost proportional to it, which for a development host is nothing.
+        // Abandoned requests would otherwise accumulate for the life of the process.
         RemoveExpired();
 
         _entries[key] = new Entry(value.ToArray(), expiresAt);

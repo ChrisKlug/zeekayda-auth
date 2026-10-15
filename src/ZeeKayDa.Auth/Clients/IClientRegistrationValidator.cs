@@ -4,16 +4,8 @@ namespace ZeeKayDa.Auth.Clients;
 /// Validates a client registration against the framework's configuration rules.
 /// </summary>
 /// <remarks>
-/// <para>
-/// The default implementation (<c>ClientRegistrationValidator</c>) enforces all redirect URI
-/// rules, the <c>IsPublic</c> trinity, <c>ClientId</c> format, the
-/// two-credential cap, and the <c>AllowedTokenEndpointAuthMethods</c> subset check.
-/// </para>
-/// <para>
-/// The framework runs it on every registration a repository returns. A custom
-/// <c>IClientRepository</c> may also call it before persisting a new or updated client, so a bad
-/// registration is rejected where it is written rather than on a live request.
-/// </para>
+/// The framework runs it on every registration a repository returns. A custom repository may also call it
+/// before persisting, so a bad registration is refused where it is written.
 /// </remarks>
 public interface IClientRegistrationValidator
 {
