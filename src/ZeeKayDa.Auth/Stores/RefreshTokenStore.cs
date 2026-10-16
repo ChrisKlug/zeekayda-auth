@@ -56,7 +56,7 @@ internal sealed class RefreshTokenStore(
             FamilyAbsoluteExpiry = entry.FamilyAbsoluteExpiry,
             ExpiresAt = expiresAt,
             Status = RefreshGrantStatus.Active,
-            ProtectedPayload = ProtectEntry(clampedEntry),
+            ProtectedPayload = ProtectEntry(key, clampedEntry),
         };
 
         await Guarded(
@@ -90,7 +90,7 @@ internal sealed class RefreshTokenStore(
 
         try
         {
-            return UnprotectEntry(grant.ProtectedPayload);
+            return UnprotectEntry(key, grant.ProtectedPayload);
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException)
         {
@@ -151,7 +151,7 @@ internal sealed class RefreshTokenStore(
         // Only now is ciphertext touched.
         try
         {
-            return new RefreshTokenConsumptionResult.Consumed { Entry = UnprotectEntry(grant.ProtectedPayload) };
+            return new RefreshTokenConsumptionResult.Consumed { Entry = UnprotectEntry(key, grant.ProtectedPayload) };
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException)
         {
@@ -190,12 +190,12 @@ internal sealed class RefreshTokenStore(
             : new RefreshTokenConsumptionResult.AlreadyConsumed { FamilyId = familyId };
     }
 
-    private ReadOnlyMemory<byte> ProtectEntry(RefreshTokenEntry entry)
+    private ReadOnlyMemory<byte> ProtectEntry(StoreKey key, RefreshTokenEntry entry)
     {
         try
         {
             var json = JsonSerializer.SerializeToUtf8Bytes(entry, StoreJsonSerializerContext.Default.RefreshTokenEntry);
-            return _protector.Protect(json);
+            return ProtectorFor(key).Protect(json);
         }
         catch (Exception ex) when (ex is not ZeeKayDaStoreException)
         {
@@ -203,11 +203,14 @@ internal sealed class RefreshTokenStore(
         }
     }
 
-    private RefreshTokenEntry UnprotectEntry(ReadOnlyMemory<byte> protectedPayload)
+    private RefreshTokenEntry UnprotectEntry(StoreKey key, ReadOnlyMemory<byte> protectedPayload)
     {
-        var json = _protector.Unprotect(protectedPayload.ToArray());
+        var json = ProtectorFor(key).Unprotect(protectedPayload.ToArray());
         return JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.RefreshTokenEntry)!;
     }
+
+    // Sealed to its own row, so a writer to the store cannot move a victim's payload under a handle they hold.
+    private IDataProtector ProtectorFor(StoreKey handleKey) => _protector.CreateProtector(handleKey.ToString());
 
     private static StoreKey BuildHandleKey(string tokenHandle) => StoreKey.Hash("refresh", "h", tokenHandle);
 

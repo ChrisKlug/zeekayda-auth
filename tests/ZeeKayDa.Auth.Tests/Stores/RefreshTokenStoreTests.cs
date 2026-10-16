@@ -814,6 +814,24 @@ public sealed class RefreshTokenStoreTests
     }
 
     [Fact]
+    public async Task TryConsumeAsync_returns_NotFound_for_a_payload_copied_from_another_grant_row()
+    {
+        // A writer to the backing store copies a victim's row, payload and cleartext columns alike,
+        // under a handle they hold.
+        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var store = CreateStore(grantStore: grantStore);
+        await store.StoreAsync("victim-handle", BuildEntry(clientId: "client-a"), CancellationToken.None);
+        var victimGrant = await grantStore.FindByHandleAsync(StoreKey.Hash("refresh", "h", "victim-handle"), CancellationToken.None);
+        await grantStore.InsertAsync(
+            victimGrant! with { HandleHash = StoreKey.Hash("refresh", "h", "attacker-handle") },
+            CancellationToken.None);
+
+        var outcome = await store.TryConsumeAsync("attacker-handle", "client-a", CancellationToken.None);
+
+        outcome.Should().BeOfType<RefreshTokenConsumptionResult.NotFound>();
+    }
+
+    [Fact]
     public async Task TryConsumeAsync_after_NotFound_from_unreadable_payload_does_not_allow_a_second_successful_consume()
     {
         // The row is already marked Consumed by the losing decrypt attempt — the token is dead
