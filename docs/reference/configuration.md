@@ -607,6 +607,7 @@ startup output and host logs.
 | `configuration.issuer.trailing_slash` | `Issuer` ends with `/` |
 | `configuration.issuer.not_https` | `Issuer` uses a scheme other than HTTPS, and is not HTTP with `AllowInsecureIssuer` set |
 | `configuration.issuer.http_non_loopback` | `Issuer` uses HTTP with a non-loopback host |
+| `configuration.development.allow_http_loopback_issuer.https_issuer` | `Development.AllowHttpLoopbackIssuer` is `true` while `Issuer` uses HTTPS; the flag would still exempt every loopback request from the HTTPS requirement |
 | `configuration.issuer.not_canonical` | `Issuer` uses uppercase scheme or host, or explicitly specifies a default port (`:443` for HTTPS, `:80` for HTTP loopback) |
 | `configuration.<endpoint>.uri.invalid` | an endpoint override is not an absolute URI |
 | `configuration.<endpoint>.uri.userinfo` | an endpoint override contains `user:password@host` userinfo |

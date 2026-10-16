@@ -163,6 +163,22 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Theory]
+    [InlineData("https://auth.example.com")]
+    [InlineData("https://localhost:5001")]
+    public void Validate_fails_for_HTTPS_Issuer_with_AllowHttpLoopbackIssuer_flag(string issuer)
+    {
+        // Behind a same-host reverse proxy every request arrives from loopback, so the flag would
+        // exempt all traffic from the HTTPS requirement on a host that is meant to be HTTPS.
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = issuer,
+            Development = { AllowHttpLoopbackIssuer = true },
+        });
+
+        failures.Select(f => f.Code).Should().Equal("configuration.development.allow_http_loopback_issuer.https_issuer");
+    }
+
+    [Theory]
     [InlineData("https://auth.example.com/tenant1/")]
     [InlineData("https://auth.example.com/a/b/c/")]
     [InlineData("http://localhost:5000/tenant1/", true)]
