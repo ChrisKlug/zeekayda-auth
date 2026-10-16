@@ -50,7 +50,20 @@ internal static partial class AuthorizationServerOptionsValidation
                 $"AuthorizationServerOptions.GrantTypesSupported contains invalid value '{(int)grantType}'. " +
                 $"Expected a valid {nameof(GrantType)} enum member.");
         }
+
+        // Discovery publishes this list, and may name only grants the server supports (RFC 8414 §2).
+        foreach (var grantType in options.GrantTypesSupported.Where(IsDefinedButNotServed))
+        {
+            yield return new(
+                "configuration.grant_types_supported.not_served",
+                $"AuthorizationServerOptions.GrantTypesSupported contains GrantType.{grantType}, which the token " +
+                "endpoint does not serve: discovery would advertise a grant every request for is refused. " +
+                $"Remove it; only GrantType.{GrantType.AuthorizationCode} is served.");
+        }
     }
+
+    private static bool IsDefinedButNotServed(GrantType grantType) =>
+        Enum.IsDefined(grantType) && grantType != GrantType.AuthorizationCode;
 
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateCors(AuthorizationServerOptions options)
     {

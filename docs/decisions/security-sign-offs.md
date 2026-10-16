@@ -2098,8 +2098,10 @@ Copilot code, security and architecture lenses, the security and architect agent
 - A filter withholding `none` refuses public clients. Closed — `A_public_client_refused_because_the_server_disallows_none_is_padded_like_an_unknown_client`,
   `Build_failure_for_a_public_client_on_a_server_whose_filter_withholds_none_names_the_filter`.
 - `client_credentials` with only `none` advertised fails startup (RFC 6749 §4.4). Closed —
-  `Verify_fails_when_client_credentials_is_served_and_the_filter_leaves_only_none`,
-  `Verify_fails_when_client_credentials_is_served_and_no_authenticator_is_registered`.
+  Verify_fails_when_client_credentials_is_served_and_the_filter_leaves_only_none,
+  Verify_fails_when_client_credentials_is_served_and_no_authenticator_is_registered
+  [deleted by #968 with that check: GrantTypesSupported can no longer contain client_credentials, which startup now refuses —
+  `Validate_fails_when_GrantTypesSupported_contains_a_grant_the_token_endpoint_does_not_serve`].
 - A host without the HTTP layer is held to the same advertised-set checks. Closed —
   `AddZeeKayDaAuthCore_registers_the_check_so_a_core_only_host_is_held_to_it`.
 - Discovery, client registration and the token endpoint read one resolution, fixed at startup. Closed —

@@ -83,7 +83,7 @@ public sealed class EndSessionEndpointHostTests
     [Fact]
     public async Task The_endpoint_is_not_served_on_a_host_without_the_code_grant()
     {
-        using var factory = new TestWebAppFactory(options => options.GrantTypesSupported = [GrantType.ClientCredentials]);
+        using var factory = new TestWebAppFactory(options => options.GrantTypesSupported = []);
         using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com") });
 
         var response = await client.GetAsync(EndSessionPath, Cancellation);

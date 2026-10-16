@@ -42,6 +42,10 @@ public sealed class AuthorizationServerOptions
     /// Gets or sets the grant types supported by this authorization server.
     /// Defaults to <c>[<see cref="GrantType.AuthorizationCode"/>]</c>.
     /// </summary>
+    /// <remarks>
+    /// Only <see cref="GrantType.AuthorizationCode"/> is served; any other value fails startup, since
+    /// discovery publishes this list. Empty declares a host with no interactive flow.
+    /// </remarks>
     public ICollection<GrantType> GrantTypesSupported
     {
         get => _grantTypesSupported;
