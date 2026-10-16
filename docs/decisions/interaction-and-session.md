@@ -127,6 +127,8 @@ callback-scoped `zkd.challenge.<id>` cookie (none or several: the error page; a 
 no login page only a refusal reaches the client, as `access_denied` on its own properties; the rest renders locally, logged by type
 never by message. The session subject of an auto-promoted external principal is derived from provider, claim issuer and upstream
 subject together, never the upstream value: two providers can never share a session, and a subject without an issuer is refused.
+The derivation is public (`ExternalSubject.Derive`), so a host can pre-link accounts, and case-sensitive: renaming a provider,
+casing included, re-identifies its users, and `WithProviders` says so. No namespace option decouples the two.
 
 **Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and whether a page is needed
 decides dispatch, not the path.** `LoginPath` defaults to `/login` and `ConsentPath` to `/consent`; a path is only an

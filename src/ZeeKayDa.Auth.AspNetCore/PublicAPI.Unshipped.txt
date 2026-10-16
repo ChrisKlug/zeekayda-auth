@@ -131,3 +131,5 @@ ZeeKayDa.Auth.AspNetCore.Interaction.ProviderReturnOutcome
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderReturnOutcome.Declined = 0 -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderReturnOutcome
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderReturnOutcome.Failed = 1 -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderReturnOutcome
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest.LoginHint.get -> string?
+ZeeKayDa.Auth.AspNetCore.Interaction.ExternalSubject
+static ZeeKayDa.Auth.AspNetCore.Interaction.ExternalSubject.Derive(string! providerId, string! issuer, string! subject) -> string!

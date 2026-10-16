@@ -23,6 +23,7 @@ public sealed class ExternalSubjectTests
     [InlineData("acme", "https://acme.example.net", "43")]
     [InlineData("acme", "https://other.example.net", "42")]
     [InlineData("globex", "https://acme.example.net", "42")]
+    [InlineData("Acme", "https://acme.example.net", "42")]
     public void Derive_changes_when_any_part_changes(string provider, string issuer, string subject)
     {
         var baseline = ExternalSubject.Derive("acme", "https://acme.example.net", "42");
@@ -36,6 +37,17 @@ public sealed class ExternalSubjectTests
         // With a separator or plain concatenation, ("ab", "c") and ("a", "bc") could hash alike.
         ExternalSubject.Derive("ab", "c", "x").Should().NotBe(ExternalSubject.Derive("a", "bc", "x"));
         ExternalSubject.Derive("a", "bc", "x").Should().NotBe(ExternalSubject.Derive("a", "b", "cx"));
+    }
+
+    [Theory]
+    [InlineData("", "https://acme.example.net", "42")]
+    [InlineData("acme", "", "42")]
+    [InlineData("acme", "https://acme.example.net", "")]
+    public void Derive_refuses_an_empty_part(string provider, string issuer, string subject)
+    {
+        var act = () => ExternalSubject.Derive(provider, issuer, subject);
+
+        act.Should().Throw<ArgumentException>();
     }
 
     [Fact]
