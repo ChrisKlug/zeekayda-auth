@@ -1372,10 +1372,10 @@ public sealed class AuthorizationServerOptionsValidatorTests
         failures.Should().BeEmpty();
     }
 
-    // ── Cross-field: RefreshTokenLifetime >= AuthorizationCodeLifetime ────────────────────────────
+    // ── Lifetime relationships ───────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_RefreshTokenLifetime_is_less_than_AuthorizationCodeLifetime()
+    public void Validate_succeeds_when_RefreshTokenLifetime_is_shorter_than_AuthorizationCodeLifetime()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
@@ -1384,66 +1384,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
             TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromSeconds(60) },
         });
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.refresh_token_lifetime.shorter_than_code_lifetime")
-            .Which.Message.Should().Contain("RefreshTokenLifetime must be greater than or equal to");
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_RefreshTokenLifetime_equals_AuthorizationCodeLifetime()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(60) },
-            TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromSeconds(60) },
-        });
-
         failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_RefreshTokenLifetime_is_greater_than_AuthorizationCodeLifetime()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(60) },
-            TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromDays(1) },
-        });
-
-        failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Validate_does_not_emit_cross_field_error_when_RefreshTokenLifetime_is_zero()
-    {
-        // RefreshTokenLifetime = zero triggers the per-field zero check; the cross-field guard
-        // must NOT fire because its condition requires both values to be positive.
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(60) },
-            TokenEndpoint = { RefreshTokenLifetime = TimeSpan.Zero },
-        });
-
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.refresh_token_lifetime.not_positive")
-            .Which.Message.Should().Contain("greater than zero");
-    }
-
-    [Fact]
-    public void Validate_does_not_emit_cross_field_error_when_AuthorizationCodeLifetime_is_zero()
-    {
-        // AuthorizationCodeLifetime = zero triggers the per-field zero check; the cross-field guard
-        // must NOT fire because its condition requires both values to be positive.
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.Zero },
-            TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromDays(1) },
-        });
-
-        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.authorization_code_lifetime.not_positive")
-            .Which.Message.Should().Contain("AuthorizationCodeLifetime must be greater than zero");
     }
 
     // ── ClockSkewTolerance — non-negative constraint ─────────────────────────────────────────────

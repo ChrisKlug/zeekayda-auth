@@ -625,7 +625,6 @@ startup output and host logs.
 | `configuration.token_endpoint.access_token_lifetime.not_positive` | `TokenEndpoint.AccessTokenLifetime` is zero or negative |
 | `configuration.token_endpoint.id_token_lifetime.not_positive` | `TokenEndpoint.IdTokenLifetime` is zero or negative |
 | `configuration.token_endpoint.refresh_token_lifetime.not_positive` | `TokenEndpoint.RefreshTokenLifetime` is zero or negative |
-| `configuration.token_endpoint.refresh_token_lifetime.shorter_than_code_lifetime` | `TokenEndpoint.RefreshTokenLifetime` is shorter than `AuthorizationEndpoint.AuthorizationCodeLifetime` |
 | `configuration.token_endpoint.absolute_family_lifetime.not_positive` | `TokenEndpoint.AbsoluteFamilyLifetime` is zero or negative |
 | `configuration.discovery_document.cache_max_age.negative` | `DiscoveryDocument.CacheMaxAge` is negative |
 | `configuration.jwks_endpoint.cache_max_age.negative` | `JwksEndpoint.CacheMaxAge` is negative |
