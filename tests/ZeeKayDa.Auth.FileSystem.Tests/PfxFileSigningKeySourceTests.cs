@@ -614,7 +614,7 @@ public sealed class PfxFileSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_reports_an_empty_password_when_the_bundle_has_one_as_a_per_entry_failure()
+    public async Task ReadAsync_reports_a_password_source_that_returns_an_empty_string_as_password_unavailable()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -624,7 +624,38 @@ public sealed class PfxFileSigningKeySourceTests
 
         var listing = await sut.ReadAsync(ct);
 
-        listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
+        listing.ShouldReportOnly(path, "signing.file_signing.password_unavailable");
+    }
+
+    [Fact]
+    public async Task ReadAsync_refuses_a_bundle_exported_under_an_empty_password()
+    {
+        // A key encrypted under "" is a plain key in disguise, and "" is most often a secret that
+        // was never bound; PEM refuses it the same way.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("empty.pfx", certificate, string.Empty);
+        var sut = BuildSource(new PfxFile(path, Password(string.Empty)));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(path, "signing.file_signing.password_unavailable");
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_refuses_a_password_source_that_returns_an_empty_string()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("empty.pfx", certificate, string.Empty);
+        var sut = BuildSource(new PfxFile(path, Password(string.Empty)));
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(path), ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.password_unavailable");
     }
 
     [Fact]
