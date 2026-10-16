@@ -558,6 +558,9 @@ public class AuthorizeRequestValidatorTests
     [InlineData("-1")]
     [InlineData("abc")]
     [InlineData("1.5")]
+    [InlineData(" 60")]
+    [InlineData("60 ")]
+    [InlineData("+60")]
     public async Task Phase2_malformed_max_age_is_invalid_request(string maxAge)
     {
         var parameters = ValidParameters();

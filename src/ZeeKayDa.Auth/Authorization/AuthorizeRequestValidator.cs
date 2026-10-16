@@ -331,7 +331,7 @@ internal sealed partial class AuthorizeRequestValidator(
         if (string.IsNullOrEmpty(raw))
             return null;
 
-        if (!long.TryParse(raw, out var seconds))
+        if (!long.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds))
             return InvalidRequest("The max_age parameter is malformed.");
 
         // Capped well below where TimeSpan.FromSeconds would overflow and throw.
