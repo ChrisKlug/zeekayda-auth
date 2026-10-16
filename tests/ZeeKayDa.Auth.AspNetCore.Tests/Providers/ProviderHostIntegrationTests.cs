@@ -488,12 +488,22 @@ public sealed class ProviderHostIntegrationTests
     public async Task A_handler_outside_the_remote_hierarchy_is_a_provider_with_nothing_to_pin()
     {
         using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
-            auth.AddScheme<AuthenticationSchemeOptions, PlainHandler>("plain", "Plain", _ => { })));
+            auth.AddScheme<AuthenticationSchemeOptions, PlainRequestHandler>("plain", "Plain", _ => { })));
         using var client = NewClient(factory);
 
         var body = await LoginOptionsAsync(client);
 
         body.Should().Be("""{"local":true,"providers":["plain:Plain"]}""");
+    }
+
+    [Fact]
+    public void A_handler_that_does_not_handle_requests_fails_startup()
+    {
+        // Nothing could complete its callback, so it is not a sign-in method the login page may offer.
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+            auth.AddScheme<AuthenticationSchemeOptions, PlainHandler>("plain", "Plain", _ => { })));
+
+        ShouldFailStartupWith(factory, "provider.handler_cannot_handle_requests");
     }
 
     // ── Dispatch at the authorization endpoint ────────────────────────────────────────────────
@@ -563,13 +573,28 @@ public sealed class ProviderHostIntegrationTests
         IOptionsMonitor<OddRemoteOptions> options,
         ILoggerFactory logger,
         UrlEncoder encoder)
-        : AuthenticationHandler<OddRemoteOptions>(options, logger, encoder)
+        : AuthenticationHandler<OddRemoteOptions>(options, logger, encoder), IAuthenticationRequestHandler
     {
+        public Task<bool> HandleRequestAsync() => Task.FromResult(false);
+
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
             => Task.FromResult(AuthenticateResult.NoResult());
     }
 
-    /// <summary>A handler outside the remote hierarchy — supported, with nothing to pin.</summary>
+    /// <summary>A handler outside the remote hierarchy that handles requests — supported, with nothing to pin.</summary>
+    private sealed class PlainRequestHandler(
+        IOptionsMonitor<AuthenticationSchemeOptions> options,
+        ILoggerFactory logger,
+        UrlEncoder encoder)
+        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder), IAuthenticationRequestHandler
+    {
+        public Task<bool> HandleRequestAsync() => Task.FromResult(false);
+
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+            => Task.FromResult(AuthenticateResult.NoResult());
+    }
+
+    /// <summary>A handler outside the request-handler contract: nothing could complete its callback.</summary>
     private sealed class PlainHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
