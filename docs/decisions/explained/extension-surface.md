@@ -29,6 +29,7 @@ The wrong thing is made impossible rather than forbidden.
 | `IClientAuthenticator` | client authentication methods | `AddClientAuthenticator<T>()` |
 | `IClientSecretHasher` | secret hashing | `AddClientSecretHasher<T>()` |
 | `OnProviderSignIn` | hook after an external sign-in | `WithProviders(…)` |
+| `OnProviderChallenge` | hook before a challenge to a provider | `WithProviders(…)` |
 | options of a package's own | validated with the framework's | `AddZeeKayDaOptions<T>()` |
 | `IClientRepository`, `IScopeRepository` | clients, scopes | raw DI today |
 | `IStartupVerifier`, `IStartupActivator` | startup checks | raw DI today |

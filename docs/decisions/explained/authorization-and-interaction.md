@@ -57,7 +57,9 @@ a call made while rendering a GET would decide every request on arrival.
 - **Consent:** bound to the browser *and* to the session that signed in, so a different user cannot
   answer. A grant can only narrow what was requested and always includes `openid`. The page cannot
   be framed or cached.
-- **External providers** return to `/connect/resume`. The ticket must name this interaction and the
+- **External providers** are challenged after the optional `OnProviderChallenge` hook has had its say;
+  under `prompt=login` or an outlived `max_age` only a hook answering `Reauthenticating` lets the
+  challenge go, and otherwise the client gets `login_required`. They return to `/connect/resume`. The ticket must name this interaction and the
   provider that was challenged. The host's optional `OnProviderSignIn` hook can let it through, park
   it for a host page, or deny. The subject is derived from provider, issuer and upstream `sub`, so
   equal ids at two providers never meet. A parked sign-in finishes as the external user plus

@@ -16,4 +16,46 @@ public sealed class ProviderOptions
     /// or with <see cref="ProviderSignInContext.DenyAsync"/>. Calling neither promotes the principal.
     /// </remarks>
     public Func<ProviderSignInContext, Task>? OnProviderSignIn { get; set; }
+
+    /// <summary>
+    /// Gets or sets the handler that runs before the user is sent to a provider, to forward what
+    /// the client's authorization request asks of the authentication in the form that provider's
+    /// handler reads. <see langword="null"/> (the default) sends every challenge as it is.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// OpenID Connect Core §3.1.2.3 requires the authorization server to re-authenticate the user
+    /// when the request carries <c>prompt=login</c> or a <c>max_age</c> the session has outlived.
+    /// A provider with a live session of its own would otherwise answer without asking the user,
+    /// so when <see cref="ProviderChallengeContext.ReauthenticationRequired"/> is set, the
+    /// challenge proceeds only if the handler returns <see cref="ProviderChallengeOutcome.Reauthenticating"/>.
+    /// That is a claim the framework acts on, recording the authentication as fresh: return it
+    /// only for a provider known to honour what the handler set. Under a re-authentication demand,
+    /// <see cref="ProviderChallengeOutcome.Proceed"/> and no handler at all answer the client with
+    /// <c>login_required</c> instead of challenging (§3.1.2.1), as <see cref="ProviderChallengeOutcome.Refuse"/>
+    /// always does; a handler that throws or returns <see langword="null"/> answers it with
+    /// <c>server_error</c>.
+    /// </para>
+    /// <para>
+    /// The handler runs for every provider registered through the same <c>WithProviders</c> call;
+    /// <see cref="ProviderChallengeContext.Provider"/> says which one is being challenged.
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// For a provider registered with ASP.NET Core's OpenID Connect handler, which reads the
+    /// <c>prompt</c> and <c>max_age</c> it sends upstream from the challenge properties:
+    /// <code>
+    /// options.OnProviderChallenge = ctx =>
+    /// {
+    ///     if (!ctx.ReauthenticationRequired)
+    ///         return ProviderChallengeOutcome.Proceed;
+    ///
+    ///     ctx.Properties.SetParameter(OpenIdConnectChallengeProperties.PromptKey, "login");
+    ///     ctx.Properties.SetParameter(OpenIdConnectChallengeProperties.MaxAgeKey, ctx.MaxAge);
+    ///
+    ///     return ProviderChallengeOutcome.Reauthenticating;
+    /// };
+    /// </code>
+    /// </example>
+    public Func<ProviderChallengeContext, ProviderChallengeOutcome>? OnProviderChallenge { get; set; }
 }

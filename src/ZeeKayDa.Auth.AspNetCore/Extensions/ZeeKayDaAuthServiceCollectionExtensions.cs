@@ -183,6 +183,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddSingleton<PendingPrincipalStore>();
         services.TryAddSingleton<AuthorizationFlow>();
         services.TryAddSingleton<AuthorizationCodeIssuer>();
+        services.TryAddSingleton<ProviderChallengeHook>();
         services.TryAddSingleton<InteractionOutcomes>();
         services.TryAddSingleton<InteractionAnswers>();
         services.TryAddSingleton<NothingToContinue>();
