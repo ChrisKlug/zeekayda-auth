@@ -37,6 +37,7 @@ internal static class ExternalTicket
                 "A host signs users in through LoginInteraction, never by naming a framework scheme.");
 
         context.Properties.Items[ProviderItem] = feature.Provider.Name;
+        feature.MarkSignedIn();
         return Task.CompletedTask;
     }
 }
