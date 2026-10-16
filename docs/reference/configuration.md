@@ -644,6 +644,7 @@ startup output and host logs.
 | `configuration.clock_skew_tolerance.negative` | `ClockSkewTolerance` is negative |
 | `configuration.clock_skew_tolerance.too_large` | `ClockSkewTolerance` is at least half of `AuthorizationEndpoint.AuthorizationCodeLifetime` |
 | `scopes.openid_missing` | the configured scope repository does not include a scope named `openid` (checked by a startup verifier, not the options validator) |
+| `scopes.openid_hidden` | the configured scope repository's `openid` scope has `IsDiscoverable` set to `false`, which would omit it from `scopes_supported` (checked by a startup verifier, not the options validator) |
 
 `<endpoint>` is `authorization_endpoint`, `token_endpoint`, `jwks_endpoint`, `end_session_endpoint`,
 or `user_info_endpoint`.

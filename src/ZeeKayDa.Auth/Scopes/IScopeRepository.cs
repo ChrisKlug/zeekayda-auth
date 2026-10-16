@@ -45,7 +45,9 @@ public interface IScopeRepository
     /// </item>
     /// <item>
     /// The <c>openid</c> scope is present, since every OpenID Connect authorization request is
-    /// required to request it (<c>scopes.openid_missing</c>).
+    /// required to request it (<c>scopes.openid_missing</c>), and its
+    /// <see cref="ScopeDefinition.IsDiscoverable"/> is <see langword="true"/>, since OpenID Connect
+    /// Discovery 1.0 §3 requires <c>scopes_supported</c> to advertise it (<c>scopes.openid_hidden</c>).
     /// </item>
     /// </list>
     /// <para>

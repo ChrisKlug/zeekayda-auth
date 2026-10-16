@@ -66,6 +66,19 @@ public sealed class ScopePresenceActivatorTests
     }
 
     [Fact]
+    public async Task VerifyAsync_adds_a_failure_with_code_scopes_openid_hidden_when_openid_is_not_discoverable()
+    {
+        var (sut, provider) = BuildSut(new InMemoryScopeRepository([StandardScopes.OpenId with { IsDiscoverable = false }]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle()
+            .Which.Code.Should().Be("scopes.openid_hidden");
+    }
+
+    [Fact]
     public async Task VerifyAsync_adds_a_failure_with_message_containing_openid_scope_name()
     {
         var (sut, provider) = BuildSut(new InMemoryScopeRepository([]));
