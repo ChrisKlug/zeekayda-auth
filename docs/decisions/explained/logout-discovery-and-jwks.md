@@ -25,8 +25,9 @@ bound to the session it asked about, so a user who signed in again since cannot 
 it, nor shown the old subject. The client and redirect are checked again at confirm time.
 
 **Signing out** deletes the session cookie only when the request carries it; the cookie is
-`SameSite=Lax`, so a cross-site POST cannot end a session. It also deletes every interaction
-binding in the browser, tombstones included, so no half-finished sign-in in another tab survives. The
+`SameSite=Lax`, so a cross-site POST cannot end a session. When that cookie reads as a session it
+also deletes every interaction binding in the browser, tombstones included, so no half-finished
+sign-in in another tab survives; an unreadable one is no session, and leaves them alone. The
 browser goes to the registered redirect with `state`, or `SignedOutPath`, or a built-in page.
 
 ## Discovery
