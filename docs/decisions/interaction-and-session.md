@@ -128,8 +128,8 @@ no login page only a refusal reaches the client, as `access_denied` on its own p
 never by message. The session subject of an auto-promoted external principal is derived from provider, claim issuer and upstream
 subject together, never the upstream value: two providers can never share a session, and a subject without an issuer is refused.
 
-**A re-authentication demand reaches a provider only through `OnProviderChallenge`, and fails closed.** With `prompt=login` or an outlived
-`max_age`, a challenge goes out only when the hook answers `Reauthenticating`, a claim the session's fresh `auth_time` rests on; no hook
+**A re-authentication demand reaches a provider only through `OnProviderChallenge`, and fails closed.** With `prompt=login`, or `max_age` and no
+session or an older one, a challenge goes out only when the hook answers `Reauthenticating`, a claim the session's fresh `auth_time` rests on; no hook
 or `Proceed` answers `login_required` (OIDC Core §3.1.2.1), as `Refuse` always does, and a hook that throws or returns `null` answers
 `server_error`. The framework re-stamps its own round-trip items after the hook, so no hook can break the return through resume.
 

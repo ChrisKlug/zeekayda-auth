@@ -168,6 +168,33 @@ public sealed class ProviderChallengeHookTests
     }
 
     [Fact]
+    public async Task Max_age_with_no_session_and_no_hook_answers_the_client_with_login_required_and_challenges_nothing()
+    {
+        using var host = new Host(onProviderChallenge: null, singleProvider: true);
+
+        var response = await host.Client.GetAsync(AuthorizeUrl(("max_age", "300")), Cancellation);
+
+        ShouldHaveAnsweredTheClientWith(response, AuthorizeRequestErrors.LoginRequired);
+        host.Challenged.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Max_age_with_no_session_is_a_reauthentication_demand_the_hook_can_answer_with_Reauthenticating()
+    {
+        ProviderChallengeContext? seen = null;
+        using var host = new Host(context =>
+        {
+            seen = context;
+            return ProviderChallengeOutcome.Reauthenticating;
+        }, singleProvider: true);
+
+        var challenge = await host.Client.GetAsync(AuthorizeUrl(("max_age", "300")), Cancellation);
+
+        DestinationOf(challenge).Should().Be("https://acme.example.net/authorize");
+        seen!.ReauthenticationRequired.Should().BeTrue("with no session the authentication time cannot be within max_age");
+    }
+
+    [Fact]
     public async Task Prompt_login_with_a_hook_returning_Proceed_from_the_login_page_answers_the_client_with_login_required()
     {
         using var host = new Host(_ => ProviderChallengeOutcome.Proceed);
@@ -201,13 +228,35 @@ public sealed class ProviderChallengeHookTests
             return ProviderChallengeOutcome.Proceed;
         });
 
-        await ChooseProviderAsync(host.Client, ("max_age", "60"), ("login_hint", "alice@example.com"), ("prompt", "consent"));
+        await ChooseProviderAsync(host.Client, ("login_hint", "alice@example.com"), ("prompt", "consent"));
 
         seen!.Provider.Id.Should().Be("acme");
         seen.Prompts.Should().BeEquivalentTo([PromptValue.Consent]);
-        seen.MaxAge.Should().Be(TimeSpan.FromSeconds(60));
+        seen.MaxAge.Should().BeNull();
         seen.LoginHint.Should().Be("alice@example.com");
-        seen.ReauthenticationRequired.Should().BeFalse("there is no session for max_age to measure, and no prompt=login");
+        seen.ReauthenticationRequired.Should().BeFalse("the request carries neither prompt=login nor max_age");
+    }
+
+    [Fact]
+    public async Task Max_age_within_the_age_of_a_session_is_no_reauthentication_demand_and_the_challenge_proceeds()
+    {
+        // Near real time: the correlation cookie of the first round trip expires against the real clock.
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        ProviderChallengeContext? seen = null;
+        using var host = new Host(context =>
+        {
+            seen = context;
+            return ProviderChallengeOutcome.Proceed;
+        }, time: time);
+        var pending = await host.Client.GetAsync(AuthorizeUrl(("max_age", "300")), Cancellation);
+        await ReturnThroughResumeAsync(host.Client, await ChooseProviderAsync(host.Client));
+        time.Advance(TimeSpan.FromSeconds(60));
+
+        var challenge = await host.Client.PostAsync(
+            WithInteractionId(LoginPath, InteractionIdFrom(pending)), Form(("provider", "acme")), Cancellation);
+
+        DestinationOf(challenge).Should().Be("https://acme.example.net/authorize");
+        seen!.ReauthenticationRequired.Should().BeFalse("the session was authenticated 60 seconds ago, within max_age=300");
     }
 
     [Fact]

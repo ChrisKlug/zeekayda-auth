@@ -44,7 +44,8 @@ internal sealed class AuthorizationFlow(
 
     /// <summary>
     /// Whether the client demands that the user authenticate again: <c>prompt=login</c>, or a
-    /// <paramref name="session"/> older than the requested <c>max_age</c> (OIDC Core §3.1.2.1).
+    /// <c>max_age</c> that no <paramref name="session"/> is within, because there is none or it is
+    /// older (OIDC Core §3.1.2.1).
     /// </summary>
     public bool RequiresReauthentication(IReadOnlySet<PromptValue> prompts, TimeSpan? maxAge, SsoSessionState? session)
     {
@@ -53,8 +54,7 @@ internal sealed class AuthorizationFlow(
         if (prompts.Contains(PromptValue.Login))
             return true;
 
-        // max_age=0 falls out of the comparison.
-        return session is not null && maxAge is { } limit && timeProvider.GetUtcNow() - session.AuthTime > limit;
+        return maxAge is { } limit && (session is null || IsOlderThan(session, limit));
     }
 
     /// <summary>The context for a freshly validated request, carrying the session it continues on, if any.</summary>
@@ -248,6 +248,10 @@ internal sealed class AuthorizationFlow(
 
     private bool IsExpired(AuthorizationRequestContext requestContext) =>
         timeProvider.GetUtcNow() >= requestContext.ExpiresAt;
+
+    // max_age=0 falls out of the comparison.
+    private bool IsOlderThan(SsoSessionState session, TimeSpan maxAge) =>
+        timeProvider.GetUtcNow() - session.AuthTime > maxAge;
 
     private async ValueTask RefuseAsync(HttpContext context, AuthorizationRequestContext requestContext, string reason)
     {

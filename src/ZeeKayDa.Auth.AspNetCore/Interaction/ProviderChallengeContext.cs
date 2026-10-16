@@ -40,7 +40,8 @@ public sealed class ProviderChallengeContext
 
     /// <summary>
     /// Whether the client demands that the user authenticate again: the request carries
-    /// <c>prompt=login</c>, or the user's current session is older than <see cref="MaxAge"/>.
+    /// <c>prompt=login</c>, or it carries a <see cref="MaxAge"/> and the user has no session, or one
+    /// older than that.
     /// OpenID Connect Core §3.1.2.1 requires the authorization server to re-authenticate the user
     /// then, and, if it cannot, to return an error, typically <c>login_required</c>.
     /// </summary>
