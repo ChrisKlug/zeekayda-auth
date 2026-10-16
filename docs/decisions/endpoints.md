@@ -111,9 +111,9 @@ resume and provider-callback routes do, so a host's fallback authorization polic
 client authentication.
 
 **The end-session endpoint refuses nothing and asks by default.** GET and form POST alike; a
-parameter that fails to validate is ignored, as RP-Initiated Logout §4 requires of an
-`id_token_hint`, so a bad request lands the user on a confirmation or signed-out page, never an
-error. The user is asked unless there is no session to end, or a valid hint names the signed-in
+parameter that fails to validate is ignored, so a bad request lands the user on a confirmation or
+signed-out page, never an error, and an `id_token_hint` that fails also drops the post-logout
+redirect (RP-Initiated Logout §4: no redirection after an error in the request). The user is asked unless there is no session to end, or a valid hint names the signed-in
 user and its client set `SkipLogoutConfirmation` (§2: asking is a SHOULD with a hint, a MUST
 without). `post_logout_redirect_uri` is honoured only on an exact match against the registration of
 the client the request resolves to — the hint's, else `client_id`'s — echoing `state`, and a
