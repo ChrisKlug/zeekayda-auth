@@ -22,7 +22,7 @@ public sealed class RefreshTokenStoreTests
         AuthorizationServerOptions? serverOptions = null,
         TimeProvider? timeProvider = null)
         => new(
-            grantStore ?? new InMemoryRefreshTokenBackingStore(),
+            grantStore ?? InMemoryStores.RefreshTokens(),
             dp ?? new EphemeralDataProtectionProvider(),
             new OptionsWrapper<AuthorizationServerOptions>(serverOptions ?? new AuthorizationServerOptions()),
             timeProvider ?? TimeProvider.System);
@@ -53,7 +53,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task StoreAsync_keys_the_grant_by_the_hashed_handle_in_the_shared_format()
     {
-        var backing = new InMemoryRefreshTokenBackingStore();
+        var backing = InMemoryStores.RefreshTokens();
         var store = CreateStore(backing);
 
         await store.StoreAsync("handle-1", BuildEntry(), CancellationToken.None);
@@ -172,7 +172,7 @@ public sealed class RefreshTokenStoreTests
         var tp = new FakeTimeProvider(startTime);
         var lifetime = TimeSpan.FromDays(1);
         var familyAbsoluteExpiry = startTime.AddDays(365); // far beyond the per-token lifetime
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(
             grantStore: grantStore,
             serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = lifetime } },
@@ -193,7 +193,7 @@ public sealed class RefreshTokenStoreTests
         var tp = new FakeTimeProvider(startTime);
         var lifetime = TimeSpan.FromDays(365); // far beyond the family's absolute cap
         var familyAbsoluteExpiry = startTime.AddDays(1);
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(
             grantStore: grantStore,
             serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = lifetime } },
@@ -218,7 +218,7 @@ public sealed class RefreshTokenStoreTests
     public async Task StoreAsync_saturates_ExpiresAt_instead_of_throwing_when_now_plus_RefreshTokenLifetime_overflows(TimeSpan lifetime)
     {
         var tp = new FakeTimeProvider(new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero));
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(
             grantStore: grantStore,
             serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = lifetime } },
@@ -239,7 +239,7 @@ public sealed class RefreshTokenStoreTests
         var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
         var tp = new FakeTimeProvider(startTime);
         var familyAbsoluteExpiry = startTime.AddDays(90);
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(
             grantStore: grantStore,
             serverOptions: new AuthorizationServerOptions { TokenEndpoint = { RefreshTokenLifetime = lifetime } },
@@ -284,7 +284,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task StoreAsync_persists_FamilyAbsoluteExpiry_verbatim_as_a_queryable_column()
     {
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(grantStore: grantStore);
         const string handle = "family-absolute-expiry-column";
         var familyAbsoluteExpiry = new DateTimeOffset(2095, 6, 1, 0, 0, 0, TimeSpan.Zero);
@@ -488,7 +488,7 @@ public sealed class RefreshTokenStoreTests
         // inserted strictly after a sibling's RevokeFamilyAsync returned), but the family reads
         // revoked. The gate must catch this regardless of the row's own status.
         const string familyId = "fam-386-consume";
-        var innerStore = new InMemoryRefreshTokenBackingStore();
+        var innerStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(grantStore: new FamilyRevokedOverrideGrantStore(innerStore, familyId));
         const string handle = "family-revoked-out-of-band-consume";
 
@@ -504,7 +504,7 @@ public sealed class RefreshTokenStoreTests
     public async Task FindAsync_returns_null_when_grant_reads_Active_but_IsFamilyRevokedAsync_reports_true()
     {
         const string familyId = "fam-386-find";
-        var innerStore = new InMemoryRefreshTokenBackingStore();
+        var innerStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(grantStore: new FamilyRevokedOverrideGrantStore(innerStore, familyId));
         const string handle = "family-revoked-out-of-band-find";
 
@@ -520,7 +520,7 @@ public sealed class RefreshTokenStoreTests
     public async Task TryConsumeAsync_returns_Revoked_not_ClientMismatch_when_IsFamilyRevokedAsync_reports_true_and_client_mismatches()
     {
         const string familyId = "fam-386-mismatch";
-        var innerStore = new InMemoryRefreshTokenBackingStore();
+        var innerStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(grantStore: new FamilyRevokedOverrideGrantStore(innerStore, familyId));
         const string handle = "family-revoked-out-of-band-mismatch";
 
@@ -564,7 +564,7 @@ public sealed class RefreshTokenStoreTests
     {
         // An authorization code replayed before its own first StoreAsync revokes a family that has
         // no rows yet; the record, not a row, is what the gate reads.
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(grantStore: grantStore);
         const string familyId = "fam-388-zero-row";
 
@@ -608,7 +608,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task RevokeFamilyAsync_never_writes_a_row_to_the_backing_store()
     {
-        var tracker = new HandleTrackingGrantStore(new InMemoryRefreshTokenBackingStore());
+        var tracker = new HandleTrackingGrantStore(InMemoryStores.RefreshTokens());
         var store = CreateStore(grantStore: tracker);
         const string familyId = "fam-388-no-row";
 
@@ -640,7 +640,7 @@ public sealed class RefreshTokenStoreTests
         var options = new AuthorizationServerOptions { ClockSkewTolerance = TimeSpan.FromMinutes(5) };
         options.TokenEndpoint.AbsoluteFamilyLifetime = TimeSpan.FromDays(90);
         options.AuthorizationEndpoint.AuthorizationCodeLifetime = TimeSpan.FromSeconds(60);
-        var tracker = new HandleTrackingGrantStore(new InMemoryRefreshTokenBackingStore());
+        var tracker = new HandleTrackingGrantStore(InMemoryStores.RefreshTokens());
         var store = CreateStore(grantStore: tracker, serverOptions: options, timeProvider: new FakeTimeProvider(now));
 
         await store.RevokeFamilyAsync("fam-485-expiry", CancellationToken.None);
@@ -653,7 +653,7 @@ public sealed class RefreshTokenStoreTests
     {
         var options = new AuthorizationServerOptions();
         options.TokenEndpoint.AbsoluteFamilyLifetime = TimeSpan.MaxValue;
-        var tracker = new HandleTrackingGrantStore(new InMemoryRefreshTokenBackingStore());
+        var tracker = new HandleTrackingGrantStore(InMemoryStores.RefreshTokens());
         var store = CreateStore(grantStore: tracker, serverOptions: options);
 
         await store.RevokeFamilyAsync("fam-485-unbounded", CancellationToken.None);
@@ -685,7 +685,7 @@ public sealed class RefreshTokenStoreTests
         // A grant with a deliberately corrupt/unparseable ProtectedPayload must still resolve
         // AlreadyConsumed purely from the cleartext Status column — reuse detection must never
         // ride on a successful decrypt.
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(grantStore: grantStore);
         const string handle = "corrupt-payload-consumed";
         const string familyId = "fam-corrupt-consumed";
@@ -712,7 +712,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_returns_Revoked_without_throwing_even_when_ProtectedPayload_is_corrupt()
     {
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(grantStore: grantStore);
         const string handle = "corrupt-payload-revoked";
         const string familyId = "fam-corrupt-revoked";
@@ -739,7 +739,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_returns_NotFound_without_throwing_when_expired_grant_has_corrupt_ProtectedPayload()
     {
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var startTime = new DateTimeOffset(2090, 1, 1, 12, 0, 0, TimeSpan.Zero);
         var tp = new FakeTimeProvider(startTime);
         var store = CreateStore(grantStore: grantStore, timeProvider: tp);
@@ -768,7 +768,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_returns_ClientMismatch_without_throwing_when_active_grant_has_corrupt_ProtectedPayload()
     {
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(grantStore: grantStore);
         const string handle = "corrupt-payload-mismatch";
         var key = new StoreKey(ComputeExpectedHandleHash(handle));
@@ -799,7 +799,7 @@ public sealed class RefreshTokenStoreTests
         // Two stores share the same grant store but use independent DP key rings. Store 1 writes
         // the grant; store 2 wins the CAS pivot but cannot decrypt the payload — the sole
         // Unprotect call's only failure mode, degrading to NotFound (fail-closed: already dead).
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var dp1 = new EphemeralDataProtectionProvider();
         var dp2 = new EphemeralDataProtectionProvider();
         var store1 = CreateStore(grantStore: grantStore, dp: dp1);
@@ -819,7 +819,7 @@ public sealed class RefreshTokenStoreTests
         // The row is already marked Consumed by the losing decrypt attempt — the token is dead
         // even though NotFound was returned, so a subsequent attempt (e.g. with a working key
         // ring) must not be able to consume it again.
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var dp1 = new EphemeralDataProtectionProvider();
         var dp2 = new EphemeralDataProtectionProvider();
         var store1 = CreateStore(grantStore: grantStore, dp: dp1);
@@ -838,7 +838,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task FindAsync_returns_null_when_entry_cannot_be_unprotected()
     {
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var dp1 = new EphemeralDataProtectionProvider();
         var dp2 = new EphemeralDataProtectionProvider();
         var store1 = CreateStore(grantStore: grantStore, dp: dp1);
@@ -857,7 +857,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_lost_race_resolves_to_AlreadyConsumed_via_re_read()
     {
-        var inner = new InMemoryRefreshTokenBackingStore();
+        var inner = InMemoryStores.RefreshTokens();
         var dp = new EphemeralDataProtectionProvider();
         var seedStore = CreateStore(grantStore: inner, dp: dp);
         const string handle = "race-losing-handle";
@@ -875,7 +875,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_lost_race_resolves_to_Revoked_when_the_winner_revoked_the_family_first()
     {
-        var inner = new InMemoryRefreshTokenBackingStore();
+        var inner = InMemoryStores.RefreshTokens();
         var dp = new EphemeralDataProtectionProvider();
         var seedStore = CreateStore(grantStore: inner, dp: dp);
         const string handle = "race-losing-then-revoked-handle";
@@ -967,7 +967,7 @@ public sealed class RefreshTokenStoreTests
     [Fact]
     public async Task TryConsumeAsync_rethrows_OperationCanceledException_from_TryMarkConsumedAsync_unwrapped()
     {
-        var grantStore = new CancellationThrowingOnMarkConsumedGrantStore(new InMemoryRefreshTokenBackingStore());
+        var grantStore = new CancellationThrowingOnMarkConsumedGrantStore(InMemoryStores.RefreshTokens());
         var store = CreateStore(grantStore: grantStore);
         await store.StoreAsync("handle", BuildEntry(), CancellationToken.None);
 
