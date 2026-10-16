@@ -1,8 +1,11 @@
+using System.Collections.Concurrent;
 using System.Formats.Asn1;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.FileSystem;
@@ -10,13 +13,20 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// <summary>
 /// Lists the configured PFX/PKCS#12 bundles and signs in process with the one the ring chooses.
 /// Listing decrypts no key bag; signing imports the paired key bag into an in-memory key, never an
-/// OS-backed certificate.
+/// OS-backed certificate. A key encrypted under weak parameters is still used, since that is what a
+/// default Windows export produces, and warned about once per version of the file.
 /// </summary>
 internal sealed class PfxFileSigningKeySource(
     IOptions<PfxFileSigningOptions> options,
-    FileSigningKeyReader reader) : ISigningKeySource
+    FileSigningKeyReader reader,
+    SanitizingLogger<PfxFileSigningKeySource> logger) : ISigningKeySource
 {
+    private const string WeakKeyEncryptionCode = "signing.file_signing.weak_key_encryption";
+
     private readonly IOptions<PfxFileSigningOptions> _options = options;
+
+    // Keyed by Path: the hash of the bundle whose key encryption was last judged.
+    private readonly ConcurrentDictionary<string, byte[]> _judgedVersions = new(StringComparer.Ordinal);
 
     /// <inheritdoc/>
     public SigningAlgorithm Algorithm => _options.Value.Algorithm;
@@ -100,7 +110,32 @@ internal sealed class PfxFileSigningKeySource(
 
         var password = await SigningFilePassword.ReadAsync(file.Path, file.PasswordSource, cancellationToken).ConfigureAwait(false);
 
-        return OpenSigningPair(bytes, file.Path, password, pair => pair.Certificate.GetCertificate());
+        return OpenSigningPair(bytes, file.Path, password, pair =>
+        {
+            WarnOfWeakKeyEncryptionOncePerVersion(file.Path, bytes, pair.Key);
+            return pair.Certificate.GetCertificate();
+        });
+    }
+
+    /// <summary>Warns when the key bag is shrouded under weaker parameters than PEM accepts; a refresh of the same file stays quiet.</summary>
+    private void WarnOfWeakKeyEncryptionOncePerVersion(string path, byte[] bytes, Pkcs12SafeBag keyBag)
+    {
+        var version = SHA256.HashData(bytes);
+        if (_judgedVersions.TryGetValue(path, out var judged) && judged.AsSpan().SequenceEqual(version))
+            return;
+
+        if (keyBag is Pkcs12ShroudedKeyBag shrouded
+            && KeyEncryptionStrength.WeaknessOf(shrouded.EncryptedPkcs8PrivateKey) is { } weakness)
+        {
+            logger.LogWarning(
+                "ZeeKayDa.Auth: {ErrorCode}: the private key in PFX file '{Path}' is encrypted with {Weakness}, " +
+                "which is brute-forceable offline from a copy of the file. It is still used. Re-export the bundle " +
+                "under PBES2 with AES and PBKDF2 at {MinimumIterations} or more iterations: OpenSSL 3's " +
+                "'openssl pkcs12 -export' does by default, as does Export-PfxCertificate -CryptoAlgorithmOption AES256_SHA256.",
+                WeakKeyEncryptionCode, path, weakness, KeyEncryptionStrength.MinimumIterations);
+        }
+
+        _judgedVersions[path] = version;
     }
 
     /// <summary>

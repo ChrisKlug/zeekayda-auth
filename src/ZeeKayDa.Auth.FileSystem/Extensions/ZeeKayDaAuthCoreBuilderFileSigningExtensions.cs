@@ -177,6 +177,11 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// <see cref="AddPfxFileSigning{TBuilder}(TBuilder,SigningAlgorithm,Action{PfxFileSigningOptions})"/>
     /// overload and list both bundles.
     /// </para>
+    /// <para>
+    /// A private key shrouded under weaker parameters than PBES2 with AES-CBC and PBKDF2 at 2048 or more
+    /// iterations, such as a default Windows export's 3DES and SHA-1, still signs, and logs a
+    /// <c>signing.file_signing.weak_key_encryption</c> warning once per version of the file.
+    /// </para>
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
@@ -221,6 +226,11 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// own password source, since real-world bundles are frequently password-per-file. Startup fails
     /// when no bundle is listed, when two entries name the same file, when a bundle carries no private
     /// key, or when no listed certificate is valid.
+    /// </para>
+    /// <para>
+    /// A private key shrouded under weaker parameters than PBES2 with AES-CBC and PBKDF2 at 2048 or more
+    /// iterations, such as a default Windows export's 3DES and SHA-1, still signs, and logs a
+    /// <c>signing.file_signing.weak_key_encryption</c> warning once per version of the file.
     /// </para>
     /// <para>
     /// Listing reads each certificate out of its bundle without decrypting the key bag; only the
