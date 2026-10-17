@@ -101,28 +101,24 @@ internal sealed class SsoSession(TimeProvider timeProvider)
 
         await context.SignInAsync(
                 ZeeKayDaCookies.Session,
-                BuildSessionPrincipal(principal, state),
+                BuildSessionPrincipal(state),
                 new AuthenticationProperties { IsPersistent = false })
             .ConfigureAwait(false);
 
         return state;
     }
 
-    /// <summary>The host's claims outside the reserved namespace, plus the framework's session claims.</summary>
-    private static ClaimsPrincipal BuildSessionPrincipal(ClaimsPrincipal principal, SsoSessionState state)
+    /// <summary>Exactly the claims <see cref="ReadAsync"/> reads, and nothing else.</summary>
+    private static ClaimsPrincipal BuildSessionPrincipal(SsoSessionState state)
     {
-        // A reserved claim left in place would win the lookup over the framework's own.
-        var claims = principal.Claims
-            .Where(claim => !ReservedClaims.IsReserved(claim))
-            .ToList();
+        Claim[] claims =
+        [
+            new(SubjectClaimType, state.Subject),
+            new(SsoSessionClaimTypes.SessionId, state.SessionId),
+            new(SsoSessionClaimTypes.AuthTime, state.AuthTime.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
+            .. state.Amr.Select(value => new Claim(SsoSessionClaimTypes.Amr, value)),
+        ];
 
-        claims.Add(new Claim(SsoSessionClaimTypes.SessionId, state.SessionId));
-        claims.Add(new Claim(
-            SsoSessionClaimTypes.AuthTime,
-            state.AuthTime.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
-        claims.AddRange(state.Amr.Select(value => new Claim(SsoSessionClaimTypes.Amr, value)));
-
-        // One identity: a second would leave the subject ambiguous.
         return new ClaimsPrincipal(new ClaimsIdentity(claims, ZeeKayDaCookies.Session));
     }
 

@@ -14,7 +14,7 @@ public static class ExternalSubject
     /// <summary>The claims the upstream subject is read from, in order.</summary>
     internal static readonly string[] SubjectClaimTypes = ["sub", ClaimTypes.NameIdentifier];
 
-    /// <summary>The provider's claims with the upstream subject replaced by the derived one.</summary>
+    /// <summary>The session principal for an external one: the derived subject, none of the provider's claims.</summary>
     /// <exception cref="ZeeKayDaInteractionException">
     /// The principal carries no subject claim, or its subject claim names no issuer.
     /// </exception>
@@ -22,10 +22,7 @@ public static class ExternalSubject
     {
         var identity = Identify(providerId, principal);
 
-        var claims = new List<Claim> { new("sub", Derive(identity.Issuer, identity.Subject)) };
-        claims.AddRange(principal.Claims.Where(claim => !IsSubjectClaimType(claim.Type)));
-
-        return new ClaimsPrincipal(new ClaimsIdentity(claims, providerId));
+        return SessionPrincipal.Build(Derive(identity.Issuer, identity.Subject));
     }
 
     /// <summary>The upstream identity of a principal the framework will promote or park.</summary>

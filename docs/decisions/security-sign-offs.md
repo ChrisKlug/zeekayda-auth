@@ -1239,9 +1239,11 @@ scheme becomes the automatic default.
   `SignInAsync_naming_an_interaction_the_browser_is_not_carrying_is_refused`,
   `SignInAsync_after_the_interaction_has_expired_is_refused`.
 - A host cannot choose the session identifier, `amr` or `auth_time`: reserved `zkd:` claims are
-  stripped as case-insensitively as they are read. Closed — `A_host_supplied_session_id_claim_is_stripped_whatever_its_case`,
-  `A_host_supplied_amr_claim_is_stripped_whatever_its_case`,
-  `A_host_supplied_auth_time_claim_cannot_defeat_max_age`.
+  stripped as case-insensitively as they are read. Closed — A_host_supplied_session_id_claim_is_stripped_whatever_its_case,
+  A_host_supplied_amr_claim_is_stripped_whatever_its_case,
+  A_host_supplied_auth_time_claim_cannot_defeat_max_age
+  [replaced by #974 with `The_session_cookie_holds_only_the_claims_the_framework_reads`: a host passes no claims,
+  and the session cookie is written from the framework's own four].
 - The framework contributes no automatic default scheme, so an unqualified host `SignInAsync` cannot
   write the session cookie past promotion. Closed — `The_framework_contributes_no_default_authenticate_scheme`,
   `The_framework_contributes_no_default_sign_in_scheme`, `Every_principal_carrying_cookie_is_registered_as_a_scheme`.
@@ -1474,12 +1476,16 @@ Highs across two fix commits, then the maintainer's rulings verified by both age
 
 - The framework builds the promoted principal; a collected subject claim is refused before any read, and
   a replacement whose subject is the upstream one is refused, on the principal read and again on the one
-  taken. Closed — `SignInAsync_with_collected_claims_refuses_a_subject_claim_before_anything_is_read`,
+  taken. Closed — SignInAsync_with_collected_claims_refuses_a_subject_claim_before_anything_is_read
+  [replaced by #974 with `SignInAsync_promotes_the_derived_subject_with_none_of_the_providers_claims`: SignInAsync
+  takes no claims, so a page has no way to name a subject],
   `SignInWithReplacedAccountAsync_refuses_the_upstream_subject_passed_straight_back`
   [renamed by #781 from SignInWithReplacedPrincipalAsync_refuses_the_parked_principal_passed_straight_back],
-  `SignInWithReplacedAccountAsync_refuses_an_additional_claim_naming_the_subject`
+  SignInWithReplacedAccountAsync_refuses_an_additional_claim_naming_the_subject
   [renamed by #781 from SignInWithReplacedPrincipalAsync_refuses_a_copy_of_the_upstream_subject: the subject
-  is now an argument, and a subject claim beside it is refused],
+  is now an argument, and a subject claim beside it is refused]
+  [replaced by #974 with `SignInWithReplacedAccountAsync_refuses_the_upstream_subject_passed_straight_back`: the
+  method takes no claims, so the subject argument is the only one],
   `SignInWithReplacedAccountAsync_holds_a_principal_parked_between_the_read_and_the_take_to_the_same_rule`
   [renamed by #781 from SignInWithReplacedPrincipalAsync_holds_a_principal_parked_between_the_read_and_the_take_to_the_same_rule].
 - The parked principal is taken once and what was taken is promoted; refusals are decided before the take;
@@ -1489,8 +1495,10 @@ Highs across two fix commits, then the maintainer's rulings verified by both age
   SignInAsync_with_collected_claims_refuses_a_parked_subject_without_an_issuer
   [replaced by #985 with `A_principal_without_a_usable_subject_never_reaches_the_handler_and_renders_the_local_error`:
   such a principal is now refused before OnProviderSignIn runs, so it is never parked],
-  `SignInWithReplacedAccountAsync_holds_the_additional_claims_as_validated_not_as_later_changed`
-  [renamed by #781 from SignInWithReplacedPrincipalAsync_promotes_the_principal_as_validated_not_as_later_changed],
+  SignInWithReplacedAccountAsync_holds_the_additional_claims_as_validated_not_as_later_changed
+  [renamed by #781 from SignInWithReplacedPrincipalAsync_promotes_the_principal_as_validated_not_as_later_changed]
+  [replaced by #974 with `SignInWithReplacedAccountAsync_reports_the_authentication_methods_as_validated_not_as_later_changed`:
+  the methods are the only caller-owned input left],
   `A_terminal_call_from_a_GET_is_refused_before_anything_is_read`.
 - A local sign-in at the login page discards a parked principal and records no provider. Closed —
   `A_local_sign_in_at_the_login_page_discards_a_parked_principal_and_records_no_provider`.

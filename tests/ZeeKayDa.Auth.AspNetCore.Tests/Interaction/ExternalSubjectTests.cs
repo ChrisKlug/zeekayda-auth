@@ -88,7 +88,7 @@ public sealed class ExternalSubjectTests
     }
 
     [Fact]
-    public void ForPromotion_replaces_the_upstream_subject_and_keeps_the_other_claims()
+    public void ForPromotion_carries_the_derived_subject_and_none_of_the_providers_claims()
     {
         var upstream = new ClaimsPrincipal(new ClaimsIdentity(
         [
@@ -99,9 +99,8 @@ public sealed class ExternalSubjectTests
 
         var promoted = ExternalSubject.ForPromotion("acme", upstream);
 
-        promoted.FindAll("sub").Select(claim => claim.Value).Should().Equal(ExternalSubject.Derive("https://acme.example.net", "42"));
-        promoted.FindFirst(ClaimTypes.NameIdentifier).Should().BeNull("the upstream identifier is never carried verbatim");
-        promoted.FindFirst("email")!.Value.Should().Be("user@example.net");
+        promoted.Claims.Select(claim => (claim.Type, claim.Value))
+            .Should().Equal(("sub", ExternalSubject.Derive("https://acme.example.net", "42")));
     }
 
     [Fact]

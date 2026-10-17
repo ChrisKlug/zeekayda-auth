@@ -62,8 +62,8 @@ today.** The identifier is carried as a reserved claim the host neither supplies
 across re-authentication (`prompt=login` and `max_age` refresh `auth_time` only); a fresh sign-in
 or a changed subject mints a new one. None of those properties may be traded away: one derived from
 the cookie value breaks every binding the moment the cookie rotates, and one tracking authentication
-events could never key a denylist. Claims in the reserved `zkd:` namespace are stripped from the
-claims a host supplies, or a host copying claims from an inbound token could choose its own identifier.
+events could never key a denylist. The cookie holds exactly what its one reader takes — `sub`, `zkd:sid`, `zkd:auth_time`, `zkd:amr`: pages pass a subject and methods, never claims, and promotion copies no provider claim, since tokens and userinfo get theirs from `IClaimsProvider` and anything more is unread personal data that can overflow the `Cookie` header.
+A host's subject is 1–255 characters, each 0x21–0x7E (OIDC Core §2 caps `sub` at 255 ASCII), refused at the call: a subject is compared exactly, so a stray space would make two users.
 
 **Framework cookie names are reserved, the `zkd.interaction.` and `zkd.challenge.` prefixes included; a host
 registering one fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and the

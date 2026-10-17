@@ -7,39 +7,22 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </summary>
 internal static class SessionPrincipal
 {
-    /// <summary>The principal the session is established for: the subject and the page's additional claims.</summary>
-    public static ClaimsPrincipal Build(string subject, Claim[] additionalClaims)
+    private const int MaxSubjectLength = 255;
+
+    /// <summary>The principal the session is established for: the subject alone.</summary>
+    public static ClaimsPrincipal Build(string subject)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(subject);
-        var claims = AdditionalClaims(additionalClaims);
+        ArgumentNullException.ThrowIfNull(subject);
 
-        return new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", subject), .. claims], ZeeKayDaCookies.Session));
-    }
-
-    /// <summary>
-    /// A copy of the page's additional claims, reserved ones stripped; a subject claim is refused,
-    /// not silently dropped.
-    /// </summary>
-    public static Claim[] AdditionalClaims(Claim[] additionalClaims)
-    {
-        ArgumentNullException.ThrowIfNull(additionalClaims);
-
-        if (additionalClaims.Any(claim => claim is null))
-            throw new ArgumentException("An entry in the additional claims is null.", nameof(additionalClaims));
-
-        if (additionalClaims.Any(claim => ExternalSubject.IsSubjectClaimType(claim.Type)))
+        if (!IsWellFormedSubject(subject))
         {
             throw new ArgumentException(
-                "An additional claim names the subject. The subject is the framework's to set: pass it as " +
-                "the subject argument of LoginInteraction.SignInAsync or SignInWithReplacedAccountAsync, " +
-                "and ProviderSignInInteraction.SignInAsync derives it from the provider.",
-                nameof(additionalClaims));
+                "The subject must be 1–255 printable ASCII characters (0x21–0x7E), with no space: OpenID " +
+                "Connect Core §2 caps sub at 255 ASCII characters, and a subject is compared exactly.",
+                nameof(subject));
         }
 
-        return additionalClaims
-            .Where(claim => !ReservedClaims.IsReserved(claim))
-            .Select(ReservedClaims.Materialize)
-            .ToArray();
+        return new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", subject)], ZeeKayDaCookies.Session));
     }
 
     /// <summary>
@@ -58,4 +41,7 @@ internal static class SessionPrincipal
 
         return methods;
     }
+
+    private static bool IsWellFormedSubject(string subject) =>
+        subject.Length is > 0 and <= MaxSubjectLength && !subject.AsSpan().ContainsAnyExceptInRange('\x21', '\x7E');
 }
