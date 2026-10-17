@@ -150,7 +150,7 @@ public sealed class LogoutInteraction
     private async Task ConfirmAsync(HttpContext context)
     {
         var request = await ResolveAddressedAsync(context, context.RequestAborted).ConfigureAwait(false);
-        await RequireAskedSessionAsync(context, request, context.RequestAborted).ConfigureAwait(false);
+        var session = await RequireAskedSessionAsync(context, request, context.RequestAborted).ConfigureAwait(false);
 
         var client = request.ClientId is null
             ? null
@@ -158,7 +158,7 @@ public sealed class LogoutInteraction
         var redirect = PostLogoutRedirect.For(client, request.PostLogoutRedirectUri, request.State);
 
         await _requests.DeleteAsync(context, request.Id, context.RequestAborted).ConfigureAwait(false);
-        var result = await _responses.SignOutAsync(context, redirect).ConfigureAwait(false);
+        var result = await _responses.SignOutAsync(context, session, redirect).ConfigureAwait(false);
 
         context.Response.Headers.CacheControl = "no-store";
         await result.ExecuteAsync(context).ConfigureAwait(false);
@@ -197,14 +197,14 @@ public sealed class LogoutInteraction
     /// Refuses, and discards the sign-out, unless the browser still holds the session it was started
     /// for: an answer about a session since ended is not an instruction about its replacement.
     /// </summary>
-    private async ValueTask RequireAskedSessionAsync(
+    private async ValueTask<SsoSessionState> RequireAskedSessionAsync(
         HttpContext context,
         LogoutRequestContext request,
         CancellationToken cancellationToken)
     {
         var session = await _session.ReadAsync(context).ConfigureAwait(false);
         if (session is not null && string.Equals(session.SessionId, request.SsoSessionId, StringComparison.Ordinal))
-            return;
+            return session;
 
         await _requests.DeleteAsync(context, request.Id, cancellationToken).ConfigureAwait(false);
 
