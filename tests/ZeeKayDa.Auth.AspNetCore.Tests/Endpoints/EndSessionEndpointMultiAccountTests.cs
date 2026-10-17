@@ -101,6 +101,19 @@ public sealed class EndSessionEndpointMultiAccountTests : IClassFixture<MultiAcc
     }
 
     [Fact]
+    public async Task SignOutAllAsync_ends_the_accounts_that_remain_though_the_asked_one_was_signed_out_since()
+    {
+        await _browser.SignInAsync(Alice, clientId: App);
+        var logout = await AskAsync();
+        await _browser.SignInAsync(Bob, add: false, clientId: OtherApp);
+        (await _browser.ReadSessionAsync()).Subjects.Should().Equal(Bob);
+
+        await _browser.PostFormAsync(With(LogoutPath + "/all", logout));
+
+        (await _browser.ReadSessionAsync()).Accounts.Should().BeEmpty("signing out of everything only ever removes access");
+    }
+
+    [Fact]
     public async Task A_confirmation_is_refused_once_the_asked_account_was_signed_out_though_another_account_remains()
     {
         await _browser.SignInAsync(Alice, clientId: App);

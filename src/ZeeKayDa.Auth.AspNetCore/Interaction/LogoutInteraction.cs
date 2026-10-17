@@ -157,8 +157,10 @@ public sealed class LogoutInteraction
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <strong>Terminal</strong>, on the terms <see cref="SignOutAsync"/> states, and refused on the
-    /// same terms: the sign-out must still be for an account the browser holds.
+    /// <strong>Terminal</strong>, on the terms <see cref="SignOutAsync"/> states. Unlike it, this goes
+    /// ahead when the account the sign-out was for has been signed out since, ending whatever
+    /// accounts remain: it only ever removes access, and the sign-out's <c>zkd_i</c> binding still
+    /// proves the request came from this browser's own page.
     /// </para>
     /// <para>
     /// The session cookie is removed, and every authorization request this browser has in flight
@@ -181,7 +183,9 @@ public sealed class LogoutInteraction
     private async Task ConfirmAsync(HttpContext context, bool allAccounts)
     {
         var request = await ResolveAddressedAsync(context, context.RequestAborted).ConfigureAwait(false);
-        var (sessions, account) = await RequireAskedSessionAsync(context, request, context.RequestAborted).ConfigureAwait(false);
+        var (sessions, account) = allAccounts
+            ? (await _session.ReadAsync(context).ConfigureAwait(false), (SsoSessionState?)null)
+            : await RequireAskedSessionAsync(context, request, context.RequestAborted).ConfigureAwait(false);
 
         var client = request.ClientId is null
             ? null
@@ -189,7 +193,7 @@ public sealed class LogoutInteraction
         var redirect = PostLogoutRedirect.For(client, request.PostLogoutRedirectUri, request.State);
 
         await _requests.DeleteAsync(context, request.Id, context.RequestAborted).ConfigureAwait(false);
-        var result = allAccounts
+        var result = account is null
             ? await _responses.EndAllAsync(context, sessions, redirect).ConfigureAwait(false)
             : await _responses.EndAccountAsync(context, sessions, account, redirect).ConfigureAwait(false);
 
