@@ -241,14 +241,14 @@ public sealed class ProviderSignInInteraction
     /// </exception>
     public async Task SignInWithReplacedAccountAsync(string subject, IEnumerable<string> authenticationMethods)
     {
-        var methods = SessionPrincipal.Methods(authenticationMethods);
-        var replacement = SessionPrincipal.Build(subject);
+        var methods = SignInArguments.Methods(authenticationMethods);
+        var replacement = SessionSubject.From(subject);
 
         var context = RequireStateChangingRequest();
         await _services.NothingToContinue.SignInStepAsync(context, Page, () => SignInAsReplacementAsync(context, replacement, methods)).ConfigureAwait(false);
     }
 
-    private async Task SignInAsReplacementAsync(HttpContext context, ClaimsPrincipal replacement, string[] methods)
+    private async Task SignInAsReplacementAsync(HttpContext context, SessionSubject replacement, string[] methods)
     {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
@@ -324,7 +324,7 @@ public sealed class ProviderSignInInteraction
     private void RequirePromotable(PendingTicket parked) => Promote(parked);
 
     /// <summary>The principal to promote for a parked ticket, from a provider still registered.</summary>
-    private ClaimsPrincipal Promote(PendingTicket ticket)
+    private SessionSubject Promote(PendingTicket ticket)
     {
         RequireRegistered(ticket);
         return ExternalSubject.ForPromotion(ticket.Provider, ticket.Principal);
@@ -341,7 +341,7 @@ public sealed class ProviderSignInInteraction
         }
     }
 
-    private void RequireReplaceable(PendingTicket ticket, ClaimsPrincipal replacement)
+    private void RequireReplaceable(PendingTicket ticket, SessionSubject replacement)
     {
         RequireRegistered(ticket);
         if (CarriesUpstreamSubject(replacement, ticket.Principal))
@@ -349,8 +349,8 @@ public sealed class ProviderSignInInteraction
     }
 
     /// <summary>Whether the replacement's subject is, by value, a subject the provider returned.</summary>
-    private static bool CarriesUpstreamSubject(ClaimsPrincipal replacement, ClaimsPrincipal parked) =>
-        SubjectValues(replacement).Intersect(SubjectValues(parked), StringComparer.Ordinal).Any();
+    private static bool CarriesUpstreamSubject(SessionSubject replacement, ClaimsPrincipal parked) =>
+        SubjectValues(parked).Contains(replacement.Value, StringComparer.Ordinal);
 
     private static IEnumerable<string> SubjectValues(ClaimsPrincipal principal) =>
         principal.Claims

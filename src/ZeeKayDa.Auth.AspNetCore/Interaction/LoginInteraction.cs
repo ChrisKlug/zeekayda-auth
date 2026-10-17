@@ -221,8 +221,8 @@ public sealed class LoginInteraction
     /// </exception>
     public async Task SignInAsync(string subject, IEnumerable<string> authenticationMethods)
     {
-        var methods = SessionPrincipal.Methods(authenticationMethods);
-        var user = SessionPrincipal.Build(subject);
+        var methods = SignInArguments.Methods(authenticationMethods);
+        var user = SessionSubject.From(subject);
 
         var context = RequireStateChangingRequest();
         await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>

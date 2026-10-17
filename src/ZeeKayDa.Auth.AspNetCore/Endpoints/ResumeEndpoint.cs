@@ -95,7 +95,7 @@ internal sealed class ResumeEndpoint(
             path => outcomes.ParkAsync(context, requestContext, registration, principal, path),
             () => outcomes.DenyAsync(context, requestContext, Denial.RefusedAfterProvider));
 
-        ClaimsPrincipal promoted;
+        SessionSubject promoted;
         try
         {
             if (providerOptions.Value.OnProviderSignIn is { } onProviderSignIn)
@@ -118,11 +118,11 @@ internal sealed class ResumeEndpoint(
     }
 
     /// <summary>
-    /// Signs in the promoted principal, superseding one parked by an earlier return. No <c>amr</c>:
+    /// Signs in the promoted subject, superseding a principal parked by an earlier return. No <c>amr</c>:
     /// the provider told the framework nothing about how the user proved who they are.
     /// </summary>
     private async Task SignInPromotedAsync(
-        HttpContext context, AuthorizationRequestContext requestContext, ProviderRegistration registration, ClaimsPrincipal promoted)
+        HttpContext context, AuthorizationRequestContext requestContext, ProviderRegistration registration, SessionSubject promoted)
     {
         await flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
         await outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], registration.Name))

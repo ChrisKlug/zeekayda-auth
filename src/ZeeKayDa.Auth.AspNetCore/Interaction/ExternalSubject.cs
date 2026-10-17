@@ -14,15 +14,15 @@ public static class ExternalSubject
     /// <summary>The claims the upstream subject is read from, in order.</summary>
     internal static readonly string[] SubjectClaimTypes = ["sub", ClaimTypes.NameIdentifier];
 
-    /// <summary>The session principal for an external one: the derived subject, none of the provider's claims.</summary>
+    /// <summary>The session subject for an external principal: the derived one, never the upstream value.</summary>
     /// <exception cref="ZeeKayDaInteractionException">
     /// The principal carries no subject claim, or its subject claim names no issuer.
     /// </exception>
-    internal static ClaimsPrincipal ForPromotion(string providerId, ClaimsPrincipal principal)
+    internal static SessionSubject ForPromotion(string providerId, ClaimsPrincipal principal)
     {
         var identity = Identify(providerId, principal);
 
-        return SessionPrincipal.Build(Derive(identity.Issuer, identity.Subject));
+        return SessionSubject.From(Derive(identity.Issuer, identity.Subject));
     }
 
     /// <summary>The upstream identity of a principal the framework will promote or park.</summary>

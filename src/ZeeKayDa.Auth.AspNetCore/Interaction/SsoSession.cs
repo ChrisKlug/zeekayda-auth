@@ -70,21 +70,16 @@ internal sealed class SsoSession(TimeProvider timeProvider)
     }
 
     /// <summary>Writes a fresh session cookie, keeping the session identifier when the subject is unchanged.</summary>
-    /// <exception cref="InvalidOperationException">
-    /// The principal carries no <c>sub</c> — a framework bug, since every caller builds it with one.
-    /// </exception>
     public async Task<SsoSessionState> PromoteAsync(
         HttpContext context,
-        ClaimsPrincipal principal,
+        SessionSubject sessionSubject,
         IReadOnlyList<string> authenticationMethods)
     {
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentNullException.ThrowIfNull(sessionSubject);
         ArgumentNullException.ThrowIfNull(authenticationMethods);
 
-        var subject = ReadSubject(principal)
-            ?? throw new InvalidOperationException("The principal to promote carries no 'sub' claim.");
-
+        var subject = sessionSubject.Value;
         var current = await ReadAsync(context).ConfigureAwait(false);
         var sessionId = current is not null && string.Equals(current.Subject, subject, StringComparison.Ordinal)
             ? current.SessionId

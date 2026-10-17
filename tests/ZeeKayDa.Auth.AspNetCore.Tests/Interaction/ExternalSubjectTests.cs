@@ -46,7 +46,7 @@ public sealed class ExternalSubjectTests
         var throughAcme = ExternalSubject.ForPromotion("acme", upstream);
         var throughGlobex = ExternalSubject.ForPromotion("globex", upstream);
 
-        throughGlobex.FindFirst("sub")!.Value.Should().Be(throughAcme.FindFirst("sub")!.Value)
+        throughGlobex.Value.Should().Be(throughAcme.Value)
             .And.Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
 
@@ -99,8 +99,7 @@ public sealed class ExternalSubjectTests
 
         var promoted = ExternalSubject.ForPromotion("acme", upstream);
 
-        promoted.Claims.Select(claim => (claim.Type, claim.Value))
-            .Should().Equal(("sub", ExternalSubject.Derive("https://acme.example.net", "42")));
+        promoted.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
 
     [Fact]
@@ -111,7 +110,7 @@ public sealed class ExternalSubjectTests
 
         var promoted = ExternalSubject.ForPromotion("acme", upstream);
 
-        promoted.FindFirst("sub")!.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
+        promoted.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
 
     [Fact]
@@ -127,7 +126,7 @@ public sealed class ExternalSubjectTests
 
         var promoted = ExternalSubject.ForPromotion("acme", upstream);
 
-        promoted.FindFirst("sub")!.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
+        promoted.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
 
     [Fact]

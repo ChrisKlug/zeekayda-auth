@@ -1,9 +1,8 @@
-using System.Security.Claims;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 
 namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 
-public sealed class SessionPrincipalTests
+public sealed class SessionSubjectTests
 {
     public static TheoryData<string> MalformedSubjects => new()
     {
@@ -17,20 +16,20 @@ public sealed class SessionPrincipalTests
 
     [Theory]
     [MemberData(nameof(MalformedSubjects))]
-    public void Build_refuses_a_subject_that_is_not_1_to_255_printable_ascii_characters(string subject)
+    public void From_refuses_a_subject_that_is_not_1_to_255_printable_ascii_characters(string subject)
     {
-        var build = () => SessionPrincipal.Build(subject);
+        var from = () => SessionSubject.From(subject);
 
-        build.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("subject");
+        from.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("subject");
     }
 
     [Fact]
-    public void Build_accepts_255_printable_ascii_characters()
+    public void From_accepts_255_printable_ascii_characters()
     {
         var subject = string.Concat(Enumerable.Range(0, 255).Select(index => (char)('!' + index % 94)));
 
-        var principal = SessionPrincipal.Build(subject);
+        var sessionSubject = SessionSubject.From(subject);
 
-        principal.FindFirstValue("sub").Should().Be(subject);
+        sessionSubject.Value.Should().Be(subject);
     }
 }
