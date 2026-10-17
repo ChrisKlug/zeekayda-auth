@@ -15,7 +15,8 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
     {
         var options = Resolve(new Dictionary<string, string?>
         {
-            ["Issuer"] = "https://auth.example.com",
+            // http loopback, the only issuer the AllowHttpLoopbackIssuer switch bound below is valid with.
+            ["Issuer"] = "http://localhost:5000",
             ["ClockSkewTolerance"] = "00:00:10",
             ["GrantTypesSupported:0"] = "AuthorizationCode",
             ["GrantTypesSupported:1"] = "RefreshToken",
@@ -31,7 +32,7 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
             ["Development:AllowHttpLoopbackIssuer"] = "true",
         });
 
-        options.Issuer.Should().Be("https://auth.example.com");
+        options.Issuer.Should().Be("http://localhost:5000");
         options.ClockSkewTolerance.Should().Be(TimeSpan.FromSeconds(10));
         options.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode, GrantType.RefreshToken);
         options.CorsOrigins.Should().Equal("https://app.example.com");

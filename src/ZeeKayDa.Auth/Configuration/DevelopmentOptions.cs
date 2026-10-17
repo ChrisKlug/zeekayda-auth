@@ -26,7 +26,8 @@ public sealed class DevelopmentOptions
 
     /// <summary>
     /// Gets or sets whether the issuer, endpoint URIs and requests may use plain HTTP on a loopback
-    /// host such as <c>http://localhost:5000</c>. Any other HTTP host still fails startup.
+    /// host such as <c>http://localhost:5000</c>. Any other HTTP host still fails startup, and so does an
+    /// <c>https</c> issuer with this set.
     /// </summary>
     public bool AllowHttpLoopbackIssuer
     {

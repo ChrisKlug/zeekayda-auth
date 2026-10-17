@@ -495,6 +495,21 @@ public sealed class DiscoveryEndpointTests
     }
 
     [Fact]
+    public async Task Startup_rejects_the_AllowHttpLoopbackIssuer_flag_on_an_HTTPS_Issuer()
+    {
+        using var host = new EndpointHost(opts =>
+        {
+            opts.Issuer = "https://auth.example.com";
+            opts.Development.AllowHttpLoopbackIssuer = true;
+        });
+
+        var failure = await host.StartupFailureAsync();
+
+        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(failure)!
+            .AggregatedFailures.Should().Contain(f => f.Code == "configuration.development.allow_http_loopback_issuer.https_issuer");
+    }
+
+    [Fact]
     public async Task Startup_rejects_a_malformed_Issuer()
     {
         using var host = new EndpointHost(opts => opts.Issuer = "not-a-valid-uri");
