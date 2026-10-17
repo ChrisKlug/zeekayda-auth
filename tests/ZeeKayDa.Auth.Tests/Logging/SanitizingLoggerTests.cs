@@ -98,9 +98,26 @@ public sealed class SanitizingLoggerTests
             "password",
             "code",
             "DPoP",
+            "id_token_hint",
+            "IdTokenHint",
             "login_hint",
             "LoginHint"],
             o => o.WithoutStrictOrdering());
+    }
+
+    [Theory]
+    [InlineData("id_token_hint")]
+    [InlineData("IdTokenHint")]
+    public void Log_redacts_id_token_hint(string key)
+    {
+        var inner = new CapturingLogger<object>();
+        var sut = CreateSut(inner);
+        var state = new List<KeyValuePair<string, object?>> { new(key, "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.sig") };
+
+        sut.Log(LogLevel.Information, default, state, null, static (_, _) => "");
+
+        inner.Entries.Should().ContainSingle().Which.Pairs.Should().ContainSingle()
+            .Which.Value.Should().Be("[REDACTED]");
     }
 
     [Fact]

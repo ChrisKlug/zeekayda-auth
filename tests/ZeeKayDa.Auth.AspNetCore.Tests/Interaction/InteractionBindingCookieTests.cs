@@ -208,7 +208,7 @@ public sealed class InteractionBindingCookieTests
     [Fact]
     public void A_binding_retired_in_the_request_that_issued_it_keeps_its_client()
     {
-        // prompt=none with no session stores and ends an interaction before the browser has the cookie.
+        // A request refused for a configuration gap stores and ends an interaction before the browser has the cookie.
         var binding = Binding();
         var context = new DefaultHttpContext();
         binding.Issue(context, new("interaction-a", ExpiresAt, InteractionBindingCookie.NewSecret(), "client-a"));

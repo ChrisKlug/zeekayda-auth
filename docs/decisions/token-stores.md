@@ -26,6 +26,8 @@ because the handle is itself a bearer credential and store read access — ops t
 sidecars — must not expose it (RFC 6819 §5.1.4.1.3). "Hash before you key" is therefore
 unrepresentable in third-party code rather than documented. Every store uses one layout,
 `zkd:{store}:{kind}:{hex(sha256(value))}`, so a key in a shared backend says what it belongs to.
+Each code entry and refresh-token payload is sealed under a Data Protection purpose narrowed by its own
+row's key, as the interaction stores are, so a writer to the store cannot move one under a handle it holds.
 
 **Fail-closed I/O, with no discretion left to the implementer.** The framework wraps every native
 fault as `ZeeKayDaStoreException` and rethrows `OperationCanceledException` unwrapped. A read MUST
