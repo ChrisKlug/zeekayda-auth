@@ -82,6 +82,11 @@ public sealed class ProviderSignInInteraction
     /// read is not reported as absent, since the page would then tell the user there is nothing
     /// to finish.
     /// </exception>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// The parked principal carries no usable upstream subject. A principal parked through
+    /// <see cref="ProviderSignInContext.RedirectToAsync"/> always has one: the framework refuses
+    /// one without before the hook runs.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// There is no active HTTP request — the service was resolved outside one.
     /// </exception>
@@ -104,7 +109,8 @@ public sealed class ProviderSignInInteraction
         if (pending is null || _providers.Find(pending.Provider) is not { } registration)
             return null;
 
-        return new PendingPrincipal(pending.Principal, registration.Descriptor);
+        return new PendingPrincipal(
+            ExternalSubject.Identify(registration.Name, pending.Principal), pending.Principal, registration.Descriptor);
     }
 
     /// <summary>
@@ -124,9 +130,7 @@ public sealed class ProviderSignInInteraction
     /// are at the provider.
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// The parked principal cannot be promoted: its provider is no longer registered, it carries no
-    /// subject on an authenticated identity, or its subject claim names no issuer — a provider
-    /// handler that must be fixed, since it fails every time.
+    /// The parked principal's provider is no longer registered.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached before the
@@ -235,10 +239,8 @@ public sealed class ProviderSignInInteraction
     /// external sign-in's session subject is never the upstream one verbatim. The arguments are
     /// copied when the call is made, so what was validated is what is signed in.
     /// <para>
-    /// <strong>Linking on the provider's <c>email</c> is an account-takeover risk</strong> unless the
-    /// provider asserts <c>email_verified</c> and you trust its verification; a missing claim means
-    /// unverified. Prefer the provider name and upstream subject, and treat an email match as a
-    /// prompt to prove ownership of the local account.
+    /// Find the local account by <see cref="PendingPrincipal.Identity"/>, never by an unverified
+    /// email: see <see cref="ExternalIdentity"/>.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
