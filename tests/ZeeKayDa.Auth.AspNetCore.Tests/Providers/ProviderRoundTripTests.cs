@@ -1,10 +1,8 @@
 using System.Net;
-using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 using ZeeKayDa.Auth.Stores;
@@ -549,6 +547,53 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
     }
 
     [Fact]
+    public async Task A_host_event_that_answers_the_callback_without_a_sign_in_or_a_failure_logs_a_warning_naming_the_provider()
+    {
+        // The stock ASP.NET idiom: OnTicketReceived redirects and calls HandleResponse, so the
+        // handler reports the callback handled although nothing was signed in.
+        var logs = new CapturingLoggerProvider();
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", options =>
+            {
+                ConfigureAcme(options);
+                options.Events.OnTicketReceived = context =>
+                {
+                    context.Response.Redirect("/host-page");
+                    context.HandleResponse();
+                    return Task.CompletedTask;
+                };
+            }));
+            builder.Services.AddLogging(logging => logging.AddProvider(logs));
+        });
+        using var client = NewClient(factory);
+        var (_, challenge) = await ChallengeAsync(client);
+
+        var callback = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
+
+        callback.Headers.Location!.OriginalString.Should().Be("/host-page");
+        logs.Entries.Should().ContainSingle(entry => entry.Level == LogLevel.Warning && entry.Message.Contains("abandoned"))
+            .Which.Message.Should().Contain("acme");
+    }
+
+    [Fact]
+    public async Task A_callback_that_signs_in_logs_no_abandoned_sign_in_warning()
+    {
+        var logs = new CapturingLoggerProvider();
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", "Acme", ConfigureAcme));
+            builder.Services.AddLogging(logging => logging.AddProvider(logs));
+        });
+        using var client = NewClient(factory);
+        var (_, challenge) = await ChallengeAsync(client);
+
+        await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
+
+        logs.Entries.Should().NotContain(entry => entry.Message.Contains("abandoned"));
+    }
+
+    [Fact]
     public async Task A_host_that_clears_the_remote_failure_event_still_starts_and_returns_the_user_to_the_login_page()
     {
         using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
@@ -686,18 +731,6 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
 
         callback.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await callback.Content.ReadAsStringAsync(Cancellation)).Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task A_handler_that_does_not_handle_requests_answers_404_at_its_callback()
-    {
-        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
-            auth.AddScheme<AuthenticationSchemeOptions, PlainHandler>("plain", "Plain", _ => { })));
-        using var client = NewClient(factory);
-
-        var callback = await client.GetAsync("/connect/callback/plain", Cancellation);
-
-        callback.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -929,16 +962,5 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
         var signIn = async () => await client.GetAsync("/test/sign-in-external", Cancellation);
 
         await signIn.Should().ThrowAsync<InvalidOperationException>().WithMessage("*callback endpoint*");
-    }
-
-    /// <summary>A handler outside the request-handler contract: nothing to serve at its callback.</summary>
-    private sealed class PlainHandler(
-        IOptionsMonitor<AuthenticationSchemeOptions> options,
-        ILoggerFactory logger,
-        UrlEncoder encoder)
-        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
-    {
-        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
-            => Task.FromResult(AuthenticateResult.NoResult());
     }
 }

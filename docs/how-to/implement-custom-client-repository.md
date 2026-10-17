@@ -114,6 +114,11 @@ public sealed class MyDatabaseClientRepository : IClientRepository
 
 ## String comparison invariants
 
+`FindByClientIdAsync` must match `client_id` exactly. A registration whose `ClientId` differs from
+the id the framework looked up, even only in case, is served as an unknown client and logged at
+Critical once (`client.client_id.mismatch`). A database column with a case-insensitive collation
+matches loosely, so compare ordinally in the query or check the returned row's `ClientId`.
+
 The framework never hands your entity to its endpoints or to a token issuer. It copies each
 registration it looks up and rebuilds the `IReadOnlySet<string>` members — `RedirectUris`,
 `PostLogoutRedirectUris`, `AllowedScopes`, `AllowedTokenEndpointAuthMethods` — with

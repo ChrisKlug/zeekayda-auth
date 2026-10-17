@@ -565,6 +565,45 @@ public sealed class PfxFileSigningKeySourceTests
             .And.NotEqual(first.Single().PublicKey.RsaPublicParameters!.Value.Modulus);
     }
 
+    // ── The bundle's bytes are wiped once decoded ────────────────────────────────────────────────
+
+    [Fact]
+    public void OpenSigningPair_wipes_the_bundle_bytes_when_reading_the_certificate_for_a_listing()
+    {
+        using var certificate = CreateRsaCertificate();
+        var bytes = certificate.Export(X509ContentType.Pfx, CorrectPassword);
+
+        using var listed = PfxFileSigningKeySource.OpenSigningPair(
+            bytes, "bundle.pfx", CorrectPassword, pair => pair.Certificate.GetCertificate());
+
+        bytes.Should().OnlyContain(b => b == 0, "the file's bytes hold the private key");
+    }
+
+    [Fact]
+    public void OpenSigningPair_wipes_the_bundle_bytes_when_importing_the_key_to_sign()
+    {
+        using var certificate = CreateRsaCertificate();
+        var bytes = certificate.Export(X509ContentType.Pfx, CorrectPassword);
+
+        using var key = PfxFileSigningKeySource.OpenSigningPair(
+            bytes, "bundle.pfx", CorrectPassword, pair => Pkcs12PrivateKey.Import(pair.Key, CorrectPassword));
+
+        bytes.Should().OnlyContain(b => b == 0, "the file's bytes hold the private key");
+    }
+
+    [Fact]
+    public void OpenSigningPair_wipes_the_bundle_bytes_when_the_bundle_is_refused()
+    {
+        using var certificate = CreateRsaCertificate();
+        var bytes = certificate.Export(X509ContentType.Pfx, CorrectPassword);
+
+        var act = () => PfxFileSigningKeySource.OpenSigningPair(
+            bytes, "bundle.pfx", "wrong password", pair => pair.Certificate.GetCertificate());
+
+        act.Should().Throw<ZeeKayDaConfigurationException>();
+        bytes.Should().OnlyContain(b => b == 0, "a refused bundle still holds the private key");
+    }
+
     // ── Missing file, wrong password, invalid bundle ─────────────────────────────────────────────
 
     [Fact]

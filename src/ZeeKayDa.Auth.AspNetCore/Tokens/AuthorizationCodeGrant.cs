@@ -158,8 +158,8 @@ internal sealed class AuthorizationCodeGrant(
     }
 
     /// <summary>
-    /// Revokes the family the first exchange started (RFC 9700 §4.5.3). Not cancelled by the client
-    /// disconnecting: the revocation is the server's own action.
+    /// Revokes the family the first exchange started (RFC 9700 §4.2.4, RFC 6749 §4.1.2). Not
+    /// cancelled by the client disconnecting: the revocation is the server's own action.
     /// </summary>
     private async Task<IResult> RefuseReplayAsync(HttpContext context, IClient client, string familyId)
     {

@@ -2098,8 +2098,10 @@ Copilot code, security and architecture lenses, the security and architect agent
 - A filter withholding `none` refuses public clients. Closed — `A_public_client_refused_because_the_server_disallows_none_is_padded_like_an_unknown_client`,
   `Build_failure_for_a_public_client_on_a_server_whose_filter_withholds_none_names_the_filter`.
 - `client_credentials` with only `none` advertised fails startup (RFC 6749 §4.4). Closed —
-  `Verify_fails_when_client_credentials_is_served_and_the_filter_leaves_only_none`,
-  `Verify_fails_when_client_credentials_is_served_and_no_authenticator_is_registered`.
+  Verify_fails_when_client_credentials_is_served_and_the_filter_leaves_only_none,
+  Verify_fails_when_client_credentials_is_served_and_no_authenticator_is_registered
+  [deleted by #968 with that check: GrantTypesSupported can no longer contain client_credentials, which startup now refuses —
+  `Validate_fails_when_GrantTypesSupported_contains_a_grant_the_token_endpoint_does_not_serve`].
 - A host without the HTTP layer is held to the same advertised-set checks. Closed —
   `AddZeeKayDaAuthCore_registers_the_check_so_a_core_only_host_is_held_to_it`.
 - Discovery, client registration and the token endpoint read one resolution, fixed at startup. Closed —
@@ -2415,6 +2417,14 @@ and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `46
   A version 1 root placed first is not caught at listing; it fails at the handover's pairing. **Not covered:** the macOS x86_64 `$INODE64` binding runs on no CI leg.
   A write grant to a named Windows account, or a POSIX ACL entry, is not inspected — the same model the key-file check has always used, so this sign-off does not claim the file is writable by its owner alone.
 
+## 2026-10-17 — a stored code or refresh-token payload is sealed to its own row (#961, code frozen at `bac9a02`)
+M1 audit finding (Medium, area 5) and the security agent's fix-round review (sign-off, no findings); no Copilot lens (quota). `bac9a02` was read by the security agent and the maintainer on the PR.
+- Both token stores seal each payload under a purpose narrowed by the row's own `StoreKey` (`ProtectorFor(key)`), the model the interaction stores already use, so a writer to the backing
+  store cannot move a victim's payload under a handle it holds; a moved payload fails to unprotect and reads as absent. Closed —
+  `TryRedeemAsync_returns_NotFound_for_an_entry_copied_under_another_codes_key`, `TryConsumeAsync_returns_NotFound_for_a_payload_copied_from_another_grant_row`.
+- The entry format and the plaintext tombstone (`zkd:code:t`) and interaction marker (`zkd:code:i`) are unchanged; the register's "a persistence breach discloses nothing redeemable" now holds for a
+  writer as well as a reader. Purposes differ per store (distinct parent purpose and key prefix) and per row (hash), so no two rows share a protector.
+- **Not covered:** a writer who also holds the Data Protection key ring can re-seal anything; that is in-process access and outside the threat model.
 ## 2026-10-17 — a host hook forwards an RP's re-authentication demand to an external provider, or the RP is told (#962, code frozen at `5908586`)
 M1 audit finding (Medium, raised independently by the authorize and provider reviewers), the security agent's fix-round review (sign-off, two Lows fixed) and its verification of both fix diffs; no Copilot lens (quota). `d8ec1ed`, `9f6f250`, `b5182a3`, `5908586` read by the security agent; the maintainer reads the PR.
 - A demand is `prompt=login`, or `max_age` with no local session or a session older than it; one rule, `AuthorizationFlow.RequiresReauthentication`, decides it on both dispatch paths. Closed —

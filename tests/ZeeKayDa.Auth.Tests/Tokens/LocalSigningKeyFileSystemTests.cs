@@ -62,6 +62,29 @@ public sealed class LocalSigningKeyFileSystemTests : IDisposable
     }
 
     [Fact]
+    public void EnsureDirectorySafe_writes_a_gitignore_ignoring_its_contents_into_a_directory_it_creates()
+    {
+        var directory = Path.Join(_tempDirectory, ".zeekayda", "signing-keys");
+
+        _sut.EnsureDirectorySafe(directory);
+
+        File.ReadAllText(Path.Join(directory, ".gitignore")).Should().Be("*\n");
+    }
+
+    [Fact]
+    public void EnsureDirectorySafe_writes_no_gitignore_into_a_directory_that_already_exists()
+    {
+        var directory = Path.Join(_tempDirectory, "signing-keys");
+        Directory.CreateDirectory(directory);
+        if (!OperatingSystem.IsWindows())
+            SetUnixMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+        _sut.EnsureDirectorySafe(directory);
+
+        File.Exists(Path.Join(directory, ".gitignore")).Should().BeFalse();
+    }
+
+    [Fact]
     public void EnsureDirectorySafe_accepts_a_directory_whose_every_component_is_owned_by_the_current_user()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), RequiresUnixReason);

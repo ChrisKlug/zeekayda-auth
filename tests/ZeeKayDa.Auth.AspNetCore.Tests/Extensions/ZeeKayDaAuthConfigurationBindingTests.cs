@@ -15,10 +15,10 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
     {
         var options = Resolve(new Dictionary<string, string?>
         {
-            ["Issuer"] = "https://auth.example.com",
+            // http loopback, the only issuer the AllowHttpLoopbackIssuer switch bound below is valid with.
+            ["Issuer"] = "http://localhost:5000",
             ["ClockSkewTolerance"] = "00:00:10",
             ["GrantTypesSupported:0"] = "AuthorizationCode",
-            ["GrantTypesSupported:1"] = "RefreshToken",
             ["CorsOrigins:0"] = "https://app.example.com",
             ["TokenEndpoint:AccessTokenLifetime"] = "00:20:00",
             ["TokenEndpoint:AdvertisedAuthMethods:0"] = "client_secret_post",
@@ -31,9 +31,9 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
             ["Development:AllowHttpLoopbackIssuer"] = "true",
         });
 
-        options.Issuer.Should().Be("https://auth.example.com");
+        options.Issuer.Should().Be("http://localhost:5000");
         options.ClockSkewTolerance.Should().Be(TimeSpan.FromSeconds(10));
-        options.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode, GrantType.RefreshToken);
+        options.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode);
         options.CorsOrigins.Should().Equal("https://app.example.com");
         options.TokenEndpoint.AccessTokenLifetime.Should().Be(TimeSpan.FromMinutes(20));
         options.TokenEndpoint.AdvertisedAuthMethods.Should().Equal("client_secret_post");
@@ -52,14 +52,14 @@ public sealed class ZeeKayDaAuthConfigurationBindingTests
         var options = Resolve(new Dictionary<string, string?>
         {
             ["Issuer"] = "https://auth.example.com",
-            ["GrantTypesSupported:0"] = "ClientCredentials",
+            ["GrantTypesSupported:0"] = "AuthorizationCode",
             ["TokenEndpoint:AdvertisedAuthMethods:0"] = "client_secret_post",
             ["Response:TypesSupported:0"] = "Code",
             ["Response:ModesSupported:0"] = "Query",
             ["AuthorizationEndpoint:CodeChallengeMethodsSupported:0"] = "S256",
         });
 
-        options.GrantTypesSupported.Should().Equal(GrantType.ClientCredentials);
+        options.GrantTypesSupported.Should().Equal([GrantType.AuthorizationCode], "appended, the default would appear twice");
         options.TokenEndpoint.AdvertisedAuthMethods.Should().Equal("client_secret_post");
         options.Response.TypesSupported.Should().Equal(ResponseType.Code);
         options.Response.ModesSupported.Should().Equal(ResponseMode.Query);

@@ -19,9 +19,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Nothing a sign-out sends is refused. A parameter that fails to validate is ignored, as §4
-/// requires of an <c>id_token_hint</c>, and the worst a bad request can do is land the user on a
-/// confirmation or signed-out page instead of back at the client.
+/// Nothing a sign-out sends is refused. A parameter that fails to validate is ignored, and the
+/// worst a bad request can do is land the user on a confirmation or signed-out page instead of back
+/// at the client. An <c>id_token_hint</c> that fails to validate is an error in the request, so
+/// the user is not sent back to the client at all (§4).
 /// </para>
 /// <para>
 /// The user is signed out without being asked only when there is no session to end, or when a
@@ -76,23 +77,24 @@ internal sealed class EndSessionEndpoint(
         context.Response.Headers.CacheControl = "no-store";
 
         var parameters = await ReadParametersAsync(context).ConfigureAwait(false);
-        var (hint, client) = await ResolveClientAsync(parameters, hints, clients, context.RequestAborted).ConfigureAwait(false);
-        var redirect = RedirectFor(client, parameters);
+        var (hint, hintRejected, client) = await ResolveClientAsync(parameters, hints, clients, context.RequestAborted).ConfigureAwait(false);
+        var redirect = hintRejected ? null : RedirectFor(client, parameters);
 
         var session = await _session.ReadAsync(context).ConfigureAwait(false);
         if (session is null || MayEndWithoutAsking(client, hint, session))
-            return await responses.SignOutAsync(context, redirect).ConfigureAwait(false);
+            return await responses.SignOutAsync(context, session, redirect).ConfigureAwait(false);
 
         return await AskAsync(context, new PendingSignOut(client?.ClientId, redirect, session.SessionId, session.Subject))
             .ConfigureAwait(false);
     }
 
     /// <summary>
-    /// The validated hint, and the client the sign-out is for: the hint's own when it validated,
-    /// the one <c>client_id</c> names otherwise. <c>client_id</c> is passed to the validator as
-    /// sent, so a hint issued to any other client is refused.
+    /// The validated hint, whether one was sent that failed to validate, and the client the
+    /// sign-out is for: the hint's own when it validated, the one <c>client_id</c> names otherwise.
+    /// <c>client_id</c> is passed to the validator as sent, so a hint issued to any other client is
+    /// refused.
     /// </summary>
-    private async ValueTask<(IdTokenHint? Hint, IClient? Client)> ResolveClientAsync(
+    private async ValueTask<(IdTokenHint? Hint, bool HintRejected, IClient? Client)> ResolveClientAsync(
         Dictionary<string, StringValues> parameters,
         IdTokenHintValidator hints,
         ValidatedClientResolver clients,
@@ -102,15 +104,16 @@ internal sealed class EndSessionEndpoint(
         var idTokenHint = Single(parameters, "id_token_hint");
 
         var hint = hints.Validate(idTokenHint, requestedClientId);
-        if (hint is null && idTokenHint is not null)
-            logger.LogDebug("An id_token_hint that is not an ID token this server issued was ignored.");
+        var hintRejected = hint is null && idTokenHint is not null;
+        if (hintRejected)
+            logger.LogDebug("An id_token_hint that is not an ID token this server issued was ignored, and with it any post-logout redirect.");
 
         var clientId = hint?.ClientId ?? requestedClientId;
         var client = clientId is null
             ? null
             : await clients.FindClientAsync(clientId, cancellationToken).ConfigureAwait(false);
 
-        return (hint, client);
+        return (hint, hintRejected, client);
     }
 
     /// <summary>

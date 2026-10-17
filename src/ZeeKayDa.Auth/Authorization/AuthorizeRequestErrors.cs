@@ -26,6 +26,12 @@ internal static class AuthorizeRequestErrors
     public const string ConsentRequired = "consent_required";
 
     /// <summary>
+    /// The request asks the user to select an account, and the server cannot obtain that choice
+    /// (OIDC Core 1.0 §3.1.2.1, §3.1.2.6).
+    /// </summary>
+    public const string AccountSelectionRequired = "account_selection_required";
+
+    /// <summary>
     /// The user, or the authorization server on their behalf, refused the request
     /// (RFC 6749 §4.1.2.1).
     /// </summary>

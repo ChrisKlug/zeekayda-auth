@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Tests.Stores;
 /// </summary>
 public sealed class InMemoryAuthorizationCodeBackingStoreConformanceTests : AuthorizationCodeBackingStoreConformanceTests
 {
-    protected override IAuthorizationCodeBackingStore CreateStore() => new InMemoryAuthorizationCodeBackingStore();
+    protected override IAuthorizationCodeBackingStore CreateStore() => InMemoryStores.AuthorizationCodes();
 
     // Pure in-process ConcurrentDictionary with no injectable transport dependency — there is
     // genuinely nothing to fail, so the fault-injection tests are deliberately skipped here.
