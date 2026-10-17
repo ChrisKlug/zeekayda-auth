@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Providers;
@@ -17,7 +16,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// <c>&lt;form method="post"&gt;</c> does by default.
 /// </para>
 /// <para>
-/// <strong>Terminal methods</strong> — <see cref="SignInAsync(string, IEnumerable{string}, Claim[])"/>,
+/// <strong>Terminal methods</strong> — <see cref="SignInAsync(string, IEnumerable{string})"/>,
 /// <see cref="DenyAsync"/> and <see cref="ChallengeAsync"/> — write and commit the response, so each
 /// must be the last thing the page does. A Razor Pages handler or controller action can simply end
 /// after it: the framework skips MVC's result. Anywhere else, returning a result of your own
@@ -146,8 +145,9 @@ public sealed class LoginInteraction
     /// here.
     /// </summary>
     /// <param name="subject">
-    /// The user's identifier, which the client receives as <c>sub</c>: stable for the life of the
-    /// account and never reassigned (OpenID Connect Core §2).
+    /// The user's identifier, which the client receives as <c>sub</c>: 1–255 printable ASCII
+    /// characters with no space, stable for the life of the account and never reassigned (OpenID
+    /// Connect Core §2).
     /// </param>
     /// <param name="authenticationMethod">
     /// How the user proved who they are, reported to the client in the <c>amr</c> claim. Use
@@ -156,10 +156,6 @@ public sealed class LoginInteraction
     /// for a method the registry does not name. A sign-in that used several takes the overload
     /// with a list.
     /// </param>
-    /// <param name="additionalClaims">
-    /// Claims held on the SSO session alongside the subject, on the same terms as the overload
-    /// taking a list of methods.
-    /// </param>
     /// <remarks>
     /// Exactly the overload taking a list of methods, with one method in it.
     /// </remarks>
@@ -167,20 +163,20 @@ public sealed class LoginInteraction
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// nothing was signed in or issued.
     /// </exception>
-    /// <exception cref="ArgumentNullException"><paramref name="additionalClaims"/> is null.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="subject"/> is null.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="subject"/> or <paramref name="authenticationMethod"/> is null or blank, or
-    /// an entry in <paramref name="additionalClaims"/> is null or names the subject.
+    /// <paramref name="subject"/> is not 1–255 printable ASCII characters with no space, or
+    /// <paramref name="authenticationMethod"/> is null or blank.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c> — only the login form's submission may sign in, and that
     /// is checked before anything is read — or there is no active HTTP request.
     /// </exception>
-    public Task SignInAsync(string subject, string authenticationMethod, params Claim[] additionalClaims)
+    public Task SignInAsync(string subject, string authenticationMethod)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(authenticationMethod);
 
-        return SignInAsync(subject, [authenticationMethod], additionalClaims);
+        return SignInAsync(subject, [authenticationMethod]);
     }
 
     /// <summary>
@@ -188,8 +184,9 @@ public sealed class LoginInteraction
     /// request that led here.
     /// </summary>
     /// <param name="subject">
-    /// The user's identifier, which the client receives as <c>sub</c>: stable for the life of the
-    /// account and never reassigned (OpenID Connect Core §2).
+    /// The user's identifier, which the client receives as <c>sub</c>: 1–255 printable ASCII
+    /// characters with no space, stable for the life of the account and never reassigned (OpenID
+    /// Connect Core §2).
     /// </param>
     /// <param name="authenticationMethods">
     /// How the user proved who they are, reported to the client in the <c>amr</c> claim. Use
@@ -197,12 +194,6 @@ public sealed class LoginInteraction
     /// method the registry does not name. RFC 8176 §2 asks that a multi-factor sign-in report
     /// <c>MultiFactor</c> alongside the individual factors:
     /// <c>SignInAsync(user.Subject, [AuthenticationMethods.MultiFactor, AuthenticationMethods.Password, AuthenticationMethods.OneTimePassword])</c>.
-    /// </param>
-    /// <param name="additionalClaims">
-    /// Claims held on the SSO session alongside the subject. Held on the session only: tokens and
-    /// userinfo get their claims from <c>IClaimsProvider</c>. A <c>sub</c> or
-    /// <see cref="ClaimTypes.NameIdentifier"/> claim is refused, and claims in the reserved
-    /// <c>zkd:</c> namespace are stripped.
     /// </param>
     /// <remarks>
     /// <para>
@@ -225,20 +216,20 @@ public sealed class LoginInteraction
     /// nothing was signed in or issued.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="authenticationMethods"/> or <paramref name="additionalClaims"/> is null.
+    /// <paramref name="subject"/> or <paramref name="authenticationMethods"/> is null.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="subject"/> or an entry in <paramref name="authenticationMethods"/> is null
-    /// or blank, or an entry in <paramref name="additionalClaims"/> is null or names the subject.
+    /// <paramref name="subject"/> is not 1–255 printable ASCII characters with no space, or an entry
+    /// in <paramref name="authenticationMethods"/> is null or blank.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c> — only the login form's submission may sign in, and that
     /// is checked before anything is read — or there is no active HTTP request.
     /// </exception>
-    public async Task SignInAsync(string subject, IEnumerable<string> authenticationMethods, params Claim[] additionalClaims)
+    public async Task SignInAsync(string subject, IEnumerable<string> authenticationMethods)
     {
-        var methods = SessionPrincipal.Methods(authenticationMethods);
-        var user = SessionPrincipal.Build(subject, additionalClaims);
+        var methods = SignInArguments.Methods(authenticationMethods);
+        var user = SessionSubject.From(subject);
 
         var context = RequireStateChangingRequest();
         await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>

@@ -8,14 +8,15 @@ public sealed class ProviderOptions
 {
     /// <summary>
     /// Gets or sets the handler that runs when a provider has authenticated the user, before the
-    /// SSO session is established. <see langword="null"/> (the default) promotes the principal as it is.
+    /// SSO session is established. <see langword="null"/> (the default) promotes the principal under
+    /// its derived subject.
     /// </summary>
     /// <remarks>
     /// The handler may end the request with <see cref="ProviderSignInContext.RedirectToAsync"/>,
     /// sending the user to a host page that finishes through <see cref="ProviderSignInInteraction"/>,
     /// or with <see cref="ProviderSignInContext.DenyAsync"/>. Calling neither promotes the principal.
     /// This is where a host chooses the subject an external user gets, through
-    /// <see cref="ProviderSignInInteraction.SignInWithReplacedAccountAsync(string, IEnumerable{string}, System.Security.Claims.Claim[])"/>
+    /// <see cref="ProviderSignInInteraction.SignInWithReplacedAccountAsync(string, IEnumerable{string})"/>
     /// on that page; otherwise the default <see cref="ExternalSubject.Derive"/>(issuer, subject) applies.
     /// </remarks>
     public Func<ProviderSignInContext, Task>? OnProviderSignIn { get; set; }

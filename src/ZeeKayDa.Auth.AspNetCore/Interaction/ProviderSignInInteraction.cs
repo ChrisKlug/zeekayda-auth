@@ -16,10 +16,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// <c>&lt;form method="post"&gt;</c> does by default.
 /// </para>
 /// <para>
-/// A page that collects what the provider did not supply calls <see cref="SignInAsync"/>, and the
-/// session holds the provider's claims under the derived subject, never the upstream one. A page
-/// that links the external identity to a local account calls
-/// <see cref="SignInWithReplacedAccountAsync(string, IEnumerable{string}, Claim[])"/>.
+/// A page that collects what the provider did not supply keeps it in the host's own store, then
+/// calls <see cref="SignInAsync"/>: the session is for the derived subject, never the upstream one.
+/// A page that links the external identity to a local account calls
+/// <see cref="SignInWithReplacedAccountAsync(string, IEnumerable{string})"/>.
 /// </para>
 /// <para>
 /// <strong>Terminal methods</strong> — every one but <see cref="GetPendingPrincipalAsync"/> — write
@@ -112,20 +112,15 @@ public sealed class ProviderSignInInteraction
     }
 
     /// <summary>
-    /// Establishes the SSO session for the parked principal, with <paramref name="additionalClaims"/>
-    /// added, and continues the authorization request that led here.
+    /// Establishes the SSO session for the parked principal and continues the authorization request
+    /// that led here.
     /// </summary>
-    /// <param name="additionalClaims">
-    /// What the page collected, added to the provider's claims; pass none to promote the parked
-    /// principal as it is. Held on the SSO session only: tokens and userinfo get their claims from
-    /// <c>IClaimsProvider</c>. A <c>sub</c> or <see cref="ClaimTypes.NameIdentifier"/> claim is
-    /// refused, and claims in the reserved <c>zkd:</c> namespace are stripped.
-    /// </param>
     /// <remarks>
-    /// Terminal (see the class remarks). The session holds what an external sign-in with no page
-    /// would hold — the provider's claims under the derived subject — plus what was collected. No
-    /// <c>amr</c> is reported: the framework was told nothing about how the user proved who they
-    /// are at the provider.
+    /// Terminal (see the class remarks). The session is the one an external sign-in with no page
+    /// would establish: for the derived subject, holding none of the provider's claims. Anything the
+    /// page collected belongs in the host's own store, where <c>IClaimsProvider</c> finds it for
+    /// tokens and userinfo. No <c>amr</c> is reported: the framework was told nothing about how the
+    /// user proved who they are at the provider.
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// The parked principal's provider is no longer registered.
@@ -136,30 +131,23 @@ public sealed class ProviderSignInInteraction
     /// after that point is answered to the client as <c>server_error</c> rather than thrown,
     /// with the session already established.
     /// </exception>
-    /// <exception cref="ArgumentNullException"><paramref name="additionalClaims"/> is null.</exception>
-    /// <exception cref="ArgumentException">
-    /// An entry in <paramref name="additionalClaims"/> is null, or names the subject.
-    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c> — only the form's submission may sign in, and that is
     /// checked before anything is read — or there is no active HTTP request.
     /// </exception>
-    public async Task SignInAsync(params Claim[] additionalClaims)
+    public async Task SignInAsync()
     {
-        var collected = SessionPrincipal.AdditionalClaims(additionalClaims);
-
         var context = RequireStateChangingRequest();
-        await _services.NothingToContinue.SignInStepAsync(context, Page, () => SignInWithParkedAsync(context, collected)).ConfigureAwait(false);
+        await _services.NothingToContinue.SignInStepAsync(context, Page, () => SignInWithParkedAsync(context)).ConfigureAwait(false);
     }
 
-    private async Task SignInWithParkedAsync(HttpContext context, Claim[] additionalClaims)
+    private async Task SignInWithParkedAsync(HttpContext context)
     {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
         RequirePromotable(parked);
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
         var promoted = Promote(taken);
-        ((ClaimsIdentity)promoted.Identity!).AddClaims(additionalClaims);
 
         await _services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], taken.Provider))
             .ConfigureAwait(false);
@@ -170,18 +158,14 @@ public sealed class ProviderSignInInteraction
     /// the parked principal, and continues the authorization request that led here.
     /// </summary>
     /// <param name="subject">
-    /// The local account the session is for. It must not be the upstream subject the provider
-    /// returned.
+    /// The local account the session is for: 1–255 printable ASCII characters with no space. It
+    /// must not be the upstream subject the provider returned.
     /// </param>
     /// <param name="authenticationMethod">
     /// How the user proved who they are, reported to the client in the <c>amr</c> claim. Use
     /// <see cref="AuthenticationMethods"/> for the registered values, or pass your own string for
     /// a method the registry does not name. A sign-in that used several takes the overload with a
     /// list.
-    /// </param>
-    /// <param name="additionalClaims">
-    /// Claims held on the SSO session alongside the subject, on the same terms as the overload
-    /// taking a list of methods.
     /// </param>
     /// <remarks>
     /// Exactly the overload taking a list of methods, with one method in it.
@@ -196,19 +180,19 @@ public sealed class ProviderSignInInteraction
     /// after that point is answered to the client as <c>server_error</c> rather than thrown,
     /// with the session already established.
     /// </exception>
-    /// <exception cref="ArgumentNullException"><paramref name="additionalClaims"/> is null.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="subject"/> is null.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="subject"/> or <paramref name="authenticationMethod"/> is null or blank, or
-    /// an entry in <paramref name="additionalClaims"/> is null or names the subject.
+    /// <paramref name="subject"/> is not 1–255 printable ASCII characters with no space, or
+    /// <paramref name="authenticationMethod"/> is null or blank.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request.
     /// </exception>
-    public Task SignInWithReplacedAccountAsync(string subject, string authenticationMethod, params Claim[] additionalClaims)
+    public Task SignInWithReplacedAccountAsync(string subject, string authenticationMethod)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(authenticationMethod);
 
-        return SignInWithReplacedAccountAsync(subject, [authenticationMethod], additionalClaims);
+        return SignInWithReplacedAccountAsync(subject, [authenticationMethod]);
     }
 
     /// <summary>
@@ -216,19 +200,13 @@ public sealed class ProviderSignInInteraction
     /// the parked principal, and continues the authorization request that led here.
     /// </summary>
     /// <param name="subject">
-    /// The local account the session is for. It must not be the upstream subject the provider
-    /// returned.
+    /// The local account the session is for: 1–255 printable ASCII characters with no space. It
+    /// must not be the upstream subject the provider returned.
     /// </param>
     /// <param name="authenticationMethods">
     /// How the user proved who they are, reported to the client in the <c>amr</c> claim. Use
     /// <see cref="AuthenticationMethods"/> for the registered values, or pass your own string for
     /// a method the registry does not name. An empty list omits the claim.
-    /// </param>
-    /// <param name="additionalClaims">
-    /// Claims held on the SSO session alongside the subject. Held on the session only: tokens and
-    /// userinfo get their claims from <c>IClaimsProvider</c>. A <c>sub</c> or
-    /// <see cref="ClaimTypes.NameIdentifier"/> claim is refused, and claims in the reserved
-    /// <c>zkd:</c> namespace are stripped.
     /// </param>
     /// <remarks>
     /// Terminal (see the class remarks). This is account linking: the page decided the external
@@ -252,25 +230,25 @@ public sealed class ProviderSignInInteraction
     /// with the session already established.
     /// </exception>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="authenticationMethods"/> or <paramref name="additionalClaims"/> is null.
+    /// <paramref name="subject"/> or <paramref name="authenticationMethods"/> is null.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="subject"/> or an entry in <paramref name="authenticationMethods"/> is null
-    /// or blank, or an entry in <paramref name="additionalClaims"/> is null or names the subject.
+    /// <paramref name="subject"/> is not 1–255 printable ASCII characters with no space, or an entry
+    /// in <paramref name="authenticationMethods"/> is null or blank.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request.
     /// </exception>
-    public async Task SignInWithReplacedAccountAsync(string subject, IEnumerable<string> authenticationMethods, params Claim[] additionalClaims)
+    public async Task SignInWithReplacedAccountAsync(string subject, IEnumerable<string> authenticationMethods)
     {
-        var methods = SessionPrincipal.Methods(authenticationMethods);
-        var replacement = SessionPrincipal.Build(subject, additionalClaims);
+        var methods = SignInArguments.Methods(authenticationMethods);
+        var replacement = SessionSubject.From(subject);
 
         var context = RequireStateChangingRequest();
         await _services.NothingToContinue.SignInStepAsync(context, Page, () => SignInAsReplacementAsync(context, replacement, methods)).ConfigureAwait(false);
     }
 
-    private async Task SignInAsReplacementAsync(HttpContext context, ClaimsPrincipal replacement, string[] methods)
+    private async Task SignInAsReplacementAsync(HttpContext context, SessionSubject replacement, string[] methods)
     {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
@@ -346,7 +324,7 @@ public sealed class ProviderSignInInteraction
     private void RequirePromotable(PendingTicket parked) => Promote(parked);
 
     /// <summary>The principal to promote for a parked ticket, from a provider still registered.</summary>
-    private ClaimsPrincipal Promote(PendingTicket ticket)
+    private SessionSubject Promote(PendingTicket ticket)
     {
         RequireRegistered(ticket);
         return ExternalSubject.ForPromotion(ticket.Provider, ticket.Principal);
@@ -363,7 +341,7 @@ public sealed class ProviderSignInInteraction
         }
     }
 
-    private void RequireReplaceable(PendingTicket ticket, ClaimsPrincipal replacement)
+    private void RequireReplaceable(PendingTicket ticket, SessionSubject replacement)
     {
         RequireRegistered(ticket);
         if (CarriesUpstreamSubject(replacement, ticket.Principal))
@@ -371,8 +349,8 @@ public sealed class ProviderSignInInteraction
     }
 
     /// <summary>Whether the replacement's subject is, by value, a subject the provider returned.</summary>
-    private static bool CarriesUpstreamSubject(ClaimsPrincipal replacement, ClaimsPrincipal parked) =>
-        SubjectValues(replacement).Intersect(SubjectValues(parked), StringComparer.Ordinal).Any();
+    private static bool CarriesUpstreamSubject(SessionSubject replacement, ClaimsPrincipal parked) =>
+        SubjectValues(parked).Contains(replacement.Value, StringComparer.Ordinal);
 
     private static IEnumerable<string> SubjectValues(ClaimsPrincipal principal) =>
         principal.Claims
