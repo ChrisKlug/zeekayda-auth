@@ -431,6 +431,29 @@ public sealed class AuthorizationCodeIssuanceHostFixture : FlowHostFixture
 }
 
 /// <summary>
+/// The host shared by <see cref="AuthorizationEndpointIdTokenHintTests"/>: the default issuer, the two
+/// clients that class registers, and its login page and session probe.
+/// </summary>
+public sealed class IdTokenHintHostFixture : FlowHostFixture
+{
+    /// <inheritdoc/>
+    protected override DateTimeOffset StartTime => new(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
+
+    /// <inheritdoc/>
+    protected override string DefaultBaseAddress => "https://test.example.com";
+
+    /// <inheritdoc/>
+    protected override WebApplicationFactory<TestWebAppFactory> CreateFactory()
+        => new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                AddTestDoubles(builder);
+                AuthorizationEndpointIdTokenHintTests.AddClients(builder);
+            },
+            mapEndpoints: AuthorizationEndpointIdTokenHintTests.MapHostPages);
+}
+
+/// <summary>
 /// The host shared by <see cref="ConsentInteractionTests"/>: the default issuer, the consenting and
 /// trusted clients that class registers, and the login and consent pages it maps.
 /// </summary>

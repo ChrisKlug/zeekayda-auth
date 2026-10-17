@@ -1,8 +1,15 @@
+using System.Buffers.Text;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Tests.Tokens;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Tests.Authorization;
 
@@ -13,6 +20,16 @@ public class AuthorizeRequestValidatorTests
 
     // A syntactically valid S256 challenge: 43 unreserved characters.
     private const string Challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+
+    private const string Issuer = "https://auth.example.com";
+    private const string HintedSubject = "alice";
+
+    private static readonly ECDsa SigningKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+    private static readonly ECDsa ForeignKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+    private static readonly IdTokenHintValidator IdTokenHints = new(
+        TestSigningKeys.Ring([TestSigningKeys.SourceKey("current", SigningKey)], SigningKey),
+        Options.Create(new AuthorizationServerOptions { Issuer = Issuer }));
 
     // ── Phase 1: local errors, never redirected ───────────────────────────────────────────────
 
@@ -793,6 +810,77 @@ public class AuthorizeRequestValidatorTests
         valid.Request.MaxAge.Should().Be(TimeSpan.FromSeconds(300));
     }
 
+    // ── id_token_hint ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_valid_id_token_hint_makes_its_subject_the_required_subject()
+    {
+        var parameters = ValidParameters();
+        parameters["id_token_hint"] = [IdTokenHint()];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.RequiredSubject.Should().Be(HintedSubject);
+    }
+
+    [Fact]
+    public async Task An_expired_id_token_hint_is_accepted()
+    {
+        var parameters = ValidParameters();
+        parameters["id_token_hint"] = [IdTokenHint(expiresAt: DateTimeOffset.UnixEpoch.AddDays(1))];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.RequiredSubject.Should().Be(HintedSubject);
+    }
+
+    [Fact]
+    public async Task An_empty_id_token_hint_is_treated_as_omitted()
+    {
+        var parameters = ValidParameters();
+        parameters["id_token_hint"] = [""];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.Valid>().Subject.Request.RequiredSubject.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Phase2_id_token_hint_from_another_issuer_is_invalid_request()
+    {
+        var parameters = ValidParameters();
+        parameters["id_token_hint"] = [IdTokenHint(issuer: "https://other.example.com")];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Which.Error.Should().Be(AuthorizeRequestErrors.InvalidRequest);
+    }
+
+    [Fact]
+    public async Task Phase2_id_token_hint_signed_by_an_unknown_key_is_invalid_request()
+    {
+        var parameters = ValidParameters();
+        parameters["id_token_hint"] = [IdTokenHint(signingKey: ForeignKey)];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Which.Error.Should().Be(AuthorizeRequestErrors.InvalidRequest);
+    }
+
+    [Fact]
+    public async Task Phase2_id_token_hint_issued_to_another_client_is_invalid_request()
+    {
+        var parameters = ValidParameters();
+        parameters["id_token_hint"] = [IdTokenHint(audience: "another-client")];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Which.Error.Should().Be(AuthorizeRequestErrors.InvalidRequest);
+    }
+
     // ── Fixture ───────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -847,10 +935,45 @@ public class AuthorizeRequestValidatorTests
         var validator = new AuthorizeRequestValidator(
             resolver,
             new ValidatedScopeCatalog(new InMemoryScopeRepository(scopes ?? StandardScopes.All)),
+            IdTokenHints,
             NullSanitizingLogger<AuthorizeRequestValidator>.Instance);
 
         return await validator.ValidateAsync(parameters, TestContext.Current.CancellationToken);
     }
+
+    /// <summary>An ES256 ID token naming <see cref="HintedSubject"/>, by default one this server issued to the test client.</summary>
+    private static string IdTokenHint(
+        string issuer = Issuer,
+        string audience = ClientId,
+        ECDsa? signingKey = null,
+        DateTimeOffset? expiresAt = null)
+    {
+        var header = new Dictionary<string, object>
+        {
+            ["alg"] = "ES256",
+            ["typ"] = "JWT",
+            ["kid"] = TestSigningKeys.KidOf(SigningKey),
+        };
+        var exp = (expiresAt ?? DateTimeOffset.UtcNow.AddMinutes(5)).ToUnixTimeSeconds();
+        var claims = new Dictionary<string, object>
+        {
+            ["iss"] = issuer,
+            ["sub"] = HintedSubject,
+            ["aud"] = audience,
+            ["iat"] = exp - 300,
+            ["exp"] = exp,
+        };
+
+        var signingInput = $"{Segment(header)}.{Segment(claims)}";
+        var signature = (signingKey ?? SigningKey).SignData(
+            Encoding.ASCII.GetBytes(signingInput),
+            HashAlgorithmName.SHA256,
+            DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+
+        return $"{signingInput}.{Base64Url.EncodeToString(signature)}";
+    }
+
+    private static string Segment(object value) => Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(value));
 
     private sealed class SingleClientRepository(IClientWithCredentials client) : IClientRepository
     {

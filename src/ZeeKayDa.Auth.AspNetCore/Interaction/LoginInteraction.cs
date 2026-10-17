@@ -97,7 +97,8 @@ public sealed class LoginInteraction
             _options.Value.AuthorizationEndpoint.Interaction.SupportsLocalSignIn,
             ProviderReturnOf(requestContext.ProviderAttempt),
             requestContext.LoginHint,
-            _services.Flow.RequiresReauthentication(requestContext.Prompts, requestContext.MaxAge, session));
+            _services.Flow.RequiresReauthentication(requestContext.Prompts, requestContext.MaxAge, session),
+            requestContext.RequiredSubject);
     }
 
     /// <summary>

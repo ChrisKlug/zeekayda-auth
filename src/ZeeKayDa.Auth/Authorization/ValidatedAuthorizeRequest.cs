@@ -31,4 +31,10 @@ internal sealed record ValidatedAuthorizeRequest
 
     /// <summary>The client's well-formed <c>login_hint</c>, or <see langword="null"/> when blank. A hint, never an identity.</summary>
     public required string? LoginHint { get; init; }
+
+    /// <summary>
+    /// The subject a valid <c>id_token_hint</c> names, or <see langword="null"/> without one: only a
+    /// session for this user may answer the request (OIDC Core §3.1.2.2).
+    /// </summary>
+    public required string? RequiredSubject { get; init; }
 }
