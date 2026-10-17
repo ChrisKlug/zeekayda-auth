@@ -115,10 +115,9 @@ error and not a shadowing rule. The framework pins every provider's forwarding a
 callback path, sign-in scheme and access-denied path by name, and *asserts* the pins with a validator resolved
 at startup, because a post-configurer registered later would otherwise win silently and send the sign-in to the
 wrong cookie or the callback to a path nothing serves. A host remote scheme whose callback path is a provider's
-route is refused for the same reason: the middleware would claim the callback first. A provider whose
-handler is not an `IAuthenticationRequestHandler` fails startup: nothing could complete its callback.
-One outside `RemoteAuthenticationHandler<>` starts with a warning: the pins cannot reach it, so its callback
-path and sign-in scheme are the host's to keep.
+route is refused for the same reason: the middleware would claim the callback first. A handler that is not an
+`IAuthenticationRequestHandler` fails startup (nothing could complete its callback); one outside
+`RemoteAuthenticationHandler<>` starts with a warning, its callback path and sign-in scheme being the host's to keep.
 
 **No handler is trusted for provider identity or interaction binding.** The challenge stamps the interaction identifier into the
 properties it hands the handler; the callback endpoint marks the request with the provider its route names before the handler runs;
@@ -128,15 +127,14 @@ complete nothing else. A failed callback for an interaction the browser carries 
 the interaction alive and the outcome on `LoginRequest.ProviderReturn` — found by the handler's own properties, else by the one
 callback-scoped `zkd.challenge.<id>` cookie (none or several: the error page; a forged one changes only the message, accepted). With
 no login page only a refusal reaches the client, as `access_denied` on its own properties; the rest renders locally, logged by type
-never by message. The session subject of an auto-promoted external principal is derived from claim issuer and upstream subject
-alone, exactly, never the upstream value: the issuer namespaces the subject, so two registrations of one issuer share identities and
-renaming a registration changes nothing; a subject without an issuer is refused. `ExternalSubject.Derive` is public so a host can
-pre-link accounts; a host choosing other subjects does so in `OnProviderSignIn`, through `SignInWithReplacedAccountAsync`.
+never by message. An auto-promoted external principal's session subject is `ExternalSubject.Derive(issuer, subject)` — public, so a
+host can pre-link — never the upstream value: the issuer namespaces the subject, so two registrations of one issuer share identities,
+a rename changes nothing, and a subject without an issuer is refused. A host choosing other subjects does so in `OnProviderSignIn`.
 
-**A re-authentication demand reaches a provider only through `OnProviderChallenge`, and fails closed.** With `prompt=login`, or `max_age` and no
-session or an older one, a challenge goes out only when the hook answers `Reauthenticating`, a claim the session's fresh `auth_time` rests on; no hook
-or `Proceed` answers `login_required` (OIDC Core §3.1.2.1), as `Refuse` always does, and a hook that throws or returns `null` answers
-`server_error`. The framework re-stamps its own round-trip items after the hook, so no hook can break the return through resume.
+**A re-authentication demand reaches a provider only through `OnProviderChallenge`, and fails closed.** With `prompt=login`, or `max_age`
+and no session or an older one, a challenge goes out only when the hook answers `Reauthenticating` — the claim a fresh `auth_time` rests on;
+no hook or `Proceed` answers `login_required` (OIDC Core §3.1.2.1), `Refuse` always does, a throw or `null` answers `server_error`. The
+framework re-stamps its round-trip items and ticket lifetime after the hook, so no hook can break the return or lengthen the external cookie.
 
 **Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and whether a page is needed
 decides dispatch, not the path.** `LoginPath` defaults to `/login` and `ConsentPath` to `/consent`; a path is only an
