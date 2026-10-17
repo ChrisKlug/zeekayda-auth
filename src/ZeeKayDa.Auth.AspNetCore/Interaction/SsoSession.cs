@@ -70,21 +70,16 @@ internal sealed class SsoSession(TimeProvider timeProvider)
     }
 
     /// <summary>Writes a fresh session cookie, keeping the session identifier when the subject is unchanged.</summary>
-    /// <exception cref="InvalidOperationException">
-    /// The principal carries no <c>sub</c> — a framework bug, since every caller builds it with one.
-    /// </exception>
     public async Task<SsoSessionState> PromoteAsync(
         HttpContext context,
-        ClaimsPrincipal principal,
+        SessionSubject sessionSubject,
         IReadOnlyList<string> authenticationMethods)
     {
         ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentNullException.ThrowIfNull(sessionSubject);
         ArgumentNullException.ThrowIfNull(authenticationMethods);
 
-        var subject = ReadSubject(principal)
-            ?? throw new InvalidOperationException("The principal to promote carries no 'sub' claim.");
-
+        var subject = sessionSubject.Value;
         var current = await ReadAsync(context).ConfigureAwait(false);
         var sessionId = current is not null && string.Equals(current.Subject, subject, StringComparison.Ordinal)
             ? current.SessionId
@@ -101,28 +96,24 @@ internal sealed class SsoSession(TimeProvider timeProvider)
 
         await context.SignInAsync(
                 ZeeKayDaCookies.Session,
-                BuildSessionPrincipal(principal, state),
+                BuildSessionPrincipal(state),
                 new AuthenticationProperties { IsPersistent = false })
             .ConfigureAwait(false);
 
         return state;
     }
 
-    /// <summary>The host's claims outside the reserved namespace, plus the framework's session claims.</summary>
-    private static ClaimsPrincipal BuildSessionPrincipal(ClaimsPrincipal principal, SsoSessionState state)
+    /// <summary>Exactly the claims <see cref="ReadAsync"/> reads, and nothing else.</summary>
+    private static ClaimsPrincipal BuildSessionPrincipal(SsoSessionState state)
     {
-        // A reserved claim left in place would win the lookup over the framework's own.
-        var claims = principal.Claims
-            .Where(claim => !ReservedClaims.IsReserved(claim))
-            .ToList();
+        Claim[] claims =
+        [
+            new(SubjectClaimType, state.Subject),
+            new(SsoSessionClaimTypes.SessionId, state.SessionId),
+            new(SsoSessionClaimTypes.AuthTime, state.AuthTime.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
+            .. state.Amr.Select(value => new Claim(SsoSessionClaimTypes.Amr, value)),
+        ];
 
-        claims.Add(new Claim(SsoSessionClaimTypes.SessionId, state.SessionId));
-        claims.Add(new Claim(
-            SsoSessionClaimTypes.AuthTime,
-            state.AuthTime.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
-        claims.AddRange(state.Amr.Select(value => new Claim(SsoSessionClaimTypes.Amr, value)));
-
-        // One identity: a second would leave the subject ambiguous.
         return new ClaimsPrincipal(new ClaimsIdentity(claims, ZeeKayDaCookies.Session));
     }
 

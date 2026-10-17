@@ -23,12 +23,12 @@ internal sealed class AuthorizationFlow(
     /// <summary>Reads the established SSO session, or <see langword="null"/> when there is none.</summary>
     public Task<SsoSessionState?> ReadSessionAsync(HttpContext context) => _session.ReadAsync(context);
 
-    /// <summary>Establishes the SSO session for an authenticated principal.</summary>
+    /// <summary>Establishes the SSO session for an authenticated subject.</summary>
     public Task<SsoSessionState> PromoteAsync(
         HttpContext context,
-        ClaimsPrincipal principal,
+        SessionSubject subject,
         IReadOnlyList<string> authenticationMethods) =>
-        _session.PromoteAsync(context, principal, authenticationMethods);
+        _session.PromoteAsync(context, subject, authenticationMethods);
 
     /// <summary>
     /// Whether the request must be authenticated before it can continue: no session at all, a

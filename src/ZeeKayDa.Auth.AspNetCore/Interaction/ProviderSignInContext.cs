@@ -51,9 +51,10 @@ public sealed class ProviderSignInContext
     /// <summary>
     /// Parks <see cref="Principal"/> and sends the user to a page of the host's, to link the
     /// external identity to a local account or to collect what the provider did not supply. That
-    /// page reads the principal back with <see cref="ProviderSignInInteraction.GetPendingPrincipalAsync"/> and
-    /// finishes through <see cref="ProviderSignInInteraction"/>: with the claims it collected,
-    /// or with a linked local account's own principal in place of the parked one.
+    /// page reads the principal back with <see cref="ProviderSignInInteraction.GetPendingPrincipalAsync"/>,
+    /// keeps anything it collects in the host's own store, and finishes through
+    /// <see cref="ProviderSignInInteraction"/>: for the derived subject, or for a linked local
+    /// account in its place.
     /// </summary>
     /// <param name="path">
     /// A host-relative path: absolute within the application, starting with <c>/</c>, with no
@@ -124,9 +125,9 @@ public sealed class ProviderSignInContext
     public ExternalIdentity Identity { get; }
 
     /// <summary>
-    /// A copy of the principal as the provider returned it, reserved claims removed; changes to it
-    /// are not carried into the session. To change what the session holds, redirect to a page that
-    /// finishes through <see cref="ProviderSignInInteraction"/>.
+    /// A copy of the principal as the provider returned it, reserved claims removed, for the handler
+    /// to read. The session holds none of its claims, only the subject derived from
+    /// <see cref="Identity"/>; what the host wants to keep of them belongs in its own store.
     /// </summary>
     public ClaimsPrincipal Principal { get; }
 
