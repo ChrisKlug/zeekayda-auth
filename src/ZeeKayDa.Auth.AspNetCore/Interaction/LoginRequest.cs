@@ -9,7 +9,8 @@ public sealed class LoginRequest
         bool localLoginEnabled,
         ProviderReturn? providerReturn,
         string? loginHint,
-        bool reauthenticationRequired)
+        bool reauthenticationRequired,
+        string? requiredSubject)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(providers);
@@ -20,6 +21,7 @@ public sealed class LoginRequest
         ProviderReturn = providerReturn;
         LoginHint = loginHint;
         ReauthenticationRequired = reauthenticationRequired;
+        RequiredSubject = requiredSubject;
     }
 
     /// <summary>The client the user is signing in to.</summary>
@@ -62,4 +64,15 @@ public sealed class LoginRequest
     /// for credentials again.
     /// </remarks>
     public bool ReauthenticationRequired { get; }
+
+    /// <summary>
+    /// The subject the client's <c>id_token_hint</c> names, or <see langword="null"/> when it sent
+    /// none. A sign-in as anyone else is refused with <c>login_required</c> at the client (OpenID
+    /// Connect Core §3.1.2.2), so a page that would sign in a user it already knows checks this first.
+    /// </summary>
+    /// <remarks>
+    /// For a user who signs in through an external provider this is the derived subject, which
+    /// <see cref="ExternalSubject.Derive"/> computes from the provider's issuer and upstream subject.
+    /// </remarks>
+    public string? RequiredSubject { get; }
 }

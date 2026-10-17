@@ -137,6 +137,7 @@ ZeeKayDa.Auth.AspNetCore.Interaction.ProviderReturnOutcome.Declined = 0 -> ZeeKa
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderReturnOutcome.Failed = 1 -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderReturnOutcome
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest.LoginHint.get -> string?
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest.ReauthenticationRequired.get -> bool
+ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest.RequiredSubject.get -> string?
 ZeeKayDa.Auth.AspNetCore.Interaction.ExternalSubject
 static ZeeKayDa.Auth.AspNetCore.Interaction.ExternalSubject.Derive(string! issuer, string! subject) -> string!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext

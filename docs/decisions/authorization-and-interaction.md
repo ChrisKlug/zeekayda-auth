@@ -65,9 +65,9 @@ there is no account picker, and a server that cannot obtain a selection must say
 **An `id_token_hint` names the only user who may answer** (OIDC Core §3.1.2.2). It must be this
 issuer's ID token, signed by the key ring and issued to the requesting client — lifetime ignored, as
 a hint has usually expired — or it is `invalid_request` at the client. A session for anyone else
-counts as none: `login_required` under `prompt=none`, else the login page; and a sign-in completing
-as anyone else — local, auto-promoted or linked, in derived form — is refused `login_required`
-before the session changes.
+counts as none: `login_required` under `prompt=none`, else the login page, told the subject as
+`LoginRequest.RequiredSubject`; a sign-in completing as anyone else — local, auto-promoted or
+linked, in derived form — is refused `login_required` before the session changes.
 
 **Consent is asked of every user for every client on first use, and only a remembered grant or a
 per-registration opt-out skips it.** The consent page is the one thing between a sign-in and an

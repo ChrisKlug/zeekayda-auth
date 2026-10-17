@@ -68,6 +68,13 @@ public sealed class AuthorizationEndpointIdTokenHintTests : IClassFixture<IdToke
     /// <summary>The host's pages: a login form signing in whichever subject it is posted, and a session probe.</summary>
     internal static void MapHostPages(IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet(LoginPath, async (HttpContext context, LoginInteraction login) =>
+        {
+            var request = await login.GetRequestAsync(context.RequestAborted);
+
+            return Results.Ok(new { requiredSubject = request.RequiredSubject });
+        });
+
         endpoints.MapPost(LoginPath, async (HttpContext context, LoginInteraction login) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
@@ -126,6 +133,30 @@ public sealed class AuthorizationEndpointIdTokenHintTests : IClassFixture<IdToke
 
         response.StatusCode.Should().Be(HttpStatusCode.Redirect);
         Location(response).Should().StartWith($"{LoginPath}?{InteractionHandoff.InteractionIdParameter}=");
+    }
+
+    [Fact]
+    public async Task The_login_page_is_told_the_subject_the_hint_names()
+    {
+        var alicesHint = await IdTokenForAsync(Alice);
+        await SignInAsync(Bob);
+        var handoff = await AuthorizeAsync(idTokenHint: alicesHint);
+
+        var page = await _client.GetAsync(Location(handoff), Cancellation);
+
+        var body = JsonDocument.Parse(await page.Content.ReadAsStringAsync(Cancellation)).RootElement;
+        body.GetProperty("requiredSubject").GetString().Should().Be(Alice);
+    }
+
+    [Fact]
+    public async Task The_login_page_is_told_no_required_subject_without_a_hint()
+    {
+        var handoff = await AuthorizeAsync();
+
+        var page = await _client.GetAsync(Location(handoff), Cancellation);
+
+        var body = JsonDocument.Parse(await page.Content.ReadAsStringAsync(Cancellation)).RootElement;
+        body.GetProperty("requiredSubject").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]
