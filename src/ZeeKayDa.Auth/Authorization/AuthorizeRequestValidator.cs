@@ -305,16 +305,23 @@ internal sealed partial class AuthorizeRequestValidator(
         if (string.IsNullOrEmpty(prompt))
             return null;
 
+        var values = prompt.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (CombinesNoneWithAnotherValue(values))
+            return InvalidRequest("The prompt value none cannot be combined with other values.");
+
         context.Prompts.UnionWith(
-            prompt.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            values
                 .Select(value => TryParsePrompt(value, out var parsed) ? parsed : (PromptValue?)null)
                 .Where(parsed => parsed.HasValue)
                 .Select(parsed => parsed!.Value));
 
-        return context.Prompts.Contains(PromptValue.None) && context.Prompts.Count > 1
-            ? InvalidRequest("The prompt value none cannot be combined with other values.")
-            : null;
+        return null;
     }
+
+    // Judged on the raw values, so an unrecognised one counts as "any other value" too.
+    private static bool CombinesNoneWithAnotherValue(string[] values) =>
+        values.Contains("none", StringComparer.Ordinal)
+        && values.Any(value => !string.Equals(value, "none", StringComparison.Ordinal));
 
     private static Problem? PromptValuesArePermittedForTheClient(RequestContext context)
     {
