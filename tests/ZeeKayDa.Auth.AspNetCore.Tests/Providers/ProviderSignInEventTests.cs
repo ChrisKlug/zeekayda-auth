@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
@@ -183,6 +184,56 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
     }
 
     [Fact]
+    public async Task The_handler_sees_the_upstream_identity_of_a_subject_mapped_to_the_name_identifier()
+    {
+        // How the OpenID Connect handler returns a user by default: sub mapped to the
+        // name-identifier claim type, stamped with the token's issuer, and no iss claim.
+        ExternalIdentity? seen = null;
+        using var factory = NewFactory(
+            context =>
+            {
+                seen = context.Identity;
+                return Task.CompletedTask;
+            },
+            ConfigureAcmeReturning(new Claim(ClaimTypes.NameIdentifier, UpstreamSubject, ClaimValueTypes.String, "https://acme.example.net")));
+        using var client = NewClient(factory);
+
+        await ResumeAsync(client);
+
+        seen.Should().NotBeNull();
+        seen!.Subject.Should().Be(UpstreamSubject);
+        seen.Issuer.Should().Be("https://acme.example.net");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(ClaimsIdentity.DefaultIssuer)]
+    public async Task A_principal_without_a_usable_subject_never_reaches_the_handler_and_renders_the_local_error(string? subjectIssuer)
+    {
+        // No subject at all, or one carrying the default issuer: nothing to identify the user by,
+        // so the handler cannot park it for a linking page.
+        Claim[] returned = subjectIssuer is null
+            ? [new Claim("name", "Upstream User", ClaimValueTypes.String, "acme")]
+            : [new Claim("sub", UpstreamSubject, ClaimValueTypes.String, subjectIssuer)];
+        var called = false;
+        using var factory = NewFactory(
+            context =>
+            {
+                called = true;
+                return context.RedirectToAsync(CollectMorePath);
+            },
+            ConfigureAcmeReturning(returned));
+        using var client = NewClient(factory);
+
+        var (_, resume) = await ResumeAsync(client);
+
+        called.Should().BeFalse();
+        resume.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await resume.Content.ReadAsStringAsync(Cancellation)).Should().Contain("server_error");
+        StoreEntryCount(factory).Should().Be(1, "only the interaction's context is stored; nothing was parked");
+    }
+
+    [Fact]
     public async Task RequestAborted_is_signalled_when_the_browser_disconnects_during_the_handler()
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -303,6 +354,24 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         pending.GetProperty("sub").GetString().Should().Be(UpstreamSubject);
         pending.GetProperty("provider").GetString().Should().Be("acme");
         pending.GetProperty("reservedClaims").GetInt32().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task The_host_page_reads_back_the_identity_the_handler_saw()
+    {
+        ExternalIdentity? seen = null;
+        _fixture.OnProviderSignIn = context =>
+        {
+            seen = context.Identity;
+            return context.RedirectToAsync(CollectMorePath);
+        };
+        using var client = _fixture.NewFlowClient();
+        var (_, resume) = await ResumeAsync(client);
+
+        var pending = (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString))!.Value;
+
+        pending.GetProperty("identityIssuer").GetString().Should().Be(seen!.Issuer).And.Be("acme");
+        pending.GetProperty("identitySubject").GetString().Should().Be(seen.Subject).And.Be(UpstreamSubject);
     }
 
     [Fact]
@@ -715,29 +784,6 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         await cancel.Should().ThrowAsync<InvalidOperationException>();
         (await ReadJsonAsync(client, "/test/session")).Should().BeNull();
         StoreEntryCount(factory).Should().Be(2, "nothing was consumed or discarded");
-    }
-
-    [Fact]
-    public async Task SignInAsync_with_collected_claims_refuses_a_parked_subject_without_an_issuer()
-    {
-        // The same rule promotion applies with no page involved: the derived subject needs the
-        // issuer, and a parked principal without one cannot be finished through the collected
-        // claims. It stays parked, and the interaction survives for the login page.
-        using var factory = new TestWebAppFactory(
-            configureBuilder: builder => builder.WithProviders(
-                auth => AddHandWritten(auth, options => options.SubjectWithoutIssuer = true),
-                options => options.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath)),
-            mapEndpoints: MapHostPages);
-        using var client = NewClient(factory);
-        var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
-        var interactionId = InteractionIdFrom(handoff);
-        var resume = await ResumeThroughHandWrittenAsync(client, interactionId);
-
-        var signIn = async () => await client.PostAsync(resume.Headers.Location!.OriginalString, Form(), Cancellation);
-
-        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*issuer*");
-        (await ReadJsonAsync(client, "/test/session")).Should().BeNull();
-        (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().NotBeNull("the refusal was decided before the parked principal was taken");
     }
 
     [Fact]

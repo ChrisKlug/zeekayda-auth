@@ -20,6 +20,20 @@ public static class ExternalSubject
     /// </exception>
     internal static ClaimsPrincipal ForPromotion(string providerId, ClaimsPrincipal principal)
     {
+        var identity = Identify(providerId, principal);
+
+        var claims = new List<Claim> { new("sub", Derive(identity.Issuer, identity.Subject)) };
+        claims.AddRange(principal.Claims.Where(claim => !IsSubjectClaimType(claim.Type)));
+
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, providerId));
+    }
+
+    /// <summary>The upstream identity of a principal the framework will promote or park.</summary>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// The principal carries no subject claim, or its subject claim names no issuer.
+    /// </exception>
+    internal static ExternalIdentity Identify(string providerId, ClaimsPrincipal principal)
+    {
         ArgumentException.ThrowIfNullOrEmpty(providerId);
         ArgumentNullException.ThrowIfNull(principal);
 
@@ -38,11 +52,7 @@ public static class ExternalSubject
                 "the subject together. Create the claim with its issuer set.");
         }
 
-        var claims = new List<Claim> { new("sub", Derive(subject.Issuer, subject.Value)) };
-        claims.AddRange(principal.Claims.Where(claim =>
-            !SubjectClaimTypes.Contains(claim.Type, StringComparer.OrdinalIgnoreCase)));
-
-        return new ClaimsPrincipal(new ClaimsIdentity(claims, providerId));
+        return new ExternalIdentity(subject.Issuer, subject.Value);
     }
 
     /// <summary>The upstream subject claim, read only from an authenticated identity, never an auxiliary one.</summary>

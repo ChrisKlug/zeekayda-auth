@@ -8,14 +8,19 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </summary>
 public sealed class PendingPrincipal
 {
-    internal PendingPrincipal(ClaimsPrincipal principal, ProviderDescriptor provider)
+    internal PendingPrincipal(ExternalIdentity identity, ClaimsPrincipal principal, ProviderDescriptor provider)
     {
+        ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(provider);
 
+        Identity = identity;
         Principal = principal;
         Provider = provider;
     }
+
+    /// <summary>Who the user is at the provider: the key a linking page finds the local account by.</summary>
+    public ExternalIdentity Identity { get; }
 
     /// <summary>The principal as the provider returned it, with the framework's reserved claims removed.</summary>
     public ClaimsPrincipal Principal { get; }
