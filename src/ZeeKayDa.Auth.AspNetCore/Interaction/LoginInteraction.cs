@@ -90,13 +90,15 @@ public sealed class LoginInteraction
         RenderedPage.Protect(context.Response);
         var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
         var client = await _services.Flow.DescribeClientAsync(context, requestContext, cancellationToken).ConfigureAwait(false);
+        var session = await _services.Flow.ReadSessionAsync(context).ConfigureAwait(false);
 
         return new LoginRequest(
             client,
             _providers.Descriptors,
             _options.Value.AuthorizationEndpoint.Interaction.SupportsLocalSignIn,
             ProviderReturnOf(requestContext.ProviderAttempt),
-            requestContext.LoginHint);
+            requestContext.LoginHint,
+            _services.Flow.RequiresReauthentication(requestContext.Prompts, requestContext.MaxAge, session));
     }
 
     /// <summary>
@@ -211,6 +213,11 @@ public sealed class LoginInteraction
     /// <para>
     /// An empty list omits the <c>amr</c> claim rather than assuming a password: a relying party may
     /// gate a sensitive operation on it, so the framework states nothing it was not told.
+    /// </para>
+    /// <para>
+    /// When <see cref="LoginRequest.ReauthenticationRequired"/> is <see langword="true"/>, call this
+    /// only after the user has actively authenticated on the page: a cookie of the host's own is not
+    /// enough (OpenID Connect Core §3.1.2.3).
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
