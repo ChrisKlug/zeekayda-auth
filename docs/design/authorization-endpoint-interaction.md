@@ -519,6 +519,7 @@ public sealed class ProviderDescriptor                   // one per scheme WithP
 
 public sealed class ProviderSignInContext                // what OnProviderSignIn receives
 {
+    public ExternalIdentity Identity { get; }            // the upstream issuer and subject, resolved before the hook
     public ClaimsPrincipal Principal { get; }            // as the provider returned it, zkd:* stripped
     public ProviderDescriptor Provider { get; }
     public ClientInformation Client { get; }             // ClientId and the registration's DisplayName
@@ -535,8 +536,15 @@ public sealed class ProviderSignInContext                // what OnProviderSignI
     public Task DenyAsync();
 }
 
+public sealed class ExternalIdentity                     // the key a linking page finds a local account by
+{
+    public string Issuer { get; }                        // Claim.Issuer of the subject claim, never an iss claim
+    public string Subject { get; }                       // the sub or name-identifier value
+}
+
 public sealed class PendingPrincipal                     // GetPendingPrincipalAsync, on the collect-more page
 {
+    public ExternalIdentity Identity { get; }            // the same pair, read back from the parked principal
     public ClaimsPrincipal Principal { get; }
     public ProviderDescriptor Provider { get; }
 }
@@ -565,8 +573,9 @@ account. The issuer is framework-visible for every handler: a JWT-validating han
 validated token issuer onto each claim, an OAuth handler stamps `ClaimsIssuer`, which defaults to
 the scheme name, and a hand-written handler sets it when it creates the claim. A registration that
 validates several issuers therefore separates its users by issuer rather than by promise. A
-subject claim carrying `ClaimsIdentity.DefaultIssuer` names no namespace, and promotion refuses it
-with a message saying so — a handler that constructs claims without an issuer is one line away
+subject claim carrying `ClaimsIdentity.DefaultIssuer` names no namespace, and `/connect/resume`
+refuses it before `OnProviderSignIn` runs, as it does a principal with no subject, with a message
+saying so: neither can reach the hook or be parked — a handler that constructs claims without an issuer is one line away
 from compliant. Two issuers returning the same value cannot share a session or a `sub`. The
 registration name is not in the hash: the issuer already namespaces the subject, so renaming a
 registration changes no subject, and two registrations of one issuer share their users'

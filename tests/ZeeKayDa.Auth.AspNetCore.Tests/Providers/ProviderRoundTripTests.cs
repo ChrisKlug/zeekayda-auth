@@ -817,7 +817,7 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
     }
 
     [Fact]
-    public async Task A_subject_claim_without_an_issuer_is_refused_at_promotion()
+    public async Task A_subject_claim_without_an_issuer_is_refused_before_the_sign_in_hook()
     {
         using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
             AddHandWritten(auth, options => options.SubjectWithoutIssuer = true)));

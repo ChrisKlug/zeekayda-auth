@@ -62,7 +62,8 @@ a call made while rendering a GET would decide every request on arrival.
 - **External providers** are challenged after the optional `OnProviderChallenge` hook has had its say;
   under `prompt=login` or an outlived `max_age` only a hook answering `Reauthenticating` lets the
   challenge go, and otherwise the client gets `login_required`. They return to `/connect/resume`. The ticket must name this interaction and the
-  provider that was challenged. The host's optional `OnProviderSignIn` hook can let it through, park
+  provider that was challenged, and its principal must carry a subject with an issuer. The host's
+  optional `OnProviderSignIn` hook gets that pair as `ExternalIdentity` and can let it through, park
   it for a host page, or deny. The subject is derived from the issuer and upstream `sub`, so
   equal ids at two issuers never meet. A parked sign-in finishes as the external user plus
   collected claims, or as a local account the page has proven the user owns; the upstream `sub` is
