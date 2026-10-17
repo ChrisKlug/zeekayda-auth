@@ -110,6 +110,21 @@ public sealed class AuthorizationEndpointMultiAccountTests
         (await _browser.SubjectAnsweredAsync(response, TrustedApp)).Should().Be(Bob);
     }
 
+    [Fact]
+    public async Task A_client_answered_silently_keeps_that_account_after_another_account_signs_in_later()
+    {
+        await _browser.SignInAsync(Alice, clientId: App);
+        _host.Time.Advance(TimeSpan.FromMinutes(1));
+        await _browser.SignInAsync(Bob, clientId: OtherApp);
+        (await _browser.SubjectAnsweredAsync(await _browser.AuthorizeAsync(TrustedApp, prompt: "none"), TrustedApp)).Should().Be(Bob);
+        _host.Time.Advance(TimeSpan.FromMinutes(1));
+        await _browser.SignInAsync(Carol, clientId: App);
+
+        var response = await _browser.AuthorizeAsync(TrustedApp, prompt: "none");
+
+        (await _browser.SubjectAnsweredAsync(response, TrustedApp)).Should().Be(Bob, "the account that answered the client silently is remembered as its own");
+    }
+
     // ── max_age ───────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

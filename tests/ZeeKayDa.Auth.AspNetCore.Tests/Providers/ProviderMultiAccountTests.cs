@@ -239,6 +239,25 @@ public sealed class ProviderMultiAccountTests : IClassFixture<MultiAccountProvid
     }
 
     [Fact]
+    public async Task ReauthenticationRequired_is_judged_against_the_account_the_hint_names_not_a_fresher_one_held()
+    {
+        var alicesHint = await new MultiAccountBrowser(_host.NewFlowClient()).IdTokenForAsync(Alice);
+        await _browser.SignInAsync(Bob);
+        ProviderChallengeContext? challenged = null;
+        _host.OnProviderChallenge = context =>
+        {
+            challenged = context;
+            return ProviderChallengeOutcome.Reauthenticating;
+        };
+
+        var started = await _browser.AuthorizeAsync(idTokenHint: alicesHint, maxAge: "3600");
+        await ReturnFromProviderAsync(InteractionIdFrom(started));
+
+        challenged.Should().NotBeNull();
+        challenged!.ReauthenticationRequired.Should().BeTrue("this browser holds no session for alice, and bob's fresh one does not answer her hint");
+    }
+
+    [Fact]
     public async Task ProviderChallengeContext_RequiredSubject_is_null_when_the_request_carries_no_hint()
     {
         ProviderChallengeContext? challenged = null;
