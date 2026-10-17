@@ -61,6 +61,8 @@ and discovery says so (`authorization_response_iss_parameter_supported`), since 
 relying party's silent-auth iframe is a clickjacking vector. It succeeds only against an existing
 session plus a prior consent grant covering the requested scopes, and otherwise returns
 `login_required` / `consent_required` / `account_selection_required` / `interaction_required`.
+**`prompt=select_account` is refused with `account_selection_required`**, with or without a session:
+there is no account picker, and a server that cannot obtain a selection must say so (§3.1.2.1).
 
 **Consent is asked of every user for every client on first use, and only a remembered grant or a
 per-registration opt-out skips it.** The consent page is the one thing between a sign-in and an
