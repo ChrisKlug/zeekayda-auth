@@ -2414,3 +2414,13 @@ and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `46
 - **Accepted residuals (maintainer):** no test drives the Unix owner reject path through the real `fstat` (needs `chown` as root) — `IsTrustedOwner_trusts_root_and_the_process_user_only` proves the policy.
   A version 1 root placed first is not caught at listing; it fails at the handover's pairing. **Not covered:** the macOS x86_64 `$INODE64` binding runs on no CI leg.
   A write grant to a named Windows account, or a POSIX ACL entry, is not inspected — the same model the key-file check has always used, so this sign-off does not claim the file is writable by its owner alone.
+
+## 2026-10-17 — a PFX bundle refuses an empty password and warns of weak or absent key encryption (#989, code frozen at `90d82b3`)
+M1 audit findings (two Lows, area 4), the security agent's fix-round review (sign-off, one Low fixed) and its verification of the fix diff; no Copilot lens (quota). `82c454f`, `1b7fb4f`, `90d82b3` read by the security agent; the maintainer reads the PR.
+- A `PasswordSource` returning `""` is `password_unavailable` for PFX as for PEM, before any decode, on listing and signing; this supersedes the #917 entry's "PFX keeps `\"\"`". Closed —
+  `ReadAsync_reports_a_password_source_that_returns_an_empty_string_as_password_unavailable`, `ReadAsync_refuses_a_bundle_exported_under_an_empty_password`, `CreateSignerAsync_refuses_a_password_source_that_returns_an_empty_string`.
+- A key bag shrouded under a legacy scheme, under 2048 PBKDF2 iterations or a non-AES cipher (the PEM floor, one shared `KeyEncryptionStrength`), or stored unshrouded, lists and signs but logs
+  `signing.file_signing.weak_key_encryption` once per file version — a warning, not a refusal, because the Windows export default is 3DES/SHA-1 (maintainer). Closed —
+  `ReadAsync_lists_a_key_shrouded_under_3DES_and_SHA1_and_warns_once_across_two_reads`, `ReadAsync_lists_a_key_stored_without_encryption_and_warns_once_across_two_reads`, `ReadAsync_does_not_warn_about_a_key_shrouded_under_AES_and_PBKDF2`.
+- The warning carries the path, the weakness and the iteration count; no password or key material. The version hash is taken inside the decode scope, before the buffer wipe.
+- **Accepted residuals (maintainer):** a whitespace-only password is a deliberate value, as for PEM; an unshrouded key bag inside a password-encrypted safe also warns, the safe's own encryption being unjudged.
