@@ -291,6 +291,14 @@ public sealed class ValidatedScopeCatalogTests
         (await CodesFrom(catalog)).Should().BeEquivalentTo(["scopes.openid_missing"]);
     }
 
+    [Fact]
+    public async Task GetScopesAsync_fails_with_scopes_openid_hidden_when_the_openid_scope_is_not_discoverable()
+    {
+        var catalog = Catalog(StandardScopes.OpenId with { IsDiscoverable = false });
+
+        (await CodesFrom(catalog)).Should().BeEquivalentTo(["scopes.openid_hidden"]);
+    }
+
     // ── A repository's own exception is never absorbed ────────────────────────────────────────
 
     [Fact]

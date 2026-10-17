@@ -71,7 +71,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
     internal async Task<IResult> Handle(AuthorizeRequestValidator validator, HttpContext context)
     {
-        // Codes and errors must never be cached (RFC 6749 §10.12, RFC 9700 §4.16).
+        // Codes and errors must never be cached (RFC 9700 §4.3).
         context.Response.Headers.CacheControl = "no-store";
 
         var parameters = await ExtractParametersAsync(context).ConfigureAwait(false);
@@ -103,6 +103,16 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
     /// </summary>
     private async Task<IResult> BeginInteractionAsync(HttpContext context, ValidatedAuthorizeRequest request)
     {
+        // There is no account picker, and a server that cannot obtain a selection must say so
+        // (OIDC Core §3.1.2.1) rather than continue as whichever account holds the session.
+        if (request.Prompts.Contains(PromptValue.SelectAccount))
+        {
+            return RedirectToClient(
+                request,
+                AuthorizeRequestErrors.AccountSelectionRequired,
+                "The request specified prompt=select_account, but this server cannot prompt the user to select an account.");
+        }
+
         var session = await _flow.ReadSessionAsync(context).ConfigureAwait(false);
         var needsAuthentication = _flow.NeedsAuthentication(request, session);
 

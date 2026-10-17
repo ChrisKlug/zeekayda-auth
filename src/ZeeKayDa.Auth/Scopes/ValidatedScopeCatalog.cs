@@ -222,15 +222,26 @@ internal sealed class ValidatedScopeCatalog(IScopeRepository repository)
         }
     }
 
+    /// <summary>The <c>openid</c> scope is served and advertised in <c>scopes_supported</c>.</summary>
     private static void CheckOpenIdIsPresent(List<ScopeDefinition> scopes, List<ZeeKayDaConfigurationFailure> failures)
     {
-        if (scopes.Any(scope => string.Equals(scope.Name, StandardScopes.OpenId.Name, StringComparison.Ordinal)))
-            return;
+        var openId = scopes.FirstOrDefault(scope => string.Equals(scope.Name, StandardScopes.OpenId.Name, StringComparison.Ordinal));
 
-        failures.Add(new ZeeKayDaConfigurationFailure(
-            "scopes.openid_missing",
-            $"IScopeRepository must include the '{StandardScopes.OpenId.Name}' scope. " +
-            $"Every OpenID Connect authorization request is required to include '{StandardScopes.OpenId.Name}'."));
+        if (openId is null)
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "scopes.openid_missing",
+                $"IScopeRepository must include the '{StandardScopes.OpenId.Name}' scope. " +
+                $"Every OpenID Connect authorization request is required to include '{StandardScopes.OpenId.Name}'."));
+        }
+        else if (!openId.IsDiscoverable)
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "scopes.openid_hidden",
+                $"The '{StandardScopes.OpenId.Name}' scope has IsDiscoverable set to false, which omits it from the " +
+                "discovery document's scopes_supported. OpenID Connect Discovery 1.0 §3 requires a server to " +
+                $"support '{StandardScopes.OpenId.Name}', so scopes_supported must advertise it; set IsDiscoverable to true."));
+        }
     }
 
     /// <summary>Every claim name a scope lists, across all three destinations.</summary>
