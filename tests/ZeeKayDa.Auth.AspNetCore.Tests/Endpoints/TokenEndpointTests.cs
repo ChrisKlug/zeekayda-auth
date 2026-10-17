@@ -59,11 +59,13 @@ public sealed class TokenEndpointTests : IDisposable
     private readonly FakeTimeProvider _time = new(Now);
     private readonly CapturingLoggerProvider _logs = new();
     private readonly RecordingRefreshTokenBackingStore _refreshTokens = new();
-    private readonly SwitchableBackingStore _backingStore = new();
+    private readonly SwitchableBackingStore _backingStore;
     private readonly EndpointHost _host;
 
     public TokenEndpointTests()
     {
+        // On the host's clock, so a code the test treats as live is never evicted as expired by the real one.
+        _backingStore = new SwitchableBackingStore(_time);
         _host = NewHost();
     }
 
@@ -1156,9 +1158,9 @@ public sealed class TokenEndpointTests : IDisposable
     }
 
     /// <summary>An in-memory backing store that can be made to fail every operation, as an unreachable cache would.</summary>
-    private sealed class SwitchableBackingStore : IAuthorizationCodeBackingStore
+    private sealed class SwitchableBackingStore(TimeProvider timeProvider) : IAuthorizationCodeBackingStore
     {
-        private readonly InMemoryAuthorizationCodeBackingStore _inner = new();
+        private readonly InMemoryAuthorizationCodeBackingStore _inner = new(timeProvider);
 
         public bool Fail { get; set; }
 
