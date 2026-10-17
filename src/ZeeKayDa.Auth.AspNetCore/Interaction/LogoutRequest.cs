@@ -22,7 +22,7 @@ public sealed class LogoutRequest
     /// <summary>
     /// The subject identifier of the account being signed out, as the host's sign-in supplied it:
     /// the one the client's <c>id_token_hint</c> named, or else the account the client was last
-    /// answered for.
+    /// signed in to or picked for.
     /// </summary>
     /// <remarks>
     /// The account <see cref="LogoutInteraction.SignOutAsync"/> ends. Both it and

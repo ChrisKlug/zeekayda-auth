@@ -25,8 +25,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// the user is not sent back to the client at all (§4).
 /// </para>
 /// <para>
-/// A sign-out ends one account: the one a valid <c>id_token_hint</c> names, or else the one the
-/// client was last answered for. The user is signed out without being asked only when there is
+/// A sign-out ends one account: the one a valid <c>id_token_hint</c> names, or else the client's
+/// own — the one last signed in to or picked for it. The user is signed out without being asked only when there is
 /// nothing to end — no account at all, or none for the hinted user — or when a valid hint names a
 /// signed-in account and its client opted out of the question with <c>SkipLogoutConfirmation</c>.
 /// Everything else is confirmed first (§2), and the confirmation can end every account instead.

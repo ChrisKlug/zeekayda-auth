@@ -37,9 +37,9 @@ never another account answering silently: a client that named bob and got alice 
 mix-up this design removes. A verified `id_token_hint` wins over a `login_hint`. A `login_hint`
 matches a login identifier ignoring case, as an email is typed, or a subject exactly; with no login
 identifier the subject stands in, so a host that passes none never matches a client's email hints,
-and its `LoginIdentifier` docs say so. A client's own account is the one it was last answered for,
-else the most recently signed-in; a choice is remembered per client, capped and least recent first
-out. `prompt=login` and `max_age` are judged against the account that answers, not the whole cookie.
+and its `LoginIdentifier` docs say so. A client's own account is the one last signed in to or
+picked for it, else the most recently signed-in, remembered per client, capped and least recent first
+out. Only a sign-in or a picker choice writes the cookie; a silent answer never does. `prompt=login` and `max_age` are judged against the account that answers, not the whole cookie.
 
 **A sign-in replaces the accounts held unless the page asks to add.** `SignInAsync` signs every
 other account out — the safe default on a shared computer, where the previous user would otherwise
@@ -73,4 +73,5 @@ Which relying parties are told is unbuilt.
 
 ## Tried, didn't work
 
-Nothing reversed here yet.
+- **A silent answer remembering its account for the client.** Every hint-selected refresh rewrote the
+  cookie, and one read before a sign-out wrote the signed-out account back.

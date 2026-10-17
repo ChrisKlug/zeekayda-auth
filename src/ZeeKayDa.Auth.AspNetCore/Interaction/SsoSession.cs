@@ -26,7 +26,7 @@ internal static class SsoSessionClaimTypes
     /// <summary>The identifier the user signs in with, when the sign-in gave one.</summary>
     public const string LoginIdentifier = "zkd:login_id";
 
-    /// <summary>A client and the account it was last answered for, as <c>subject client_id</c>: a subject holds no space.</summary>
+    /// <summary>A client and the account last signed in to or picked for it, as <c>subject client_id</c>: a subject holds no space.</summary>
     public const string ClientAccount = "zkd:client";
 }
 
@@ -53,12 +53,12 @@ internal sealed record SsoSessionState
         || string.Equals(Subject, loginHint, StringComparison.Ordinal);
 }
 
-/// <summary>A client, and the account it was last answered for.</summary>
+/// <summary>A client, and the account last signed in to or picked for it.</summary>
 internal sealed record ClientAccount(string ClientId, string Subject);
 
 /// <summary>
 /// The accounts one browser is signed in to, the one most recently signed in to or chosen first,
-/// and the account each client was last answered for, the most recent first.
+/// and the account last signed in to or picked for each client, the most recent first.
 /// </summary>
 internal sealed class SsoSessionList(IReadOnlyList<SsoSessionState> accounts, IReadOnlyList<ClientAccount> clients)
 {
@@ -91,7 +91,7 @@ internal sealed class SsoSessionList(IReadOnlyList<SsoSessionState> accounts, IR
     }
 
     /// <summary>
-    /// The account <paramref name="clientId"/> was last answered for, else the one most recently
+    /// The account last signed in to or picked for <paramref name="clientId"/>, else the one most recently
     /// signed in to; <see langword="null"/> when the browser holds none.
     /// </summary>
     public SsoSessionState? DefaultFor(string? clientId)

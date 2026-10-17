@@ -1,3 +1,4 @@
+using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 using ZeeKayDa.Auth.Authorization;
 using static ZeeKayDa.Auth.AspNetCore.Tests.Interaction.MultiAccountBrowser;
@@ -111,7 +112,7 @@ public sealed class AuthorizationEndpointMultiAccountTests
     }
 
     [Fact]
-    public async Task A_client_answered_silently_keeps_that_account_after_another_account_signs_in_later()
+    public async Task A_client_answered_silently_follows_the_most_recent_sign_in_until_it_signs_in_or_picks()
     {
         await _browser.SignInAsync(Alice, clientId: App);
         _host.Time.Advance(TimeSpan.FromMinutes(1));
@@ -122,7 +123,20 @@ public sealed class AuthorizationEndpointMultiAccountTests
 
         var response = await _browser.AuthorizeAsync(TrustedApp, prompt: "none");
 
-        (await _browser.SubjectAnsweredAsync(response, TrustedApp)).Should().Be(Bob, "the account that answered the client silently is remembered as its own");
+        (await _browser.SubjectAnsweredAsync(response, TrustedApp)).Should().Be(Carol, "a silent answer is not remembered for the client");
+    }
+
+    [Fact]
+    public async Task A_silent_answer_writes_no_session_cookie_so_a_refresh_cannot_undo_a_sign_out()
+    {
+        var alicesHint = await _browser.IdTokenForAsync(Alice, clientId: App);
+        await _browser.SignInAsync(Bob, clientId: App);
+
+        var response = await _browser.AuthorizeAsync(App, prompt: "none", idTokenHint: alicesHint);
+
+        response.Headers.TryGetValues("Set-Cookie", out var cookies);
+        (cookies ?? []).Should().NotContain(cookie => cookie.StartsWith(ZeeKayDaCookies.Session, StringComparison.Ordinal));
+        (await _browser.SubjectAnsweredAsync(response)).Should().Be(Alice);
     }
 
     // ── max_age ───────────────────────────────────────────────────────────────────────────────────

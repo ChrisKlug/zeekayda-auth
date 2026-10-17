@@ -125,7 +125,8 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         if (continuedSession is null)
             return await _outcomes.AuthenticateAsync(context, requestContext).ConfigureAwait(false);
 
-        await _flow.ChooseAsync(context, sessions, continuedSession, request.Client.ClientId).ConfigureAwait(false);
+        // Writes no cookie: only a sign-in or a picker choice does, so a background refresh racing a
+        // sign-out can never write the signed-out account back.
         return await _outcomes.ContinueAsync(context, requestContext).ConfigureAwait(false);
     }
 

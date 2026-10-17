@@ -14,8 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   selects the matching account; a hint matching no account here sends the user to sign in, and
   `prompt=none` gets `login_required`, so a client that named one user never silently gets another.
   This replaces #965's "refuse a session for another user" with "select that user's account". A
-  request naming no one is answered by the account the client was last answered for, else the most
-  recently signed in. `max_age` and `prompt=login` are judged against the selected account. An
+  request naming no one is answered by the account last signed in to or picked for that client, else
+  the most recently signed in; a silent answer never writes the cookie, so a background refresh
+  cannot undo a sign-out. `max_age` and `prompt=login` are judged against the selected account. An
   account lives for the cookie lifetime from its own last sign-in; rewriting the cookie for another
   account never extends it.
 - **Signing in replaces the accounts held unless the page asks to add** (#1032).
