@@ -37,8 +37,9 @@ public sealed class ProviderOptions
     /// <c>server_error</c>.
     /// </para>
     /// <para>
-    /// The handler runs for every provider registered through the same <c>WithProviders</c> call;
-    /// <see cref="ProviderChallengeContext.Provider"/> says which one is being challenged.
+    /// One handler serves every provider, from every <c>WithProviders</c> call, and a later call
+    /// that sets it replaces the handler an earlier one set. Branch on
+    /// <see cref="ProviderChallengeContext.Provider"/>, which names the provider being challenged.
     /// </para>
     /// </remarks>
     /// <example>

@@ -238,6 +238,36 @@ public sealed class ProviderChallengeHookTests
     }
 
     [Fact]
+    public async Task The_hook_set_by_a_later_WithProviders_call_runs_for_a_provider_registered_by_an_earlier_one()
+    {
+        var calls = new List<string>();
+        using var factory = new TestWebAppFactory(
+            configureBuilder: builder =>
+            {
+                builder.WithProviders(
+                    auth => auth.AddOAuth("acme", "Acme", ConfigureAcme),
+                    options => options.OnProviderChallenge = context =>
+                    {
+                        calls.Add($"first:{context.Provider.Id}");
+                        return ProviderChallengeOutcome.Proceed;
+                    });
+                builder.WithProviders(
+                    auth => auth.AddOAuth("globex", "Globex", ConfigureAcme),
+                    options => options.OnProviderChallenge = context =>
+                    {
+                        calls.Add($"second:{context.Provider.Id}");
+                        return ProviderChallengeOutcome.Proceed;
+                    });
+            },
+            mapEndpoints: MapHostPages);
+        using var client = NewClient(factory);
+
+        await ChooseProviderAsync(client);
+
+        calls.Should().Equal("second:acme");
+    }
+
+    [Fact]
     public async Task Max_age_within_the_age_of_a_session_is_no_reauthentication_demand_and_the_challenge_proceeds()
     {
         // Near real time: the correlation cookie of the first round trip expires against the real clock.
